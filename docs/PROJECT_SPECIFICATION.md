@@ -48,23 +48,29 @@ Every completed run must contain enough information to audit and re-execute it:
 
 ```text
 runs/<run-id>/
-├── config/          source configuration and effective engine configuration
-├── input/           immutable inventory or staged copies with hashes
-├── output/          numerical results only
-├── logs/            complete machine-readable and human-readable logs
-├── report/          convergence, preflight, and quality-control report
-└── manifest.json    versions, hardware, command, parameters, hashes, and status
+├── config/                source and fully resolved YAML configuration
+├── input/                 staged template and subject meshes
+├── engine/                backend-specific, generated inputs such as XML
+├── output/                numerical engine outputs only
+├── logs/                  full backend log and parsed convergence CSV
+├── manifest.json          write-once pre-execution evidence
+├── manifest.sha256        manifest integrity sidecar
+├── events.jsonl           append-only lifecycle events
+├── result.json            terminal status, environment, command, and duration
+└── output-inventory.json  sizes and SHA-256 hashes for every output file
 ```
 
-The manifest schema and retention behavior will be versioned. Existing run
-directories must never be silently overwritten.
+The prepared-manifest schema and retention behavior are versioned. Existing
+run directories are never silently overwritten or re-executed.
 
 ## Scientific guardrails
 
 - Units are mandatory and kernel widths are reported in those units.
 - Template selection is explicit; selecting the first alphabetic mesh is not a
   permitted hidden default.
-- Effective parameters, including engine defaults, are materialized before run.
+- Effective user parameters and known fixed backend constants are materialized
+  before a run; any newly discovered implicit engine choice is treated as a
+  reproducibility defect.
 - Geometry checks distinguish errors, warnings, and informational variation.
 - CPU and GPU results are compared under declared numerical tolerances.
 - Parameter recommendations must be supported by experiments or literature,

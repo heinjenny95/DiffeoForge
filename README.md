@@ -2,7 +2,9 @@
 
 > [!WARNING]
 > **Pre-alpha research software.** DiffeoForge is not yet validated for
-> scientific production use and does not currently estimate an atlas.
+> scientific production use. Its experimental reference backend can invoke an
+> existing Deformetrica 4.3.0 installation, but installation and scientific
+> equivalence are not yet automated or validated.
 
 DiffeoForge is the working title for an open-source, reproducible workflow for
 diffeomorphic atlas construction from 3D surface meshes. The project aims to
@@ -28,15 +30,21 @@ Select mesh directory
   -> export a reproducible run bundle
 ```
 
-The command-line equivalent is expected to look like:
+The current command-line workflow is:
 
 ```bash
 diffeoforge validate atlas.yaml
-diffeoforge run atlas.yaml
-diffeoforge report runs/example
+diffeoforge prepare atlas.yaml --run-id experiment-001
+# Inspect manifest.json and engine/*.xml before committing compute time.
+diffeoforge execute runs/experiment-001
+diffeoforge status runs/experiment-001
+
+# Or prepare and execute a new run in one command:
+diffeoforge run atlas.yaml --run-id experiment-002
 ```
 
-Only `validate` exists in the current pre-alpha scaffold.
+Prepared run directories are write-once. DiffeoForge refuses to overwrite or
+execute one a second time.
 
 ## Design principles
 
@@ -57,15 +65,23 @@ Only `validate` exists in the current pre-alpha scaffold.
 
 This repository currently provides:
 
-- a draft, machine-readable atlas configuration schema;
-- a small CLI that validates that schema and input paths;
+- versioned, machine-readable atlas-configuration and run-manifest schemas;
+- geometry-aware preflight for classic and VTK 5.1 triangular PolyData;
+- deterministic input discovery, staging, SHA-256 inventories, and immutable
+  run directories;
+- explicit Deformetrica XML generation and native or Windows-to-WSL launchers;
+- exact command, environment, lifecycle, convergence, result, and output
+  inventories;
 - an engine-independent architecture decision;
 - an explicit scientific validation strategy;
 - automated linting, tests, and package-build checks;
 - contribution and AI-usage policies suitable for public research software.
 
-It intentionally does **not** yet contain a numerical atlas implementation,
-redistribute Deformetrica, or promise CPU/GPU equivalence.
+It intentionally does **not** yet contain a new numerical atlas engine,
+install or redistribute Deformetrica, provide a GUI or report generator, or
+promise CPU/GPU equivalence. See the
+[reference-backend documentation](docs/REFERENCE_BACKEND.md) for the exact
+implemented boundary and current limitations.
 
 ## Developer quick start
 
@@ -90,6 +106,7 @@ open-data license.
 
 - [Project specification](docs/PROJECT_SPECIFICATION.md)
 - [Architecture](docs/ARCHITECTURE.md)
+- [Deformetrica reference backend](docs/REFERENCE_BACKEND.md)
 - [Validation strategy](docs/VALIDATION_STRATEGY.md)
 - [Roadmap](ROADMAP.md)
 - [Contributing](CONTRIBUTING.md)

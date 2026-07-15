@@ -1,0 +1,233 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DiffeoForge prepared-run manifest",
+  "description": "Write-once evidence recorded before a DiffeoForge backend starts.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "manifest_version",
+    "run_id",
+    "created_at",
+    "project",
+    "source_config",
+    "backend",
+    "effective_config",
+    "input_count",
+    "inputs",
+    "protected_artifacts",
+    "command_preview",
+    "preparation_environment",
+    "immutability_contract"
+  ],
+  "properties": {
+    "manifest_version": {
+      "const": "0.1"
+    },
+    "run_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+    },
+    "created_at": {
+      "type": "string",
+      "minLength": 1
+    },
+    "project": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "source_config": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "backend": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "contract_version", "engine_constants"],
+      "properties": {
+        "id": {
+          "const": "deformetrica_reference"
+        },
+        "contract_version": {
+          "const": "0.1"
+        },
+        "engine_constants": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["line_search_shrink", "line_search_expand"],
+          "properties": {
+            "line_search_shrink": {"const": 0.5},
+            "line_search_expand": {"const": 1.5},
+            "state_file": {"const": "output/deformetrica-state.p"}
+          }
+        }
+      }
+    },
+    "effective_config": {
+      "type": "object",
+      "required": [
+        "schema_version",
+        "project",
+        "input",
+        "model",
+        "optimization",
+        "runtime",
+        "output"
+      ]
+    },
+    "input_count": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["templates", "subjects"],
+      "properties": {
+        "templates": {
+          "const": 1
+        },
+        "subjects": {
+          "type": "integer",
+          "minimum": 2
+        }
+      }
+    },
+    "inputs": {
+      "type": "array",
+      "minItems": 3,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["role", "source_path", "staged_path", "geometry"],
+        "properties": {
+          "role": {
+            "enum": ["template", "subject"]
+          },
+          "source_path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "staged_path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "geometry": {
+            "$ref": "#/$defs/geometry"
+          }
+        }
+      }
+    },
+    "protected_artifacts": {
+      "type": "array",
+      "minItems": 8,
+      "items": {
+        "$ref": "#/$defs/artifact"
+      }
+    },
+    "command_preview": {
+      "$ref": "#/$defs/command"
+    },
+    "preparation_environment": {
+      "type": "object",
+      "required": ["python", "python_executable", "platform", "diffeoforge", "packages"]
+    },
+    "immutability_contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["manifest", "protected_artifacts", "events", "output", "run_directory"],
+      "properties": {
+        "manifest": {"type": "string", "minLength": 1},
+        "protected_artifacts": {"type": "string", "minLength": 1},
+        "events": {"type": "string", "minLength": 1},
+        "output": {"type": "string", "minLength": 1},
+        "run_directory": {"type": "string", "minLength": 1}
+      }
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "bytes", "sha256"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "bytes": {"type": "integer", "minimum": 0},
+        "sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "command": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["argv", "working_directory", "environment"],
+      "properties": {
+        "argv": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"type": "string"}
+        },
+        "working_directory": {"type": "string", "minLength": 1},
+        "environment": {
+          "type": "object",
+          "additionalProperties": {"type": "string"}
+        }
+      }
+    },
+    "geometry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "bytes",
+        "sha256",
+        "vtk_version",
+        "encoding",
+        "dataset_type",
+        "points",
+        "cells",
+        "triangular",
+        "bounds",
+        "bounding_box_extents",
+        "bounding_box_diagonal"
+      ],
+      "properties": {
+        "bytes": {"type": "integer", "minimum": 1},
+        "sha256": {"$ref": "#/$defs/sha256"},
+        "vtk_version": {"type": "string", "minLength": 1},
+        "encoding": {"enum": ["ASCII", "BINARY"]},
+        "dataset_type": {"const": "POLYDATA"},
+        "points": {"type": "integer", "minimum": 1},
+        "cells": {"type": "integer", "minimum": 1},
+        "triangular": {"const": true},
+        "bounds": {
+          "type": "array",
+          "minItems": 6,
+          "maxItems": 6,
+          "items": {"type": "number"}
+        },
+        "bounding_box_extents": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "items": {"type": "number", "minimum": 0}
+        },
+        "bounding_box_diagonal": {"type": "number", "exclusiveMinimum": 0}
+      }
+    }
+  }
+}

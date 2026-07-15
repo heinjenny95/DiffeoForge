@@ -73,6 +73,14 @@ def _resolve_from_config(value: str, config_path: Path) -> Path:
     return candidate.resolve()
 
 
+def resolve_output_directory(
+    config: Mapping[str, Any], config_path: Path | str
+) -> Path:
+    """Resolve the configured run root relative to the configuration file."""
+
+    return _resolve_from_config(config["output"]["directory"], Path(config_path))
+
+
 def validate_input_paths(config: Mapping[str, Any], config_path: Path | str) -> InputSummary:
     """Resolve the template and subject glob without parsing mesh geometry yet."""
 
@@ -109,8 +117,15 @@ def validate_input_paths(config: Mapping[str, Any], config_path: Path | str) -> 
         raise ConfigurationError(
             f"No subject VTK files match {pattern!r} in {input_directory}."
         )
+    if len(subjects) < 2:
+        raise ConfigurationError("Atlas estimation requires at least two subject meshes.")
     if len(set(subjects)) != len(subjects):
         raise ConfigurationError("Subject file selection contains duplicate paths.")
+    names = [path.name.casefold() for path in subjects]
+    if len(set(names)) != len(names):
+        raise ConfigurationError(
+            "Subject mesh filenames must be unique when compared case-insensitively."
+        )
 
     return InputSummary(
         input_directory=input_directory,
