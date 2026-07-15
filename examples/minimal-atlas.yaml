@@ -1,0 +1,37 @@
+# Draft schema example. The paths are placeholders until openly licensed
+# example meshes are added to the repository.
+schema_version: "0.1"
+
+project:
+  name: minimal-example
+
+input:
+  directory: ./meshes
+  subject_pattern: "subject-*.vtk"
+  template: ./meshes/template.vtk
+  units: unitless
+
+model:
+  type: deterministic_atlas
+  dimension: 3
+  attachment:
+    type: current
+    kernel_width: 0.1
+  deformation:
+    kernel_width: 0.1
+    timepoints: 10
+  noise_std: 0.05
+
+optimization:
+  method: gradient_ascent
+  max_iterations: 100
+  initial_step_size: 0.01
+
+runtime:
+  backend: deformetrica_reference
+  device: cpu
+  threads: 4
+
+output:
+  directory: ./runs
+  retain_flow_meshes: true
