@@ -94,8 +94,15 @@ Selected outputs, provenance, hashes, environment versions, and draft numeric
 tolerances are published under `reference/synthetic-v1`. The
 `compare-reference` command evaluates a new run without requiring exact hashes.
 This is same-environment repeatability evidence and an engineering regression
-fixture; cross-platform equivalence still requires a pinned execution
-environment and independently justified tolerances.
+fixture.
+
+The frozen CPU image subsequently rebuilt the environment on a clean
+GitHub-hosted Ubuntu 24.04 runner. The container run stopped at iteration 22
+and passed all 10 comparisons; every selected artifact was byte-identical to
+the reference, with maximum absolute difference 0.0. This establishes the
+public container as a working regression environment. Independently justified
+tolerances and broader operating-system and CPU coverage remain necessary for
+scientific equivalence claims.
 
 ## Known limitations
 

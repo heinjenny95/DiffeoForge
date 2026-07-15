@@ -62,6 +62,19 @@ The acceptance command must report 10 of 10 artifacts passed. The published
 GitHub Actions workflow repeats the build, atlas execution, and numerical
 comparison on a clean runner.
 
+## Clean-runner evidence
+
+On 15 July 2026, the workflow built the image from an empty GitHub-hosted
+Ubuntu 24.04 runner, verified Deformetrica 4.3.0 and Torch 1.6.0+cpu with CUDA
+unavailable, and completed the public atlas. The optimizer again stopped at
+iteration 22. Atlas estimation, including the first-use PyKeOps compilation,
+took 2 minutes 10 seconds.
+
+The versioned comparator passed all 10 selected artifacts. Every selected
+artifact was byte-identical to `reference/synthetic-v1`, with maximum absolute
+difference 0.0. This is clean-container reproducibility evidence for the public
+synthetic case; it is not a biological validation result.
+
 ## Use it for another dataset
 
 Copy `examples/minimal-atlas-container.yaml`, then change the input directory,
