@@ -15,6 +15,8 @@ Python 3.8.20 inside the container.
 - CPU-only PyTorch 1.6.0 and Torchvision 0.7.0 wheels from the official
   PyTorch index;
 - PyKeOps 1.4.1 and CMake 3.28.3;
+- Debian Bookworm `libgl1`, `libglvnd0`, and `libglx0`, each at version
+  1.6.0-1, required by Deformetrica's unconditional Qt import;
 - SHA-256 for every selected Python wheel or source archive.
 
 The lock was derived from a fresh environment, not from the notebook

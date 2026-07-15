@@ -5,6 +5,16 @@
 # the official PyTorch 1.6 CPU wheel is architecture-specific.
 FROM python:3.8.20@sha256:d411270700143fa2683cc8264d9fa5d3279fd3b6afff62ae81ea2f9d070e390c
 
+# Deformetrica imports its Qt GUI package even for headless CLI execution.
+# These signed Debian Bookworm packages provide the required libGL.so.1 ABI.
+RUN apt-get update \
+    && apt-get install --yes --no-install-recommends \
+        libgl1=1.6.0-1 \
+        libglvnd0=1.6.0-1 \
+        libglx0=1.6.0-1 \
+    && test -e /usr/lib/x86_64-linux-gnu/libGL.so.1 \
+    && rm -rf /var/lib/apt/lists/*
+
 LABEL org.opencontainers.image.title="DiffeoForge Deformetrica reference backend" \
       org.opencontainers.image.description="Frozen CPU execution environment for Deformetrica 4.3.0" \
       org.opencontainers.image.source="https://github.com/heinjenny95/DiffeoForge" \
