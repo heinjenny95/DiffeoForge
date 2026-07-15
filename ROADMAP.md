@@ -40,6 +40,7 @@ This roadmap describes evidence gates rather than promised dates.
 
 ## Milestone 3: Accessible application
 
+- [x] Define desktop executable/installer architecture and release gates
 - [ ] Local graphical interface backed by the shared core
 - [ ] Parameter explanations and safe presets
 - [ ] Resource estimation and progress reporting

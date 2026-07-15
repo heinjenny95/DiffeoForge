@@ -94,6 +94,11 @@ decision and reviewer:
 ## 7. Distribution and platform claims
 
 - [ ] Each advertised operating system and installation route has clean-machine evidence.
+- [ ] A desktop artifact installs, launches, runs the public CC0 smoke, and uninstalls offline on a clean machine without Python.
+- [ ] Installer and uninstaller logs show that user-selected projects are preserved.
+- [ ] Executables/installers have verified signatures, SHA-256 hashes, an SBOM, and a third-party license inventory.
+- [ ] Paths with spaces, non-ASCII characters, and a non-administrator install are tested.
+- [ ] The installed application makes no network request by default.
 - [ ] CPU and GPU claims are kept separate and supported by their own comparisons.
 - [ ] Container tags are backed by immutable image digests and build instructions.
 - [ ] Archive/HPC instructions are tested when advertised.
