@@ -64,15 +64,17 @@ The experimental `diffeoforge.engine` module currently implements:
 - the complete per-subject deterministic-atlas contribution, with attachment
   `-distance / noise_variance`, regularity `-p^T K(q,q) p`, and their sum;
 - an unaveraged, order-preserving multi-subject objective sum.
+- a deterministic momenta-only gradient-ascent prototype with Armijo
+  backtracking and complete accepted-state history.
 
 All public operations require finite, three-dimensional floating-point tensors,
 matching dtype/device, finite positive kernel widths, and valid zero-based
 `int64` triangle connectivity. They do not silently cast inputs. Degenerate
 zero-area faces fail explicitly.
 
-This boundary does **not** yet include control-point initialization, atlas
-optimization, output meshes, checkpointing, GPU execution, sparse/chunked
-kernels, or a workflow-backend adapter.
+This boundary does **not** yet include control-point initialization, template
+or control-point optimization, output meshes, checkpointing, GPU execution,
+sparse/chunked kernels, or a workflow-backend adapter.
 
 ## Evidence in this baseline
 
