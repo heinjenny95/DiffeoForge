@@ -7,7 +7,7 @@ Status: **draft**
 ```text
 GUI and CLI
     |
-Application service (validate, prepare, execute, run, status; resume/report future)
+Application service (validate, prepare, execute, run, status, report; resume future)
     |
 Versioned configuration and run-manifest contracts
     |
@@ -43,6 +43,13 @@ Execution verifies this evidence and requires an empty output directory before
 starting the backend exactly once. `result.json`, `logs/convergence.csv`, and
 `output-inventory.json` record the terminal outcome without rewriting the
 prepared manifest.
+
+`result-report.html` is a derived, regenerable view of those evidence files.
+It is not a substitute for them and is not included in the numerical output
+inventory. Report generation revalidates the prepared-manifest digest and
+checks consistency among the terminal event, result, convergence-row count,
+and output inventory. The report is self-contained and performs no network
+requests.
 
 ## Backend boundary
 

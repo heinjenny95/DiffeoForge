@@ -22,6 +22,7 @@ from diffeoforge.report import (
     default_preflight_report_path,
     write_preflight_report,
 )
+from diffeoforge.result_report import collect_run_report, write_result_report
 from diffeoforge.runs import execute_run, prepare_run, run_status
 
 _AUTO_REPORT = Path("__diffeoforge_auto_report__")
@@ -190,6 +191,22 @@ def build_parser() -> argparse.ArgumentParser:
         help="Read the latest append-only lifecycle state for a run.",
     )
     status_parser.add_argument("run_directory", type=Path)
+
+    report_parser = subparsers.add_parser(
+        "report",
+        help="Create a self-contained HTML convergence and result report.",
+    )
+    report_parser.add_argument("run_directory", type=Path)
+    report_parser.add_argument(
+        "--output",
+        type=Path,
+        help="Report destination (default: RUN_DIRECTORY/result-report.html).",
+    )
+    report_parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Explicitly replace an existing DiffeoForge result report.",
+    )
 
     compare_parser = subparsers.add_parser(
         "compare-reference",
@@ -371,6 +388,22 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"ERROR: {error}", file=sys.stderr)
             return 2
         print(json.dumps(status, indent=2, ensure_ascii=False))
+        return 0
+
+    if args.command == "report":
+        try:
+            report = collect_run_report(args.run_directory)
+            report_path = write_result_report(
+                report,
+                args.output,
+                overwrite=args.force,
+            )
+        except ConfigurationError as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        print(f"Run status: {report.result['status']}")
+        print(f"Convergence observations: {len(report.convergence)}")
+        print(f"Result report: {report_path}")
         return 0
 
     if args.command == "compare-reference":

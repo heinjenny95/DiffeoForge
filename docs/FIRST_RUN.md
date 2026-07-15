@@ -122,9 +122,13 @@ After reviewing `atlas.yaml` and the report:
 ```powershell
 diffeoforge prepare atlas.yaml --run-id pilot-001
 diffeoforge execute runs\pilot-001
+diffeoforge report runs\pilot-001
 ```
 
 For a cohort of hundreds of specimens, start with a small representative pilot
-and inspect convergence before committing the full dataset. Resource estimation,
-progress reporting, checkpoint/resume support, and the post-run convergence
-report remain separate roadmap items.
+and inspect the objective curves, lifecycle, evidence checks, and output
+inventory before committing the full dataset. The result report deliberately
+distinguishes a successful backend exit from demonstrated convergence and from
+scientific validity. See [result-report interpretation](RESULT_REPORT.md).
+Resource estimation, progress reporting, and checkpoint/resume support remain
+separate roadmap items.

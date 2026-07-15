@@ -38,6 +38,7 @@ diffeoforge prepare atlas.yaml --run-id experiment-001
 # Inspect manifest.json and engine/*.xml before committing compute time.
 diffeoforge execute runs/experiment-001
 diffeoforge status runs/experiment-001
+diffeoforge report runs/experiment-001
 
 # Or prepare and execute a new run in one command:
 diffeoforge run atlas.yaml --run-id experiment-002
@@ -79,11 +80,12 @@ This repository currently provides:
 - versioned Deformetrica outputs and a tolerance-based reference comparator;
 - a read-only environment doctor and transparent mesh-directory initializer;
 - a self-contained HTML input-validation and parameter-scale report;
+- a self-contained HTML convergence, lifecycle, and result report;
 - contribution and AI-usage policies suitable for public research software.
 
 It intentionally does **not** yet contain a new numerical atlas engine,
-ship a prebuilt container or desktop installer, provide a GUI or post-run
-convergence report, or promise CPU/GPU equivalence. See the
+ship a prebuilt container or desktop installer, provide a GUI or mesh-output
+quality visualization, or promise CPU/GPU equivalence. See the
 [reference-backend documentation](docs/REFERENCE_BACKEND.md) for the exact
 implemented boundary and current limitations.
 
@@ -97,6 +99,7 @@ diffeoforge doctor
 diffeoforge init "C:\path\to\meshes" --units millimeter
 # Review atlas.yaml and atlas.preflight.html before computation.
 diffeoforge run atlas.yaml --run-id pilot-001
+diffeoforge report runs/pilot-001
 ```
 
 `init` never guesses coordinate units or silently overwrites files. A file
@@ -153,6 +156,7 @@ and workflow for another mesh directory.
 - [Synthetic numerical reference](reference/synthetic-v1/README.md)
 - [Frozen Deformetrica CPU container](docs/CONTAINER_REFERENCE.md)
 - [First-run workflow](docs/FIRST_RUN.md)
+- [Result-report interpretation](docs/RESULT_REPORT.md)
 - [Validation strategy](docs/VALIDATION_STRATEGY.md)
 - [Roadmap](ROADMAP.md)
 - [Contributing](CONTRIBUTING.md)
