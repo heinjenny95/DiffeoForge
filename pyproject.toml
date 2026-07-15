@@ -58,6 +58,8 @@ include = [
   "/docs",
   "/examples",
   "/reference",
+  "/container",
+  "/.dockerignore",
   "/README.md",
   "/LICENSE",
   "/AI_USAGE.md",

@@ -105,8 +105,23 @@ ruff check .
 
 The bundled example uses one template and five deterministic synthetic meshes.
 It exercises geometry preflight and immutable run preparation without private
-research data. Execution still requires a separately installed Deformetrica
-reference environment.
+research data. Execution requires either a compatible external Deformetrica
+installation or the frozen reference container below.
+
+For an isolated, hash-locked Deformetrica 4.3.0 CPU environment, build the
+reference container and use the container example:
+
+```bash
+docker build --platform linux/amd64 -f container/Dockerfile \
+  -t diffeoforge-deformetrica:4.3.0-cpu .
+diffeoforge run examples/minimal-atlas-container.yaml --run-id container-smoke
+diffeoforge compare-reference \
+  examples/runs/container-smoke reference/synthetic-v1
+```
+
+See the [container reference documentation](docs/CONTAINER_REFERENCE.md) for
+the frozen dependency boundary, first-run compilation cost, security limits,
+and workflow for another mesh directory.
 
 ## Documentation
 
@@ -115,6 +130,7 @@ reference environment.
 - [Deformetrica reference backend](docs/REFERENCE_BACKEND.md)
 - [Open synthetic validation dataset](docs/SYNTHETIC_DATASET.md)
 - [Synthetic numerical reference](reference/synthetic-v1/README.md)
+- [Frozen Deformetrica CPU container](docs/CONTAINER_REFERENCE.md)
 - [Validation strategy](docs/VALIDATION_STRATEGY.md)
 - [Roadmap](ROADMAP.md)
 - [Contributing](CONTRIBUTING.md)

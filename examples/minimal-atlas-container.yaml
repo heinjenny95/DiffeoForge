@@ -1,0 +1,58 @@
+# Runnable public reference case using the frozen Deformetrica CPU container.
+schema_version: "0.1"
+
+project:
+  name: minimal-container-example
+
+input:
+  directory: ./synthetic/meshes
+  subject_pattern: "subject-*.vtk"
+  template: ./synthetic/meshes/template.vtk
+  units: unitless
+
+model:
+  type: deterministic_atlas
+  dimension: 3
+  object_id: surface
+  attachment:
+    type: current
+    kernel_width: 0.45
+  deformation:
+    kernel_width: 0.6
+    timepoints: 10
+    initial_control_point_spacing: 0.6
+    use_rk2: false
+  noise_std: 0.1
+
+optimization:
+  method: gradient_ascent
+  max_iterations: 100
+  initial_step_size: 0.01
+  convergence_tolerance: 0.0001
+  downsampling_factor: 1
+  max_line_search_iterations: 10
+  save_every_n_iterations: 100
+  print_every_n_iterations: 1
+  scale_initial_step_size: true
+  use_sobolev_gradient: true
+  sobolev_kernel_width_ratio: 1.0
+  freeze_template: false
+  freeze_control_points: false
+
+runtime:
+  backend: deformetrica_reference
+  device: cpu
+  threads: 4
+  processes: 1
+  precision: float32
+  random_seed: 20260715
+  kernel_backend: keops
+  verbosity: INFO
+  launcher:
+    type: container
+    engine: docker
+    image: diffeoforge-deformetrica:4.3.0-cpu
+
+output:
+  directory: ./runs
+  retain_flow_meshes: true

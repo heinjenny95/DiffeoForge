@@ -15,14 +15,15 @@ pipeline.
 - Gradient Ascent optimization;
 - CPU execution with explicit KeOps or Torch kernels;
 - one native executable or a Windows-to-WSL launcher;
+- one offline, read-only Docker launcher using the frozen CPU image;
 - Deformetrica version exactly 4.3.0;
 - one process, configurable OpenMP thread count, and Float32 precision;
 - explicit initial template, control-point spacing, random seed, time
   discretization, optimizer stopping and logging parameters;
 - retained flow meshes and a complete output inventory.
 
-GPU execution, LBFGS, resume, automatic engine installation, containers, and
-scientific production claims are outside contract 0.1.
+GPU execution, LBFGS, resume, automatic Docker installation, and scientific
+production claims are outside contract 0.1.
 
 ## Separation of responsibilities
 
@@ -35,8 +36,10 @@ Python.
 
 The launcher is part of the public configuration. A native launcher names a
 local executable. On Windows, a WSL launcher names the distribution and the
-absolute Linux path to the executable. DiffeoForge probes the adjacent Python
-environment and refuses execution unless it reports Deformetrica 4.3.0.
+absolute Linux path to the executable. A container launcher names Docker and a
+locally available image. DiffeoForge probes the backend environment and refuses
+execution unless it reports Deformetrica 4.3.0. Container runs additionally
+record the resolved image ID and repository digests.
 
 ## Lifecycle
 
@@ -91,12 +94,20 @@ Selected outputs, provenance, hashes, environment versions, and draft numeric
 tolerances are published under `reference/synthetic-v1`. The
 `compare-reference` command evaluates a new run without requiring exact hashes.
 This is same-environment repeatability evidence and an engineering regression
-fixture; cross-platform equivalence still requires a pinned execution
-environment and independently justified tolerances.
+fixture.
+
+The frozen CPU image subsequently rebuilt the environment on a clean
+GitHub-hosted Ubuntu 24.04 runner. The container run stopped at iteration 22
+and passed all 10 comparisons; every selected artifact was byte-identical to
+the reference, with maximum absolute difference 0.0. This establishes the
+public container as a working regression environment. Independently justified
+tolerances and broader operating-system and CPU coverage remain necessary for
+scientific equivalence claims.
 
 ## Known limitations
 
-- Environment creation is not automated yet.
+- Docker itself must still be installed and started by the user; the legacy
+  environment inside it is automated and hash-locked.
 - Absolute source paths in a private manifest may reveal specimen names or
   workstation layout; do not publish run bundles without review.
 - Geometry preflight currently targets legacy-file-format VTK PolyData,
