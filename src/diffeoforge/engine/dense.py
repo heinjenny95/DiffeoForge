@@ -160,6 +160,29 @@ def deformation_energy(
     return torch.sum(momenta * velocity)
 
 
+def _rk2_shooting_step(
+    control_points: torch.Tensor,
+    momenta: torch.Tensor,
+    kernel_width: float,
+    step: float,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    points_velocity = gaussian_convolve(
+        control_points, control_points, momenta, kernel_width
+    )
+    momenta_velocity = -gaussian_convolve_gradient(
+        momenta, control_points, kernel_width=kernel_width
+    )
+    midpoint_points = control_points + 0.5 * step * points_velocity
+    midpoint_momenta = momenta + 0.5 * step * momenta_velocity
+    next_points = control_points + step * gaussian_convolve(
+        midpoint_points, midpoint_points, midpoint_momenta, kernel_width
+    )
+    next_momenta = momenta - step * gaussian_convolve_gradient(
+        midpoint_momenta, midpoint_points, kernel_width=kernel_width
+    )
+    return next_points, next_momenta
+
+
 def shoot(
     control_points: torch.Tensor,
     momenta: torch.Tensor,
@@ -197,13 +220,11 @@ def shoot(
             next_points = points_state + step * points_velocity
             next_momenta = momenta_state + step * momenta_velocity
         else:
-            midpoint_points = points_state + 0.5 * step * points_velocity
-            midpoint_momenta = momenta_state + 0.5 * step * momenta_velocity
-            next_points = points_state + step * gaussian_convolve(
-                midpoint_points, midpoint_points, midpoint_momenta, width
-            )
-            next_momenta = momenta_state - step * gaussian_convolve_gradient(
-                midpoint_momenta, midpoint_points, kernel_width=width
+            next_points, next_momenta = _rk2_shooting_step(
+                points_state,
+                momenta_state,
+                width,
+                step,
             )
         points_state = next_points
         momenta_state = next_momenta
@@ -221,9 +242,14 @@ def flow_points(
     trajectory: ShootingTrajectory,
     kernel_width: float,
     *,
-    integrator: Literal["euler", "heun"] = "heun",
+    integrator: Literal["euler", "heun", "deformetrica_heun"] = "heun",
 ) -> torch.Tensor:
-    """Flow template/landmark points along a stored shooting trajectory."""
+    """Flow template/landmark points along a stored shooting trajectory.
+
+    ``heun`` is the standard predictor-corrector method. ``deformetrica_heun``
+    reproduces Deformetrica 4.3's final-step extrapolation beyond the stored
+    trajectory and exists only to make that observable legacy behavior explicit.
+    """
 
     _validate_float_matrix("points", points, columns=3)
     if not isinstance(trajectory, ShootingTrajectory):
@@ -253,8 +279,8 @@ def flow_points(
     _validate_compatible("trajectory.control_points", trajectory.control_points, points)
     _validate_compatible("trajectory.momenta", trajectory.momenta, points)
     width = _validate_width(kernel_width)
-    if integrator not in {"euler", "heun"}:
-        raise ValueError("integrator must be 'euler' or 'heun'")
+    if integrator not in {"euler", "heun", "deformetrica_heun"}:
+        raise ValueError("integrator must be 'euler', 'heun', or 'deformetrica_heun'")
 
     step = 1.0 / (trajectory.control_points.shape[0] - 1)
     state = points
@@ -270,10 +296,22 @@ def flow_points(
             next_state = state + step * velocity
         else:
             predictor = state + step * velocity
+            next_control_points = trajectory.control_points[index + 1]
+            next_momenta = trajectory.momenta[index + 1]
+            if (
+                integrator == "deformetrica_heun"
+                and index == trajectory.control_points.shape[0] - 2
+            ):
+                next_control_points, next_momenta = _rk2_shooting_step(
+                    trajectory.control_points[-1],
+                    trajectory.momenta[-1],
+                    width,
+                    step,
+                )
             next_velocity = gaussian_convolve(
                 predictor,
-                trajectory.control_points[index + 1],
-                trajectory.momenta[index + 1],
+                next_control_points,
+                next_momenta,
                 width,
             )
             next_state = state + 0.5 * step * (velocity + next_velocity)
