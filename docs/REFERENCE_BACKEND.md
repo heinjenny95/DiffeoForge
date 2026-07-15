@@ -55,6 +55,7 @@ three files under `engine/`. Preparation has not started Deformetrica.
 ```bash
 diffeoforge execute runs/trial-001
 diffeoforge status runs/trial-001
+diffeoforge report runs/trial-001
 ```
 
 Execution is allowed once. Before launch, DiffeoForge verifies the manifest
@@ -115,5 +116,4 @@ scientific equivalence claims.
 - The engine emits a PyTorch deprecation warning after the tested run; it does
   not change the successful return code but is preserved in the log.
 - Run interruption and resume are not implemented.
-- A convergence plot, mesh QC report, GUI, and resource estimator remain
-  future work.
+- Mesh-output QC visualization, a GUI, and a resource estimator remain future work.

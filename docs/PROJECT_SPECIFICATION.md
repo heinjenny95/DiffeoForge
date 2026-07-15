@@ -57,7 +57,8 @@ runs/<run-id>/
 ├── manifest.sha256        manifest integrity sidecar
 ├── events.jsonl           append-only lifecycle events
 ├── result.json            terminal status, environment, command, and duration
-└── output-inventory.json  sizes and SHA-256 hashes for every output file
+├── output-inventory.json  sizes and SHA-256 hashes for every output file
+└── result-report.html     derived, self-contained evidence summary
 ```
 
 The prepared-manifest schema and retention behavior are versioned. Existing
