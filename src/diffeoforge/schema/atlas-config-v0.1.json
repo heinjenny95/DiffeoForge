@@ -1,0 +1,155 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DiffeoForge atlas configuration",
+  "description": "Draft configuration contract for a 3D deterministic surface atlas.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "project",
+    "input",
+    "model",
+    "optimization",
+    "runtime",
+    "output"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "0.1"
+    },
+    "project": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "input": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["directory", "subject_pattern", "template", "units"],
+      "properties": {
+        "directory": {
+          "type": "string",
+          "minLength": 1
+        },
+        "subject_pattern": {
+          "type": "string",
+          "minLength": 1
+        },
+        "template": {
+          "type": "string",
+          "minLength": 1
+        },
+        "units": {
+          "enum": [
+            "unitless",
+            "micrometer",
+            "millimeter",
+            "centimeter",
+            "meter"
+          ]
+        }
+      }
+    },
+    "model": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "dimension", "attachment", "deformation", "noise_std"],
+      "properties": {
+        "type": {
+          "const": "deterministic_atlas"
+        },
+        "dimension": {
+          "const": 3
+        },
+        "attachment": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "kernel_width"],
+          "properties": {
+            "type": {
+              "enum": ["current", "varifold"]
+            },
+            "kernel_width": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            }
+          }
+        },
+        "deformation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kernel_width", "timepoints"],
+          "properties": {
+            "kernel_width": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "timepoints": {
+              "type": "integer",
+              "minimum": 2
+            }
+          }
+        },
+        "noise_std": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        }
+      }
+    },
+    "optimization": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["method", "max_iterations", "initial_step_size"],
+      "properties": {
+        "method": {
+          "enum": ["gradient_ascent", "lbfgs"]
+        },
+        "max_iterations": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "initial_step_size": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        }
+      }
+    },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["backend", "device", "threads"],
+      "properties": {
+        "backend": {
+          "const": "deformetrica_reference"
+        },
+        "device": {
+          "enum": ["cpu", "cuda", "auto"]
+        },
+        "threads": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "output": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["directory", "retain_flow_meshes"],
+      "properties": {
+        "directory": {
+          "type": "string",
+          "minLength": 1
+        },
+        "retain_flow_meshes": {
+          "type": "boolean"
+        }
+      }
+    }
+  }
+}

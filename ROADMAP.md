@@ -1,0 +1,50 @@
+# Roadmap
+
+This roadmap describes evidence gates rather than promised dates.
+
+## Milestone 0: Public foundation
+
+- [x] Public repository, license, and pre-alpha warning
+- [x] Draft project scope and architecture decision
+- [x] Versioned draft configuration schema
+- [x] Minimal schema/path validation CLI
+- [x] Initial automated tests and CI
+- [x] Scientific validation plan
+- [ ] Openly licensed miniature surface dataset
+- [ ] Contribution issue templates and release checklist
+
+## Milestone 1: Reproducible reference backend
+
+- [ ] Pinned CPU container for Deformetrica 4.3
+- [ ] Explicit XML generation from the public configuration
+- [ ] Immutable run directories and versioned manifests
+- [ ] VTK geometry preflight and mesh inventory
+- [ ] Checkpoint, resume, and failure-state handling
+- [ ] HTML validation and convergence report
+- [ ] Reference results for the miniature dataset
+
+## Milestone 2: Modern-engine feasibility
+
+- [ ] Evaluate a focused Deformetrica dependency port
+- [ ] Evaluate current PyTorch/KeOps-based libraries
+- [ ] Prototype only the deterministic 3D surface-atlas path
+- [ ] Compare gradients, objectives, deformations, and performance
+- [ ] Record the engine decision in an ADR
+
+## Milestone 3: Accessible application
+
+- [ ] Local graphical interface backed by the shared core
+- [ ] Parameter explanations and safe presets
+- [ ] Resource estimation and progress reporting
+- [ ] Cross-platform CPU distribution
+- [ ] Validated NVIDIA GPU distribution
+- [ ] Apptainer workflow for HPC environments
+
+## Milestone 4: Scientific release
+
+- [ ] Frozen validation protocol and tolerances
+- [ ] Multi-platform benchmark study
+- [ ] External usability evaluation
+- [ ] Complete user and methods documentation
+- [ ] Archived release and DOI
+- [ ] Software and/or methods-paper submission

@@ -1,0 +1,13 @@
+cff-version: 1.2.0
+message: >-
+  DiffeoForge is pre-alpha and not yet validated for scientific use. If you use
+  a future released version, please cite the archived release and associated
+  publication described in its documentation.
+title: DiffeoForge
+type: software
+authors:
+  - family-names: Hein
+    given-names: Jenny
+repository-code: https://github.com/heinjenny95/DiffeoForge
+license: MIT
+version: 0.0.0-dev
