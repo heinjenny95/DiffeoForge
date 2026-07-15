@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import math
+import runpy
 from itertools import pairwise
 from pathlib import Path
 
@@ -207,9 +208,11 @@ def test_nonfinite_initial_momenta_fail_before_optimization() -> None:
 
 
 def test_committed_cc0_smoke_matches_versioned_evidence() -> None:
-    from tools.run_modern_optimizer_smoke import run_smoke
-
     expected = json.loads(SMOKE_FIXTURE.read_text(encoding="utf-8"))
+    tool = runpy.run_path(
+        str(Path(__file__).parents[1] / "tools" / "run_modern_optimizer_smoke.py")
+    )
+    run_smoke = tool["run_smoke"]
     observed = run_smoke()
 
     assert observed["schema_version"] == expected["schema_version"]
