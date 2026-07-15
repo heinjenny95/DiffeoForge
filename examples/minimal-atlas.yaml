@@ -1,14 +1,13 @@
-# Draft schema example. The paths are placeholders until openly licensed
-# example meshes are added to the repository.
+# Runnable pre-computation example using the bundled CC0 synthetic meshes.
 schema_version: "0.1"
 
 project:
   name: minimal-example
 
 input:
-  directory: ./meshes
+  directory: ./synthetic/meshes
   subject_pattern: "subject-*.vtk"
-  template: ./meshes/template.vtk
+  template: ./synthetic/meshes/template.vtk
   units: unitless
 
 model:
@@ -17,13 +16,13 @@ model:
   object_id: surface
   attachment:
     type: current
-    kernel_width: 0.1
+    kernel_width: 0.45
   deformation:
-    kernel_width: 0.1
+    kernel_width: 0.6
     timepoints: 10
-    initial_control_point_spacing: 0.1
+    initial_control_point_spacing: 0.6
     use_rk2: false
-  noise_std: 0.05
+  noise_std: 0.1
 
 optimization:
   method: gradient_ascent

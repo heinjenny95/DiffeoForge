@@ -10,7 +10,7 @@ This roadmap describes evidence gates rather than promised dates.
 - [x] Minimal schema/path validation CLI
 - [x] Initial automated tests and CI
 - [x] Scientific validation plan
-- [ ] Openly licensed miniature surface dataset
+- [x] Openly licensed miniature surface dataset
 - [ ] Contribution issue templates and release checklist
 
 ## Milestone 1: Reproducible reference backend

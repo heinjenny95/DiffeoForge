@@ -1,0 +1,147 @@
+{
+  "construction": {
+    "base_mesh": "unit icosphere",
+    "deterministic": true,
+    "edges": 480,
+    "euler_characteristic": 2,
+    "points": 162,
+    "randomness": null,
+    "shared_connectivity": true,
+    "subdivision_level": 2,
+    "topology": "closed triangular genus-zero two-manifold",
+    "triangles": 320
+  },
+  "coordinate_units": "unitless",
+  "dataset": "DiffeoForge synthetic ellipsoid cohort",
+  "dataset_version": "1.0",
+  "generator_version": "1.0",
+  "license": "CC0-1.0",
+  "surfaces": [
+    {
+      "bend": 0.04,
+      "bytes": 10021,
+      "filename": "template.vtk",
+      "points": 162,
+      "polar_bulge": 0.05,
+      "role": "template",
+      "scale": [
+        1.0,
+        0.78,
+        0.62
+      ],
+      "sha256": "e3f5fa71028d419e28e07403af2eff932d6e950acce9a989e1f1a2cc441b8325",
+      "translation": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "triangles": 320,
+      "twist_radians": 0.08
+    },
+    {
+      "bend": 0.02,
+      "bytes": 10026,
+      "filename": "subject-01.vtk",
+      "points": 162,
+      "polar_bulge": 0.03,
+      "role": "subject",
+      "scale": [
+        0.96,
+        0.82,
+        0.6
+      ],
+      "sha256": "25c07a447699028e63b535c00ca094803664fcda15595c1645d9cb3a5b73233b",
+      "translation": [
+        -0.03,
+        0.02,
+        0.0
+      ],
+      "triangles": 320,
+      "twist_radians": -0.06
+    },
+    {
+      "bend": 0.06,
+      "bytes": 10024,
+      "filename": "subject-02.vtk",
+      "points": 162,
+      "polar_bulge": 0.08,
+      "role": "subject",
+      "scale": [
+        1.05,
+        0.74,
+        0.65
+      ],
+      "sha256": "932d282639be32a04f127f86ba67bb9b2d7559a849a0169f7e87e668dbec9cc2",
+      "translation": [
+        0.02,
+        -0.02,
+        0.01
+      ],
+      "triangles": 320,
+      "twist_radians": 0.12
+    },
+    {
+      "bend": -0.03,
+      "bytes": 10038,
+      "filename": "subject-03.vtk",
+      "points": 162,
+      "polar_bulge": 0.02,
+      "role": "subject",
+      "scale": [
+        1.0,
+        0.8,
+        0.58
+      ],
+      "sha256": "87503b00d72e5700619a3c46a9dca185f42e5be8b362de7087b3d9b97a9a8486",
+      "translation": [
+        0.01,
+        0.03,
+        -0.02
+      ],
+      "triangles": 320,
+      "twist_radians": 0.18
+    },
+    {
+      "bend": 0.08,
+      "bytes": 10026,
+      "filename": "subject-04.vtk",
+      "points": 162,
+      "polar_bulge": 0.1,
+      "role": "subject",
+      "scale": [
+        0.92,
+        0.76,
+        0.7
+      ],
+      "sha256": "b69329d0832bd5a0ec90827cd3d0f90dc6e8b30adb3239eb6b2131b09163e848",
+      "translation": [
+        -0.02,
+        -0.01,
+        0.03
+      ],
+      "triangles": 320,
+      "twist_radians": -0.12
+    },
+    {
+      "bend": -0.01,
+      "bytes": 10030,
+      "filename": "subject-05.vtk",
+      "points": 162,
+      "polar_bulge": -0.02,
+      "role": "subject",
+      "scale": [
+        1.08,
+        0.83,
+        0.56
+      ],
+      "sha256": "0703116ec14196cb1d2737ccbc1467a170404101ae6749e8a1867bf44030c325",
+      "translation": [
+        0.03,
+        0.0,
+        -0.01
+      ],
+      "triangles": 320,
+      "twist_radians": 0.05
+    }
+  ]
+}
