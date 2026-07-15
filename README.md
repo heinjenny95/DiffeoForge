@@ -76,6 +76,7 @@ This repository currently provides:
 - an explicit scientific validation strategy;
 - automated linting, tests, and package-build checks;
 - a deterministic CC0 synthetic mesh cohort for public integration tests;
+- versioned Deformetrica outputs and a tolerance-based reference comparator;
 - contribution and AI-usage policies suitable for public research software.
 
 It intentionally does **not** yet contain a new numerical atlas engine,
@@ -96,6 +97,8 @@ python -m pip install -e ".[dev]"
 
 diffeoforge validate examples/minimal-atlas.yaml
 diffeoforge prepare examples/minimal-atlas.yaml --run-id synthetic-smoke
+# After executing a compatible reference run:
+diffeoforge compare-reference examples/runs/synthetic-smoke reference/synthetic-v1
 pytest
 ruff check .
 ```
@@ -111,6 +114,7 @@ reference environment.
 - [Architecture](docs/ARCHITECTURE.md)
 - [Deformetrica reference backend](docs/REFERENCE_BACKEND.md)
 - [Open synthetic validation dataset](docs/SYNTHETIC_DATASET.md)
+- [Synthetic numerical reference](reference/synthetic-v1/README.md)
 - [Validation strategy](docs/VALIDATION_STRATEGY.md)
 - [Roadmap](ROADMAP.md)
 - [Contributing](CONTRIBUTING.md)

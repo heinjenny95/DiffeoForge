@@ -39,3 +39,7 @@ size make it useful for software and numerical regression, but unsuitable for
 claims about anatomical variability, scientific accuracy, or real-world
 scaling. Those questions require separately governed validation datasets and a
 predeclared evaluation protocol.
+
+The first Deformetrica 4.3.0 outputs, repeatability evidence, and versioned
+numeric comparison thresholds are documented in the
+[synthetic reference suite](../reference/synthetic-v1/README.md).

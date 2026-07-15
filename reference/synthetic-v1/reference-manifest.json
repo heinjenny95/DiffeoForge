@@ -1,0 +1,173 @@
+{
+  "artifacts": [
+    {
+      "fixture_path": "artifacts/convergence.csv",
+      "id": "convergence",
+      "kind": "numeric_csv",
+      "run_path": "logs/convergence.csv",
+      "sha256": "c4b1ef5440e5157724c8df3789786f3d6f88fae7bd85a55c51cf981fbfcec8b2",
+      "tolerances": {
+        "max_absolute": 1e-06,
+        "rms": 1e-07
+      }
+    },
+    {
+      "fixture_path": "artifacts/control-points.txt",
+      "id": "control-points",
+      "kind": "numeric_text",
+      "run_path": "output/DeterministicAtlas__EstimatedParameters__ControlPoints.txt",
+      "sha256": "680df34cfef0ab11657460e32396df225e11e0fb362baeafb223cb13a016fe44",
+      "tolerances": {
+        "max_absolute": 1e-06,
+        "rms": 1e-07
+      }
+    },
+    {
+      "fixture_path": "artifacts/momenta.txt",
+      "id": "momenta",
+      "kind": "numeric_text",
+      "run_path": "output/DeterministicAtlas__EstimatedParameters__Momenta.txt",
+      "sha256": "947197486bc6574c6646e03647ced22b470aa23dfab28974f871b1d9c02f6d78",
+      "tolerances": {
+        "max_absolute": 1e-06,
+        "rms": 1e-07
+      }
+    },
+    {
+      "fixture_path": "artifacts/residuals.txt",
+      "id": "residuals",
+      "kind": "numeric_text",
+      "run_path": "output/DeterministicAtlas__EstimatedParameters__Residuals.txt",
+      "sha256": "e8cd02f0211a24d5c0981d388bb8c091da961e57b28e6192f00f7391eb9f3789",
+      "tolerances": {
+        "max_absolute": 1e-06,
+        "rms": 1e-07
+      }
+    },
+    {
+      "fixture_path": "artifacts/estimated-template.vtk",
+      "id": "estimated-template",
+      "kind": "vtk_points",
+      "run_path": "output/DeterministicAtlas__EstimatedParameters__Template_surface.vtk",
+      "sha256": "899d362191033fad441192e9dc91231ab758f6c501bcfacedebf0942bb4a52c9",
+      "tolerances": {
+        "max_absolute": 1e-06,
+        "rms": 1e-07
+      }
+    },
+    {
+      "fixture_path": "artifacts/reconstructions/subject-01.vtk",
+      "id": "reconstruction-subject-01",
+      "kind": "vtk_points",
+      "run_path": "output/DeterministicAtlas__Reconstruction__surface__subject_subject-01.vtk.vtk",
+      "sha256": "2f9c27c87307eef6f8b88d5ffe54ece05b3437bf4bf566b2a2dba158e1bebbe8",
+      "tolerances": {
+        "max_absolute": 1e-06,
+        "rms": 1e-07
+      }
+    },
+    {
+      "fixture_path": "artifacts/reconstructions/subject-02.vtk",
+      "id": "reconstruction-subject-02",
+      "kind": "vtk_points",
+      "run_path": "output/DeterministicAtlas__Reconstruction__surface__subject_subject-02.vtk.vtk",
+      "sha256": "a53d499de63016174834deac8ae8c78e8327c9f82fdc5781fb128777c73718ad",
+      "tolerances": {
+        "max_absolute": 1e-06,
+        "rms": 1e-07
+      }
+    },
+    {
+      "fixture_path": "artifacts/reconstructions/subject-03.vtk",
+      "id": "reconstruction-subject-03",
+      "kind": "vtk_points",
+      "run_path": "output/DeterministicAtlas__Reconstruction__surface__subject_subject-03.vtk.vtk",
+      "sha256": "91af56114285633d97ece31413958cdc99858eb72b67cf17a8ee0b52aabfc920",
+      "tolerances": {
+        "max_absolute": 1e-06,
+        "rms": 1e-07
+      }
+    },
+    {
+      "fixture_path": "artifacts/reconstructions/subject-04.vtk",
+      "id": "reconstruction-subject-04",
+      "kind": "vtk_points",
+      "run_path": "output/DeterministicAtlas__Reconstruction__surface__subject_subject-04.vtk.vtk",
+      "sha256": "4bfb30cfbd12cef28c2294585a80da2b388d9a5d39253e02ce3678213db3c00e",
+      "tolerances": {
+        "max_absolute": 1e-06,
+        "rms": 1e-07
+      }
+    },
+    {
+      "fixture_path": "artifacts/reconstructions/subject-05.vtk",
+      "id": "reconstruction-subject-05",
+      "kind": "vtk_points",
+      "run_path": "output/DeterministicAtlas__Reconstruction__surface__subject_subject-05.vtk.vtk",
+      "sha256": "1db00632016fe4ff63fe036e966c0db5050d9749b8527b5e6eca5d72f4eb9e32",
+      "tolerances": {
+        "max_absolute": 1e-06,
+        "rms": 1e-07
+      }
+    }
+  ],
+  "description": "Deformetrica 4.3.0 CPU reference outputs for the CC0 synthetic ellipsoid cohort.",
+  "engine_environment": {
+    "device": "cpu",
+    "packages": {
+      "deformetrica": "4.3.0",
+      "numpy": "1.24.4",
+      "pykeops": "1.4.1",
+      "scipy": "1.10.1",
+      "torch": "1.6.0"
+    },
+    "platform": "Linux 6.18.33.2 Microsoft WSL2 x86_64",
+    "python": "3.8.20",
+    "threads": 4
+  },
+  "execution": {
+    "completed_iteration": 22,
+    "control_points": 36,
+    "convergence_rows": 23,
+    "date": "2026-07-15",
+    "durations_seconds": [
+      4.172,
+      4.109
+    ],
+    "final_attachment": -0.3153,
+    "final_log_likelihood": -0.4679,
+    "final_regularity": -0.1526,
+    "initial_log_likelihood": -44.07,
+    "output_bytes": 574096,
+    "output_files": 61,
+    "requested_max_iterations": 100,
+    "residual_maximum": 0.0012874603,
+    "residual_mean": 0.00062379837,
+    "residual_minimum": 0.00012683868,
+    "return_codes": [
+      0,
+      0
+    ],
+    "runs": 2
+  },
+  "id": "synthetic-v1",
+  "license": "CC0-1.0",
+  "reference_version": "0.1",
+  "repeatability": {
+    "byte_identical_shared_outputs": 60,
+    "convergence_sha256": "c4b1ef5440e5157724c8df3789786f3d6f88fae7bd85a55c51cf981fbfcec8b2",
+    "interpretation": "Both local runs produced identical convergence data and byte-identical content for every shared output path. This is repeatability evidence for the recorded environment, not proof of cross-platform scientific equivalence.",
+    "shared_output_paths": 60
+  },
+  "source": {
+    "configuration": "examples/minimal-atlas.yaml",
+    "configuration_sha256": "edaf7b791f075c5a378f13fb29eb5d31eaf667a8f5cdf47518f2e943d4d9a808",
+    "dataset_manifest": "examples/synthetic/meshes/dataset-manifest.json",
+    "dataset_manifest_sha256": "40a51d572cb97ab1f90164025f36a366ade2ae4be6b995af283debf440f6c904",
+    "operational_overrides": [
+      "Input, template, and output paths were resolved to absolute local Windows paths.",
+      "The portable native launcher was replaced by an Ubuntu WSL launcher pointing to the verified Deformetrica 4.3.0 virtual environment; no numerical parameters changed."
+    ],
+    "repository_commit": "5d21b0f0d19916dad24c644aa5f6f87d1515cb91"
+  }
+}
