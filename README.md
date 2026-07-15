@@ -88,10 +88,12 @@ This repository currently provides:
 - terminal interruption capture, explicit unclean-stop recovery, and
   provenance-bound checkpoint successors;
 - contribution and AI-usage policies suitable for public research software.
+- an experimental dense-PyTorch numerical baseline with primitive-level
+  Deformetrica comparisons, analytic/autograd checks, and cross-platform CI.
 
-It intentionally does **not** yet contain a new numerical atlas engine,
-ship a prebuilt container or desktop installer, provide a GUI or mesh-output
-quality visualization, or promise CPU/GPU equivalence. See the
+It intentionally does **not** yet expose the experimental numerical primitives
+as an atlas backend, ship a prebuilt container or desktop installer, provide a
+GUI or mesh-output quality visualization, or promise CPU/GPU equivalence. See the
 [reference-backend documentation](docs/REFERENCE_BACKEND.md) for the exact
 implemented boundary and current limitations.
 
@@ -133,6 +135,19 @@ pytest
 ruff check .
 ```
 
+Modern-engine contributors install its optional dependency set and run the
+machine-readable primitive comparison separately:
+
+```bash
+python -m pip install -e ".[dev,modern-engine]"
+python -m diffeoforge.engine.reference \
+  reference/modern-engine-v0.1/deformetrica-4.3.0-primitives.json
+```
+
+This is a correctness probe, not an atlas command. See the modern-engine
+feasibility document for the implemented equations, evidence, and remaining
+acceptance gates.
+
 The bundled example uses one template and five deterministic synthetic meshes.
 It exercises geometry preflight and immutable run preparation without private
 research data. Execution requires either a compatible external Deformetrica
@@ -158,6 +173,7 @@ and workflow for another mesh directory.
 - [Project specification](docs/PROJECT_SPECIFICATION.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Deformetrica reference backend](docs/REFERENCE_BACKEND.md)
+- [Modern-engine feasibility baseline](docs/MODERN_ENGINE_FEASIBILITY.md)
 - [Open synthetic validation dataset](docs/SYNTHETIC_DATASET.md)
 - [Synthetic numerical reference](reference/synthetic-v1/README.md)
 - [Frozen Deformetrica CPU container](docs/CONTAINER_REFERENCE.md)

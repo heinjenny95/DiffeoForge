@@ -28,11 +28,11 @@ This roadmap describes evidence gates rather than promised dates.
 
 ## Milestone 2: Modern-engine feasibility
 
-- [ ] Evaluate a focused Deformetrica dependency port
-- [ ] Evaluate current PyTorch/KeOps-based libraries
+- [x] Evaluate a focused Deformetrica dependency port
+- [x] Evaluate current PyTorch/KeOps-based libraries
 - [ ] Prototype only the deterministic 3D surface-atlas path
 - [ ] Compare gradients, objectives, deformations, and performance
-- [ ] Record the engine decision in an ADR
+- [x] Record the engine decision in an ADR
 
 ## Milestone 3: Accessible application
 
