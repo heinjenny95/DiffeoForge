@@ -7,7 +7,7 @@ Status: **draft**
 ```text
 GUI and CLI
     |
-Application service (validate, prepare, run, resume, report)
+Application service (validate, prepare, execute, run, status; resume/report future)
     |
 Versioned configuration and run-manifest contracts
     |
@@ -29,9 +29,24 @@ The YAML is not passed directly to a numerical engine. A backend adapter
 translates the validated configuration into engine-specific input and records
 the fully effective configuration in the run directory.
 
+## Prepared-run boundary
+
+Preparation is atomic: files are first assembled in a temporary directory and
+renamed to the final run ID only after geometry inspection, input copying, XML
+generation, hashing, and manifest-schema validation all succeed. Preparation
+never overwrites an existing run ID.
+
+`manifest.json` and its SHA-256 sidecar describe all evidence known before
+execution. Staged input, source/effective configuration, and generated XML are
+protected by hashes. `events.jsonl` records the append-only lifecycle.
+Execution verifies this evidence and requires an empty output directory before
+starting the backend exactly once. `result.json`, `logs/convergence.csv`, and
+`output-inventory.json` record the terminal outcome without rewriting the
+prepared manifest.
+
 ## Backend boundary
 
-A backend will eventually implement operations comparable to:
+The backend contract is defined by operations comparable to:
 
 ```text
 capabilities()
@@ -43,8 +58,9 @@ collect(run_directory)
 ```
 
 The interface is deliberately defined by observable behavior and artifacts,
-not by Deformetrica's XML structure. The legacy adapter may generate XML; a
-modern backend does not need to.
+not by Deformetrica's XML structure. The current reference adapter generates
+three XML files and invokes an externally supplied Deformetrica 4.3.0
+executable. A modern backend does not need to use XML or Python 3.8.
 
 ## Security and privacy boundary
 
@@ -59,4 +75,5 @@ created.
 - modern numerical core: port, external library, or focused implementation;
 - container strategy for Windows, Linux, and HPC;
 - checkpoint compatibility across backend versions;
-- stable identifiers for configuration and run-manifest schemas.
+- portable path representation and privacy-preserving diagnostic exports;
+- quantitative comparison formats and tolerance governance.

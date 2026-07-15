@@ -59,13 +59,24 @@
     "model": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["type", "dimension", "attachment", "deformation", "noise_std"],
+      "required": [
+        "type",
+        "dimension",
+        "object_id",
+        "attachment",
+        "deformation",
+        "noise_std"
+      ],
       "properties": {
         "type": {
           "const": "deterministic_atlas"
         },
         "dimension": {
           "const": 3
+        },
+        "object_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9._-]*$"
         },
         "attachment": {
           "type": "object",
@@ -84,7 +95,12 @@
         "deformation": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["kernel_width", "timepoints"],
+          "required": [
+            "kernel_width",
+            "timepoints",
+            "initial_control_point_spacing",
+            "use_rk2"
+          ],
           "properties": {
             "kernel_width": {
               "type": "number",
@@ -93,6 +109,13 @@
             "timepoints": {
               "type": "integer",
               "minimum": 2
+            },
+            "initial_control_point_spacing": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            "use_rk2": {
+              "type": "boolean"
             }
           }
         },
@@ -105,10 +128,24 @@
     "optimization": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["method", "max_iterations", "initial_step_size"],
+      "required": [
+        "method",
+        "max_iterations",
+        "initial_step_size",
+        "convergence_tolerance",
+        "downsampling_factor",
+        "max_line_search_iterations",
+        "save_every_n_iterations",
+        "print_every_n_iterations",
+        "scale_initial_step_size",
+        "use_sobolev_gradient",
+        "sobolev_kernel_width_ratio",
+        "freeze_template",
+        "freeze_control_points"
+      ],
       "properties": {
         "method": {
-          "enum": ["gradient_ascent", "lbfgs"]
+          "const": "gradient_ascent"
         },
         "max_iterations": {
           "type": "integer",
@@ -117,23 +154,120 @@
         "initial_step_size": {
           "type": "number",
           "exclusiveMinimum": 0
+        },
+        "convergence_tolerance": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "downsampling_factor": {
+          "const": 1
+        },
+        "max_line_search_iterations": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "save_every_n_iterations": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "print_every_n_iterations": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "scale_initial_step_size": {
+          "type": "boolean"
+        },
+        "use_sobolev_gradient": {
+          "type": "boolean"
+        },
+        "sobolev_kernel_width_ratio": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "freeze_template": {
+          "type": "boolean"
+        },
+        "freeze_control_points": {
+          "type": "boolean"
         }
       }
     },
     "runtime": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["backend", "device", "threads"],
+      "required": [
+        "backend",
+        "device",
+        "threads",
+        "processes",
+        "precision",
+        "random_seed",
+        "kernel_backend",
+        "verbosity",
+        "launcher"
+      ],
       "properties": {
         "backend": {
           "const": "deformetrica_reference"
         },
         "device": {
-          "enum": ["cpu", "cuda", "auto"]
+          "const": "cpu"
         },
         "threads": {
           "type": "integer",
           "minimum": 1
+        },
+        "processes": {
+          "const": 1
+        },
+        "precision": {
+          "const": "float32"
+        },
+        "random_seed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "kernel_backend": {
+          "enum": ["keops", "torch"]
+        },
+        "verbosity": {
+          "enum": ["CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG"]
+        },
+        "launcher": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["type", "executable"],
+              "properties": {
+                "type": {
+                  "const": "native"
+                },
+                "executable": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["type", "distribution", "executable"],
+              "properties": {
+                "type": {
+                  "const": "wsl"
+                },
+                "distribution": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "executable": {
+                  "type": "string",
+                  "pattern": "^/"
+                }
+              }
+            }
+          ]
         }
       }
     },
@@ -147,7 +281,7 @@
           "minLength": 1
         },
         "retain_flow_meshes": {
-          "type": "boolean"
+          "const": true
         }
       }
     }

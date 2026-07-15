@@ -16,9 +16,10 @@ This roadmap describes evidence gates rather than promised dates.
 ## Milestone 1: Reproducible reference backend
 
 - [ ] Pinned CPU container for Deformetrica 4.3
-- [ ] Explicit XML generation from the public configuration
-- [ ] Immutable run directories and versioned manifests
-- [ ] VTK geometry preflight and mesh inventory
+- [x] Explicit XML generation from the public configuration
+- [x] Immutable run directories and versioned manifests
+- [x] VTK geometry preflight and mesh inventory
+- [x] Local 8-subject CPU smoke test against the frozen environment
 - [ ] Checkpoint, resume, and failure-state handling
 - [ ] HTML validation and convergence report
 - [ ] Reference results for the miniature dataset
