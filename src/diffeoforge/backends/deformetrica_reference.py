@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import re
 import shutil
+import subprocess
 import xml.etree.ElementTree as ET
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -15,6 +16,7 @@ from diffeoforge.config import ConfigurationError
 
 BACKEND_ID = "deformetrica_reference"
 BACKEND_CONTRACT_VERSION = "0.1"
+CONTAINER_WORKING_DIRECTORY = "/work"
 ENGINE_CONSTANTS = {
     "line_search_shrink": 0.5,
     "line_search_expand": 1.5,
@@ -266,6 +268,45 @@ def build_command(config: Mapping[str, Any], run_directory: Path) -> CommandSpec
             environment=environment,
         )
 
+    if launcher["type"] == "container":
+        engine = launcher["engine"]
+        image = launcher["image"]
+        mount = (
+            f"type=bind,source={run_directory.resolve()},"
+            f"target={CONTAINER_WORKING_DIRECTORY}"
+        )
+        container_environment = tuple(
+            argument
+            for key, value in environment.items()
+            for argument in ("--env", f"{key}={value}")
+        )
+        user_arguments = (
+            ()
+            if os.name == "nt"
+            else ("--user", f"{os.getuid()}:{os.getgid()}")
+        )
+        return CommandSpec(
+            argv=(
+                engine,
+                "run",
+                "--rm",
+                "--pull=never",
+                "--network=none",
+                "--read-only",
+                "--tmpfs=/tmp:rw,exec,nosuid,size=1g",
+                "--mount",
+                mount,
+                "--workdir",
+                CONTAINER_WORKING_DIRECTORY,
+                *user_arguments,
+                *container_environment,
+                image,
+                *arguments,
+            ),
+            working_directory=str(run_directory.resolve()),
+            environment=environment,
+        )
+
     raise ConfigurationError(f"Unsupported launcher type: {launcher['type']}")
 
 
@@ -286,6 +327,34 @@ def ensure_launcher_available(config: Mapping[str, Any]) -> None:
             raise ConfigurationError("The WSL launcher is only available from Windows.")
         if shutil.which("wsl.exe") is None:
             raise ConfigurationError("wsl.exe is not available on PATH.")
+        return
+
+    if launcher["type"] == "container":
+        engine = launcher["engine"]
+        if shutil.which(engine) is None:
+            raise ConfigurationError(
+                f"Container engine is not available on PATH: {engine}"
+            )
+        try:
+            completed = subprocess.run(
+                [engine, "image", "inspect", launcher["image"]],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=30,
+                check=False,
+            )
+        except subprocess.TimeoutExpired as error:
+            raise ConfigurationError(
+                f"Timed out while inspecting container image: {launcher['image']}"
+            ) from error
+        if completed.returncode != 0:
+            detail = completed.stderr.strip() or completed.stdout.strip()
+            raise ConfigurationError(
+                f"Container image is not available locally: {launcher['image']}. "
+                f"Build or pull it before execution. {detail}"
+            )
         return
 
     raise ConfigurationError(f"Unsupported launcher type: {launcher['type']}")

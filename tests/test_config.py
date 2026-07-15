@@ -77,6 +77,17 @@ def test_valid_schema_is_accepted(valid_config: dict) -> None:
     validate_schema(valid_config)
 
 
+def test_container_launcher_is_accepted(valid_config: dict) -> None:
+    config = deepcopy(valid_config)
+    config["runtime"]["launcher"] = {
+        "type": "container",
+        "engine": "docker",
+        "image": "diffeoforge-deformetrica:4.3.0-cpu",
+    }
+
+    validate_schema(config)
+
+
 def test_non_positive_kernel_width_is_rejected(valid_config: dict) -> None:
     invalid = deepcopy(valid_config)
     invalid["model"]["deformation"]["kernel_width"] = 0

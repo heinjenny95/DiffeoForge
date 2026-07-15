@@ -421,6 +421,7 @@ def _probe_backend_environment(config: Mapping[str, Any]) -> Mapping[str, Any]:
         "'packages':versions}, sort_keys=True))\n"
     )
 
+    container_identity: Mapping[str, Any] | None = None
     if launcher["type"] == "wsl":
         python_executable = str(PurePosixPath(launcher["executable"]).parent / "python")
         argv = [
@@ -429,6 +430,50 @@ def _probe_backend_environment(config: Mapping[str, Any]) -> Mapping[str, Any]:
             launcher["distribution"],
             "--",
             python_executable,
+            "-c",
+            script,
+        ]
+    elif launcher["type"] == "container":
+        engine = launcher["engine"]
+        image = launcher["image"]
+        inspected = subprocess.run(
+            [engine, "image", "inspect", image],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=30,
+            check=False,
+        )
+        if inspected.returncode != 0:
+            raise ConfigurationError(
+                "Could not inspect the Deformetrica container image before execution: "
+                f"{inspected.stderr.strip() or inspected.stdout.strip()}"
+            )
+        try:
+            images = json.loads(inspected.stdout)
+            image_data = images[0]
+            container_identity = {
+                "engine": engine,
+                "configured_image": image,
+                "image_id": image_data["Id"],
+                "repo_digests": image_data.get("RepoDigests") or [],
+            }
+        except (IndexError, KeyError, TypeError, json.JSONDecodeError) as error:
+            raise ConfigurationError(
+                "Container image inspection did not return the expected JSON."
+            ) from error
+        argv = [
+            engine,
+            "run",
+            "--rm",
+            "--pull=never",
+            "--network=none",
+            "--read-only",
+            "--tmpfs=/tmp:rw,exec,nosuid,size=256m",
+            "--entrypoint",
+            "python",
+            image,
             "-c",
             script,
         ]
@@ -467,6 +512,8 @@ def _probe_backend_environment(config: Mapping[str, Any]) -> Mapping[str, Any]:
             "Reference execution requires Deformetrica 4.3.0, got "
             f"{value.get('packages', {}).get('deformetrica')!r}."
         )
+    if container_identity is not None:
+        value["container"] = container_identity
     return {"probe_status": "verified", **value}
 
 

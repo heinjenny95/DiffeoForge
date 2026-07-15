@@ -266,6 +266,23 @@
                   "pattern": "^/"
                 }
               }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["type", "engine", "image"],
+              "properties": {
+                "type": {
+                  "const": "container"
+                },
+                "engine": {
+                  "const": "docker"
+                },
+                "image": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
             }
           ]
         }

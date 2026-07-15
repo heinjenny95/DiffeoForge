@@ -1,0 +1,8 @@
+# Bootstrap tools for the Python 3.8 reference image. Every selected artifact
+# is integrity-pinned for Linux x86-64 builds.
+pip==25.0.1 \
+    --hash=sha256:c46efd13b6aa8279f33f2864459c8ce587ea6a1a59ee20de055868d8f7688f7f
+setuptools==75.3.2 \
+    --hash=sha256:90ab613b6583fc02d5369cbca13ea26ea0e182d1df2d943ee9cbe81d4c61add9
+wheel==0.45.1 \
+    --hash=sha256:708e7481cc80179af0e556bbf0cc00b8444c7321e2700b8d8580231d13017248
