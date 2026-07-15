@@ -33,6 +33,9 @@ This roadmap describes evidence gates rather than promised dates.
 - [ ] Prototype only the deterministic 3D surface-atlas path
 - [ ] Compare gradients, objectives, deformations, and performance
 - [x] Record the engine decision in an ADR
+- [x] Prototype landmark-based generalized Procrustes alignment
+- [ ] Integrate labelled landmarks and aligned mesh copies into run manifests
+- [ ] Add PCA for explicitly declared atlas-derived subject features
 
 ## Milestone 3: Accessible application
 
