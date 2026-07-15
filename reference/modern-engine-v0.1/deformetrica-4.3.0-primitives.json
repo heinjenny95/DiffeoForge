@@ -1,0 +1,58 @@
+{
+  "schema_version": "0.1",
+  "description": "Primitive-level CPU float64 values generated with the frozen Deformetrica 4.3.0 environment.",
+  "baseline": {
+    "engine": "Deformetrica",
+    "engine_version": "4.3.0",
+    "kernel_backend": "torch",
+    "pytorch": "1.6.0",
+    "python": "3.8.20",
+    "platform": "Linux x86_64 (frozen WSL reference environment)",
+    "source_components": [
+      "deformetrica/support/kernels/torch_kernel.py",
+      "deformetrica/core/model_tools/deformations/exponential.py"
+    ]
+  },
+  "device": "cpu",
+  "dtype": "float64",
+  "tolerance": {
+    "relative": 1e-12,
+    "absolute": 1e-13,
+    "status": "operation-level feasibility threshold; not a final scientific equivalence tolerance"
+  },
+  "inputs": {
+    "kernel_width": 1.25,
+    "number_of_time_points": 4,
+    "control_points": [
+      [0.0, 0.0, 0.0],
+      [1.0, 0.5, -0.25]
+    ],
+    "momenta": [
+      [0.2, -0.1, 0.05],
+      [-0.15, 0.3, 0.1]
+    ]
+  },
+  "expected": {
+    "kernel": [
+      [1.0, 0.43171052342907973],
+      [0.43171052342907973, 1.0]
+    ],
+    "convolution": [
+      [0.13524342148563806, 0.029513157028723896, 0.09317105234290798],
+      [-0.06365789531418405, 0.256828947657092, 0.12158552617145399]
+    ],
+    "gradient": [
+      [-0.030392420849407208, -0.015196210424703604, 0.007598105212351802],
+      [0.030392420849407215, 0.015196210424703607, -0.007598105212351804]
+    ],
+    "norm_squared": 0.12751184242280125,
+    "rk2_q_step": [
+      [0.04563391870475212, 0.011097790510133662, 0.03108276996121602],
+      [0.9783590810051711, 0.5848742083295593, -0.20910377083144632]
+    ],
+    "rk2_p_step": [
+      [0.21012888669000268, -0.09436501294990932, 0.04743056895542829],
+      [-0.16012888669000266, 0.2943650129499093, 0.10256943104457172]
+    ]
+  }
+}

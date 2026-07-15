@@ -83,6 +83,11 @@ not by Deformetrica's XML structure. The current reference adapter generates
 three XML files and invokes an externally supplied Deformetrica 4.3.0
 executable. A modern backend does not need to use XML or Python 3.8.
 
+The experimental modern-engine primitives are not a backend yet. Dense PyTorch
+CPU/float64 is the inspectable correctness baseline selected by ADR 0002. An
+optimized kernel or GPU path must reproduce that baseline before it can sit
+behind the backend interface.
+
 ## Security and privacy boundary
 
 The application is local-first. A run does not upload meshes, metadata, logs,
@@ -93,7 +98,6 @@ created.
 ## Open questions
 
 - exact mesh library for robust VTK/PLY/STL/OBJ inspection;
-- modern numerical core: port, external library, or focused implementation;
 - container strategy for Windows, Linux, and HPC;
 - validation of checkpoint compatibility beyond the identical frozen backend;
 - portable path representation and privacy-preserving diagnostic exports;
