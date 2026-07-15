@@ -179,6 +179,7 @@ and workflow for another mesh directory.
 - [Modern-engine feasibility baseline](docs/MODERN_ENGINE_FEASIBILITY.md)
 - [Experimental momenta-only optimizer](docs/MOMENTA_OPTIMIZER.md)
 - [Landmark-based Procrustes alignment](docs/PROCRUSTES_ALIGNMENT.md)
+- [PCA of atlas-derived subject features](docs/ATLAS_PCA.md)
 - [Open synthetic validation dataset](docs/SYNTHETIC_DATASET.md)
 - [Synthetic numerical reference](reference/synthetic-v1/README.md)
 - [Frozen Deformetrica CPU container](docs/CONTAINER_REFERENCE.md)
