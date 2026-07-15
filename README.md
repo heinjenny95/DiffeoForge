@@ -75,6 +75,7 @@ This repository currently provides:
 - an engine-independent architecture decision;
 - an explicit scientific validation strategy;
 - automated linting, tests, and package-build checks;
+- a deterministic CC0 synthetic mesh cohort for public integration tests;
 - contribution and AI-usage policies suitable for public research software.
 
 It intentionally does **not** yet contain a new numerical atlas engine,
@@ -93,20 +94,23 @@ source .venv/bin/activate  # Windows PowerShell: .venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
 python -m pip install -e ".[dev]"
 
-diffeoforge validate examples/minimal-atlas.yaml --schema-only
+diffeoforge validate examples/minimal-atlas.yaml
+diffeoforge prepare examples/minimal-atlas.yaml --run-id synthetic-smoke
 pytest
 ruff check .
 ```
 
-The example configuration uses placeholder paths, so filesystem validation is
-skipped with `--schema-only` until example meshes are added under a compatible
-open-data license.
+The bundled example uses one template and five deterministic synthetic meshes.
+It exercises geometry preflight and immutable run preparation without private
+research data. Execution still requires a separately installed Deformetrica
+reference environment.
 
 ## Documentation
 
 - [Project specification](docs/PROJECT_SPECIFICATION.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Deformetrica reference backend](docs/REFERENCE_BACKEND.md)
+- [Open synthetic validation dataset](docs/SYNTHETIC_DATASET.md)
 - [Validation strategy](docs/VALIDATION_STRATEGY.md)
 - [Roadmap](ROADMAP.md)
 - [Contributing](CONTRIBUTING.md)
