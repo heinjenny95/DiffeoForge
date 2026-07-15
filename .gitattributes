@@ -1,10 +1,17 @@
 * text=auto
 
 *.cff text eol=lf
+*.csv text eol=lf
 *.json text eol=lf
 *.md text eol=lf
 *.py text eol=lf
 *.toml text eol=lf
+*.txt text eol=lf
 *.vtk text eol=lf
 *.yaml text eol=lf
 *.yml text eol=lf
+
+# Preserve engine-emitted reference bytes exactly. Deformetrica writes trailing
+# spaces in numeric text arrays; the Windows-side convergence writer uses CRLF.
+reference/synthetic-v1/artifacts/*.txt -whitespace
+reference/synthetic-v1/artifacts/convergence.csv -text -eol -whitespace

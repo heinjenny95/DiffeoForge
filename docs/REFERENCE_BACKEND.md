@@ -76,8 +76,23 @@ tiny. Output hashes are integrity evidence, not a scientific equivalence
 criterion. Versioned numerical tolerances must be defined independently.
 
 The private meshes are not public reference data and are not part of this
-repository. Public regression evidence still requires a synthetic or clearly
-redistributable miniature dataset and a pinned execution environment.
+repository.
+
+## Public synthetic reference evidence
+
+On 15 July 2026, two CPU runs processed the CC0 synthetic cohort with the same
+contract and a requested maximum of 100 iterations. Both reached the
+convergence threshold at iteration 22, improving log-likelihood from -44.07 to
+-0.4679. Each complete run produced 61 files totaling 574,096 bytes in about
+four seconds. All 60 shared output paths and both convergence CSV files were
+byte-identical.
+
+Selected outputs, provenance, hashes, environment versions, and draft numeric
+tolerances are published under `reference/synthetic-v1`. The
+`compare-reference` command evaluates a new run without requiring exact hashes.
+This is same-environment repeatability evidence and an engineering regression
+fixture; cross-platform equivalence still requires a pinned execution
+environment and independently justified tolerances.
 
 ## Known limitations
 

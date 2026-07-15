@@ -22,7 +22,7 @@ This roadmap describes evidence gates rather than promised dates.
 - [x] Local 8-subject CPU smoke test against the frozen environment
 - [ ] Checkpoint, resume, and failure-state handling
 - [ ] HTML validation and convergence report
-- [ ] Reference results for the miniature dataset
+- [x] Reference results for the miniature dataset
 
 ## Milestone 2: Modern-engine feasibility
 

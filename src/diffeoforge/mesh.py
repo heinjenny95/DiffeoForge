@@ -286,6 +286,38 @@ def inspect_vtk(path: Path | str) -> MeshMetadata:
     )
 
 
+def read_vtk_points(path: Path | str) -> tuple[tuple[float, float, float], ...]:
+    """Return point coordinates from a supported legacy VTK PolyData mesh."""
+
+    mesh_path = Path(path).resolve()
+    try:
+        raw = mesh_path.read_bytes()
+    except OSError as error:
+        raise ConfigurationError(f"Could not read VTK mesh {mesh_path}: {error}") from error
+
+    encoding_match = _ENCODING_RE.search(raw[:1024])
+    points_match = _POINTS_RE.search(raw)
+    if encoding_match is None or points_match is None:
+        raise ConfigurationError(f"VTK mesh has no readable POINTS section: {mesh_path}")
+
+    encoding = encoding_match.group(1).decode("ascii").upper()
+    point_count = int(points_match.group(1))
+    scalar_type = points_match.group(2).decode("ascii").lower()
+    values = _read_point_values(
+        raw,
+        points_match,
+        point_count,
+        scalar_type,
+        encoding,
+        mesh_path,
+    )
+    _bounds_from_values(values, mesh_path)
+    return tuple(
+        (values[index], values[index + 1], values[index + 2])
+        for index in range(0, len(values), 3)
+    )
+
+
 def inspect_inputs(summary: InputSummary) -> tuple[MeshMetadata, tuple[MeshMetadata, ...]]:
     """Inspect the template and every selected subject in stable order."""
 

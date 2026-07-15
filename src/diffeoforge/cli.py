@@ -11,6 +11,7 @@ from pathlib import Path
 from diffeoforge import __version__
 from diffeoforge.config import ConfigurationError, load_config, validate_input_paths
 from diffeoforge.mesh import inspect_inputs
+from diffeoforge.reference import compare_reference_run
 from diffeoforge.runs import execute_run, prepare_run, run_status
 
 
@@ -67,6 +68,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="Read the latest append-only lifecycle state for a run.",
     )
     status_parser.add_argument("run_directory", type=Path)
+
+    compare_parser = subparsers.add_parser(
+        "compare-reference",
+        help="Compare selected run outputs with a versioned numerical reference.",
+    )
+    compare_parser.add_argument("run_directory", type=Path)
+    compare_parser.add_argument("reference_directory", type=Path)
     return parser
 
 
@@ -143,5 +151,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 2
         print(json.dumps(status, indent=2, ensure_ascii=False))
         return 0
+
+    if args.command == "compare-reference":
+        try:
+            report = compare_reference_run(args.run_directory, args.reference_directory)
+        except ConfigurationError as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        print(json.dumps(report, indent=2, ensure_ascii=False))
+        return 0 if report["status"] == "passed" else 4
 
     raise AssertionError(f"Unhandled command: {args.command}")

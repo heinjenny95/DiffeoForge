@@ -1,0 +1,288 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://diffeoforge.org/schema/reference-manifest-v0.1.json",
+  "title": "DiffeoForge numerical reference manifest 0.1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "reference_version",
+    "id",
+    "description",
+    "license",
+    "source",
+    "engine_environment",
+    "execution",
+    "repeatability",
+    "artifacts"
+  ],
+  "properties": {
+    "reference_version": {
+      "const": "0.1"
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]*$"
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1
+    },
+    "license": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repository_commit",
+        "dataset_manifest",
+        "dataset_manifest_sha256",
+        "configuration",
+        "configuration_sha256",
+        "operational_overrides"
+      ],
+      "properties": {
+        "repository_commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "dataset_manifest": {
+          "type": "string",
+          "minLength": 1
+        },
+        "dataset_manifest_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "configuration": {
+          "type": "string",
+          "minLength": 1
+        },
+        "configuration_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "operational_overrides": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "engine_environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["platform", "python", "packages", "device", "threads"],
+      "properties": {
+        "platform": {
+          "type": "string",
+          "minLength": 1
+        },
+        "python": {
+          "type": "string",
+          "minLength": 1
+        },
+        "packages": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "device": {
+          "const": "cpu"
+        },
+        "threads": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "execution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "date",
+        "runs",
+        "return_codes",
+        "durations_seconds",
+        "requested_max_iterations",
+        "completed_iteration",
+        "convergence_rows",
+        "control_points",
+        "output_files",
+        "output_bytes",
+        "initial_log_likelihood",
+        "final_log_likelihood",
+        "final_attachment",
+        "final_regularity",
+        "residual_minimum",
+        "residual_maximum",
+        "residual_mean"
+      ],
+      "properties": {
+        "date": {
+          "type": "string",
+          "format": "date"
+        },
+        "runs": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "return_codes": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "integer"
+          }
+        },
+        "durations_seconds": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "number",
+            "minimum": 0
+          }
+        },
+        "requested_max_iterations": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "completed_iteration": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "convergence_rows": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "control_points": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "output_files": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "output_bytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "initial_log_likelihood": {
+          "type": "number"
+        },
+        "final_log_likelihood": {
+          "type": "number"
+        },
+        "final_attachment": {
+          "type": "number"
+        },
+        "final_regularity": {
+          "type": "number"
+        },
+        "residual_minimum": {
+          "type": "number",
+          "minimum": 0
+        },
+        "residual_maximum": {
+          "type": "number",
+          "minimum": 0
+        },
+        "residual_mean": {
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    },
+    "repeatability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "shared_output_paths",
+        "byte_identical_shared_outputs",
+        "convergence_sha256",
+        "interpretation"
+      ],
+      "properties": {
+        "shared_output_paths": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "byte_identical_shared_outputs": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "convergence_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "interpretation": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "artifacts": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "fixture_path",
+          "run_path",
+          "kind",
+          "sha256",
+          "tolerances"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9._-]*$"
+          },
+          "fixture_path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "run_path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "kind": {
+            "enum": ["numeric_csv", "numeric_text", "vtk_points"]
+          },
+          "sha256": {
+            "$ref": "#/$defs/sha256"
+          },
+          "tolerances": {
+            "$ref": "#/$defs/tolerances"
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "tolerances": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["max_absolute", "rms"],
+      "properties": {
+        "max_absolute": {
+          "type": "number",
+          "minimum": 0
+        },
+        "rms": {
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    }
+  }
+}
