@@ -7,7 +7,7 @@ Status: **draft**
 ```text
 GUI and CLI
     |
-Application service (validate, prepare, execute, run, status, report; resume future)
+Application service (validate, prepare, execute, run, recover, resume, status, report)
     |
 Versioned configuration and run-manifest contracts
     |
@@ -51,6 +51,20 @@ checks consistency among the terminal event, result, convergence-row count,
 and output inventory. The report is self-contained and performs no network
 requests.
 
+## Interruption and successor boundary
+
+A clean keyboard interrupt is finalized as a terminal `interrupted` state with
+partial logs, convergence history, output inventory, and checkpoint evidence. An
+unclean `started` state can be finalized only by an explicit recovery operation
+after the caller confirms that the numerical process has stopped.
+
+Resume does not reopen the source run. It atomically prepares an immutable
+successor containing a versioned `resume/resume.json` provenance record and a
+protected copy of the source checkpoint. The execution copy is placed under the
+new run's `output/` only after protected-artifact and environment verification.
+The adapter treats the checkpoint as opaque bytes; only the pinned backend may
+deserialize it.
+
 ## Backend boundary
 
 The backend contract is defined by operations comparable to:
@@ -81,6 +95,6 @@ created.
 - exact mesh library for robust VTK/PLY/STL/OBJ inspection;
 - modern numerical core: port, external library, or focused implementation;
 - container strategy for Windows, Linux, and HPC;
-- checkpoint compatibility across backend versions;
+- validation of checkpoint compatibility beyond the identical frozen backend;
 - portable path representation and privacy-preserving diagnostic exports;
 - quantitative comparison formats and tolerance governance.

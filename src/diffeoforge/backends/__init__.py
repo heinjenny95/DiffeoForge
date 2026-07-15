@@ -8,6 +8,7 @@ from diffeoforge.backends.deformetrica_reference import (
     build_command,
     ensure_launcher_available,
     generate_engine_files,
+    generate_resume_optimization_file,
     validate_reference_config,
 )
 
@@ -19,5 +20,6 @@ __all__ = [
     "build_command",
     "ensure_launcher_available",
     "generate_engine_files",
+    "generate_resume_optimization_file",
     "validate_reference_config",
 ]

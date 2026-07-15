@@ -19,7 +19,7 @@ from diffeoforge.mesh import sha256_file
 from diffeoforge.runs import run_status
 
 _REPORT_MARKER = '<meta name="generator" content="DiffeoForge result report">'
-_TERMINAL_STATES = {"completed", "failed"}
+_TERMINAL_STATES = {"completed", "failed", "interrupted"}
 _CONVERGENCE_COLUMNS = (
     "iteration",
     "log_likelihood",
@@ -77,6 +77,11 @@ class RunReport:
             return (
                 f"The backend failed after the observation at iteration {final_iteration}; "
                 "failure is not convergence."
+            )
+        if self.result["status"] == "interrupted":
+            return (
+                f"The run was interrupted after the observation at iteration {final_iteration}; "
+                "interruption is not convergence."
             )
         if final_iteration >= self.max_iterations:
             return (
@@ -293,6 +298,22 @@ def collect_run_report(run_directory: Path | str) -> RunReport:
     if result["status"] == "failed":
         error_detail = result.get("execution_error") or f"return code {result.get('return_code')}"
         notices.append(f"The numerical backend failed: {error_detail}.")
+    if result["status"] == "interrupted":
+        error_detail = result.get("execution_error") or "the run was stopped"
+        checkpoint = result.get("checkpoint") or {}
+        checkpoint_detail = (
+            "A checkpoint whose integrity matches the output inventory is available for "
+            "an immutable successor run; loadability has not been established."
+            if checkpoint.get("available")
+            else "No checkpoint is available, so this run cannot be resumed."
+        )
+        notices.append(f"The numerical run was interrupted: {error_detail}. {checkpoint_detail}")
+    if result.get("resume"):
+        notices.append(
+            "This is a Deformetrica 4.3 successor: model parameters and iteration were "
+            "restored, while the objective baseline, gradient, and line-search step sizes "
+            "were reinitialized. Exact optimization-trajectory continuity is not guaranteed."
+        )
     if not convergence:
         notices.append(
             "No objective observations were parsed. Inspect logs/deformetrica.log before "
@@ -317,7 +338,7 @@ def collect_run_report(run_directory: Path | str) -> RunReport:
         if check.status == "fail":
             notices.append(f"Evidence check failed: {check.label}. {check.detail}")
     notices.append(
-        "A completed backend process and a stable-looking objective curve are engineering "
+        "A terminal backend state and a stable-looking objective curve are engineering "
         "evidence, not proof of biological validity or numerical equivalence."
     )
 
@@ -436,8 +457,13 @@ def render_result_html(report: RunReport) -> str:
     config = manifest["effective_config"]
     project_name = str(manifest["project"]["name"])
     status = str(result["status"])
-    status_label = "Engine completed" if status == "completed" else "Engine failed"
-    status_class = "completed" if status == "completed" else "failed"
+    status_labels = {
+        "completed": "Engine completed",
+        "failed": "Engine failed",
+        "interrupted": "Run interrupted",
+    }
+    status_label = status_labels[status]
+    status_class = status
     final = report.convergence[-1] if report.convergence else None
     initial = report.convergence[0] if report.convergence else None
     generated = datetime.now(UTC).isoformat(timespec="seconds")
@@ -523,6 +549,7 @@ def render_result_html(report: RunReport) -> str:
       font-weight: 700; }}
     .status.completed, .check.pass {{ color: var(--good); background: var(--good-bg); }}
     .status.failed, .check.fail {{ color: var(--bad); background: var(--bad-bg); }}
+    .status.interrupted {{ color: #7a4b00; background: #fff3cd; }}
     .cards {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
       gap: .8rem; margin: 1rem 0; }}
     .card {{ padding: 1rem; border: 1px solid var(--line); border-radius: .5rem;

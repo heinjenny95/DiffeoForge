@@ -42,10 +42,14 @@ diffeoforge report runs/experiment-001
 
 # Or prepare and execute a new run in one command:
 diffeoforge run atlas.yaml --run-id experiment-002
+
+# If a terminal failed/interrupted run has an inventoried checkpoint:
+diffeoforge resume runs/experiment-001 --run-id experiment-001-resume-01
 ```
 
 Prepared run directories are write-once. DiffeoForge refuses to overwrite or
-execute one a second time.
+execute one a second time. Resume creates a new immutable successor and preserves
+the source run.
 
 ## Design principles
 
@@ -81,6 +85,8 @@ This repository currently provides:
 - a read-only environment doctor and transparent mesh-directory initializer;
 - a self-contained HTML input-validation and parameter-scale report;
 - a self-contained HTML convergence, lifecycle, and result report;
+- terminal interruption capture, explicit unclean-stop recovery, and
+  provenance-bound checkpoint successors;
 - contribution and AI-usage policies suitable for public research software.
 
 It intentionally does **not** yet contain a new numerical atlas engine,
@@ -157,6 +163,7 @@ and workflow for another mesh directory.
 - [Frozen Deformetrica CPU container](docs/CONTAINER_REFERENCE.md)
 - [First-run workflow](docs/FIRST_RUN.md)
 - [Result-report interpretation](docs/RESULT_REPORT.md)
+- [Checkpoint, interruption, and resume](docs/RESUME_AND_RECOVERY.md)
 - [Validation strategy](docs/VALIDATION_STRATEGY.md)
 - [Roadmap](ROADMAP.md)
 - [Contributing](CONTRIBUTING.md)

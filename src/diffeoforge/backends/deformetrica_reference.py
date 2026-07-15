@@ -135,7 +135,12 @@ def _dataset_xml(
     _write_xml(root, path)
 
 
-def _optimization_xml(config: Mapping[str, Any], path: Path) -> None:
+def _optimization_xml(
+    config: Mapping[str, Any],
+    path: Path,
+    *,
+    state_file: str | None = None,
+) -> None:
     optimization = config["optimization"]
     method = {
         "gradient_ascent": "GradientAscent",
@@ -184,6 +189,8 @@ def _optimization_xml(config: Mapping[str, Any], path: Path) -> None:
         "freeze-control-points",
         "On" if optimization["freeze_control_points"] else "Off",
     )
+    if state_file is not None:
+        _add_text(root, "state-file", state_file)
     _write_xml(root, path)
 
 
@@ -203,6 +210,21 @@ def generate_engine_files(
     _dataset_xml(config, dataset_path, staged_subjects)
     _optimization_xml(config, optimization_path)
     return model_path, dataset_path, optimization_path
+
+
+def generate_resume_optimization_file(
+    config: Mapping[str, Any],
+    path: Path,
+) -> Path:
+    """Generate optimization XML that resumes from the run-local state file."""
+
+    validate_reference_config(config)
+    _optimization_xml(
+        config,
+        path,
+        state_file="../output/deformetrica-state.p",
+    )
+    return path
 
 
 def _windows_to_wsl(path: Path) -> str:

@@ -130,5 +130,6 @@ and inspect the objective curves, lifecycle, evidence checks, and output
 inventory before committing the full dataset. The result report deliberately
 distinguishes a successful backend exit from demonstrated convergence and from
 scientific validity. See [result-report interpretation](RESULT_REPORT.md).
-Resource estimation, progress reporting, and checkpoint/resume support remain
-separate roadmap items.
+For long runs, review the checkpoint save interval and the explicit
+[interruption and resume workflow](RESUME_AND_RECOVERY.md) before starting.
+Resource estimation and progress reporting remain separate roadmap items.
