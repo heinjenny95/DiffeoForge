@@ -87,9 +87,10 @@ This repository currently provides:
 - a self-contained HTML convergence, lifecycle, and result report;
 - terminal interruption capture, explicit unclean-stop recovery, and
   provenance-bound checkpoint successors;
-- contribution and AI-usage policies suitable for public research software.
-- an experimental dense-PyTorch numerical baseline with primitive-level
-  Deformetrica comparisons, analytic/autograd checks, and cross-platform CI.
+- contribution and AI-usage policies suitable for public research software;
+- an experimental dense-PyTorch numerical baseline with full per-subject
+  Current/Varifold objective and gradient comparisons against Deformetrica 4.3,
+  plus cross-platform CI.
 
 It intentionally does **not** yet expose the experimental numerical primitives
 as an atlas backend, ship a prebuilt container or desktop installer, provide a
@@ -142,6 +143,8 @@ machine-readable primitive comparison separately:
 python -m pip install -e ".[dev,modern-engine]"
 python -m diffeoforge.engine.reference \
   reference/modern-engine-v0.1/deformetrica-4.3.0-primitives.json
+python -m diffeoforge.engine.reference \
+  reference/modern-engine-v0.2/deformetrica-4.3.0-objective.json
 ```
 
 This is a correctness probe, not an atlas command. See the modern-engine

@@ -16,9 +16,18 @@ from diffeoforge.engine.dense import (
     triangle_centers_and_area_normals,
     varifold_squared_distance,
 )
+from diffeoforge.engine.objective import (
+    AtlasObjective,
+    SubjectObjective,
+    atlas_objective,
+    subject_objective,
+)
 
 __all__ = [
     "ShootingTrajectory",
+    "AtlasObjective",
+    "SubjectObjective",
+    "atlas_objective",
     "current_squared_distance",
     "deformation_energy",
     "flow_points",
@@ -26,6 +35,7 @@ __all__ = [
     "gaussian_convolve_gradient",
     "gaussian_kernel",
     "shoot",
+    "subject_objective",
     "triangle_centers_and_area_normals",
     "varifold_squared_distance",
 ]

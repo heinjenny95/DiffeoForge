@@ -62,6 +62,7 @@ include = [
   "/docs",
   "/examples",
   "/reference",
+  "/tools",
   "/container",
   "/.dockerignore",
   "/README.md",
