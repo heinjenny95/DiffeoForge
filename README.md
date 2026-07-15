@@ -164,6 +164,7 @@ and workflow for another mesh directory.
 - [First-run workflow](docs/FIRST_RUN.md)
 - [Result-report interpretation](docs/RESULT_REPORT.md)
 - [Checkpoint, interruption, and resume](docs/RESUME_AND_RECOVERY.md)
+- [Release checklist](docs/RELEASE_CHECKLIST.md)
 - [Validation strategy](docs/VALIDATION_STRATEGY.md)
 - [Roadmap](ROADMAP.md)
 - [Contributing](CONTRIBUTING.md)

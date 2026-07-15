@@ -1,0 +1,109 @@
+name: Bug report
+description: Report reproducible incorrect behavior without sharing private research data.
+title: "[Bug] "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        DiffeoForge is pre-alpha research software. Please use synthetic, public,
+        or otherwise redistributable data for reproduction. Never upload unpublished
+        meshes, specimen identifiers, credentials, or sensitive paths.
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Affected component
+      description: Select the part of the workflow where the problem appears.
+      options:
+        - Installation or packaging
+        - doctor
+        - init or preflight report
+        - validate or mesh inspection
+        - prepare or XML generation
+        - execute or run
+        - status or result report
+        - interruption, recover, or resume
+        - reference comparison
+        - Documentation
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: DiffeoForge version or commit
+      description: Give the installed version, Git commit, or branch name.
+      placeholder: "For example: commit d479c41 or main at 2026-07-15"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: installation
+    attributes:
+      label: Installation route
+      options:
+        - Editable source checkout
+        - Built wheel or source distribution
+        - Frozen reference container
+        - Other or unknown
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Describe the operating system, Python, backend, and relevant doctor output.
+      placeholder: Remove usernames, private paths, hostnames, and specimen information.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: Provide the smallest deterministic sequence that reproduces the problem.
+      placeholder: |
+        1. Prepare a synthetic or public dataset ...
+        2. Run `diffeoforge ...`
+        3. Observe ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: State the expected observable behavior or artifact.
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: State what happened, including the terminal run state when applicable.
+    validations:
+      required: true
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Sanitized evidence
+      description: Add relevant logs, manifest fragments, hashes, or screenshots after redaction.
+      placeholder: Do not paste checkpoints; they are Python Pickles and may contain unsafe content.
+
+  - type: checkboxes
+    id: confirmations
+    attributes:
+      label: Submission checks
+      options:
+        - label: I searched existing issues for the same problem.
+          required: true
+        - label: I removed unpublished data, personal identifiers, credentials, and sensitive paths.
+          required: true
+        - label: I understand that pre-alpha results are not validated for scientific production use.
+          required: true

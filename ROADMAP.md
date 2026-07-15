@@ -12,7 +12,7 @@ This roadmap describes evidence gates rather than promised dates.
 - [x] Scientific validation plan
 - [x] Openly licensed miniature surface dataset
 - [x] Read-only environment doctor and transparent configuration initializer
-- [ ] Contribution issue templates and release checklist
+- [x] Contribution issue templates and release checklist
 
 ## Milestone 1: Reproducible reference backend
 
