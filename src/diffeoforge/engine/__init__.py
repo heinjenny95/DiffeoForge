@@ -22,10 +22,17 @@ from diffeoforge.engine.objective import (
     atlas_objective,
     subject_objective,
 )
+from diffeoforge.engine.optimizer import (
+    MomentaOptimizationResult,
+    OptimizationRecord,
+    optimize_momenta,
+)
 
 __all__ = [
     "ShootingTrajectory",
     "AtlasObjective",
+    "MomentaOptimizationResult",
+    "OptimizationRecord",
     "SubjectObjective",
     "atlas_objective",
     "current_squared_distance",
@@ -34,6 +41,7 @@ __all__ = [
     "gaussian_convolve",
     "gaussian_convolve_gradient",
     "gaussian_kernel",
+    "optimize_momenta",
     "shoot",
     "subject_objective",
     "triangle_centers_and_area_normals",

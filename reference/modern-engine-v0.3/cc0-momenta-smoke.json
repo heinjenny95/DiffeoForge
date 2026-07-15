@@ -1,0 +1,94 @@
+{
+  "schema_version": "0.3",
+  "description": "Deterministic momenta-only optimization smoke evidence on the committed five-subject CC0 synthetic cohort.",
+  "scientific_boundary": "Template vertices and control points are fixed; this is not a complete atlas estimator or evidence of optimizer equivalence with Deformetrica.",
+  "runtime": {
+    "python": "3.12.13",
+    "pytorch": "2.13.0+cpu",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "device": "cpu",
+    "dtype": "float64"
+  },
+  "inputs": {
+    "license": "CC0-1.0",
+    "generator_sha256": "28a5fd976a01df06d6155a8f37d7c8c68fb70486d176587152d676ce6a33ebb4",
+    "template": {
+      "path": "examples/synthetic/meshes/template.vtk",
+      "sha256": "e3f5fa71028d419e28e07403af2eff932d6e950acce9a989e1f1a2cc441b8325",
+      "points": 162,
+      "triangles": 320
+    },
+    "subjects": [
+      {"path": "examples/synthetic/meshes/subject-01.vtk", "sha256": "25c07a447699028e63b535c00ca094803664fcda15595c1645d9cb3a5b73233b"},
+      {"path": "examples/synthetic/meshes/subject-02.vtk", "sha256": "932d282639be32a04f127f86ba67bb9b2d7559a849a0169f7e87e668dbec9cc2"},
+      {"path": "examples/synthetic/meshes/subject-03.vtk", "sha256": "87503b00d72e5700619a3c46a9dca185f42e5be8b362de7087b3d9b97a9a8486"},
+      {"path": "examples/synthetic/meshes/subject-04.vtk", "sha256": "b69329d0832bd5a0ec90827cd3d0f90dc6e8b30adb3239eb6b2131b09163e848"},
+      {"path": "examples/synthetic/meshes/subject-05.vtk", "sha256": "0703116ec14196cb1d2737ccbc1467a170404101ae6749e8a1867bf44030c325"}
+    ],
+    "control_point_indices": [0, 20, 40, 60, 80, 100, 120, 140, 160]
+  },
+  "settings": {
+    "deformation_kernel_width": 0.6,
+    "attachment_kernel_width": 0.45,
+    "noise_variance": 0.01,
+    "number_of_time_points": 5,
+    "attachment_type": "current",
+    "shooting_integrator": "rk2",
+    "flow_integrator": "deformetrica_heun",
+    "max_iterations": 3,
+    "initial_step_size": 0.01,
+    "backtracking_factor": 0.5,
+    "armijo_constant": 0.0001,
+    "gradient_tolerance": 0.0,
+    "minimum_step_size": 1e-12,
+    "max_line_search_iterations": 20
+  },
+  "result": {
+    "termination_reason": "max_iterations",
+    "converged": false,
+    "total_line_search_evaluations": 12,
+    "momenta_sha256": "dd2a037a3f951505319ac3339cb095a30d7ea3555132a193b654fa76302915bb",
+    "history": [
+      {
+        "iteration": 0,
+        "objective": -44.07138921672118,
+        "attachment": -44.07138921672118,
+        "regularity": 0.0,
+        "residuals": [0.04449775141460677, 0.06034654977948861, 0.061281422519657625, 0.15306866788201035, 0.12151950057144845],
+        "gradient_norm": 234.7663305249667,
+        "accepted_step_size": null,
+        "line_search_evaluations": 0
+      },
+      {
+        "iteration": 1,
+        "objective": -12.76269776702205,
+        "attachment": -12.62463433307559,
+        "regularity": -0.1380634339464605,
+        "residuals": [0.011766879691334609, 0.017901616315086244, 0.02075859893600196, 0.04414986461059378, 0.03166938377773931],
+        "gradient_norm": 115.54771583674757,
+        "accepted_step_size": 0.00125,
+        "line_search_evaluations": 4
+      },
+      {
+        "iteration": 2,
+        "objective": -7.4385234691205975,
+        "attachment": -7.318484593304575,
+        "regularity": -0.1200388758160226,
+        "residuals": [0.005846524298561917, 0.009066871522245279, 0.014594535733809977, 0.023970359968151556, 0.019706554410277022],
+        "gradient_norm": 79.73853411795722,
+        "accepted_step_size": 0.00125,
+        "line_search_evaluations": 4
+      },
+      {
+        "iteration": 3,
+        "objective": -5.8421017379167495,
+        "attachment": -5.661981255475901,
+        "regularity": -0.18012048244084855,
+        "residuals": [0.003717905604091243, 0.006233752253782754, 0.012385368412598297, 0.017040547038133624, 0.01724223924615309],
+        "gradient_norm": 64.92016448014691,
+        "accepted_step_size": 0.00125,
+        "line_search_evaluations": 4
+      }
+    ]
+  }
+}

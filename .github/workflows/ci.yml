@@ -64,4 +64,6 @@ jobs:
           python -m pip install -e ".[dev,modern-engine]"
 
       - name: Test modern engine
-        run: pytest tests/test_modern_engine.py tests/test_atlas_objective.py
+        run: >-
+          pytest tests/test_modern_engine.py tests/test_atlas_objective.py
+          tests/test_momenta_optimizer.py
