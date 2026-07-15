@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: First-run and workflow documentation
+    url: https://github.com/heinjenny95/DiffeoForge#first-run-from-a-mesh-directory
+    about: Review the current pre-alpha workflow and limitations before opening a usage issue.

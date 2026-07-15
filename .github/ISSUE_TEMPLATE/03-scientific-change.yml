@@ -1,0 +1,102 @@
+name: Scientific or numerical change
+description: Propose a change that can affect atlas mathematics, numerical behavior, or interpretation.
+title: "[Scientific change] "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Scientific changes require an evidence plan before implementation. Plausible output
+        is not evidence of equivalence. Use only controlled, redistributable datasets here.
+
+  - type: dropdown
+    id: category
+    attributes:
+      label: Change category
+      options:
+        - Objective or data attachment
+        - Deformation kernel
+        - Integration or shooting
+        - Optimization or convergence
+        - Geometry or mesh handling
+        - Default or safe preset
+        - Quality-control criterion
+        - Comparison metric or tolerance
+        - Numerical backend
+        - Other scientific behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: rationale
+    attributes:
+      label: Mathematical or methodological rationale
+      description: State the proposed behavior and why it is scientifically justified.
+    validations:
+      required: true
+
+  - type: textarea
+    id: references
+    attributes:
+      label: Reference implementation or literature
+      description: Give persistent links, citations, equations, and relevant version identifiers.
+    validations:
+      required: true
+
+  - type: textarea
+    id: contract
+    attributes:
+      label: Observable contract
+      description: Define affected inputs, outputs, units, invariants, and failure modes.
+    validations:
+      required: true
+
+  - type: textarea
+    id: datasets
+    attributes:
+      label: Controlled validation datasets
+      description: Record provenance, license, geometry range, and why each dataset is informative.
+    validations:
+      required: true
+
+  - type: textarea
+    id: comparison
+    attributes:
+      label: Quantitative comparison plan
+      description: Name metrics, baselines, tolerances, hardware, repetitions, and pass criteria.
+      placeholder: Include gradients, objectives, deformations, runtime, and memory where relevant.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: claim
+    attributes:
+      label: Intended claim
+      options:
+        - Exact reproduction is expected
+        - Equivalence within declared tolerances is expected
+        - Methodological change with no equivalence claim
+        - Exploratory feasibility only
+    validations:
+      required: true
+
+  - type: textarea
+    id: limitations
+    attributes:
+      label: Limitations and unsupported cases
+      description: State where the proposal may fail or where evidence will not generalize.
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: confirmations
+    attributes:
+      label: Scientific submission checks
+      options:
+        - label: The validation inputs are synthetic, public, or licensed for redistribution.
+          required: true
+        - label: The proposal does not rely only on visual plausibility.
+          required: true
+        - label: Changes to defaults or tolerances will be explicit and versioned.
+          required: true

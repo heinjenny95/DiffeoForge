@@ -1,0 +1,74 @@
+name: Feature or workflow request
+description: Propose a user-facing capability, workflow improvement, or integration.
+title: "[Feature] "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Describe the research workflow problem before proposing an implementation.
+        This helps keep the command line, future GUI, and reproducibility artifacts aligned.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem to solve
+      description: What is difficult, error-prone, opaque, or currently impossible?
+    validations:
+      required: true
+
+  - type: dropdown
+    id: audience
+    attributes:
+      label: Primary users
+      options:
+        - Researchers without programming experience
+        - Command-line users
+        - Methods developers
+        - HPC or infrastructure operators
+        - Reviewers and reproducibility auditors
+        - Multiple groups
+    validations:
+      required: true
+
+  - type: textarea
+    id: workflow
+    attributes:
+      label: Desired workflow
+      description: Describe the user actions, decisions, and outputs from beginning to end.
+      placeholder: "Given ..., the user should be able to ..., and DiffeoForge should record ..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproducibility
+    attributes:
+      label: Reproducibility and scientific impact
+      description: Explain effects on configuration, provenance, validation, or interpretation.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Include current workarounds and why they are insufficient.
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance evidence
+      description: What observable test or usability evidence would demonstrate success?
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: confirmations
+    attributes:
+      label: Submission checks
+      options:
+        - label: This request does not include unpublished meshes or sensitive metadata.
+          required: true
+        - label: I have described the problem independently of a specific implementation.
+          required: true

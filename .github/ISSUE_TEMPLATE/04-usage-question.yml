@@ -1,0 +1,53 @@
+name: Usage or documentation question
+description: Ask for help understanding the documented pre-alpha workflow or its limits.
+title: "[Question] "
+labels:
+  - question
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Questions help us find usability and documentation gaps. Describe the goal and
+        the point where the workflow became unclear. Do not upload unpublished data.
+
+  - type: textarea
+    id: goal
+    attributes:
+      label: Research workflow goal
+      description: What are you trying to accomplish with DiffeoForge?
+    validations:
+      required: true
+
+  - type: textarea
+    id: attempted
+    attributes:
+      label: What you tried
+      description: List the documentation and commands you followed with private paths redacted.
+    validations:
+      required: true
+
+  - type: textarea
+    id: unclear
+    attributes:
+      label: What is unclear
+      description: Identify the decision, term, output, or error that needs explanation.
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Sanitized context
+      description: Add relevant software, operating-system, backend, and mesh-format details.
+
+  - type: checkboxes
+    id: confirmations
+    attributes:
+      label: Submission checks
+      options:
+        - label: I reviewed the README and the linked first-run documentation.
+          required: true
+        - label: I removed unpublished data, identifiers, credentials, and sensitive paths.
+          required: true
+        - label: I understand that DiffeoForge is not yet validated for scientific production use.
+          required: true

@@ -4,6 +4,23 @@ DiffeoForge welcomes scientific, software, documentation, and usability
 contributions. The project is pre-alpha, so proposals should begin with a GitHub
 issue before large implementations are developed.
 
+## Before opening an issue
+
+Use the [structured issue chooser](https://github.com/heinjenny95/DiffeoForge/issues/new/choose)
+so that a report enters the appropriate evidence path:
+
+- **Bug report:** reproducible software behavior with a sanitized environment and
+  synthetic or public reproduction data.
+- **Feature or workflow request:** the user problem, desired workflow, and observable
+  acceptance evidence before implementation details.
+- **Scientific or numerical change:** rationale, references, controlled datasets,
+  quantitative comparisons, tolerances, and limitations.
+- **Usage or documentation question:** the intended research workflow, attempted
+  instructions, and the exact decision or output that is unclear.
+
+Do not attach private checkpoints or unpublished meshes. Checkpoints are Python
+Pickles and must be treated as trusted-source-only artifacts.
+
 ## Local setup
 
 ```bash
@@ -31,6 +48,10 @@ python -m build
 - Do not mix private research data into code changes.
 - Identify references and validation evidence for numerical changes.
 - Describe material AI assistance according to [AI_USAGE.md](AI_USAGE.md).
+
+The pull-request template is the minimum handoff contract. Release candidates
+must additionally satisfy the evidence-based
+[release checklist](docs/RELEASE_CHECKLIST.md).
 
 ## Scientific changes
 
