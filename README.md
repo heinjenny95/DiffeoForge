@@ -2,9 +2,9 @@
 
 > [!WARNING]
 > **Pre-alpha research software.** DiffeoForge is not yet validated for
-> scientific production use. Its experimental reference backend can invoke an
-> existing Deformetrica 4.3.0 installation, but installation and scientific
-> equivalence are not yet automated or validated.
+> scientific production use. Its experimental reference backend can invoke a
+> hash-locked Deformetrica 4.3.0 CPU container, but scientific equivalence,
+> cross-platform distribution, and production-scale use are not yet validated.
 
 DiffeoForge is the working title for an open-source, reproducible workflow for
 diffeomorphic atlas construction from 3D surface meshes. The project aims to
@@ -77,13 +77,34 @@ This repository currently provides:
 - automated linting, tests, and package-build checks;
 - a deterministic CC0 synthetic mesh cohort for public integration tests;
 - versioned Deformetrica outputs and a tolerance-based reference comparator;
+- a read-only environment doctor and transparent mesh-directory initializer;
+- a self-contained HTML input-validation and parameter-scale report;
 - contribution and AI-usage policies suitable for public research software.
 
 It intentionally does **not** yet contain a new numerical atlas engine,
-install or redistribute Deformetrica, provide a GUI or report generator, or
-promise CPU/GPU equivalence. See the
+ship a prebuilt container or desktop installer, provide a GUI or post-run
+convergence report, or promise CPU/GPU equivalence. See the
 [reference-backend documentation](docs/REFERENCE_BACKEND.md) for the exact
 implemented boundary and current limitations.
+
+## First run from a mesh directory
+
+Check the computer, create a transparent starter configuration, and review its
+automatically generated HTML preflight report:
+
+```powershell
+diffeoforge doctor
+diffeoforge init "C:\path\to\meshes" --units millimeter
+# Review atlas.yaml and atlas.preflight.html before computation.
+diffeoforge run atlas.yaml --run-id pilot-001
+```
+
+`init` never guesses coordinate units or silently overwrites files. A file
+named `template.vtk` can be detected automatically; otherwise pass
+`--template`. Model parameters that were not explicitly supplied are labelled
+as exploratory, geometry-scaled starting values in both the YAML and report.
+See the [first-run workflow](docs/FIRST_RUN.md) for every check, parameter rule,
+override, and scientific boundary.
 
 ## Developer quick start
 
@@ -131,6 +152,7 @@ and workflow for another mesh directory.
 - [Open synthetic validation dataset](docs/SYNTHETIC_DATASET.md)
 - [Synthetic numerical reference](reference/synthetic-v1/README.md)
 - [Frozen Deformetrica CPU container](docs/CONTAINER_REFERENCE.md)
+- [First-run workflow](docs/FIRST_RUN.md)
 - [Validation strategy](docs/VALIDATION_STRATEGY.md)
 - [Roadmap](ROADMAP.md)
 - [Contributing](CONTRIBUTING.md)

@@ -11,6 +11,7 @@ This roadmap describes evidence gates rather than promised dates.
 - [x] Initial automated tests and CI
 - [x] Scientific validation plan
 - [x] Openly licensed miniature surface dataset
+- [x] Read-only environment doctor and transparent configuration initializer
 - [ ] Contribution issue templates and release checklist
 
 ## Milestone 1: Reproducible reference backend
@@ -21,7 +22,8 @@ This roadmap describes evidence gates rather than promised dates.
 - [x] VTK geometry preflight and mesh inventory
 - [x] Local 8-subject CPU smoke test against the frozen environment
 - [ ] Checkpoint, resume, and failure-state handling
-- [ ] HTML validation and convergence report
+- [x] Self-contained HTML input-validation report
+- [ ] HTML convergence and result report
 - [x] Reference results for the miniature dataset
 
 ## Milestone 2: Modern-engine feasibility
