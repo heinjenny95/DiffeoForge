@@ -21,7 +21,7 @@ This roadmap describes evidence gates rather than promised dates.
 - [x] Immutable run directories and versioned manifests
 - [x] VTK geometry preflight and mesh inventory
 - [x] Local 8-subject CPU smoke test against the frozen environment
-- [ ] Checkpoint, resume, and failure-state handling
+- [x] Checkpoint, resume, and failure-state handling
 - [x] Self-contained HTML input-validation report
 - [x] HTML convergence and result report
 - [x] Reference results for the miniature dataset

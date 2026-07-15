@@ -151,3 +151,51 @@ def test_report_cli_writes_default_html(capsys, tmp_path: Path) -> None:
     assert "Run status: completed" in captured.out
     assert "Convergence observations: 3" in captured.out
     assert (run_directory / "result-report.html").is_file()
+
+
+def test_interrupted_run_has_terminal_report_without_claiming_convergence(
+    tmp_path: Path,
+) -> None:
+    run_directory = completed_example_run(tmp_path)
+    result_path = run_directory / "result.json"
+    result = json.loads(result_path.read_text(encoding="utf-8"))
+    result.update(
+        {
+            "status": "interrupted",
+            "return_code": 130,
+            "execution_error": "KeyboardInterrupt: interrupted by user",
+            "checkpoint": {
+                "available": False,
+                "path": "output/deformetrica-state.p",
+            },
+        }
+    )
+    result_path.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
+    event_path = run_directory / "events.jsonl"
+    events = [json.loads(line) for line in event_path.read_text(encoding="utf-8").splitlines()]
+    events[-1].update({"event": "interrupted", "return_code": 130})
+    event_path.write_text(
+        "\n".join(json.dumps(event) for event in events) + "\n",
+        encoding="utf-8",
+    )
+
+    report = collect_run_report(run_directory)
+
+    assert "interruption is not convergence" in report.stop_interpretation
+    assert any("cannot be resumed" in notice for notice in report.notices)
+    assert "Run interrupted" in render_result_html(report)
+
+
+def test_resume_report_discloses_reinitialized_optimizer_state(tmp_path: Path) -> None:
+    run_directory = completed_example_run(tmp_path)
+    result_path = run_directory / "result.json"
+    result = json.loads(result_path.read_text(encoding="utf-8"))
+    result["resume"] = {
+        "semantics": {"trajectory_continuity": "not_guaranteed"},
+    }
+    result_path.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
+
+    report = collect_run_report(run_directory)
+
+    assert any("line-search step sizes" in notice for notice in report.notices)
+    assert any("not guaranteed" in notice for notice in report.notices)

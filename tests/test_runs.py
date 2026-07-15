@@ -8,7 +8,15 @@ import yaml
 
 from diffeoforge.config import ConfigurationError
 from diffeoforge.mesh import sha256_file
-from diffeoforge.runs import prepare_run, run_status, verify_prepared_run
+from diffeoforge.runs import (
+    execute_run,
+    parse_convergence,
+    prepare_resume_run,
+    prepare_run,
+    recover_run,
+    run_status,
+    verify_prepared_run,
+)
 
 
 def write_tetrahedron(path: Path) -> Path:
@@ -94,6 +102,34 @@ def write_run_config(tmp_path: Path) -> Path:
     return config_path
 
 
+def abandon_prepared_run(run_directory: Path, *, checkpoint: bytes | None = None) -> None:
+    with (run_directory / "events.jsonl").open("a", encoding="utf-8", newline="\n") as handle:
+        handle.write(
+            json.dumps(
+                {
+                    "timestamp": "2026-07-15T10:00:00Z",
+                    "event": "started",
+                    "command": {
+                        "argv": ["deformetrica", "estimate"],
+                        "working_directory": str(run_directory),
+                        "environment": {},
+                    },
+                    "backend_environment": {
+                        "probe_status": "verified",
+                        "packages": {"deformetrica": "4.3.0"},
+                    },
+                }
+            )
+            + "\n"
+        )
+    (run_directory / "logs" / "deformetrica.log").write_text(
+        "Log-likelihood = -10 ; attachment = -8 ; regularity = -2\n",
+        encoding="utf-8",
+    )
+    if checkpoint is not None:
+        (run_directory / "output" / "deformetrica-state.p").write_bytes(checkpoint)
+
+
 def test_prepare_creates_verifiable_immutable_run(tmp_path: Path) -> None:
     config_path = write_run_config(tmp_path)
 
@@ -123,6 +159,29 @@ def test_prepare_creates_verifiable_immutable_run(tmp_path: Path) -> None:
     expected_manifest_hash = (run_directory / "manifest.sha256").read_text().split()[0]
     assert sha256_file(run_directory / "manifest.json") == expected_manifest_hash
     assert run_status(run_directory)["status"] == "prepared"
+
+
+def test_convergence_parser_preserves_backend_iteration_numbers(tmp_path: Path) -> None:
+    log_path = tmp_path / "deformetrica.log"
+    csv_path = tmp_path / "convergence.csv"
+    log_path.write_text(
+        "------------------------------------- Iteration: 6 "
+        "-------------------------------------\n"
+        ">> Log-likelihood = -8.181E+00 [ attachment = -8.128E+00 ; "
+        "regularity = -5.328E-02 ]\n"
+        "------------------------------------- Iteration: 7 "
+        "-------------------------------------\n"
+        ">> Log-likelihood = -6.831E+00 [ attachment = -6.770E+00 ; "
+        "regularity = -6.049E-02 ]\n",
+        encoding="utf-8",
+    )
+
+    assert parse_convergence(log_path, csv_path) == 2
+    assert csv_path.read_text(encoding="utf-8").splitlines() == [
+        "iteration,log_likelihood,attachment,regularity",
+        "6,-8.181,-8.128,-0.05328",
+        "7,-6.831,-6.77,-0.06049",
+    ]
 
 
 def test_prepare_refuses_to_overwrite_existing_run(tmp_path: Path) -> None:
@@ -177,3 +236,257 @@ def test_manifest_optional_constant_is_backward_compatible(tmp_path: Path) -> No
     )
 
     assert run_status(run_directory)["status"] == "prepared"
+
+
+def test_recover_requires_confirmation_and_records_partial_evidence(tmp_path: Path) -> None:
+    run_directory = prepare_run(write_run_config(tmp_path), run_id="abandoned")
+    abandon_prepared_run(run_directory, checkpoint=b"opaque-checkpoint-bytes")
+
+    with pytest.raises(ConfigurationError, match="confirm-process-stopped"):
+        recover_run(run_directory, reason="test interruption")
+
+    result = recover_run(
+        run_directory,
+        reason="test interruption",
+        confirm_process_stopped=True,
+    )
+
+    assert result["status"] == "interrupted"
+    assert result["return_code"] is None
+    assert result["duration_seconds"] is None
+    assert result["convergence_rows"] == 1
+    assert result["checkpoint"]["available"] is True
+    assert result["checkpoint"]["bytes"] == len(b"opaque-checkpoint-bytes")
+    assert run_status(run_directory)["status"] == "interrupted"
+    inventory = json.loads(
+        (run_directory / "output-inventory.json").read_text(encoding="utf-8")
+    )
+    assert inventory["files"][0]["path"] == "deformetrica-state.p"
+
+
+def test_prepare_resume_creates_immutable_successor(tmp_path: Path) -> None:
+    source = prepare_run(write_run_config(tmp_path), run_id="source")
+    checkpoint = b"opaque-checkpoint-bytes"
+    abandon_prepared_run(source, checkpoint=checkpoint)
+    recover_run(source, reason="power loss", confirm_process_stopped=True)
+
+    successor = prepare_resume_run(source, run_id="successor")
+    manifest = verify_prepared_run(successor)
+
+    assert successor == source.parent / "successor"
+    assert not any((successor / "output").iterdir())
+    assert (successor / "resume" / "source-checkpoint.p").read_bytes() == checkpoint
+    provenance = json.loads(
+        (successor / "resume" / "resume.json").read_text(encoding="utf-8")
+    )
+    assert provenance["source_run"] == {
+        "run_id": "source",
+        "path": str(source),
+        "terminal_status": "interrupted",
+    }
+    assert provenance["semantics"] == {
+        "backend_id": "deformetrica_reference",
+        "backend_version": "4.3.0",
+        "restored": ["current_parameters", "current_iteration"],
+        "reinitialized": [
+            "objective_baseline",
+            "gradient",
+            "line_search_step_sizes",
+        ],
+        "trajectory_continuity": "not_guaranteed",
+    }
+    optimization_xml = (
+        successor / "engine" / "optimization_parameters.xml"
+    ).read_text(encoding="utf-8")
+    assert "<state-file>../output/deformetrica-state.p</state-file>" in optimization_xml
+    protected = {record["path"] for record in manifest["protected_artifacts"]}
+    assert "resume/resume.json" in protected
+    assert "resume/source-checkpoint.p" in protected
+
+
+def test_prepare_resume_rejects_checkpoint_changed_after_inventory(tmp_path: Path) -> None:
+    source = prepare_run(write_run_config(tmp_path), run_id="source")
+    abandon_prepared_run(source, checkpoint=b"original")
+    recover_run(source, reason="power loss", confirm_process_stopped=True)
+    (source / "output" / "deformetrica-state.p").write_bytes(b"tampered")
+
+    with pytest.raises(ConfigurationError, match="differs from its inventory"):
+        prepare_resume_run(source, run_id="successor")
+
+
+def test_prepare_resume_explains_missing_checkpoint(tmp_path: Path) -> None:
+    source = prepare_run(write_run_config(tmp_path), run_id="source")
+    abandon_prepared_run(source)
+    recover_run(source, reason="stopped before first save", confirm_process_stopped=True)
+
+    with pytest.raises(ConfigurationError, match="stopped before its first save"):
+        prepare_resume_run(source, run_id="successor")
+
+
+def test_prepare_resume_requires_frozen_source_backend_evidence(tmp_path: Path) -> None:
+    source = prepare_run(write_run_config(tmp_path), run_id="source")
+    abandon_prepared_run(source, checkpoint=b"checkpoint")
+    recover_run(source, reason="power loss", confirm_process_stopped=True)
+    result_path = source / "result.json"
+    result = json.loads(result_path.read_text(encoding="utf-8"))
+    result["backend_environment"]["packages"]["deformetrica"] = "5.0.0"
+    result_path.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
+
+    with pytest.raises(ConfigurationError, match="source evidence from Deformetrica 4.3.0"):
+        prepare_resume_run(source, run_id="successor")
+
+
+def test_prepare_resume_rejects_completed_lifecycle(tmp_path: Path) -> None:
+    source = prepare_run(write_run_config(tmp_path), run_id="source")
+    abandon_prepared_run(source, checkpoint=b"checkpoint")
+    recover_run(source, reason="power loss", confirm_process_stopped=True)
+    with (source / "events.jsonl").open("a", encoding="utf-8", newline="\n") as handle:
+        handle.write(
+            json.dumps(
+                {
+                    "timestamp": "2026-07-15T10:01:00Z",
+                    "event": "completed",
+                    "return_code": 0,
+                }
+            )
+            + "\n"
+        )
+
+    with pytest.raises(ConfigurationError, match="failed or interrupted"):
+        prepare_resume_run(source, run_id="successor")
+
+
+def test_keyboard_interrupt_becomes_terminal_interrupted_state(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run_directory = prepare_run(write_run_config(tmp_path), run_id="interruptible")
+
+    class InterruptingOutput:
+        def __iter__(self) -> InterruptingOutput:
+            return self
+
+        def __next__(self) -> str:
+            raise KeyboardInterrupt
+
+    class FakeProcess:
+        def __init__(self) -> None:
+            self.stdout = InterruptingOutput()
+            self.terminated = False
+
+        def poll(self) -> int | None:
+            return 143 if self.terminated else None
+
+        def terminate(self) -> None:
+            self.terminated = True
+
+        def wait(self, timeout: int | None = None) -> int:
+            return 143
+
+        def kill(self) -> None:
+            self.terminated = True
+
+    monkeypatch.setattr("diffeoforge.runs.ensure_launcher_available", lambda config: None)
+    monkeypatch.setattr(
+        "diffeoforge.runs._probe_backend_environment",
+        lambda config: {"probe_status": "verified"},
+    )
+    fake_process = FakeProcess()
+    monkeypatch.setattr(
+        "diffeoforge.runs.subprocess.Popen",
+        lambda *args, **kwargs: fake_process,
+    )
+
+    assert execute_run(run_directory) == 130
+    snapshot = run_status(run_directory)
+    assert snapshot["status"] == "interrupted"
+    assert snapshot["result"]["checkpoint"]["available"] is False
+    assert snapshot["result"]["return_code"] == 130
+    assert fake_process.terminated is True
+
+
+def test_child_reported_keyboard_interrupt_is_terminal_interruption(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run_directory = prepare_run(write_run_config(tmp_path), run_id="child-interrupt")
+
+    class CompletedOutput:
+        def __iter__(self):
+            return iter(("Traceback (most recent call last):\n", "KeyboardInterrupt\n"))
+
+    class FakeProcess:
+        stdout = CompletedOutput()
+
+        def poll(self) -> int:
+            return 2
+
+        def wait(self, timeout: int | None = None) -> int:
+            return 2
+
+    monkeypatch.setattr("diffeoforge.runs.ensure_launcher_available", lambda config: None)
+    monkeypatch.setattr(
+        "diffeoforge.runs._probe_backend_environment",
+        lambda config: {"probe_status": "verified"},
+    )
+    monkeypatch.setattr(
+        "diffeoforge.runs.subprocess.Popen",
+        lambda *args, **kwargs: FakeProcess(),
+    )
+
+    assert execute_run(run_directory) == 2
+    snapshot = run_status(run_directory)
+    assert snapshot["status"] == "interrupted"
+    assert snapshot["result"]["return_code"] == 2
+    assert snapshot["result"]["execution_error"] == (
+        "Backend process reported KeyboardInterrupt"
+    )
+
+
+def test_resume_execution_uses_copy_and_preserves_protected_checkpoint(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = prepare_run(write_run_config(tmp_path), run_id="source")
+    checkpoint = b"protected-opaque-checkpoint"
+    abandon_prepared_run(source, checkpoint=checkpoint)
+    recover_run(source, reason="power loss", confirm_process_stopped=True)
+    successor = prepare_resume_run(source, run_id="successor")
+
+    class InterruptingOutput:
+        def __iter__(self) -> InterruptingOutput:
+            return self
+
+        def __next__(self) -> str:
+            raise KeyboardInterrupt
+
+    class FakeProcess:
+        stdout = InterruptingOutput()
+        stopped = False
+
+        def poll(self) -> int | None:
+            return 143 if self.stopped else None
+
+        def terminate(self) -> None:
+            self.stopped = True
+
+        def wait(self, timeout: int | None = None) -> int:
+            return 143
+
+        def kill(self) -> None:
+            self.stopped = True
+
+    monkeypatch.setattr("diffeoforge.runs.ensure_launcher_available", lambda config: None)
+    monkeypatch.setattr(
+        "diffeoforge.runs._probe_backend_environment",
+        lambda config: {"probe_status": "verified"},
+    )
+    monkeypatch.setattr(
+        "diffeoforge.runs.subprocess.Popen",
+        lambda *args, **kwargs: FakeProcess(),
+    )
+
+    assert execute_run(successor) == 130
+    assert (successor / "output" / "deformetrica-state.p").read_bytes() == checkpoint
+    assert (successor / "resume" / "source-checkpoint.p").read_bytes() == checkpoint
+    assert run_status(successor)["result"]["resume"]["source_run"]["run_id"] == "source"

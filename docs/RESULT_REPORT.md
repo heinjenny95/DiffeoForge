@@ -2,10 +2,10 @@
 
 Status: **pre-alpha engineering report; not a scientific acceptance test**
 
-The result report turns a completed or failed run's recorded evidence into a
-portable HTML document. It is designed to make the numerical process easier to
-inspect without hiding the underlying files or assigning a stronger scientific
-meaning than those files support.
+The result report turns a completed, failed, or interrupted run's recorded
+evidence into a portable HTML document. It is designed to make the numerical
+process easier to inspect without hiding the underlying files or assigning a
+stronger scientific meaning than those files support.
 
 ## Create a report
 
@@ -27,8 +27,9 @@ file carrying the DiffeoForge result-report generator marker; unrelated files
 remain protected.
 
 Prepared or still-running directories do not yet have a terminal result and
-are rejected. Failed runs are accepted because their partial objective history,
-error, lifecycle, and output inventory can be diagnostically important.
+are rejected. Failed and interrupted runs are accepted because their partial
+objective history, error, lifecycle, and output inventory can be diagnostically
+important.
 
 ## Recorded sources
 

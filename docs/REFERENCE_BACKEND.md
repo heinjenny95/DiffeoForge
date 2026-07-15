@@ -21,9 +21,11 @@ pipeline.
 - explicit initial template, control-point spacing, random seed, time
   discretization, optimizer stopping and logging parameters;
 - retained flow meshes and a complete output inventory.
+- terminal interruption capture and immutable successor resume from an
+  inventoried Deformetrica state file.
 
-GPU execution, LBFGS, resume, automatic Docker installation, and scientific
-production claims are outside contract 0.1.
+GPU execution, LBFGS, cross-version checkpoint portability, automatic Docker
+installation, and scientific production claims are outside contract 0.1.
 
 ## Separation of responsibilities
 
@@ -63,6 +65,13 @@ checksum, every protected artifact hash, lifecycle state, and the empty output
 directory. It then records the backend environment, streams a complete log,
 parses objective components into `logs/convergence.csv`, and hashes every
 output file.
+
+`Ctrl+C` finalizes partial evidence as `interrupted`. A failed or interrupted
+run with an inventoried, hash-matched checkpoint can seed a new immutable
+successor through `diffeoforge resume`; the original run is never mutated or
+re-executed. See
+[checkpoint, interruption, and resume](RESUME_AND_RECOVERY.md) for the recovery
+command, provenance files, compatibility boundary, and Pickle security model.
 
 ## Local development evidence
 
@@ -105,6 +114,31 @@ public container as a working regression environment. Independently justified
 tolerances and broader operating-system and CPU coverage remain necessary for
 scientific equivalence claims.
 
+## Public interruption and resume evidence
+
+On 15 July 2026, a Windows-to-WSL run of the CC0 synthetic cohort was stopped
+with `Ctrl+C` after eight logged objective observations. DiffeoForge finalized
+it as `interrupted`, inventoried 61 partial output files, and recorded a
+9,392-byte checkpoint. No Deformetrica process remained after terminalization.
+
+An immutable successor copied and hash-verified that checkpoint, recorded its
+source manifest, result, inventory, and resume semantics by SHA-256, and invoked
+the same Deformetrica 4.3.0 environment. Deformetrica explicitly reported
+loading the state file and its first observation retained backend iteration 6
+rather than restarting at 0. The successor completed with 104 observations
+spanning iterations 6 through 109 in 27.5 seconds. Its result report retained
+those true backend iteration numbers and displayed the trajectory-continuity
+warning.
+
+The interrupted log had already printed iteration 7 while the last completely
+written checkpoint represented iteration 6. This is expected: console output
+can be newer than the latest atomic evidence available for resume. A separate
+uninterrupted run of the same stress configuration stopped at iteration 101
+with log-likelihood -0.1787; the successor stopped at iteration 109 with
+-0.1777. This difference is consistent with Deformetrica reinitializing
+line-search state and is evidence against claiming exact trajectory continuity.
+These runs validate the engineering lifecycle, not scientific equivalence.
+
 ## Known limitations
 
 - Docker itself must still be installed and started by the user; the legacy
@@ -115,5 +149,9 @@ scientific equivalence claims.
   including the VTK 5.1 split OFFSETS/CONNECTIVITY representation.
 - The engine emits a PyTorch deprecation warning after the tested run; it does
   not change the successful return code but is preserved in the log.
-- Run interruption and resume are not implemented.
+- Resume is restricted to the identical protected model/configuration and
+  Deformetrica 4.3.0 contract; checkpoint portability is not claimed.
+- Gradient Ascent checkpoints restore parameters and iteration but not gradient,
+  objective baseline, or line-search step sizes; exact trajectory continuity is
+  therefore not guaranteed.
 - Mesh-output QC visualization, a GUI, and a resource estimator remain future work.

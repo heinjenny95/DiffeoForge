@@ -23,7 +23,13 @@ from diffeoforge.report import (
     write_preflight_report,
 )
 from diffeoforge.result_report import collect_run_report, write_result_report
-from diffeoforge.runs import execute_run, prepare_run, run_status
+from diffeoforge.runs import (
+    execute_run,
+    prepare_resume_run,
+    prepare_run,
+    recover_run,
+    run_status,
+)
 
 _AUTO_REPORT = Path("__diffeoforge_auto_report__")
 
@@ -186,6 +192,34 @@ def build_parser() -> argparse.ArgumentParser:
         help="Override the configured run root for this run.",
     )
 
+    resume_parser = subparsers.add_parser(
+        "resume",
+        help="Create and execute an immutable successor from an inventoried checkpoint.",
+    )
+    resume_parser.add_argument("source_run", type=Path)
+    resume_parser.add_argument("--run-id", help="Explicit unique successor run identifier.")
+    resume_parser.add_argument(
+        "--prepare-only",
+        action="store_true",
+        help="Prepare the successor without starting Deformetrica.",
+    )
+
+    recover_parser = subparsers.add_parser(
+        "recover",
+        help="Finalize an abandoned started run as interrupted without executing it.",
+    )
+    recover_parser.add_argument("run_directory", type=Path)
+    recover_parser.add_argument(
+        "--reason",
+        required=True,
+        help="Human-readable explanation of the unclean stop.",
+    )
+    recover_parser.add_argument(
+        "--confirm-process-stopped",
+        action="store_true",
+        help="Confirm that no Deformetrica process is still writing to this run.",
+    )
+
     status_parser = subparsers.add_parser(
         "status",
         help="Read the latest append-only lifecycle state for a run.",
@@ -243,6 +277,30 @@ def _prompt_template(mesh_directory: Path) -> Path | None:
         "No template.vtk was found. Enter the template path relative to the mesh directory: "
     ).strip()
     return Path(value) if value else None
+
+
+def _execution_outcome(run_directory: Path, return_code: int) -> int:
+    snapshot = run_status(run_directory)
+    if snapshot["status"] == "interrupted":
+        result = snapshot.get("result") or {}
+        checkpoint = result.get("checkpoint") or {}
+        print("Run interrupted safely.", file=sys.stderr)
+        if checkpoint.get("available"):
+            print(
+                "Checkpoint integrity matches the output inventory. Resume with: "
+                f"diffeoforge resume \"{run_directory}\"",
+                file=sys.stderr,
+            )
+        else:
+            print(
+                "No checkpoint was written before the interruption; this run cannot be resumed.",
+                file=sys.stderr,
+            )
+        return 130
+    if return_code != 0:
+        print(f"ERROR: Deformetrica returned {return_code}.", file=sys.stderr)
+        return 3
+    return 0
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -359,10 +417,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         except ConfigurationError as error:
             print(f"ERROR: {error}", file=sys.stderr)
             return 2
-        if return_code != 0:
-            print(f"ERROR: Deformetrica returned {return_code}.", file=sys.stderr)
-            return 3
-        return 0
+        return _execution_outcome(args.run_directory.resolve(), return_code)
 
     if args.command == "run":
         try:
@@ -376,9 +431,48 @@ def main(argv: Sequence[str] | None = None) -> int:
         except ConfigurationError as error:
             print(f"ERROR: {error}", file=sys.stderr)
             return 2
-        if return_code != 0:
-            print(f"ERROR: Deformetrica returned {return_code}.", file=sys.stderr)
-            return 3
+        return _execution_outcome(run_directory, return_code)
+
+    if args.command == "resume":
+        try:
+            run_directory = prepare_resume_run(args.source_run, run_id=args.run_id)
+            print(f"Prepared resume run: {run_directory}")
+            print(
+                "WARNING: Deformetrica 4.3 restores parameters and iteration but "
+                "reinitializes gradients and line-search step sizes; exact trajectory "
+                "continuity is not guaranteed."
+            )
+            print(
+                "SECURITY: Continue only with a trusted source run; Deformetrica loads "
+                "the checkpoint as a Python Pickle."
+            )
+            if args.prepare_only:
+                return 0
+            return_code = execute_run(run_directory)
+        except ConfigurationError as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return _execution_outcome(run_directory, return_code)
+
+    if args.command == "recover":
+        try:
+            result = recover_run(
+                args.run_directory,
+                reason=args.reason,
+                confirm_process_stopped=args.confirm_process_stopped,
+            )
+        except ConfigurationError as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        checkpoint = result["checkpoint"]
+        print(f"Recovered run as interrupted: {args.run_directory.resolve()}")
+        if checkpoint["available"]:
+            print(
+                "Checkpoint integrity matches the output inventory. Resume with: "
+                f"diffeoforge resume \"{args.run_directory.resolve()}\""
+            )
+        else:
+            print("No checkpoint is available; this run cannot be resumed.")
         return 0
 
     if args.command == "status":
