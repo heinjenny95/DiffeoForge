@@ -40,6 +40,8 @@ This roadmap describes evidence gates rather than promised dates.
 - [x] Connect mesh-folder preflight, initialization, modern optimization, and result bundles
 - [x] Add PCA plots and PC deformation visualizations
 - [x] Add deterministic input/output mesh-quality evidence and configurable gates
+- [x] Add explicit blockwise Gaussian/Current/Varifold primitives with dense parity
+- [ ] Integrate and benchmark blockwise mode through the full atlas workflow
 
 ## Milestone 3: Accessible application
 

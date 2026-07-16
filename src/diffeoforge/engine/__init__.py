@@ -13,16 +13,21 @@ from diffeoforge.engine.atlas_optimizer import (
     optimize_atlas,
 )
 from diffeoforge.engine.dense import (
+    GaussianTilePlan,
     ShootingTrajectory,
     current_squared_distance,
+    current_squared_distance_blockwise,
     deformation_energy,
     flow_points,
     gaussian_convolve,
+    gaussian_convolve_blockwise,
     gaussian_convolve_gradient,
+    gaussian_convolve_gradient_blockwise,
     gaussian_kernel,
     shoot,
     triangle_centers_and_area_normals,
     varifold_squared_distance,
+    varifold_squared_distance_blockwise,
 )
 from diffeoforge.engine.objective import (
     AtlasObjective,
@@ -38,6 +43,7 @@ from diffeoforge.engine.optimizer import (
 
 __all__ = [
     "ShootingTrajectory",
+    "GaussianTilePlan",
     "AtlasObjective",
     "AtlasOptimizationRecord",
     "AtlasOptimizationResult",
@@ -49,10 +55,13 @@ __all__ = [
     "SubjectObjective",
     "atlas_objective",
     "current_squared_distance",
+    "current_squared_distance_blockwise",
     "deformation_energy",
     "flow_points",
     "gaussian_convolve",
+    "gaussian_convolve_blockwise",
     "gaussian_convolve_gradient",
+    "gaussian_convolve_gradient_blockwise",
     "gaussian_kernel",
     "optimize_momenta",
     "optimize_atlas",
@@ -60,4 +69,5 @@ __all__ = [
     "subject_objective",
     "triangle_centers_and_area_normals",
     "varifold_squared_distance",
+    "varifold_squared_distance_blockwise",
 ]

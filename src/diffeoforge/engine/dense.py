@@ -78,6 +78,51 @@ def _validate_time_points(number_of_time_points: int) -> int:
     return normalized
 
 
+def _validate_tile_size(name: str, value: int) -> int:
+    if isinstance(value, bool) or not isinstance(value, Integral):
+        raise TypeError(f"{name} must be an integer")
+    normalized = int(value)
+    if normalized < 1:
+        raise ValueError(f"{name} must be at least 1")
+    return normalized
+
+
+@dataclass(frozen=True)
+class GaussianTilePlan:
+    """Explicit query/source bounds for exact blockwise Gaussian operations."""
+
+    query_rows: int
+    source_rows: int
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "query_rows",
+            _validate_tile_size("query_rows", self.query_rows),
+        )
+        object.__setattr__(
+            self,
+            "source_rows",
+            _validate_tile_size("source_rows", self.source_rows),
+        )
+
+    def maximum_xyz_difference_tensor_bytes(self, *, bytes_per_float: int = 8) -> int:
+        """Return the exact declared tile bound ``query × source × 3 × bytes``."""
+
+        element_bytes = _validate_tile_size("bytes_per_float", bytes_per_float)
+        return self.query_rows * self.source_rows * 3 * element_bytes
+
+
+def _gaussian_tile(
+    x: torch.Tensor,
+    y: torch.Tensor,
+    width: float,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    differences = x[:, None, :] - y[None, :, :]
+    squared_distances = torch.sum(differences.square(), dim=2)
+    return differences, torch.exp(-squared_distances / (width * width))
+
+
 def gaussian_kernel(x: torch.Tensor, y: torch.Tensor, kernel_width: float) -> torch.Tensor:
     """Return the dense Deformetrica-convention Gaussian kernel matrix."""
 
@@ -85,9 +130,8 @@ def gaussian_kernel(x: torch.Tensor, y: torch.Tensor, kernel_width: float) -> to
     _validate_float_matrix("y", y, columns=3)
     _validate_compatible("y", y, x)
     width = _validate_width(kernel_width)
-    differences = x[:, None, :] - y[None, :, :]
-    squared_distances = torch.sum(differences.square(), dim=2)
-    return torch.exp(-squared_distances / (width * width))
+    _, kernel = _gaussian_tile(x, y, width)
+    return kernel
 
 
 def gaussian_convolve(
@@ -104,6 +148,43 @@ def gaussian_convolve(
         raise ValueError("weights must have one row per point in y")
     _validate_compatible("weights", weights, y)
     return gaussian_kernel(x, y, kernel_width) @ weights
+
+
+def gaussian_convolve_blockwise(
+    x: torch.Tensor,
+    y: torch.Tensor,
+    weights: torch.Tensor,
+    kernel_width: float,
+    *,
+    query_tile_size: int,
+    source_tile_size: int,
+) -> torch.Tensor:
+    """Apply the exact Gaussian convolution through explicit bounded tiles."""
+
+    _validate_float_matrix("x", x, columns=3)
+    _validate_float_matrix("y", y, columns=3)
+    _validate_float_matrix("weights", weights)
+    _validate_compatible("y", y, x)
+    _validate_compatible("weights", weights, x)
+    if weights.shape[0] != y.shape[0]:
+        raise ValueError("weights must have one row per point in y")
+    width = _validate_width(kernel_width)
+    plan = GaussianTilePlan(query_tile_size, source_tile_size)
+    outputs = []
+    for query_start in range(0, x.shape[0], plan.query_rows):
+        query = x[query_start : query_start + plan.query_rows]
+        result = torch.zeros(
+            (query.shape[0], weights.shape[1]),
+            dtype=x.dtype,
+            device=x.device,
+        )
+        for source_start in range(0, y.shape[0], plan.source_rows):
+            source = y[source_start : source_start + plan.source_rows]
+            source_weights = weights[source_start : source_start + plan.source_rows]
+            _, kernel = _gaussian_tile(query, source, width)
+            result = result + kernel @ source_weights
+        outputs.append(result)
+    return torch.cat(outputs, dim=0)
 
 
 def gaussian_convolve_gradient(
@@ -142,6 +223,56 @@ def gaussian_convolve_gradient(
     differences = x[:, None, :] - y[None, :, :]
     coefficients = (left_weights @ right_weights.T) * gaussian_kernel(x, y, width)
     return (-2.0 / (width * width)) * torch.sum(coefficients[:, :, None] * differences, dim=1)
+
+
+def gaussian_convolve_gradient_blockwise(
+    left_weights: torch.Tensor,
+    x: torch.Tensor,
+    y: torch.Tensor | None = None,
+    right_weights: torch.Tensor | None = None,
+    kernel_width: float = 1.0,
+    *,
+    query_tile_size: int,
+    source_tile_size: int,
+) -> torch.Tensor:
+    """Evaluate the exact explicit Gaussian x-gradient through bounded tiles."""
+
+    if y is None:
+        y = x
+    if right_weights is None:
+        right_weights = left_weights
+    _validate_float_matrix("x", x, columns=3)
+    _validate_float_matrix("y", y, columns=3)
+    _validate_float_matrix("left_weights", left_weights)
+    _validate_float_matrix("right_weights", right_weights)
+    _validate_compatible("y", y, x)
+    _validate_compatible("left_weights", left_weights, x)
+    _validate_compatible("right_weights", right_weights, x)
+    if left_weights.shape[0] != x.shape[0]:
+        raise ValueError("left_weights must have one row per point in x")
+    if right_weights.shape[0] != y.shape[0]:
+        raise ValueError("right_weights must have one row per point in y")
+    if left_weights.shape[1] != right_weights.shape[1]:
+        raise ValueError("left_weights and right_weights must have the same column count")
+    width = _validate_width(kernel_width)
+    plan = GaussianTilePlan(query_tile_size, source_tile_size)
+    outputs = []
+    scale = -2.0 / (width * width)
+    for query_start in range(0, x.shape[0], plan.query_rows):
+        query = x[query_start : query_start + plan.query_rows]
+        query_weights = left_weights[query_start : query_start + plan.query_rows]
+        result = torch.zeros_like(query)
+        for source_start in range(0, y.shape[0], plan.source_rows):
+            source = y[source_start : source_start + plan.source_rows]
+            source_weights = right_weights[source_start : source_start + plan.source_rows]
+            differences, kernel = _gaussian_tile(query, source, width)
+            coefficients = (query_weights @ source_weights.T) * kernel
+            result = result + scale * torch.sum(
+                coefficients[:, :, None] * differences,
+                dim=1,
+            )
+        outputs.append(result)
+    return torch.cat(outputs, dim=0)
 
 
 def deformation_energy(
@@ -400,6 +531,56 @@ def current_squared_distance(
     return self_a + self_b - 2.0 * cross
 
 
+def _current_inner_product_blockwise(
+    centers_a: torch.Tensor,
+    normals_a: torch.Tensor,
+    centers_b: torch.Tensor,
+    normals_b: torch.Tensor,
+    kernel_width: float,
+    plan: GaussianTilePlan,
+) -> torch.Tensor:
+    convolved = gaussian_convolve_blockwise(
+        centers_a,
+        centers_b,
+        normals_b,
+        kernel_width,
+        query_tile_size=plan.query_rows,
+        source_tile_size=plan.source_rows,
+    )
+    return torch.sum(normals_a * convolved)
+
+
+def current_squared_distance_blockwise(
+    vertices_a: torch.Tensor,
+    triangles_a: torch.Tensor,
+    vertices_b: torch.Tensor,
+    triangles_b: torch.Tensor,
+    kernel_width: float,
+    *,
+    query_tile_size: int,
+    source_tile_size: int,
+) -> torch.Tensor:
+    """Return the exact Current distance without full face-pair matrices."""
+
+    plan = GaussianTilePlan(query_tile_size, source_tile_size)
+    centers_a, normals_a = _surface_geometry(vertices_a, triangles_a)
+    centers_b, normals_b = _surface_geometry(
+        vertices_b,
+        triangles_b,
+        reference_vertices=vertices_a,
+    )
+    self_a = _current_inner_product_blockwise(
+        centers_a, normals_a, centers_a, normals_a, kernel_width, plan
+    )
+    self_b = _current_inner_product_blockwise(
+        centers_b, normals_b, centers_b, normals_b, kernel_width, plan
+    )
+    cross = _current_inner_product_blockwise(
+        centers_a, normals_a, centers_b, normals_b, kernel_width, plan
+    )
+    return self_a + self_b - 2.0 * cross
+
+
 def _varifold_inner_product(
     centers_a: torch.Tensor,
     normals_a: torch.Tensor,
@@ -437,5 +618,66 @@ def varifold_squared_distance(
     )
     cross = _varifold_inner_product(
         centers_a, normals_a, centers_b, normals_b, kernel_width
+    )
+    return self_a + self_b - 2.0 * cross
+
+
+def _varifold_inner_product_blockwise(
+    centers_a: torch.Tensor,
+    normals_a: torch.Tensor,
+    centers_b: torch.Tensor,
+    normals_b: torch.Tensor,
+    kernel_width: float,
+    plan: GaussianTilePlan,
+) -> torch.Tensor:
+    width = _validate_width(kernel_width)
+    areas_a = torch.linalg.vector_norm(normals_a, dim=1, keepdim=True)
+    areas_b = torch.linalg.vector_norm(normals_b, dim=1, keepdim=True)
+    unit_a = normals_a / areas_a
+    unit_b = normals_b / areas_b
+    result = torch.zeros((), dtype=centers_a.dtype, device=centers_a.device)
+    for query_start in range(0, centers_a.shape[0], plan.query_rows):
+        query_centers = centers_a[query_start : query_start + plan.query_rows]
+        query_areas = areas_a[query_start : query_start + plan.query_rows]
+        query_units = unit_a[query_start : query_start + plan.query_rows]
+        for source_start in range(0, centers_b.shape[0], plan.source_rows):
+            source_centers = centers_b[source_start : source_start + plan.source_rows]
+            source_areas = areas_b[source_start : source_start + plan.source_rows]
+            source_units = unit_b[source_start : source_start + plan.source_rows]
+            _, kernel = _gaussian_tile(query_centers, source_centers, width)
+            orientation = (query_units @ source_units.T).square()
+            result = result + torch.sum(
+                query_areas * ((kernel * orientation) @ source_areas)
+            )
+    return result
+
+
+def varifold_squared_distance_blockwise(
+    vertices_a: torch.Tensor,
+    triangles_a: torch.Tensor,
+    vertices_b: torch.Tensor,
+    triangles_b: torch.Tensor,
+    kernel_width: float,
+    *,
+    query_tile_size: int,
+    source_tile_size: int,
+) -> torch.Tensor:
+    """Return the exact Varifold distance without full face-pair matrices."""
+
+    plan = GaussianTilePlan(query_tile_size, source_tile_size)
+    centers_a, normals_a = _surface_geometry(vertices_a, triangles_a)
+    centers_b, normals_b = _surface_geometry(
+        vertices_b,
+        triangles_b,
+        reference_vertices=vertices_a,
+    )
+    self_a = _varifold_inner_product_blockwise(
+        centers_a, normals_a, centers_a, normals_a, kernel_width, plan
+    )
+    self_b = _varifold_inner_product_blockwise(
+        centers_b, normals_b, centers_b, normals_b, kernel_width, plan
+    )
+    cross = _varifold_inner_product_blockwise(
+        centers_a, normals_a, centers_b, normals_b, kernel_width, plan
     )
     return self_a + self_b - 2.0 * cross
