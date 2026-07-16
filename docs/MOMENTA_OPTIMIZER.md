@@ -68,7 +68,8 @@ state preservation, execution under an outer `no_grad` context, invalid
 settings, non-finite inputs, and tolerance-based replay of the CC0 smoke
 fixture on Windows and Linux CI.
 
-Remaining gates include template/control-point initialization and optimization,
-output meshes, convergence studies, matched Deformetrica optimizer experiments,
-chunked/accelerated kernels, memory/runtime benchmarks, checkpointing, and
-workflow-backend integration.
+The separate [full atlas optimizer](FULL_ATLAS_OPTIMIZER.md) now prototypes
+template and control-point updates. Remaining gates include output meshes,
+convergence and initialization studies, matched Deformetrica optimizer
+experiments, chunked/accelerated kernels, memory/runtime benchmarks,
+checkpointing, and workflow-backend integration.

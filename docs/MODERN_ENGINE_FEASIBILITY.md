@@ -66,15 +66,18 @@ The experimental `diffeoforge.engine` module currently implements:
 - an unaveraged, order-preserving multi-subject objective sum.
 - a deterministic momenta-only gradient-ascent prototype with Armijo
   backtracking and complete accepted-state history.
+- a deterministic full-parameter block optimizer for per-subject momenta,
+  shared template vertices, and shared control points, with an explicit Armijo
+  line search and decision history for every block.
 
 All public operations require finite, three-dimensional floating-point tensors,
 matching dtype/device, finite positive kernel widths, and valid zero-based
 `int64` triangle connectivity. They do not silently cast inputs. Degenerate
 zero-area faces fail explicitly.
 
-This boundary does **not** yet include control-point initialization, template
-or control-point optimization, output meshes, checkpointing, GPU execution,
-sparse/chunked kernels, or a workflow-backend adapter.
+This boundary does **not** yet include automatic control-point initialization,
+output meshes, optimizer checkpointing, GPU execution, sparse/chunked kernels,
+mesh-quality constraints, or a workflow-backend adapter.
 
 ## Evidence in this baseline
 
@@ -137,12 +140,14 @@ constructor-cache artifact; that policy is recorded inside the fixture.
    environment rather than only invariant tests.~~ Completed in v0.2.
 2. ~~Assemble and differentiate the complete per-subject deterministic-atlas
    objective.~~ Completed in the dense correctness baseline.
-3. Compare objective components, endpoint surfaces, control-point trajectories,
+3. ~~Prototype explicit optimization of momenta, template vertices, and shared
+   control points.~~ Completed in the v0.4 CC0 block-optimizer evidence.
+4. Compare objective components, endpoint surfaces, control-point trajectories,
    and gradients on CC0 meshes.
-4. Add chunked or accelerated kernels and prove parity with the dense baseline.
-5. Benchmark runtime and peak memory over mesh, control-point, and subject count.
-6. Define evidence-derived tolerances before accepting a production backend.
-7. Integrate the engine through immutable run manifests without weakening the
+5. Add chunked or accelerated kernels and prove parity with the dense baseline.
+6. Benchmark runtime and peak memory over mesh, control-point, and subject count.
+7. Define evidence-derived tolerances before accepting a production backend.
+8. Integrate the engine through immutable run manifests without weakening the
    existing reference workflow.
 
 No scientific atlas result should be produced or interpreted through this

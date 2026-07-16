@@ -90,7 +90,8 @@ This repository currently provides:
 - contribution and AI-usage policies suitable for public research software;
 - an experimental dense-PyTorch numerical baseline with full per-subject
   Current/Varifold objective and gradient comparisons against Deformetrica 4.3,
-  plus cross-platform CI.
+  plus deterministic momenta-only and full-parameter block-optimization
+  prototypes with versioned CC0 evidence and cross-platform CI.
 
 It intentionally does **not** yet expose the experimental numerical primitives
 as an atlas backend, ship a prebuilt container or desktop installer, provide a
@@ -178,6 +179,7 @@ and workflow for another mesh directory.
 - [Deformetrica reference backend](docs/REFERENCE_BACKEND.md)
 - [Modern-engine feasibility baseline](docs/MODERN_ENGINE_FEASIBILITY.md)
 - [Experimental momenta-only optimizer](docs/MOMENTA_OPTIMIZER.md)
+- [Experimental full atlas optimizer](docs/FULL_ATLAS_OPTIMIZER.md)
 - [Landmark-based Procrustes alignment](docs/PROCRUSTES_ALIGNMENT.md)
 - [PCA of atlas-derived subject features](docs/ATLAS_PCA.md)
 - [Desktop executable and installer architecture](docs/DESKTOP_DISTRIBUTION.md)

@@ -30,7 +30,7 @@ This roadmap describes evidence gates rather than promised dates.
 
 - [x] Evaluate a focused Deformetrica dependency port
 - [x] Evaluate current PyTorch/KeOps-based libraries
-- [ ] Prototype only the deterministic 3D surface-atlas path
+- [x] Prototype only the deterministic 3D surface-atlas path
 - [ ] Compare gradients, objectives, deformations, and performance
 - [x] Record the engine decision in an ADR
 - [x] Prototype landmark-based generalized Procrustes alignment
