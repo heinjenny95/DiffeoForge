@@ -42,6 +42,11 @@ official installer already distinguishes Windows CPU and CUDA selections, so a
 single ambiguous "works everywhere" bundle would hide a material dependency
 and validation difference.
 
+The shared-core `modern-plan` workload report is the first implementation of
+the resource-review step. A future GUI may render its strict JSON, but must
+retain the report's distinction between exact dense operation counts, known
+payload subtotals, and unknown measured peak RAM/runtime.
+
 Deformetrica 4.3 remains an external reference backend. Its Python 3.8 stack is
 not copied into the desktop executable. `doctor` will detect a separately
 installed version-checked native/container route and explain how it differs

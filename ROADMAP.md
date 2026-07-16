@@ -38,14 +38,16 @@ This roadmap describes evidence gates rather than promised dates.
 - [x] Prototype PCA for explicitly declared atlas-derived subject features
 - [x] Integrate PCA evidence and tables into immutable atlas results
 - [x] Connect mesh-folder preflight, initialization, modern optimization, and result bundles
-- [ ] Add PCA plots and PC deformation visualizations
+- [x] Add PCA plots and PC deformation visualizations
+- [x] Add deterministic input/output mesh-quality evidence and configurable gates
 
 ## Milestone 3: Accessible application
 
 - [x] Define desktop executable/installer architecture and release gates
 - [ ] Local graphical interface backed by the shared core
 - [ ] Parameter explanations and safe presets
-- [ ] Resource estimation and progress reporting
+- [x] Pre-compute dense-operation and known-payload workload report
+- [ ] Measured resource calibration and progress reporting
 - [ ] Cross-platform CPU distribution
 - [ ] Validated NVIDIA GPU distribution
 - [ ] Apptainer workflow for HPC environments

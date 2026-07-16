@@ -111,6 +111,30 @@ def load_modern_workflow_config(path: Path | str) -> dict[str, Any]:
     return loaded
 
 
+def validate_modern_analysis_dimensions(
+    config: Mapping[str, Any],
+    subject_count: int,
+) -> None:
+    """Reject PCA requests that exceed the configured cohort/feature dimensions."""
+
+    if isinstance(subject_count, bool) or not isinstance(subject_count, int) or subject_count < 2:
+        raise ConfigurationError("Modern PCA requires at least two subjects")
+    control_points = config["initialization"]["control_points"]["count"]
+    maximum = min(subject_count - 1, 3 * control_points)
+    pca_components = config["analysis"]["pca_components"]
+    if pca_components is not None and pca_components > maximum:
+        raise ConfigurationError(
+            f"analysis.pca_components cannot exceed {maximum} for this cohort"
+        )
+    retained = maximum if pca_components is None else pca_components
+    deformation_components = config["analysis"]["deformation_components"]
+    if deformation_components is not None and deformation_components > retained:
+        raise ConfigurationError(
+            "analysis.deformation_components cannot exceed the retained PCA "
+            f"component count ({retained})"
+        )
+
+
 def _resolve_from_config(value: str, config_path: Path) -> Path:
     path = Path(value).expanduser()
     if not path.is_absolute():
@@ -305,6 +329,7 @@ def initialize_modern_workflow(
     summary = validate_input_paths(config, destination)
     config["analysis"]["deformation_components"] = min(3, len(summary.subjects) - 1)
     validate_modern_workflow_config(config)
+    validate_modern_analysis_dimensions(config, len(summary.subjects))
     inspect_inputs(summary)
     quality_settings = MeshQualitySettings.from_mapping(config["quality_control"])
     source_paths = (summary.template, *summary.subjects)
@@ -647,6 +672,7 @@ def run_modern_workflow(
     source_config = Path(config_path).expanduser().resolve()
     config = load_modern_workflow_config(source_config)
     inputs: InputSummary = validate_input_paths(config, source_config)
+    validate_modern_analysis_dimensions(config, len(inputs.subjects))
     template_metadata, subject_metadata = inspect_inputs(inputs)
     output = (
         _resolve_from_config(config["output"]["directory"], source_config)
