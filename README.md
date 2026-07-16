@@ -195,6 +195,13 @@ Every condition remains a separate verified benchmark v0.3 report. The runner
 publishes only integrity hashes and completion state, never a winner or
 performance claim.
 
+Inspection is read-only, and completed evidence has a dedicated verifier:
+
+```powershell
+diffeoforge modern-benchmark-study-status modern-atlas.benchmark-study.run
+diffeoforge modern-benchmark-study-verify modern-atlas.benchmark-study.run
+```
+
 Generated configurations declare dense evaluation explicitly. The exact
 non-approximate blockwise path can instead be requested without code:
 

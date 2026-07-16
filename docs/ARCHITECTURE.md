@@ -134,6 +134,14 @@ manifest with artifact hashes. It never aggregates the observations. A
 process-identity lock rejects concurrent writers; valid reports found after an
 interruption are reconciled rather than overwritten.
 
+The read-only `modern-benchmark-study-status` path applies the same design,
+source-copy, frozen-prefix, raw-report, event-order, and lock inspection without
+reconciling or writing. It distinguishes a recoverable report-ahead-of-state
+crash from the unsafe inverse: state claiming a missing report is data loss or
+tampering and stops both inspection and execution. A separate
+`modern-benchmark-study-verify` entry point requires the complete state,
+manifest sidecar, regenerated manifest, events, and every raw report.
+
 Below the application layer, the engine now contains an explicit blockwise
 Gaussian primitive family. Query and source tile sizes bound each pairwise XYZ
 difference tensor; Current and Varifold inner products accumulate tiles

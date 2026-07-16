@@ -276,6 +276,19 @@ def build_parser() -> argparse.ArgumentParser:
         help="Study run directory (default: DESIGN_DIRECTORY.run).",
     )
 
+    modern_benchmark_study_status_parser = subparsers.add_parser(
+        "modern-benchmark-study-status",
+        help="Strictly inspect partial or complete study evidence without changing it.",
+    )
+    modern_benchmark_study_status_parser.add_argument("run_directory", type=Path)
+    modern_benchmark_study_status_parser.add_argument("--json", action="store_true")
+
+    modern_benchmark_study_verify_parser = subparsers.add_parser(
+        "modern-benchmark-study-verify",
+        help="Verify a completed frozen study and every separate raw report.",
+    )
+    modern_benchmark_study_verify_parser.add_argument("run_directory", type=Path)
+
     modern_verify_parser = subparsers.add_parser(
         "modern-verify",
         help="Verify an immutable modern workflow run and its nested atlas/PCA bundle.",
@@ -777,6 +790,67 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"       {error}", file=sys.stderr)
             return 2
         except (ConfigurationError, RuntimeError, OSError, ValueError, TypeError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
+
+    if args.command == "modern-benchmark-study-status":
+        try:
+            from diffeoforge.modern_benchmark_study import (
+                inspect_modern_benchmark_study_run,
+            )
+
+            status = inspect_modern_benchmark_study_run(args.run_directory)
+            if args.json:
+                print(json.dumps(status, indent=2, ensure_ascii=False, sort_keys=True))
+            else:
+                print(f"Study status: {status['status']}")
+                print(
+                    "Strictly verified raw reports: "
+                    f"{status['verified_report_count']}/{status['total_condition_count']}"
+                )
+                print(
+                    "State-recorded completed conditions: "
+                    f"{status['state_completed_condition_count']}"
+                )
+                print(f"Execution lock: {status['lock']['status']}")
+                if status["next_condition"] is not None:
+                    condition = status["next_condition"]
+                    print(
+                        "Next frozen condition: "
+                        f"{condition['condition_id']} "
+                        f"({condition['tile_autograd_strategy']}, "
+                        f"{condition['subject_count']} subjects)"
+                    )
+                if status["reconciliation_required"]:
+                    print(
+                        "RECOVERABLE: Valid report evidence is ahead of atomic state; "
+                        "the runner can reconcile it."
+                    )
+                print(
+                    "Completion manifest: "
+                    f"{status['completion_manifest_status']}; "
+                    f"verified={str(status['completion_manifest_verified']).lower()}"
+                )
+        except (RuntimeError, OSError, ValueError, TypeError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
+
+    if args.command == "modern-benchmark-study-verify":
+        try:
+            from diffeoforge.modern_benchmark_study import (
+                MANIFEST_NAME,
+                verify_modern_benchmark_study_run,
+            )
+
+            run_directory = args.run_directory.resolve()
+            manifest = verify_modern_benchmark_study_run(run_directory)
+            print(f"Completed benchmark study verified: {run_directory}")
+            print(f"Separate raw condition reports: {len(manifest['conditions'])}")
+            print(f"Completion manifest: {run_directory / MANIFEST_NAME}")
+            print("No automatic comparison or performance claim is present.")
+        except (RuntimeError, OSError, ValueError, TypeError) as error:
             print(f"ERROR: {error}", file=sys.stderr)
             return 2
         return 0

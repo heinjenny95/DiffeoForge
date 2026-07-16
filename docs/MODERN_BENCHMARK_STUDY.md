@@ -153,3 +153,39 @@ runner does not pool repeats, subtract timings, compute ratios or p-values,
 rank conditions, or change a workflow setting. Analysis remains a later,
 separately versioned evidence stage after a real prospectively frozen study is
 collected under controlled conditions.
+
+## Read-only inspection and verification
+
+Status inspection never resumes, reconciles, deletes, or writes:
+
+```powershell
+diffeoforge modern-benchmark-study-status `
+  modern-atlas.benchmark-study.run
+
+diffeoforge modern-benchmark-study-status `
+  modern-atlas.benchmark-study.run --json
+```
+
+It strictly verifies the copied design and source-config digest, every existing
+raw-report prefix, state prefix, event sequence, manifest presence, and lock
+owner. The machine-readable output distinguishes state-recorded completions
+from verified reports and names the next frozen condition.
+
+If a hard interruption happened after a report was atomically published but
+before state was updated, status reports `reconciliation_required: true`; the
+runner may safely promote that already verified report. The inverse is not
+recoverable: if state claims a completed condition whose report is absent, both
+status and runner fail. Recomputing it silently would erase evidence of loss or
+tampering.
+
+For a completed or copied study, run the dedicated full verifier:
+
+```powershell
+diffeoforge modern-benchmark-study-verify `
+  modern-atlas.benchmark-study.run
+```
+
+Successful verification means the frozen identities, separate reports,
+condition order, state, events, manifest, and hashes agree. It still does not
+mean either strategy is faster, uses less peak memory, or is ready as a public
+default.

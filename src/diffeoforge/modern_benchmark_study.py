@@ -137,6 +137,25 @@ def _verify_events(root: Path, design: dict[str, Any]) -> None:
         raise ModernBenchmarkStudyError("Completed event order differs from the frozen design")
 
 
+def _verify_partial_events(
+    root: Path, design: dict[str, Any], existing_ids: list[str]
+) -> None:
+    records = _event_records(root)
+    if not records or records[0].get("event") != "study_created":
+        raise ModernBenchmarkStudyError("Study event log does not start with creation")
+    if [record.get("sequence") for record in records] != list(range(1, len(records) + 1)):
+        raise ModernBenchmarkStudyError("Study event sequence is not contiguous")
+    completed = [
+        record.get("condition_id")
+        for record in records
+        if record.get("event") == "condition_completed"
+    ]
+    if completed != existing_ids[: len(completed)]:
+        raise ModernBenchmarkStudyError(
+            "Completed events and condition reports differ from frozen order"
+        )
+
+
 def _initial_state(design: dict[str, Any]) -> dict[str, Any]:
     return {
         "study_run_version": STUDY_RUN_VERSION,
@@ -554,6 +573,99 @@ def verify_modern_benchmark_study_run(directory: Path | str) -> dict[str, Any]:
     return manifest
 
 
+def _lock_observation(root: Path) -> dict[str, Any]:
+    path = root / LOCK_NAME
+    if not path.exists():
+        return {"status": "absent", "host": None, "pid": None}
+    try:
+        owner = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise ModernBenchmarkStudyError("Study execution lock is unreadable") from error
+    host = owner.get("host")
+    pid = owner.get("pid")
+    if host != platform.node():
+        status = "foreign-host"
+    else:
+        try:
+            process = psutil.Process(pid)
+            active = math.isclose(
+                process.create_time(), owner["process_create_time"], abs_tol=0.01
+            )
+        except (psutil.Error, KeyError, TypeError, ValueError):
+            active = False
+        status = "active" if active else "stale"
+    return {"status": status, "host": host, "pid": pid}
+
+
+def inspect_modern_benchmark_study_run(directory: Path | str) -> dict[str, Any]:
+    """Strictly inspect partial or complete study evidence without changing it."""
+
+    root = Path(directory).expanduser().resolve()
+    required = {
+        DESIGN_DIRECTORY_NAME,
+        SOURCE_CONFIG_NAME,
+        CONDITIONS_DIRECTORY_NAME,
+        STATE_NAME,
+        EVENTS_NAME,
+    }
+    allowed = required | {MANIFEST_NAME, MANIFEST_SIDECAR_NAME, LOCK_NAME}
+    observed = {path.name for path in root.iterdir()} if root.is_dir() else set()
+    if not required.issubset(observed) or observed - allowed:
+        raise ModernBenchmarkStudyError("Study run scaffold is incomplete or unexpected")
+    design = verify_modern_benchmark_design(root / DESIGN_DIRECTORY_NAME)
+    if sha256_file(root / SOURCE_CONFIG_NAME) != design["source_config"]["sha256"]:
+        raise ModernBenchmarkStudyError("Copied source config differs from the frozen design")
+    state = _read_state(root, design)
+    existing_ids = _existing_condition_ids(root, design)
+    state_ids = state["completed_condition_ids"]
+    if state_ids != existing_ids[: len(state_ids)]:
+        raise ModernBenchmarkStudyError(
+            "Study state claims completed condition evidence that is missing"
+        )
+    _verify_partial_events(root, design, existing_ids)
+    manifest_files = [
+        name for name in (MANIFEST_NAME, MANIFEST_SIDECAR_NAME) if (root / name).exists()
+    ]
+    if len(manifest_files) == 1:
+        manifest_status = "partial"
+    elif len(manifest_files) == 2:
+        manifest_status = "present"
+    else:
+        manifest_status = "absent"
+    manifest_verified = False
+    if state["status"] == "complete":
+        verify_modern_benchmark_study_run(root)
+        manifest_verified = True
+    next_condition = (
+        design["conditions"][len(existing_ids)]
+        if len(existing_ids) < len(design["conditions"])
+        else None
+    )
+    return {
+        "study_run_version": STUDY_RUN_VERSION,
+        "status": state["status"],
+        "total_condition_count": len(design["conditions"]),
+        "state_completed_condition_count": len(state_ids),
+        "verified_report_count": len(existing_ids),
+        "reconciliation_required": len(existing_ids) > len(state_ids),
+        "active_condition_id": state["active_condition_id"],
+        "next_condition": (
+            None
+            if next_condition is None
+            else {
+                "sequence": next_condition["sequence"],
+                "condition_id": next_condition["condition_id"],
+                "subject_count": next_condition["subject_count"],
+                "tile_autograd_strategy": next_condition["tile_autograd_strategy"],
+            }
+        ),
+        "completion_manifest_status": manifest_status,
+        "completion_manifest_verified": manifest_verified,
+        "lock": _lock_observation(root),
+        "scientific_boundary": SCIENTIFIC_BOUNDARY,
+    }
+
+
 def default_modern_benchmark_study_path(design_directory: Path | str) -> Path:
     root = Path(design_directory).expanduser().resolve()
     return root.parent / f"{root.name}.run"
@@ -583,8 +695,13 @@ def run_modern_benchmark_study(
             verify_modern_benchmark_study_run(output)
             return output
         existing_ids = _existing_condition_ids(output, design)
+        state_ids = state["completed_condition_ids"]
+        if state_ids != existing_ids[: len(state_ids)]:
+            raise ModernBenchmarkStudyError(
+                "Study state claims completed condition evidence that is missing"
+            )
         _reconcile_completed_events(output, design, existing_ids)
-        if state["completed_condition_ids"] != existing_ids:
+        if state_ids != existing_ids:
             state["completed_condition_ids"] = existing_ids
             state["active_condition_id"] = None
             _save_state(output, state, design)
