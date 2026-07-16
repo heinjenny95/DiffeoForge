@@ -40,6 +40,9 @@ jobs:
       - name: Build distributions
         run: python -m build
 
+      - name: Verify wheel contents
+        run: python tools/verify_wheel.py dist/*.whl
+
   modern-engine:
     name: Modern engine (${{ matrix.os }})
     runs-on: ${{ matrix.os }}

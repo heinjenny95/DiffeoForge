@@ -31,7 +31,8 @@ applicable only with a written justification.
 - [ ] `ruff check .` passes on the candidate commit.
 - [ ] `pytest` passes on every supported Python version.
 - [ ] `python -m build` produces both source and wheel distributions.
-- [ ] The built wheel contains all versioned schemas and required package data.
+- [ ] `python tools/verify_wheel.py dist/<wheel>.whl` confirms all versioned
+  schemas, CLI entry points, package metadata, and safe unique archive names.
 - [ ] A clean environment can install the built artifact and display CLI help.
 - [ ] GitHub Actions checks pass without ignored or manually skipped failures.
 
