@@ -69,7 +69,11 @@ def _configuration(*, output: str = "unused-run", landmarks: str | None = None) 
             "minimum_step_size": 1e-12,
             "max_line_search_iterations": 20,
         },
-        "analysis": {"pca_components": None},
+        "analysis": {
+            "pca_components": None,
+            "deformation_standard_deviations": 2.0,
+            "deformation_components": 3,
+        },
         "runtime": {
             "device": "cpu",
             "precision": "float64",
@@ -119,6 +123,11 @@ def test_example_configuration_is_valid_and_public_schema_is_packaged() -> None:
         "threads": 1,
         "random_seed": 20260715,
     }
+    assert loaded["analysis"] == {
+        "pca_components": None,
+        "deformation_standard_deviations": 2.0,
+        "deformation_components": 3,
+    }
     schema = workflow._schema("modern-workflow-config-v0.1.json")
     assert schema["title"] == "DiffeoForge modern workflow configuration"
 
@@ -155,6 +164,11 @@ def test_five_subject_workflow_is_verified_and_byte_repeatable(tmp_path: Path) -
     assert (
         first / first_manifest["result_bundle"]["path"] / "analysis" / "pca-scores.csv"
     ).is_file()
+    bundle = first / first_manifest["result_bundle"]["path"]
+    bundle_manifest = workflow.verify_modern_atlas_bundle(bundle)
+    assert (bundle / bundle_manifest["pca"]["plots"]["scree_path"]).is_file()
+    assert (bundle / bundle_manifest["pca"]["plots"]["scores_path"]).is_file()
+    assert bundle_manifest["pca"]["deformations"]["standard_deviations"] == 2.0
     for source, record in zip(
         sorted(MESH_DIRECTORY.glob("subject-*.vtk")),
         first_manifest["input"]["subjects"],
@@ -308,6 +322,11 @@ def test_modern_init_and_cli_run_form_a_public_folder_to_bundle_path(
     assert init_code == 0
     assert "configuration created" in init_output.out
     assert config.read_text(encoding="utf-8").startswith(workflow.CONFIG_MARKER)
+    assert yaml.safe_load(config.read_text(encoding="utf-8"))["analysis"] == {
+        "pca_components": None,
+        "deformation_standard_deviations": 2.0,
+        "deformation_components": 3,
+    }
 
     return_code = main(["modern-run", str(config)])
     captured = capsys.readouterr()
@@ -315,12 +334,16 @@ def test_modern_init_and_cli_run_form_a_public_folder_to_bundle_path(
     assert return_code == 0
     assert "Modern workflow completed" in captured.out
     assert "Subject meshes: 5" in captured.out
+    assert "PCA scree plot:" in captured.out
+    assert "PCA scores plot:" in captured.out
+    assert "PCA deformation meshes:" in captured.out
     assert workflow.verify_modern_workflow(tmp_path / "cli-run")["project"]["name"]
 
     verify_code = main(["modern-verify", str(tmp_path / "cli-run")])
     verify_output = capsys.readouterr()
     assert verify_code == 0
     assert "Modern workflow verified" in verify_output.out
+    assert "PCA scree plot:" in verify_output.out
 
 
 def test_schema_requires_landmarks_exactly_when_procrustes_is_enabled() -> None:

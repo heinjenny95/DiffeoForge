@@ -3,7 +3,8 @@
 Status: **tested CPU/float64 engineering path; not scientifically validated or production-scaled**
 
 Tracked prospectively by
-[engineering issue #28](https://github.com/heinjenny95/DiffeoForge/issues/28).
+[engineering issue #28](https://github.com/heinjenny95/DiffeoForge/issues/28) and
+[PCA-product issue #30](https://github.com/heinjenny95/DiffeoForge/issues/30).
 
 ## Purpose
 
@@ -83,6 +84,10 @@ modern-atlas-run/
       optimization/history.csv
       analysis/pca-*.csv
       analysis/pca-summary.json
+      analysis/pca-scree.svg
+      analysis/pca-scores.svg
+      analysis/pca-deformations.json
+      analysis/pca-deformations/*.vtk
 ```
 
 The outer manifest stores exact source filenames and subject order, raw-input
@@ -128,6 +133,30 @@ The exact selected vertex indices are stored in the workflow manifest.
 This is a reproducible engineering initialization, not evidence that the
 selected count or locations are optimal for a scientific dataset.
 
+## Automatic PCA products
+
+The reviewed YAML makes both PCA retention and deformation visualization
+explicit:
+
+```yaml
+analysis:
+  pca_components: null
+  deformation_standard_deviations: 2.0
+  deformation_components: 3
+```
+
+`pca_components: null` retains every mathematically available PCA axis in the
+CSV/JSON analysis. `deformation_components` limits the more expensive VTK
+endpoint generation; `null` requests every retained axis. `modern-init` writes
+three or fewer according to the cohort's maximum component count, avoiding an
+accidental hundreds-of-mesh default for large cohorts. These are transparent
+starting values, not validated biological choices.
+
+The nested bundle includes a scree SVG, a PC1/PC2 scores SVG (or explicit PC1
+strip), a mean-momenta mesh, and both directions of each requested nonzero PC.
+All are deterministic, hashed, schema-declared, and reconstructed with the
+run's final template/control points and exact flow settings.
+
 ## Verification and limits
 
 `modern-verify` rejects schema violations, a changed manifest sidecar,
@@ -138,7 +167,9 @@ failure of the nested atlas-bundle verifier.
 
 SHA-256 provides integrity detection, not an authenticity signature. Workflow
 v0.1 also does not provide checkpoints, modern-engine resume, PLY/STL/OBJ
-input, mesh repair, self-intersection tests, PCA plots, PC deformation
-visualizations, a GUI, or an installer. The five-subject CC0 regression path is
-not evidence of Deformetrica equivalence, biological validity, global
-convergence, GPU parity, or acceptable runtime and memory for 300+ specimens.
+input, mesh repair, self-intersection tests, loading plots, mesh-rendering
+quality assessment, a GUI, or an installer. PCA signs are conventional and
+±PC meshes are neither observations nor confidence intervals. The five-subject
+CC0 regression path is not evidence of Deformetrica equivalence, biological
+validity, global convergence, GPU parity, or acceptable runtime and memory for
+300+ specimens.
