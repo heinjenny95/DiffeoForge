@@ -15,6 +15,7 @@ from diffeoforge.engine.atlas_optimizer import (
 from diffeoforge.engine.dense import (
     GaussianTilePlan,
     ShootingTrajectory,
+    TileAutogradStrategy,
     current_squared_distance,
     current_squared_distance_blockwise,
     deformation_energy,
@@ -45,6 +46,7 @@ from diffeoforge.engine.optimizer import (
 __all__ = [
     "ShootingTrajectory",
     "GaussianTilePlan",
+    "TileAutogradStrategy",
     "PairwiseEvaluationPlan",
     "AtlasObjective",
     "AtlasOptimizationRecord",

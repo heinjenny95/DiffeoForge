@@ -43,6 +43,9 @@ This roadmap describes evidence gates rather than promised dates.
 - [x] Add explicit blockwise Gaussian/Current/Varifold primitives with dense parity
 - [x] Integrate explicit blockwise mode through the full atlas workflow,
   workload accounting, provenance, and fresh-process benchmark protocol
+- [x] Prototype explicit tile recomputation with primitive/autograd parity and
+  saved-tensor evidence
+- [ ] Measure and integrate tile recomputation through the complete objective
 - [ ] Run a prospective multi-size/tile blockwise performance study
 
 ## Milestone 3: Accessible application

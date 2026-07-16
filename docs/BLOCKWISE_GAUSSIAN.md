@@ -1,10 +1,12 @@
 # Explicit blockwise Gaussian primitives
 
-Status: **complete explicit public workflow path; performance presets remain unvalidated**
+Status: **complete explicit public workflow path; isolated tile-recompute prototype; performance presets remain unvalidated**
 
 Tracked prospectively by [primitive issue
 #40](https://github.com/heinjenny95/DiffeoForge/issues/40) and [full-objective
 issue #42](https://github.com/heinjenny95/DiffeoForge/issues/42).
+Tile recomputation is tracked prospectively by
+[engine issue #48](https://github.com/heinjenny95/DiffeoForge/issues/48).
 
 ## Why this slice exists
 
@@ -23,6 +25,7 @@ Gaussian convention, or silently switch algorithms.
 The engine exports:
 
 - `GaussianTilePlan`;
+- `TileAutogradStrategy`;
 - `gaussian_convolve_blockwise`;
 - `gaussian_convolve_gradient_blockwise`;
 - `current_squared_distance_blockwise`; and
@@ -66,6 +69,34 @@ every Gaussian deformation, flow, Current, and Varifold operation reached by
 that objective or optimizer call. Invalid plan types fail before numerical
 integration begins.
 
+## Isolated tile-recompute contract
+
+The four low-level blockwise primitive functions additionally accept the
+keyword-only choice `autograd_strategy="standard"` or
+`autograd_strategy="recompute"`. Standard is the unchanged default. Recompute
+uses PyTorch's non-reentrant activation checkpointing around each deterministic
+tile calculation: the forward graph retains tile inputs and reconstructs
+pairwise differences, kernels, coefficients, and orientation values when
+backward needs them.
+
+```python
+value = gaussian_convolve_blockwise(
+    x,
+    y,
+    weights,
+    kernel_width,
+    query_tile_size=256,
+    source_tile_size=256,
+    autograd_strategy="recompute",
+)
+```
+
+This is deliberately a low-level prototype. `GaussianTilePlan`, atlas
+objectives, optimizers, `modern-init`, `modern-run`, workload reports, and
+benchmarks continue to use standard autograd. There is no automatic activation,
+environment override, or public workflow setting. Invalid or misspelled
+strategies fail rather than falling back.
+
 ## Numerical contract and evidence
 
 The algorithm is non-approximate, but source-tile accumulation changes
@@ -86,7 +117,13 @@ Tests currently require:
   and template/control-point/momenta-gradient parity; and
 - two-subject atlas objective/all-parameter-gradient parity plus one complete
   optimizer-cycle decision-history and final-parameter parity for both
-  attachment types.
+  attachment types;
+- recompute forward/gradient parity across uneven Gaussian tile shapes;
+- recompute parity for the explicit Gaussian x-gradient and its differentiated
+  result, plus Current/Varifold vertex gradients; and
+- saved-tensor-hook instrumentation showing that the tested recompute
+  convolution forward retains no rank-3 pairwise tensor and a smaller logical
+  saved-tensor payload than standard tiling.
 
 The dense path remains the correctness oracle and continues to match the
 frozen Deformetrica primitive/objective evidence. `modern-run` can select the
@@ -101,9 +138,14 @@ the measured fresh-process objective/gradient path.
 1. ~~extend the workload and benchmark schemas/models;~~ completed in v0.2;
 2. benchmark several prospectively declared tile sizes using the measured
    protocol on representative simplified meshes;
-3. determine whether checkpoint/recomputation or a custom backward pass is
-   required to reduce retained autograd memory; and
+3. measure the isolated recompute prototype through complete objectives and
+   fresh processes, including its additional backward compute, before deciding
+   whether to integrate it or build a custom backward pass; and
 4. select evidence-based safe presets separately from user overrides.
 
 Blockwise mode is selectable only by an explicit user plan. It must not become
 an automatic default or claim a safe preset until the remaining gates pass.
+Saved-tensor hooks describe tensors requested by autograd under the tested
+PyTorch implementation; their logical byte sum is not unique storage, allocator
+state, process RSS, total live memory, runtime performance, or 300-subject
+feasibility.

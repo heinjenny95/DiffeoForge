@@ -148,6 +148,14 @@ immutable provenance, workload planning, and fresh-process benchmarking. It is
 not an automatic default or evidence-backed performance preset. See
 [blockwise Gaussian primitives](BLOCKWISE_GAUSSIAN.md).
 
+An isolated low-level `recompute` autograd strategy now checkpoints each
+deterministic Gaussian/Current/Varifold tile and reconstructs pairwise
+intermediates during backward. Primitive tests preserve forward, gradient, and
+differentiated-explicit-gradient parity. Saved-tensor instrumentation observes
+no retained rank-3 pairwise tensor for the tested recompute convolution, but
+this is not yet wired into the atlas plan and is not process peak-memory or
+runtime evidence.
+
 ## Gates before a usable atlas engine
 
 1. ~~Add current/varifold fixtures generated through the independent reference
@@ -170,7 +178,7 @@ not an automatic default or evidence-backed performance preset. See
 8. Benchmark runtime and peak memory over mesh, control-point, and subject count.
 9. Define evidence-derived tolerances before accepting a production backend.
 10. Integrate the engine through immutable run manifests without weakening the
-   existing reference workflow.
+    existing reference workflow.
 
 No scientific atlas result should be produced or interpreted through this
 experimental module until these gates pass.
