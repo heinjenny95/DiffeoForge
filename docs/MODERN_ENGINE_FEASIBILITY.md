@@ -137,6 +137,15 @@ model. The v0.2 generator deliberately marks targets for recomputation so the
 fixture measures the float64 mathematical chain rather than this mixed-precision
 constructor-cache artifact; that policy is recorded inside the fixture.
 
+The first bounded-memory primitive slice is now implemented separately from
+the public workflow. Explicit query/source tiles cover Gaussian convolution,
+the analytical Gaussian x-gradient, and Current/Varifold distances without a
+full face-pair kernel or orientation matrix. Random uneven shapes, tetrahedral
+surface gradients, and the 320-face CC0 meshes match the dense baseline within
+declared float64 tolerances. This is primitive parity, not yet full-objective
+or optimizer integration evidence. See
+[blockwise Gaussian primitives](BLOCKWISE_GAUSSIAN.md).
+
 ## Gates before a usable atlas engine
 
 1. ~~Add current/varifold fixtures generated through the independent reference
@@ -147,10 +156,14 @@ constructor-cache artifact; that policy is recorded inside the fixture.
    control points.~~ Completed in the v0.4 CC0 block-optimizer evidence.
 4. Compare objective components, endpoint surfaces, control-point trajectories,
    and gradients on CC0 meshes.
-5. Add chunked or accelerated kernels and prove parity with the dense baseline.
-6. Benchmark runtime and peak memory over mesh, control-point, and subject count.
-7. Define evidence-derived tolerances before accepting a production backend.
-8. Integrate the engine through immutable run manifests without weakening the
+5. ~~Add explicit blockwise Gaussian and surface primitives and prove local
+   forward/autograd parity with the dense baseline.~~ Completed as an isolated
+   primitive slice.
+6. Integrate blockwise mode through the full objective, optimizer, workload
+   model, and immutable run provenance, then prove end-to-end parity.
+7. Benchmark runtime and peak memory over mesh, control-point, and subject count.
+8. Define evidence-derived tolerances before accepting a production backend.
+9. Integrate the engine through immutable run manifests without weakening the
    existing reference workflow.
 
 No scientific atlas result should be produced or interpreted through this

@@ -112,6 +112,16 @@ samples. The strict report binds measurements to config/input hashes and the
 same exact operation model as `modern-plan`; it performs no scaling
 extrapolation or hardware verdict.
 
+Below the application layer, the engine now contains an explicit blockwise
+Gaussian primitive family. Query and source tile sizes bound each pairwise XYZ
+difference tensor; Current and Varifold inner products accumulate tiles
+without full face-by-face kernel/orientation matrices. This path is
+non-approximate but changes floating reduction order. It remains an isolated
+primitive until configuration, workload accounting, result provenance, and
+full-objective parity gates are complete. The tile shape bounds a single
+pairwise allocation; standard autograd may still retain multiple tile graphs,
+so reduced peak RAM remains a measurement gate.
+
 This vertical path is not yet the common production backend shown above: it
 does not implement the reference lifecycle's checkpoint/resume operations or
 the child-process transport around the progress contract. An optimized kernel or GPU path must reproduce the dense

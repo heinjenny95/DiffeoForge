@@ -110,7 +110,10 @@ This repository currently provides:
   invented percent-complete or ETA claims;
 - an opt-in fresh-process objective/gradient benchmark with explicit subject
   selection, raw repeats, sampled process RSS, exact provenance, and no
-  extrapolation to full-cohort runtime.
+  extrapolation to full-cohort runtime;
+- explicit non-approximate blockwise Gaussian convolution, x-gradient,
+  Current, and Varifold primitives with bounded tile tensors and dense
+  forward/autograd parity, not yet enabled in public atlas runs.
 
 The experimental modern path is a public CLI/application-service workflow, but
 it is not yet the shared production backend behind a GUI and does not provide
@@ -226,6 +229,7 @@ and workflow for another mesh directory.
 - [Modern dense-engine workload planning](docs/MODERN_WORKLOAD.md)
 - [Versioned modern progress events](docs/MODERN_PROGRESS.md)
 - [Modern objective/gradient benchmark protocol](docs/MODERN_BENCHMARK.md)
+- [Bounded-memory blockwise Gaussian primitives](docs/BLOCKWISE_GAUSSIAN.md)
 - [Landmark-based Procrustes alignment](docs/PROCRUSTES_ALIGNMENT.md)
 - [PCA of atlas-derived subject features](docs/ATLAS_PCA.md)
 - [Desktop executable and installer architecture](docs/DESKTOP_DISTRIBUTION.md)
