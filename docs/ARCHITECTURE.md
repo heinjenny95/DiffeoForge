@@ -112,7 +112,10 @@ configured dense or blockwise objective plus gradient in a fresh spawned CPU
 process after declared warm-up evaluations, recording wall-clock nanoseconds
 and 5 ms process-RSS samples. The strict report binds measurements to
 config/input hashes, pairwise plan, and the same exact operation model as
-`modern-plan`; it performs no scaling extrapolation or hardware verdict.
+`modern-plan`. Version 0.3 can replace standard with recompute only inside a
+configured blockwise benchmark worker and records that benchmark-only choice;
+it performs no automatic comparison, scaling extrapolation, or hardware
+verdict.
 
 Below the application layer, the engine now contains an explicit blockwise
 Gaussian primitive family. Query and source tile sizes bound each pairwise XYZ
@@ -122,7 +125,7 @@ non-approximate but changes floating reduction order. An explicit public
 workflow setting now carries the plan through the complete optimizer,
 reconstructions, PCA endpoints, nested bundle, outer run provenance, and
 verifier cross-checks. Workload v0.2 accounts for exact logical pairs and the
-configured execution tile, and benchmark v0.2 measures that same plan; a
+configured execution tile, and benchmark v0.3 measures that same plan; a
 prospective multi-size scaling study remains open. The tile shape bounds a single
 pairwise allocation; standard autograd may still retain multiple tile graphs,
 so reduced peak RAM remains a measurement gate.
@@ -132,8 +135,10 @@ strategy that places deterministic tile calculations behind non-reentrant
 activation checkpointing. The plan now reaches complete Subject/Atlas
 objectives and the block optimizer, trading additional backward computation
 for a smaller tested saved-tensor graph. Public `PairwiseEvaluationPlan`,
-workflow configuration, benchmark protocol, and provenance intentionally remain
-standard-only until fresh-process evidence establishes the tradeoff;
+workflow configuration, and provenance intentionally remain standard-only. The
+benchmark protocol can measure either strategy in separately declared fresh
+processes, but a prospective representative study still has to establish the
+tradeoff;
 saved-tensor counts are not peak-RAM claims.
 
 This vertical path is not yet the common production backend shown above: it

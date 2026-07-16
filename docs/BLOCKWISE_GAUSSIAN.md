@@ -102,10 +102,12 @@ result = atlas_objective(..., gaussian_tile_plan=plan)
 ```
 
 This remains an engine-level prototype. Public `PairwiseEvaluationPlan`,
-`modern-init`, YAML, manifests, `modern-run`, workload reports, and benchmarks
-continue to construct standard-autograd tile plans only. There is no automatic
-activation, environment override, or public workflow setting. Invalid or
-misspelled strategies fail rather than falling back.
+`modern-init`, YAML, manifests, `modern-run`, and workload reports continue to
+construct standard-autograd tile plans only. `modern-benchmark` v0.3 can apply
+an explicit benchmark-only override in its fresh worker and records it in the
+strict report. There is no automatic activation, environment override, or
+public atlas-workflow setting. Invalid or misspelled strategies fail rather
+than falling back.
 
 ## Numerical contract and evidence
 
@@ -148,7 +150,7 @@ The dense path remains the correctness oracle and continues to match the
 frozen Deformetrica primitive/objective evidence. `modern-run` can select the
 same plan explicitly and records it in both immutable manifests. Subject
 reconstructions, PCA endpoints, and mesh-quality evidence use the declared
-mode. `modern-plan` and `modern-benchmark` v0.2 also accept it: their strict
+mode. `modern-plan` v0.2 and `modern-benchmark` v0.3 also accept it: their strict
 reports bind the configured tile sizes to exact workload accounting and to
 the measured fresh-process objective/gradient path.
 
@@ -157,9 +159,10 @@ the measured fresh-process objective/gradient path.
 1. ~~extend the workload and benchmark schemas/models;~~ completed in v0.2;
 2. benchmark several prospectively declared tile sizes using the measured
    protocol on representative simplified meshes;
-3. measure the complete-objective recompute plan in fresh processes, including
-   its additional backward compute, before exposing public configuration or
-   deciding whether a custom backward pass is preferable; and
+3. use the now-available fresh-process benchmark protocol in a prospective,
+   representative multi-size study, including recompute's additional backward
+   compute, before exposing public configuration or deciding whether a custom
+   backward pass is preferable; and
 4. select evidence-based safe presets separately from user overrides.
 
 Blockwise mode is selectable only by an explicit user plan. It must not become

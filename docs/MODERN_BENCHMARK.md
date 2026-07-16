@@ -25,7 +25,7 @@ diffeoforge modern-benchmark modern-atlas.yaml `
 ```
 
 The deterministic prefix comes from the same validated subject-path order as
-the workflow. Version 0.2 executes the exact dense or blockwise pairwise plan
+the workflow. Version 0.3 executes the exact dense or blockwise pairwise plan
 declared in the reviewed configuration. It rejects Procrustes-enabled
 configurations because it benchmarks the numerical objective directly rather
 than pretending to measure the preprocessing pipeline.
@@ -42,6 +42,25 @@ modern-atlas.benchmark/
 The directory is not overwritten by default. `--force` replaces only a
 recognized generated directory containing exactly those three files.
 
+## Benchmark-only autograd strategy
+
+Standard autograd remains the default and the only strategy carried by the
+reviewed atlas workflow configuration. A configured blockwise benchmark may
+explicitly override the measured tile plan to `recompute`:
+
+```powershell
+diffeoforge modern-benchmark modern-atlas.yaml `
+  --subjects 5 --tile-autograd-strategy recompute `
+  --output modern-atlas.recompute-benchmark
+```
+
+Dense execution with `recompute` fails before a worker is spawned because there
+are no tiles to recompute. The strict report stores
+`configuration.tile_autograd_strategy`. To collect standard and recompute
+observations, run two commands with separate output directories. DiffeoForge
+does not combine them, select a winner, calculate a speedup, or convert them
+into a workflow setting.
+
 ## What one repeat measures
 
 Every repeat uses a fresh process created with Python's cross-platform
@@ -51,7 +70,8 @@ Every repeat uses a fresh process created with Python's cross-platform
 2. constructs CPU float64 tensors and deterministic farthest-template control
    points exactly as the modern workflow does;
 3. applies the configured PyTorch thread count and random seed;
-4. applies the declared dense or blockwise plan to every Gaussian operation;
+4. applies the declared dense or blockwise plan and explicit benchmark
+   autograd strategy to every Gaussian operation;
 5. performs the declared number of unmeasured warm-up evaluations;
 6. starts a 5 ms process-RSS sampler;
 7. measures one atlas objective and one gradient for the first configured
@@ -70,13 +90,14 @@ the current 7.x major in the modern-engine dependency set.
 
 ## Auditable evidence
 
-Strict JSON records:
+Strict `modern-benchmark-v0.3.json` records:
 
 - config and selected input SHA-256 values, filenames, points, triangles, and
   deterministic selection rule;
 - Python, DiffeoForge, NumPy, PyTorch, psutil, operating-system, CPU-thread,
   random-seed, and physical-memory observations;
 - warm-up/repeat counts, process-isolation method, and sampling interval;
+- the benchmark-only standard/recompute strategy;
 - the exact logical Gaussian calls/pair elements, largest logical pair, and
   largest configured execution tile from the versioned workload model for
   this selected subset;
@@ -110,3 +131,9 @@ reports for every prospectively declared configuration under the same frozen
 protocol. One faster repeat or lower sampled RSS value is not evidence of a
 causal performance difference, and a blockwise tile bound is not a measured
 peak-memory bound.
+
+The same applies to standard/recompute comparisons. Recompute changes backward
+work and the saved-tensor graph; a defensible tradeoff requires prospectively
+declared repeat counts, controlled order, representative meshes and subject
+counts, and separate end-to-end evidence. Benchmark support and spawn smoke
+tests alone are not performance validation.

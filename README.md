@@ -110,8 +110,9 @@ This repository currently provides:
   CLI and designed for reuse by the future desktop worker protocol, without
   invented percent-complete or ETA claims;
 - an opt-in fresh-process objective/gradient benchmark with explicit subject
-  selection, raw repeats, sampled process RSS, exact provenance, and no
-  extrapolation to full-cohort runtime;
+  selection, raw repeats, sampled process RSS, exact provenance, explicit
+  standard/recompute blockwise measurement, and no extrapolation to full-cohort
+  runtime;
 - explicit non-approximate blockwise Gaussian convolution, x-gradient,
   Current, and Varifold primitives with bounded tile tensors and dense
   forward/autograd parity, plus an explicit opt-in plan through the complete
@@ -163,6 +164,11 @@ diffeoforge modern-benchmark modern-atlas.yaml --subjects 5
 diffeoforge modern-run modern-atlas.yaml
 diffeoforge modern-verify modern-atlas-run
 ```
+
+For a configured blockwise plan, the microbenchmark can explicitly measure the
+experimental recompute graph in separate fresh processes with
+`--tile-autograd-strategy recompute`. This is a benchmark-only override, not a
+`modern-run` setting, safe preset, peak-RAM claim, or automatic comparison.
 
 Generated configurations declare dense evaluation explicitly. The exact
 non-approximate blockwise path can instead be requested without code:
