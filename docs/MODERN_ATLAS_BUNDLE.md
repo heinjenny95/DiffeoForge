@@ -1,9 +1,10 @@
 # Immutable modern atlas result bundle
 
-Status: **tested v0.1 engineering contract; not yet a workflow backend**
+Status: **tested v0.1 engineering contract embedded in the experimental workflow**
 
 Tracked prospectively by
-[engineering issue #26](https://github.com/heinjenny95/DiffeoForge/issues/26).
+[engineering issue #26](https://github.com/heinjenny95/DiffeoForge/issues/26) and
+[PCA-product issue #30](https://github.com/heinjenny95/DiffeoForge/issues/30).
 
 ## Purpose
 
@@ -13,8 +14,8 @@ directory whose parameters, reconstructed meshes, optimizer history, PCA
 inputs, and integrity metadata remain available without a live Python session.
 
 The bundle is deliberately separate from the existing Deformetrica prepared-
-run schema. It does not pretend that the modern engine is already a selectable
-production backend.
+run schema. The experimental modern workflow embeds it, but it does not
+pretend that the modern engine is already a validated production backend.
 
 ## Directory contract
 
@@ -37,6 +38,14 @@ bundle/
     pca-scores.csv
     pca-loadings.csv
     pca-mean.csv
+    pca-scree.svg
+    pca-scores.svg
+    pca-deformations.json
+    pca-deformations/
+      mean-momenta.vtk
+      pc-0001-minus.vtk
+      pc-0001-plus.vtk
+      ...
 ```
 
 VTK files are deterministic legacy ASCII PolyData with double-precision point
@@ -83,12 +92,24 @@ control-point-by-XYZ momenta tensor. It stores:
   ratios, tied groups, zero-variance components, and sign convention;
 - subject scores;
 - component loadings;
-- the PCA mean vector.
+- the PCA mean vector;
+- a static SVG scree plot and PC1/PC2 score plot (or explicit PC1 strip); and
+- a mean-momenta mesh plus selected nonzero ±PC deformation meshes.
 
 The CSV mean and loading files plus the declared sign convention are sufficient
 to reproduce projections without a serialized Python object. PCA failure, such
 as zero total subject variance, fails bundle creation explicitly rather than
 emitting meaningless axes.
+
+Each PC endpoint uses `mean ± k * sqrt(explained_variance) * loading` in the
+stored control-point-then-XYZ order. The explicit positive amplitude `k` and
+requested component count are inputs to bundle creation and are recorded in
+both the manifest and `pca-deformations.json`. Numerical zero-variance axes are
+listed and skipped instead of producing duplicate, misleading meshes. Every
+SVG, JSON, and VTK is covered by the exact artifact inventory. Verification
+also parses the static SVGs, rejects scripts/external references, cross-checks
+the deformation definition against the manifest, and validates every
+deformation mesh's geometry counts.
 
 ## Python entry point
 
@@ -111,6 +132,8 @@ bundle = write_modern_atlas_bundle(
     template_triangles,
     subject_labels,
     settings,
+    pca_deformation_standard_deviations=2.0,
+    pca_deformation_components=3,
 )
 manifest = verify_modern_atlas_bundle(bundle)
 ```
@@ -128,6 +151,6 @@ biological hypothesis.
 
 The [experimental modern workflow](MODERN_WORKFLOW.md) now embeds and verifies
 this bundle after folder preflight and optimization. Remaining gates are
-lifecycle/checkpoint integration, schema migration policy, mesh-quality
-metrics, PCA plots and PC deformation visualizations, matched Deformetrica
-result comparison, and large-cohort performance validation.
+lifecycle/checkpoint integration, schema migration policy, mesh-quality and
+rendering metrics, matched Deformetrica result comparison, biological PCA
+validation, and large-cohort performance validation.

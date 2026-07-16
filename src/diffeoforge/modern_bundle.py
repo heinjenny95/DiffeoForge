@@ -9,6 +9,7 @@ import re
 import shutil
 import unicodedata
 import uuid
+import xml.etree.ElementTree as ET
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from importlib.resources import files
@@ -22,6 +23,10 @@ import torch
 
 from diffeoforge import __version__
 from diffeoforge.analysis.pca import PCAResult, momenta_pca
+from diffeoforge.analysis.pca_visualization import (
+    write_pca_scores_svg,
+    write_pca_scree_svg,
+)
 from diffeoforge.config import ConfigurationError
 from diffeoforge.engine import AtlasOptimizationResult, flow_points, shoot
 from diffeoforge.mesh import inspect_vtk, sha256_file, write_vtk_polydata
@@ -34,6 +39,14 @@ SCIENTIFIC_BOUNDARY = (
     "validation, Deformetrica optimizer equivalence, topology preservation, GPU parity, "
     "or production readiness for 300 specimens. Momenta PCA is one explicitly declared "
     "feature space and is not automatically appropriate for every biological question."
+)
+PCA_DEFORMATION_EQUATION = (
+    "mean_momenta +/- standard_deviations * sqrt(explained_variance) * component_loading"
+)
+PCA_DEFORMATION_BOUNDARY = (
+    "PCA deformations visualize axes in the declared training-momenta feature space. "
+    "Their signs are conventional; endpoints are not observed specimens, confidence "
+    "intervals, biological effects, or evidence of group separation."
 )
 
 
@@ -51,9 +64,7 @@ class ModernAtlasModelSettings:
     number_of_time_points: int
     attachment_type: Literal["current", "varifold"] = "current"
     shooting_integrator: Literal["euler", "rk2"] = "rk2"
-    flow_integrator: Literal["euler", "heun", "deformetrica_heun"] = (
-        "deformetrica_heun"
-    )
+    flow_integrator: Literal["euler", "heun", "deformetrica_heun"] = "deformetrica_heun"
 
     def __post_init__(self) -> None:
         for name in (
@@ -77,9 +88,7 @@ class ModernAtlasModelSettings:
         if self.shooting_integrator not in {"euler", "rk2"}:
             raise ValueError("shooting_integrator must be 'euler' or 'rk2'")
         if self.flow_integrator not in {"euler", "heun", "deformetrica_heun"}:
-            raise ValueError(
-                "flow_integrator must be 'euler', 'heun', or 'deformetrica_heun'"
-            )
+            raise ValueError("flow_integrator must be 'euler', 'heun', or 'deformetrica_heun'")
 
     def as_manifest(self) -> dict[str, object]:
         """Return normalized JSON-compatible settings."""
@@ -129,6 +138,26 @@ def _float(value: float) -> str:
     if not math.isfinite(normalized):
         raise ValueError("bundle values must be finite")
     return format(0.0 if normalized == 0.0 else normalized, ".17g")
+
+
+def _positive_real(name: str, value: float) -> float:
+    if isinstance(value, bool) or not isinstance(value, Real):
+        raise TypeError(f"{name} must be a real scalar")
+    normalized = float(value)
+    if not math.isfinite(normalized) or normalized <= 0:
+        raise ValueError(f"{name} must be finite and greater than zero")
+    return normalized
+
+
+def _optional_positive_integer(name: str, value: int | None) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, Integral):
+        raise TypeError(f"{name} must be an integer or None")
+    normalized = int(value)
+    if normalized < 1:
+        raise ValueError(f"{name} must be at least 1")
+    return normalized
 
 
 def _csv_label(value: str) -> str:
@@ -199,12 +228,14 @@ def _artifact(root: Path, path: Path) -> dict[str, object]:
     }
 
 
-def _pca_files(root: Path, pca: PCAResult) -> dict[str, str]:
+def _pca_files(root: Path, pca: PCAResult) -> dict[str, object]:
     analysis = root / "analysis"
     summary_path = analysis / "pca-summary.json"
     scores_path = analysis / "pca-scores.csv"
     loadings_path = analysis / "pca-loadings.csv"
     mean_path = analysis / "pca-mean.csv"
+    scree_path = analysis / "pca-scree.svg"
+    scores_plot_path = analysis / "pca-scores.svg"
     component_labels = [f"PC{index + 1}" for index in range(pca.number_of_components)]
     _write_json_exclusive(
         summary_path,
@@ -247,11 +278,126 @@ def _pca_files(root: Path, pca: PCAResult) -> dict[str, str]:
             for label, value in zip(pca.feature_labels, pca.mean, strict=True)
         ],
     )
+    write_pca_scree_svg(scree_path, pca)
+    write_pca_scores_svg(scores_plot_path, pca)
     return {
         "summary_path": summary_path.relative_to(root).as_posix(),
         "scores_path": scores_path.relative_to(root).as_posix(),
         "loadings_path": loadings_path.relative_to(root).as_posix(),
         "mean_path": mean_path.relative_to(root).as_posix(),
+        "plots": {
+            "scree_path": scree_path.relative_to(root).as_posix(),
+            "scores_path": scores_plot_path.relative_to(root).as_posix(),
+            "score_axes": ["PC1"] if pca.number_of_components == 1 else ["PC1", "PC2"],
+        },
+    }
+
+
+def _deformed_template_endpoint(
+    result: AtlasOptimizationResult,
+    momenta: torch.Tensor,
+    model_settings: ModernAtlasModelSettings,
+) -> torch.Tensor:
+    trajectory = shoot(
+        result.control_points,
+        momenta,
+        model_settings.deformation_kernel_width,
+        model_settings.number_of_time_points,
+        integrator=model_settings.shooting_integrator,
+    )
+    return flow_points(
+        result.template_vertices,
+        trajectory,
+        model_settings.deformation_kernel_width,
+        integrator=model_settings.flow_integrator,
+    )[-1]
+
+
+def _pca_deformation_files(
+    root: Path,
+    pca: PCAResult,
+    result: AtlasOptimizationResult,
+    triangle_rows: list[list[int]],
+    model_settings: ModernAtlasModelSettings,
+    *,
+    standard_deviations: float,
+    requested_components: int | None,
+) -> dict[str, object]:
+    resolved_components = (
+        pca.number_of_components if requested_components is None else requested_components
+    )
+    if resolved_components > pca.number_of_components:
+        raise ValueError(
+            "pca_deformation_components cannot exceed the retained PCA component count "
+            f"({pca.number_of_components})"
+        )
+    feature_shape = tuple(result.control_points.shape)
+    mean_momenta = torch.from_numpy(
+        np.array(pca.mean.reshape(feature_shape), dtype=np.float64, copy=True)
+    )
+    deformation_directory = root / "analysis" / "pca-deformations"
+    mean_path = write_vtk_polydata(
+        deformation_directory / "mean-momenta.vtk",
+        _deformed_template_endpoint(result, mean_momenta, model_settings).tolist(),
+        triangle_rows,
+        title="DiffeoForge PCA mean-momenta reconstruction",
+    )
+    zero_components = set(pca.zero_variance_components)
+    skipped: list[int] = []
+    components: list[dict[str, object]] = []
+    for index in range(resolved_components):
+        component_number = index + 1
+        if index in zero_components:
+            skipped.append(component_number)
+            continue
+        component_standard_deviation = math.sqrt(float(pca.explained_variance[index]))
+        displacement = standard_deviations * component_standard_deviation * pca.components[index]
+        minus_momenta = torch.from_numpy(
+            np.array((pca.mean - displacement).reshape(feature_shape), copy=True)
+        )
+        plus_momenta = torch.from_numpy(
+            np.array((pca.mean + displacement).reshape(feature_shape), copy=True)
+        )
+        minus_path = write_vtk_polydata(
+            deformation_directory / f"pc-{component_number:04d}-minus.vtk",
+            _deformed_template_endpoint(result, minus_momenta, model_settings).tolist(),
+            triangle_rows,
+            title=f"DiffeoForge PCA PC{component_number} minus",
+        )
+        plus_path = write_vtk_polydata(
+            deformation_directory / f"pc-{component_number:04d}-plus.vtk",
+            _deformed_template_endpoint(result, plus_momenta, model_settings).tolist(),
+            triangle_rows,
+            title=f"DiffeoForge PCA PC{component_number} plus",
+        )
+        components.append(
+            {
+                "component": component_number,
+                "label": f"PC{component_number}",
+                "explained_variance": float(pca.explained_variance[index]),
+                "explained_variance_ratio": float(pca.explained_variance_ratio[index]),
+                "momenta_standard_deviation": component_standard_deviation,
+                "minus_path": minus_path.relative_to(root).as_posix(),
+                "plus_path": plus_path.relative_to(root).as_posix(),
+            }
+        )
+    definition = {
+        "feature_space": pca.feature_space,
+        "feature_order": "control point index outer; Cartesian x, y, z inner",
+        "sign_convention": pca.sign_convention,
+        "equation": PCA_DEFORMATION_EQUATION,
+        "standard_deviations": standard_deviations,
+        "requested_components": resolved_components,
+        "mean_path": mean_path.relative_to(root).as_posix(),
+        "components": components,
+        "skipped_zero_variance_components": skipped,
+        "interpretation_boundary": PCA_DEFORMATION_BOUNDARY,
+    }
+    definition_path = root / "analysis" / "pca-deformations.json"
+    _write_json_exclusive(definition_path, definition)
+    return {
+        "definition_path": definition_path.relative_to(root).as_posix(),
+        **definition,
     }
 
 
@@ -263,6 +409,8 @@ def write_modern_atlas_bundle(
     model_settings: ModernAtlasModelSettings,
     *,
     pca_components: int | None = None,
+    pca_deformation_standard_deviations: float = 2.0,
+    pca_deformation_components: int | None = None,
     created_at: str | None = None,
 ) -> Path:
     """Atomically create a new immutable modern-atlas result bundle."""
@@ -277,12 +425,18 @@ def write_modern_atlas_bundle(
         raise ValueError("template_triangles must have shape (triangles, 3)")
     if not isinstance(model_settings, ModernAtlasModelSettings):
         raise TypeError("model_settings must be ModernAtlasModelSettings")
+    normalized_pca_components = _optional_positive_integer("pca_components", pca_components)
+    deformation_standard_deviations = _positive_real(
+        "pca_deformation_standard_deviations",
+        pca_deformation_standard_deviations,
+    )
+    deformation_components = _optional_positive_integer(
+        "pca_deformation_components", pca_deformation_components
+    )
     _validate_result(result, template_triangles.shape[0])
     labels = _labels(subject_labels, result.momenta.shape[0])
     timestamp = (
-        datetime.now(UTC).isoformat(timespec="seconds")
-        if created_at is None
-        else created_at
+        datetime.now(UTC).isoformat(timespec="seconds") if created_at is None else created_at
     )
     if not isinstance(timestamp, str) or not timestamp.strip():
         raise ValueError("created_at must be a non-empty string")
@@ -349,9 +503,7 @@ def write_modern_atlas_bundle(
                     _float(record.attachment),
                     _float(record.regularity),
                     "" if record.gradient_norm is None else _float(record.gradient_norm),
-                    ""
-                    if record.accepted_step_size is None
-                    else _float(record.accepted_step_size),
+                    "" if record.accepted_step_size is None else _float(record.accepted_step_size),
                     str(record.line_search_evaluations),
                     *(_float(value) for value in record.residuals),
                 ]
@@ -359,27 +511,10 @@ def write_modern_atlas_bundle(
         _write_csv_exclusive(history_path, history_rows)
 
         subjects = []
-        for index, (label, momenta) in enumerate(
-            zip(labels, result.momenta, strict=True)
-        ):
-            trajectory = shoot(
-                result.control_points,
-                momenta,
-                model_settings.deformation_kernel_width,
-                model_settings.number_of_time_points,
-                integrator=model_settings.shooting_integrator,
-            )
-            path = flow_points(
-                result.template_vertices,
-                trajectory,
-                model_settings.deformation_kernel_width,
-                integrator=model_settings.flow_integrator,
-            )
+        for index, (label, momenta) in enumerate(zip(labels, result.momenta, strict=True)):
             reconstruction_path = write_vtk_polydata(
-                temporary
-                / "reconstructions"
-                / f"subject-{index:04d}-{_slug(label)}.vtk",
-                path[-1].tolist(),
+                temporary / "reconstructions" / f"subject-{index:04d}-{_slug(label)}.vtk",
+                _deformed_template_endpoint(result, momenta, model_settings).tolist(),
                 triangle_rows,
                 title=f"DiffeoForge reconstruction {index:04d}",
             )
@@ -394,13 +529,20 @@ def write_modern_atlas_bundle(
 
         pca = momenta_pca(
             np.array(result.momenta.detach().numpy(), dtype=np.float64, copy=True),
-            n_components=pca_components,
+            n_components=normalized_pca_components,
             subject_labels=labels,
         )
         pca_paths = _pca_files(temporary, pca)
-        artifact_paths = sorted(
-            path for path in temporary.rglob("*") if path.is_file()
+        pca_deformations = _pca_deformation_files(
+            temporary,
+            pca,
+            result,
+            triangle_rows,
+            model_settings,
+            standard_deviations=deformation_standard_deviations,
+            requested_components=deformation_components,
         )
+        artifact_paths = sorted(path for path in temporary.rglob("*") if path.is_file())
         artifacts = [_artifact(temporary, path) for path in artifact_paths]
         final = result.history[-1]
         optimizer_manifest = asdict(result.settings)
@@ -448,6 +590,7 @@ def write_modern_atlas_bundle(
                 "numerical_rank": pca.numerical_rank,
                 "total_variance": pca.total_variance,
                 **pca_paths,
+                "deformations": pca_deformations,
             },
             "artifacts": artifacts,
             "scientific_boundary": SCIENTIFIC_BOUNDARY,
@@ -488,6 +631,21 @@ def _resolve_artifact(root: Path, value: object) -> Path:
     if resolved != root and root not in resolved.parents:
         raise ModernBundleError(f"Bundle artifact path escapes the bundle: {value!r}")
     return resolved
+
+
+def _verify_static_svg(path: Path) -> None:
+    try:
+        document = ET.parse(path)
+    except (OSError, ET.ParseError) as error:
+        raise ModernBundleError(f"Invalid SVG artifact {path.name}: {error}") from error
+    root = document.getroot()
+    if root.tag != "{http://www.w3.org/2000/svg}svg":
+        raise ModernBundleError(f"SVG artifact has an invalid root element: {path.name}")
+    for element in root.iter():
+        if element.tag.rsplit("}", 1)[-1].lower() == "script":
+            raise ModernBundleError(f"SVG artifact contains a script: {path.name}")
+        if any(attribute.rsplit("}", 1)[-1].lower() == "href" for attribute in element.attrib):
+            raise ModernBundleError(f"SVG artifact contains an external reference: {path.name}")
 
 
 def verify_modern_atlas_bundle(directory: Path | str) -> dict:
@@ -532,9 +690,7 @@ def verify_modern_atlas_bundle(directory: Path | str) -> dict:
             raise ModernBundleError(
                 f"Modern atlas bundle artifact SHA-256 differs: {relative_path}"
             )
-    actual_files = {
-        path.relative_to(root).as_posix() for path in root.rglob("*") if path.is_file()
-    }
+    actual_files = {path.relative_to(root).as_posix() for path in root.rglob("*") if path.is_file()}
     if actual_files != expected_files:
         missing = sorted(expected_files - actual_files)
         extra = sorted(actual_files - expected_files)
@@ -542,12 +698,30 @@ def verify_modern_atlas_bundle(directory: Path | str) -> dict:
             f"Modern atlas bundle file inventory differs: missing={missing}, extra={extra}"
         )
 
-    vtk_records = [manifest["template"], *manifest["subjects"]]
-    for record in vtk_records:
-        vtk_path = _resolve_artifact(
-            root,
-            record.get("path", record.get("reconstruction_path")),
-        )
+    deformation_record = manifest["pca"]["deformations"]
+    definition_path = _resolve_artifact(root, deformation_record["definition_path"])
+    try:
+        definition = json.loads(definition_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise ModernBundleError(f"Invalid PCA deformation definition: {error}") from error
+    expected_definition = {
+        key: value for key, value in deformation_record.items() if key != "definition_path"
+    }
+    if definition != expected_definition:
+        raise ModernBundleError("PCA deformation definition differs from the bundle manifest")
+
+    vtk_paths = [
+        manifest["template"]["path"],
+        *(record["reconstruction_path"] for record in manifest["subjects"]),
+        deformation_record["mean_path"],
+        *(
+            path
+            for component in deformation_record["components"]
+            for path in (component["minus_path"], component["plus_path"])
+        ),
+    ]
+    for relative_path in vtk_paths:
+        vtk_path = _resolve_artifact(root, relative_path)
         try:
             metadata = inspect_vtk(vtk_path)
         except ConfigurationError as error:
@@ -556,4 +730,6 @@ def verify_modern_atlas_bundle(directory: Path | str) -> dict:
             raise ModernBundleError(f"VTK point count differs from manifest: {vtk_path.name}")
         if metadata.cells != manifest["template"]["triangles"]:
             raise ModernBundleError(f"VTK triangle count differs from manifest: {vtk_path.name}")
+    _verify_static_svg(_resolve_artifact(root, manifest["pca"]["plots"]["scree_path"]))
+    _verify_static_svg(_resolve_artifact(root, manifest["pca"]["plots"]["scores_path"]))
     return manifest

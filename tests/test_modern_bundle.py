@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import hashlib
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -123,7 +124,9 @@ def test_bundle_contains_verified_open_outputs_and_exact_subject_identity(
     assert all(".." not in path for path in paths)
     assert manifest["pca"]["feature_space"] == "subject_initial_momenta_cartesian"
     assert manifest["pca"]["components"] == 2
-    assert len(manifest["artifacts"]) == 11
+    assert manifest["pca"]["plots"]["score_axes"] == ["PC1", "PC2"]
+    assert manifest["pca"]["deformations"]["standard_deviations"] == 2.0
+    assert len(manifest["artifacts"]) == 19
     for tensor, original in zip(
         (result.template_vertices, result.control_points, result.momenta),
         originals,
@@ -184,15 +187,128 @@ def test_pca_csv_files_reproduce_in_memory_pca(
     score_rows = _csv(bundle / manifest["pca"]["scores_path"])
     observed_scores = np.array([row[1:] for row in score_rows[1:]], dtype=np.float64)
     loading_rows = _csv(bundle / manifest["pca"]["loadings_path"])
-    observed_components = np.array(
-        [row[1:] for row in loading_rows[1:]], dtype=np.float64
-    ).T
+    observed_components = np.array([row[1:] for row in loading_rows[1:]], dtype=np.float64).T
     mean_rows = _csv(bundle / manifest["pca"]["mean_path"])
     observed_mean = np.array([row[1] for row in mean_rows[1:]], dtype=np.float64)
 
     np.testing.assert_array_equal(observed_scores, expected.scores)
     np.testing.assert_array_equal(observed_components, expected.components)
     np.testing.assert_array_equal(observed_mean, expected.mean)
+
+
+def test_pca_deformation_meshes_equal_declared_engine_endpoints(
+    tmp_path: Path,
+    optimized: tuple,
+) -> None:
+    result, _, model = optimized
+    bundle = _write_bundle(tmp_path / "bundle", optimized)
+    manifest = verify_modern_atlas_bundle(bundle)
+    pca = momenta_pca(
+        np.array(result.momenta.numpy(), dtype=np.float64, copy=True),
+        subject_labels=LABELS,
+    )
+    deformation = manifest["pca"]["deformations"]
+    definition = json.loads((bundle / deformation["definition_path"]).read_text(encoding="utf-8"))
+    assert definition == {
+        key: value for key, value in deformation.items() if key != "definition_path"
+    }
+
+    def endpoint(flat_momenta: object) -> object:
+        momenta = torch.tensor(
+            np.asarray(flat_momenta).reshape(result.control_points.shape),
+            dtype=DTYPE,
+        )
+        trajectory = shoot(
+            result.control_points,
+            momenta,
+            model.deformation_kernel_width,
+            model.number_of_time_points,
+            integrator=model.shooting_integrator,
+        )
+        return flow_points(
+            result.template_vertices,
+            trajectory,
+            model.deformation_kernel_width,
+            integrator=model.flow_integrator,
+        )[-1]
+
+    observed_mean = torch.tensor(read_vtk_points(bundle / deformation["mean_path"]), dtype=DTYPE)
+    torch.testing.assert_close(observed_mean, endpoint(pca.mean), rtol=0, atol=0)
+    for record in deformation["components"]:
+        index = record["component"] - 1
+        displacement = (
+            deformation["standard_deviations"]
+            * np.sqrt(pca.explained_variance[index])
+            * pca.components[index]
+        )
+        minus = pca.mean - displacement
+        plus = pca.mean + displacement
+        np.testing.assert_allclose(
+            (minus + plus) / 2.0,
+            pca.mean,
+            rtol=0,
+            atol=np.finfo(np.float64).eps,
+        )
+        observed_minus = torch.tensor(read_vtk_points(bundle / record["minus_path"]), dtype=DTYPE)
+        observed_plus = torch.tensor(read_vtk_points(bundle / record["plus_path"]), dtype=DTYPE)
+        torch.testing.assert_close(observed_minus, endpoint(minus), rtol=0, atol=0)
+        torch.testing.assert_close(observed_plus, endpoint(plus), rtol=0, atol=0)
+
+
+def test_zero_variance_pc_is_explicitly_skipped(tmp_path: Path, optimized: tuple) -> None:
+    result, triangles, model = optimized
+    direction = torch.linspace(
+        0.001,
+        0.001 * result.momenta.numel() / result.momenta.shape[0],
+        result.momenta[0].numel(),
+        dtype=DTYPE,
+    ).reshape_as(result.momenta[0])
+    rank_one_momenta = torch.stack((-direction, torch.zeros_like(direction), direction))
+    rank_one_result = replace(result, momenta=rank_one_momenta)
+    bundle = write_modern_atlas_bundle(
+        tmp_path / "rank-one",
+        rank_one_result,
+        triangles,
+        LABELS,
+        model,
+        pca_components=2,
+        pca_deformation_components=2,
+        created_at=FIXED_TIME,
+    )
+    deformation = verify_modern_atlas_bundle(bundle)["pca"]["deformations"]
+
+    assert deformation["requested_components"] == 2
+    assert [record["component"] for record in deformation["components"]] == [1]
+    assert deformation["skipped_zero_variance_components"] == [2]
+
+
+def test_invalid_pca_deformation_settings_fail_without_publishing(
+    tmp_path: Path,
+    optimized: tuple,
+) -> None:
+    result, triangles, model = optimized
+    with pytest.raises(ValueError, match="greater than zero"):
+        write_modern_atlas_bundle(
+            tmp_path / "invalid-amplitude",
+            result,
+            triangles,
+            LABELS,
+            model,
+            pca_deformation_standard_deviations=0.0,
+        )
+    with pytest.raises(ValueError, match="retained PCA"):
+        write_modern_atlas_bundle(
+            tmp_path / "too-many-components",
+            result,
+            triangles,
+            LABELS,
+            model,
+            pca_components=1,
+            pca_deformation_components=2,
+        )
+
+    assert not (tmp_path / "invalid-amplitude").exists()
+    assert not (tmp_path / "too-many-components").exists()
 
 
 def test_fixed_time_bundles_are_byte_identical(tmp_path: Path, optimized: tuple) -> None:

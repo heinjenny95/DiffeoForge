@@ -449,6 +449,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if args.command == "modern-run":
         try:
+            from diffeoforge.modern_bundle import verify_modern_atlas_bundle
             from diffeoforge.modern_workflow import (
                 run_modern_workflow,
                 verify_modern_workflow,
@@ -462,7 +463,15 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"Modern workflow completed: {run_directory}")
             print(f"Subject meshes: {len(manifest['input']['subjects'])}")
             print(f"Preprocessing: {manifest['preprocessing']['id']}")
-            print(f"Atlas/PCA bundle: {run_directory / manifest['result_bundle']['path']}")
+            bundle = run_directory / manifest["result_bundle"]["path"]
+            bundle_manifest = verify_modern_atlas_bundle(bundle)
+            print(f"Atlas/PCA bundle: {bundle}")
+            print(f"PCA scree plot: {bundle / bundle_manifest['pca']['plots']['scree_path']}")
+            print(f"PCA scores plot: {bundle / bundle_manifest['pca']['plots']['scores_path']}")
+            print(
+                "PCA deformation meshes: "
+                f"{bundle / Path(bundle_manifest['pca']['deformations']['mean_path']).parent}"
+            )
         except ImportError as error:
             print(
                 "ERROR: Modern engine dependencies are missing; install "
@@ -478,11 +487,16 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if args.command == "modern-verify":
         try:
+            from diffeoforge.modern_bundle import verify_modern_atlas_bundle
             from diffeoforge.modern_workflow import verify_modern_workflow
 
             manifest = verify_modern_workflow(args.run_directory)
-            print(f"Modern workflow verified: {args.run_directory.resolve()}")
+            run_directory = args.run_directory.resolve()
+            bundle = run_directory / manifest["result_bundle"]["path"]
+            bundle_manifest = verify_modern_atlas_bundle(bundle)
+            print(f"Modern workflow verified: {run_directory}")
             print(f"Subject meshes: {len(manifest['input']['subjects'])}")
+            print(f"PCA scree plot: {bundle / bundle_manifest['pca']['plots']['scree_path']}")
         except ImportError as error:
             print(
                 "ERROR: Modern engine dependencies are missing; install "

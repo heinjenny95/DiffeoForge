@@ -273,7 +273,11 @@ def initialize_modern_workflow(
             "minimum_step_size": 1e-12,
             "max_line_search_iterations": 20,
         },
-        "analysis": {"pca_components": None},
+        "analysis": {
+            "pca_components": None,
+            "deformation_standard_deviations": 2.0,
+            "deformation_components": None,
+        },
         "runtime": {
             "device": "cpu",
             "precision": "float64",
@@ -284,6 +288,8 @@ def initialize_modern_workflow(
     }
     validate_modern_workflow_config(config)
     summary = validate_input_paths(config, destination)
+    config["analysis"]["deformation_components"] = min(3, len(summary.subjects) - 1)
+    validate_modern_workflow_config(config)
     inspect_inputs(summary)
     template_vertices = np.array(read_vtk_polydata(summary.template).vertices, dtype=np.float64)
     farthest_template_vertex_indices(template_vertices, control_point_count)
@@ -310,6 +316,9 @@ def initialize_modern_workflow(
             handle.write(CONFIG_MARKER + "\n")
             handle.write(
                 "# Geometry-scaled starter values are exploratory, not validated presets.\n"
+            )
+            handle.write(
+                "# PCA deformation settings control visual endpoints; null components means all.\n"
             )
             yaml.safe_dump(config, handle, sort_keys=False, allow_unicode=True)
     except OSError as error:
@@ -722,6 +731,10 @@ def run_modern_workflow(
             [path.name for path in inputs.subjects],
             model_settings,
             pca_components=config["analysis"]["pca_components"],
+            pca_deformation_standard_deviations=config["analysis"][
+                "deformation_standard_deviations"
+            ],
+            pca_deformation_components=config["analysis"]["deformation_components"],
             created_at=timestamp,
         )
         bundle_manifest = verify_modern_atlas_bundle(bundle_path)

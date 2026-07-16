@@ -158,9 +158,19 @@
     "analysis": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["pca_components"],
+      "required": ["pca_components", "deformation_standard_deviations", "deformation_components"],
       "properties": {
         "pca_components": {
+          "oneOf": [
+            {"type": "integer", "minimum": 1},
+            {"type": "null"}
+          ]
+        },
+        "deformation_standard_deviations": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "deformation_components": {
           "oneOf": [
             {"type": "integer", "minimum": 1},
             {"type": "null"}

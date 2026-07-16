@@ -94,7 +94,8 @@ This repository currently provides:
   prototypes with versioned CC0 evidence and cross-platform CI.
 - an immutable experimental modern-atlas result bundle containing estimated
   template/reconstruction meshes, parameters, optimizer history, artifact
-  hashes, and a complete open CSV/JSON momenta-PCA handoff;
+  hashes, a complete open CSV/JSON momenta-PCA handoff, static SVG plots, and
+  reproducible mean/±PC deformation meshes;
 - an experimental end-to-end modern workflow that inventories a mesh folder,
   optionally applies labelled-landmark Procrustes transforms, initializes and
   runs the CPU/float64 engine, and publishes a doubly verified immutable run.

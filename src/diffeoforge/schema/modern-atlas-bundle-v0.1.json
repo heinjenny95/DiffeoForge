@@ -135,7 +135,7 @@
     "pca": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["feature_space", "components", "numerical_rank", "total_variance", "summary_path", "scores_path", "loadings_path", "mean_path"],
+      "required": ["feature_space", "components", "numerical_rank", "total_variance", "summary_path", "scores_path", "loadings_path", "mean_path", "plots", "deformations"],
       "properties": {
         "feature_space": {"const": "subject_initial_momenta_cartesian"},
         "components": {"type": "integer", "minimum": 1},
@@ -144,7 +144,60 @@
         "summary_path": {"type": "string", "minLength": 1},
         "scores_path": {"type": "string", "minLength": 1},
         "loadings_path": {"type": "string", "minLength": 1},
-        "mean_path": {"type": "string", "minLength": 1}
+        "mean_path": {"type": "string", "minLength": 1},
+        "plots": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["scree_path", "scores_path", "score_axes"],
+          "properties": {
+            "scree_path": {"type": "string", "minLength": 1},
+            "scores_path": {"type": "string", "minLength": 1},
+            "score_axes": {
+              "oneOf": [
+                {"const": ["PC1"]},
+                {"const": ["PC1", "PC2"]}
+              ]
+            }
+          }
+        },
+        "deformations": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["definition_path", "feature_space", "feature_order", "sign_convention", "equation", "standard_deviations", "requested_components", "mean_path", "components", "skipped_zero_variance_components", "interpretation_boundary"],
+          "properties": {
+            "definition_path": {"type": "string", "minLength": 1},
+            "feature_space": {"const": "subject_initial_momenta_cartesian"},
+            "feature_order": {"const": "control point index outer; Cartesian x, y, z inner"},
+            "sign_convention": {"type": "string", "minLength": 1},
+            "equation": {"const": "mean_momenta +/- standard_deviations * sqrt(explained_variance) * component_loading"},
+            "standard_deviations": {"type": "number", "exclusiveMinimum": 0},
+            "requested_components": {"type": "integer", "minimum": 1},
+            "mean_path": {"type": "string", "minLength": 1},
+            "components": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["component", "label", "explained_variance", "explained_variance_ratio", "momenta_standard_deviation", "minus_path", "plus_path"],
+                "properties": {
+                  "component": {"type": "integer", "minimum": 1},
+                  "label": {"type": "string", "pattern": "^PC[1-9][0-9]*$"},
+                  "explained_variance": {"type": "number", "exclusiveMinimum": 0},
+                  "explained_variance_ratio": {"type": "number", "exclusiveMinimum": 0, "maximum": 1},
+                  "momenta_standard_deviation": {"type": "number", "exclusiveMinimum": 0},
+                  "minus_path": {"type": "string", "minLength": 1},
+                  "plus_path": {"type": "string", "minLength": 1}
+                }
+              }
+            },
+            "skipped_zero_variance_components": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {"type": "integer", "minimum": 1}
+            },
+            "interpretation_boundary": {"type": "string", "minLength": 1}
+          }
+        }
       }
     },
     "artifacts": {

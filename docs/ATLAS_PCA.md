@@ -1,8 +1,11 @@
 # PCA of atlas-derived subject features
 
-Status: **tested analysis prototype with an immutable bundle handoff; not yet a user command**
+Status: **tested experimental analysis product in the modern workflow; not scientifically validated**
 
-Tracked by [scientific-change issue #19](https://github.com/heinjenny95/DiffeoForge/issues/19).
+Core PCA is tracked by
+[scientific-change issue #19](https://github.com/heinjenny95/DiffeoForge/issues/19);
+plots and deformation products are tracked prospectively by
+[issue #30](https://github.com/heinjenny95/DiffeoForge/issues/30).
 
 ## Feature space is part of the result
 
@@ -56,12 +59,35 @@ passes the detached subject momenta directly into `momenta_pca`. The
 feature order as a JSON summary plus CSV scores, loadings, and mean vector and
 tests those files against the in-memory PCA arrays.
 
+The bundle also writes two dependency-light static SVGs: a scree plot of the
+retained explained-total-variance ratios and a PC1/PC2 subject-score plot. If
+only PC1 is retained, the latter is explicitly a one-dimensional PC1 strip; a
+second axis is never invented. Subject identifiers are stored as escaped SVG
+text/tooltips, and the files contain no scripts or external resources.
+
+For geometric inspection, the workflow reconstructs the endpoint of the mean
+momenta and both directions of selected nonzero components. For component
+`i`, its two initial-momenta vectors are exactly
+
+```text
+mean ± k * sqrt(explained_variance_i) * component_loading_i
+```
+
+where `k` is the explicit `analysis.deformation_standard_deviations` setting.
+The selected component count is `analysis.deformation_components`; `null`
+means all retained components. `modern-init` chooses the first three (or fewer
+when the cohort permits fewer) as a visible, editable starting value to avoid
+hundreds of unnecessary mesh products in a large cohort. The bundle records
+the equation, effective settings, feature order, sign convention, written
+paths, and any numerical zero-variance components skipped.
+
 ## Remaining gates
 
-The experimental [modern workflow](MODERN_WORKFLOW.md) now invokes and records
-this PCA automatically. Before PCA becomes a validated user-facing scientific
-product, DiffeoForge still needs score/loading plots, PC shape visualization
-through reconstructed deformations, missing-subject handling, and validation
-on predeclared biological data. The paper must state the feature space,
-centering, component retention, scaling/alignment policy, and treatment of tied
-or rank-deficient directions.
+The experimental [modern workflow](MODERN_WORKFLOW.md) invokes, visualizes, and
+records this PCA automatically. Before it becomes a validated scientific
+product, DiffeoForge still needs missing-subject handling, loading-focused
+views, mesh rendering/quality evidence, and validation on predeclared
+biological data. The paper must state the feature space, centering, component
+retention, deformation amplitude, scaling/alignment policy, and treatment of
+tied or rank-deficient directions. PC signs are conventional; ± endpoints are
+not observed specimens, confidence intervals, or biological effects.

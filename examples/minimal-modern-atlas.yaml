@@ -42,6 +42,8 @@ optimization:
   max_line_search_iterations: 20
 analysis:
   pca_components: null
+  deformation_standard_deviations: 2.0
+  deformation_components: 3
 runtime:
   device: cpu
   precision: float64
