@@ -21,7 +21,7 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Set up Python
-        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
@@ -53,7 +53,7 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Set up Python
-        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: "3.12"
           cache: pip
@@ -64,4 +64,12 @@ jobs:
           python -m pip install -e ".[dev,modern-engine]"
 
       - name: Test modern engine
-        run: pytest tests/test_modern_engine.py
+        run: >-
+          pytest tests/test_modern_engine.py tests/test_atlas_objective.py
+          tests/test_blockwise_engine.py
+          tests/test_momenta_optimizer.py tests/test_atlas_optimizer.py
+          tests/test_procrustes.py tests/test_pca.py
+          tests/test_pca_visualization.py tests/test_modern_bundle.py
+          tests/test_modern_workflow.py tests/test_mesh_quality.py
+          tests/test_modern_workload.py tests/test_modern_progress.py
+          tests/test_modern_benchmark.py

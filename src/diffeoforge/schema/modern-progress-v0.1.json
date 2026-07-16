@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DiffeoForge modern workflow progress event",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "progress_version", "sequence", "phase", "status", "message",
+    "completed_stages", "total_stages", "optimizer"
+  ],
+  "properties": {
+    "progress_version": {"const": "0.1"},
+    "sequence": {"type": "integer", "minimum": 0},
+    "phase": {
+      "enum": [
+        "workflow", "inputs", "preprocessing", "quality", "initialization",
+        "optimization", "bundle", "verification"
+      ]
+    },
+    "status": {"enum": ["started", "completed", "decision"]},
+    "message": {"type": "string", "minLength": 1},
+    "completed_stages": {"type": "integer", "minimum": 0, "maximum": 7},
+    "total_stages": {"const": 7},
+    "optimizer": {
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "completed_decisions", "maximum_decisions", "cycle", "max_cycles",
+            "block", "status", "objective", "attachment", "regularity",
+            "gradient_norm", "accepted_step_size", "line_search_evaluations"
+          ],
+          "properties": {
+            "completed_decisions": {"type": "integer", "minimum": 0},
+            "maximum_decisions": {"type": "integer", "minimum": 0},
+            "cycle": {"type": "integer", "minimum": 0},
+            "max_cycles": {"type": "integer", "minimum": 0},
+            "block": {
+              "oneOf": [
+                {"enum": ["momenta", "template", "control_points"]},
+                {"type": "null"}
+              ]
+            },
+            "status": {"enum": ["initial", "accepted", "stationary", "failed"]},
+            "objective": {"type": "number"},
+            "attachment": {"type": "number"},
+            "regularity": {"type": "number"},
+            "gradient_norm": {"type": ["number", "null"], "minimum": 0},
+            "accepted_step_size": {"type": ["number", "null"], "exclusiveMinimum": 0},
+            "line_search_evaluations": {"type": "integer", "minimum": 0}
+          }
+        }
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"status": {"const": "decision"}}},
+      "then": {
+        "properties": {
+          "phase": {"const": "optimization"},
+          "optimizer": {"type": "object"}
+        }
+      },
+      "else": {"properties": {"optimizer": {"type": "null"}}}
+    }
+  ]
+}

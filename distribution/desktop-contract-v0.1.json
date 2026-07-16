@@ -1,0 +1,68 @@
+{
+  "schema_version": "0.1",
+  "status": "architecture_only_not_a_release_artifact",
+  "target": "windows-x86_64",
+  "application": {
+    "name": "DiffeoForge Desktop",
+    "ui_toolkit": "PySide6",
+    "bundle_builder": "PyInstaller",
+    "bundle_mode": "onedir",
+    "installer_builder": "Inno Setup",
+    "requires_preinstalled_python": false,
+    "default_network_access": false
+  },
+  "process_boundaries": {
+    "desktop": "configuration, validation, review, progress, reports",
+    "modern_worker": "separate child process for numerical compute and cancellation",
+    "reference_worker": "external version-checked Deformetrica adapter/container only"
+  },
+  "variants": [
+    {
+      "id": "windows-cpu",
+      "release_order": 1,
+      "engine": "modern_cpu",
+      "bundled": true,
+      "scientific_claim_requires_separate_validation": true
+    },
+    {
+      "id": "windows-nvidia",
+      "release_order": 2,
+      "engine": "modern_nvidia",
+      "bundled": true,
+      "scientific_claim_requires_separate_validation": true
+    },
+    {
+      "id": "deformetrica-reference",
+      "release_order": 0,
+      "engine": "deformetrica_4_3_external",
+      "bundled": false,
+      "scientific_claim_requires_separate_validation": true
+    }
+  ],
+  "data_ownership": {
+    "installation_directory": "application files only; user runs are never stored here",
+    "project_directory": "user-selected meshes, configurations, immutable runs, and results",
+    "settings_directory": "per-user application settings only",
+    "uninstall_preserves_projects": true
+  },
+  "required_release_evidence": [
+    "clean_windows_vm_without_python",
+    "offline_install_start_doctor_cc0_smoke_uninstall",
+    "paths_with_spaces_and_non_ascii",
+    "authenticode_signature_verification",
+    "windows_defender_scan",
+    "sha256_checksums",
+    "software_bill_of_materials",
+    "third_party_license_inventory",
+    "cpu_numerical_validation",
+    "crash_interruption_recovery",
+    "installer_and_uninstaller_logs",
+    "no_network_default_verification"
+  ],
+  "forbidden_claims_before_gates_pass": [
+    "scientifically validated",
+    "Deformetrica-equivalent optimizer",
+    "production-ready for 300 specimens",
+    "validated GPU parity"
+  ]
+}

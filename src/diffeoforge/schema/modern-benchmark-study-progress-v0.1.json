@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DiffeoForge benchmark study progress event",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "progress_version",
+    "sequence",
+    "status",
+    "message",
+    "completed_conditions",
+    "total_conditions",
+    "condition"
+  ],
+  "properties": {
+    "progress_version": {
+      "const": "0.1"
+    },
+    "sequence": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "status": {
+      "enum": [
+        "study_started",
+        "study_resumed",
+        "condition_started",
+        "condition_completed",
+        "condition_reconciled",
+        "study_interrupted",
+        "study_completed",
+        "study_already_complete"
+      ]
+    },
+    "message": {
+      "type": "string",
+      "minLength": 1
+    },
+    "completed_conditions": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "total_conditions": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "condition": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "sequence",
+            "condition_id",
+            "pair_id",
+            "subject_count",
+            "tile_autograd_strategy"
+          ],
+          "properties": {
+            "sequence": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "condition_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "pair_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "subject_count": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "tile_autograd_strategy": {
+              "enum": [
+                "standard",
+                "recompute"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  }
+}
