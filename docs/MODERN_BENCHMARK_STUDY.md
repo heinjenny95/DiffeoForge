@@ -189,3 +189,29 @@ Successful verification means the frozen identities, separate reports,
 condition order, state, events, manifest, and hashes agree. It still does not
 mean either strategy is faster, uses less peak memory, or is ready as a public
 default.
+
+## Exact-count progress, not ETA
+
+`modern-benchmark-study` prints lifecycle and condition progress while it runs:
+
+```text
+Study progress [1/6 conditions] condition_completed; ...
+```
+
+The denominator is the number of prospectively frozen conditions. Conditions
+can differ greatly in subject count, geometry, strategy, and runtime; `1/6`
+therefore means exactly one verified raw report, not 16.7 percent of elapsed
+work. No percentage or ETA is calculated.
+
+The application service accepts
+`run_modern_benchmark_study(..., progress_callback=observer)`. Each synchronous
+callback receives an immutable `StudyProgressEvent` validated against
+`modern-benchmark-study-progress-v0.1.json`. Events cover study start or resume,
+condition start/completion/reconciliation, interruption, completion, and an
+already-complete re-verification. Condition events carry only stored design
+identity: sequence, ID, pair, subject count, and standard/recompute strategy.
+
+Observer failure stops the caller explicitly while preserving already
+published and verified raw evidence for a later resume. Tests require an
+observer that does not raise to leave the complete run directory byte-identical
+to an unobserved run.

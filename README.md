@@ -193,7 +193,8 @@ diffeoforge modern-benchmark-study modern-atlas.benchmark-study `
 
 Every condition remains a separate verified benchmark v0.3 report. The runner
 publishes only integrity hashes and completion state, never a winner or
-performance claim.
+performance claim. While it runs, the CLI prints exact verified-condition
+counts and identities, never elapsed-time percentages or ETA.
 
 Inspection is read-only, and completed evidence has a dedicated verifier:
 

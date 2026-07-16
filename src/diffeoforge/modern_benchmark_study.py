@@ -33,6 +33,13 @@ from diffeoforge.modern_benchmark_design import (
     collect_modern_benchmark_design,
     verify_modern_benchmark_design,
 )
+from diffeoforge.modern_benchmark_progress import (
+    StudyProgressCallback,
+    StudyProgressCondition,
+    StudyProgressEvent,
+    StudyProgressObserverError,
+    StudyProgressStatus,
+)
 
 STUDY_RUN_VERSION = "0.1"
 STATE_NAME = "study-state.json"
@@ -676,8 +683,41 @@ def run_modern_benchmark_study(
     config_path: Path | str,
     *,
     destination: Path | str | None = None,
+    progress_callback: StudyProgressCallback | None = None,
 ) -> Path:
     """Execute or resume all frozen conditions without comparing them."""
+
+    if progress_callback is not None and not callable(progress_callback):
+        raise TypeError("progress_callback must be callable or None")
+    progress_sequence = 0
+
+    def emit(
+        status: StudyProgressStatus,
+        message: str,
+        completed: int,
+        total: int,
+        condition: dict[str, Any] | None = None,
+    ) -> None:
+        nonlocal progress_sequence
+        if progress_callback is None:
+            return
+        event = StudyProgressEvent(
+            sequence=progress_sequence,
+            status=status,
+            message=message,
+            completed_conditions=completed,
+            total_conditions=total,
+            condition=(
+                None if condition is None else StudyProgressCondition.from_design(condition)
+            ),
+        )
+        try:
+            progress_callback(event)
+        except Exception as error:
+            raise StudyProgressObserverError(
+                f"Benchmark study progress observer failed: {error}"
+            ) from error
+        progress_sequence += 1
 
     design_root = Path(design_directory).expanduser().resolve()
     source = Path(config_path).expanduser().resolve()
@@ -691,9 +731,17 @@ def run_modern_benchmark_study(
     _create_run_root(output, design_root, source, design)
     with _study_lock(output):
         _, state = _verify_run_scaffold(output, design, source)
+        total = len(design["conditions"])
         if state["status"] == "complete":
+            emit(
+                "study_already_complete",
+                "Study was already complete; all evidence was reverified",
+                total,
+                total,
+            )
             verify_modern_benchmark_study_run(output)
             return output
+        previous_status = state["status"]
         existing_ids = _existing_condition_ids(output, design)
         state_ids = state["completed_condition_ids"]
         if state_ids != existing_ids[: len(state_ids)]:
@@ -701,6 +749,14 @@ def run_modern_benchmark_study(
                 "Study state claims completed condition evidence that is missing"
             )
         _reconcile_completed_events(output, design, existing_ids)
+        for condition in design["conditions"][len(state_ids) : len(existing_ids)]:
+            emit(
+                "condition_reconciled",
+                "Valid condition report was reconciled after interruption",
+                condition["sequence"],
+                total,
+                condition,
+            )
         if state_ids != existing_ids:
             state["completed_condition_ids"] = existing_ids
             state["active_condition_id"] = None
@@ -708,6 +764,21 @@ def run_modern_benchmark_study(
             _append_event(output, "completed_reports_reconciled", count=len(existing_ids))
         state["status"] = "running"
         _save_state(output, state, design)
+        lifecycle_status = (
+            "study_started"
+            if previous_status == "initialized" and not existing_ids
+            else "study_resumed"
+        )
+        emit(
+            lifecycle_status,
+            (
+                "Frozen benchmark study started"
+                if lifecycle_status == "study_started"
+                else "Frozen benchmark study resumed from verified evidence"
+            ),
+            len(existing_ids),
+            total,
+        )
         for condition in design["conditions"][len(existing_ids) :]:
             state["active_condition_id"] = condition["condition_id"]
             _save_state(output, state, design)
@@ -718,6 +789,13 @@ def run_modern_benchmark_study(
                 condition_sequence=condition["sequence"],
             )
             try:
+                emit(
+                    "condition_started",
+                    "Frozen benchmark condition started",
+                    condition["sequence"] - 1,
+                    total,
+                    condition,
+                )
                 benchmark_modern_objective(
                     source,
                     subject_count=condition["subject_count"],
@@ -740,6 +818,14 @@ def run_modern_benchmark_study(
                     error_type=type(error).__name__,
                     message=str(error),
                 )
+                if not isinstance(error, StudyProgressObserverError):
+                    emit(
+                        "study_interrupted",
+                        f"Study interrupted: {error}",
+                        condition["sequence"] - 1,
+                        total,
+                        condition,
+                    )
                 raise ModernBenchmarkStudyError(
                     f"Study interrupted in {condition['condition_id']}: {error}"
                 ) from error
@@ -752,6 +838,13 @@ def run_modern_benchmark_study(
                 condition_id=condition["condition_id"],
                 condition_sequence=condition["sequence"],
             )
+            emit(
+                "condition_completed",
+                "Frozen benchmark condition completed and verified",
+                condition["sequence"],
+                total,
+                condition,
+            )
         _publish_manifest(output, design)
         events = _event_records(output)
         if not events or events[-1].get("event") != "study_completed":
@@ -759,5 +852,11 @@ def run_modern_benchmark_study(
         state["status"] = "complete"
         state["active_condition_id"] = None
         _save_state(output, state, design)
+        emit(
+            "study_completed",
+            "Frozen benchmark study completed and verified",
+            total,
+            total,
+        )
         verify_modern_benchmark_study_run(output)
     return output

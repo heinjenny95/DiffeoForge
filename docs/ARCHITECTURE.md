@@ -142,6 +142,14 @@ tampering and stops both inspection and execution. A separate
 `modern-benchmark-study-verify` entry point requires the complete state,
 manifest sidecar, regenerated manifest, events, and every raw report.
 
+Long study execution accepts a synchronous immutable progress observer. Strict
+v0.1 events expose lifecycle status, exact completed/total condition counts,
+and the current frozen condition identity. Start, resume, reconciliation,
+interruption, completion, and already-complete paths are explicit. The CLI is
+the first consumer; no event contains a percentage, elapsed-time fraction,
+ETA, runtime forecast, or comparative result. Tests require callback presence
+to leave all published evidence byte-identical.
+
 Below the application layer, the engine now contains an explicit blockwise
 Gaussian primitive family. Query and source tile sizes bound each pairwise XYZ
 difference tensor; Current and Varifold inner products accumulate tiles
