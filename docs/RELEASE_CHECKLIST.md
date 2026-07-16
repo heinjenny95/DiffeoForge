@@ -68,6 +68,8 @@ decision and reviewer:
 - [ ] A clean user can run `doctor`, `init`, `validate`, `prepare`, and `report` as documented.
 - [ ] At least one supported backend completes the public example end to end.
 - [ ] Effective configuration, inputs, commands, versions, hashes, events, and outputs are inventoried.
+- [ ] Every advertised modern-atlas bundle passes schema, exact-file inventory, SHA-256, and VTK verification.
+- [ ] Every advertised modern workflow passes outer schema/inventory verification and nested bundle verification.
 - [ ] Existing run directories cannot be silently overwritten or executed twice.
 - [ ] Interruption, recovery, and resume behavior is rechecked when lifecycle code changes.
 - [ ] Generated HTML reports remain self-contained and make no network requests.
@@ -94,6 +96,11 @@ decision and reviewer:
 ## 7. Distribution and platform claims
 
 - [ ] Each advertised operating system and installation route has clean-machine evidence.
+- [ ] A desktop artifact installs, launches, runs the public CC0 smoke, and uninstalls offline on a clean machine without Python.
+- [ ] Installer and uninstaller logs show that user-selected projects are preserved.
+- [ ] Executables/installers have verified signatures, SHA-256 hashes, an SBOM, and a third-party license inventory.
+- [ ] Paths with spaces, non-ASCII characters, and a non-administrator install are tested.
+- [ ] The installed application makes no network request by default.
 - [ ] CPU and GPU claims are kept separate and supported by their own comparisons.
 - [ ] Container tags are backed by immutable image digests and build instructions.
 - [ ] Archive/HPC instructions are tested when advertised.

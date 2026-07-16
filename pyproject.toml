@@ -35,6 +35,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+analysis = [
+  "numpy>=2,<3",
+]
 dev = [
   "build>=1.2,<2",
   "pytest>=8.3,<10",
@@ -42,6 +45,7 @@ dev = [
 ]
 modern-engine = [
   "numpy>=2,<3",
+  "psutil>=7.2,<8",
   "torch>=2.6,<2.14",
 ]
 
@@ -62,6 +66,8 @@ include = [
   "/docs",
   "/examples",
   "/reference",
+  "/tools",
+  "/distribution",
   "/container",
   "/.dockerignore",
   "/README.md",

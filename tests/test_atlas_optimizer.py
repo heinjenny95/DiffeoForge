@@ -1,0 +1,363 @@
+from __future__ import annotations
+
+import json
+import math
+import runpy
+from itertools import pairwise
+from pathlib import Path
+
+import pytest
+
+torch = pytest.importorskip("torch")
+engine = pytest.importorskip("diffeoforge.engine")
+
+optimize_atlas = engine.optimize_atlas
+
+DTYPE = torch.float64
+REFERENCE_FIXTURE = (
+    Path(__file__).parents[1]
+    / "reference"
+    / "modern-engine-v0.2"
+    / "deformetrica-4.3.0-objective.json"
+)
+SMOKE_FIXTURE = (
+    Path(__file__).parents[1]
+    / "reference"
+    / "modern-engine-v0.4"
+    / "cc0-full-atlas-smoke.json"
+)
+
+
+def _problem(
+    *,
+    subjects: int = 2,
+    identical: bool = False,
+) -> tuple[tuple, dict]:
+    fixture = json.loads(REFERENCE_FIXTURE.read_text(encoding="utf-8"))
+    values = fixture["inputs"]
+    template = torch.tensor(values["template_vertices"], dtype=DTYPE)
+    reference_target = torch.tensor(values["target_vertices"], dtype=DTYPE)
+    triangles = torch.tensor(values["triangles"], dtype=torch.int64)
+    control_points = torch.tensor(values["control_points"], dtype=DTYPE)
+    translations = (
+        torch.tensor([0.0, 0.0, 0.0], dtype=DTYPE),
+        torch.tensor([0.01, -0.015, 0.02], dtype=DTYPE),
+    )
+    target = template if identical else reference_target
+    targets = tuple((target + translations[index], triangles) for index in range(subjects))
+    momenta = torch.zeros((subjects, *control_points.shape), dtype=DTYPE)
+    arguments = (template, triangles, targets, control_points, momenta)
+    keywords = {
+        "deformation_kernel_width": values["deformation_width"],
+        "attachment_kernel_width": values["attachment_width"],
+        "noise_variance": values["noise_variance"],
+        "number_of_time_points": values["number_of_time_points"],
+        "attachment_type": "current",
+    }
+    return arguments, keywords
+
+
+def test_every_accepted_block_monotonically_improves_the_objective() -> None:
+    arguments, keywords = _problem()
+
+    result = optimize_atlas(
+        *arguments,
+        **keywords,
+        max_cycles=2,
+        gradient_tolerance=0.0,
+    )
+
+    assert result.termination_reason == "max_cycles"
+    assert result.converged is False
+    assert result.failed_block is None
+    assert result.cycles_completed == 2
+    assert [record.block for record in result.history[1:]] == [
+        "momenta",
+        "template",
+        "control_points",
+        "momenta",
+        "template",
+        "control_points",
+    ]
+    assert all(record.status == "accepted" for record in result.history[1:])
+    assert all(
+        later.objective > earlier.objective for earlier, later in pairwise(result.history)
+    )
+    assert all(
+        record.objective == pytest.approx(record.attachment + record.regularity)
+        for record in result.history
+    )
+    assert result.total_line_search_evaluations == sum(
+        record.line_search_evaluations for record in result.history
+    )
+    assert result.settings.max_cycles == 2
+    assert result.settings.block_order == ("momenta", "template", "control_points")
+    assert result.settings.momenta_step_size == 0.1
+
+
+def test_optimizer_is_repeatable_detached_and_does_not_mutate_inputs() -> None:
+    arguments, keywords = _problem()
+    originals = tuple(
+        value.clone() if isinstance(value, torch.Tensor) else value for value in arguments
+    )
+
+    first = optimize_atlas(*arguments, **keywords, max_cycles=2)
+    second = optimize_atlas(*arguments, **keywords, max_cycles=2)
+
+    for original, observed in zip(originals, arguments, strict=True):
+        if isinstance(original, torch.Tensor):
+            assert torch.equal(observed, original)
+    assert torch.equal(first.template_vertices, second.template_vertices)
+    assert torch.equal(first.control_points, second.control_points)
+    assert torch.equal(first.momenta, second.momenta)
+    assert first.history == second.history
+    for tensor, source in zip(
+        (first.template_vertices, first.control_points, first.momenta),
+        (arguments[0], arguments[3], arguments[4]),
+        strict=True,
+    ):
+        assert tensor.requires_grad is False
+        assert tensor.shape == source.shape
+        assert tensor.dtype == source.dtype
+        assert tensor.device == source.device
+
+
+def test_progress_observer_mirrors_committed_history_without_changing_results() -> None:
+    arguments, keywords = _problem()
+    observed = []
+
+    with_progress = optimize_atlas(
+        *arguments,
+        **keywords,
+        max_cycles=2,
+        progress_callback=observed.append,
+    )
+    without_progress = optimize_atlas(*arguments, **keywords, max_cycles=2)
+
+    assert tuple(observed) == with_progress.history
+    assert with_progress.history == without_progress.history
+    assert torch.equal(with_progress.template_vertices, without_progress.template_vertices)
+    assert torch.equal(with_progress.control_points, without_progress.control_points)
+    assert torch.equal(with_progress.momenta, without_progress.momenta)
+
+
+def test_progress_observer_reports_failed_decision_not_rejected_candidates() -> None:
+    arguments, keywords = _problem(subjects=1)
+    observed = []
+
+    result = optimize_atlas(
+        *arguments,
+        **keywords,
+        max_cycles=3,
+        momenta_step_size=10.0,
+        template_step_size=10.0,
+        control_points_step_size=10.0,
+        max_line_search_iterations=1,
+        progress_callback=observed.append,
+    )
+
+    assert [record.status for record in observed] == ["initial", "failed"]
+    assert tuple(observed) == result.history
+    assert result.total_line_search_evaluations == 1
+
+
+def test_identical_subject_is_stationary_for_every_block() -> None:
+    arguments, keywords = _problem(subjects=1, identical=True)
+
+    result = optimize_atlas(*arguments, **keywords, max_cycles=5)
+
+    assert result.termination_reason == "gradient_tolerance"
+    assert result.converged is True
+    assert result.cycles_completed == 1
+    assert [record.status for record in result.history] == [
+        "initial",
+        "stationary",
+        "stationary",
+        "stationary",
+    ]
+    assert all((record.gradient_norm or 0.0) < 1e-8 for record in result.history[1:])
+    assert torch.equal(result.template_vertices, arguments[0])
+    assert torch.equal(result.control_points, arguments[3])
+    assert torch.equal(result.momenta, arguments[4])
+
+
+def test_zero_cycles_returns_fully_evaluated_initial_state() -> None:
+    arguments, keywords = _problem(subjects=1)
+
+    result = optimize_atlas(*arguments, **keywords, max_cycles=0)
+
+    assert result.termination_reason == "max_cycles"
+    assert result.cycles_completed == 0
+    assert len(result.history) == 1
+    assert result.history[0].status == "initial"
+    assert math.isfinite(result.history[0].objective)
+    assert result.total_line_search_evaluations == 0
+
+
+def test_failed_first_block_preserves_all_initial_parameters() -> None:
+    arguments, keywords = _problem(subjects=1)
+
+    result = optimize_atlas(
+        *arguments,
+        **keywords,
+        max_cycles=3,
+        momenta_step_size=10.0,
+        template_step_size=10.0,
+        control_points_step_size=10.0,
+        max_line_search_iterations=1,
+    )
+
+    assert result.termination_reason == "line_search_failed"
+    assert result.failed_block == "momenta"
+    assert result.cycles_completed == 0
+    assert result.history[-1].status == "failed"
+    assert result.history[-1].line_search_evaluations == 1
+    assert torch.equal(result.template_vertices, arguments[0])
+    assert torch.equal(result.control_points, arguments[3])
+    assert torch.equal(result.momenta, arguments[4])
+
+
+def test_all_parameter_blocks_move_on_a_nontrivial_problem() -> None:
+    arguments, keywords = _problem()
+    template, _, _, control_points, momenta = arguments
+
+    result = optimize_atlas(*arguments, **keywords, max_cycles=2)
+
+    assert torch.linalg.vector_norm(result.template_vertices - template) > 0
+    assert torch.linalg.vector_norm(result.control_points - control_points) > 0
+    assert torch.linalg.vector_norm(result.momenta - momenta) > 0
+
+
+def test_translated_subject_moves_template_toward_the_declared_translation() -> None:
+    arguments, keywords = _problem(subjects=1, identical=True)
+    template, triangles, _, control_points, momenta = arguments
+    translation = torch.tensor([0.03, -0.02, 0.04], dtype=DTYPE)
+
+    result = optimize_atlas(
+        template,
+        triangles,
+        ((template + translation, triangles),),
+        control_points,
+        momenta,
+        **keywords,
+        max_cycles=1,
+        gradient_tolerance=0.0,
+    )
+
+    mean_template_displacement = torch.mean(result.template_vertices - template, dim=0)
+    assert torch.dot(mean_template_displacement, translation) > 0
+    assert torch.linalg.vector_norm(result.control_points - control_points) > 0
+    assert result.history[1].block == "momenta"
+    assert result.history[1].status == "accepted"
+
+
+def test_declared_block_order_is_honored() -> None:
+    arguments, keywords = _problem()
+
+    result = optimize_atlas(
+        *arguments,
+        **keywords,
+        max_cycles=1,
+        block_order=("template", "momenta", "control_points"),
+    )
+
+    assert [record.block for record in result.history[1:]] == [
+        "template",
+        "momenta",
+        "control_points",
+    ]
+
+
+def test_optimizer_remains_differentiable_internally_under_no_grad() -> None:
+    arguments, keywords = _problem(subjects=1)
+
+    with torch.no_grad():
+        result = optimize_atlas(*arguments, **keywords, max_cycles=1)
+
+    assert any(record.status == "accepted" for record in result.history)
+    assert result.history[-1].objective > result.history[0].objective
+
+
+@pytest.mark.parametrize(
+    ("override", "message"),
+    [
+        ({"max_cycles": -1}, "max_cycles"),
+        ({"max_line_search_iterations": 0}, "max_line_search_iterations"),
+        ({"momenta_step_size": 0.0}, "momenta_step_size"),
+        ({"template_step_size": 0.0}, "template_step_size"),
+        ({"control_points_step_size": 0.0}, "control_points_step_size"),
+        ({"backtracking_factor": 0.0}, "backtracking_factor"),
+        ({"backtracking_factor": 1.0}, "backtracking_factor"),
+        ({"armijo_constant": 0.0}, "armijo_constant"),
+        ({"gradient_tolerance": -1.0}, "gradient_tolerance"),
+        ({"minimum_step_size": 0.0}, "minimum_step_size"),
+        ({"minimum_step_size": 0.02, "template_step_size": 0.01}, "minimum_step_size"),
+        (
+            {"block_order": ("momenta", "template", "template")},
+            "block_order",
+        ),
+    ],
+)
+def test_invalid_optimizer_settings_fail_explicitly(override: dict, message: str) -> None:
+    arguments, keywords = _problem(subjects=1)
+
+    with pytest.raises((TypeError, ValueError), match=message):
+        optimize_atlas(*arguments, **keywords, **override)
+
+
+def test_nonfinite_initial_parameter_fails_before_optimization() -> None:
+    arguments, keywords = _problem(subjects=1)
+    invalid_template = arguments[0].clone()
+    invalid_template[0, 0] = torch.nan
+
+    with pytest.raises(ValueError, match="finite"):
+        optimize_atlas(invalid_template, *arguments[1:], **keywords)
+
+
+def test_committed_cc0_full_atlas_smoke_matches_versioned_evidence() -> None:
+    expected = json.loads(SMOKE_FIXTURE.read_text(encoding="utf-8"))
+    tool = runpy.run_path(
+        str(Path(__file__).parents[1] / "tools" / "run_full_atlas_optimizer_smoke.py")
+    )
+    observed = tool["run_smoke"]()
+
+    assert observed["schema_version"] == expected["schema_version"]
+    assert observed["scientific_boundary"] == expected["scientific_boundary"]
+    assert observed["inputs"] == expected["inputs"]
+    assert observed["settings"] == expected["settings"]
+    assert observed["result"]["termination_reason"] == "max_cycles"
+    assert observed["result"]["converged"] is False
+    assert observed["result"]["failed_block"] is None
+    assert observed["result"]["cycles_completed"] == 3
+    assert (
+        observed["result"]["total_line_search_evaluations"]
+        == expected["result"]["total_line_search_evaluations"]
+    )
+    assert all(len(value) == 64 for value in observed["result"]["parameter_sha256"].values())
+    for name, value in observed["result"]["parameter_delta_norms"].items():
+        assert value == pytest.approx(
+            expected["result"]["parameter_delta_norms"][name],
+            rel=1e-9,
+            abs=1e-12,
+        )
+        assert value > 0
+    for actual_record, expected_record in zip(
+        observed["result"]["history"],
+        expected["result"]["history"],
+        strict=True,
+    ):
+        for name in (
+            "cycle",
+            "block",
+            "status",
+            "accepted_step_size",
+            "line_search_evaluations",
+        ):
+            assert actual_record[name] == expected_record[name]
+        for name in ("objective", "attachment", "regularity", "gradient_norm"):
+            assert actual_record[name] == pytest.approx(
+                expected_record[name], rel=1e-9, abs=1e-11
+            )
+        assert actual_record["residuals"] == pytest.approx(
+            expected_record["residuals"], rel=1e-9, abs=1e-11
+        )

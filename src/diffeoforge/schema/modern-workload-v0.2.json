@@ -1,0 +1,284 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DiffeoForge modern configured-engine workload plan",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "workload_version", "engine", "source_config", "input", "configuration",
+    "operation_model", "optimizer_bound", "payload_model", "output_bound",
+    "host_observations", "warnings", "scientific_boundary"
+  ],
+  "$defs": {
+    "mesh": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["label", "role", "bytes", "sha256", "points", "triangles"],
+      "properties": {
+        "label": {"type": "string", "minLength": 1},
+        "role": {"enum": ["template", "subject"]},
+        "bytes": {"type": "integer", "minimum": 1},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "points": {"type": "integer", "minimum": 1},
+        "triangles": {"type": "integer", "minimum": 1}
+      }
+    },
+    "count": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["calls", "pair_elements"],
+      "properties": {
+        "calls": {"type": "integer", "minimum": 0},
+        "pair_elements": {"type": "integer", "minimum": 0}
+      }
+    },
+    "pairwiseEvaluation": {
+      "oneOf": [
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["mode", "query_tile_size", "source_tile_size"],
+          "properties": {
+            "mode": {"const": "dense"},
+            "query_tile_size": {"type": "null"},
+            "source_tile_size": {"type": "null"}
+          }
+        },
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["mode", "query_tile_size", "source_tile_size"],
+          "properties": {
+            "mode": {"const": "blockwise"},
+            "query_tile_size": {"type": "integer", "minimum": 1},
+            "source_tile_size": {"type": "integer", "minimum": 1}
+          }
+        }
+      ]
+    }
+  },
+  "properties": {
+    "workload_version": {"const": "0.2"},
+    "engine": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "diffeoforge", "device", "precision", "bytes_per_float", "pairwise_evaluation"],
+      "properties": {
+        "id": {"enum": ["diffeoforge_modern_dense", "diffeoforge_modern_blockwise"]},
+        "diffeoforge": {"type": "string", "minLength": 1},
+        "device": {"const": "cpu"},
+        "precision": {"const": "float64"},
+        "bytes_per_float": {"const": 8},
+        "pairwise_evaluation": {"$ref": "#/$defs/pairwiseEvaluation"}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"pairwise_evaluation": {"properties": {"mode": {"const": "dense"}}}}},
+          "then": {"properties": {"id": {"const": "diffeoforge_modern_dense"}}}
+        },
+        {
+          "if": {"properties": {"pairwise_evaluation": {"properties": {"mode": {"const": "blockwise"}}}}},
+          "then": {"properties": {"id": {"const": "diffeoforge_modern_blockwise"}}}
+        }
+      ]
+    },
+    "source_config": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["filename", "sha256", "project"],
+      "properties": {
+        "filename": {"type": "string", "minLength": 1},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "project": {"type": "string", "minLength": 1}
+      }
+    },
+    "input": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["template", "subjects", "subject_count", "source_file_bytes"],
+      "properties": {
+        "template": {"$ref": "#/$defs/mesh"},
+        "subjects": {"type": "array", "minItems": 2, "items": {"$ref": "#/$defs/mesh"}},
+        "subject_count": {"type": "integer", "minimum": 2},
+        "source_file_bytes": {"type": "integer", "minimum": 1}
+      }
+    },
+    "configuration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "control_points", "timepoints", "shooting_integrator", "flow_integrator",
+        "attachment_type", "max_cycles", "block_order", "max_line_search_iterations",
+        "threads", "procrustes_enabled"
+      ],
+      "properties": {
+        "control_points": {"type": "integer", "minimum": 1},
+        "timepoints": {"type": "integer", "minimum": 2},
+        "shooting_integrator": {"enum": ["euler", "rk2"]},
+        "flow_integrator": {"enum": ["euler", "heun", "deformetrica_heun"]},
+        "attachment_type": {"enum": ["current", "varifold"]},
+        "max_cycles": {"type": "integer", "minimum": 0},
+        "block_order": {
+          "type": "array", "minItems": 3, "maxItems": 3, "uniqueItems": true,
+          "items": {"enum": ["momenta", "template", "control_points"]}
+        },
+        "max_line_search_iterations": {"type": "integer", "minimum": 1},
+        "threads": {"type": "integer", "minimum": 1},
+        "procrustes_enabled": {"type": "boolean"}
+      }
+    },
+    "operation_model": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["definitions", "one_objective_forward", "largest_logical_pair", "largest_execution_tile"],
+      "properties": {
+        "definitions": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "pair_element", "attachment_per_subject", "shooting_per_step",
+            "flow_per_step", "deformetrica_heun_extrapolation", "deformation_energy"
+          ],
+          "properties": {
+            "pair_element": {"type": "string", "minLength": 1},
+            "attachment_per_subject": {"type": "string", "minLength": 1},
+            "shooting_per_step": {"type": "string", "minLength": 1},
+            "flow_per_step": {"type": "string", "minLength": 1},
+            "deformetrica_heun_extrapolation": {"type": "string", "minLength": 1},
+            "deformation_energy": {"type": "string", "minLength": 1}
+          }
+        },
+        "one_objective_forward": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "gaussian_calls", "gaussian_pair_elements", "attachment",
+            "shooting", "template_flow", "deformetrica_heun_extrapolation",
+            "deformation_energy"
+          ],
+          "properties": {
+            "gaussian_calls": {"type": "integer", "minimum": 1},
+            "gaussian_pair_elements": {"type": "integer", "minimum": 1},
+            "attachment": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["calls", "pair_elements", "orientation_pair_elements"],
+              "properties": {
+                "calls": {"type": "integer", "minimum": 1},
+                "pair_elements": {"type": "integer", "minimum": 1},
+                "orientation_pair_elements": {"type": "integer", "minimum": 0}
+              }
+            },
+            "shooting": {"$ref": "#/$defs/count"},
+            "template_flow": {"$ref": "#/$defs/count"},
+            "deformetrica_heun_extrapolation": {"$ref": "#/$defs/count"},
+            "deformation_energy": {"$ref": "#/$defs/count"}
+          }
+        },
+        "largest_logical_pair": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "operation", "subject_label", "rows", "columns", "pair_elements",
+            "float64_matrix_bytes", "float64_xyz_difference_tensor_bytes"
+          ],
+          "properties": {
+            "operation": {"type": "string", "minLength": 1},
+            "subject_label": {"type": ["string", "null"]},
+            "rows": {"type": "integer", "minimum": 1},
+            "columns": {"type": "integer", "minimum": 1},
+            "pair_elements": {"type": "integer", "minimum": 1},
+            "float64_matrix_bytes": {"type": "integer", "minimum": 8},
+            "float64_xyz_difference_tensor_bytes": {"type": "integer", "minimum": 24}
+          }
+        },
+        "largest_execution_tile": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "operation", "subject_label", "logical_rows", "logical_columns",
+            "tile_rows", "tile_columns", "pair_elements", "float64_matrix_bytes",
+            "float64_xyz_difference_tensor_bytes"
+          ],
+          "properties": {
+            "operation": {"type": "string", "minLength": 1},
+            "subject_label": {"type": ["string", "null"]},
+            "logical_rows": {"type": "integer", "minimum": 1},
+            "logical_columns": {"type": "integer", "minimum": 1},
+            "tile_rows": {"type": "integer", "minimum": 1},
+            "tile_columns": {"type": "integer", "minimum": 1},
+            "pair_elements": {"type": "integer", "minimum": 1},
+            "float64_matrix_bytes": {"type": "integer", "minimum": 8},
+            "float64_xyz_difference_tensor_bytes": {"type": "integer", "minimum": 24}
+          }
+        }
+      }
+    },
+    "optimizer_bound": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "formula", "parameter_blocks", "objective_gradient_evaluation_upper_bound",
+        "gaussian_pair_elements_upper_bound"
+      ],
+      "properties": {
+        "formula": {"type": "string", "minLength": 1},
+        "parameter_blocks": {"const": 3},
+        "objective_gradient_evaluation_upper_bound": {"type": "integer", "minimum": 1},
+        "gaussian_pair_elements_upper_bound": {"type": "integer", "minimum": 1}
+      }
+    },
+    "payload_model": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "engine_initial_mesh_tensor_bytes", "engine_initial_control_point_tensor_bytes",
+        "engine_initial_momenta_tensor_bytes", "engine_initial_persistent_tensor_bytes",
+        "objective_retained_trajectory_and_template_path_bytes",
+        "largest_logical_all_pairs_xyz_difference_tensor_bytes",
+        "largest_single_execution_xyz_difference_tensor_bytes",
+        "known_payload_arithmetic_subtotal_bytes"
+      ],
+      "properties": {
+        "engine_initial_mesh_tensor_bytes": {"type": "integer", "minimum": 1},
+        "engine_initial_control_point_tensor_bytes": {"type": "integer", "minimum": 1},
+        "engine_initial_momenta_tensor_bytes": {"type": "integer", "minimum": 1},
+        "engine_initial_persistent_tensor_bytes": {"type": "integer", "minimum": 1},
+        "objective_retained_trajectory_and_template_path_bytes": {"type": "integer", "minimum": 1},
+        "largest_logical_all_pairs_xyz_difference_tensor_bytes": {"type": "integer", "minimum": 1},
+        "largest_single_execution_xyz_difference_tensor_bytes": {"type": "integer", "minimum": 1},
+        "known_payload_arithmetic_subtotal_bytes": {"type": "integer", "minimum": 1}
+      }
+    },
+    "output_bound": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "maximum_retained_components", "maximum_deformation_components",
+        "maximum_pca_meshes_including_mean", "maximum_bundle_vtk_meshes"
+      ],
+      "properties": {
+        "maximum_retained_components": {"type": "integer", "minimum": 1},
+        "maximum_deformation_components": {"type": "integer", "minimum": 1},
+        "maximum_pca_meshes_including_mean": {"type": "integer", "minimum": 3},
+        "maximum_bundle_vtk_meshes": {"type": "integer", "minimum": 5}
+      }
+    },
+    "host_observations": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "platform", "logical_cpus", "physical_memory_bytes",
+        "output_filesystem_free_bytes"
+      ],
+      "properties": {
+        "platform": {"type": "string", "minLength": 1},
+        "logical_cpus": {"type": ["integer", "null"], "minimum": 1},
+        "physical_memory_bytes": {"type": ["integer", "null"], "minimum": 1},
+        "output_filesystem_free_bytes": {"type": ["integer", "null"], "minimum": 0}
+      }
+    },
+    "warnings": {
+      "type": "array", "minItems": 1,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "scientific_boundary": {"type": "string", "minLength": 1}
+  }
+}

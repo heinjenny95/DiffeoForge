@@ -1,0 +1,287 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DiffeoForge modern workflow configuration",
+  "description": "Explicit configuration for the experimental CPU/float64 mesh-folder atlas workflow.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "project",
+    "input",
+    "preprocessing",
+    "quality_control",
+    "initialization",
+    "model",
+    "optimization",
+    "analysis",
+    "runtime",
+    "output"
+  ],
+  "properties": {
+    "schema_version": {"enum": ["0.1", "0.2"]},
+    "project": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {"name": {"type": "string", "minLength": 1}}
+    },
+    "input": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["directory", "subject_pattern", "template", "units"],
+      "properties": {
+        "directory": {"type": "string", "minLength": 1},
+        "subject_pattern": {"type": "string", "minLength": 1},
+        "template": {"type": "string", "minLength": 1},
+        "units": {
+          "enum": ["unitless", "micrometer", "millimeter", "centimeter", "meter"]
+        }
+      }
+    },
+    "preprocessing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["procrustes"],
+      "properties": {
+        "procrustes": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "enabled",
+            "landmarks_file",
+            "scale_to_unit_centroid_size",
+            "allow_reflection",
+            "tolerance",
+            "max_iterations"
+          ],
+          "properties": {
+            "enabled": {"type": "boolean"},
+            "landmarks_file": {
+              "oneOf": [
+                {"type": "string", "minLength": 1},
+                {"type": "null"}
+              ]
+            },
+            "scale_to_unit_centroid_size": {"type": "boolean"},
+            "allow_reflection": {"type": "boolean"},
+            "tolerance": {"type": "number", "minimum": 0},
+            "max_iterations": {"type": "integer", "minimum": 1}
+          },
+          "allOf": [
+            {
+              "if": {"properties": {"enabled": {"const": true}}},
+              "then": {"properties": {"landmarks_file": {"type": "string", "minLength": 1}}},
+              "else": {"properties": {"landmarks_file": {"type": "null"}}}
+            }
+          ]
+        }
+      }
+    },
+    "quality_control": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "require_no_duplicate_faces",
+        "require_no_isolated_vertices",
+        "require_edge_manifold",
+        "require_consistent_orientation",
+        "require_single_component",
+        "require_closed_surface",
+        "reject_zero_area_faces",
+        "minimum_triangle_angle_degrees",
+        "maximum_triangle_edge_ratio",
+        "minimum_face_area_ratio",
+        "maximum_face_area_ratio"
+      ],
+      "properties": {
+        "require_no_duplicate_faces": {"type": "boolean"},
+        "require_no_isolated_vertices": {"type": "boolean"},
+        "require_edge_manifold": {"type": "boolean"},
+        "require_consistent_orientation": {"type": "boolean"},
+        "require_single_component": {"type": "boolean"},
+        "require_closed_surface": {"type": "boolean"},
+        "reject_zero_area_faces": {"type": "boolean"},
+        "minimum_triangle_angle_degrees": {
+          "oneOf": [
+            {"type": "number", "exclusiveMinimum": 0, "maximum": 60},
+            {"type": "null"}
+          ]
+        },
+        "maximum_triangle_edge_ratio": {
+          "oneOf": [
+            {"type": "number", "minimum": 1},
+            {"type": "null"}
+          ]
+        },
+        "minimum_face_area_ratio": {
+          "oneOf": [
+            {"type": "number", "exclusiveMinimum": 0},
+            {"type": "null"}
+          ]
+        },
+        "maximum_face_area_ratio": {
+          "oneOf": [
+            {"type": "number", "exclusiveMinimum": 0},
+            {"type": "null"}
+          ]
+        }
+      }
+    },
+    "initialization": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["control_points", "momenta"],
+      "properties": {
+        "control_points": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["method", "count"],
+          "properties": {
+            "method": {"const": "farthest_template_vertices"},
+            "count": {"type": "integer", "minimum": 1}
+          }
+        },
+        "momenta": {"const": "zeros"}
+      }
+    },
+    "model": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["attachment", "deformation", "noise_variance"],
+      "properties": {
+        "attachment": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "kernel_width"],
+          "properties": {
+            "type": {"enum": ["current", "varifold"]},
+            "kernel_width": {"type": "number", "exclusiveMinimum": 0}
+          }
+        },
+        "deformation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kernel_width", "timepoints", "shooting_integrator", "flow_integrator"],
+          "properties": {
+            "kernel_width": {"type": "number", "exclusiveMinimum": 0},
+            "timepoints": {"type": "integer", "minimum": 2},
+            "shooting_integrator": {"enum": ["euler", "rk2"]},
+            "flow_integrator": {"enum": ["euler", "heun", "deformetrica_heun"]}
+          }
+        },
+        "noise_variance": {"type": "number", "exclusiveMinimum": 0}
+      }
+    },
+    "optimization": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "max_cycles",
+        "block_order",
+        "momenta_step_size",
+        "template_step_size",
+        "control_points_step_size",
+        "backtracking_factor",
+        "armijo_constant",
+        "gradient_tolerance",
+        "minimum_step_size",
+        "max_line_search_iterations"
+      ],
+      "properties": {
+        "max_cycles": {"type": "integer", "minimum": 0},
+        "block_order": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "uniqueItems": true,
+          "items": {"enum": ["momenta", "template", "control_points"]}
+        },
+        "momenta_step_size": {"type": "number", "exclusiveMinimum": 0},
+        "template_step_size": {"type": "number", "exclusiveMinimum": 0},
+        "control_points_step_size": {"type": "number", "exclusiveMinimum": 0},
+        "backtracking_factor": {"type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 1},
+        "armijo_constant": {"type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 1},
+        "gradient_tolerance": {"type": "number", "minimum": 0},
+        "minimum_step_size": {"type": "number", "exclusiveMinimum": 0},
+        "max_line_search_iterations": {"type": "integer", "minimum": 1}
+      }
+    },
+    "analysis": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pca_components", "deformation_standard_deviations", "deformation_components"],
+      "properties": {
+        "pca_components": {
+          "oneOf": [
+            {"type": "integer", "minimum": 1},
+            {"type": "null"}
+          ]
+        },
+        "deformation_standard_deviations": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "deformation_components": {
+          "oneOf": [
+            {"type": "integer", "minimum": 1},
+            {"type": "null"}
+          ]
+        }
+      }
+    },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["device", "precision", "threads", "random_seed"],
+      "properties": {
+        "device": {"const": "cpu"},
+        "precision": {"const": "float64"},
+        "threads": {"type": "integer", "minimum": 1},
+        "random_seed": {"type": "integer", "minimum": 0},
+        "pairwise_evaluation": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["mode", "query_tile_size", "source_tile_size"],
+              "properties": {
+                "mode": {"const": "dense"},
+                "query_tile_size": {"type": "null"},
+                "source_tile_size": {"type": "null"}
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["mode", "query_tile_size", "source_tile_size"],
+              "properties": {
+                "mode": {"const": "blockwise"},
+                "query_tile_size": {"type": "integer", "minimum": 1},
+                "source_tile_size": {"type": "integer", "minimum": 1}
+              }
+            }
+          ]
+        }
+      }
+    },
+    "output": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["directory"],
+      "properties": {"directory": {"type": "string", "minLength": 1}}
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "required": ["schema_version"],
+        "properties": {"schema_version": {"const": "0.2"}}
+      },
+      "then": {
+        "properties": {
+          "runtime": {"required": ["pairwise_evaluation"]}
+        }
+      }
+    }
+  ]
+}

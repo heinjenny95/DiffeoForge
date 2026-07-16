@@ -140,6 +140,161 @@ def build_parser() -> argparse.ArgumentParser:
         help="Explicitly replace an existing generated configuration and report.",
     )
 
+    modern_init_parser = subparsers.add_parser(
+        "modern-init",
+        help="Create an explicit starter configuration for the modern CPU/float64 path.",
+    )
+    modern_init_parser.add_argument("mesh_directory", type=Path)
+    modern_init_parser.add_argument("--template", type=Path)
+    modern_init_parser.add_argument("--units", choices=SUPPORTED_UNITS)
+    modern_init_parser.add_argument("--project-name")
+    modern_init_parser.add_argument("--subject-pattern", default="*.vtk")
+    modern_init_parser.add_argument("--config", type=Path, default=Path("modern-atlas.yaml"))
+    modern_init_parser.add_argument("--output-directory", type=Path)
+    modern_init_parser.add_argument(
+        "--landmarks",
+        type=Path,
+        help="Optional labelled landmark CSV; enables recorded Procrustes alignment.",
+    )
+    modern_init_parser.add_argument("--control-points", type=int, default=9)
+    modern_init_parser.add_argument("--attachment-kernel-width", type=float)
+    modern_init_parser.add_argument("--deformation-kernel-width", type=float)
+    modern_init_parser.add_argument("--noise-variance", type=float)
+    modern_init_parser.add_argument("--max-cycles", type=int, default=3)
+    modern_init_parser.add_argument("--threads", type=int)
+    modern_init_parser.add_argument("--random-seed", type=int, default=20260715)
+    modern_init_parser.add_argument(
+        "--pairwise-mode",
+        choices=("dense", "blockwise"),
+        default="dense",
+        help="Exact pairwise execution mode (default: dense correctness oracle).",
+    )
+    modern_init_parser.add_argument(
+        "--query-tile-size",
+        type=int,
+        help="Required positive query-row tile size for --pairwise-mode blockwise.",
+    )
+    modern_init_parser.add_argument(
+        "--source-tile-size",
+        type=int,
+        help="Required positive source-row tile size for --pairwise-mode blockwise.",
+    )
+    modern_init_parser.add_argument("--force", action="store_true")
+
+    modern_run_parser = subparsers.add_parser(
+        "modern-run",
+        help="Execute one immutable experimental modern atlas/PCA workflow.",
+    )
+    modern_run_parser.add_argument("config", type=Path)
+    modern_run_parser.add_argument(
+        "--output",
+        type=Path,
+        help="Override the exact previously nonexistent run destination.",
+    )
+
+    modern_plan_parser = subparsers.add_parser(
+        "modern-plan",
+        help="Inspect configured-engine workload and known tensor payloads without computing.",
+    )
+    modern_plan_parser.add_argument("config", type=Path)
+    modern_plan_parser.add_argument(
+        "--output",
+        type=Path,
+        help="Report directory (default: CONFIG_NAME.workload).",
+    )
+    modern_plan_parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Replace only a recognized generated workload-report directory.",
+    )
+
+    modern_benchmark_parser = subparsers.add_parser(
+        "modern-benchmark",
+        help="Measure configured objective/gradient repeats without extrapolation.",
+    )
+    modern_benchmark_parser.add_argument("config", type=Path)
+    modern_benchmark_parser.add_argument(
+        "--subjects",
+        type=int,
+        required=True,
+        help="Explicit deterministic subject-prefix size to benchmark.",
+    )
+    modern_benchmark_parser.add_argument("--repeats", type=int, default=3)
+    modern_benchmark_parser.add_argument("--warmups", type=int, default=1)
+    modern_benchmark_parser.add_argument(
+        "--tile-autograd-strategy",
+        choices=("standard", "recompute"),
+        default="standard",
+        help="Benchmark-only override; recompute requires configured blockwise execution.",
+    )
+    modern_benchmark_parser.add_argument(
+        "--output",
+        type=Path,
+        help="Report directory (default: CONFIG_NAME.benchmark).",
+    )
+    modern_benchmark_parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Replace only a recognized generated benchmark-report directory.",
+    )
+
+    modern_benchmark_design_parser = subparsers.add_parser(
+        "modern-benchmark-design",
+        help="Freeze a paired blockwise standard/recompute design before measuring.",
+    )
+    modern_benchmark_design_parser.add_argument("config", type=Path)
+    modern_benchmark_design_parser.add_argument(
+        "--subjects",
+        type=int,
+        nargs="+",
+        required=True,
+        help="One or more unique deterministic subject-prefix sizes.",
+    )
+    modern_benchmark_design_parser.add_argument("--repeats", type=int, default=5)
+    modern_benchmark_design_parser.add_argument("--warmups", type=int, default=1)
+    modern_benchmark_design_parser.add_argument(
+        "--order-seed",
+        type=int,
+        default=20260716,
+        help="Seed for the versioned deterministic paired condition order.",
+    )
+    modern_benchmark_design_parser.add_argument(
+        "--output",
+        type=Path,
+        help="New immutable design directory (default: CONFIG_NAME.benchmark-study).",
+    )
+
+    modern_benchmark_study_parser = subparsers.add_parser(
+        "modern-benchmark-study",
+        help="Execute or resume one frozen design without comparing conditions.",
+    )
+    modern_benchmark_study_parser.add_argument("design_directory", type=Path)
+    modern_benchmark_study_parser.add_argument("config", type=Path)
+    modern_benchmark_study_parser.add_argument(
+        "--output",
+        type=Path,
+        help="Study run directory (default: DESIGN_DIRECTORY.run).",
+    )
+
+    modern_benchmark_study_status_parser = subparsers.add_parser(
+        "modern-benchmark-study-status",
+        help="Strictly inspect partial or complete study evidence without changing it.",
+    )
+    modern_benchmark_study_status_parser.add_argument("run_directory", type=Path)
+    modern_benchmark_study_status_parser.add_argument("--json", action="store_true")
+
+    modern_benchmark_study_verify_parser = subparsers.add_parser(
+        "modern-benchmark-study-verify",
+        help="Verify a completed frozen study and every separate raw report.",
+    )
+    modern_benchmark_study_verify_parser.add_argument("run_directory", type=Path)
+
+    modern_verify_parser = subparsers.add_parser(
+        "modern-verify",
+        help="Verify an immutable modern workflow run and its nested atlas/PCA bundle.",
+    )
+    modern_verify_parser.add_argument("run_directory", type=Path)
+
     validate_parser = subparsers.add_parser(
         "validate",
         help="Validate an atlas configuration before any computation starts.",
@@ -288,7 +443,7 @@ def _execution_outcome(run_directory: Path, return_code: int) -> int:
         if checkpoint.get("available"):
             print(
                 "Checkpoint integrity matches the output inventory. Resume with: "
-                f"diffeoforge resume \"{run_directory}\"",
+                f'diffeoforge resume "{run_directory}"',
                 file=sys.stderr,
             )
         else:
@@ -361,6 +516,382 @@ def main(argv: Sequence[str] | None = None) -> int:
                 )
                 print(f"Preflight report: {written_report}")
         except ConfigurationError as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
+
+    if args.command == "modern-init":
+        try:
+            from diffeoforge.modern_workflow import initialize_modern_workflow
+
+            units = args.units or _prompt_units()
+            template = args.template or _prompt_template(args.mesh_directory)
+            config_path = initialize_modern_workflow(
+                args.mesh_directory,
+                units=units,
+                config_path=args.config,
+                template=template,
+                subject_pattern=args.subject_pattern,
+                project_name=args.project_name,
+                output_directory=args.output_directory,
+                landmarks_file=args.landmarks,
+                control_point_count=args.control_points,
+                attachment_kernel_width=args.attachment_kernel_width,
+                deformation_kernel_width=args.deformation_kernel_width,
+                noise_variance=args.noise_variance,
+                max_cycles=args.max_cycles,
+                threads=args.threads,
+                random_seed=args.random_seed,
+                pairwise_mode=args.pairwise_mode,
+                query_tile_size=args.query_tile_size,
+                source_tile_size=args.source_tile_size,
+                overwrite=args.force,
+            )
+            print(f"Modern workflow configuration created: {config_path}")
+            print("WARNING: Geometry-scaled starter values are exploratory.")
+            print("Review every parameter before running the modern engine.")
+            print(f"Next: diffeoforge modern-plan {config_path}")
+        except ImportError as error:
+            print(
+                "ERROR: Modern engine dependencies are missing; install "
+                "diffeoforge[modern-engine].",
+                file=sys.stderr,
+            )
+            print(f"       {error}", file=sys.stderr)
+            return 2
+        except (ConfigurationError, ValueError, TypeError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
+
+    if args.command == "modern-run":
+        try:
+            from diffeoforge.modern_bundle import verify_modern_atlas_bundle
+            from diffeoforge.modern_workflow import (
+                run_modern_workflow,
+                verify_modern_workflow,
+            )
+
+            def show_progress(event) -> None:
+                stage = f"{event.completed_stages}/{event.total_stages} stages"
+                if event.optimizer is None:
+                    print(
+                        f"Progress [{stage}] {event.phase} {event.status}: {event.message}",
+                        flush=True,
+                    )
+                    return
+                optimizer = event.optimizer
+                decision = (
+                    f"{optimizer.completed_decisions}/{optimizer.maximum_decisions} decisions"
+                )
+                block = "initial" if optimizer.block is None else optimizer.block
+                print(
+                    f"Progress [{stage}; optimizer {decision}] cycle "
+                    f"{optimizer.cycle}/{optimizer.max_cycles} {block} {optimizer.status}; "
+                    f"objective={optimizer.objective:.12g}; "
+                    f"line-search={optimizer.line_search_evaluations}",
+                    flush=True,
+                )
+
+            run_directory = run_modern_workflow(
+                args.config,
+                destination=args.output,
+                progress_callback=show_progress,
+            )
+            manifest = verify_modern_workflow(run_directory)
+            print(f"Modern workflow completed: {run_directory}")
+            print(f"Subject meshes: {len(manifest['input']['subjects'])}")
+            print(f"Preprocessing: {manifest['preprocessing']['id']}")
+            bundle = run_directory / manifest["result_bundle"]["path"]
+            bundle_manifest = verify_modern_atlas_bundle(bundle)
+            print(f"Atlas/PCA bundle: {bundle}")
+            print(f"PCA scree plot: {bundle / bundle_manifest['pca']['plots']['scree_path']}")
+            print(f"PCA scores plot: {bundle / bundle_manifest['pca']['plots']['scores_path']}")
+            print(
+                "PCA deformation meshes: "
+                f"{bundle / Path(bundle_manifest['pca']['deformations']['mean_path']).parent}"
+            )
+        except ImportError as error:
+            print(
+                "ERROR: Modern engine dependencies are missing; install "
+                "diffeoforge[modern-engine].",
+                file=sys.stderr,
+            )
+            print(f"       {error}", file=sys.stderr)
+            return 2
+        except (ConfigurationError, RuntimeError, ValueError, TypeError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
+
+    if args.command == "modern-plan":
+        try:
+            from diffeoforge.modern_workload import (
+                REPORT_HTML_NAME,
+                REPORT_JSON_NAME,
+                plan_modern_workload,
+            )
+
+            report_directory = plan_modern_workload(
+                args.config,
+                destination=args.output,
+                overwrite=args.force,
+            )
+            report = json.loads(
+                (report_directory / REPORT_JSON_NAME).read_text(encoding="utf-8")
+            )
+            largest_execution_bytes = report["payload_model"][
+                "largest_single_execution_xyz_difference_tensor_bytes"
+            ]
+            print(f"Modern workload plan created: {report_directory}")
+            print(f"Subject meshes: {report['input']['subject_count']}")
+            print(
+                "Optimizer evaluation upper bound: "
+                f"{report['optimizer_bound']['objective_gradient_evaluation_upper_bound']}"
+            )
+            print(
+                "Largest single execution XYZ-difference tensor: "
+                f"{largest_execution_bytes} bytes"
+            )
+            print(f"Pairwise execution: {report['engine']['pairwise_evaluation']['mode']}")
+            print(f"Machine-readable report: {report_directory / REPORT_JSON_NAME}")
+            print(f"Review report: {report_directory / REPORT_HTML_NAME}")
+            print("WARNING: This is not a peak-RAM estimate or runtime forecast.")
+        except ImportError as error:
+            print(
+                "ERROR: Modern engine dependencies are missing; install "
+                "diffeoforge[modern-engine].",
+                file=sys.stderr,
+            )
+            print(f"       {error}", file=sys.stderr)
+            return 2
+        except (ConfigurationError, RuntimeError, OSError, ValueError, TypeError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
+
+    if args.command == "modern-benchmark":
+        try:
+            from diffeoforge.modern_benchmark import (
+                REPORT_HTML_NAME,
+                REPORT_JSON_NAME,
+                benchmark_modern_objective,
+            )
+
+            report_directory = benchmark_modern_objective(
+                args.config,
+                subject_count=args.subjects,
+                repeats=args.repeats,
+                warmup_evaluations=args.warmups,
+                tile_autograd_strategy=args.tile_autograd_strategy,
+                destination=args.output,
+                overwrite=args.force,
+            )
+            report = json.loads(
+                (report_directory / REPORT_JSON_NAME).read_text(encoding="utf-8")
+            )
+            wall_ms = report["summary"]["wall_time_ns"]["median"] / 1_000_000
+            peak_mib = (
+                report["summary"]["sampled_peak_rss_bytes"]["median"] / 1024**2
+            )
+            print(f"Modern objective benchmark created: {report_directory}")
+            print(f"Selected subjects: {report['input']['selected_subject_count']}")
+            print(f"Fresh-process repeats: {report['configuration']['repeats']}")
+            print(
+                "Pairwise execution: "
+                f"{report['configuration']['pairwise_evaluation']['mode']}"
+            )
+            print(
+                "Tile autograd strategy: "
+                f"{report['configuration']['tile_autograd_strategy']}"
+            )
+            print(f"Median measured objective+gradient wall time: {wall_ms:.3f} ms")
+            print(f"Median sampled process RSS: {peak_mib:.2f} MiB")
+            print(f"Machine-readable report: {report_directory / REPORT_JSON_NAME}")
+            print(f"Review report: {report_directory / REPORT_HTML_NAME}")
+            print("WARNING: Do not extrapolate this objective-only measurement to 300 subjects.")
+        except ImportError as error:
+            print(
+                "ERROR: Modern benchmark dependencies are missing; install "
+                "diffeoforge[modern-engine].",
+                file=sys.stderr,
+            )
+            print(f"       {error}", file=sys.stderr)
+            return 2
+        except (ConfigurationError, RuntimeError, OSError, ValueError, TypeError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
+
+    if args.command == "modern-benchmark-design":
+        try:
+            from diffeoforge.modern_benchmark_design import (
+                DESIGN_HTML_NAME,
+                DESIGN_JSON_NAME,
+                DESIGN_SIDECAR_NAME,
+                create_modern_benchmark_design,
+                verify_modern_benchmark_design,
+            )
+
+            design_directory = create_modern_benchmark_design(
+                args.config,
+                subject_counts=args.subjects,
+                repeats_per_condition=args.repeats,
+                warmup_evaluations=args.warmups,
+                order_seed=args.order_seed,
+                destination=args.output,
+            )
+            design = verify_modern_benchmark_design(design_directory)
+            print(f"Prospective benchmark design created: {design_directory}")
+            print(f"Paired subject-prefix sizes: {design['protocol']['subject_counts']}")
+            print(f"Frozen condition count: {len(design['conditions'])}")
+            print(f"Deterministic order seed: {design['protocol']['order_seed']}")
+            print(f"Machine-readable design: {design_directory / DESIGN_JSON_NAME}")
+            print(f"Integrity sidecar: {design_directory / DESIGN_SIDECAR_NAME}")
+            print(f"Review page: {design_directory / DESIGN_HTML_NAME}")
+            print("WARNING: No benchmark has been run and no performance claim is made.")
+        except ImportError as error:
+            print(
+                "ERROR: Modern benchmark dependencies are missing; install "
+                "diffeoforge[modern-engine].",
+                file=sys.stderr,
+            )
+            print(f"       {error}", file=sys.stderr)
+            return 2
+        except (ConfigurationError, RuntimeError, OSError, ValueError, TypeError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
+
+    if args.command == "modern-benchmark-study":
+        try:
+            from diffeoforge.modern_benchmark_study import (
+                MANIFEST_NAME,
+                run_modern_benchmark_study,
+                verify_modern_benchmark_study_run,
+            )
+
+            def show_study_progress(event) -> None:
+                condition = ""
+                if event.condition is not None:
+                    condition = (
+                        f"; {event.condition.condition_id}; "
+                        f"{event.condition.tile_autograd_strategy}; "
+                        f"{event.condition.subject_count} subjects"
+                    )
+                print(
+                    "Study progress "
+                    f"[{event.completed_conditions}/{event.total_conditions} conditions] "
+                    f"{event.status}{condition}: {event.message}",
+                    flush=True,
+                )
+
+            run_directory = run_modern_benchmark_study(
+                args.design_directory,
+                args.config,
+                destination=args.output,
+                progress_callback=show_study_progress,
+            )
+            manifest = verify_modern_benchmark_study_run(run_directory)
+            print(f"Frozen benchmark study completed and verified: {run_directory}")
+            print(f"Separate raw condition reports: {len(manifest['conditions'])}")
+            print(f"Completion manifest: {run_directory / MANIFEST_NAME}")
+            print("WARNING: No automatic comparison or performance claim was produced.")
+        except ImportError as error:
+            print(
+                "ERROR: Modern benchmark dependencies are missing; install "
+                "diffeoforge[modern-engine].",
+                file=sys.stderr,
+            )
+            print(f"       {error}", file=sys.stderr)
+            return 2
+        except (ConfigurationError, RuntimeError, OSError, ValueError, TypeError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
+
+    if args.command == "modern-benchmark-study-status":
+        try:
+            from diffeoforge.modern_benchmark_study import (
+                inspect_modern_benchmark_study_run,
+            )
+
+            status = inspect_modern_benchmark_study_run(args.run_directory)
+            if args.json:
+                print(json.dumps(status, indent=2, ensure_ascii=False, sort_keys=True))
+            else:
+                print(f"Study status: {status['status']}")
+                print(
+                    "Strictly verified raw reports: "
+                    f"{status['verified_report_count']}/{status['total_condition_count']}"
+                )
+                print(
+                    "State-recorded completed conditions: "
+                    f"{status['state_completed_condition_count']}"
+                )
+                print(f"Execution lock: {status['lock']['status']}")
+                if status["next_condition"] is not None:
+                    condition = status["next_condition"]
+                    print(
+                        "Next frozen condition: "
+                        f"{condition['condition_id']} "
+                        f"({condition['tile_autograd_strategy']}, "
+                        f"{condition['subject_count']} subjects)"
+                    )
+                if status["reconciliation_required"]:
+                    print(
+                        "RECOVERABLE: Valid report evidence is ahead of atomic state; "
+                        "the runner can reconcile it."
+                    )
+                print(
+                    "Completion manifest: "
+                    f"{status['completion_manifest_status']}; "
+                    f"verified={str(status['completion_manifest_verified']).lower()}"
+                )
+        except (RuntimeError, OSError, ValueError, TypeError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
+
+    if args.command == "modern-benchmark-study-verify":
+        try:
+            from diffeoforge.modern_benchmark_study import (
+                MANIFEST_NAME,
+                verify_modern_benchmark_study_run,
+            )
+
+            run_directory = args.run_directory.resolve()
+            manifest = verify_modern_benchmark_study_run(run_directory)
+            print(f"Completed benchmark study verified: {run_directory}")
+            print(f"Separate raw condition reports: {len(manifest['conditions'])}")
+            print(f"Completion manifest: {run_directory / MANIFEST_NAME}")
+            print("No automatic comparison or performance claim is present.")
+        except (RuntimeError, OSError, ValueError, TypeError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
+
+    if args.command == "modern-verify":
+        try:
+            from diffeoforge.modern_bundle import verify_modern_atlas_bundle
+            from diffeoforge.modern_workflow import verify_modern_workflow
+
+            manifest = verify_modern_workflow(args.run_directory)
+            run_directory = args.run_directory.resolve()
+            bundle = run_directory / manifest["result_bundle"]["path"]
+            bundle_manifest = verify_modern_atlas_bundle(bundle)
+            print(f"Modern workflow verified: {run_directory}")
+            print(f"Subject meshes: {len(manifest['input']['subjects'])}")
+            print(f"PCA scree plot: {bundle / bundle_manifest['pca']['plots']['scree_path']}")
+        except ImportError as error:
+            print(
+                "ERROR: Modern engine dependencies are missing; install "
+                "diffeoforge[modern-engine].",
+                file=sys.stderr,
+            )
+            print(f"       {error}", file=sys.stderr)
+            return 2
+        except (ConfigurationError, RuntimeError, ValueError, TypeError) as error:
             print(f"ERROR: {error}", file=sys.stderr)
             return 2
         return 0
@@ -469,7 +1000,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         if checkpoint["available"]:
             print(
                 "Checkpoint integrity matches the output inventory. Resume with: "
-                f"diffeoforge resume \"{args.run_directory.resolve()}\""
+                f'diffeoforge resume "{args.run_directory.resolve()}"'
             )
         else:
             print("No checkpoint is available; this run cannot be resumed.")

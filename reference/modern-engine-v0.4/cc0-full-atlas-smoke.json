@@ -1,0 +1,277 @@
+{
+  "description": "Deterministic full-parameter block optimization evidence on the committed five-subject CC0 synthetic cohort.",
+  "inputs": {
+    "control_point_indices": [
+      0,
+      20,
+      40,
+      60,
+      80,
+      100,
+      120,
+      140,
+      160
+    ],
+    "generator_sha256": "28a5fd976a01df06d6155a8f37d7c8c68fb70486d176587152d676ce6a33ebb4",
+    "license": "CC0-1.0",
+    "subjects": [
+      {
+        "path": "examples/synthetic/meshes/subject-01.vtk",
+        "sha256": "25c07a447699028e63b535c00ca094803664fcda15595c1645d9cb3a5b73233b"
+      },
+      {
+        "path": "examples/synthetic/meshes/subject-02.vtk",
+        "sha256": "932d282639be32a04f127f86ba67bb9b2d7559a849a0169f7e87e668dbec9cc2"
+      },
+      {
+        "path": "examples/synthetic/meshes/subject-03.vtk",
+        "sha256": "87503b00d72e5700619a3c46a9dca185f42e5be8b362de7087b3d9b97a9a8486"
+      },
+      {
+        "path": "examples/synthetic/meshes/subject-04.vtk",
+        "sha256": "b69329d0832bd5a0ec90827cd3d0f90dc6e8b30adb3239eb6b2131b09163e848"
+      },
+      {
+        "path": "examples/synthetic/meshes/subject-05.vtk",
+        "sha256": "0703116ec14196cb1d2737ccbc1467a170404101ae6749e8a1867bf44030c325"
+      }
+    ],
+    "template": {
+      "path": "examples/synthetic/meshes/template.vtk",
+      "points": 162,
+      "sha256": "e3f5fa71028d419e28e07403af2eff932d6e950acce9a989e1f1a2cc441b8325",
+      "triangles": 320
+    }
+  },
+  "result": {
+    "converged": false,
+    "cycles_completed": 3,
+    "failed_block": null,
+    "history": [
+      {
+        "accepted_step_size": null,
+        "attachment": -44.07138921672118,
+        "block": null,
+        "cycle": 0,
+        "gradient_norm": null,
+        "line_search_evaluations": 0,
+        "objective": -44.07138921672118,
+        "regularity": 0.0,
+        "residuals": [
+          0.04449775141460677,
+          0.06034654977948861,
+          0.061281422519657625,
+          0.15306866788201035,
+          0.12151950057144845
+        ],
+        "status": "initial"
+      },
+      {
+        "accepted_step_size": 0.00125,
+        "attachment": -12.62463433307559,
+        "block": "momenta",
+        "cycle": 1,
+        "gradient_norm": 115.54771583674757,
+        "line_search_evaluations": 4,
+        "objective": -12.76269776702205,
+        "regularity": -0.1380634339464605,
+        "residuals": [
+          0.011766879691334609,
+          0.017901616315086244,
+          0.02075859893600196,
+          0.04414986461059378,
+          0.03166938377773931
+        ],
+        "status": "accepted"
+      },
+      {
+        "accepted_step_size": 0.001,
+        "attachment": -12.532319390861346,
+        "block": "template",
+        "cycle": 1,
+        "gradient_norm": 7.141629853137392,
+        "line_search_evaluations": 1,
+        "objective": -12.670382824807806,
+        "regularity": -0.1380634339464605,
+        "residuals": [
+          0.010977440591068088,
+          0.019158602127038904,
+          0.01974289865740886,
+          0.04450751175291501,
+          0.030936740780182603
+        ],
+        "status": "accepted"
+      },
+      {
+        "accepted_step_size": 0.001,
+        "attachment": -12.31184465302313,
+        "block": "control_points",
+        "cycle": 1,
+        "gradient_norm": 14.692502561310603,
+        "line_search_evaluations": 1,
+        "objective": -12.449445058052364,
+        "regularity": -0.13760040502923462,
+        "residuals": [
+          0.010866455547223097,
+          0.01898931139499993,
+          0.019412682168974627,
+          0.043504304119883486,
+          0.030345693299150156
+        ],
+        "status": "accepted"
+      },
+      {
+        "accepted_step_size": 0.00125,
+        "attachment": -7.0464594651083345,
+        "block": "momenta",
+        "cycle": 2,
+        "gradient_norm": 77.23652030192407,
+        "line_search_evaluations": 4,
+        "objective": -7.166518359585117,
+        "regularity": -0.12005889447678239,
+        "residuals": [
+          0.005338792043067642,
+          0.009556540003119451,
+          0.013724467348827929,
+          0.02307650713635212,
+          0.018768288119716203
+        ],
+        "status": "accepted"
+      },
+      {
+        "accepted_step_size": 0.001,
+        "attachment": -6.982647906921002,
+        "block": "template",
+        "cycle": 2,
+        "gradient_norm": 5.802560887438172,
+        "line_search_evaluations": 1,
+        "objective": -7.102706801397785,
+        "regularity": -0.12005889447678239,
+        "residuals": [
+          0.005276054583237766,
+          0.009970133106925516,
+          0.0131095354604156,
+          0.02313088422637577,
+          0.01833987169225537
+        ],
+        "status": "accepted"
+      },
+      {
+        "accepted_step_size": 0.001,
+        "attachment": -6.872150881920369,
+        "block": "control_points",
+        "cycle": 2,
+        "gradient_norm": 10.342726151610899,
+        "line_search_evaluations": 1,
+        "objective": -6.992419107869538,
+        "regularity": -0.12026822594916937,
+        "residuals": [
+          0.005282113905561658,
+          0.009916275636436822,
+          0.012922996024403943,
+          0.022549054456575846,
+          0.018051068796225422
+        ],
+        "status": "accepted"
+      },
+      {
+        "accepted_step_size": 0.00125,
+        "attachment": -5.279103505848681,
+        "block": "momenta",
+        "cycle": 3,
+        "gradient_norm": 60.56589553124929,
+        "line_search_evaluations": 4,
+        "objective": -5.457422509527471,
+        "regularity": -0.17831900367878964,
+        "residuals": [
+          0.003388655434648058,
+          0.006756264988494465,
+          0.0110166591313412,
+          0.01592110786519818,
+          0.01570834763880491
+        ],
+        "status": "accepted"
+      },
+      {
+        "accepted_step_size": 0.001,
+        "attachment": -5.237808551474288,
+        "block": "template",
+        "cycle": 3,
+        "gradient_norm": 4.708917251791372,
+        "line_search_evaluations": 1,
+        "objective": -5.416127555153078,
+        "regularity": -0.17831900367878964,
+        "residuals": [
+          0.0034209118443069286,
+          0.0070432379357576735,
+          0.010512712994501072,
+          0.016134600014584777,
+          0.015266622725592427
+        ],
+        "status": "accepted"
+      },
+      {
+        "accepted_step_size": 0.001,
+        "attachment": -5.148541961427178,
+        "block": "control_points",
+        "cycle": 3,
+        "gradient_norm": 9.308290881625275,
+        "line_search_evaluations": 1,
+        "objective": -5.326626026843593,
+        "regularity": -0.17808406541641533,
+        "residuals": [
+          0.0034137103622082776,
+          0.00700104374239352,
+          0.010345099487629739,
+          0.015719942802048692,
+          0.015005623219991548
+        ],
+        "status": "accepted"
+      }
+    ],
+    "parameter_delta_norms": {
+      "control_points": 0.031107204863700208,
+      "momenta": 0.3538709461998471,
+      "template_vertices": 0.018559582036453366
+    },
+    "parameter_sha256": {
+      "control_points": "3bb5f8946f6b7ed487e73f1cbcb1299aeed54a47a6f2be507d4733bd69da47f8",
+      "momenta": "9daed7b714f6fdc73e40e6e1cfdd4ef96b347990d585d1d89d007cd5ed30a3f8",
+      "template_vertices": "fd0f3a4a1ddae28c1a8e829381d077f00d421e79c5e0d06753898f085bd585e1"
+    },
+    "termination_reason": "max_cycles",
+    "total_line_search_evaluations": 18
+  },
+  "runtime": {
+    "device": "cpu",
+    "dtype": "float64",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "python": "3.12.13",
+    "pytorch": "2.13.0+cpu"
+  },
+  "schema_version": "0.4",
+  "scientific_boundary": "This is a dense CPU correctness prototype, not evidence of optimizer equivalence with Deformetrica, global convergence, topology preservation, or production readiness for 300 specimens.",
+  "settings": {
+    "armijo_constant": 0.0001,
+    "attachment_kernel_width": 0.45,
+    "attachment_type": "current",
+    "backtracking_factor": 0.5,
+    "block_order": [
+      "momenta",
+      "template",
+      "control_points"
+    ],
+    "control_points_step_size": 0.001,
+    "deformation_kernel_width": 0.6,
+    "flow_integrator": "deformetrica_heun",
+    "gradient_tolerance": 0.0,
+    "max_cycles": 3,
+    "max_line_search_iterations": 20,
+    "minimum_step_size": 1e-12,
+    "momenta_step_size": 0.01,
+    "noise_variance": 0.01,
+    "number_of_time_points": 5,
+    "shooting_integrator": "rk2",
+    "template_step_size": 0.001
+  }
+}
