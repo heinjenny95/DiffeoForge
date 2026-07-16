@@ -10,6 +10,7 @@ from typing import Literal
 
 import torch
 
+from diffeoforge.engine.dense import GaussianTilePlan
 from diffeoforge.engine.objective import (
     AttachmentType,
     FlowIntegrator,
@@ -181,6 +182,7 @@ def optimize_atlas(
     attachment_type: AttachmentType = "current",
     shooting_integrator: ShootingIntegrator = "rk2",
     flow_integrator: FlowIntegrator = "deformetrica_heun",
+    gaussian_tile_plan: GaussianTilePlan | None = None,
     max_cycles: int = 10,
     block_order: Sequence[AtlasParameterBlock] = _ALL_BLOCKS,
     momenta_step_size: float = 0.1,
@@ -215,9 +217,7 @@ def optimize_atlas(
             "control_points_step_size", control_points_step_size, minimum=0.0
         ),
     }
-    shrink = _finite_real(
-        "backtracking_factor", backtracking_factor, minimum=0.0, maximum=1.0
-    )
+    shrink = _finite_real("backtracking_factor", backtracking_factor, minimum=0.0, maximum=1.0)
     armijo = _finite_real("armijo_constant", armijo_constant, minimum=0.0, maximum=1.0)
     gradient_threshold = _finite_real(
         "gradient_tolerance",
@@ -257,6 +257,7 @@ def optimize_atlas(
         "attachment_type": attachment_type,
         "shooting_integrator": shooting_integrator,
         "flow_integrator": flow_integrator,
+        "gaussian_tile_plan": gaussian_tile_plan,
     }
 
     def evaluate(

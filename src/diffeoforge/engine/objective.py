@@ -11,12 +11,15 @@ from typing import Literal
 import torch
 
 from diffeoforge.engine.dense import (
+    GaussianTilePlan,
     ShootingTrajectory,
     current_squared_distance,
+    current_squared_distance_blockwise,
     deformation_energy,
     flow_points,
     shoot,
     varifold_squared_distance,
+    varifold_squared_distance_blockwise,
 )
 
 AttachmentType = Literal["current", "varifold"]
@@ -77,6 +80,7 @@ def subject_objective(
     attachment_type: AttachmentType = "current",
     shooting_integrator: ShootingIntegrator = "rk2",
     flow_integrator: FlowIntegrator = "deformetrica_heun",
+    gaussian_tile_plan: GaussianTilePlan | None = None,
 ) -> SubjectObjective:
     """Compute one Deformetrica-convention subject log-likelihood contribution.
 
@@ -93,25 +97,48 @@ def subject_objective(
         deformation_kernel_width,
         number_of_time_points,
         integrator=shooting_integrator,
+        gaussian_tile_plan=gaussian_tile_plan,
     )
     template_path = flow_points(
         template_vertices,
         trajectory,
         deformation_kernel_width,
         integrator=flow_integrator,
+        gaussian_tile_plan=gaussian_tile_plan,
     )
-    distance_function = (
-        current_squared_distance if attachment_type == "current" else varifold_squared_distance
-    )
-    residual = distance_function(
-        template_path[-1],
-        template_triangles,
-        target_vertices,
-        target_triangles,
-        attachment_kernel_width,
-    )
+    if gaussian_tile_plan is None:
+        distance_function = (
+            current_squared_distance if attachment_type == "current" else varifold_squared_distance
+        )
+        residual = distance_function(
+            template_path[-1],
+            template_triangles,
+            target_vertices,
+            target_triangles,
+            attachment_kernel_width,
+        )
+    else:
+        blockwise_distance_function = (
+            current_squared_distance_blockwise
+            if attachment_type == "current"
+            else varifold_squared_distance_blockwise
+        )
+        residual = blockwise_distance_function(
+            template_path[-1],
+            template_triangles,
+            target_vertices,
+            target_triangles,
+            attachment_kernel_width,
+            query_tile_size=gaussian_tile_plan.query_rows,
+            source_tile_size=gaussian_tile_plan.source_rows,
+        )
     attachment = -residual / variance
-    regularity = -deformation_energy(control_points, momenta, deformation_kernel_width)
+    regularity = -deformation_energy(
+        control_points,
+        momenta,
+        deformation_kernel_width,
+        gaussian_tile_plan=gaussian_tile_plan,
+    )
     return SubjectObjective(
         trajectory=trajectory,
         template_path=template_path,
@@ -136,6 +163,7 @@ def atlas_objective(
     attachment_type: AttachmentType = "current",
     shooting_integrator: ShootingIntegrator = "rk2",
     flow_integrator: FlowIntegrator = "deformetrica_heun",
+    gaussian_tile_plan: GaussianTilePlan | None = None,
 ) -> AtlasObjective:
     """Sum the objective over subjects without hidden averaging or reordering."""
 
@@ -164,6 +192,7 @@ def atlas_objective(
             attachment_type=attachment_type,
             shooting_integrator=shooting_integrator,
             flow_integrator=flow_integrator,
+            gaussian_tile_plan=gaussian_tile_plan,
         )
         for index, (target_vertices, target_triangles) in enumerate(target_sequence)
     )

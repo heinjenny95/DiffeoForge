@@ -137,13 +137,14 @@ model. The v0.2 generator deliberately marks targets for recomputation so the
 fixture measures the float64 mathematical chain rather than this mixed-precision
 constructor-cache artifact; that policy is recorded inside the fixture.
 
-The first bounded-memory primitive slice is now implemented separately from
-the public workflow. Explicit query/source tiles cover Gaussian convolution,
-the analytical Gaussian x-gradient, and Current/Varifold distances without a
-full face-pair kernel or orientation matrix. Random uneven shapes, tetrahedral
-surface gradients, and the 320-face CC0 meshes match the dense baseline within
-declared float64 tolerances. This is primitive parity, not yet full-objective
-or optimizer integration evidence. See
+The explicit blockwise path now spans Gaussian convolution, the analytical
+Gaussian x-gradient, deformation energy, shooting, template flow,
+Current/Varifold attachments, the complete subject/atlas objective, and the
+block optimizer. Random uneven shapes, tetrahedral surface gradients, the
+320-face CC0 meshes, all full-objective parameter gradients, and one-cycle
+optimizer decisions match the dense baseline within declared float64
+tolerances. It remains a direct engine opt-in, not a public workflow setting.
+See
 [blockwise Gaussian primitives](BLOCKWISE_GAUSSIAN.md).
 
 ## Gates before a usable atlas engine
@@ -159,11 +160,13 @@ or optimizer integration evidence. See
 5. ~~Add explicit blockwise Gaussian and surface primitives and prove local
    forward/autograd parity with the dense baseline.~~ Completed as an isolated
    primitive slice.
-6. Integrate blockwise mode through the full objective, optimizer, workload
-   model, and immutable run provenance, then prove end-to-end parity.
-7. Benchmark runtime and peak memory over mesh, control-point, and subject count.
-8. Define evidence-derived tolerances before accepting a production backend.
-9. Integrate the engine through immutable run manifests without weakening the
+6. ~~Integrate an explicit opt-in blockwise mode through the full objective and
+   optimizer and prove full objective/gradient/history parity.~~ Completed.
+7. Integrate blockwise mode through the workload model, public configuration,
+   and immutable run provenance, then prove artifact-level parity.
+8. Benchmark runtime and peak memory over mesh, control-point, and subject count.
+9. Define evidence-derived tolerances before accepting a production backend.
+10. Integrate the engine through immutable run manifests without weakening the
    existing reference workflow.
 
 No scientific atlas result should be produced or interpreted through this
