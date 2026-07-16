@@ -92,6 +92,9 @@ This repository currently provides:
   Current/Varifold objective and gradient comparisons against Deformetrica 4.3,
   plus deterministic momenta-only and full-parameter block-optimization
   prototypes with versioned CC0 evidence and cross-platform CI.
+- an immutable experimental modern-atlas result bundle containing estimated
+  template/reconstruction meshes, parameters, optimizer history, artifact
+  hashes, and a complete open CSV/JSON momenta-PCA handoff.
 
 It intentionally does **not** yet expose the experimental numerical primitives
 as an atlas backend, ship a prebuilt container or desktop installer, provide a
@@ -180,6 +183,7 @@ and workflow for another mesh directory.
 - [Modern-engine feasibility baseline](docs/MODERN_ENGINE_FEASIBILITY.md)
 - [Experimental momenta-only optimizer](docs/MOMENTA_OPTIMIZER.md)
 - [Experimental full atlas optimizer](docs/FULL_ATLAS_OPTIMIZER.md)
+- [Immutable modern atlas result bundle](docs/MODERN_ATLAS_BUNDLE.md)
 - [Landmark-based Procrustes alignment](docs/PROCRUSTES_ALIGNMENT.md)
 - [PCA of atlas-derived subject features](docs/ATLAS_PCA.md)
 - [Desktop executable and installer architecture](docs/DESKTOP_DISTRIBUTION.md)

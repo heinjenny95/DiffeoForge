@@ -49,6 +49,22 @@ class AtlasOptimizationRecord:
 
 
 @dataclass(frozen=True)
+class AtlasOptimizerSettings:
+    """Normalized settings that fully declare the transparent optimizer."""
+
+    max_cycles: int
+    block_order: tuple[AtlasParameterBlock, ...]
+    momenta_step_size: float
+    template_step_size: float
+    control_points_step_size: float
+    backtracking_factor: float
+    armijo_constant: float
+    gradient_tolerance: float
+    minimum_step_size: float
+    max_line_search_iterations: int
+
+
+@dataclass(frozen=True)
 class AtlasOptimizationResult:
     """Detached final atlas parameters and the complete block-decision history."""
 
@@ -61,6 +77,7 @@ class AtlasOptimizationResult:
     failed_block: AtlasParameterBlock | None
     cycles_completed: int
     total_line_search_evaluations: int
+    settings: AtlasOptimizerSettings
 
 
 @dataclass(frozen=True)
@@ -205,6 +222,18 @@ def optimize_atlas(
     minimum_step = _finite_real("minimum_step_size", minimum_step_size, minimum=0.0)
     if any(minimum_step > step for step in step_sizes.values()):
         raise ValueError("minimum_step_size must not exceed any block step size")
+    optimizer_settings = AtlasOptimizerSettings(
+        max_cycles=cycles,
+        block_order=order,
+        momenta_step_size=step_sizes["momenta"],
+        template_step_size=step_sizes["template"],
+        control_points_step_size=step_sizes["control_points"],
+        backtracking_factor=shrink,
+        armijo_constant=armijo,
+        gradient_tolerance=gradient_threshold,
+        minimum_step_size=minimum_step,
+        max_line_search_iterations=line_search_limit,
+    )
     for name, value in (
         ("initial_template_vertices", initial_template_vertices),
         ("initial_control_points", initial_control_points),
@@ -318,6 +347,7 @@ def optimize_atlas(
             failed_block=failed_block,
             cycles_completed=cycles_completed,
             total_line_search_evaluations=total_line_search_evaluations,
+            settings=optimizer_settings,
         )
 
     for cycle in range(1, cycles + 1):

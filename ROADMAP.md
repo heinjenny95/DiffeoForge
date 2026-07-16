@@ -36,7 +36,8 @@ This roadmap describes evidence gates rather than promised dates.
 - [x] Prototype landmark-based generalized Procrustes alignment
 - [ ] Integrate labelled landmarks and aligned mesh copies into run manifests
 - [x] Prototype PCA for explicitly declared atlas-derived subject features
-- [ ] Integrate PCA evidence, tables, and plots into immutable atlas results
+- [x] Integrate PCA evidence and tables into immutable atlas results
+- [ ] Add PCA plots and PC deformation visualizations
 
 ## Milestone 3: Accessible application
 

@@ -6,7 +6,9 @@ import hashlib
 import math
 import re
 import struct
+from collections.abc import Sequence
 from dataclasses import asdict, dataclass
+from numbers import Integral, Real
 from pathlib import Path
 
 from diffeoforge.config import ConfigurationError, InputSummary
@@ -316,6 +318,76 @@ def read_vtk_points(path: Path | str) -> tuple[tuple[float, float, float], ...]:
         (values[index], values[index + 1], values[index + 2])
         for index in range(0, len(values), 3)
     )
+
+
+def write_vtk_polydata(
+    path: Path | str,
+    vertices: Sequence[Sequence[Real]],
+    triangles: Sequence[Sequence[Integral]],
+    *,
+    title: str = "DiffeoForge surface",
+) -> Path:
+    """Write deterministic, exclusive ASCII legacy VTK triangular PolyData."""
+
+    destination = Path(path).resolve()
+    if not isinstance(title, str) or not title.strip() or "\n" in title or "\r" in title:
+        raise ValueError("title must be a non-empty single line")
+    try:
+        title.encode("ascii")
+    except UnicodeEncodeError as error:
+        raise ValueError("title must contain only ASCII characters") from error
+    try:
+        normalized_vertices = tuple(
+            tuple(float(coordinate) for coordinate in vertex) for vertex in vertices
+        )
+    except (TypeError, ValueError) as error:
+        raise TypeError("vertices must be a sequence of numeric rows") from error
+    if not normalized_vertices or any(len(vertex) != 3 for vertex in normalized_vertices):
+        raise ValueError("vertices must have shape (n, 3)")
+    if not all(math.isfinite(value) for vertex in normalized_vertices for value in vertex):
+        raise ValueError("vertices must contain only finite values")
+
+    normalized_triangles: list[tuple[int, int, int]] = []
+    try:
+        for triangle in triangles:
+            if len(triangle) != 3:
+                raise ValueError("triangles must have shape (n, 3)")
+            if any(
+                isinstance(index, bool) or not isinstance(index, Integral)
+                for index in triangle
+            ):
+                raise TypeError("triangle indices must be integers")
+            normalized_triangles.append(tuple(int(index) for index in triangle))
+    except TypeError as error:
+        if "triangle indices" in str(error):
+            raise
+        raise TypeError("triangles must be a sequence of integer rows") from error
+    if not normalized_triangles:
+        raise ValueError("triangles must contain at least one face")
+    maximum_index = len(normalized_vertices) - 1
+    for triangle in normalized_triangles:
+        if min(triangle) < 0 or max(triangle) > maximum_index:
+            raise ValueError("triangles contain an out-of-range vertex index")
+        if len(set(triangle)) != 3:
+            raise ValueError("triangles contain a repeated vertex index")
+
+    def coordinate(value: float) -> str:
+        return format(0.0 if value == 0.0 else value, ".17g")
+
+    lines = [
+        "# vtk DataFile Version 3.0",
+        title.strip(),
+        "ASCII",
+        "DATASET POLYDATA",
+        f"POINTS {len(normalized_vertices)} double",
+        *(" ".join(coordinate(value) for value in vertex) for vertex in normalized_vertices),
+        f"POLYGONS {len(normalized_triangles)} {len(normalized_triangles) * 4}",
+        *(f"3 {a} {b} {c}" for a, b, c in normalized_triangles),
+    ]
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with destination.open("x", encoding="ascii", newline="\n") as handle:
+        handle.write("\n".join(lines) + "\n")
+    return destination
 
 
 def inspect_inputs(summary: InputSummary) -> tuple[MeshMetadata, tuple[MeshMetadata, ...]]:

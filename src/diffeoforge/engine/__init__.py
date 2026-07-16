@@ -7,6 +7,7 @@ this package requires the optional ``modern-engine`` dependency set.
 from diffeoforge.engine.atlas_optimizer import (
     AtlasOptimizationRecord,
     AtlasOptimizationResult,
+    AtlasOptimizerSettings,
     AtlasParameterBlock,
     optimize_atlas,
 )
@@ -39,6 +40,7 @@ __all__ = [
     "AtlasObjective",
     "AtlasOptimizationRecord",
     "AtlasOptimizationResult",
+    "AtlasOptimizerSettings",
     "AtlasParameterBlock",
     "MomentaOptimizationResult",
     "OptimizationRecord",
