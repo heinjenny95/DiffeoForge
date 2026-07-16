@@ -9,6 +9,7 @@
     "project",
     "input",
     "preprocessing",
+    "quality_control",
     "initialization",
     "model",
     "optimization",
@@ -72,6 +73,56 @@
               "then": {"properties": {"landmarks_file": {"type": "string", "minLength": 1}}},
               "else": {"properties": {"landmarks_file": {"type": "null"}}}
             }
+          ]
+        }
+      }
+    },
+    "quality_control": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "require_no_duplicate_faces",
+        "require_no_isolated_vertices",
+        "require_edge_manifold",
+        "require_consistent_orientation",
+        "require_single_component",
+        "require_closed_surface",
+        "reject_zero_area_faces",
+        "minimum_triangle_angle_degrees",
+        "maximum_triangle_edge_ratio",
+        "minimum_face_area_ratio",
+        "maximum_face_area_ratio"
+      ],
+      "properties": {
+        "require_no_duplicate_faces": {"type": "boolean"},
+        "require_no_isolated_vertices": {"type": "boolean"},
+        "require_edge_manifold": {"type": "boolean"},
+        "require_consistent_orientation": {"type": "boolean"},
+        "require_single_component": {"type": "boolean"},
+        "require_closed_surface": {"type": "boolean"},
+        "reject_zero_area_faces": {"type": "boolean"},
+        "minimum_triangle_angle_degrees": {
+          "oneOf": [
+            {"type": "number", "exclusiveMinimum": 0, "maximum": 60},
+            {"type": "null"}
+          ]
+        },
+        "maximum_triangle_edge_ratio": {
+          "oneOf": [
+            {"type": "number", "minimum": 1},
+            {"type": "null"}
+          ]
+        },
+        "minimum_face_area_ratio": {
+          "oneOf": [
+            {"type": "number", "exclusiveMinimum": 0},
+            {"type": "null"}
+          ]
+        },
+        "maximum_face_area_ratio": {
+          "oneOf": [
+            {"type": "number", "exclusiveMinimum": 0},
+            {"type": "null"}
           ]
         }
       }

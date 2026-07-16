@@ -13,7 +13,7 @@ workflow = pytest.importorskip("diffeoforge.modern_workflow")
 
 from diffeoforge.cli import main  # noqa: E402
 from diffeoforge.config import ConfigurationError  # noqa: E402
-from diffeoforge.mesh import read_vtk_polydata, sha256_file  # noqa: E402
+from diffeoforge.mesh import read_vtk_polydata, sha256_file, write_vtk_polydata  # noqa: E402
 
 ROOT = Path(__file__).parents[1]
 MESH_DIRECTORY = ROOT / "examples" / "synthetic" / "meshes"
@@ -39,6 +39,19 @@ def _configuration(*, output: str = "unused-run", landmarks: str | None = None) 
                 "tolerance": 1e-10,
                 "max_iterations": 100,
             }
+        },
+        "quality_control": {
+            "require_no_duplicate_faces": True,
+            "require_no_isolated_vertices": True,
+            "require_edge_manifold": True,
+            "require_consistent_orientation": True,
+            "require_single_component": False,
+            "require_closed_surface": False,
+            "reject_zero_area_faces": True,
+            "minimum_triangle_angle_degrees": None,
+            "maximum_triangle_edge_ratio": None,
+            "minimum_face_area_ratio": None,
+            "maximum_face_area_ratio": None,
         },
         "initialization": {
             "control_points": {
@@ -160,6 +173,15 @@ def test_five_subject_workflow_is_verified_and_byte_repeatable(tmp_path: Path) -
     assert len(first_manifest["input"]["subjects"]) == 5
     assert first_manifest["preprocessing"]["id"] == "none"
     assert first_manifest["initialization"]["control_points"]["count"] == 9
+    assert first_manifest["quality"]["assessed_meshes"] == 12
+    input_quality = json.loads(
+        (first / first_manifest["quality"]["report_path"]).read_text(encoding="utf-8")
+    )
+    assert {record["stage"] for record in input_quality["meshes"]} == {
+        "raw",
+        "effective",
+    }
+    assert all(record["comparison_to_reference"] is None for record in input_quality["meshes"])
     assert first_manifest["result_bundle"]["bundle_version"] == "0.1"
     assert (
         first / first_manifest["result_bundle"]["path"] / "analysis" / "pca-scores.csv"
@@ -169,6 +191,9 @@ def test_five_subject_workflow_is_verified_and_byte_repeatable(tmp_path: Path) -
     assert (bundle / bundle_manifest["pca"]["plots"]["scree_path"]).is_file()
     assert (bundle / bundle_manifest["pca"]["plots"]["scores_path"]).is_file()
     assert bundle_manifest["pca"]["deformations"]["standard_deviations"] == 2.0
+    assert bundle_manifest["quality"]["assessed_meshes"] > len(
+        first_manifest["input"]["subjects"]
+    )
     for source, record in zip(
         sorted(MESH_DIRECTORY.glob("subject-*.vtk")),
         first_manifest["input"]["subjects"],
@@ -221,6 +246,33 @@ def test_inconsistent_landmark_order_fails_without_publishing(tmp_path: Path) ->
 
     assert not destination.exists()
     assert not list(tmp_path.glob(".rejected.tmp-*"))
+
+
+def test_modern_init_rejects_invalid_mesh_topology_before_writing_config(
+    tmp_path: Path,
+) -> None:
+    mesh_directory = tmp_path / "meshes"
+    mesh_directory.mkdir()
+    vertices = [(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0)]
+    triangles = [(0, 2, 1), (0, 1, 3), (1, 2, 3), (2, 0, 3)]
+    write_vtk_polydata(mesh_directory / "template.vtk", vertices, triangles)
+    write_vtk_polydata(mesh_directory / "subject-01.vtk", vertices, triangles)
+    write_vtk_polydata(
+        mesh_directory / "subject-02.vtk",
+        vertices,
+        [*triangles, triangles[0]],
+    )
+    config = tmp_path / "modern.yaml"
+
+    with pytest.raises(ConfigurationError, match="Mesh quality gate failed"):
+        workflow.initialize_modern_workflow(
+            mesh_directory,
+            units="unitless",
+            config_path=config,
+            control_point_count=4,
+        )
+
+    assert not config.exists()
 
 
 def test_bundle_failure_is_atomic_and_existing_destination_is_never_reused(
@@ -276,6 +328,42 @@ def test_verifier_rejects_extra_or_tampered_files(tmp_path: Path) -> None:
     raw = next((run / "input" / "raw").glob("subject-*.vtk"))
     raw.write_bytes(raw.read_bytes() + b"\n")
     with pytest.raises(workflow.ModernWorkflowError, match="size differs"):
+        workflow.verify_modern_workflow(run)
+
+
+def test_workflow_verifier_recomputes_input_mesh_quality(tmp_path: Path) -> None:
+    config = _write_config(tmp_path / "workflow.yaml")
+    run = workflow.run_modern_workflow(
+        config,
+        destination=tmp_path / "run",
+        created_at=FIXED_TIME,
+    )
+    manifest_path = run / workflow.MANIFEST_NAME
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    quality_path = run / manifest["quality"]["report_path"]
+    quality = json.loads(quality_path.read_text(encoding="utf-8"))
+    quality["meshes"][0]["metrics"]["boundary_edges"] += 1
+    quality_path.write_text(
+        json.dumps(quality, indent=2, ensure_ascii=False, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    artifact = next(
+        record
+        for record in manifest["artifacts"]
+        if record["path"] == manifest["quality"]["report_path"]
+    )
+    artifact["bytes"] = quality_path.stat().st_size
+    artifact["sha256"] = sha256_file(quality_path)
+    manifest_path.write_text(
+        json.dumps(manifest, indent=2, ensure_ascii=False, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    (run / workflow.MANIFEST_SIDECAR_NAME).write_text(
+        f"{sha256_file(manifest_path)}  {workflow.MANIFEST_NAME}\n",
+        encoding="ascii",
+    )
+
+    with pytest.raises(workflow.ModernWorkflowError, match="recomputed geometry"):
         workflow.verify_modern_workflow(run)
 
 

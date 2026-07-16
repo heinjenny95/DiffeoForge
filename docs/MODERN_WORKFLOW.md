@@ -4,7 +4,9 @@ Status: **tested CPU/float64 engineering path; not scientifically validated or p
 
 Tracked prospectively by
 [engineering issue #28](https://github.com/heinjenny95/DiffeoForge/issues/28) and
-[PCA-product issue #30](https://github.com/heinjenny95/DiffeoForge/issues/30).
+[PCA-product issue #30](https://github.com/heinjenny95/DiffeoForge/issues/30),
+with mesh-quality gates tracked by
+[scientific-change issue #32](https://github.com/heinjenny95/DiffeoForge/issues/32).
 
 ## Purpose
 
@@ -46,13 +48,15 @@ For every run, DiffeoForge:
    supported ASCII or big-endian binary legacy VTK PolyData;
 5. optionally applies recorded landmark-derived Procrustes transforms to
    copied full-mesh vertices;
-6. selects shared initial control points with the configured deterministic
+6. records and enforces deterministic topology and triangle-shape gates for
+   every raw and effective input mesh;
+7. selects shared initial control points with the configured deterministic
    farthest-template-vertex rule and initializes all momenta to zero;
-7. executes the declared dense CPU/float64 atlas optimizer;
-8. creates and verifies the nested immutable atlas/PCA bundle;
-9. verifies the outer workflow schema, exact file inventory, hashes, raw and
+8. executes the declared dense CPU/float64 atlas optimizer;
+9. creates and verifies the nested immutable atlas/PCA/quality bundle;
+10. verifies the outer workflow schema, exact file inventory, hashes, raw and
    aligned geometry, effective configuration, and nested bundle; and
-10. atomically renames the temporary directory to the requested destination.
+11. atomically renames the temporary directory to the requested destination.
 
 Any failure before publication removes the temporary directory. Existing
 destinations are never overwritten or reused.
@@ -75,6 +79,9 @@ modern-atlas-run/
     aligned/*.vtk                 # only when enabled
   preprocessing/
     procrustes.json               # only when enabled
+  quality/
+    input-mesh-quality.json
+    input-mesh-quality.csv
   result/
     atlas-bundle/
       bundle-manifest.json
@@ -88,6 +95,8 @@ modern-atlas-run/
       analysis/pca-scores.svg
       analysis/pca-deformations.json
       analysis/pca-deformations/*.vtk
+      quality/mesh-quality.json
+      quality/mesh-quality.csv
 ```
 
 The outer manifest stores exact source filenames and subject order, raw-input
@@ -122,6 +131,22 @@ configuration, but both decisions remain explicit. `procrustes.json` stores
 the coordinate convention, settings, ordered labels, consensus, convergence
 history, residuals, and every centroid/scale/rotation transform. Both raw and
 aligned mesh copies remain inspectable.
+
+## Mesh-quality gates
+
+`modern-init` writes explicit structural gates and optional numeric thresholds
+into `quality_control`. The default rejects duplicate faces, isolated vertices,
+non-manifold edges, inconsistent edge orientation, and zero-area faces. It
+does not reject open surfaces or multiple face-connected components by
+default. Numeric triangle-angle, edge-ratio, and local face-area-ratio limits
+remain disabled until the study declares defensible values.
+
+`modern-run` records both raw and effective input assessments. The nested
+bundle assesses the estimated template, all reconstructions, and all emitted
+PCA meshes; generated meshes are also compared face by face with the final
+template when connectivity is identical. Both verifiers recompute the JSON and
+CSV evidence from VTK geometry. See the exact definitions, configuration, and
+limitations in [deterministic mesh-quality evidence](MESH_QUALITY.md).
 
 ## Deterministic initialization
 
@@ -167,8 +192,8 @@ failure of the nested atlas-bundle verifier.
 
 SHA-256 provides integrity detection, not an authenticity signature. Workflow
 v0.1 also does not provide checkpoints, modern-engine resume, PLY/STL/OBJ
-input, mesh repair, self-intersection tests, loading plots, mesh-rendering
-quality assessment, a GUI, or an installer. PCA signs are conventional and
+input, mesh repair, self-intersection tests, loading plots, mesh rendering,
+a GUI, or an installer. PCA signs are conventional and
 ±PC meshes are neither observations nor confidence intervals. The five-subject
 CC0 regression path is not evidence of Deformetrica equivalence, biological
 validity, global convergence, GPU parity, or acceptable runtime and memory for

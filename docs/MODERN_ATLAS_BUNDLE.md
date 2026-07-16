@@ -4,7 +4,9 @@ Status: **tested v0.1 engineering contract embedded in the experimental workflow
 
 Tracked prospectively by
 [engineering issue #26](https://github.com/heinjenny95/DiffeoForge/issues/26) and
-[PCA-product issue #30](https://github.com/heinjenny95/DiffeoForge/issues/30).
+[PCA-product issue #30](https://github.com/heinjenny95/DiffeoForge/issues/30),
+with output-quality gates tracked by
+[scientific-change issue #32](https://github.com/heinjenny95/DiffeoForge/issues/32).
 
 ## Purpose
 
@@ -46,6 +48,9 @@ bundle/
       pc-0001-minus.vtk
       pc-0001-plus.vtk
       ...
+  quality/
+    mesh-quality.json
+    mesh-quality.csv
 ```
 
 VTK files are deterministic legacy ASCII PolyData with double-precision point
@@ -76,7 +81,9 @@ are covered by `bundle-manifest.sha256`. Verification requires:
 - exactly the listed files and no additional files;
 - matching size and SHA-256 for every artifact;
 - safe bundle-relative POSIX paths;
-- readable triangular VTK geometry with manifest-declared point/face counts.
+- readable triangular VTK geometry with manifest-declared point/face counts;
+- recomputed topology and triangle-shape evidence for every generated VTK; and
+- recomputed local face-area ratios relative to the estimated template.
 
 SHA-256 detects changes but is not an authenticity signature. Anyone able to
 replace both data and hashes can forge a new internally consistent bundle.
@@ -110,6 +117,20 @@ SVG, JSON, and VTK is covered by the exact artifact inventory. Verification
 also parses the static SVGs, rejects scripts/external references, cross-checks
 the deformation definition against the manifest, and validates every
 deformation mesh's geometry counts.
+
+## Mesh-quality evidence
+
+The bundle's JSON and CSV quality reports cover the estimated template, every
+subject reconstruction, the mean-momenta mesh, and both endpoints of each
+emitted nonzero PCA axis. The default structural gates reject duplicate faces,
+isolated vertices, non-manifold edges, inconsistent orientation, and zero-area
+faces. Optional triangle-angle, edge-ratio, and local face-area-ratio thresholds
+are carried from the reviewed workflow configuration.
+
+Verification rebuilds the report from the stored VTK geometry and rejects a
+report or CSV whose values differ, even if an actor also refreshed artifact and
+manifest hashes. Exact definitions and excluded failure modes are documented
+in [deterministic mesh-quality evidence](MESH_QUALITY.md).
 
 ## Python entry point
 
@@ -145,12 +166,12 @@ silent limitation to be removed without new evidence.
 ## Scientific boundary and next gates
 
 The bundle makes experimental results auditable. It does not make the optimizer
-scientifically validated, guarantee mesh quality, establish Deformetrica
+scientifically validated, guarantee complete surface validity, establish Deformetrica
 equivalence, or prove that momenta PCA is appropriate for a particular
 biological hypothesis.
 
 The [experimental modern workflow](MODERN_WORKFLOW.md) now embeds and verifies
 this bundle after folder preflight and optimization. Remaining gates are
-lifecycle/checkpoint integration, schema migration policy, mesh-quality and
-rendering metrics, matched Deformetrica result comparison, biological PCA
+lifecycle/checkpoint integration, schema migration policy, self-intersection
+and rendering checks, matched Deformetrica result comparison, biological PCA
 validation, and large-cohort performance validation.
