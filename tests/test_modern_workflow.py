@@ -4,10 +4,10 @@ import csv
 import json
 from pathlib import Path
 
-import numpy as np
 import pytest
 import yaml
 
+np = pytest.importorskip("numpy")
 torch = pytest.importorskip("torch")
 workflow = pytest.importorskip("diffeoforge.modern_workflow")
 
