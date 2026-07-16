@@ -24,7 +24,7 @@ import yaml
 from diffeoforge import __version__
 from diffeoforge.analysis.procrustes import generalized_procrustes
 from diffeoforge.config import ConfigurationError, InputSummary, validate_input_paths
-from diffeoforge.engine.atlas_optimizer import optimize_atlas
+from diffeoforge.engine.atlas_optimizer import AtlasOptimizationRecord, optimize_atlas
 from diffeoforge.initialization import SUPPORTED_UNITS, detect_template
 from diffeoforge.mesh import (
     MeshMetadata,
@@ -52,6 +52,13 @@ from diffeoforge.modern_bundle import (
     ModernAtlasModelSettings,
     verify_modern_atlas_bundle,
     write_modern_atlas_bundle,
+)
+from diffeoforge.modern_progress import (
+    ModernOptimizerProgress,
+    ModernProgressCallback,
+    ModernProgressEvent,
+    ModernProgressPhase,
+    ModernProgressStatus,
 )
 
 WORKFLOW_VERSION = "0.1"
@@ -666,9 +673,12 @@ def run_modern_workflow(
     *,
     destination: Path | str | None = None,
     created_at: str | None = None,
+    progress_callback: ModernProgressCallback | None = None,
 ) -> Path:
     """Atomically execute a configured mesh-folder workflow and publish its evidence."""
 
+    if progress_callback is not None and not callable(progress_callback):
+        raise TypeError("progress_callback must be callable or None")
     source_config = Path(config_path).expanduser().resolve()
     config = load_modern_workflow_config(source_config)
     inputs: InputSummary = validate_input_paths(config, source_config)
@@ -686,7 +696,32 @@ def run_modern_workflow(
     temporary = output.parent / f".{output.name}.tmp-{uuid.uuid4().hex}"
     temporary.mkdir()
     previous_threads = torch.get_num_threads()
+    progress_sequence = 0
+
+    def emit_progress(
+        phase: ModernProgressPhase,
+        status: ModernProgressStatus,
+        message: str,
+        completed_stages: int,
+        *,
+        optimizer_progress: ModernOptimizerProgress | None = None,
+    ) -> None:
+        nonlocal progress_sequence
+        if progress_callback is None:
+            return
+        event = ModernProgressEvent(
+            sequence=progress_sequence,
+            phase=phase,
+            status=status,
+            message=message,
+            completed_stages=completed_stages,
+            optimizer=optimizer_progress,
+        )
+        progress_callback(event)
+        progress_sequence += 1
+
     try:
+        emit_progress("workflow", "started", "Modern workflow started", 0)
         source_copy = temporary / "config" / "source.yaml"
         _copy_exclusive(source_config, source_copy)
         effective_path = temporary / "config" / "effective-config.json"
@@ -701,6 +736,7 @@ def run_modern_workflow(
             raw_paths.append(raw_path)
         raw_path_tuple = tuple(raw_paths)
         geometries = tuple(read_vtk_polydata(path) for path in raw_path_tuple)
+        emit_progress("inputs", "completed", "Input meshes copied and parsed", 1)
 
         procrustes = config["preprocessing"]["procrustes"]
         if procrustes["enabled"]:
@@ -724,6 +760,7 @@ def run_modern_workflow(
                 "converged": None,
                 "termination_reason": None,
             }
+        emit_progress("preprocessing", "completed", "Preprocessing completed", 2)
 
         quality_settings = MeshQualitySettings.from_mapping(config["quality_control"])
         quality_descriptors: list[dict[str, str]] = []
@@ -756,6 +793,7 @@ def run_modern_workflow(
         quality_csv_path = temporary / "quality" / "input-mesh-quality.csv"
         _write_json_exclusive(quality_report_path, quality_report)
         _write_csv_exclusive(quality_csv_path, mesh_quality_csv_rows(quality_report))
+        emit_progress("quality", "completed", "Input mesh quality gates passed", 3)
 
         count = config["initialization"]["control_points"]["count"]
         control_indices = farthest_template_vertex_indices(vertices[0], count)
@@ -772,6 +810,7 @@ def run_modern_workflow(
         momenta = torch.zeros(
             (len(target_tensors), control_points.shape[0], 3), dtype=torch.float64
         )
+        emit_progress("initialization", "completed", "Atlas tensors initialized", 4)
         model = config["model"]
         deformation = model["deformation"]
         attachment = model["attachment"]
@@ -780,6 +819,37 @@ def run_modern_workflow(
         torch.set_num_threads(runtime["threads"])
         if torch.get_num_threads() != runtime["threads"]:
             raise ModernWorkflowError("PyTorch did not apply the requested CPU thread count")
+        optimizer_decisions = 0
+        maximum_optimizer_decisions = optimizer["max_cycles"] * len(optimizer["block_order"])
+
+        def observe_optimizer(record: AtlasOptimizationRecord) -> None:
+            nonlocal optimizer_decisions
+            if record.status != "initial":
+                optimizer_decisions += 1
+            optimizer_progress = ModernOptimizerProgress(
+                completed_decisions=optimizer_decisions,
+                maximum_decisions=maximum_optimizer_decisions,
+                cycle=record.cycle,
+                max_cycles=optimizer["max_cycles"],
+                block=record.block,
+                status=record.status,
+                objective=record.objective,
+                attachment=record.attachment,
+                regularity=record.regularity,
+                gradient_norm=record.gradient_norm,
+                accepted_step_size=record.accepted_step_size,
+                line_search_evaluations=record.line_search_evaluations,
+            )
+            block = "initial state" if record.block is None else record.block
+            emit_progress(
+                "optimization",
+                "decision",
+                f"Optimizer {block}: {record.status}",
+                4,
+                optimizer_progress=optimizer_progress,
+            )
+
+        emit_progress("optimization", "started", "Atlas optimization started", 4)
         with torch.random.fork_rng(devices=[]):
             torch.manual_seed(runtime["random_seed"])
             result = optimize_atlas(
@@ -805,7 +875,9 @@ def run_modern_workflow(
                 gradient_tolerance=optimizer["gradient_tolerance"],
                 minimum_step_size=optimizer["minimum_step_size"],
                 max_line_search_iterations=optimizer["max_line_search_iterations"],
+                progress_callback=observe_optimizer if progress_callback is not None else None,
             )
+        emit_progress("optimization", "completed", "Atlas optimization completed", 5)
         model_settings = ModernAtlasModelSettings(
             deformation_kernel_width=deformation["kernel_width"],
             attachment_kernel_width=attachment["kernel_width"],
@@ -830,6 +902,7 @@ def run_modern_workflow(
             created_at=timestamp,
         )
         bundle_manifest = verify_modern_atlas_bundle(bundle_path)
+        emit_progress("bundle", "completed", "Atlas and PCA bundle verified", 6)
 
         template_record = _mesh_record(
             index=0,
@@ -924,6 +997,7 @@ def run_modern_workflow(
         with sidecar.open("x", encoding="ascii", newline="\n") as handle:
             handle.write(f"{sha256_file(manifest_path)}  {MANIFEST_NAME}\n")
         verify_modern_workflow(temporary)
+        emit_progress("verification", "completed", "Workflow evidence verified", 7)
         if output.exists():
             raise FileExistsError(f"Modern workflow destination appeared during creation: {output}")
         temporary.rename(output)

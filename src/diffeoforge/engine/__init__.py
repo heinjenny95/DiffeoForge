@@ -9,6 +9,7 @@ from diffeoforge.engine.atlas_optimizer import (
     AtlasOptimizationResult,
     AtlasOptimizerSettings,
     AtlasParameterBlock,
+    AtlasProgressCallback,
     optimize_atlas,
 )
 from diffeoforge.engine.dense import (
@@ -42,6 +43,7 @@ __all__ = [
     "AtlasOptimizationResult",
     "AtlasOptimizerSettings",
     "AtlasParameterBlock",
+    "AtlasProgressCallback",
     "MomentaOptimizationResult",
     "OptimizationRecord",
     "SubjectObjective",

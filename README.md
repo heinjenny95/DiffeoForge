@@ -104,7 +104,10 @@ This repository currently provides:
   ratios, atomic rejection, and verifier-side recomputation;
 - a pre-compute dense-engine workload plan with instrumented operation-count
   formulas, known tensor payloads, host observations, and explicit refusal to
-  invent peak-RAM or runtime predictions.
+  invent peak-RAM or runtime predictions;
+- versioned live workflow and committed optimizer-decision events used by the
+  CLI and designed for reuse by the future desktop worker protocol, without
+  invented percent-complete or ETA claims.
 
 The experimental modern path is a public CLI/application-service workflow, but
 it is not yet the shared production backend behind a GUI and does not provide
@@ -216,6 +219,7 @@ and workflow for another mesh directory.
 - [Experimental modern mesh-folder workflow](docs/MODERN_WORKFLOW.md)
 - [Deterministic mesh-quality evidence](docs/MESH_QUALITY.md)
 - [Modern dense-engine workload planning](docs/MODERN_WORKLOAD.md)
+- [Versioned modern progress events](docs/MODERN_PROGRESS.md)
 - [Landmark-based Procrustes alignment](docs/PROCRUSTES_ALIGNMENT.md)
 - [PCA of atlas-derived subject features](docs/ATLAS_PCA.md)
 - [Desktop executable and installer architecture](docs/DESKTOP_DISTRIBUTION.md)

@@ -472,9 +472,31 @@ def main(argv: Sequence[str] | None = None) -> int:
                 verify_modern_workflow,
             )
 
+            def show_progress(event) -> None:
+                stage = f"{event.completed_stages}/{event.total_stages} stages"
+                if event.optimizer is None:
+                    print(
+                        f"Progress [{stage}] {event.phase} {event.status}: {event.message}",
+                        flush=True,
+                    )
+                    return
+                optimizer = event.optimizer
+                decision = (
+                    f"{optimizer.completed_decisions}/{optimizer.maximum_decisions} decisions"
+                )
+                block = "initial" if optimizer.block is None else optimizer.block
+                print(
+                    f"Progress [{stage}; optimizer {decision}] cycle "
+                    f"{optimizer.cycle}/{optimizer.max_cycles} {block} {optimizer.status}; "
+                    f"objective={optimizer.objective:.12g}; "
+                    f"line-search={optimizer.line_search_evaluations}",
+                    flush=True,
+                )
+
             run_directory = run_modern_workflow(
                 args.config,
                 destination=args.output,
+                progress_callback=show_progress,
             )
             manifest = verify_modern_workflow(run_directory)
             print(f"Modern workflow completed: {run_directory}")

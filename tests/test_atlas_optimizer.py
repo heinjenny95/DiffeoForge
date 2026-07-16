@@ -122,6 +122,45 @@ def test_optimizer_is_repeatable_detached_and_does_not_mutate_inputs() -> None:
         assert tensor.device == source.device
 
 
+def test_progress_observer_mirrors_committed_history_without_changing_results() -> None:
+    arguments, keywords = _problem()
+    observed = []
+
+    with_progress = optimize_atlas(
+        *arguments,
+        **keywords,
+        max_cycles=2,
+        progress_callback=observed.append,
+    )
+    without_progress = optimize_atlas(*arguments, **keywords, max_cycles=2)
+
+    assert tuple(observed) == with_progress.history
+    assert with_progress.history == without_progress.history
+    assert torch.equal(with_progress.template_vertices, without_progress.template_vertices)
+    assert torch.equal(with_progress.control_points, without_progress.control_points)
+    assert torch.equal(with_progress.momenta, without_progress.momenta)
+
+
+def test_progress_observer_reports_failed_decision_not_rejected_candidates() -> None:
+    arguments, keywords = _problem(subjects=1)
+    observed = []
+
+    result = optimize_atlas(
+        *arguments,
+        **keywords,
+        max_cycles=3,
+        momenta_step_size=10.0,
+        template_step_size=10.0,
+        control_points_step_size=10.0,
+        max_line_search_iterations=1,
+        progress_callback=observed.append,
+    )
+
+    assert [record.status for record in observed] == ["initial", "failed"]
+    assert tuple(observed) == result.history
+    assert result.total_line_search_evaluations == 1
+
+
 def test_identical_subject_is_stationary_for_every_block() -> None:
     arguments, keywords = _problem(subjects=1, identical=True)
 

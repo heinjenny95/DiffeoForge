@@ -44,6 +44,13 @@ publishes exact operation counts and selected known tensor payloads, but does
 not predict peak RAM or runtime. See
 [modern workload planning](MODERN_WORKLOAD.md).
 
+During `modern-run`, the CLI prints live stage and optimizer-decision events.
+They come from the same versioned application-service callback intended for a
+future desktop worker. A decision event is emitted only after the optimizer
+has committed an initial, accepted, stationary, or failed record; rejected
+line-search candidates are not shown as accepted progress. See
+[modern progress events](MODERN_PROGRESS.md).
+
 ## End-to-end contract
 
 For every run, DiffeoForge:
@@ -197,7 +204,8 @@ changed raw/aligned geometry counts, invalid effective configuration,
 inconsistent preprocessing evidence, invalid initialization indices, and any
 failure of the nested atlas-bundle verifier.
 
-SHA-256 provides integrity detection, not an authenticity signature. Workflow
+SHA-256 provides integrity detection, not an authenticity signature. Progress
+counts are not runtime percentages and carry no ETA. Workflow
 v0.1 also does not provide checkpoints, modern-engine resume, PLY/STL/OBJ
 input, mesh repair, self-intersection tests, loading plots, mesh rendering,
 a GUI, or an installer. PCA signs are conventional and
