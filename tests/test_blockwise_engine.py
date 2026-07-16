@@ -53,9 +53,11 @@ def _tetrahedron() -> tuple[torch.Tensor, torch.Tensor]:
     ("query_tile_size", "source_tile_size"),
     [(1, 1), (2, 3), (5, 2), (99, 99)],
 )
+@pytest.mark.parametrize("autograd_strategy", ["standard", "recompute"])
 def test_blockwise_convolution_matches_dense_forward_and_autograd(
     query_tile_size: int,
     source_tile_size: int,
+    autograd_strategy: str,
 ) -> None:
     inputs = _convolution_inputs()
     dense_inputs = tuple(value.clone().requires_grad_(True) for value in inputs)
@@ -69,6 +71,7 @@ def test_blockwise_convolution_matches_dense_forward_and_autograd(
         1.3,
         query_tile_size=query_tile_size,
         source_tile_size=source_tile_size,
+        autograd_strategy=autograd_strategy,
     )
     dense_gradients = torch.autograd.grad(dense.square().sum(), dense_inputs[:2] + dense_inputs[3:])
     block_gradients = torch.autograd.grad(
@@ -81,7 +84,10 @@ def test_blockwise_convolution_matches_dense_forward_and_autograd(
         torch.testing.assert_close(actual, expected, rtol=2e-12, atol=2e-13)
 
 
-def test_blockwise_explicit_x_gradient_matches_dense_and_second_derivatives() -> None:
+@pytest.mark.parametrize("autograd_strategy", ["standard", "recompute"])
+def test_blockwise_explicit_x_gradient_matches_dense_and_second_derivatives(
+    autograd_strategy: str,
+) -> None:
     inputs = _convolution_inputs()
     dense_inputs = tuple(value.clone().requires_grad_(True) for value in inputs)
     block_inputs = tuple(value.clone().requires_grad_(True) for value in inputs)
@@ -101,6 +107,7 @@ def test_blockwise_explicit_x_gradient_matches_dense_and_second_derivatives() ->
         0.9,
         query_tile_size=3,
         source_tile_size=2,
+        autograd_strategy=autograd_strategy,
     )
     dense_gradients = torch.autograd.grad(dense.square().sum(), dense_inputs)
     block_gradients = torch.autograd.grad(blockwise.square().sum(), block_inputs)
@@ -117,9 +124,11 @@ def test_blockwise_explicit_x_gradient_matches_dense_and_second_derivatives() ->
         (varifold_squared_distance, varifold_squared_distance_blockwise),
     ],
 )
+@pytest.mark.parametrize("autograd_strategy", ["standard", "recompute"])
 def test_blockwise_surface_distances_match_dense_forward_and_gradient(
     dense_distance,
     blockwise_distance,
+    autograd_strategy: str,
 ) -> None:
     source, triangles = _tetrahedron()
     target = source.clone()
@@ -136,6 +145,7 @@ def test_blockwise_surface_distances_match_dense_forward_and_gradient(
         0.75,
         query_tile_size=3,
         source_tile_size=2,
+        autograd_strategy=autograd_strategy,
     )
     (dense_gradient,) = torch.autograd.grad(dense, dense_source)
     (block_gradient,) = torch.autograd.grad(blockwise, block_source)
@@ -257,3 +267,70 @@ def test_tile_plan_has_exact_float64_payload_and_rejects_invalid_bounds() -> Non
         GaussianTilePlan(True, 2)
     with pytest.raises(TypeError, match="bytes_per_float"):
         plan.maximum_xyz_difference_tensor_bytes(bytes_per_float=True)
+
+
+def test_recompute_avoids_saving_pairwise_rank_three_convolution_tensors() -> None:
+    generator = torch.Generator().manual_seed(20260716)
+    inputs = (
+        torch.randn((64, 3), dtype=DTYPE, generator=generator),
+        torch.randn((64, 3), dtype=DTYPE, generator=generator),
+        torch.randn((64, 3), dtype=DTYPE, generator=generator),
+    )
+
+    def observe(strategy: str):
+        variables = tuple(value.clone().requires_grad_(True) for value in inputs)
+        saved: list[tuple[int, int]] = []
+
+        def pack(tensor: torch.Tensor):
+            saved.append((tensor.numel() * tensor.element_size(), tensor.ndim))
+            return tensor
+
+        with torch.autograd.graph.saved_tensors_hooks(pack, lambda tensor: tensor):
+            result = gaussian_convolve_blockwise(
+                variables[0],
+                variables[1],
+                variables[2],
+                1.1,
+                query_tile_size=16,
+                source_tile_size=16,
+                autograd_strategy=strategy,
+            )
+        gradients = torch.autograd.grad(result.square().sum(), variables)
+        return result, gradients, saved
+
+    standard, standard_gradients, standard_saved = observe("standard")
+    recomputed, recomputed_gradients, recomputed_saved = observe("recompute")
+
+    torch.testing.assert_close(recomputed, standard, rtol=0, atol=0)
+    for actual, expected in zip(recomputed_gradients, standard_gradients, strict=True):
+        torch.testing.assert_close(actual, expected, rtol=0, atol=0)
+    assert any(rank == 3 for _, rank in standard_saved)
+    assert all(rank <= 2 for _, rank in recomputed_saved)
+    assert sum(size for size, _ in recomputed_saved) < sum(
+        size for size, _ in standard_saved
+    )
+
+
+def test_recompute_strategy_is_strict_and_opt_in() -> None:
+    x, y, _left, right = _convolution_inputs()
+
+    with pytest.raises(TypeError, match="autograd_strategy must be a string"):
+        gaussian_convolve_blockwise(
+            x,
+            y,
+            right,
+            1.0,
+            query_tile_size=2,
+            source_tile_size=2,
+            autograd_strategy=True,
+        )
+    with pytest.raises(ValueError, match="'standard' or 'recompute'"):
+        gaussian_convolve_blockwise(
+            x,
+            y,
+            right,
+            1.0,
+            query_tile_size=2,
+            source_tile_size=2,
+            autograd_strategy="automatic",
+        )

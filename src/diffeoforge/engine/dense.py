@@ -11,6 +11,7 @@ The Gaussian convention follows Deformetrica 4.3 exactly: ``exp(-||x-y||^2 / wid
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
 from dataclasses import dataclass
 from numbers import Integral, Real
 from typing import Literal
@@ -22,6 +23,10 @@ except ModuleNotFoundError as exc:  # pragma: no cover - exercised in packaging 
         "The experimental modern engine requires PyTorch. "
         'Install DiffeoForge with the "modern-engine" extra.'
     ) from exc
+
+from torch.utils.checkpoint import checkpoint
+
+TileAutogradStrategy = Literal["standard", "recompute"]
 
 
 @dataclass(frozen=True)
@@ -85,6 +90,33 @@ def _validate_tile_size(name: str, value: int) -> int:
     if normalized < 1:
         raise ValueError(f"{name} must be at least 1")
     return normalized
+
+
+def _validate_tile_autograd_strategy(value: TileAutogradStrategy) -> TileAutogradStrategy:
+    if not isinstance(value, str):
+        raise TypeError("autograd_strategy must be a string")
+    if value not in {"standard", "recompute"}:
+        raise ValueError("autograd_strategy must be 'standard' or 'recompute'")
+    return value
+
+
+def _evaluate_tile(
+    function: Callable[..., torch.Tensor],
+    tensors: tuple[torch.Tensor, ...],
+    strategy: TileAutogradStrategy,
+) -> torch.Tensor:
+    if (
+        strategy == "standard"
+        or not torch.is_grad_enabled()
+        or not any(tensor.requires_grad for tensor in tensors)
+    ):
+        return function(*tensors)
+    return checkpoint(
+        function,
+        *tensors,
+        use_reentrant=False,
+        preserve_rng_state=False,
+    )
 
 
 @dataclass(frozen=True)
@@ -158,8 +190,14 @@ def gaussian_convolve_blockwise(
     *,
     query_tile_size: int,
     source_tile_size: int,
+    autograd_strategy: TileAutogradStrategy = "standard",
 ) -> torch.Tensor:
-    """Apply the exact Gaussian convolution through explicit bounded tiles."""
+    """Apply the exact Gaussian convolution through explicit bounded tiles.
+
+    ``recompute`` retains tile inputs for backward and reconstructs pairwise
+    intermediates there. It is an explicit compute-for-graph-retention tradeoff,
+    not a peak-memory guarantee.
+    """
 
     _validate_float_matrix("x", x, columns=3)
     _validate_float_matrix("y", y, columns=3)
@@ -170,6 +208,12 @@ def gaussian_convolve_blockwise(
         raise ValueError("weights must have one row per point in y")
     width = _validate_width(kernel_width)
     plan = GaussianTilePlan(query_tile_size, source_tile_size)
+    strategy = _validate_tile_autograd_strategy(autograd_strategy)
+
+    def evaluate(query: torch.Tensor, source: torch.Tensor, source_weights: torch.Tensor):
+        _, kernel = _gaussian_tile(query, source, width)
+        return kernel @ source_weights
+
     outputs = []
     for query_start in range(0, x.shape[0], plan.query_rows):
         query = x[query_start : query_start + plan.query_rows]
@@ -181,8 +225,11 @@ def gaussian_convolve_blockwise(
         for source_start in range(0, y.shape[0], plan.source_rows):
             source = y[source_start : source_start + plan.source_rows]
             source_weights = weights[source_start : source_start + plan.source_rows]
-            _, kernel = _gaussian_tile(query, source, width)
-            result = result + kernel @ source_weights
+            result = result + _evaluate_tile(
+                evaluate,
+                (query, source, source_weights),
+                strategy,
+            )
         outputs.append(result)
     return torch.cat(outputs, dim=0)
 
@@ -234,6 +281,7 @@ def gaussian_convolve_gradient_blockwise(
     *,
     query_tile_size: int,
     source_tile_size: int,
+    autograd_strategy: TileAutogradStrategy = "standard",
 ) -> torch.Tensor:
     """Evaluate the exact explicit Gaussian x-gradient through bounded tiles."""
 
@@ -256,8 +304,20 @@ def gaussian_convolve_gradient_blockwise(
         raise ValueError("left_weights and right_weights must have the same column count")
     width = _validate_width(kernel_width)
     plan = GaussianTilePlan(query_tile_size, source_tile_size)
+    strategy = _validate_tile_autograd_strategy(autograd_strategy)
     outputs = []
     scale = -2.0 / (width * width)
+
+    def evaluate(
+        query_weights: torch.Tensor,
+        query: torch.Tensor,
+        source: torch.Tensor,
+        source_weights: torch.Tensor,
+    ) -> torch.Tensor:
+        differences, kernel = _gaussian_tile(query, source, width)
+        coefficients = (query_weights @ source_weights.T) * kernel
+        return scale * torch.sum(coefficients[:, :, None] * differences, dim=1)
+
     for query_start in range(0, x.shape[0], plan.query_rows):
         query = x[query_start : query_start + plan.query_rows]
         query_weights = left_weights[query_start : query_start + plan.query_rows]
@@ -265,11 +325,10 @@ def gaussian_convolve_gradient_blockwise(
         for source_start in range(0, y.shape[0], plan.source_rows):
             source = y[source_start : source_start + plan.source_rows]
             source_weights = right_weights[source_start : source_start + plan.source_rows]
-            differences, kernel = _gaussian_tile(query, source, width)
-            coefficients = (query_weights @ source_weights.T) * kernel
-            result = result + scale * torch.sum(
-                coefficients[:, :, None] * differences,
-                dim=1,
+            result = result + _evaluate_tile(
+                evaluate,
+                (query_weights, query, source, source_weights),
+                strategy,
             )
         outputs.append(result)
     return torch.cat(outputs, dim=0)
@@ -617,6 +676,7 @@ def _current_inner_product_blockwise(
     normals_b: torch.Tensor,
     kernel_width: float,
     plan: GaussianTilePlan,
+    autograd_strategy: TileAutogradStrategy,
 ) -> torch.Tensor:
     convolved = gaussian_convolve_blockwise(
         centers_a,
@@ -625,6 +685,7 @@ def _current_inner_product_blockwise(
         kernel_width,
         query_tile_size=plan.query_rows,
         source_tile_size=plan.source_rows,
+        autograd_strategy=autograd_strategy,
     )
     return torch.sum(normals_a * convolved)
 
@@ -638,10 +699,12 @@ def current_squared_distance_blockwise(
     *,
     query_tile_size: int,
     source_tile_size: int,
+    autograd_strategy: TileAutogradStrategy = "standard",
 ) -> torch.Tensor:
     """Return the exact Current distance without full face-pair matrices."""
 
     plan = GaussianTilePlan(query_tile_size, source_tile_size)
+    strategy = _validate_tile_autograd_strategy(autograd_strategy)
     centers_a, normals_a = _surface_geometry(vertices_a, triangles_a)
     centers_b, normals_b = _surface_geometry(
         vertices_b,
@@ -649,13 +712,13 @@ def current_squared_distance_blockwise(
         reference_vertices=vertices_a,
     )
     self_a = _current_inner_product_blockwise(
-        centers_a, normals_a, centers_a, normals_a, kernel_width, plan
+        centers_a, normals_a, centers_a, normals_a, kernel_width, plan, strategy
     )
     self_b = _current_inner_product_blockwise(
-        centers_b, normals_b, centers_b, normals_b, kernel_width, plan
+        centers_b, normals_b, centers_b, normals_b, kernel_width, plan, strategy
     )
     cross = _current_inner_product_blockwise(
-        centers_a, normals_a, centers_b, normals_b, kernel_width, plan
+        centers_a, normals_a, centers_b, normals_b, kernel_width, plan, strategy
     )
     return self_a + self_b - 2.0 * cross
 
@@ -700,6 +763,7 @@ def _varifold_inner_product_blockwise(
     normals_b: torch.Tensor,
     kernel_width: float,
     plan: GaussianTilePlan,
+    autograd_strategy: TileAutogradStrategy,
 ) -> torch.Tensor:
     width = _validate_width(kernel_width)
     areas_a = torch.linalg.vector_norm(normals_a, dim=1, keepdim=True)
@@ -707,6 +771,19 @@ def _varifold_inner_product_blockwise(
     unit_a = normals_a / areas_a
     unit_b = normals_b / areas_b
     result = torch.zeros((), dtype=centers_a.dtype, device=centers_a.device)
+
+    def evaluate(
+        query_centers: torch.Tensor,
+        query_areas: torch.Tensor,
+        query_units: torch.Tensor,
+        source_centers: torch.Tensor,
+        source_areas: torch.Tensor,
+        source_units: torch.Tensor,
+    ) -> torch.Tensor:
+        _, kernel = _gaussian_tile(query_centers, source_centers, width)
+        orientation = (query_units @ source_units.T).square()
+        return torch.sum(query_areas * ((kernel * orientation) @ source_areas))
+
     for query_start in range(0, centers_a.shape[0], plan.query_rows):
         query_centers = centers_a[query_start : query_start + plan.query_rows]
         query_areas = areas_a[query_start : query_start + plan.query_rows]
@@ -715,9 +792,18 @@ def _varifold_inner_product_blockwise(
             source_centers = centers_b[source_start : source_start + plan.source_rows]
             source_areas = areas_b[source_start : source_start + plan.source_rows]
             source_units = unit_b[source_start : source_start + plan.source_rows]
-            _, kernel = _gaussian_tile(query_centers, source_centers, width)
-            orientation = (query_units @ source_units.T).square()
-            result = result + torch.sum(query_areas * ((kernel * orientation) @ source_areas))
+            result = result + _evaluate_tile(
+                evaluate,
+                (
+                    query_centers,
+                    query_areas,
+                    query_units,
+                    source_centers,
+                    source_areas,
+                    source_units,
+                ),
+                autograd_strategy,
+            )
     return result
 
 
@@ -730,10 +816,12 @@ def varifold_squared_distance_blockwise(
     *,
     query_tile_size: int,
     source_tile_size: int,
+    autograd_strategy: TileAutogradStrategy = "standard",
 ) -> torch.Tensor:
     """Return the exact Varifold distance without full face-pair matrices."""
 
     plan = GaussianTilePlan(query_tile_size, source_tile_size)
+    strategy = _validate_tile_autograd_strategy(autograd_strategy)
     centers_a, normals_a = _surface_geometry(vertices_a, triangles_a)
     centers_b, normals_b = _surface_geometry(
         vertices_b,
@@ -741,12 +829,12 @@ def varifold_squared_distance_blockwise(
         reference_vertices=vertices_a,
     )
     self_a = _varifold_inner_product_blockwise(
-        centers_a, normals_a, centers_a, normals_a, kernel_width, plan
+        centers_a, normals_a, centers_a, normals_a, kernel_width, plan, strategy
     )
     self_b = _varifold_inner_product_blockwise(
-        centers_b, normals_b, centers_b, normals_b, kernel_width, plan
+        centers_b, normals_b, centers_b, normals_b, kernel_width, plan, strategy
     )
     cross = _varifold_inner_product_blockwise(
-        centers_a, normals_a, centers_b, normals_b, kernel_width, plan
+        centers_a, normals_a, centers_b, normals_b, kernel_width, plan, strategy
     )
     return self_a + self_b - 2.0 * cross
