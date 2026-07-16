@@ -1,6 +1,6 @@
 # Landmark-based Procrustes alignment
 
-Status: **tested numerical prototype; not yet connected to mesh-run preparation**
+Status: **tested numerical prototype integrated into the experimental modern workflow**
 
 Tracked by [scientific-change issue #18](https://github.com/heinjenny95/DiffeoForge/issues/18).
 
@@ -54,11 +54,16 @@ non-collinear landmarks per subject are required. It records every consensus
 update, mean change, total squared residual, convergence flag, and termination
 reason.
 
-## Scientific limitations
+## Workflow integration and scientific limitations
 
-The code does not yet provide landmark file formats, specimen/landmark labels,
-interactive landmark placement, uncertainty estimates, missing-landmark
-handling, semilandmark sliding, symmetry models, weights, GUI review, or
-integration into immutable atlas manifests. Those require separate schemas and
-validation. A user must be able to inspect raw and aligned meshes side by side
-before any atlas run.
+The [experimental modern workflow](MODERN_WORKFLOW.md) defines a strict
+long-form CSV with `mesh_file,landmark,x,y,z`, requires identical ordered
+labels for the template and every subject, writes transformed full-mesh copies,
+and inventories the complete transformations and convergence evidence. Raw and
+aligned meshes remain side by side in the immutable run.
+
+The code still does not provide interactive landmark placement, uncertainty
+estimates, missing-landmark handling, semilandmark sliding, symmetry models,
+weights, or GUI review. The current combined template-and-subject GPA cohort
+and default unit-centroid-size scaling are explicit preprocessing choices, not
+automatically appropriate biological decisions.

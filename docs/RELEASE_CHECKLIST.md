@@ -69,6 +69,7 @@ decision and reviewer:
 - [ ] At least one supported backend completes the public example end to end.
 - [ ] Effective configuration, inputs, commands, versions, hashes, events, and outputs are inventoried.
 - [ ] Every advertised modern-atlas bundle passes schema, exact-file inventory, SHA-256, and VTK verification.
+- [ ] Every advertised modern workflow passes outer schema/inventory verification and nested bundle verification.
 - [ ] Existing run directories cannot be silently overwritten or executed twice.
 - [ ] Interruption, recovery, and resume behavior is rechecked when lifecycle code changes.
 - [ ] Generated HTML reports remain self-contained and make no network requests.

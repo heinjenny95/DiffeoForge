@@ -94,13 +94,18 @@ This repository currently provides:
   prototypes with versioned CC0 evidence and cross-platform CI.
 - an immutable experimental modern-atlas result bundle containing estimated
   template/reconstruction meshes, parameters, optimizer history, artifact
-  hashes, and a complete open CSV/JSON momenta-PCA handoff.
+  hashes, and a complete open CSV/JSON momenta-PCA handoff;
+- an experimental end-to-end modern workflow that inventories a mesh folder,
+  optionally applies labelled-landmark Procrustes transforms, initializes and
+  runs the CPU/float64 engine, and publishes a doubly verified immutable run.
 
-It intentionally does **not** yet expose the experimental numerical primitives
-as an atlas backend, ship a prebuilt container or desktop installer, provide a
-GUI or mesh-output quality visualization, or promise CPU/GPU equivalence. See the
-[reference-backend documentation](docs/REFERENCE_BACKEND.md) for the exact
-implemented boundary and current limitations.
+The experimental modern path is a public CLI/application-service workflow, but
+it is not yet the shared production backend behind a GUI and does not provide
+checkpoint/resume. DiffeoForge also does **not** yet ship a desktop installer,
+provide mesh-output quality visualization, or promise CPU/GPU equivalence or
+300-specimen production performance. See the [modern-workflow
+documentation](docs/MODERN_WORKFLOW.md) and [reference-backend
+documentation](docs/REFERENCE_BACKEND.md) for the exact boundaries.
 
 ## First run from a mesh directory
 
@@ -121,6 +126,18 @@ named `template.vtk` can be detected automatically; otherwise pass
 as exploratory, geometry-scaled starting values in both the YAML and report.
 See the [first-run workflow](docs/FIRST_RUN.md) for every check, parameter rule,
 override, and scientific boundary.
+
+For the experimental modern engine, no XML or historical Python environment is
+needed. Generate and review its separate explicit configuration, then create
+and verify one immutable Atlas/PCA run:
+
+```powershell
+python -m pip install -e ".[modern-engine]"
+diffeoforge modern-init "C:\path\to\meshes" --units millimeter
+# Review modern-atlas.yaml. Generated parameter values are exploratory.
+diffeoforge modern-run modern-atlas.yaml
+diffeoforge modern-verify modern-atlas-run
+```
 
 ## Developer quick start
 
@@ -149,11 +166,14 @@ python -m diffeoforge.engine.reference \
   reference/modern-engine-v0.1/deformetrica-4.3.0-primitives.json
 python -m diffeoforge.engine.reference \
   reference/modern-engine-v0.2/deformetrica-4.3.0-objective.json
+diffeoforge modern-run examples/minimal-modern-atlas.yaml \
+  --output modern-synthetic-smoke
+diffeoforge modern-verify modern-synthetic-smoke
 ```
 
-This is a correctness probe, not an atlas command. See the modern-engine
-feasibility document for the implemented equations, evidence, and remaining
-acceptance gates.
+The primitive comparisons remain correctness probes. `modern-run` is an
+experimental atlas command with a stricter artifact boundary, but it remains
+subject to the validation and scaling gates in the modern-engine documentation.
 
 The bundled example uses one template and five deterministic synthetic meshes.
 It exercises geometry preflight and immutable run preparation without private
@@ -184,6 +204,7 @@ and workflow for another mesh directory.
 - [Experimental momenta-only optimizer](docs/MOMENTA_OPTIMIZER.md)
 - [Experimental full atlas optimizer](docs/FULL_ATLAS_OPTIMIZER.md)
 - [Immutable modern atlas result bundle](docs/MODERN_ATLAS_BUNDLE.md)
+- [Experimental modern mesh-folder workflow](docs/MODERN_WORKFLOW.md)
 - [Landmark-based Procrustes alignment](docs/PROCRUSTES_ALIGNMENT.md)
 - [PCA of atlas-derived subject features](docs/ATLAS_PCA.md)
 - [Desktop executable and installer architecture](docs/DESKTOP_DISTRIBUTION.md)

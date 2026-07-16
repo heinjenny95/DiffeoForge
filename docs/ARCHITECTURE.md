@@ -83,12 +83,18 @@ not by Deformetrica's XML structure. The current reference adapter generates
 three XML files and invokes an externally supplied Deformetrica 4.3.0
 executable. A modern backend does not need to use XML or Python 3.8.
 
-The experimental modern engine is not a backend yet. Dense PyTorch CPU/float64
-is the inspectable correctness baseline selected by ADR 0002. It now reaches
-the complete differentiable per-subject Current/Varifold objective and an
-order-preserving multi-subject sum, but it does not yet optimize an atlas or
-write atlas products. An optimized kernel or GPU path must reproduce this
-baseline before it can sit behind the backend interface.
+Dense PyTorch CPU/float64 is the inspectable modern correctness baseline
+selected by ADR 0002. The experimental `modern-run` application service now
+connects folder preflight, optional labelled-landmark Procrustes alignment,
+deterministic initialization, full block optimization, and an immutable
+atlas/PCA result bundle. Its outer run copies and hashes raw inputs, records
+aligned copies and transformations when enabled, and verifies the nested
+bundle before atomic publication.
+
+This vertical path is not yet the common production backend shown above: it
+does not implement the reference lifecycle's checkpoint/resume operations or
+GUI worker protocol. An optimized kernel or GPU path must reproduce the dense
+baseline before it can replace this correctness implementation.
 
 ## Security and privacy boundary
 
