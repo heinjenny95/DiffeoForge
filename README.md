@@ -47,6 +47,10 @@ diffeoforge run atlas.yaml --run-id experiment-002
 diffeoforge resume runs/experiment-001 --run-id experiment-001-resume-01
 ```
 
+If the Python Scripts directory is not available on `PATH`, the packaged
+fallback `python -m diffeoforge` invokes this exact same parser and commands;
+it is not a separate workflow implementation.
+
 Prepared run directories are write-once. DiffeoForge refuses to overwrite or
 execute one a second time. Resume creates a new immutable successor and preserves
 the source run.

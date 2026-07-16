@@ -1,5 +1,6 @@
-"""Allow ``python -m diffeoforge`` to behave like the CLI command."""
+"""Run the public DiffeoForge CLI through ``python -m diffeoforge``."""
 
 from diffeoforge.cli import main
 
-raise SystemExit(main())
+if __name__ == "__main__":
+    raise SystemExit(main())
