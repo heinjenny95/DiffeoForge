@@ -116,8 +116,9 @@ This repository currently provides:
   Current, and Varifold primitives with bounded tile tensors and dense
   forward/autograd parity, plus an explicit opt-in plan through the complete
   objective, optimizer, reconstructions, PCA meshes, and immutable public-run
-  provenance; and an isolated, explicit tile-recompute primitive prototype
-  with saved-tensor evidence, not yet a workflow setting or peak-RAM claim.
+  provenance; and an explicit direct-engine tile-recompute plan with complete
+  objective/optimizer parity and saved-tensor evidence, not yet a public
+  workflow setting or peak-RAM claim.
 
 The experimental modern path is a public CLI/application-service workflow, but
 it is not yet the shared production backend behind a GUI and does not provide

@@ -148,13 +148,15 @@ immutable provenance, workload planning, and fresh-process benchmarking. It is
 not an automatic default or evidence-backed performance preset. See
 [blockwise Gaussian primitives](BLOCKWISE_GAUSSIAN.md).
 
-An isolated low-level `recompute` autograd strategy now checkpoints each
+An explicit direct-plan `recompute` autograd strategy now checkpoints each
 deterministic Gaussian/Current/Varifold tile and reconstructs pairwise
-intermediates during backward. Primitive tests preserve forward, gradient, and
-differentiated-explicit-gradient parity. Saved-tensor instrumentation observes
-no retained rank-3 pairwise tensor for the tested recompute convolution, but
-this is not yet wired into the atlas plan and is not process peak-memory or
-runtime evidence.
+intermediates during backward. Primitive, complete Subject/Atlas objective, and
+one-cycle optimizer tests preserve forward, all-parameter-gradient, and decision
+parity. On the 320-face CC0 Current objective, tested `64 × 64` recompute removes
+the corresponding rank-3 pairwise tensors from the forward saved-tensor graph
+and reduces its largest and summed logical payload. Public workflow plans still
+construct standard autograd only; this is not process peak-memory or runtime
+evidence.
 
 ## Gates before a usable atlas engine
 

@@ -45,7 +45,9 @@ This roadmap describes evidence gates rather than promised dates.
   workload accounting, provenance, and fresh-process benchmark protocol
 - [x] Prototype explicit tile recomputation with primitive/autograd parity and
   saved-tensor evidence
-- [ ] Measure and integrate tile recomputation through the complete objective
+- [x] Carry tile recomputation through complete Subject/Atlas objectives and
+  optimizer parity
+- [ ] Measure tile recomputation in fresh processes before public integration
 - [ ] Run a prospective multi-size/tile blockwise performance study
 
 ## Milestone 3: Accessible application

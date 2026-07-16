@@ -1,6 +1,6 @@
 # Explicit blockwise Gaussian primitives
 
-Status: **complete explicit public workflow path; isolated tile-recompute prototype; performance presets remain unvalidated**
+Status: **complete explicit public workflow path; direct-plan tile-recompute evidence; performance presets remain unvalidated**
 
 Tracked prospectively by [primitive issue
 #40](https://github.com/heinjenny95/DiffeoForge/issues/40) and [full-objective
@@ -69,7 +69,7 @@ every Gaussian deformation, flow, Current, and Varifold operation reached by
 that objective or optimizer call. Invalid plan types fail before numerical
 integration begins.
 
-## Isolated tile-recompute contract
+## Direct-plan tile-recompute contract
 
 The four low-level blockwise primitive functions additionally accept the
 keyword-only choice `autograd_strategy="standard"` or
@@ -91,11 +91,21 @@ value = gaussian_convolve_blockwise(
 )
 ```
 
-This is deliberately a low-level prototype. `GaussianTilePlan`, atlas
-objectives, optimizers, `modern-init`, `modern-run`, workload reports, and
-benchmarks continue to use standard autograd. There is no automatic activation,
-environment override, or public workflow setting. Invalid or misspelled
-strategies fail rather than falling back.
+`GaussianTilePlan` owns the same explicit strategy as its third field. A direct
+engine caller can therefore carry recompute through deformation energy,
+shooting, point flow, Current/Varifold attachment, complete Subject/Atlas
+objectives, and the block optimizer:
+
+```python
+plan = GaussianTilePlan(256, 256, autograd_strategy="recompute")
+result = atlas_objective(..., gaussian_tile_plan=plan)
+```
+
+This remains an engine-level prototype. Public `PairwiseEvaluationPlan`,
+`modern-init`, YAML, manifests, `modern-run`, workload reports, and benchmarks
+continue to construct standard-autograd tile plans only. There is no automatic
+activation, environment override, or public workflow setting. Invalid or
+misspelled strategies fail rather than falling back.
 
 ## Numerical contract and evidence
 
@@ -123,7 +133,16 @@ Tests currently require:
   result, plus Current/Varifold vertex gradients; and
 - saved-tensor-hook instrumentation showing that the tested recompute
   convolution forward retains no rank-3 pairwise tensor and a smaller logical
-  saved-tensor payload than standard tiling.
+  saved-tensor payload than standard tiling;
+- Current and Varifold complete Subject trajectories, objective components,
+  and template/control-point/momenta gradients under both standard and
+  recompute plans;
+- a two-subject Atlas objective and one complete optimizer-cycle decision and
+  final-parameter comparison under both plans; and
+- a 320-face CC0 Current-objective probe with `64 × 64` tiles: recompute retains
+  no `64 × 64 × 3` tensor and has a smaller largest and summed logical saved
+  payload while objective and all parameter gradients match standard exactly
+  on the tested CPU run.
 
 The dense path remains the correctness oracle and continues to match the
 frozen Deformetrica primitive/objective evidence. `modern-run` can select the
@@ -138,9 +157,9 @@ the measured fresh-process objective/gradient path.
 1. ~~extend the workload and benchmark schemas/models;~~ completed in v0.2;
 2. benchmark several prospectively declared tile sizes using the measured
    protocol on representative simplified meshes;
-3. measure the isolated recompute prototype through complete objectives and
-   fresh processes, including its additional backward compute, before deciding
-   whether to integrate it or build a custom backward pass; and
+3. measure the complete-objective recompute plan in fresh processes, including
+   its additional backward compute, before exposing public configuration or
+   deciding whether a custom backward pass is preferable; and
 4. select evidence-based safe presets separately from user overrides.
 
 Blockwise mode is selectable only by an explicit user plan. It must not become

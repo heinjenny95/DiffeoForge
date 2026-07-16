@@ -127,12 +127,14 @@ prospective multi-size scaling study remains open. The tile shape bounds a singl
 pairwise allocation; standard autograd may still retain multiple tile graphs,
 so reduced peak RAM remains a measurement gate.
 
-The low-level primitives also expose an isolated `recompute` strategy that
-places deterministic tile calculations behind non-reentrant activation
-checkpointing. It trades additional backward computation for a smaller tested
-saved-tensor graph. This choice is intentionally absent from public workflow
-configuration and provenance until complete-objective and fresh-process
-evidence establish its behavior; saved-tensor counts are not peak-RAM claims.
+The low-level primitives and direct `GaussianTilePlan` expose a `recompute`
+strategy that places deterministic tile calculations behind non-reentrant
+activation checkpointing. The plan now reaches complete Subject/Atlas
+objectives and the block optimizer, trading additional backward computation
+for a smaller tested saved-tensor graph. Public `PairwiseEvaluationPlan`,
+workflow configuration, benchmark protocol, and provenance intentionally remain
+standard-only until fresh-process evidence establishes the tradeoff;
+saved-tensor counts are not peak-RAM claims.
 
 This vertical path is not yet the common production backend shown above: it
 does not implement the reference lifecycle's checkpoint/resume operations or
