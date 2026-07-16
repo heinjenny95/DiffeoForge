@@ -96,6 +96,22 @@ def test_example_workload_has_exact_public_dimensions_and_formulas() -> None:
     assert _schema()["title"] == "DiffeoForge modern dense-engine workload plan"
 
 
+def test_dense_v01_plan_refuses_blockwise_config_instead_of_mislabeling_it(
+    tmp_path: Path,
+) -> None:
+    config = _example_config()
+    config["runtime"]["pairwise_evaluation"] = {
+        "mode": "blockwise",
+        "query_tile_size": 64,
+        "source_tile_size": 64,
+    }
+    path = tmp_path / "blockwise.yaml"
+    path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+
+    with pytest.raises(ModernWorkloadError, match="will not be silently reported as dense"):
+        collect_modern_workload(path, host_observations=FIXED_HOST)
+
+
 @pytest.mark.parametrize("attachment_type", ["current", "varifold"])
 @pytest.mark.parametrize("shooting_integrator", ["euler", "rk2"])
 @pytest.mark.parametrize("flow_integrator", ["euler", "heun", "deformetrica_heun"])

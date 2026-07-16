@@ -28,7 +28,12 @@ from diffeoforge.analysis.pca_visualization import (
     write_pca_scree_svg,
 )
 from diffeoforge.config import ConfigurationError
-from diffeoforge.engine import AtlasOptimizationResult, flow_points, shoot
+from diffeoforge.engine import (
+    AtlasOptimizationResult,
+    PairwiseEvaluationPlan,
+    flow_points,
+    shoot,
+)
 from diffeoforge.mesh import inspect_vtk, sha256_file, write_vtk_polydata
 from diffeoforge.mesh_quality import MeshQualitySettings
 from diffeoforge.mesh_quality_report import (
@@ -40,7 +45,7 @@ BUNDLE_VERSION = "0.1"
 MANIFEST_NAME = "bundle-manifest.json"
 MANIFEST_SIDECAR_NAME = "bundle-manifest.sha256"
 SCIENTIFIC_BOUNDARY = (
-    "Experimental dense float64 CPU result bundle. It is not evidence of scientific "
+    "Experimental exact pairwise float64 CPU result bundle. It is not evidence of scientific "
     "validation, Deformetrica optimizer equivalence, topology preservation, GPU parity, "
     "or production readiness for 300 specimens. Momenta PCA is one explicitly declared "
     "feature space and is not automatically appropriate for every biological question."
@@ -302,19 +307,23 @@ def _deformed_template_endpoint(
     result: AtlasOptimizationResult,
     momenta: torch.Tensor,
     model_settings: ModernAtlasModelSettings,
+    pairwise_evaluation: PairwiseEvaluationPlan,
 ) -> torch.Tensor:
+    gaussian_tile_plan = pairwise_evaluation.gaussian_tile_plan
     trajectory = shoot(
         result.control_points,
         momenta,
         model_settings.deformation_kernel_width,
         model_settings.number_of_time_points,
         integrator=model_settings.shooting_integrator,
+        gaussian_tile_plan=gaussian_tile_plan,
     )
     return flow_points(
         result.template_vertices,
         trajectory,
         model_settings.deformation_kernel_width,
         integrator=model_settings.flow_integrator,
+        gaussian_tile_plan=gaussian_tile_plan,
     )[-1]
 
 
@@ -324,6 +333,7 @@ def _pca_deformation_files(
     result: AtlasOptimizationResult,
     triangle_rows: list[list[int]],
     model_settings: ModernAtlasModelSettings,
+    pairwise_evaluation: PairwiseEvaluationPlan,
     *,
     standard_deviations: float,
     requested_components: int | None,
@@ -343,7 +353,12 @@ def _pca_deformation_files(
     deformation_directory = root / "analysis" / "pca-deformations"
     mean_path = write_vtk_polydata(
         deformation_directory / "mean-momenta.vtk",
-        _deformed_template_endpoint(result, mean_momenta, model_settings).tolist(),
+        _deformed_template_endpoint(
+            result,
+            mean_momenta,
+            model_settings,
+            pairwise_evaluation,
+        ).tolist(),
         triangle_rows,
         title="DiffeoForge PCA mean-momenta reconstruction",
     )
@@ -365,13 +380,23 @@ def _pca_deformation_files(
         )
         minus_path = write_vtk_polydata(
             deformation_directory / f"pc-{component_number:04d}-minus.vtk",
-            _deformed_template_endpoint(result, minus_momenta, model_settings).tolist(),
+            _deformed_template_endpoint(
+                result,
+                minus_momenta,
+                model_settings,
+                pairwise_evaluation,
+            ).tolist(),
             triangle_rows,
             title=f"DiffeoForge PCA PC{component_number} minus",
         )
         plus_path = write_vtk_polydata(
             deformation_directory / f"pc-{component_number:04d}-plus.vtk",
-            _deformed_template_endpoint(result, plus_momenta, model_settings).tolist(),
+            _deformed_template_endpoint(
+                result,
+                plus_momenta,
+                model_settings,
+                pairwise_evaluation,
+            ).tolist(),
             triangle_rows,
             title=f"DiffeoForge PCA PC{component_number} plus",
         )
@@ -413,6 +438,7 @@ def write_modern_atlas_bundle(
     subject_labels: tuple[str, ...] | list[str],
     model_settings: ModernAtlasModelSettings,
     *,
+    pairwise_evaluation: PairwiseEvaluationPlan | None = None,
     pca_components: int | None = None,
     pca_deformation_standard_deviations: float = 2.0,
     pca_deformation_components: int | None = None,
@@ -431,6 +457,11 @@ def write_modern_atlas_bundle(
         raise ValueError("template_triangles must have shape (triangles, 3)")
     if not isinstance(model_settings, ModernAtlasModelSettings):
         raise TypeError("model_settings must be ModernAtlasModelSettings")
+    resolved_pairwise_evaluation = (
+        PairwiseEvaluationPlan() if pairwise_evaluation is None else pairwise_evaluation
+    )
+    if not isinstance(resolved_pairwise_evaluation, PairwiseEvaluationPlan):
+        raise TypeError("pairwise_evaluation must be PairwiseEvaluationPlan or None")
     resolved_quality_settings = (
         MeshQualitySettings() if quality_settings is None else quality_settings
     )
@@ -525,7 +556,12 @@ def write_modern_atlas_bundle(
         for index, (label, momenta) in enumerate(zip(labels, result.momenta, strict=True)):
             reconstruction_path = write_vtk_polydata(
                 temporary / "reconstructions" / f"subject-{index:04d}-{_slug(label)}.vtk",
-                _deformed_template_endpoint(result, momenta, model_settings).tolist(),
+                _deformed_template_endpoint(
+                    result,
+                    momenta,
+                    model_settings,
+                    resolved_pairwise_evaluation,
+                ).tolist(),
                 triangle_rows,
                 title=f"DiffeoForge reconstruction {index:04d}",
             )
@@ -550,6 +586,7 @@ def write_modern_atlas_bundle(
             result,
             triangle_rows,
             model_settings,
+            resolved_pairwise_evaluation,
             standard_deviations=deformation_standard_deviations,
             requested_components=deformation_components,
         )
@@ -613,12 +650,13 @@ def write_modern_atlas_bundle(
             "bundle_version": BUNDLE_VERSION,
             "created_at": timestamp.strip(),
             "engine": {
-                "id": "diffeoforge_modern_dense",
+                "id": resolved_pairwise_evaluation.engine_id,
                 "diffeoforge": __version__,
                 "pytorch": torch.__version__,
                 "numpy": np.__version__,
                 "device": "cpu",
                 "dtype": "float64",
+                "pairwise_evaluation": resolved_pairwise_evaluation.as_manifest(),
             },
             "model": model_settings.as_manifest(),
             "optimizer": {

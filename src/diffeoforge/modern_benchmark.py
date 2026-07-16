@@ -34,6 +34,7 @@ from diffeoforge.mesh import inspect_vtk, read_vtk_polydata, sha256_file
 from diffeoforge.modern_workflow import (
     farthest_template_vertex_indices,
     load_modern_workflow_config,
+    pairwise_evaluation_from_config,
 )
 from diffeoforge.modern_workload import _mesh_record, _operation_model
 
@@ -169,6 +170,11 @@ def _prepare_problem(
 ) -> tuple[dict[str, Any], tuple[Any, ...]]:
     source = Path(config_path).resolve()
     config = load_modern_workflow_config(source)
+    if pairwise_evaluation_from_config(config).mode != "dense":
+        raise ModernBenchmarkError(
+            "modern-benchmark v0.1 measures dense execution only; blockwise measurement "
+            "is not yet implemented and will not be silently reported as dense"
+        )
     if config["preprocessing"]["procrustes"]["enabled"]:
         raise ConfigurationError(
             "modern-benchmark v0.1 requires preprocessing.procrustes.enabled=false"
@@ -365,6 +371,11 @@ def collect_modern_benchmark(
     )
     source = Path(config_path).expanduser().resolve()
     config = load_modern_workflow_config(source)
+    if pairwise_evaluation_from_config(config).mode != "dense":
+        raise ModernBenchmarkError(
+            "modern-benchmark v0.1 measures dense execution only; blockwise measurement "
+            "is not yet implemented and will not be silently reported as dense"
+        )
     if config["preprocessing"]["procrustes"]["enabled"]:
         raise ConfigurationError(
             "modern-benchmark v0.1 requires preprocessing.procrustes.enabled=false"

@@ -18,7 +18,7 @@
     "output"
   ],
   "properties": {
-    "schema_version": {"const": "0.1"},
+    "schema_version": {"enum": ["0.1", "0.2"]},
     "project": {
       "type": "object",
       "additionalProperties": false,
@@ -237,7 +237,31 @@
         "device": {"const": "cpu"},
         "precision": {"const": "float64"},
         "threads": {"type": "integer", "minimum": 1},
-        "random_seed": {"type": "integer", "minimum": 0}
+        "random_seed": {"type": "integer", "minimum": 0},
+        "pairwise_evaluation": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["mode", "query_tile_size", "source_tile_size"],
+              "properties": {
+                "mode": {"const": "dense"},
+                "query_tile_size": {"type": "null"},
+                "source_tile_size": {"type": "null"}
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["mode", "query_tile_size", "source_tile_size"],
+              "properties": {
+                "mode": {"const": "blockwise"},
+                "query_tile_size": {"type": "integer", "minimum": 1},
+                "source_tile_size": {"type": "integer", "minimum": 1}
+              }
+            }
+          ]
+        }
       }
     },
     "output": {
@@ -246,5 +270,18 @@
       "required": ["directory"],
       "properties": {"directory": {"type": "string", "minLength": 1}}
     }
-  }
+  },
+  "allOf": [
+    {
+      "if": {
+        "required": ["schema_version"],
+        "properties": {"schema_version": {"const": "0.2"}}
+      },
+      "then": {
+        "properties": {
+          "runtime": {"required": ["pairwise_evaluation"]}
+        }
+      }
+    }
+  ]
 }

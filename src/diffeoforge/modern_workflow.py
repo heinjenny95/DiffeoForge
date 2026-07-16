@@ -24,6 +24,7 @@ import yaml
 from diffeoforge import __version__
 from diffeoforge.analysis.procrustes import generalized_procrustes
 from diffeoforge.config import ConfigurationError, InputSummary, validate_input_paths
+from diffeoforge.engine import PairwiseEvaluationPlan
 from diffeoforge.engine.atlas_optimizer import AtlasOptimizationRecord, optimize_atlas
 from diffeoforge.initialization import SUPPORTED_UNITS, detect_template
 from diffeoforge.mesh import (
@@ -61,6 +62,7 @@ from diffeoforge.modern_progress import (
     ModernProgressStatus,
 )
 
+CONFIG_VERSION = "0.2"
 WORKFLOW_VERSION = "0.1"
 MANIFEST_NAME = "workflow-manifest.json"
 MANIFEST_SIDECAR_NAME = "workflow-manifest.sha256"
@@ -116,6 +118,43 @@ def load_modern_workflow_config(path: Path | str) -> dict[str, Any]:
         raise ConfigurationError("Modern workflow configuration root must be a mapping.")
     validate_modern_workflow_config(loaded)
     return loaded
+
+
+def pairwise_evaluation_from_config(
+    config: Mapping[str, Any],
+) -> PairwiseEvaluationPlan:
+    """Resolve explicit execution provenance, preserving legacy dense configs."""
+
+    configured = config["runtime"].get("pairwise_evaluation")
+    if configured is None:
+        return PairwiseEvaluationPlan()
+    try:
+        return PairwiseEvaluationPlan.from_mapping(configured)
+    except (TypeError, ValueError) as error:
+        raise ConfigurationError(f"Invalid runtime.pairwise_evaluation: {error}") from error
+
+
+def _verify_pairwise_provenance(
+    manifest: Mapping[str, Any],
+    effective: Mapping[str, Any],
+) -> None:
+    expected = pairwise_evaluation_from_config(effective)
+    engine = manifest["engine"]
+    if engine["id"] != expected.engine_id:
+        raise ModernWorkflowError(
+            "Workflow engine id differs from the effective pairwise evaluation mode"
+        )
+    observed = engine.get("pairwise_evaluation")
+    legacy_dense = (
+        effective.get("schema_version") == "0.1"
+        and "pairwise_evaluation" not in effective["runtime"]
+        and engine["id"] == "diffeoforge_modern_dense"
+        and observed is None
+    )
+    if not legacy_dense and observed != expected.as_manifest():
+        raise ModernWorkflowError(
+            "Workflow pairwise execution provenance differs from the effective configuration"
+        )
 
 
 def validate_modern_analysis_dimensions(
@@ -191,6 +230,9 @@ def initialize_modern_workflow(
     max_cycles: int = 3,
     threads: int | None = None,
     random_seed: int = 20260715,
+    pairwise_mode: str = "dense",
+    query_tile_size: int | None = None,
+    source_tile_size: int | None = None,
     overwrite: bool = False,
 ) -> Path:
     """Inspect a mesh directory and write an explicit modern-workflow starter YAML."""
@@ -209,6 +251,14 @@ def initialize_modern_workflow(
         raise ConfigurationError("threads must be a positive integer")
     if isinstance(random_seed, bool) or not isinstance(random_seed, int) or random_seed < 0:
         raise ConfigurationError("random_seed must be a nonnegative integer")
+    try:
+        pairwise_evaluation = PairwiseEvaluationPlan(
+            mode=pairwise_mode,
+            query_tile_size=query_tile_size,
+            source_tile_size=source_tile_size,
+        )
+    except (TypeError, ValueError) as error:
+        raise ConfigurationError(f"Invalid pairwise evaluation plan: {error}") from error
     destination = Path(config_path).expanduser().resolve()
     if destination.exists():
         if not overwrite:
@@ -264,7 +314,7 @@ def initialize_modern_workflow(
         else directory.name
     )
     config: dict[str, Any] = {
-        "schema_version": WORKFLOW_VERSION,
+        "schema_version": CONFIG_VERSION,
         "project": {"name": project_name or f"{default_name}-modern-atlas"},
         "input": {
             "directory": _portable_path(directory, config_base),
@@ -329,6 +379,7 @@ def initialize_modern_workflow(
             "precision": "float64",
             "threads": thread_count,
             "random_seed": random_seed,
+            "pairwise_evaluation": pairwise_evaluation.as_manifest(),
         },
         "output": {"directory": _portable_path(output_path, config_base)},
     }
@@ -681,6 +732,7 @@ def run_modern_workflow(
         raise TypeError("progress_callback must be callable or None")
     source_config = Path(config_path).expanduser().resolve()
     config = load_modern_workflow_config(source_config)
+    pairwise_evaluation = pairwise_evaluation_from_config(config)
     inputs: InputSummary = validate_input_paths(config, source_config)
     validate_modern_analysis_dimensions(config, len(inputs.subjects))
     template_metadata, subject_metadata = inspect_inputs(inputs)
@@ -865,6 +917,7 @@ def run_modern_workflow(
                 attachment_type=attachment["type"],
                 shooting_integrator=deformation["shooting_integrator"],
                 flow_integrator=deformation["flow_integrator"],
+                gaussian_tile_plan=pairwise_evaluation.gaussian_tile_plan,
                 max_cycles=optimizer["max_cycles"],
                 block_order=optimizer["block_order"],
                 momenta_step_size=optimizer["momenta_step_size"],
@@ -893,6 +946,7 @@ def run_modern_workflow(
             triangle_tensor,
             [path.name for path in inputs.subjects],
             model_settings,
+            pairwise_evaluation=pairwise_evaluation,
             pca_components=config["analysis"]["pca_components"],
             pca_deformation_standard_deviations=config["analysis"][
                 "deformation_standard_deviations"
@@ -940,7 +994,7 @@ def run_modern_workflow(
             "created_at": timestamp,
             "project": {"name": config["project"]["name"]},
             "engine": {
-                "id": "diffeoforge_modern_dense",
+                "id": pairwise_evaluation.engine_id,
                 "diffeoforge": __version__,
                 "pytorch": torch.__version__,
                 "numpy": np.__version__,
@@ -948,6 +1002,7 @@ def run_modern_workflow(
                 "dtype": "float64",
                 "threads": runtime["threads"],
                 "random_seed": runtime["random_seed"],
+                "pairwise_evaluation": pairwise_evaluation.as_manifest(),
             },
             "config": {
                 "source_path": source_copy.relative_to(temporary).as_posix(),
@@ -1094,6 +1149,7 @@ def verify_modern_workflow(directory: Path | str) -> dict[str, Any]:
         validate_modern_workflow_config(effective)
     except ConfigurationError as error:
         raise ModernWorkflowError(str(error)) from error
+    _verify_pairwise_provenance(manifest, effective)
     _resolve_artifact(root, manifest["config"]["source_path"])
 
     mesh_records = [manifest["input"]["template"], *manifest["input"]["subjects"]]

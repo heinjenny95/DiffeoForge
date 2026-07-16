@@ -20,6 +20,7 @@ from diffeoforge.diagnostics import _physical_memory_bytes
 from diffeoforge.mesh import MeshMetadata, inspect_inputs, sha256_file
 from diffeoforge.modern_workflow import (
     load_modern_workflow_config,
+    pairwise_evaluation_from_config,
     validate_modern_analysis_dimensions,
 )
 
@@ -264,6 +265,11 @@ def collect_modern_workload(
 
     source = Path(config_path).expanduser().resolve()
     config = load_modern_workflow_config(source)
+    if pairwise_evaluation_from_config(config).mode != "dense":
+        raise ModernWorkloadError(
+            "modern-plan v0.1 models dense execution only; blockwise planning is not yet "
+            "implemented and will not be silently reported as dense"
+        )
     inputs: InputSummary = validate_input_paths(config, source)
     validate_modern_analysis_dimensions(config, len(inputs.subjects))
     template_metadata, subject_metadata = inspect_inputs(inputs)

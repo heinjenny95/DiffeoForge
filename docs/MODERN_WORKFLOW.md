@@ -6,12 +6,15 @@ Tracked prospectively by
 [engineering issue #28](https://github.com/heinjenny95/DiffeoForge/issues/28) and
 [PCA-product issue #30](https://github.com/heinjenny95/DiffeoForge/issues/30),
 with mesh-quality gates tracked by
-[scientific-change issue #32](https://github.com/heinjenny95/DiffeoForge/issues/32).
+[scientific-change issue #32](https://github.com/heinjenny95/DiffeoForge/issues/32) and
+blockwise workflow provenance tracked by
+[engineering issue #44](https://github.com/heinjenny95/DiffeoForge/issues/44).
 
 ## Purpose
 
 The modern numerical functions previously accepted only in-memory tensors.
-Workflow v0.1 connects a normal directory of triangular legacy VTK PolyData
+Configuration v0.2 and workflow manifest v0.1 connect a normal directory of
+triangular legacy VTK PolyData
 meshes to the full atlas optimizer and the immutable atlas/PCA bundle without
 requiring a notebook, XML, or a special working directory.
 
@@ -39,10 +42,34 @@ The geometry-scaled values produced by `modern-init` are visibly labelled
 exploratory. They are starting values, not biologically or numerically
 validated presets.
 
-`modern-plan` is a non-compute review step for the current dense engine. It
+The generated runtime section always declares exact pairwise evaluation:
+
+```yaml
+runtime:
+  device: cpu
+  precision: float64
+  threads: 1
+  random_seed: 20260715
+  pairwise_evaluation:
+    mode: dense
+    query_tile_size: null
+    source_tile_size: null
+```
+
+To select the already parity-tested non-approximate blockwise engine without
+editing YAML, pass `--pairwise-mode blockwise --query-tile-size N
+--source-tile-size M` to `modern-init`. Both sizes are mandatory positive row
+counts; dense mode requires both to remain null. There is no automatic size,
+threshold, environment override, or fallback. Legacy v0.1 configurations and
+manifests without this record remain readable only as dense; configuration
+v0.2 requires it.
+
+`modern-plan` v0.1 is a non-compute review step for the dense engine. It
 publishes exact operation counts and selected known tensor payloads, but does
 not predict peak RAM or runtime. See
 [modern workload planning](MODERN_WORKLOAD.md).
+It explicitly refuses a blockwise configuration until the blockwise payload
+model is versioned; it never silently labels a blockwise request as dense.
 
 During `modern-run`, the CLI prints live stage and optimizer-decision events.
 They come from the same versioned application-service callback intended for a
@@ -77,7 +104,7 @@ For every run, DiffeoForge:
    every raw and effective input mesh;
 7. selects shared initial control points with the configured deterministic
    farthest-template-vertex rule and initializes all momenta to zero;
-8. executes the declared dense CPU/float64 atlas optimizer;
+8. executes the declared dense or exact blockwise CPU/float64 atlas optimizer;
 9. creates and verifies the nested immutable atlas/PCA/quality bundle;
 10. verifies the outer workflow schema, exact file inventory, hashes, raw and
    aligned geometry, effective configuration, and nested bundle; and
@@ -129,6 +156,10 @@ SHA-256 values and geometry counts, aligned paths, the selected template
 vertex indices used as control points, runtime thread count and seed, and the
 hash of the nested bundle manifest. Absolute source paths are intentionally
 not copied into the public manifest.
+Both outer and nested manifests store the pairwise mode and both tile sizes.
+The outer verifier cross-checks that provenance against the hashed effective
+configuration. The same plan is used for optimization, subject
+reconstructions, and every PCA deformation endpoint.
 
 ## Optional labelled landmarks
 
@@ -214,6 +245,8 @@ modified/missing/additional files, duplicate or unsafe paths, symbolic links,
 changed raw/aligned geometry counts, invalid effective configuration,
 inconsistent preprocessing evidence, invalid initialization indices, and any
 failure of the nested atlas-bundle verifier.
+It also rejects an engine id or pairwise plan that differs from the effective
+configuration.
 
 SHA-256 provides integrity detection, not an authenticity signature. Progress
 counts are not runtime percentages and carry no ETA. Workflow

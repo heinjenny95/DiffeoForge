@@ -1,4 +1,4 @@
-schema_version: "0.1"
+schema_version: "0.2"
 project:
   name: synthetic-modern-atlas
 input:
@@ -61,5 +61,9 @@ runtime:
   precision: float64
   threads: 1
   random_seed: 20260715
+  pairwise_evaluation:
+    mode: dense
+    query_tile_size: null
+    source_tile_size: null
 output:
   directory: ./modern-atlas-run

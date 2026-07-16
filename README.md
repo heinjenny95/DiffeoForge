@@ -114,7 +114,8 @@ This repository currently provides:
 - explicit non-approximate blockwise Gaussian convolution, x-gradient,
   Current, and Varifold primitives with bounded tile tensors and dense
   forward/autograd parity, plus an explicit opt-in plan through the complete
-  objective and optimizer; public atlas runs remain dense-only.
+  objective, optimizer, reconstructions, PCA meshes, and immutable public-run
+  provenance.
 
 The experimental modern path is a public CLI/application-service workflow, but
 it is not yet the shared production backend behind a GUI and does not provide
@@ -159,6 +160,17 @@ diffeoforge modern-benchmark modern-atlas.yaml --subjects 5
 diffeoforge modern-run modern-atlas.yaml
 diffeoforge modern-verify modern-atlas-run
 ```
+
+Generated configurations declare dense evaluation explicitly. The exact
+non-approximate blockwise path can instead be requested without code:
+
+```powershell
+diffeoforge modern-init "C:\path\to\meshes" --units millimeter `
+  --pairwise-mode blockwise --query-tile-size 256 --source-tile-size 256
+```
+
+Those tile values are user choices, not validated presets. Blockwise
+`modern-plan` and `modern-benchmark` support remain a separate measured gate.
 
 ## Developer quick start
 

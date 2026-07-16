@@ -89,17 +89,18 @@ Tests currently require:
   attachment types.
 
 The dense path remains the correctness oracle and continues to match the
-frozen Deformetrica primitive/objective evidence. The blockwise path is now
-available only through direct engine APIs; `modern-run`, `modern-plan`, and
-`modern-benchmark` remain dense-only.
+frozen Deformetrica primitive/objective evidence. `modern-run` can now select
+the same plan explicitly and records it in both immutable manifests. Subject
+reconstructions, PCA endpoints, and mesh-quality evidence use the declared
+mode. `modern-plan` and `modern-benchmark` v0.1 deliberately refuse blockwise
+configurations until their models are versioned.
 
 ## Gates before workflow integration
 
-1. extend the workload model and immutable configuration/run schemas;
-2. prove downstream immutable endpoint, PCA, and mesh-quality artifact parity;
-3. benchmark several explicit tile sizes using the measured protocol;
-4. determine whether checkpoint/recomputation or a custom backward pass is
+1. extend the workload and benchmark schemas/models;
+2. benchmark several explicit tile sizes using the measured protocol;
+3. determine whether checkpoint/recomputation or a custom backward pass is
    required to reduce retained autograd memory; and
-5. select evidence-based safe presets separately from user overrides.
+4. select evidence-based safe presets separately from user overrides.
 
 Only after those gates may blockwise mode become a selectable atlas backend.
