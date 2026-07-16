@@ -58,8 +58,9 @@ tests those files against the in-memory PCA arrays.
 
 ## Remaining gates
 
-Before PCA becomes a user-facing atlas product, DiffeoForge still needs the
-workflow/run-manifest adapter, score/loading plots, PC shape visualization
+The experimental [modern workflow](MODERN_WORKFLOW.md) now invokes and records
+this PCA automatically. Before PCA becomes a validated user-facing scientific
+product, DiffeoForge still needs score/loading plots, PC shape visualization
 through reconstructed deformations, missing-subject handling, and validation
 on predeclared biological data. The paper must state the feature space,
 centering, component retention, scaling/alignment policy, and treatment of tied

@@ -6,7 +6,12 @@ from pathlib import Path
 import pytest
 
 from diffeoforge.config import ConfigurationError
-from diffeoforge.mesh import inspect_vtk, read_vtk_points, write_vtk_polydata
+from diffeoforge.mesh import (
+    inspect_vtk,
+    read_vtk_points,
+    read_vtk_polydata,
+    write_vtk_polydata,
+)
 
 
 def write_tetrahedron(path: Path) -> Path:
@@ -32,7 +37,9 @@ POLYGONS 4 16
 
 
 def test_ascii_vtk_geometry_is_inspected(tmp_path: Path) -> None:
-    metadata = inspect_vtk(write_tetrahedron(tmp_path / "mesh.vtk"))
+    mesh_path = write_tetrahedron(tmp_path / "mesh.vtk")
+    metadata = inspect_vtk(mesh_path)
+    geometry = read_vtk_polydata(mesh_path)
 
     assert metadata.encoding == "ASCII"
     assert metadata.points == 4
@@ -40,6 +47,8 @@ def test_ascii_vtk_geometry_is_inspected(tmp_path: Path) -> None:
     assert metadata.triangular is True
     assert metadata.bounds == (0.0, 1.0, 0.0, 1.0, 0.0, 1.0)
     assert metadata.bounding_box_diagonal == pytest.approx(3**0.5)
+    assert geometry.vertices[1] == (1.0, 0.0, 0.0)
+    assert geometry.triangles == ((0, 2, 1), (0, 1, 3), (1, 2, 3), (2, 0, 3))
 
 
 def test_non_triangular_polygons_are_rejected(tmp_path: Path) -> None:
@@ -82,12 +91,14 @@ def test_binary_vtk51_split_cell_arrays_are_inspected(tmp_path: Path) -> None:
     )
 
     metadata = inspect_vtk(mesh)
+    geometry = read_vtk_polydata(mesh)
 
     assert metadata.vtk_version == "5.1"
     assert metadata.encoding == "BINARY"
     assert metadata.points == 4
     assert metadata.cells == 4
     assert metadata.triangular is True
+    assert geometry.triangles == ((0, 2, 1), (0, 1, 3), (1, 2, 3), (2, 0, 3))
 
 
 def test_deterministic_vtk_writer_is_exclusive_and_round_trips(tmp_path: Path) -> None:
@@ -101,6 +112,7 @@ def test_deterministic_vtk_writer_is_exclusive_and_round_trips(tmp_path: Path) -
     assert b"\r\n" not in path.read_bytes()
     assert "POINTS 3 double" in path.read_text(encoding="ascii")
     assert read_vtk_points(path) == vertices
+    assert read_vtk_polydata(path).triangles == triangles
     assert inspect_vtk(path).cells == 1
     with pytest.raises(FileExistsError):
         write_vtk_polydata(path, vertices, triangles)
@@ -141,3 +153,14 @@ def test_vtk_writer_rejects_non_ascii_title_before_creating_file(tmp_path: Path)
         )
 
     assert not path.exists()
+
+
+def test_vtk_reader_rejects_invalid_triangle_indices(tmp_path: Path) -> None:
+    path = write_tetrahedron(tmp_path / "invalid.vtk")
+    path.write_text(
+        path.read_text(encoding="ascii").replace("3 2 0 3", "3 2 0 9"),
+        encoding="ascii",
+    )
+
+    with pytest.raises(ConfigurationError, match="out of range"):
+        read_vtk_polydata(path)

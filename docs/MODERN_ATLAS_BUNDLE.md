@@ -126,7 +126,8 @@ scientifically validated, guarantee mesh quality, establish Deformetrica
 equivalence, or prove that momenta PCA is appropriate for a particular
 biological hypothesis.
 
-Remaining gates are the modern workflow adapter, lifecycle/checkpoint
-integration, schema migration policy, mesh-quality metrics, PCA plots and PC
-deformation visualizations, matched Deformetrica result comparison, and
-large-cohort performance validation.
+The [experimental modern workflow](MODERN_WORKFLOW.md) now embeds and verifies
+this bundle after folder preflight and optimization. Remaining gates are
+lifecycle/checkpoint integration, schema migration policy, mesh-quality
+metrics, PCA plots and PC deformation visualizations, matched Deformetrica
+result comparison, and large-cohort performance validation.

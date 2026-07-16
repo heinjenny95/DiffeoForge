@@ -100,7 +100,8 @@ This prototype does **not** establish:
 - suitability for biological inference.
 
 The [modern atlas bundle](MODERN_ATLAS_BUNDLE.md) now exports the accepted final
-state and reconstructed endpoints without changing this optimizer contract.
-Before workflow integration, the next gates are matched optimizer experiments,
+state and reconstructed endpoints without changing this optimizer contract;
+the [experimental modern workflow](MODERN_WORKFLOW.md) now connects ordinary
+mesh directories to both. The next gates are matched optimizer experiments,
 mesh-quality safeguards, checkpoint serialization, convergence studies, and
 chunked or accelerated kernels with parity evidence.

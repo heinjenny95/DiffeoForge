@@ -34,9 +34,10 @@ This roadmap describes evidence gates rather than promised dates.
 - [ ] Compare gradients, objectives, deformations, and performance
 - [x] Record the engine decision in an ADR
 - [x] Prototype landmark-based generalized Procrustes alignment
-- [ ] Integrate labelled landmarks and aligned mesh copies into run manifests
+- [x] Integrate labelled landmarks and aligned mesh copies into modern run manifests
 - [x] Prototype PCA for explicitly declared atlas-derived subject features
 - [x] Integrate PCA evidence and tables into immutable atlas results
+- [x] Connect mesh-folder preflight, initialization, modern optimization, and result bundles
 - [ ] Add PCA plots and PC deformation visualizations
 
 ## Milestone 3: Accessible application

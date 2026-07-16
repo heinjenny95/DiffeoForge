@@ -140,6 +140,48 @@ def build_parser() -> argparse.ArgumentParser:
         help="Explicitly replace an existing generated configuration and report.",
     )
 
+    modern_init_parser = subparsers.add_parser(
+        "modern-init",
+        help="Create an explicit starter configuration for the modern CPU/float64 path.",
+    )
+    modern_init_parser.add_argument("mesh_directory", type=Path)
+    modern_init_parser.add_argument("--template", type=Path)
+    modern_init_parser.add_argument("--units", choices=SUPPORTED_UNITS)
+    modern_init_parser.add_argument("--project-name")
+    modern_init_parser.add_argument("--subject-pattern", default="*.vtk")
+    modern_init_parser.add_argument("--config", type=Path, default=Path("modern-atlas.yaml"))
+    modern_init_parser.add_argument("--output-directory", type=Path)
+    modern_init_parser.add_argument(
+        "--landmarks",
+        type=Path,
+        help="Optional labelled landmark CSV; enables recorded Procrustes alignment.",
+    )
+    modern_init_parser.add_argument("--control-points", type=int, default=9)
+    modern_init_parser.add_argument("--attachment-kernel-width", type=float)
+    modern_init_parser.add_argument("--deformation-kernel-width", type=float)
+    modern_init_parser.add_argument("--noise-variance", type=float)
+    modern_init_parser.add_argument("--max-cycles", type=int, default=3)
+    modern_init_parser.add_argument("--threads", type=int)
+    modern_init_parser.add_argument("--random-seed", type=int, default=20260715)
+    modern_init_parser.add_argument("--force", action="store_true")
+
+    modern_run_parser = subparsers.add_parser(
+        "modern-run",
+        help="Execute one immutable experimental modern atlas/PCA workflow.",
+    )
+    modern_run_parser.add_argument("config", type=Path)
+    modern_run_parser.add_argument(
+        "--output",
+        type=Path,
+        help="Override the exact previously nonexistent run destination.",
+    )
+
+    modern_verify_parser = subparsers.add_parser(
+        "modern-verify",
+        help="Verify an immutable modern workflow run and its nested atlas/PCA bundle.",
+    )
+    modern_verify_parser.add_argument("run_directory", type=Path)
+
     validate_parser = subparsers.add_parser(
         "validate",
         help="Validate an atlas configuration before any computation starts.",
@@ -288,7 +330,7 @@ def _execution_outcome(run_directory: Path, return_code: int) -> int:
         if checkpoint.get("available"):
             print(
                 "Checkpoint integrity matches the output inventory. Resume with: "
-                f"diffeoforge resume \"{run_directory}\"",
+                f'diffeoforge resume "{run_directory}"',
                 file=sys.stderr,
             )
         else:
@@ -361,6 +403,95 @@ def main(argv: Sequence[str] | None = None) -> int:
                 )
                 print(f"Preflight report: {written_report}")
         except ConfigurationError as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
+
+    if args.command == "modern-init":
+        try:
+            from diffeoforge.modern_workflow import initialize_modern_workflow
+
+            units = args.units or _prompt_units()
+            template = args.template or _prompt_template(args.mesh_directory)
+            config_path = initialize_modern_workflow(
+                args.mesh_directory,
+                units=units,
+                config_path=args.config,
+                template=template,
+                subject_pattern=args.subject_pattern,
+                project_name=args.project_name,
+                output_directory=args.output_directory,
+                landmarks_file=args.landmarks,
+                control_point_count=args.control_points,
+                attachment_kernel_width=args.attachment_kernel_width,
+                deformation_kernel_width=args.deformation_kernel_width,
+                noise_variance=args.noise_variance,
+                max_cycles=args.max_cycles,
+                threads=args.threads,
+                random_seed=args.random_seed,
+                overwrite=args.force,
+            )
+            print(f"Modern workflow configuration created: {config_path}")
+            print("WARNING: Geometry-scaled starter values are exploratory.")
+            print("Review every parameter before running the modern engine.")
+        except ImportError as error:
+            print(
+                "ERROR: Modern engine dependencies are missing; install "
+                "diffeoforge[modern-engine].",
+                file=sys.stderr,
+            )
+            print(f"       {error}", file=sys.stderr)
+            return 2
+        except (ConfigurationError, ValueError, TypeError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
+
+    if args.command == "modern-run":
+        try:
+            from diffeoforge.modern_workflow import (
+                run_modern_workflow,
+                verify_modern_workflow,
+            )
+
+            run_directory = run_modern_workflow(
+                args.config,
+                destination=args.output,
+            )
+            manifest = verify_modern_workflow(run_directory)
+            print(f"Modern workflow completed: {run_directory}")
+            print(f"Subject meshes: {len(manifest['input']['subjects'])}")
+            print(f"Preprocessing: {manifest['preprocessing']['id']}")
+            print(f"Atlas/PCA bundle: {run_directory / manifest['result_bundle']['path']}")
+        except ImportError as error:
+            print(
+                "ERROR: Modern engine dependencies are missing; install "
+                "diffeoforge[modern-engine].",
+                file=sys.stderr,
+            )
+            print(f"       {error}", file=sys.stderr)
+            return 2
+        except (ConfigurationError, RuntimeError, ValueError, TypeError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
+
+    if args.command == "modern-verify":
+        try:
+            from diffeoforge.modern_workflow import verify_modern_workflow
+
+            manifest = verify_modern_workflow(args.run_directory)
+            print(f"Modern workflow verified: {args.run_directory.resolve()}")
+            print(f"Subject meshes: {len(manifest['input']['subjects'])}")
+        except ImportError as error:
+            print(
+                "ERROR: Modern engine dependencies are missing; install "
+                "diffeoforge[modern-engine].",
+                file=sys.stderr,
+            )
+            print(f"       {error}", file=sys.stderr)
+            return 2
+        except (ConfigurationError, RuntimeError, ValueError, TypeError) as error:
             print(f"ERROR: {error}", file=sys.stderr)
             return 2
         return 0
@@ -469,7 +600,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         if checkpoint["available"]:
             print(
                 "Checkpoint integrity matches the output inventory. Resume with: "
-                f"diffeoforge resume \"{args.run_directory.resolve()}\""
+                f'diffeoforge resume "{args.run_directory.resolve()}"'
             )
         else:
             print("No checkpoint is available; this run cannot be resumed.")
