@@ -1,0 +1,129 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DiffeoForge completed paired benchmark study run",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "study_run_version",
+    "status",
+    "completed_at",
+    "design",
+    "source_config",
+    "conditions",
+    "analysis_performed",
+    "scientific_boundary"
+  ],
+  "$defs": {
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "sha256"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    }
+  },
+  "properties": {
+    "study_run_version": {
+      "const": "0.1"
+    },
+    "status": {
+      "const": "complete"
+    },
+    "completed_at": {
+      "type": "string",
+      "minLength": 1
+    },
+    "design": {
+      "$ref": "#/$defs/evidence"
+    },
+    "source_config": {
+      "$ref": "#/$defs/evidence"
+    },
+    "conditions": {
+      "type": "array",
+      "minItems": 2,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "sequence",
+          "condition_id",
+          "pair_id",
+          "subject_count",
+          "tile_autograd_strategy",
+          "report_directory",
+          "artifacts"
+        ],
+        "properties": {
+          "sequence": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "condition_id": {
+            "type": "string",
+            "pattern": "^condition-[0-9]{3}-subjects-[0-9]{5}-(standard|recompute)$"
+          },
+          "pair_id": {
+            "type": "string",
+            "pattern": "^subjects-[0-9]{5}$"
+          },
+          "subject_count": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100000
+          },
+          "tile_autograd_strategy": {
+            "enum": [
+              "standard",
+              "recompute"
+            ]
+          },
+          "report_directory": {
+            "type": "string",
+            "pattern": "^conditions/condition-[0-9]{3}-subjects-[0-9]{5}-(standard|recompute)$"
+          },
+          "artifacts": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "benchmark.json",
+              "samples.csv",
+              "benchmark.html"
+            ],
+            "properties": {
+              "benchmark.json": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              "samples.csv": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              "benchmark.html": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              }
+            }
+          }
+        }
+      }
+    },
+    "analysis_performed": {
+      "const": false
+    },
+    "scientific_boundary": {
+      "const": "This run preserves separate raw objective/gradient benchmark reports in a frozen paired order. It performs no automatic comparison, winner selection, speedup or significance calculation, safe-preset selection, peak-memory inference, full-workflow measurement, scaling extrapolation, or 300-subject feasibility test."
+    }
+  }
+}

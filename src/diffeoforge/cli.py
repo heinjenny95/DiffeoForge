@@ -264,6 +264,18 @@ def build_parser() -> argparse.ArgumentParser:
         help="New immutable design directory (default: CONFIG_NAME.benchmark-study).",
     )
 
+    modern_benchmark_study_parser = subparsers.add_parser(
+        "modern-benchmark-study",
+        help="Execute or resume one frozen design without comparing conditions.",
+    )
+    modern_benchmark_study_parser.add_argument("design_directory", type=Path)
+    modern_benchmark_study_parser.add_argument("config", type=Path)
+    modern_benchmark_study_parser.add_argument(
+        "--output",
+        type=Path,
+        help="Study run directory (default: DESIGN_DIRECTORY.run).",
+    )
+
     modern_verify_parser = subparsers.add_parser(
         "modern-verify",
         help="Verify an immutable modern workflow run and its nested atlas/PCA bundle.",
@@ -725,6 +737,37 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"Integrity sidecar: {design_directory / DESIGN_SIDECAR_NAME}")
             print(f"Review page: {design_directory / DESIGN_HTML_NAME}")
             print("WARNING: No benchmark has been run and no performance claim is made.")
+        except ImportError as error:
+            print(
+                "ERROR: Modern benchmark dependencies are missing; install "
+                "diffeoforge[modern-engine].",
+                file=sys.stderr,
+            )
+            print(f"       {error}", file=sys.stderr)
+            return 2
+        except (ConfigurationError, RuntimeError, OSError, ValueError, TypeError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
+
+    if args.command == "modern-benchmark-study":
+        try:
+            from diffeoforge.modern_benchmark_study import (
+                MANIFEST_NAME,
+                run_modern_benchmark_study,
+                verify_modern_benchmark_study_run,
+            )
+
+            run_directory = run_modern_benchmark_study(
+                args.design_directory,
+                args.config,
+                destination=args.output,
+            )
+            manifest = verify_modern_benchmark_study_run(run_directory)
+            print(f"Frozen benchmark study completed and verified: {run_directory}")
+            print(f"Separate raw condition reports: {len(manifest['conditions'])}")
+            print(f"Completion manifest: {run_directory / MANIFEST_NAME}")
+            print("WARNING: No automatic comparison or performance claim was produced.")
         except ImportError as error:
             print(
                 "ERROR: Modern benchmark dependencies are missing; install "

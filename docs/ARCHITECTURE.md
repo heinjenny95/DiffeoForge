@@ -125,6 +125,15 @@ not execute the argument vectors. This separates prospective decisions from
 later benchmark observations; execution, cross-config multi-size designs, and
 analysis remain distinct evidence gates.
 
+`modern-benchmark-study` is the corresponding execution service. Before work,
+it regenerates the frozen design from the supplied config and current complete
+input inventory, requiring exact equality. It executes conditions in their
+stored order, verifies JSON/CSV/regenerated-HTML agreement for every v0.3 raw
+report, tracks an atomic resumable prefix, and publishes a strict completion
+manifest with artifact hashes. It never aggregates the observations. A
+process-identity lock rejects concurrent writers; valid reports found after an
+interruption are reconciled rather than overwritten.
+
 Below the application layer, the engine now contains an explicit blockwise
 Gaussian primitive family. Query and source tile sizes bound each pairwise XYZ
 difference tensor; Current and Varifold inner products accumulate tiles

@@ -184,6 +184,17 @@ The immutable JSON/sidecar/HTML artifact records the exact condition order but
 does not execute, compare, or rank benchmarks. See the
 [prospective benchmark-design protocol](docs/MODERN_BENCHMARK_STUDY.md).
 
+Execute or resume that exact design with one command:
+
+```powershell
+diffeoforge modern-benchmark-study modern-atlas.benchmark-study `
+  modern-atlas.yaml
+```
+
+Every condition remains a separate verified benchmark v0.3 report. The runner
+publishes only integrity hashes and completion state, never a winner or
+performance claim.
+
 Generated configurations declare dense evaluation explicitly. The exact
 non-approximate blockwise path can instead be requested without code:
 

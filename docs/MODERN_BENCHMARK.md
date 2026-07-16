@@ -143,3 +143,8 @@ that protocol: config/input hashes, paired subject-prefix sizes, repeats,
 warm-ups, exact condition order, separate intended report directories, and the
 analysis boundary. It performs no measurements. See the
 [prospective paired benchmark-design protocol](MODERN_BENCHMARK_STUDY.md).
+
+`modern-benchmark-study` can execute or resume that exact stored sequence. It
+revalidates config/input identity and preserves every condition as its own
+strict v0.3 report, then hashes those artifacts into a completion manifest. It
+does not combine or interpret the measurements.
