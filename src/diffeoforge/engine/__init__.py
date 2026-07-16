@@ -4,6 +4,12 @@ The modern engine is deliberately separate from the production backend interface
 this package requires the optional ``modern-engine`` dependency set.
 """
 
+from diffeoforge.engine.atlas_optimizer import (
+    AtlasOptimizationRecord,
+    AtlasOptimizationResult,
+    AtlasParameterBlock,
+    optimize_atlas,
+)
 from diffeoforge.engine.dense import (
     ShootingTrajectory,
     current_squared_distance,
@@ -31,6 +37,9 @@ from diffeoforge.engine.optimizer import (
 __all__ = [
     "ShootingTrajectory",
     "AtlasObjective",
+    "AtlasOptimizationRecord",
+    "AtlasOptimizationResult",
+    "AtlasParameterBlock",
     "MomentaOptimizationResult",
     "OptimizationRecord",
     "SubjectObjective",
@@ -42,6 +51,7 @@ __all__ = [
     "gaussian_convolve_gradient",
     "gaussian_kernel",
     "optimize_momenta",
+    "optimize_atlas",
     "shoot",
     "subject_objective",
     "triangle_centers_and_area_normals",
