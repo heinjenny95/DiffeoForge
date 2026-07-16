@@ -50,6 +50,7 @@ This roadmap describes evidence gates rather than promised dates.
 - [x] Add an explicit fresh-process recompute benchmark path and spawn smoke evidence
 - [x] Freeze immutable paired standard/recompute designs before observations
 - [x] Execute/resume frozen designs with strict separate-report verification
+- [x] Expose read-only partial status and dedicated completed-run verification
 - [ ] Run a prospective standard/recompute study before public integration
 - [ ] Run a prospective multi-size/tile blockwise performance study
 

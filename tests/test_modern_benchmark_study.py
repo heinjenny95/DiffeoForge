@@ -26,6 +26,7 @@ from diffeoforge.modern_benchmark_study import (  # noqa: E402
     ModernBenchmarkStudyError,
     _manifest_schema,
     _study_lock,
+    inspect_modern_benchmark_study_run,
     run_modern_benchmark_study,
     verify_modern_benchmark_study_run,
 )
@@ -115,6 +116,28 @@ def test_interrupted_study_reconciles_valid_prefix_and_resumes_without_overwrite
     assert state["status"] == "interrupted"
     assert len(state["completed_condition_ids"]) == 1
     assert state["active_condition_id"] is None
+    status = inspect_modern_benchmark_study_run(run)
+    assert status["status"] == "interrupted"
+    assert status["verified_report_count"] == 1
+    assert status["state_completed_condition_count"] == 1
+    assert status["reconciliation_required"] is False
+    assert status["next_condition"] is not None
+
+    state["completed_condition_ids"].append(status["next_condition"]["condition_id"])
+    (run / STATE_NAME).write_text(
+        json.dumps(state, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    with pytest.raises(ModernBenchmarkStudyError, match="claims completed"):
+        inspect_modern_benchmark_study_run(run)
+
+    state["completed_condition_ids"] = []
+    (run / STATE_NAME).write_text(
+        json.dumps(state, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    status = inspect_modern_benchmark_study_run(run)
+    assert status["verified_report_count"] == 1
+    assert status["state_completed_condition_count"] == 0
+    assert status["reconciliation_required"] is True
 
     resumed_calls = []
 
@@ -219,3 +242,14 @@ def test_cli_runs_one_real_two_condition_windows_smoke_study(
         "standard",
         "recompute",
     }
+
+    assert main(["modern-benchmark-study-status", str(run), "--json"]) == 0
+    status = json.loads(capsys.readouterr().out)
+    assert status["status"] == "complete"
+    assert status["verified_report_count"] == 2
+    assert status["completion_manifest_verified"] is True
+
+    assert main(["modern-benchmark-study-verify", str(run)]) == 0
+    verified_output = capsys.readouterr().out
+    assert "Completed benchmark study verified" in verified_output
+    assert "No automatic comparison" in verified_output
