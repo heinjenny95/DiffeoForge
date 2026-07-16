@@ -238,6 +238,32 @@ def build_parser() -> argparse.ArgumentParser:
         help="Replace only a recognized generated benchmark-report directory.",
     )
 
+    modern_benchmark_design_parser = subparsers.add_parser(
+        "modern-benchmark-design",
+        help="Freeze a paired blockwise standard/recompute design before measuring.",
+    )
+    modern_benchmark_design_parser.add_argument("config", type=Path)
+    modern_benchmark_design_parser.add_argument(
+        "--subjects",
+        type=int,
+        nargs="+",
+        required=True,
+        help="One or more unique deterministic subject-prefix sizes.",
+    )
+    modern_benchmark_design_parser.add_argument("--repeats", type=int, default=5)
+    modern_benchmark_design_parser.add_argument("--warmups", type=int, default=1)
+    modern_benchmark_design_parser.add_argument(
+        "--order-seed",
+        type=int,
+        default=20260716,
+        help="Seed for the versioned deterministic paired condition order.",
+    )
+    modern_benchmark_design_parser.add_argument(
+        "--output",
+        type=Path,
+        help="New immutable design directory (default: CONFIG_NAME.benchmark-study).",
+    )
+
     modern_verify_parser = subparsers.add_parser(
         "modern-verify",
         help="Verify an immutable modern workflow run and its nested atlas/PCA bundle.",
@@ -659,6 +685,46 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"Machine-readable report: {report_directory / REPORT_JSON_NAME}")
             print(f"Review report: {report_directory / REPORT_HTML_NAME}")
             print("WARNING: Do not extrapolate this objective-only measurement to 300 subjects.")
+        except ImportError as error:
+            print(
+                "ERROR: Modern benchmark dependencies are missing; install "
+                "diffeoforge[modern-engine].",
+                file=sys.stderr,
+            )
+            print(f"       {error}", file=sys.stderr)
+            return 2
+        except (ConfigurationError, RuntimeError, OSError, ValueError, TypeError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
+
+    if args.command == "modern-benchmark-design":
+        try:
+            from diffeoforge.modern_benchmark_design import (
+                DESIGN_HTML_NAME,
+                DESIGN_JSON_NAME,
+                DESIGN_SIDECAR_NAME,
+                create_modern_benchmark_design,
+                verify_modern_benchmark_design,
+            )
+
+            design_directory = create_modern_benchmark_design(
+                args.config,
+                subject_counts=args.subjects,
+                repeats_per_condition=args.repeats,
+                warmup_evaluations=args.warmups,
+                order_seed=args.order_seed,
+                destination=args.output,
+            )
+            design = verify_modern_benchmark_design(design_directory)
+            print(f"Prospective benchmark design created: {design_directory}")
+            print(f"Paired subject-prefix sizes: {design['protocol']['subject_counts']}")
+            print(f"Frozen condition count: {len(design['conditions'])}")
+            print(f"Deterministic order seed: {design['protocol']['order_seed']}")
+            print(f"Machine-readable design: {design_directory / DESIGN_JSON_NAME}")
+            print(f"Integrity sidecar: {design_directory / DESIGN_SIDECAR_NAME}")
+            print(f"Review page: {design_directory / DESIGN_HTML_NAME}")
+            print("WARNING: No benchmark has been run and no performance claim is made.")
         except ImportError as error:
             print(
                 "ERROR: Modern benchmark dependencies are missing; install "

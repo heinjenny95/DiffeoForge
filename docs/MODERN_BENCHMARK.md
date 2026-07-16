@@ -137,3 +137,9 @@ work and the saved-tensor graph; a defensible tradeoff requires prospectively
 declared repeat counts, controlled order, representative meshes and subject
 counts, and separate end-to-end evidence. Benchmark support and spawn smoke
 tests alone are not performance validation.
+
+`modern-benchmark-design` v0.1 now creates the immutable pre-results half of
+that protocol: config/input hashes, paired subject-prefix sizes, repeats,
+warm-ups, exact condition order, separate intended report directories, and the
+analysis boundary. It performs no measurements. See the
+[prospective paired benchmark-design protocol](MODERN_BENCHMARK_STUDY.md).
