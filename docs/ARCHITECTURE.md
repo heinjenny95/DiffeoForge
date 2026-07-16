@@ -91,6 +91,12 @@ atlas/PCA result bundle. Its outer run copies and hashes raw inputs, records
 aligned copies and transformations when enabled, and verifies the nested
 bundle before atomic publication.
 
+The same application layer exposes a read-only `modern-plan` service before
+compute. It inspects the resolved cohort and configuration, applies a versioned
+dense-operation model, records known tensor payloads and host observations,
+and publishes strict JSON plus self-contained HTML. It deliberately does not
+cross the backend boundary into runtime or peak-memory prediction.
+
 This vertical path is not yet the common production backend shown above: it
 does not implement the reference lifecycle's checkpoint/resume operations or
 GUI worker protocol. An optimized kernel or GPU path must reproduce the dense

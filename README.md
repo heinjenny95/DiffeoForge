@@ -101,7 +101,10 @@ This repository currently provides:
   runs the CPU/float64 engine, and publishes a doubly verified immutable run;
 - deterministic raw/effective-input and generated-output mesh-quality evidence
   with explicit topology/triangle gates, JSON/CSV reports, local face-area
-  ratios, atomic rejection, and verifier-side recomputation.
+  ratios, atomic rejection, and verifier-side recomputation;
+- a pre-compute dense-engine workload plan with instrumented operation-count
+  formulas, known tensor payloads, host observations, and explicit refusal to
+  invent peak-RAM or runtime predictions.
 
 The experimental modern path is a public CLI/application-service workflow, but
 it is not yet the shared production backend behind a GUI and does not provide
@@ -139,6 +142,8 @@ and verify one immutable Atlas/PCA run:
 python -m pip install -e ".[modern-engine]"
 diffeoforge modern-init "C:\path\to\meshes" --units millimeter
 # Review modern-atlas.yaml. Generated parameter values are exploratory.
+diffeoforge modern-plan modern-atlas.yaml
+# Review modern-atlas.workload/workload.html. It is not a runtime forecast.
 diffeoforge modern-run modern-atlas.yaml
 diffeoforge modern-verify modern-atlas-run
 ```
@@ -210,6 +215,7 @@ and workflow for another mesh directory.
 - [Immutable modern atlas result bundle](docs/MODERN_ATLAS_BUNDLE.md)
 - [Experimental modern mesh-folder workflow](docs/MODERN_WORKFLOW.md)
 - [Deterministic mesh-quality evidence](docs/MESH_QUALITY.md)
+- [Modern dense-engine workload planning](docs/MODERN_WORKLOAD.md)
 - [Landmark-based Procrustes alignment](docs/PROCRUSTES_ALIGNMENT.md)
 - [PCA of atlas-derived subject features](docs/ATLAS_PCA.md)
 - [Desktop executable and installer architecture](docs/DESKTOP_DISTRIBUTION.md)

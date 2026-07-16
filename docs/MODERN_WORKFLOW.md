@@ -29,6 +29,8 @@ diffeoforge modern-init "C:\path\to\meshes" `
   --config modern-atlas.yaml
 
 # Review every value in modern-atlas.yaml before computation.
+diffeoforge modern-plan modern-atlas.yaml
+# Review modern-atlas.workload/workload.html before computation.
 diffeoforge modern-run modern-atlas.yaml
 diffeoforge modern-verify modern-atlas-run
 ```
@@ -36,6 +38,11 @@ diffeoforge modern-verify modern-atlas-run
 The geometry-scaled values produced by `modern-init` are visibly labelled
 exploratory. They are starting values, not biologically or numerically
 validated presets.
+
+`modern-plan` is a non-compute review step for the current dense engine. It
+publishes exact operation counts and selected known tensor payloads, but does
+not predict peak RAM or runtime. See
+[modern workload planning](MODERN_WORKLOAD.md).
 
 ## End-to-end contract
 

@@ -440,3 +440,23 @@ def test_schema_requires_landmarks_exactly_when_procrustes_is_enabled() -> None:
 
     with pytest.raises(ConfigurationError, match="landmarks_file"):
         workflow.validate_modern_workflow_config(invalid)
+
+
+def test_pca_dimensions_are_rejected_before_optimizer_execution(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    invalid = _configuration()
+    invalid["analysis"]["pca_components"] = 5
+    invalid["analysis"]["deformation_components"] = 5
+    config = tmp_path / "invalid-pca.yaml"
+    config.write_text(yaml.safe_dump(invalid, sort_keys=False), encoding="utf-8")
+
+    def fail(*_args, **_kwargs):
+        raise AssertionError("optimizer must not start")
+
+    monkeypatch.setattr(workflow, "optimize_atlas", fail)
+    with pytest.raises(ConfigurationError, match="pca_components cannot exceed 4"):
+        workflow.run_modern_workflow(config, destination=tmp_path / "rejected")
+
+    assert not (tmp_path / "rejected").exists()

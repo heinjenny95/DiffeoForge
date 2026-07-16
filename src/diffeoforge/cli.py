@@ -176,6 +176,22 @@ def build_parser() -> argparse.ArgumentParser:
         help="Override the exact previously nonexistent run destination.",
     )
 
+    modern_plan_parser = subparsers.add_parser(
+        "modern-plan",
+        help="Inspect dense-engine workload and known tensor payloads without computing.",
+    )
+    modern_plan_parser.add_argument("config", type=Path)
+    modern_plan_parser.add_argument(
+        "--output",
+        type=Path,
+        help="Report directory (default: CONFIG_NAME.workload).",
+    )
+    modern_plan_parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Replace only a recognized generated workload-report directory.",
+    )
+
     modern_verify_parser = subparsers.add_parser(
         "modern-verify",
         help="Verify an immutable modern workflow run and its nested atlas/PCA bundle.",
@@ -434,6 +450,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"Modern workflow configuration created: {config_path}")
             print("WARNING: Geometry-scaled starter values are exploratory.")
             print("Review every parameter before running the modern engine.")
+            print(f"Next: diffeoforge modern-plan {config_path}")
         except ImportError as error:
             print(
                 "ERROR: Modern engine dependencies are missing; install "
@@ -481,6 +498,49 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"       {error}", file=sys.stderr)
             return 2
         except (ConfigurationError, RuntimeError, ValueError, TypeError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
+
+    if args.command == "modern-plan":
+        try:
+            from diffeoforge.modern_workload import (
+                REPORT_HTML_NAME,
+                REPORT_JSON_NAME,
+                plan_modern_workload,
+            )
+
+            report_directory = plan_modern_workload(
+                args.config,
+                destination=args.output,
+                overwrite=args.force,
+            )
+            report = json.loads(
+                (report_directory / REPORT_JSON_NAME).read_text(encoding="utf-8")
+            )
+            print(f"Modern workload plan created: {report_directory}")
+            print(f"Subject meshes: {report['input']['subject_count']}")
+            print(
+                "Optimizer evaluation upper bound: "
+                f"{report['optimizer_bound']['objective_gradient_evaluation_upper_bound']}"
+            )
+            print(
+                "Largest dense XYZ-difference tensor: "
+                f"{report['payload_model']['largest_single_dense_xyz_difference_tensor_bytes']} "
+                "bytes"
+            )
+            print(f"Machine-readable report: {report_directory / REPORT_JSON_NAME}")
+            print(f"Review report: {report_directory / REPORT_HTML_NAME}")
+            print("WARNING: This is not a peak-RAM estimate or runtime forecast.")
+        except ImportError as error:
+            print(
+                "ERROR: Modern engine dependencies are missing; install "
+                "diffeoforge[modern-engine].",
+                file=sys.stderr,
+            )
+            print(f"       {error}", file=sys.stderr)
+            return 2
+        except (ConfigurationError, RuntimeError, OSError, ValueError, TypeError) as error:
             print(f"ERROR: {error}", file=sys.stderr)
             return 2
         return 0
