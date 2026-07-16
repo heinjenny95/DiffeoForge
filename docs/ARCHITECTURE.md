@@ -150,6 +150,13 @@ the first consumer; no event contains a percentage, elapsed-time fraction,
 ETA, runtime forecast, or comparative result. Tests require callback presence
 to leave all published evidence byte-identical.
 
+The next multi-tile study is governed by
+[ADR 0004](decisions/0004-prospective-multi-tile-matrix.md). It will use one
+hashed base config plus explicit benchmark-only effective tile plans, not a bag
+of hand-edited YAML files. New report/design/run versions and explicit version
+dispatch are mandatory; current v0.1 study artifacts retain their exact
+single-tile meaning.
+
 Below the application layer, the engine now contains an explicit blockwise
 Gaussian primitive family. Query and source tile sizes bound each pairwise XYZ
 difference tensor; Current and Varifold inner products accumulate tiles

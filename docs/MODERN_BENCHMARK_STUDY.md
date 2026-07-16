@@ -190,6 +190,12 @@ condition order, state, events, manifest, and hashes agree. It still does not
 mean either strategy is faster, uses less peak memory, or is ready as a public
 default.
 
+The prospective extension from one tile shape to a full factorial tile matrix
+is specified separately in
+[ADR 0004](decisions/0004-prospective-multi-tile-matrix.md). It deliberately
+requires new benchmark/design/run versions and keeps every v0.1 artifact
+unchanged. No multi-tile override or runner is implemented by that decision.
+
 ## Exact-count progress, not ETA
 
 `modern-benchmark-study` prints lifecycle and condition progress while it runs:

@@ -203,6 +203,11 @@ diffeoforge modern-benchmark-study-status modern-atlas.benchmark-study.run
 diffeoforge modern-benchmark-study-verify modern-atlas.benchmark-study.run
 ```
 
+A future full-factorial multi-tile study is specified in
+[ADR 0004](docs/decisions/0004-prospective-multi-tile-matrix.md). It is not yet
+implemented and will use new versioned contracts without changing existing
+single-tile evidence.
+
 Generated configurations declare dense evaluation explicitly. The exact
 non-approximate blockwise path can instead be requested without code:
 
