@@ -22,6 +22,7 @@ from diffeoforge.modern_benchmark import (  # noqa: E402
     _schema,
     collect_modern_benchmark,
     render_modern_benchmark_html,
+    verify_modern_benchmark_report,
     write_modern_benchmark_report,
 )
 
@@ -177,9 +178,24 @@ def test_reports_are_escaped_atomic_and_refuse_unrelated_overwrite(
     assert len(rows) == 1
     assert rows[0]["wall_time_ns"] == "100"
     assert (output / REPORT_HTML_NAME).read_text(encoding="utf-8") == rendered
+    assert verify_modern_benchmark_report(output) == report
     with pytest.raises(FileExistsError):
         write_modern_benchmark_report(report, output)
     write_modern_benchmark_report(report, output, overwrite=True)
+
+    csv_path = output / REPORT_CSV_NAME
+    original_csv = csv_path.read_text(encoding="utf-8")
+    csv_path.write_text(original_csv.replace("100,", "101,", 1), encoding="utf-8")
+    with pytest.raises(ModernBenchmarkError, match="CSV rows differ"):
+        verify_modern_benchmark_report(output)
+    csv_path.write_text(original_csv, encoding="utf-8")
+
+    html_path = output / REPORT_HTML_NAME
+    original_html = html_path.read_text(encoding="utf-8")
+    html_path.write_text(original_html + "changed", encoding="utf-8")
+    with pytest.raises(ModernBenchmarkError, match="HTML differs"):
+        verify_modern_benchmark_report(output)
+    html_path.write_text(original_html, encoding="utf-8")
 
     unsafe = tmp_path / "unsafe"
     unsafe.mkdir()
