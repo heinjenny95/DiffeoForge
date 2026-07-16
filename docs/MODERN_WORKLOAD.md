@@ -129,4 +129,6 @@ This plan describes the current dense CPU/float64 correctness implementation.
 It is not a benchmark, a wall-time forecast, a peak-RAM estimate, evidence that
 300 specimens are feasible, a GPU model, or a Deformetrica resource model.
 Measured scaling experiments on representative simplified meshes remain a
-separate prospective gate.
+separate prospective gate. `modern-benchmark` now provides the first narrow
+objective/gradient measurement protocol; it does not convert this plan into a
+runtime predictor. See [modern benchmark protocol](MODERN_BENCHMARK.md).
