@@ -163,6 +163,22 @@ def build_parser() -> argparse.ArgumentParser:
     modern_init_parser.add_argument("--max-cycles", type=int, default=3)
     modern_init_parser.add_argument("--threads", type=int)
     modern_init_parser.add_argument("--random-seed", type=int, default=20260715)
+    modern_init_parser.add_argument(
+        "--pairwise-mode",
+        choices=("dense", "blockwise"),
+        default="dense",
+        help="Exact pairwise execution mode (default: dense correctness oracle).",
+    )
+    modern_init_parser.add_argument(
+        "--query-tile-size",
+        type=int,
+        help="Required positive query-row tile size for --pairwise-mode blockwise.",
+    )
+    modern_init_parser.add_argument(
+        "--source-tile-size",
+        type=int,
+        help="Required positive source-row tile size for --pairwise-mode blockwise.",
+    )
     modern_init_parser.add_argument("--force", action="store_true")
 
     modern_run_parser = subparsers.add_parser(
@@ -469,6 +485,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                 max_cycles=args.max_cycles,
                 threads=args.threads,
                 random_seed=args.random_seed,
+                pairwise_mode=args.pairwise_mode,
+                query_tile_size=args.query_tile_size,
+                source_tile_size=args.source_tile_size,
                 overwrite=args.force,
             )
             print(f"Modern workflow configuration created: {config_path}")

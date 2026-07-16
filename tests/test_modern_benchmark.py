@@ -51,6 +51,29 @@ class _StructureParser(HTMLParser):
         self.tags.append(tag)
 
 
+def test_dense_v01_benchmark_refuses_blockwise_config_before_spawning(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = yaml.safe_load(EXAMPLE.read_text(encoding="utf-8"))
+    config["runtime"]["pairwise_evaluation"] = {
+        "mode": "blockwise",
+        "query_tile_size": 64,
+        "source_tile_size": 64,
+    }
+    path = tmp_path / "blockwise.yaml"
+    path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+
+    import diffeoforge.modern_benchmark as module
+
+    def fail(*_args, **_kwargs):
+        raise AssertionError("fresh benchmark process must not spawn")
+
+    monkeypatch.setattr(module, "_run_fresh_sample", fail)
+    with pytest.raises(ModernBenchmarkError, match="will not be silently reported as dense"):
+        collect_modern_benchmark(path, subject_count=1, repeats=1)
+
+
 def test_collection_binds_selection_operations_and_descriptive_samples(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

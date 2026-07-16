@@ -74,6 +74,30 @@
         "minimum_face_area_ratio": {"type": ["number", "null"], "exclusiveMinimum": 0},
         "maximum_face_area_ratio": {"type": ["number", "null"], "exclusiveMinimum": 0}
       }
+    },
+    "pairwiseEvaluation": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mode", "query_tile_size", "source_tile_size"],
+          "properties": {
+            "mode": {"const": "dense"},
+            "query_tile_size": {"type": "null"},
+            "source_tile_size": {"type": "null"}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mode", "query_tile_size", "source_tile_size"],
+          "properties": {
+            "mode": {"const": "blockwise"},
+            "query_tile_size": {"type": "integer", "minimum": 1},
+            "source_tile_size": {"type": "integer", "minimum": 1}
+          }
+        }
+      ]
     }
   },
   "properties": {
@@ -85,15 +109,44 @@
       "additionalProperties": false,
       "required": ["id", "diffeoforge", "pytorch", "numpy", "device", "dtype", "threads", "random_seed"],
       "properties": {
-        "id": {"const": "diffeoforge_modern_dense"},
+        "id": {"enum": ["diffeoforge_modern_dense", "diffeoforge_modern_blockwise"]},
         "diffeoforge": {"type": "string", "minLength": 1},
         "pytorch": {"type": "string", "minLength": 1},
         "numpy": {"type": "string", "minLength": 1},
         "device": {"const": "cpu"},
         "dtype": {"const": "float64"},
         "threads": {"type": "integer", "minimum": 1},
-        "random_seed": {"type": "integer", "minimum": 0}
-      }
+        "random_seed": {"type": "integer", "minimum": 0},
+        "pairwise_evaluation": {"$ref": "#/$defs/pairwiseEvaluation"}
+      },
+      "allOf": [
+        {
+          "if": {
+            "required": ["pairwise_evaluation"],
+            "properties": {
+              "pairwise_evaluation": {
+                "properties": {"mode": {"const": "blockwise"}}
+              }
+            }
+          },
+          "then": {
+            "properties": {"id": {"const": "diffeoforge_modern_blockwise"}}
+          }
+        },
+        {
+          "if": {
+            "required": ["pairwise_evaluation"],
+            "properties": {
+              "pairwise_evaluation": {
+                "properties": {"mode": {"const": "dense"}}
+              }
+            }
+          },
+          "then": {
+            "properties": {"id": {"const": "diffeoforge_modern_dense"}}
+          }
+        }
+      ]
     },
     "config": {
       "type": "object",

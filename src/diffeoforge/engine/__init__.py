@@ -29,6 +29,7 @@ from diffeoforge.engine.dense import (
     varifold_squared_distance,
     varifold_squared_distance_blockwise,
 )
+from diffeoforge.engine.execution import PairwiseEvaluationPlan
 from diffeoforge.engine.objective import (
     AtlasObjective,
     SubjectObjective,
@@ -44,6 +45,7 @@ from diffeoforge.engine.optimizer import (
 __all__ = [
     "ShootingTrajectory",
     "GaussianTilePlan",
+    "PairwiseEvaluationPlan",
     "AtlasObjective",
     "AtlasOptimizationRecord",
     "AtlasOptimizationResult",

@@ -27,13 +27,42 @@
       "additionalProperties": false,
       "required": ["id", "diffeoforge", "pytorch", "numpy", "device", "dtype"],
       "properties": {
-        "id": {"const": "diffeoforge_modern_dense"},
+        "id": {"enum": ["diffeoforge_modern_dense", "diffeoforge_modern_blockwise"]},
         "diffeoforge": {"type": "string", "minLength": 1},
         "pytorch": {"type": "string", "minLength": 1},
         "numpy": {"type": "string", "minLength": 1},
         "device": {"const": "cpu"},
-        "dtype": {"const": "float64"}
-      }
+        "dtype": {"const": "float64"},
+        "pairwise_evaluation": {"$ref": "#/$defs/pairwiseEvaluation"}
+      },
+      "allOf": [
+        {
+          "if": {
+            "required": ["pairwise_evaluation"],
+            "properties": {
+              "pairwise_evaluation": {
+                "properties": {"mode": {"const": "blockwise"}}
+              }
+            }
+          },
+          "then": {
+            "properties": {"id": {"const": "diffeoforge_modern_blockwise"}}
+          }
+        },
+        {
+          "if": {
+            "required": ["pairwise_evaluation"],
+            "properties": {
+              "pairwise_evaluation": {
+                "properties": {"mode": {"const": "dense"}}
+              }
+            }
+          },
+          "then": {
+            "properties": {"id": {"const": "diffeoforge_modern_dense"}}
+          }
+        }
+      ]
     },
     "model": {
       "type": "object",
@@ -234,6 +263,30 @@
     }
   },
   "$defs": {
+    "pairwiseEvaluation": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mode", "query_tile_size", "source_tile_size"],
+          "properties": {
+            "mode": {"const": "dense"},
+            "query_tile_size": {"type": "null"},
+            "source_tile_size": {"type": "null"}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mode", "query_tile_size", "source_tile_size"],
+          "properties": {
+            "mode": {"const": "blockwise"},
+            "query_tile_size": {"type": "integer", "minimum": 1},
+            "source_tile_size": {"type": "integer", "minimum": 1}
+          }
+        }
+      ]
+    },
     "qualitySettings": {
       "type": "object",
       "additionalProperties": false,

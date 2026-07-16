@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import csv
 import json
 from pathlib import Path
@@ -92,6 +93,11 @@ def _configuration(*, output: str = "unused-run", landmarks: str | None = None) 
             "precision": "float64",
             "threads": 1,
             "random_seed": 20260715,
+            "pairwise_evaluation": {
+                "mode": "dense",
+                "query_tile_size": None,
+                "source_tile_size": None,
+            },
         },
         "output": {"directory": output},
     }
@@ -135,6 +141,11 @@ def test_example_configuration_is_valid_and_public_schema_is_packaged() -> None:
         "precision": "float64",
         "threads": 1,
         "random_seed": 20260715,
+        "pairwise_evaluation": {
+            "mode": "dense",
+            "query_tile_size": None,
+            "source_tile_size": None,
+        },
     }
     assert loaded["analysis"] == {
         "pca_components": None,
@@ -143,6 +154,62 @@ def test_example_configuration_is_valid_and_public_schema_is_packaged() -> None:
     }
     schema = workflow._schema("modern-workflow-config-v0.1.json")
     assert schema["title"] == "DiffeoForge modern workflow configuration"
+
+
+def test_legacy_config_without_pairwise_record_remains_dense_and_valid() -> None:
+    legacy = _configuration()
+    del legacy["runtime"]["pairwise_evaluation"]
+
+    workflow.validate_modern_workflow_config(legacy)
+    plan = workflow.pairwise_evaluation_from_config(legacy)
+
+    assert plan.mode == "dense"
+    assert plan.as_manifest() == {
+        "mode": "dense",
+        "query_tile_size": None,
+        "source_tile_size": None,
+    }
+
+
+def test_config_v02_requires_explicit_pairwise_record() -> None:
+    invalid = _configuration()
+    invalid["schema_version"] = "0.2"
+    del invalid["runtime"]["pairwise_evaluation"]
+
+    with pytest.raises(ConfigurationError, match="pairwise_evaluation"):
+        workflow.validate_modern_workflow_config(invalid)
+
+
+def test_legacy_dense_manifest_without_pairwise_record_remains_verifiable() -> None:
+    legacy = _configuration()
+    del legacy["runtime"]["pairwise_evaluation"]
+    manifest = {"engine": {"id": "diffeoforge_modern_dense"}}
+
+    workflow._verify_pairwise_provenance(manifest, legacy)
+
+    current = _configuration()
+    current["schema_version"] = "0.2"
+    with pytest.raises(workflow.ModernWorkflowError, match="provenance"):
+        workflow._verify_pairwise_provenance(manifest, current)
+
+
+@pytest.mark.parametrize(
+    "pairwise",
+    [
+        {"mode": "dense", "query_tile_size": 32, "source_tile_size": None},
+        {"mode": "blockwise", "query_tile_size": None, "source_tile_size": 32},
+        {"mode": "blockwise", "query_tile_size": 0, "source_tile_size": 32},
+        {"mode": "automatic", "query_tile_size": None, "source_tile_size": None},
+    ],
+)
+def test_schema_rejects_incoherent_pairwise_execution_before_work(
+    pairwise: dict,
+) -> None:
+    invalid = _configuration()
+    invalid["runtime"]["pairwise_evaluation"] = pairwise
+
+    with pytest.raises(ConfigurationError, match="pairwise_evaluation"):
+        workflow.validate_modern_workflow_config(invalid)
 
 
 def test_farthest_template_initialization_is_repeatable_and_explicit() -> None:
@@ -224,6 +291,130 @@ def test_five_subject_workflow_is_verified_and_byte_repeatable(tmp_path: Path) -
     ):
         assert record["label"] == source.name
         assert record["sha256"] == sha256_file(source)
+
+
+def _numeric_csv(path: Path, first_numeric_column: int) -> np.ndarray:
+    with path.open(encoding="utf-8", newline="") as handle:
+        rows = list(csv.reader(handle))[1:]
+    return np.array(
+        [[float(value) for value in row[first_numeric_column:]] for row in rows],
+        dtype=np.float64,
+    )
+
+
+def _bundle_vtk_paths(manifest: dict) -> list[str]:
+    deformations = manifest["pca"]["deformations"]
+    return [
+        manifest["template"]["path"],
+        *(record["reconstruction_path"] for record in manifest["subjects"]),
+        deformations["mean_path"],
+        *(
+            path
+            for component in deformations["components"]
+            for path in (component["minus_path"], component["plus_path"])
+        ),
+    ]
+
+
+def test_blockwise_full_workflow_and_artifacts_match_dense_with_distinct_provenance(
+    tmp_path: Path,
+) -> None:
+    dense_config = _configuration(output="unused-dense")
+    blockwise_config = copy.deepcopy(dense_config)
+    blockwise_config["runtime"]["pairwise_evaluation"] = {
+        "mode": "blockwise",
+        "query_tile_size": 64,
+        "source_tile_size": 64,
+    }
+    dense_path = tmp_path / "dense.yaml"
+    blockwise_path = tmp_path / "blockwise.yaml"
+    dense_path.write_text(yaml.safe_dump(dense_config, sort_keys=False), encoding="utf-8")
+    blockwise_path.write_text(
+        yaml.safe_dump(blockwise_config, sort_keys=False), encoding="utf-8"
+    )
+
+    dense_run = workflow.run_modern_workflow(
+        dense_path,
+        destination=tmp_path / "dense-run",
+        created_at=FIXED_TIME,
+    )
+    blockwise_run = workflow.run_modern_workflow(
+        blockwise_path,
+        destination=tmp_path / "blockwise-run",
+        created_at=FIXED_TIME,
+    )
+    dense_manifest = workflow.verify_modern_workflow(dense_run)
+    blockwise_manifest = workflow.verify_modern_workflow(blockwise_run)
+
+    assert dense_manifest["engine"]["id"] == "diffeoforge_modern_dense"
+    assert dense_manifest["engine"]["pairwise_evaluation"]["mode"] == "dense"
+    assert blockwise_manifest["engine"]["id"] == "diffeoforge_modern_blockwise"
+    assert blockwise_manifest["engine"]["pairwise_evaluation"] == {
+        "mode": "blockwise",
+        "query_tile_size": 64,
+        "source_tile_size": 64,
+    }
+
+    dense_bundle = dense_run / dense_manifest["result_bundle"]["path"]
+    blockwise_bundle = blockwise_run / blockwise_manifest["result_bundle"]["path"]
+    dense_bundle_manifest = workflow.verify_modern_atlas_bundle(dense_bundle)
+    blockwise_bundle_manifest = workflow.verify_modern_atlas_bundle(blockwise_bundle)
+    assert dense_bundle_manifest["engine"]["pairwise_evaluation"]["mode"] == "dense"
+    assert blockwise_bundle_manifest["engine"]["pairwise_evaluation"] == {
+        "mode": "blockwise",
+        "query_tile_size": 64,
+        "source_tile_size": 64,
+    }
+
+    for key, first_numeric_column in (
+        ("control_points_path", 1),
+        ("momenta_path", 2),
+    ):
+        np.testing.assert_allclose(
+            _numeric_csv(
+                blockwise_bundle / blockwise_bundle_manifest["parameters"][key],
+                first_numeric_column,
+            ),
+            _numeric_csv(
+                dense_bundle / dense_bundle_manifest["parameters"][key],
+                first_numeric_column,
+            ),
+            rtol=2e-10,
+            atol=2e-11,
+        )
+
+    assert _bundle_vtk_paths(blockwise_bundle_manifest) == _bundle_vtk_paths(
+        dense_bundle_manifest
+    )
+    for relative in _bundle_vtk_paths(dense_bundle_manifest):
+        dense_mesh = read_vtk_polydata(dense_bundle / relative)
+        blockwise_mesh = read_vtk_polydata(blockwise_bundle / relative)
+        assert np.array_equal(blockwise_mesh.triangles, dense_mesh.triangles)
+        np.testing.assert_allclose(
+            blockwise_mesh.vertices,
+            dense_mesh.vertices,
+            rtol=2e-10,
+            atol=2e-11,
+        )
+
+    manifest_path = dense_run / workflow.MANIFEST_NAME
+    forged = json.loads(manifest_path.read_text(encoding="utf-8"))
+    forged["engine"]["id"] = "diffeoforge_modern_blockwise"
+    forged["engine"]["pairwise_evaluation"] = {
+        "mode": "blockwise",
+        "query_tile_size": 64,
+        "source_tile_size": 64,
+    }
+    manifest_path.write_text(
+        json.dumps(forged, indent=2, ensure_ascii=False, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    (dense_run / workflow.MANIFEST_SIDECAR_NAME).write_text(
+        f"{sha256_file(manifest_path)}  {workflow.MANIFEST_NAME}\n",
+        encoding="ascii",
+    )
+    with pytest.raises(workflow.ModernWorkflowError, match="effective"):
+        workflow.verify_modern_workflow(dense_run)
 
 
 def test_optional_labelled_landmarks_align_complete_meshes_and_are_recorded(
@@ -438,6 +629,13 @@ def test_modern_init_and_cli_run_form_a_public_folder_to_bundle_path(
         "deformation_standard_deviations": 2.0,
         "deformation_components": 3,
     }
+    assert yaml.safe_load(config.read_text(encoding="utf-8"))["runtime"][
+        "pairwise_evaluation"
+    ] == {
+        "mode": "dense",
+        "query_tile_size": None,
+        "source_tile_size": None,
+    }
 
     return_code = main(["modern-run", str(config)])
     captured = capsys.readouterr()
@@ -456,6 +654,69 @@ def test_modern_init_and_cli_run_form_a_public_folder_to_bundle_path(
     assert verify_code == 0
     assert "Modern workflow verified" in verify_output.out
     assert "PCA scree plot:" in verify_output.out
+
+
+def test_modern_init_cli_generates_only_coherent_blockwise_plans(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config = tmp_path / "blockwise.yaml"
+    common = [
+        "modern-init",
+        str(MESH_DIRECTORY),
+        "--units",
+        "unitless",
+        "--template",
+        str(MESH_DIRECTORY / "template.vtk"),
+        "--subject-pattern",
+        "subject-*.vtk",
+        "--control-points",
+        "9",
+    ]
+
+    assert (
+        main(
+            [
+                *common,
+                "--config",
+                str(config),
+                "--pairwise-mode",
+                "blockwise",
+                "--query-tile-size",
+                "32",
+                "--source-tile-size",
+                "64",
+            ]
+        )
+        == 0
+    )
+    capsys.readouterr()
+    assert yaml.safe_load(config.read_text(encoding="utf-8"))["runtime"][
+        "pairwise_evaluation"
+    ] == {
+        "mode": "blockwise",
+        "query_tile_size": 32,
+        "source_tile_size": 64,
+    }
+
+    invalid = tmp_path / "invalid.yaml"
+    assert (
+        main(
+            [
+                *common,
+                "--config",
+                str(invalid),
+                "--pairwise-mode",
+                "dense",
+                "--query-tile-size",
+                "32",
+            ]
+        )
+        == 2
+    )
+    captured = capsys.readouterr()
+    assert "dense mode requires null" in captured.err
+    assert not invalid.exists()
 
 
 def test_schema_requires_landmarks_exactly_when_procrustes_is_enabled() -> None:
