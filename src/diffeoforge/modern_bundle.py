@@ -30,6 +30,11 @@ from diffeoforge.analysis.pca_visualization import (
 from diffeoforge.config import ConfigurationError
 from diffeoforge.engine import AtlasOptimizationResult, flow_points, shoot
 from diffeoforge.mesh import inspect_vtk, sha256_file, write_vtk_polydata
+from diffeoforge.mesh_quality import MeshQualitySettings
+from diffeoforge.mesh_quality_report import (
+    build_mesh_quality_report,
+    mesh_quality_csv_rows,
+)
 
 BUNDLE_VERSION = "0.1"
 MANIFEST_NAME = "bundle-manifest.json"
@@ -411,6 +416,7 @@ def write_modern_atlas_bundle(
     pca_components: int | None = None,
     pca_deformation_standard_deviations: float = 2.0,
     pca_deformation_components: int | None = None,
+    quality_settings: MeshQualitySettings | None = None,
     created_at: str | None = None,
 ) -> Path:
     """Atomically create a new immutable modern-atlas result bundle."""
@@ -425,6 +431,11 @@ def write_modern_atlas_bundle(
         raise ValueError("template_triangles must have shape (triangles, 3)")
     if not isinstance(model_settings, ModernAtlasModelSettings):
         raise TypeError("model_settings must be ModernAtlasModelSettings")
+    resolved_quality_settings = (
+        MeshQualitySettings() if quality_settings is None else quality_settings
+    )
+    if not isinstance(resolved_quality_settings, MeshQualitySettings):
+        raise TypeError("quality_settings must be MeshQualitySettings or None")
     normalized_pca_components = _optional_positive_integer("pca_components", pca_components)
     deformation_standard_deviations = _positive_real(
         "pca_deformation_standard_deviations",
@@ -542,6 +553,57 @@ def write_modern_atlas_bundle(
             standard_deviations=deformation_standard_deviations,
             requested_components=deformation_components,
         )
+        quality_descriptors = [
+            {
+                "label": "estimated template",
+                "role": "template",
+                "stage": "estimated",
+                "path": str(template_path),
+            },
+            *[
+                {
+                    "label": record["label"],
+                    "role": "subject",
+                    "stage": "reconstruction",
+                    "path": str(temporary / record["reconstruction_path"]),
+                }
+                for record in subjects
+            ],
+            {
+                "label": "mean momenta",
+                "role": "pca",
+                "stage": "mean",
+                "path": str(temporary / pca_deformations["mean_path"]),
+            },
+            *[
+                {
+                    "label": f"{component['label']} -",
+                    "role": "pca",
+                    "stage": "minus endpoint",
+                    "path": str(temporary / component["minus_path"]),
+                }
+                for component in pca_deformations["components"]
+            ],
+            *[
+                {
+                    "label": f"{component['label']} +",
+                    "role": "pca",
+                    "stage": "plus endpoint",
+                    "path": str(temporary / component["plus_path"]),
+                }
+                for component in pca_deformations["components"]
+            ],
+        ]
+        quality_report = build_mesh_quality_report(
+            temporary,
+            quality_descriptors,
+            resolved_quality_settings,
+            reference_path=template_path,
+        )
+        quality_report_path = temporary / "quality" / "mesh-quality.json"
+        quality_csv_path = temporary / "quality" / "mesh-quality.csv"
+        _write_json_exclusive(quality_report_path, quality_report)
+        _write_csv_exclusive(quality_csv_path, mesh_quality_csv_rows(quality_report))
         artifact_paths = sorted(path for path in temporary.rglob("*") if path.is_file())
         artifacts = [_artifact(temporary, path) for path in artifact_paths]
         final = result.history[-1]
@@ -591,6 +653,14 @@ def write_modern_atlas_bundle(
                 "total_variance": pca.total_variance,
                 **pca_paths,
                 "deformations": pca_deformations,
+            },
+            "quality": {
+                "report_path": quality_report_path.relative_to(temporary).as_posix(),
+                "csv_path": quality_csv_path.relative_to(temporary).as_posix(),
+                "settings": resolved_quality_settings.as_manifest(),
+                "reference_path": template_path.relative_to(temporary).as_posix(),
+                "assessed_meshes": len(quality_report["meshes"]),
+                "scientific_boundary": quality_report["scientific_boundary"],
             },
             "artifacts": artifacts,
             "scientific_boundary": SCIENTIFIC_BOUNDARY,
@@ -730,6 +800,77 @@ def verify_modern_atlas_bundle(directory: Path | str) -> dict:
             raise ModernBundleError(f"VTK point count differs from manifest: {vtk_path.name}")
         if metadata.cells != manifest["template"]["triangles"]:
             raise ModernBundleError(f"VTK triangle count differs from manifest: {vtk_path.name}")
+    quality_record = manifest["quality"]
+    quality_path = _resolve_artifact(root, quality_record["report_path"])
+    try:
+        quality_report = json.loads(quality_path.read_text(encoding="utf-8"))
+        quality_settings = MeshQualitySettings.from_mapping(quality_record["settings"])
+        quality_descriptors = [
+            {
+                "label": "estimated template",
+                "role": "template",
+                "stage": "estimated",
+                "path": str(_resolve_artifact(root, manifest["template"]["path"])),
+            },
+            *[
+                {
+                    "label": record["label"],
+                    "role": "subject",
+                    "stage": "reconstruction",
+                    "path": str(_resolve_artifact(root, record["reconstruction_path"])),
+                }
+                for record in manifest["subjects"]
+            ],
+            {
+                "label": "mean momenta",
+                "role": "pca",
+                "stage": "mean",
+                "path": str(_resolve_artifact(root, deformation_record["mean_path"])),
+            },
+            *[
+                {
+                    "label": f"{component['label']} -",
+                    "role": "pca",
+                    "stage": "minus endpoint",
+                    "path": str(_resolve_artifact(root, component["minus_path"])),
+                }
+                for component in deformation_record["components"]
+            ],
+            *[
+                {
+                    "label": f"{component['label']} +",
+                    "role": "pca",
+                    "stage": "plus endpoint",
+                    "path": str(_resolve_artifact(root, component["plus_path"])),
+                }
+                for component in deformation_record["components"]
+            ],
+        ]
+        reference_path = _resolve_artifact(root, manifest["template"]["path"])
+        expected_quality = build_mesh_quality_report(
+            root,
+            quality_descriptors,
+            quality_settings,
+            reference_path=reference_path,
+        )
+    except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError) as error:
+        raise ModernBundleError(f"Invalid mesh-quality evidence: {error}") from error
+    if quality_report != expected_quality:
+        raise ModernBundleError("Mesh-quality JSON differs from recomputed geometry evidence")
+    if quality_record["assessed_meshes"] != len(quality_report["meshes"]):
+        raise ModernBundleError("Mesh-quality assessed mesh count differs")
+    if quality_record["reference_path"] != quality_report["reference_path"]:
+        raise ModernBundleError("Mesh-quality reference path differs")
+    if quality_record["scientific_boundary"] != quality_report["scientific_boundary"]:
+        raise ModernBundleError("Mesh-quality scientific boundary differs")
+    quality_csv_path = _resolve_artifact(root, quality_record["csv_path"])
+    try:
+        with quality_csv_path.open(encoding="utf-8", newline="") as handle:
+            quality_rows = list(csv.reader(handle))
+    except (OSError, UnicodeError, csv.Error) as error:
+        raise ModernBundleError(f"Invalid mesh-quality CSV: {error}") from error
+    if quality_rows != mesh_quality_csv_rows(expected_quality):
+        raise ModernBundleError("Mesh-quality CSV differs from recomputed geometry evidence")
     _verify_static_svg(_resolve_artifact(root, manifest["pca"]["plots"]["scree_path"]))
     _verify_static_svg(_resolve_artifact(root, manifest["pca"]["plots"]["scores_path"]))
     return manifest

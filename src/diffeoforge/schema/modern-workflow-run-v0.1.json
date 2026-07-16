@@ -11,6 +11,7 @@
     "config",
     "input",
     "preprocessing",
+    "quality",
     "initialization",
     "result_bundle",
     "artifacts",
@@ -47,6 +48,31 @@
         "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
         "points": {"type": "integer", "minimum": 1},
         "triangles": {"type": "integer", "minimum": 1}
+      }
+    },
+    "qualitySettings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "require_no_duplicate_faces", "require_no_isolated_vertices",
+        "require_edge_manifold", "require_consistent_orientation",
+        "require_single_component", "require_closed_surface",
+        "reject_zero_area_faces", "minimum_triangle_angle_degrees",
+        "maximum_triangle_edge_ratio", "minimum_face_area_ratio",
+        "maximum_face_area_ratio"
+      ],
+      "properties": {
+        "require_no_duplicate_faces": {"type": "boolean"},
+        "require_no_isolated_vertices": {"type": "boolean"},
+        "require_edge_manifold": {"type": "boolean"},
+        "require_consistent_orientation": {"type": "boolean"},
+        "require_single_component": {"type": "boolean"},
+        "require_closed_surface": {"type": "boolean"},
+        "reject_zero_area_faces": {"type": "boolean"},
+        "minimum_triangle_angle_degrees": {"type": ["number", "null"], "exclusiveMinimum": 0, "maximum": 60},
+        "maximum_triangle_edge_ratio": {"type": ["number", "null"], "minimum": 1},
+        "minimum_face_area_ratio": {"type": ["number", "null"], "exclusiveMinimum": 0},
+        "maximum_face_area_ratio": {"type": ["number", "null"], "exclusiveMinimum": 0}
       }
     }
   },
@@ -99,6 +125,18 @@
         "alignment_path": {"oneOf": [{"type": "string", "minLength": 1}, {"type": "null"}]},
         "converged": {"oneOf": [{"type": "boolean"}, {"type": "null"}]},
         "termination_reason": {"oneOf": [{"type": "string", "minLength": 1}, {"type": "null"}]}
+      }
+    },
+    "quality": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["report_path", "csv_path", "settings", "assessed_meshes", "scientific_boundary"],
+      "properties": {
+        "report_path": {"type": "string", "minLength": 1},
+        "csv_path": {"type": "string", "minLength": 1},
+        "settings": {"$ref": "#/$defs/qualitySettings"},
+        "assessed_meshes": {"type": "integer", "minimum": 2},
+        "scientific_boundary": {"type": "string", "minLength": 1}
       }
     },
     "initialization": {

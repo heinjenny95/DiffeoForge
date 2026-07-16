@@ -98,12 +98,15 @@ This repository currently provides:
   reproducible mean/±PC deformation meshes;
 - an experimental end-to-end modern workflow that inventories a mesh folder,
   optionally applies labelled-landmark Procrustes transforms, initializes and
-  runs the CPU/float64 engine, and publishes a doubly verified immutable run.
+  runs the CPU/float64 engine, and publishes a doubly verified immutable run;
+- deterministic raw/effective-input and generated-output mesh-quality evidence
+  with explicit topology/triangle gates, JSON/CSV reports, local face-area
+  ratios, atomic rejection, and verifier-side recomputation.
 
 The experimental modern path is a public CLI/application-service workflow, but
 it is not yet the shared production backend behind a GUI and does not provide
 checkpoint/resume. DiffeoForge also does **not** yet ship a desktop installer,
-provide mesh-output quality visualization, or promise CPU/GPU equivalence or
+provide mesh-quality rendering or self-intersection detection, or promise CPU/GPU equivalence or
 300-specimen production performance. See the [modern-workflow
 documentation](docs/MODERN_WORKFLOW.md) and [reference-backend
 documentation](docs/REFERENCE_BACKEND.md) for the exact boundaries.
@@ -206,6 +209,7 @@ and workflow for another mesh directory.
 - [Experimental full atlas optimizer](docs/FULL_ATLAS_OPTIMIZER.md)
 - [Immutable modern atlas result bundle](docs/MODERN_ATLAS_BUNDLE.md)
 - [Experimental modern mesh-folder workflow](docs/MODERN_WORKFLOW.md)
+- [Deterministic mesh-quality evidence](docs/MESH_QUALITY.md)
 - [Landmark-based Procrustes alignment](docs/PROCRUSTES_ALIGNMENT.md)
 - [PCA of atlas-derived subject features](docs/ATLAS_PCA.md)
 - [Desktop executable and installer architecture](docs/DESKTOP_DISTRIBUTION.md)

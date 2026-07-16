@@ -14,6 +14,7 @@ pca_module = pytest.importorskip("diffeoforge.analysis.pca")
 engine = pytest.importorskip("diffeoforge.engine")
 mesh = pytest.importorskip("diffeoforge.mesh")
 bundle_module = pytest.importorskip("diffeoforge.modern_bundle")
+quality_module = pytest.importorskip("diffeoforge.mesh_quality")
 
 momenta_pca = pca_module.momenta_pca
 flow_points = engine.flow_points
@@ -28,6 +29,7 @@ ModernAtlasModelSettings = bundle_module.ModernAtlasModelSettings
 ModernBundleError = bundle_module.ModernBundleError
 verify_modern_atlas_bundle = bundle_module.verify_modern_atlas_bundle
 write_modern_atlas_bundle = bundle_module.write_modern_atlas_bundle
+MeshQualitySettings = quality_module.MeshQualitySettings
 
 DTYPE = torch.float64
 FIXED_TIME = "2026-07-16T08:00:00+00:00"
@@ -126,7 +128,26 @@ def test_bundle_contains_verified_open_outputs_and_exact_subject_identity(
     assert manifest["pca"]["components"] == 2
     assert manifest["pca"]["plots"]["score_axes"] == ["PC1", "PC2"]
     assert manifest["pca"]["deformations"]["standard_deviations"] == 2.0
-    assert len(manifest["artifacts"]) == 19
+    assert len(manifest["artifacts"]) == 21
+    assert manifest["quality"]["assessed_meshes"] == 9
+    quality = json.loads(
+        (bundle / manifest["quality"]["report_path"]).read_text(encoding="utf-8")
+    )
+    assert quality["reference_path"] == manifest["template"]["path"]
+    assert quality["meshes"][0]["comparison_to_reference"] is None
+    assert all(
+        record["comparison_to_reference"]["connectivity_identical"]
+        for record in quality["meshes"][1:]
+    )
+    quality_rows = _csv(bundle / manifest["quality"]["csv_path"])
+    assert quality_rows[0][:5] == [
+        "index",
+        "label",
+        "role",
+        "stage",
+        "path",
+    ]
+    assert any(row[1] == "'=formula specimen" for row in quality_rows[1:])
     for tensor, original in zip(
         (result.template_vertices, result.control_points, result.momenta),
         originals,
@@ -311,6 +332,24 @@ def test_invalid_pca_deformation_settings_fail_without_publishing(
     assert not (tmp_path / "too-many-components").exists()
 
 
+def test_output_quality_gate_fails_atomically(tmp_path: Path, optimized: tuple) -> None:
+    result, triangles, model = optimized
+    destination = tmp_path / "rejected-quality"
+
+    with pytest.raises(ValueError, match="local face-area ratio"):
+        write_modern_atlas_bundle(
+            destination,
+            result,
+            triangles,
+            LABELS,
+            model,
+            quality_settings=MeshQualitySettings(maximum_face_area_ratio=0.1),
+        )
+
+    assert not destination.exists()
+    assert not tuple(tmp_path.glob(".rejected-quality.tmp-*"))
+
+
 def test_fixed_time_bundles_are_byte_identical(tmp_path: Path, optimized: tuple) -> None:
     first = _write_bundle(tmp_path / "first", optimized)
     second = _write_bundle(tmp_path / "second", optimized)
@@ -378,6 +417,40 @@ def test_verifier_rejects_manifest_path_traversal(
     )
 
     with pytest.raises(ModernBundleError, match="escapes"):
+        verify_modern_atlas_bundle(bundle)
+
+
+def test_verifier_recomputes_mesh_quality_instead_of_trusting_report(
+    tmp_path: Path,
+    optimized: tuple,
+) -> None:
+    bundle = _write_bundle(tmp_path / "bundle", optimized)
+    manifest_path = bundle / MANIFEST_NAME
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    quality_path = bundle / manifest["quality"]["report_path"]
+    quality = json.loads(quality_path.read_text(encoding="utf-8"))
+    quality["meshes"][0]["metrics"]["boundary_edges"] += 1
+    quality_path.write_text(
+        json.dumps(quality, indent=2, ensure_ascii=False, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    artifact = next(
+        record
+        for record in manifest["artifacts"]
+        if record["path"] == manifest["quality"]["report_path"]
+    )
+    artifact["bytes"] = quality_path.stat().st_size
+    artifact["sha256"] = sha256_file(quality_path)
+    manifest_path.write_text(
+        json.dumps(manifest, indent=2, ensure_ascii=False, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    (bundle / MANIFEST_SIDECAR_NAME).write_text(
+        f"{sha256_file(manifest_path)}  {MANIFEST_NAME}\n",
+        encoding="ascii",
+    )
+
+    with pytest.raises(ModernBundleError, match="recomputed geometry"):
         verify_modern_atlas_bundle(bundle)
 
 

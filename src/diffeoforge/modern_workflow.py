@@ -35,6 +35,16 @@ from diffeoforge.mesh import (
     sha256_file,
     write_vtk_polydata,
 )
+from diffeoforge.mesh_quality import (
+    MeshQualityError,
+    MeshQualitySettings,
+    assess_triangle_mesh,
+    enforce_mesh_quality,
+)
+from diffeoforge.mesh_quality_report import (
+    build_mesh_quality_report,
+    mesh_quality_csv_rows,
+)
 from diffeoforge.modern_bundle import (
     MANIFEST_NAME as BUNDLE_MANIFEST_NAME,
 )
@@ -79,6 +89,10 @@ def validate_modern_workflow_config(config: Mapping[str, Any]) -> None:
     if errors:
         details = "\n  - ".join(_format_schema_error(error) for error in errors)
         raise ConfigurationError(f"Modern workflow configuration validation failed:\n  - {details}")
+    try:
+        MeshQualitySettings.from_mapping(config["quality_control"])
+    except (TypeError, ValueError) as error:
+        raise ConfigurationError(f"Invalid quality_control settings: {error}") from error
 
 
 def load_modern_workflow_config(path: Path | str) -> dict[str, Any]:
@@ -237,6 +251,7 @@ def initialize_modern_workflow(
                 "max_iterations": 100,
             }
         },
+        "quality_control": MeshQualitySettings().as_manifest(),
         "initialization": {
             "control_points": {
                 "method": "farthest_template_vertices",
@@ -291,7 +306,19 @@ def initialize_modern_workflow(
     config["analysis"]["deformation_components"] = min(3, len(summary.subjects) - 1)
     validate_modern_workflow_config(config)
     inspect_inputs(summary)
-    template_vertices = np.array(read_vtk_polydata(summary.template).vertices, dtype=np.float64)
+    quality_settings = MeshQualitySettings.from_mapping(config["quality_control"])
+    source_paths = (summary.template, *summary.subjects)
+    source_geometries = tuple(read_vtk_polydata(path) for path in source_paths)
+    try:
+        for path, geometry in zip(source_paths, source_geometries, strict=True):
+            enforce_mesh_quality(
+                path.name,
+                assess_triangle_mesh(geometry.vertices, geometry.triangles),
+                quality_settings,
+            )
+    except MeshQualityError as error:
+        raise ConfigurationError(str(error)) from error
+    template_vertices = np.array(source_geometries[0].vertices, dtype=np.float64)
     farthest_template_vertex_indices(template_vertices, control_point_count)
     if landmark_source is not None:
         _, landmark_values = _read_landmarks(
@@ -333,6 +360,12 @@ def _write_json_exclusive(path: Path, value: object) -> None:
     with path.open("x", encoding="utf-8", newline="\n") as handle:
         json.dump(value, handle, indent=2, sort_keys=True, ensure_ascii=False, allow_nan=False)
         handle.write("\n")
+
+
+def _write_csv_exclusive(path: Path, rows: list[list[str]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("x", encoding="utf-8", newline="") as handle:
+        csv.writer(handle, lineterminator="\n").writerows(rows)
 
 
 def _copy_exclusive(source: Path, destination: Path) -> None:
@@ -666,6 +699,38 @@ def run_modern_workflow(
                 "termination_reason": None,
             }
 
+        quality_settings = MeshQualitySettings.from_mapping(config["quality_control"])
+        quality_descriptors: list[dict[str, str]] = []
+        for index, (source, raw_path, aligned_path) in enumerate(
+            zip(source_paths, raw_path_tuple, aligned_paths, strict=True)
+        ):
+            role = "template" if index == 0 else "subject"
+            quality_descriptors.extend(
+                [
+                    {
+                        "label": source.name,
+                        "role": role,
+                        "stage": "raw",
+                        "path": str(raw_path),
+                    },
+                    {
+                        "label": source.name,
+                        "role": role,
+                        "stage": "effective",
+                        "path": str(raw_path if aligned_path is None else aligned_path),
+                    },
+                ]
+            )
+        quality_report = build_mesh_quality_report(
+            temporary,
+            quality_descriptors,
+            quality_settings,
+        )
+        quality_report_path = temporary / "quality" / "input-mesh-quality.json"
+        quality_csv_path = temporary / "quality" / "input-mesh-quality.csv"
+        _write_json_exclusive(quality_report_path, quality_report)
+        _write_csv_exclusive(quality_csv_path, mesh_quality_csv_rows(quality_report))
+
         count = config["initialization"]["control_points"]["count"]
         control_indices = farthest_template_vertex_indices(vertices[0], count)
         template_tensor = torch.tensor(vertices[0], dtype=torch.float64)
@@ -735,6 +800,7 @@ def run_modern_workflow(
                 "deformation_standard_deviations"
             ],
             pca_deformation_components=config["analysis"]["deformation_components"],
+            quality_settings=quality_settings,
             created_at=timestamp,
         )
         bundle_manifest = verify_modern_atlas_bundle(bundle_path)
@@ -795,6 +861,13 @@ def run_modern_workflow(
                 "subjects": subject_records,
             },
             "preprocessing": preprocessing,
+            "quality": {
+                "report_path": quality_report_path.relative_to(temporary).as_posix(),
+                "csv_path": quality_csv_path.relative_to(temporary).as_posix(),
+                "settings": quality_settings.as_manifest(),
+                "assessed_meshes": len(quality_report["meshes"]),
+                "scientific_boundary": quality_report["scientific_boundary"],
+            },
             "initialization": {
                 "control_points": {
                     "method": "farthest_template_vertices",
@@ -956,6 +1029,62 @@ def verify_modern_workflow(directory: Path | str) -> dict[str, Any]:
             raise ModernWorkflowError("Published Procrustes evidence is not converged")
         if len(alignment.get("specimens", [])) != len(mesh_records):
             raise ModernWorkflowError("Procrustes evidence specimen count differs")
+
+    quality_record = manifest["quality"]
+    quality_path = _resolve_artifact(root, quality_record["report_path"])
+    try:
+        quality_report = _read_json_object(quality_path, "Input mesh-quality report")
+        quality_settings = MeshQualitySettings.from_mapping(quality_record["settings"])
+        quality_descriptors = []
+        for index, record in enumerate(mesh_records):
+            role = "template" if index == 0 else "subject"
+            raw_path = _resolve_artifact(root, record["raw_path"])
+            aligned_path = (
+                None
+                if record["aligned_path"] is None
+                else _resolve_artifact(root, record["aligned_path"])
+            )
+            quality_descriptors.extend(
+                [
+                    {
+                        "label": record["label"],
+                        "role": role,
+                        "stage": "raw",
+                        "path": str(raw_path),
+                    },
+                    {
+                        "label": record["label"],
+                        "role": role,
+                        "stage": "effective",
+                        "path": str(raw_path if aligned_path is None else aligned_path),
+                    },
+                ]
+            )
+        expected_quality = build_mesh_quality_report(
+            root,
+            quality_descriptors,
+            quality_settings,
+        )
+    except (ConfigurationError, KeyError, TypeError, ValueError) as error:
+        raise ModernWorkflowError(f"Invalid input mesh-quality evidence: {error}") from error
+    if quality_report != expected_quality:
+        raise ModernWorkflowError(
+            "Input mesh-quality JSON differs from recomputed geometry evidence"
+        )
+    if quality_record["assessed_meshes"] != len(quality_report["meshes"]):
+        raise ModernWorkflowError("Input mesh-quality assessed mesh count differs")
+    if quality_record["scientific_boundary"] != quality_report["scientific_boundary"]:
+        raise ModernWorkflowError("Input mesh-quality scientific boundary differs")
+    quality_csv_path = _resolve_artifact(root, quality_record["csv_path"])
+    try:
+        with quality_csv_path.open(encoding="utf-8", newline="") as handle:
+            quality_rows = list(csv.reader(handle))
+    except (OSError, UnicodeError, csv.Error) as error:
+        raise ModernWorkflowError(f"Invalid input mesh-quality CSV: {error}") from error
+    if quality_rows != mesh_quality_csv_rows(expected_quality):
+        raise ModernWorkflowError(
+            "Input mesh-quality CSV differs from recomputed geometry evidence"
+        )
 
     control = manifest["initialization"]["control_points"]
     if control["count"] != len(control["template_vertex_indices"]):

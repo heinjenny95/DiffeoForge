@@ -14,6 +14,18 @@ preprocessing:
     allow_reflection: false
     tolerance: 1.0e-10
     max_iterations: 100
+quality_control:
+  require_no_duplicate_faces: true
+  require_no_isolated_vertices: true
+  require_edge_manifold: true
+  require_consistent_orientation: true
+  require_single_component: false
+  require_closed_surface: false
+  reject_zero_area_faces: true
+  minimum_triangle_angle_degrees: null
+  maximum_triangle_edge_ratio: null
+  minimum_face_area_ratio: null
+  maximum_face_area_ratio: null
 initialization:
   control_points:
     method: farthest_template_vertices
