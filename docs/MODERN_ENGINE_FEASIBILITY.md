@@ -69,6 +69,9 @@ The experimental `diffeoforge.engine` module currently implements:
 - a deterministic full-parameter block optimizer for per-subject momenta,
   shared template vertices, and shared control points, with an explicit Armijo
   line search and decision history for every block.
+- a companion immutable result-bundle contract with estimated template and
+  reconstructed subject meshes, open parameter/history tables, complete file
+  hashes, and an automatic momenta-PCA handoff.
 
 All public operations require finite, three-dimensional floating-point tensors,
 matching dtype/device, finite positive kernel widths, and valid zero-based
@@ -76,8 +79,8 @@ matching dtype/device, finite positive kernel widths, and valid zero-based
 zero-area faces fail explicitly.
 
 This boundary does **not** yet include automatic control-point initialization,
-output meshes, optimizer checkpointing, GPU execution, sparse/chunked kernels,
-mesh-quality constraints, or a workflow-backend adapter.
+optimizer checkpointing, GPU execution, sparse/chunked kernels, mesh-quality
+constraints, or a workflow-backend adapter.
 
 ## Evidence in this baseline
 

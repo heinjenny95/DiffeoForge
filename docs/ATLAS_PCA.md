@@ -1,6 +1,6 @@
 # PCA of atlas-derived subject features
 
-Status: **tested analysis prototype; not yet an atlas output command**
+Status: **tested analysis prototype with an immutable bundle handoff; not yet a user command**
 
 Tracked by [scientific-change issue #19](https://github.com/heinjenny95/DiffeoForge/issues/19).
 
@@ -51,16 +51,16 @@ behavior. Invalid shapes, dtypes, labels, component counts, non-finite values,
 and zero total variance fail explicitly.
 
 An integration test optimizes momenta for three synthetic surface targets and
-passes the detached subject momenta directly into `momenta_pca`, establishing
-the intended optimizer-to-analysis boundary without calling it a complete
-scientific atlas workflow.
+passes the detached subject momenta directly into `momenta_pca`. The
+[modern atlas bundle](MODERN_ATLAS_BUNDLE.md) now persists the same declared
+feature order as a JSON summary plus CSV scores, loadings, and mean vector and
+tests those files against the in-memory PCA arrays.
 
 ## Remaining gates
 
 Before PCA becomes a user-facing atlas product, DiffeoForge still needs the
-complete template/control-point atlas estimator, immutable feature extraction,
-run-manifest references, CSV/JSON output schemas, score/loading plots, PC shape
-visualization through reconstructed deformations, missing-subject handling,
-and validation on predeclared biological data. The paper must state the feature
-space, centering, component retention, scaling/alignment policy, and treatment
-of tied or rank-deficient directions.
+workflow/run-manifest adapter, score/loading plots, PC shape visualization
+through reconstructed deformations, missing-subject handling, and validation
+on predeclared biological data. The paper must state the feature space,
+centering, component retention, scaling/alignment policy, and treatment of tied
+or rank-deficient directions.

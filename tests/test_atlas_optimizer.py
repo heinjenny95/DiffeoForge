@@ -90,6 +90,9 @@ def test_every_accepted_block_monotonically_improves_the_objective() -> None:
     assert result.total_line_search_evaluations == sum(
         record.line_search_evaluations for record in result.history
     )
+    assert result.settings.max_cycles == 2
+    assert result.settings.block_order == ("momenta", "template", "control_points")
+    assert result.settings.momenta_step_size == 0.1
 
 
 def test_optimizer_is_repeatable_detached_and_does_not_mutate_inputs() -> None:

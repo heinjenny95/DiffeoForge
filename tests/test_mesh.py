@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from diffeoforge.config import ConfigurationError
-from diffeoforge.mesh import inspect_vtk
+from diffeoforge.mesh import inspect_vtk, read_vtk_points, write_vtk_polydata
 
 
 def write_tetrahedron(path: Path) -> Path:
@@ -88,3 +88,56 @@ def test_binary_vtk51_split_cell_arrays_are_inspected(tmp_path: Path) -> None:
     assert metadata.points == 4
     assert metadata.cells == 4
     assert metadata.triangular is True
+
+
+def test_deterministic_vtk_writer_is_exclusive_and_round_trips(tmp_path: Path) -> None:
+    path = tmp_path / "written.vtk"
+    vertices = ((0.0, -0.0, 0.0), (1.0, 0.0, 0.0), (0.0, 1.0, 0.0))
+    triangles = ((0, 1, 2),)
+
+    written = write_vtk_polydata(path, vertices, triangles, title="round trip")
+
+    assert written == path.resolve()
+    assert b"\r\n" not in path.read_bytes()
+    assert "POINTS 3 double" in path.read_text(encoding="ascii")
+    assert read_vtk_points(path) == vertices
+    assert inspect_vtk(path).cells == 1
+    with pytest.raises(FileExistsError):
+        write_vtk_polydata(path, vertices, triangles)
+
+
+@pytest.mark.parametrize(
+    ("vertices", "triangles", "message"),
+    [
+        (((0.0, 0.0),), ((0, 1, 2),), "vertices"),
+        (((0.0, 0.0, float("nan")),), ((0, 0, 0),), "finite"),
+        (((0.0, 0.0, 0.0),), ((0, 0, 0),), "repeated"),
+        (
+            ((0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (0.0, 1.0, 0.0)),
+            ((0, 1, 3),),
+            "out-of-range",
+        ),
+    ],
+)
+def test_vtk_writer_rejects_invalid_geometry(
+    tmp_path: Path,
+    vertices: tuple,
+    triangles: tuple,
+    message: str,
+) -> None:
+    with pytest.raises((TypeError, ValueError), match=message):
+        write_vtk_polydata(tmp_path / "invalid.vtk", vertices, triangles)
+
+
+def test_vtk_writer_rejects_non_ascii_title_before_creating_file(tmp_path: Path) -> None:
+    path = tmp_path / "invalid-title.vtk"
+
+    with pytest.raises(ValueError, match="ASCII"):
+        write_vtk_polydata(
+            path,
+            ((0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (0.0, 1.0, 0.0)),
+            ((0, 1, 2),),
+            title="Käfer",
+        )
+
+    assert not path.exists()
