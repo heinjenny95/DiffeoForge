@@ -1,17 +1,27 @@
 from __future__ import annotations
 
+import importlib.util
+import sys
 import zipfile
 from pathlib import Path
 
 import pytest
 
-from tools.verify_wheel import (
-    CONSOLE_ENTRY_POINT,
-    WheelContractError,
-    expected_package_members,
-    main,
-    verify_wheel,
+ROOT = Path(__file__).resolve().parents[1]
+SPEC = importlib.util.spec_from_file_location(
+    "_diffeoforge_verify_wheel",
+    ROOT / "tools" / "verify_wheel.py",
 )
+assert SPEC is not None and SPEC.loader is not None
+WHEEL_VERIFIER = importlib.util.module_from_spec(SPEC)
+sys.modules[SPEC.name] = WHEEL_VERIFIER
+SPEC.loader.exec_module(WHEEL_VERIFIER)
+
+CONSOLE_ENTRY_POINT = WHEEL_VERIFIER.CONSOLE_ENTRY_POINT
+WheelContractError = WHEEL_VERIFIER.WheelContractError
+expected_package_members = WHEEL_VERIFIER.expected_package_members
+main = WHEEL_VERIFIER.main
+verify_wheel = WHEEL_VERIFIER.verify_wheel
 
 DIST_INFO = "diffeoforge-0.0.0.dev0.dist-info"
 
