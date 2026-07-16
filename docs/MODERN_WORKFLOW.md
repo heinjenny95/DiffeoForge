@@ -64,12 +64,11 @@ threshold, environment override, or fallback. Legacy v0.1 configurations and
 manifests without this record remain readable only as dense; configuration
 v0.2 requires it.
 
-`modern-plan` v0.1 is a non-compute review step for the dense engine. It
-publishes exact operation counts and selected known tensor payloads, but does
-not predict peak RAM or runtime. See
-[modern workload planning](MODERN_WORKLOAD.md).
-It explicitly refuses a blockwise configuration until the blockwise payload
-model is versioned; it never silently labels a blockwise request as dense.
+`modern-plan` v0.2 is a non-compute review step for the configured exact
+engine. It publishes logical all-pairs operation counts, the largest logical
+pair, the exact largest dense matrix or blockwise tile materialized by the
+reviewed plan, and selected known tensor payloads. It does not predict peak
+RAM or runtime. See [modern workload planning](MODERN_WORKLOAD.md).
 
 During `modern-run`, the CLI prints live stage and optimizer-decision events.
 They come from the same versioned application-service callback intended for a
@@ -85,8 +84,8 @@ subject prefix explicitly:
 diffeoforge modern-benchmark modern-atlas.yaml --subjects 5
 ```
 
-This measures fresh-process objective/gradient repeats, not the complete
-optimizer or workflow. See the
+This measures fresh-process objective/gradient repeats using the same declared
+dense or blockwise plan, not the complete optimizer or workflow. See the
 [modern benchmark protocol](MODERN_BENCHMARK.md).
 
 ## End-to-end contract

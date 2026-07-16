@@ -93,9 +93,11 @@ bundle before atomic publication.
 
 The same application layer exposes a read-only `modern-plan` service before
 compute. It inspects the resolved cohort and configuration, applies a versioned
-dense-operation model, records known tensor payloads and host observations,
-and publishes strict JSON plus self-contained HTML. It deliberately does not
-cross the backend boundary into runtime or peak-memory prediction.
+exact all-pairs operation model, records the largest logical pair separately
+from the largest configured dense matrix or blockwise execution tile, records
+known tensor payloads and host observations, and publishes strict JSON plus
+self-contained HTML. It deliberately does not cross the backend boundary into
+runtime or peak-memory prediction.
 
 `modern-run` now accepts a synchronous read-only progress observer. The
 application service emits versioned workflow-stage events and translates the
@@ -106,11 +108,11 @@ decisions, not elapsed-time percentages or ETA.
 
 The application layer also exposes an opt-in `modern-benchmark` service. The
 user must declare a deterministic subject-prefix size. Each repeat runs one
-dense objective plus gradient in a fresh spawned CPU process after declared
-warm-up evaluations, recording wall-clock nanoseconds and 5 ms process-RSS
-samples. The strict report binds measurements to config/input hashes and the
-same exact operation model as `modern-plan`; it performs no scaling
-extrapolation or hardware verdict.
+configured dense or blockwise objective plus gradient in a fresh spawned CPU
+process after declared warm-up evaluations, recording wall-clock nanoseconds
+and 5 ms process-RSS samples. The strict report binds measurements to
+config/input hashes, pairwise plan, and the same exact operation model as
+`modern-plan`; it performs no scaling extrapolation or hardware verdict.
 
 Below the application layer, the engine now contains an explicit blockwise
 Gaussian primitive family. Query and source tile sizes bound each pairwise XYZ
@@ -119,8 +121,9 @@ without full face-by-face kernel/orientation matrices. This path is
 non-approximate but changes floating reduction order. An explicit public
 workflow setting now carries the plan through the complete optimizer,
 reconstructions, PCA endpoints, nested bundle, outer run provenance, and
-verifier cross-checks. Workload accounting and measured scaling remain open.
-The tile shape bounds a single
+verifier cross-checks. Workload v0.2 accounts for exact logical pairs and the
+configured execution tile, and benchmark v0.2 measures that same plan; a
+prospective multi-size scaling study remains open. The tile shape bounds a single
 pairwise allocation; standard autograd may still retain multiple tile graphs,
 so reduced peak RAM remains a measurement gate.
 

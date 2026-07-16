@@ -66,8 +66,8 @@ def test_example_workload_has_exact_public_dimensions_and_formulas() -> None:
     assert {subject["triangles"] for subject in report["input"]["subjects"]} == {320}
     objective = report["operation_model"]["one_objective_forward"]
     assert objective == {
-        "dense_gaussian_calls": 200,
-        "dense_gaussian_pair_elements": 1_606_065,
+        "gaussian_calls": 200,
+        "gaussian_pair_elements": 1_606_065,
         "attachment": {
             "calls": 15,
             "pair_elements": 1_536_000,
@@ -78,11 +78,11 @@ def test_example_workload_has_exact_public_dimensions_and_formulas() -> None:
         "deformetrica_heun_extrapolation": {"calls": 20, "pair_elements": 1_620},
         "deformation_energy": {"calls": 5, "pair_elements": 405},
     }
-    largest = report["operation_model"]["largest_dense_pair"]
+    largest = report["operation_model"]["largest_logical_pair"]
     assert largest["rows"] == largest["columns"] == 320
     assert largest["float64_xyz_difference_tensor_bytes"] == 2_457_600
     assert report["optimizer_bound"]["objective_gradient_evaluation_upper_bound"] == 190
-    assert report["optimizer_bound"]["dense_gaussian_pair_elements_upper_bound"] == (
+    assert report["optimizer_bound"]["gaussian_pair_elements_upper_bound"] == (
         190 * 1_606_065
     )
     assert report["output_bound"] == {
@@ -93,23 +93,36 @@ def test_example_workload_has_exact_public_dimensions_and_formulas() -> None:
     }
     assert report["host_observations"] == FIXED_HOST
     assert "peak-RAM predictor" in report["scientific_boundary"]
-    assert _schema()["title"] == "DiffeoForge modern dense-engine workload plan"
+    assert _schema()["title"] == "DiffeoForge modern configured-engine workload plan"
 
 
-def test_dense_v01_plan_refuses_blockwise_config_instead_of_mislabeling_it(
+def test_blockwise_plan_separates_logical_pair_from_exact_execution_tile(
     tmp_path: Path,
 ) -> None:
-    config = _example_config()
+    path = _write_portable_config(tmp_path / "blockwise.yaml")
+    config = yaml.safe_load(path.read_text(encoding="utf-8"))
     config["runtime"]["pairwise_evaluation"] = {
         "mode": "blockwise",
         "query_tile_size": 64,
         "source_tile_size": 64,
     }
-    path = tmp_path / "blockwise.yaml"
     path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
 
-    with pytest.raises(ModernWorkloadError, match="will not be silently reported as dense"):
-        collect_modern_workload(path, host_observations=FIXED_HOST)
+    report = collect_modern_workload(path, host_observations=FIXED_HOST)
+
+    assert report["engine"]["id"] == "diffeoforge_modern_blockwise"
+    assert report["engine"]["pairwise_evaluation"] == config["runtime"][
+        "pairwise_evaluation"
+    ]
+    assert report["operation_model"]["largest_logical_pair"][
+        "float64_xyz_difference_tensor_bytes"
+    ] == 2_457_600
+    tile = report["operation_model"]["largest_execution_tile"]
+    assert (tile["tile_rows"], tile["tile_columns"]) == (64, 64)
+    assert tile["float64_xyz_difference_tensor_bytes"] == 64 * 64 * 3 * 8
+    assert report["payload_model"][
+        "largest_single_execution_xyz_difference_tensor_bytes"
+    ] == 64 * 64 * 3 * 8
 
 
 @pytest.mark.parametrize("attachment_type", ["current", "varifold"])
@@ -177,8 +190,8 @@ def test_predicted_gaussian_pairs_equal_instrumented_dense_objective(
     )
 
     assert torch.isfinite(result.total)
-    assert len(observed_calls) == predicted["dense_gaussian_calls"]
-    assert sum(observed_calls) == predicted["dense_gaussian_pair_elements"]
+    assert len(observed_calls) == predicted["gaussian_calls"]
+    assert sum(observed_calls) == predicted["gaussian_pair_elements"]
     expected_orientation = (
         predicted["attachment"]["pair_elements"] if attachment_type == "varifold" else 0
     )
@@ -233,6 +246,23 @@ def test_report_directory_is_deterministic_atomic_and_safely_replaceable(
     with pytest.raises(ModernWorkloadError, match="schema validation"):
         write_modern_workload_report(invalid, tmp_path / "invalid")
     assert not (tmp_path / "invalid").exists()
+
+    inconsistent = json.loads(json.dumps(report))
+    inconsistent["operation_model"]["largest_execution_tile"][
+        "float64_xyz_difference_tensor_bytes"
+    ] += 24
+    with pytest.raises(ModernWorkloadError, match="execution-tile payload"):
+        write_modern_workload_report(inconsistent, tmp_path / "inconsistent")
+    assert not (tmp_path / "inconsistent").exists()
+
+    inconsistent_operation = json.loads(json.dumps(report))
+    inconsistent_operation["operation_model"]["one_objective_forward"][
+        "gaussian_calls"
+    ] += 1
+    with pytest.raises(ModernWorkloadError, match="inventory and configuration"):
+        write_modern_workload_report(
+            inconsistent_operation, tmp_path / "inconsistent-operation"
+        )
 
     import diffeoforge.modern_workload as module
 

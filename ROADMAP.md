@@ -41,14 +41,16 @@ This roadmap describes evidence gates rather than promised dates.
 - [x] Add PCA plots and PC deformation visualizations
 - [x] Add deterministic input/output mesh-quality evidence and configurable gates
 - [x] Add explicit blockwise Gaussian/Current/Varifold primitives with dense parity
-- [ ] Integrate and benchmark blockwise mode through the full atlas workflow
+- [x] Integrate explicit blockwise mode through the full atlas workflow,
+  workload accounting, provenance, and fresh-process benchmark protocol
+- [ ] Run a prospective multi-size/tile blockwise performance study
 
 ## Milestone 3: Accessible application
 
 - [x] Define desktop executable/installer architecture and release gates
 - [ ] Local graphical interface backed by the shared core
 - [ ] Parameter explanations and safe presets
-- [x] Pre-compute dense-operation and known-payload workload report
+- [x] Pre-compute configured all-pairs and known-payload workload report
 - [x] Versioned workflow-stage and committed optimizer-decision reporting
 - [x] Fresh-process objective/gradient wall-time and sampled-RSS protocol
 - [ ] Prospective multi-size end-to-end runtime and peak-memory calibration

@@ -1,6 +1,6 @@
 # Explicit blockwise Gaussian primitives
 
-Status: **complete opt-in engine path; not enabled in public atlas workflows**
+Status: **complete explicit public workflow path; performance presets remain unvalidated**
 
 Tracked prospectively by [primitive issue
 #40](https://github.com/heinjenny95/DiffeoForge/issues/40) and [full-objective
@@ -89,18 +89,21 @@ Tests currently require:
   attachment types.
 
 The dense path remains the correctness oracle and continues to match the
-frozen Deformetrica primitive/objective evidence. `modern-run` can now select
-the same plan explicitly and records it in both immutable manifests. Subject
+frozen Deformetrica primitive/objective evidence. `modern-run` can select the
+same plan explicitly and records it in both immutable manifests. Subject
 reconstructions, PCA endpoints, and mesh-quality evidence use the declared
-mode. `modern-plan` and `modern-benchmark` v0.1 deliberately refuse blockwise
-configurations until their models are versioned.
+mode. `modern-plan` and `modern-benchmark` v0.2 also accept it: their strict
+reports bind the configured tile sizes to exact workload accounting and to
+the measured fresh-process objective/gradient path.
 
 ## Gates before workflow integration
 
-1. extend the workload and benchmark schemas/models;
-2. benchmark several explicit tile sizes using the measured protocol;
+1. ~~extend the workload and benchmark schemas/models;~~ completed in v0.2;
+2. benchmark several prospectively declared tile sizes using the measured
+   protocol on representative simplified meshes;
 3. determine whether checkpoint/recomputation or a custom backward pass is
    required to reduce retained autograd memory; and
 4. select evidence-based safe presets separately from user overrides.
 
-Only after those gates may blockwise mode become a selectable atlas backend.
+Blockwise mode is selectable only by an explicit user plan. It must not become
+an automatic default or claim a safe preset until the remaining gates pass.
