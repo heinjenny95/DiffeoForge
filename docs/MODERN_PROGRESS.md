@@ -73,3 +73,19 @@ same event dictionary to the GUI instead of inventing separate scientific
 logic. The current contract does not implement cancellation, checkpointing,
 resume, background workers, persisted partial runs, runtime calibration,
 peak-memory measurement, or ETA prediction.
+
+## Frozen benchmark-study progress
+
+The resumable benchmark-study service has a separate strict v0.1 observer
+because its unit of committed work is a verified condition report, not an atlas
+workflow stage or optimizer decision. It emits immutable start/resume,
+condition, reconciliation, interruption, completion, and already-complete
+events with exact completed/total condition counts and frozen condition
+identity.
+
+`diffeoforge modern-benchmark-study` prints these events. Counts are never
+converted to elapsed-time percentages or ETA: different subject prefixes and
+autograd strategies can have materially different costs. A callback that does
+not raise is observational only; tests require byte-identical published study
+evidence with and without it. See the
+[prospective benchmark-study protocol](MODERN_BENCHMARK_STUDY.md).

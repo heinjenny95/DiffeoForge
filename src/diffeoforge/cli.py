@@ -771,10 +771,26 @@ def main(argv: Sequence[str] | None = None) -> int:
                 verify_modern_benchmark_study_run,
             )
 
+            def show_study_progress(event) -> None:
+                condition = ""
+                if event.condition is not None:
+                    condition = (
+                        f"; {event.condition.condition_id}; "
+                        f"{event.condition.tile_autograd_strategy}; "
+                        f"{event.condition.subject_count} subjects"
+                    )
+                print(
+                    "Study progress "
+                    f"[{event.completed_conditions}/{event.total_conditions} conditions] "
+                    f"{event.status}{condition}: {event.message}",
+                    flush=True,
+                )
+
             run_directory = run_modern_benchmark_study(
                 args.design_directory,
                 args.config,
                 destination=args.output,
+                progress_callback=show_study_progress,
             )
             manifest = verify_modern_benchmark_study_run(run_directory)
             print(f"Frozen benchmark study completed and verified: {run_directory}")

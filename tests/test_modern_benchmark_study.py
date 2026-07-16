@@ -110,8 +110,21 @@ def test_interrupted_study_reconciles_valid_prefix_and_resumes_without_overwrite
 
     monkeypatch.setattr(study_module, "benchmark_modern_objective", fail_second)
     run = tmp_path / "study-run"
+    first_progress = []
     with pytest.raises(ModernBenchmarkStudyError, match="injected interruption"):
-        run_modern_benchmark_study(design, config, destination=run)
+        run_modern_benchmark_study(
+            design,
+            config,
+            destination=run,
+            progress_callback=first_progress.append,
+        )
+    assert [event.status for event in first_progress] == [
+        "study_started",
+        "condition_started",
+        "condition_completed",
+        "condition_started",
+        "study_interrupted",
+    ]
     state = json.loads((run / STATE_NAME).read_text(encoding="utf-8"))
     assert state["status"] == "interrupted"
     assert len(state["completed_condition_ids"]) == 1
@@ -146,8 +159,24 @@ def test_interrupted_study_reconciles_valid_prefix_and_resumes_without_overwrite
         return _publish_without_computing(*args, **kwargs)
 
     monkeypatch.setattr(study_module, "benchmark_modern_objective", resume)
-    assert run_modern_benchmark_study(design, config, destination=run) == run.resolve()
+    resumed_progress = []
+    assert (
+        run_modern_benchmark_study(
+            design,
+            config,
+            destination=run,
+            progress_callback=resumed_progress.append,
+        )
+        == run.resolve()
+    )
     assert len(resumed_calls) == 1
+    assert [event.status for event in resumed_progress] == [
+        "condition_reconciled",
+        "study_resumed",
+        "condition_started",
+        "condition_completed",
+        "study_completed",
+    ]
     manifest = verify_modern_benchmark_study_run(run)
     assert manifest["status"] == "complete"
     assert manifest["analysis_performed"] is False
@@ -158,7 +187,17 @@ def test_interrupted_study_reconciles_valid_prefix_and_resumes_without_overwrite
     assert any(event["event"] == "condition_failed" for event in events)
     assert events[-1]["event"] == "study_completed"
 
-    assert run_modern_benchmark_study(design, config, destination=run) == run.resolve()
+    complete_progress = []
+    assert (
+        run_modern_benchmark_study(
+            design,
+            config,
+            destination=run,
+            progress_callback=complete_progress.append,
+        )
+        == run.resolve()
+    )
+    assert [event.status for event in complete_progress] == ["study_already_complete"]
 
 
 def test_config_or_raw_report_tampering_is_rejected(
@@ -208,6 +247,56 @@ def test_concurrent_lock_is_rejected(tmp_path: Path) -> None:
                 raise AssertionError("second lock must not be acquired")
 
 
+def test_progress_observer_does_not_change_published_study_evidence(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = _write_config(tmp_path / "blockwise.yaml")
+    design = create_modern_benchmark_design(
+        config,
+        subject_counts=[1],
+        repeats_per_condition=1,
+        warmup_evaluations=0,
+        destination=tmp_path / "design",
+    )
+    import diffeoforge.modern_benchmark as benchmark_module
+    import diffeoforge.modern_benchmark_study as study_module
+
+    monkeypatch.setattr(benchmark_module, "_run_fresh_sample", lambda *_args: _sample())
+    monkeypatch.setattr(
+        study_module, "benchmark_modern_objective", _publish_without_computing
+    )
+    monkeypatch.setattr(study_module, "_timestamp", lambda: FIXED_TIME)
+    unobserved = run_modern_benchmark_study(
+        design, config, destination=tmp_path / "unobserved"
+    )
+    events = []
+    observed = run_modern_benchmark_study(
+        design,
+        config,
+        destination=tmp_path / "observed",
+        progress_callback=events.append,
+    )
+
+    def tree_bytes(root: Path) -> dict[str, bytes]:
+        return {
+            path.relative_to(root).as_posix(): path.read_bytes()
+            for path in root.rglob("*")
+            if path.is_file()
+        }
+
+    assert tree_bytes(observed) == tree_bytes(unobserved)
+    assert [event.sequence for event in events] == list(range(len(events)))
+    assert [event.status for event in events] == [
+        "study_started",
+        "condition_started",
+        "condition_completed",
+        "condition_started",
+        "condition_completed",
+        "study_completed",
+    ]
+
+
 def test_cli_runs_one_real_two_condition_windows_smoke_study(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
@@ -234,6 +323,8 @@ def test_cli_runs_one_real_two_condition_windows_smoke_study(
     captured = capsys.readouterr()
 
     assert code == 0
+    assert "Study progress [0/2 conditions] study_started" in captured.out
+    assert "Study progress [2/2 conditions] study_completed" in captured.out
     assert "completed and verified" in captured.out
     assert "Separate raw condition reports: 2" in captured.out
     assert "No automatic comparison" in captured.out
