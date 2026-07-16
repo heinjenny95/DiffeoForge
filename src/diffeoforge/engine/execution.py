@@ -53,13 +53,14 @@ class PairwiseEvaluationPlan:
 
     @property
     def gaussian_tile_plan(self) -> GaussianTilePlan | None:
-        """Return the numerical tile plan, or ``None`` for the dense oracle."""
+        """Return the standard-autograd tile plan, or ``None`` for the dense oracle."""
 
         if self.mode == "dense":
             return None
         return GaussianTilePlan(
             query_rows=self.query_tile_size,
             source_rows=self.source_tile_size,
+            autograd_strategy="standard",
         )
 
     @property

@@ -131,6 +131,7 @@ def subject_objective(
             attachment_kernel_width,
             query_tile_size=gaussian_tile_plan.query_rows,
             source_tile_size=gaussian_tile_plan.source_rows,
+            autograd_strategy=gaussian_tile_plan.autograd_strategy,
         )
     attachment = -residual / variance
     regularity = -deformation_energy(

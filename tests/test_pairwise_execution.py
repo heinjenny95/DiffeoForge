@@ -30,6 +30,7 @@ def test_blockwise_plan_normalizes_and_constructs_gaussian_tiles() -> None:
 
     assert plan.gaussian_tile_plan.query_rows == 17
     assert plan.gaussian_tile_plan.source_rows == 23
+    assert plan.gaussian_tile_plan.autograd_strategy == "standard"
     assert plan.engine_id == "diffeoforge_modern_blockwise"
 
 

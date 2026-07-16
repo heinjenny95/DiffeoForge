@@ -261,12 +261,16 @@ def test_tile_plan_has_exact_float64_payload_and_rejects_invalid_bounds() -> Non
 
     assert plan.maximum_xyz_difference_tensor_bytes() == 3 * 2 * 3 * 8
     assert plan.maximum_xyz_difference_tensor_bytes(bytes_per_float=4) == 3 * 2 * 3 * 4
+    assert plan.autograd_strategy == "standard"
+    assert GaussianTilePlan(3, 2, "recompute").autograd_strategy == "recompute"
     with pytest.raises(ValueError, match="at least 1"):
         GaussianTilePlan(0, 2)
     with pytest.raises(TypeError, match="integer"):
         GaussianTilePlan(True, 2)
     with pytest.raises(TypeError, match="bytes_per_float"):
         plan.maximum_xyz_difference_tensor_bytes(bytes_per_float=True)
+    with pytest.raises(ValueError, match="'standard' or 'recompute'"):
+        GaussianTilePlan(3, 2, "automatic")
 
 
 def test_recompute_avoids_saving_pairwise_rank_three_convolution_tensors() -> None:

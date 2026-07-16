@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 import pytest
+import yaml
 
 torch = pytest.importorskip("torch")
 engine = pytest.importorskip("diffeoforge.engine")
@@ -13,6 +14,8 @@ atlas_objective = engine.atlas_objective
 optimize_atlas = engine.optimize_atlas
 subject_objective = engine.subject_objective
 
+from diffeoforge.mesh import read_vtk_polydata  # noqa: E402
+
 DTYPE = torch.float64
 REFERENCE_FIXTURE = (
     Path(__file__).parents[1]
@@ -20,6 +23,8 @@ REFERENCE_FIXTURE = (
     / "modern-engine-v0.2"
     / "deformetrica-4.3.0-objective.json"
 )
+CC0_MESH_DIRECTORY = Path(__file__).parents[1] / "examples" / "synthetic" / "meshes"
+MODERN_EXAMPLE = Path(__file__).parents[1] / "examples" / "minimal-modern-atlas.yaml"
 
 
 @pytest.fixture(scope="module")
@@ -42,7 +47,7 @@ def _subject_inputs(reference: dict, *, requires_grad: bool) -> dict[str, torch.
     }
 
 
-def _subject(reference: dict, attachment_type: str, *, blockwise: bool):
+def _subject(reference: dict, attachment_type: str, plan: GaussianTilePlan | None):
     values = reference["inputs"]
     inputs = _subject_inputs(reference, requires_grad=True)
     result = subject_objective(
@@ -59,7 +64,7 @@ def _subject(reference: dict, attachment_type: str, *, blockwise: bool):
         attachment_type=attachment_type,
         shooting_integrator=values["shooting_integrator"],
         flow_integrator=values["flow_integrator"],
-        gaussian_tile_plan=GaussianTilePlan(2, 3) if blockwise else None,
+        gaussian_tile_plan=plan,
     )
     gradients = torch.autograd.grad(
         result.total,
@@ -69,12 +74,18 @@ def _subject(reference: dict, attachment_type: str, *, blockwise: bool):
 
 
 @pytest.mark.parametrize("attachment_type", ["current", "varifold"])
+@pytest.mark.parametrize("autograd_strategy", ["standard", "recompute"])
 def test_full_subject_blockwise_forward_and_all_gradients_match_dense(
     reference: dict,
     attachment_type: str,
+    autograd_strategy: str,
 ) -> None:
-    dense, dense_gradients = _subject(reference, attachment_type, blockwise=False)
-    blockwise, blockwise_gradients = _subject(reference, attachment_type, blockwise=True)
+    dense, dense_gradients = _subject(reference, attachment_type, None)
+    blockwise, blockwise_gradients = _subject(
+        reference,
+        attachment_type,
+        GaussianTilePlan(2, 3, autograd_strategy),
+    )
     options = {"rtol": 2e-12, "atol": 2e-13}
 
     torch.testing.assert_close(
@@ -125,8 +136,10 @@ def _atlas_problem(reference: dict) -> tuple[tuple, dict]:
     return arguments, keywords
 
 
+@pytest.mark.parametrize("autograd_strategy", ["standard", "recompute"])
 def test_atlas_blockwise_objective_and_all_parameter_gradients_match_dense(
     reference: dict,
+    autograd_strategy: str,
 ) -> None:
     arguments, keywords = _atlas_problem(reference)
 
@@ -145,7 +158,9 @@ def test_atlas_blockwise_objective_and_all_parameter_gradients_match_dense(
         return result, gradients
 
     dense, dense_gradients = evaluate(None)
-    blockwise, blockwise_gradients = evaluate(GaussianTilePlan(3, 2))
+    blockwise, blockwise_gradients = evaluate(
+        GaussianTilePlan(3, 2, autograd_strategy)
+    )
     options = {"rtol": 3e-12, "atol": 3e-13}
 
     torch.testing.assert_close(blockwise.residuals, dense.residuals, **options)
@@ -160,9 +175,11 @@ def test_atlas_blockwise_objective_and_all_parameter_gradients_match_dense(
 
 
 @pytest.mark.parametrize("attachment_type", ["current", "varifold"])
+@pytest.mark.parametrize("autograd_strategy", ["standard", "recompute"])
 def test_one_cycle_blockwise_optimizer_matches_dense_decisions_and_parameters(
     reference: dict,
     attachment_type: str,
+    autograd_strategy: str,
 ) -> None:
     arguments, keywords = _atlas_problem(reference)
     keywords["attachment_type"] = attachment_type
@@ -171,7 +188,7 @@ def test_one_cycle_blockwise_optimizer_matches_dense_decisions_and_parameters(
         *arguments,
         **keywords,
         max_cycles=1,
-        gaussian_tile_plan=GaussianTilePlan(2, 3),
+        gaussian_tile_plan=GaussianTilePlan(2, 3, autograd_strategy),
     )
     options = {"rtol": 2e-10, "atol": 2e-11}
 
@@ -225,6 +242,65 @@ def test_one_cycle_blockwise_optimizer_matches_dense_decisions_and_parameters(
         **options,
     )
     torch.testing.assert_close(blockwise.momenta, dense.momenta, **options)
+
+
+def test_recompute_reduces_cc0_objective_forward_saved_tensor_payload() -> None:
+    config = yaml.safe_load(MODERN_EXAMPLE.read_text(encoding="utf-8"))
+    template_mesh = read_vtk_polydata(CC0_MESH_DIRECTORY / "template.vtk")
+    target_mesh = read_vtk_polydata(CC0_MESH_DIRECTORY / "subject-01.vtk")
+    base_template = torch.tensor(template_mesh.vertices, dtype=DTYPE)
+    template_triangles = torch.tensor(template_mesh.triangles, dtype=torch.int64)
+    target = torch.tensor(target_mesh.vertices, dtype=DTYPE)
+    target_triangles = torch.tensor(target_mesh.triangles, dtype=torch.int64)
+    deformation = config["model"]["deformation"]
+    attachment = config["model"]["attachment"]
+
+    def observe(strategy: str):
+        template = base_template.clone().requires_grad_(True)
+        control_points = base_template[[0, 32, 64, 96, 128]].clone().requires_grad_(True)
+        momenta = torch.zeros((1, 5, 3), dtype=DTYPE, requires_grad=True)
+        saved: list[tuple[int, tuple[int, ...]]] = []
+
+        def pack(tensor: torch.Tensor):
+            saved.append((tensor.numel() * tensor.element_size(), tuple(tensor.shape)))
+            return tensor
+
+        with torch.autograd.graph.saved_tensors_hooks(pack, lambda tensor: tensor):
+            result = atlas_objective(
+                template,
+                template_triangles,
+                ((target, target_triangles),),
+                control_points,
+                momenta,
+                deformation_kernel_width=deformation["kernel_width"],
+                attachment_kernel_width=attachment["kernel_width"],
+                noise_variance=config["model"]["noise_variance"],
+                number_of_time_points=deformation["timepoints"],
+                attachment_type=attachment["type"],
+                shooting_integrator=deformation["shooting_integrator"],
+                flow_integrator=deformation["flow_integrator"],
+                gaussian_tile_plan=GaussianTilePlan(64, 64, strategy),
+            )
+        gradients = torch.autograd.grad(
+            result.total,
+            (template, control_points, momenta),
+        )
+        return result.total, gradients, saved
+
+    standard, standard_gradients, standard_saved = observe("standard")
+    recomputed, recomputed_gradients, recomputed_saved = observe("recompute")
+
+    torch.testing.assert_close(recomputed, standard, rtol=0, atol=0)
+    for actual, expected in zip(recomputed_gradients, standard_gradients, strict=True):
+        torch.testing.assert_close(actual, expected, rtol=0, atol=0)
+    assert any(shape == (64, 64, 3) for _, shape in standard_saved)
+    assert all(shape != (64, 64, 3) for _, shape in recomputed_saved)
+    assert max(size for size, _ in recomputed_saved) < max(
+        size for size, _ in standard_saved
+    )
+    assert sum(size for size, _ in recomputed_saved) < sum(
+        size for size, _ in standard_saved
+    )
 
 
 def test_invalid_tile_plan_fails_before_subject_numerics(reference: dict) -> None:

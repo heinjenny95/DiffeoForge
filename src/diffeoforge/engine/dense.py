@@ -121,10 +121,11 @@ def _evaluate_tile(
 
 @dataclass(frozen=True)
 class GaussianTilePlan:
-    """Explicit query/source bounds for exact blockwise Gaussian operations."""
+    """Explicit row bounds and autograd strategy for exact blockwise operations."""
 
     query_rows: int
     source_rows: int
+    autograd_strategy: TileAutogradStrategy = "standard"
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -136,6 +137,11 @@ class GaussianTilePlan:
             self,
             "source_rows",
             _validate_tile_size("source_rows", self.source_rows),
+        )
+        object.__setattr__(
+            self,
+            "autograd_strategy",
+            _validate_tile_autograd_strategy(self.autograd_strategy),
         )
 
     def maximum_xyz_difference_tensor_bytes(self, *, bytes_per_float: int = 8) -> int:
@@ -207,8 +213,7 @@ def gaussian_convolve_blockwise(
     if weights.shape[0] != y.shape[0]:
         raise ValueError("weights must have one row per point in y")
     width = _validate_width(kernel_width)
-    plan = GaussianTilePlan(query_tile_size, source_tile_size)
-    strategy = _validate_tile_autograd_strategy(autograd_strategy)
+    plan = GaussianTilePlan(query_tile_size, source_tile_size, autograd_strategy)
 
     def evaluate(query: torch.Tensor, source: torch.Tensor, source_weights: torch.Tensor):
         _, kernel = _gaussian_tile(query, source, width)
@@ -228,7 +233,7 @@ def gaussian_convolve_blockwise(
             result = result + _evaluate_tile(
                 evaluate,
                 (query, source, source_weights),
-                strategy,
+                plan.autograd_strategy,
             )
         outputs.append(result)
     return torch.cat(outputs, dim=0)
@@ -303,8 +308,7 @@ def gaussian_convolve_gradient_blockwise(
     if left_weights.shape[1] != right_weights.shape[1]:
         raise ValueError("left_weights and right_weights must have the same column count")
     width = _validate_width(kernel_width)
-    plan = GaussianTilePlan(query_tile_size, source_tile_size)
-    strategy = _validate_tile_autograd_strategy(autograd_strategy)
+    plan = GaussianTilePlan(query_tile_size, source_tile_size, autograd_strategy)
     outputs = []
     scale = -2.0 / (width * width)
 
@@ -328,7 +332,7 @@ def gaussian_convolve_gradient_blockwise(
             result = result + _evaluate_tile(
                 evaluate,
                 (query_weights, query, source, source_weights),
-                strategy,
+                plan.autograd_strategy,
             )
         outputs.append(result)
     return torch.cat(outputs, dim=0)
@@ -358,6 +362,7 @@ def _gaussian_convolve_with_plan(
         kernel_width,
         query_tile_size=plan.query_rows,
         source_tile_size=plan.source_rows,
+        autograd_strategy=plan.autograd_strategy,
     )
 
 
@@ -379,6 +384,7 @@ def _gaussian_convolve_gradient_with_plan(
         kernel_width=kernel_width,
         query_tile_size=plan.query_rows,
         source_tile_size=plan.source_rows,
+        autograd_strategy=plan.autograd_strategy,
     )
 
 
@@ -676,7 +682,6 @@ def _current_inner_product_blockwise(
     normals_b: torch.Tensor,
     kernel_width: float,
     plan: GaussianTilePlan,
-    autograd_strategy: TileAutogradStrategy,
 ) -> torch.Tensor:
     convolved = gaussian_convolve_blockwise(
         centers_a,
@@ -685,7 +690,7 @@ def _current_inner_product_blockwise(
         kernel_width,
         query_tile_size=plan.query_rows,
         source_tile_size=plan.source_rows,
-        autograd_strategy=autograd_strategy,
+        autograd_strategy=plan.autograd_strategy,
     )
     return torch.sum(normals_a * convolved)
 
@@ -703,8 +708,7 @@ def current_squared_distance_blockwise(
 ) -> torch.Tensor:
     """Return the exact Current distance without full face-pair matrices."""
 
-    plan = GaussianTilePlan(query_tile_size, source_tile_size)
-    strategy = _validate_tile_autograd_strategy(autograd_strategy)
+    plan = GaussianTilePlan(query_tile_size, source_tile_size, autograd_strategy)
     centers_a, normals_a = _surface_geometry(vertices_a, triangles_a)
     centers_b, normals_b = _surface_geometry(
         vertices_b,
@@ -712,13 +716,13 @@ def current_squared_distance_blockwise(
         reference_vertices=vertices_a,
     )
     self_a = _current_inner_product_blockwise(
-        centers_a, normals_a, centers_a, normals_a, kernel_width, plan, strategy
+        centers_a, normals_a, centers_a, normals_a, kernel_width, plan
     )
     self_b = _current_inner_product_blockwise(
-        centers_b, normals_b, centers_b, normals_b, kernel_width, plan, strategy
+        centers_b, normals_b, centers_b, normals_b, kernel_width, plan
     )
     cross = _current_inner_product_blockwise(
-        centers_a, normals_a, centers_b, normals_b, kernel_width, plan, strategy
+        centers_a, normals_a, centers_b, normals_b, kernel_width, plan
     )
     return self_a + self_b - 2.0 * cross
 
@@ -763,7 +767,6 @@ def _varifold_inner_product_blockwise(
     normals_b: torch.Tensor,
     kernel_width: float,
     plan: GaussianTilePlan,
-    autograd_strategy: TileAutogradStrategy,
 ) -> torch.Tensor:
     width = _validate_width(kernel_width)
     areas_a = torch.linalg.vector_norm(normals_a, dim=1, keepdim=True)
@@ -802,7 +805,7 @@ def _varifold_inner_product_blockwise(
                     source_areas,
                     source_units,
                 ),
-                autograd_strategy,
+                plan.autograd_strategy,
             )
     return result
 
@@ -820,8 +823,7 @@ def varifold_squared_distance_blockwise(
 ) -> torch.Tensor:
     """Return the exact Varifold distance without full face-pair matrices."""
 
-    plan = GaussianTilePlan(query_tile_size, source_tile_size)
-    strategy = _validate_tile_autograd_strategy(autograd_strategy)
+    plan = GaussianTilePlan(query_tile_size, source_tile_size, autograd_strategy)
     centers_a, normals_a = _surface_geometry(vertices_a, triangles_a)
     centers_b, normals_b = _surface_geometry(
         vertices_b,
@@ -829,12 +831,12 @@ def varifold_squared_distance_blockwise(
         reference_vertices=vertices_a,
     )
     self_a = _varifold_inner_product_blockwise(
-        centers_a, normals_a, centers_a, normals_a, kernel_width, plan, strategy
+        centers_a, normals_a, centers_a, normals_a, kernel_width, plan
     )
     self_b = _varifold_inner_product_blockwise(
-        centers_b, normals_b, centers_b, normals_b, kernel_width, plan, strategy
+        centers_b, normals_b, centers_b, normals_b, kernel_width, plan
     )
     cross = _varifold_inner_product_blockwise(
-        centers_a, normals_a, centers_b, normals_b, kernel_width, plan, strategy
+        centers_a, normals_a, centers_b, normals_b, kernel_width, plan
     )
     return self_a + self_b - 2.0 * cross
