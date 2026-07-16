@@ -47,6 +47,12 @@ the resource-review step. A future GUI may render its strict JSON, but must
 retain the report's distinction between exact dense operation counts, known
 payload subtotals, and unknown measured peak RAM/runtime.
 
+The shared-core `modern-run` callback is the first implementation of the
+worker-to-UI progress payload. Its strict v0.1 JSON shape reports seven
+completed workflow stages and committed optimizer decisions. The desktop
+worker may serialize those events across a process boundary, but must not turn
+stage/decision counts into an unmeasured runtime percentage or ETA.
+
 Deformetrica 4.3 remains an external reference backend. Its Python 3.8 stack is
 not copied into the desktop executable. `doctor` will detect a separately
 installed version-checked native/container route and explain how it differs

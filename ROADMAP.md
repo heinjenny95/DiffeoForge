@@ -47,7 +47,8 @@ This roadmap describes evidence gates rather than promised dates.
 - [ ] Local graphical interface backed by the shared core
 - [ ] Parameter explanations and safe presets
 - [x] Pre-compute dense-operation and known-payload workload report
-- [ ] Measured resource calibration and progress reporting
+- [x] Versioned workflow-stage and committed optimizer-decision reporting
+- [ ] Measured runtime and peak-memory calibration
 - [ ] Cross-platform CPU distribution
 - [ ] Validated NVIDIA GPU distribution
 - [ ] Apptainer workflow for HPC environments

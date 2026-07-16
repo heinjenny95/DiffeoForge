@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from numbers import Integral, Real
 from typing import Literal
@@ -46,6 +46,9 @@ class AtlasOptimizationRecord:
     gradient_norm: float | None
     accepted_step_size: float | None
     line_search_evaluations: int
+
+
+AtlasProgressCallback = Callable[[AtlasOptimizationRecord], None]
 
 
 @dataclass(frozen=True)
@@ -188,6 +191,7 @@ def optimize_atlas(
     gradient_tolerance: float = 1e-8,
     minimum_step_size: float = 1e-12,
     max_line_search_iterations: int = 20,
+    progress_callback: AtlasProgressCallback | None = None,
 ) -> AtlasOptimizationResult:
     """Maximize the atlas objective over all three declared parameter blocks.
 
@@ -198,6 +202,8 @@ def optimize_atlas(
     """
 
     cycles = _integer("max_cycles", max_cycles, minimum=0)
+    if progress_callback is not None and not callable(progress_callback):
+        raise TypeError("progress_callback must be callable or None")
     line_search_limit = _integer(
         "max_line_search_iterations", max_line_search_iterations, minimum=1
     )
@@ -318,16 +324,17 @@ def optimize_atlas(
     if initial is None:
         raise FloatingPointError("initial atlas parameters produced a non-finite objective")
     current = initial.state
-    history = [
-        current.record(
-            0,
-            block=None,
-            status="initial",
-            gradient_norm=None,
-            accepted_step_size=None,
-            line_search_evaluations=0,
-        )
-    ]
+    initial_record = current.record(
+        0,
+        block=None,
+        status="initial",
+        gradient_norm=None,
+        accepted_step_size=None,
+        line_search_evaluations=0,
+    )
+    history = [initial_record]
+    if progress_callback is not None:
+        progress_callback(initial_record)
     total_line_search_evaluations = 0
 
     def result(
@@ -366,16 +373,17 @@ def optimize_atlas(
             current = evaluated.state
             if float(evaluated.gradient_norm) <= gradient_threshold:
                 stationary_blocks += 1
-                history.append(
-                    current.record(
-                        cycle,
-                        block=block,
-                        status="stationary",
-                        gradient_norm=evaluated.gradient_norm,
-                        accepted_step_size=None,
-                        line_search_evaluations=0,
-                    )
+                record = current.record(
+                    cycle,
+                    block=block,
+                    status="stationary",
+                    gradient_norm=evaluated.gradient_norm,
+                    accepted_step_size=None,
+                    line_search_evaluations=0,
                 )
+                history.append(record)
+                if progress_callback is not None:
+                    progress_callback(record)
                 continue
 
             step_size = step_sizes[block]
@@ -409,16 +417,17 @@ def optimize_atlas(
                 step_size *= shrink
 
             if accepted is None:
-                history.append(
-                    current.record(
-                        cycle,
-                        block=block,
-                        status="failed",
-                        gradient_norm=evaluated.gradient_norm,
-                        accepted_step_size=None,
-                        line_search_evaluations=evaluations,
-                    )
+                record = current.record(
+                    cycle,
+                    block=block,
+                    status="failed",
+                    gradient_norm=evaluated.gradient_norm,
+                    accepted_step_size=None,
+                    line_search_evaluations=evaluations,
                 )
+                history.append(record)
+                if progress_callback is not None:
+                    progress_callback(record)
                 return result(
                     "line_search_failed",
                     converged=False,
@@ -427,16 +436,17 @@ def optimize_atlas(
                 )
 
             current = accepted.state
-            history.append(
-                current.record(
-                    cycle,
-                    block=block,
-                    status="accepted",
-                    gradient_norm=accepted.gradient_norm,
-                    accepted_step_size=step_size,
-                    line_search_evaluations=evaluations,
-                )
+            record = current.record(
+                cycle,
+                block=block,
+                status="accepted",
+                gradient_norm=accepted.gradient_norm,
+                accepted_step_size=step_size,
+                line_search_evaluations=evaluations,
             )
+            history.append(record)
+            if progress_callback is not None:
+                progress_callback(record)
 
         if stationary_blocks == len(order):
             return result(

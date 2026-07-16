@@ -159,8 +159,12 @@ def test_farthest_template_initialization_is_repeatable_and_explicit() -> None:
 
 def test_five_subject_workflow_is_verified_and_byte_repeatable(tmp_path: Path) -> None:
     config = _write_config(tmp_path / "workflow.yaml")
+    progress = []
     first = workflow.run_modern_workflow(
-        config, destination=tmp_path / "first", created_at=FIXED_TIME
+        config,
+        destination=tmp_path / "first",
+        created_at=FIXED_TIME,
+        progress_callback=progress.append,
     )
     second = workflow.run_modern_workflow(
         config, destination=tmp_path / "second", created_at=FIXED_TIME
@@ -170,6 +174,25 @@ def test_five_subject_workflow_is_verified_and_byte_repeatable(tmp_path: Path) -
     second_manifest = workflow.verify_modern_workflow(second)
     assert first_manifest == second_manifest
     assert _payload_bytes(first) == _payload_bytes(second)
+    assert [event.sequence for event in progress] == list(range(len(progress)))
+    assert [(event.phase, event.status) for event in progress[:6]] == [
+        ("workflow", "started"),
+        ("inputs", "completed"),
+        ("preprocessing", "completed"),
+        ("quality", "completed"),
+        ("initialization", "completed"),
+        ("optimization", "started"),
+    ]
+    assert [(event.phase, event.status) for event in progress[-3:]] == [
+        ("optimization", "completed"),
+        ("bundle", "completed"),
+        ("verification", "completed"),
+    ]
+    optimizer_progress = [event.optimizer for event in progress if event.optimizer is not None]
+    assert [item.completed_decisions for item in optimizer_progress] == [0, 1, 2, 3]
+    assert {item.maximum_decisions for item in optimizer_progress} == {3}
+    assert all("eta" not in event.as_dict() for event in progress)
+    assert progress[-1].completed_stages == 7
     assert len(first_manifest["input"]["subjects"]) == 5
     assert first_manifest["preprocessing"]["id"] == "none"
     assert first_manifest["initialization"]["control_points"]["count"] == 9
@@ -425,6 +448,7 @@ def test_modern_init_and_cli_run_form_a_public_folder_to_bundle_path(
     assert "PCA scree plot:" in captured.out
     assert "PCA scores plot:" in captured.out
     assert "PCA deformation meshes:" in captured.out
+    assert "Progress [7/7 stages] verification completed" in captured.out
     assert workflow.verify_modern_workflow(tmp_path / "cli-run")["project"]["name"]
 
     verify_code = main(["modern-verify", str(tmp_path / "cli-run")])
@@ -460,3 +484,22 @@ def test_pca_dimensions_are_rejected_before_optimizer_execution(
         workflow.run_modern_workflow(config, destination=tmp_path / "rejected")
 
     assert not (tmp_path / "rejected").exists()
+
+
+def test_progress_callback_failure_preserves_atomic_nonpublication(tmp_path: Path) -> None:
+    config = _write_config(tmp_path / "workflow.yaml")
+    destination = tmp_path / "unpublished"
+
+    def fail_on_quality(event) -> None:
+        if event.phase == "quality":
+            raise RuntimeError("observer failed")
+
+    with pytest.raises(RuntimeError, match="observer failed"):
+        workflow.run_modern_workflow(
+            config,
+            destination=destination,
+            progress_callback=fail_on_quality,
+        )
+
+    assert not destination.exists()
+    assert not tuple(tmp_path.glob(".unpublished.tmp-*"))

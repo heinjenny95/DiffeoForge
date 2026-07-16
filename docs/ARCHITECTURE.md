@@ -97,9 +97,16 @@ dense-operation model, records known tensor payloads and host observations,
 and publishes strict JSON plus self-contained HTML. It deliberately does not
 cross the backend boundary into runtime or peak-memory prediction.
 
+`modern-run` now accepts a synchronous read-only progress observer. The
+application service emits versioned workflow-stage events and translates the
+dense optimizer's committed decision records without exposing rejected
+line-search candidates as accepted progress. CLI output and the future worker
+protocol consume this same contract. Counts describe completed stages and
+decisions, not elapsed-time percentages or ETA.
+
 This vertical path is not yet the common production backend shown above: it
 does not implement the reference lifecycle's checkpoint/resume operations or
-GUI worker protocol. An optimized kernel or GPU path must reproduce the dense
+the child-process transport around the progress contract. An optimized kernel or GPU path must reproduce the dense
 baseline before it can replace this correctness implementation.
 
 ## Security and privacy boundary
