@@ -113,6 +113,9 @@ This repository currently provides:
   selection, raw repeats, sampled process RSS, exact provenance, explicit
   standard/recompute blockwise measurement, and no extrapolation to full-cohort
   runtime;
+- an immutable prospective paired-benchmark design that freezes config/input
+  hashes, subject-prefix sizes, repeats, and deterministic condition order
+  before standard/recompute observations exist;
 - explicit non-approximate blockwise Gaussian convolution, x-gradient,
   Current, and Varifold primitives with bounded tile tensors and dense
   forward/autograd parity, plus an explicit opt-in plan through the complete
@@ -169,6 +172,17 @@ For a configured blockwise plan, the microbenchmark can explicitly measure the
 experimental recompute graph in separate fresh processes with
 `--tile-autograd-strategy recompute`. This is a benchmark-only override, not a
 `modern-run` setting, safe preset, peak-RAM claim, or automatic comparison.
+
+Before collecting a paired study, freeze its pre-results design:
+
+```powershell
+diffeoforge modern-benchmark-design modern-atlas.yaml `
+  --subjects 5 20 50 --repeats 7
+```
+
+The immutable JSON/sidecar/HTML artifact records the exact condition order but
+does not execute, compare, or rank benchmarks. See the
+[prospective benchmark-design protocol](docs/MODERN_BENCHMARK_STUDY.md).
 
 Generated configurations declare dense evaluation explicitly. The exact
 non-approximate blockwise path can instead be requested without code:

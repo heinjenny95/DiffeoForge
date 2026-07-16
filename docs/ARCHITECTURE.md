@@ -117,6 +117,14 @@ configured blockwise benchmark worker and records that benchmark-only choice;
 it performs no automatic comparison, scaling extrapolation, or hardware
 verdict.
 
+`modern-benchmark-design` sits immediately before measurement. Its immutable
+v0.1 JSON/sidecar/HTML artifact binds the complete input inventory, reviewed
+blockwise config, paired subject-prefix sizes, repeats, warm-ups, and a
+versioned deterministic condition order. It contains no result fields and does
+not execute the argument vectors. This separates prospective decisions from
+later benchmark observations; execution, cross-config multi-size designs, and
+analysis remain distinct evidence gates.
+
 Below the application layer, the engine now contains an explicit blockwise
 Gaussian primitive family. Query and source tile sizes bound each pairwise XYZ
 difference tensor; Current and Varifold inner products accumulate tiles
