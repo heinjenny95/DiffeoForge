@@ -155,8 +155,10 @@ one-cycle optimizer tests preserve forward, all-parameter-gradient, and decision
 parity. On the 320-face CC0 Current objective, tested `64 × 64` recompute removes
 the corresponding rank-3 pairwise tensors from the forward saved-tensor graph
 and reduces its largest and summed logical payload. Public workflow plans still
-construct standard autograd only; this is not process peak-memory or runtime
-evidence.
+construct standard autograd only. Benchmark v0.3 can explicitly measure either
+strategy in separate fresh processes, but its spawn smoke coverage is not a
+prospective performance comparison, process peak-memory, or runtime-scaling
+result.
 
 ## Gates before a usable atlas engine
 

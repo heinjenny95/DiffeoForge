@@ -85,7 +85,9 @@ diffeoforge modern-benchmark modern-atlas.yaml --subjects 5
 ```
 
 This measures fresh-process objective/gradient repeats using the same declared
-dense or blockwise plan, not the complete optimizer or workflow. See the
+dense or blockwise plan, not the complete optimizer or workflow. A blockwise
+run may additionally declare a benchmark-only standard/recompute override; it
+does not change `modern-run` or its provenance. See the
 [modern benchmark protocol](MODERN_BENCHMARK.md).
 
 ## End-to-end contract

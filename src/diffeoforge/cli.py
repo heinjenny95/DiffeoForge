@@ -222,6 +222,12 @@ def build_parser() -> argparse.ArgumentParser:
     modern_benchmark_parser.add_argument("--repeats", type=int, default=3)
     modern_benchmark_parser.add_argument("--warmups", type=int, default=1)
     modern_benchmark_parser.add_argument(
+        "--tile-autograd-strategy",
+        choices=("standard", "recompute"),
+        default="standard",
+        help="Benchmark-only override; recompute requires configured blockwise execution.",
+    )
+    modern_benchmark_parser.add_argument(
         "--output",
         type=Path,
         help="Report directory (default: CONFIG_NAME.benchmark).",
@@ -626,6 +632,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 subject_count=args.subjects,
                 repeats=args.repeats,
                 warmup_evaluations=args.warmups,
+                tile_autograd_strategy=args.tile_autograd_strategy,
                 destination=args.output,
                 overwrite=args.force,
             )
@@ -642,6 +649,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(
                 "Pairwise execution: "
                 f"{report['configuration']['pairwise_evaluation']['mode']}"
+            )
+            print(
+                "Tile autograd strategy: "
+                f"{report['configuration']['tile_autograd_strategy']}"
             )
             print(f"Median measured objective+gradient wall time: {wall_ms:.3f} ms")
             print(f"Median sampled process RSS: {peak_mib:.2f} MiB")

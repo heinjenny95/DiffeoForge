@@ -83,12 +83,19 @@ def test_blockwise_collection_binds_configured_plan_to_worker_and_report(
         return _sample(1)
 
     monkeypatch.setattr(module, "_run_fresh_sample", fixed_worker)
-    report = collect_modern_benchmark(path, subject_count=1, repeats=1)
+    report = collect_modern_benchmark(
+        path,
+        subject_count=1,
+        repeats=1,
+        tile_autograd_strategy="recompute",
+    )
 
     assert len(calls) == 1
     assert report["configuration"]["pairwise_evaluation"] == config["runtime"][
         "pairwise_evaluation"
     ]
+    assert calls[0][-1] == "recompute"
+    assert report["configuration"]["tile_autograd_strategy"] == "recompute"
     assert report["operation_model"]["largest_execution_tile"]["tile_rows"] == 64
     assert report["operation_model"]["largest_execution_tile"]["tile_columns"] == 64
 
@@ -98,8 +105,8 @@ def test_collection_binds_selection_operations_and_descriptive_samples(
 ) -> None:
     calls = []
 
-    def fixed_worker(config_path, subject_count, warmups):
-        calls.append((config_path, subject_count, warmups))
+    def fixed_worker(config_path, subject_count, warmups, autograd_strategy):
+        calls.append((config_path, subject_count, warmups, autograd_strategy))
         return _sample(len(calls))
 
     import diffeoforge.modern_benchmark as module
@@ -127,8 +134,13 @@ def test_collection_binds_selection_operations_and_descriptive_samples(
     }
     assert report["numerical_consistency"]["consistent"] is True
     assert report["created_at"] == FIXED_TIME
+    assert report["benchmark_version"] == "0.3"
+    assert report["configuration"]["tile_autograd_strategy"] == "standard"
     assert len(calls) == 3
-    assert all(subject_count == 2 and warmups == 1 for _, subject_count, warmups in calls)
+    assert all(
+        subject_count == 2 and warmups == 1 and strategy == "standard"
+        for _, subject_count, warmups, strategy in calls
+    )
     assert "hardware pass/fail verdict" in report["scientific_boundary"]
     assert _schema()["title"] == "DiffeoForge modern objective benchmark"
 
@@ -155,6 +167,7 @@ def test_reports_are_escaped_atomic_and_refuse_unrelated_overwrite(
 
     assert "<script>alert(1)</script>" not in rendered
     assert "&lt;script&gt;alert(1)&lt;/script&gt;" in rendered
+    assert "Tile autograd strategy: standard" in rendered
     assert parser.tags.count("h1") == 1
     assert parser.tags.count("table") == 1
     output = write_modern_benchmark_report(report, tmp_path / "report")
@@ -205,6 +218,13 @@ def test_reports_are_escaped_atomic_and_refuse_unrelated_overwrite(
             inconsistent_operation, tmp_path / "inconsistent-operation"
         )
 
+    inconsistent_strategy = json.loads(json.dumps(report))
+    inconsistent_strategy["configuration"]["tile_autograd_strategy"] = "recompute"
+    with pytest.raises(ModernBenchmarkError, match="Dense benchmark execution"):
+        write_modern_benchmark_report(
+            inconsistent_strategy, tmp_path / "inconsistent-strategy"
+        )
+
     def fail_render(_report):
         raise RuntimeError("injected rendering failure")
 
@@ -241,6 +261,14 @@ def test_subject_selection_and_procrustes_scope_fail_before_workers(
     with pytest.raises(ConfigurationError, match="requires.*false"):
         collect_modern_benchmark(path, subject_count=1, repeats=1)
 
+    with pytest.raises(ConfigurationError, match="requires configured blockwise"):
+        collect_modern_benchmark(
+            EXAMPLE,
+            subject_count=1,
+            repeats=1,
+            tile_autograd_strategy="recompute",
+        )
+
 
 def test_cli_runs_one_real_fresh_process_measurement(
     tmp_path: Path,
@@ -272,16 +300,19 @@ def test_cli_runs_one_real_fresh_process_measurement(
     assert all(sample["sampled_peak_rss_bytes"] > 0 for sample in report["samples"])
     assert all(sample["rss_sample_count"] >= 2 for sample in report["samples"])
     assert report["numerical_consistency"]["consistent"] is True
+    assert report["configuration"]["tile_autograd_strategy"] == "standard"
     assert report["numerical_consistency"]["objective_span"] <= 1e-12
     assert report["numerical_consistency"]["gradient_norm_span"] <= 1e-12
 
 
+@pytest.mark.parametrize("autograd_strategy", ["standard", "recompute"])
 def test_cli_runs_one_real_fresh_blockwise_process_measurement(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
+    autograd_strategy: str,
 ) -> None:
     config = _write_portable_config(tmp_path / "blockwise.yaml", mode="blockwise")
-    output = tmp_path / "blockwise-benchmark"
+    output = tmp_path / f"blockwise-{autograd_strategy}-benchmark"
     code = main(
         [
             "modern-benchmark",
@@ -292,6 +323,8 @@ def test_cli_runs_one_real_fresh_blockwise_process_measurement(
             "1",
             "--warmups",
             "0",
+            "--tile-autograd-strategy",
+            autograd_strategy,
             "--output",
             str(output),
         ]
@@ -300,12 +333,14 @@ def test_cli_runs_one_real_fresh_blockwise_process_measurement(
 
     assert code == 0
     assert "Pairwise execution: blockwise" in captured.out
+    assert f"Tile autograd strategy: {autograd_strategy}" in captured.out
     report = json.loads((output / REPORT_JSON_NAME).read_text(encoding="utf-8"))
     assert report["configuration"]["pairwise_evaluation"] == {
         "mode": "blockwise",
         "query_tile_size": 64,
         "source_tile_size": 64,
     }
+    assert report["configuration"]["tile_autograd_strategy"] == autograd_strategy
     assert report["operation_model"]["largest_execution_tile"]["tile_rows"] == 64
     assert report["operation_model"]["largest_execution_tile"]["tile_columns"] == 64
     assert report["samples"][0]["wall_time_ns"] > 0

@@ -47,7 +47,8 @@ This roadmap describes evidence gates rather than promised dates.
   saved-tensor evidence
 - [x] Carry tile recomputation through complete Subject/Atlas objectives and
   optimizer parity
-- [ ] Measure tile recomputation in fresh processes before public integration
+- [x] Add an explicit fresh-process recompute benchmark path and spawn smoke evidence
+- [ ] Run a prospective standard/recompute study before public integration
 - [ ] Run a prospective multi-size/tile blockwise performance study
 
 ## Milestone 3: Accessible application

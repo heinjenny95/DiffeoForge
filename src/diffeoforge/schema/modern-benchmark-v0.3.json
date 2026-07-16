@@ -1,0 +1,602 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DiffeoForge modern objective benchmark",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "benchmark_version",
+    "benchmark_id",
+    "created_at",
+    "source_config",
+    "input",
+    "configuration",
+    "environment",
+    "operation_model",
+    "samples",
+    "summary",
+    "numerical_consistency",
+    "warnings",
+    "scientific_boundary"
+  ],
+  "$defs": {
+    "mesh": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "label",
+        "role",
+        "bytes",
+        "sha256",
+        "points",
+        "triangles"
+      ],
+      "properties": {
+        "label": {
+          "type": "string",
+          "minLength": 1
+        },
+        "role": {
+          "enum": [
+            "template",
+            "subject"
+          ]
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "points": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "triangles": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "minimum",
+        "median",
+        "maximum"
+      ],
+      "properties": {
+        "minimum": {
+          "type": "number",
+          "minimum": 0
+        },
+        "median": {
+          "type": "number",
+          "minimum": 0
+        },
+        "maximum": {
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    },
+    "pairwiseEvaluation": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode",
+            "query_tile_size",
+            "source_tile_size"
+          ],
+          "properties": {
+            "mode": {
+              "const": "dense"
+            },
+            "query_tile_size": {
+              "type": "null"
+            },
+            "source_tile_size": {
+              "type": "null"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode",
+            "query_tile_size",
+            "source_tile_size"
+          ],
+          "properties": {
+            "mode": {
+              "const": "blockwise"
+            },
+            "query_tile_size": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "source_tile_size": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        }
+      ]
+    }
+  },
+  "properties": {
+    "benchmark_version": {
+      "const": "0.3"
+    },
+    "benchmark_id": {
+      "const": "declared_objective_gradient"
+    },
+    "created_at": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source_config": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "filename",
+        "sha256",
+        "project"
+      ],
+      "properties": {
+        "filename": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "project": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "input": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "template",
+        "subjects",
+        "available_subject_count",
+        "selected_subject_count",
+        "selection"
+      ],
+      "properties": {
+        "template": {
+          "$ref": "#/$defs/mesh"
+        },
+        "subjects": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/mesh"
+          }
+        },
+        "available_subject_count": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "selected_subject_count": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "selection": {
+          "const": "first subjects in validated deterministic path order"
+        }
+      }
+    },
+    "configuration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "gradient_block",
+        "control_points",
+        "timepoints",
+        "attachment_type",
+        "shooting_integrator",
+        "flow_integrator",
+        "threads",
+        "random_seed",
+        "warmup_evaluations_per_repeat",
+        "repeats",
+        "rss_sampling_interval_ms",
+        "process_isolation",
+        "pairwise_evaluation",
+        "tile_autograd_strategy"
+      ],
+      "properties": {
+        "gradient_block": {
+          "enum": [
+            "momenta",
+            "template",
+            "control_points"
+          ]
+        },
+        "control_points": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "timepoints": {
+          "type": "integer",
+          "minimum": 2
+        },
+        "attachment_type": {
+          "enum": [
+            "current",
+            "varifold"
+          ]
+        },
+        "shooting_integrator": {
+          "enum": [
+            "euler",
+            "rk2"
+          ]
+        },
+        "flow_integrator": {
+          "enum": [
+            "euler",
+            "heun",
+            "deformetrica_heun"
+          ]
+        },
+        "threads": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "random_seed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "warmup_evaluations_per_repeat": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "repeats": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "rss_sampling_interval_ms": {
+          "const": 5
+        },
+        "process_isolation": {
+          "const": "fresh multiprocessing spawn process per repeat"
+        },
+        "pairwise_evaluation": {
+          "$ref": "#/$defs/pairwiseEvaluation"
+        },
+        "tile_autograd_strategy": {
+          "enum": [
+            "standard",
+            "recompute"
+          ]
+        }
+      }
+    },
+    "environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "diffeoforge",
+        "python",
+        "numpy",
+        "pytorch",
+        "psutil",
+        "platform",
+        "logical_cpus",
+        "physical_memory_bytes",
+        "parent_executable"
+      ],
+      "properties": {
+        "diffeoforge": {
+          "type": "string",
+          "minLength": 1
+        },
+        "python": {
+          "type": "string",
+          "minLength": 1
+        },
+        "numpy": {
+          "type": "string",
+          "minLength": 1
+        },
+        "pytorch": {
+          "type": "string",
+          "minLength": 1
+        },
+        "psutil": {
+          "type": "string",
+          "minLength": 1
+        },
+        "platform": {
+          "type": "string",
+          "minLength": 1
+        },
+        "logical_cpus": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "physical_memory_bytes": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "parent_executable": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "operation_model": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "gaussian_calls_per_evaluation",
+        "gaussian_pair_elements_per_evaluation",
+        "largest_logical_pair",
+        "largest_execution_tile"
+      ],
+      "properties": {
+        "gaussian_calls_per_evaluation": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "gaussian_pair_elements_per_evaluation": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "largest_logical_pair": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "operation",
+            "subject_label",
+            "rows",
+            "columns",
+            "pair_elements",
+            "float64_matrix_bytes",
+            "float64_xyz_difference_tensor_bytes"
+          ],
+          "properties": {
+            "operation": {
+              "type": "string",
+              "minLength": 1
+            },
+            "subject_label": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "rows": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "columns": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "pair_elements": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "float64_matrix_bytes": {
+              "type": "integer",
+              "minimum": 8
+            },
+            "float64_xyz_difference_tensor_bytes": {
+              "type": "integer",
+              "minimum": 24
+            }
+          }
+        },
+        "largest_execution_tile": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "operation",
+            "subject_label",
+            "logical_rows",
+            "logical_columns",
+            "tile_rows",
+            "tile_columns",
+            "pair_elements",
+            "float64_matrix_bytes",
+            "float64_xyz_difference_tensor_bytes"
+          ],
+          "properties": {
+            "operation": {
+              "type": "string",
+              "minLength": 1
+            },
+            "subject_label": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "logical_rows": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "logical_columns": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "tile_rows": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "tile_columns": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "pair_elements": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "float64_matrix_bytes": {
+              "type": "integer",
+              "minimum": 8
+            },
+            "float64_xyz_difference_tensor_bytes": {
+              "type": "integer",
+              "minimum": 24
+            }
+          }
+        }
+      }
+    },
+    "samples": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "repeat",
+          "wall_time_ns",
+          "rss_before_bytes",
+          "sampled_peak_rss_bytes",
+          "sampled_rss_delta_bytes",
+          "rss_sample_count",
+          "objective",
+          "gradient_norm"
+        ],
+        "properties": {
+          "repeat": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "wall_time_ns": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "rss_before_bytes": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "sampled_peak_rss_bytes": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "sampled_rss_delta_bytes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "rss_sample_count": {
+            "type": "integer",
+            "minimum": 2
+          },
+          "objective": {
+            "type": "number"
+          },
+          "gradient_norm": {
+            "type": "number",
+            "minimum": 0
+          }
+        }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "wall_time_ns",
+        "rss_before_bytes",
+        "sampled_peak_rss_bytes",
+        "sampled_rss_delta_bytes"
+      ],
+      "properties": {
+        "wall_time_ns": {
+          "$ref": "#/$defs/summary"
+        },
+        "rss_before_bytes": {
+          "$ref": "#/$defs/summary"
+        },
+        "sampled_peak_rss_bytes": {
+          "$ref": "#/$defs/summary"
+        },
+        "sampled_rss_delta_bytes": {
+          "$ref": "#/$defs/summary"
+        }
+      }
+    },
+    "numerical_consistency": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "relative_tolerance",
+        "absolute_tolerance",
+        "consistent",
+        "objective_minimum",
+        "objective_maximum",
+        "objective_span",
+        "gradient_norm_minimum",
+        "gradient_norm_maximum",
+        "gradient_norm_span"
+      ],
+      "properties": {
+        "relative_tolerance": {
+          "const": 1e-12
+        },
+        "absolute_tolerance": {
+          "const": 1e-12
+        },
+        "consistent": {
+          "type": "boolean"
+        },
+        "objective_minimum": {
+          "type": "number"
+        },
+        "objective_maximum": {
+          "type": "number"
+        },
+        "objective_span": {
+          "type": "number",
+          "minimum": 0
+        },
+        "gradient_norm_minimum": {
+          "type": "number",
+          "minimum": 0
+        },
+        "gradient_norm_maximum": {
+          "type": "number",
+          "minimum": 0
+        },
+        "gradient_norm_span": {
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    },
+    "warnings": {
+      "type": "array",
+      "minItems": 3,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "scientific_boundary": {
+      "type": "string",
+      "minLength": 1
+    }
+  }
+}
