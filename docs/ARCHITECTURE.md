@@ -104,6 +104,14 @@ line-search candidates as accepted progress. CLI output and the future worker
 protocol consume this same contract. Counts describe completed stages and
 decisions, not elapsed-time percentages or ETA.
 
+The application layer also exposes an opt-in `modern-benchmark` service. The
+user must declare a deterministic subject-prefix size. Each repeat runs one
+dense objective plus gradient in a fresh spawned CPU process after declared
+warm-up evaluations, recording wall-clock nanoseconds and 5 ms process-RSS
+samples. The strict report binds measurements to config/input hashes and the
+same exact operation model as `modern-plan`; it performs no scaling
+extrapolation or hardware verdict.
+
 This vertical path is not yet the common production backend shown above: it
 does not implement the reference lifecycle's checkpoint/resume operations or
 the child-process transport around the progress contract. An optimized kernel or GPU path must reproduce the dense

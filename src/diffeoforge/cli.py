@@ -192,6 +192,30 @@ def build_parser() -> argparse.ArgumentParser:
         help="Replace only a recognized generated workload-report directory.",
     )
 
+    modern_benchmark_parser = subparsers.add_parser(
+        "modern-benchmark",
+        help="Measure isolated dense objective/gradient repeats without extrapolation.",
+    )
+    modern_benchmark_parser.add_argument("config", type=Path)
+    modern_benchmark_parser.add_argument(
+        "--subjects",
+        type=int,
+        required=True,
+        help="Explicit deterministic subject-prefix size to benchmark.",
+    )
+    modern_benchmark_parser.add_argument("--repeats", type=int, default=3)
+    modern_benchmark_parser.add_argument("--warmups", type=int, default=1)
+    modern_benchmark_parser.add_argument(
+        "--output",
+        type=Path,
+        help="Report directory (default: CONFIG_NAME.benchmark).",
+    )
+    modern_benchmark_parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Replace only a recognized generated benchmark-report directory.",
+    )
+
     modern_verify_parser = subparsers.add_parser(
         "modern-verify",
         help="Verify an immutable modern workflow run and its nested atlas/PCA bundle.",
@@ -557,6 +581,50 @@ def main(argv: Sequence[str] | None = None) -> int:
         except ImportError as error:
             print(
                 "ERROR: Modern engine dependencies are missing; install "
+                "diffeoforge[modern-engine].",
+                file=sys.stderr,
+            )
+            print(f"       {error}", file=sys.stderr)
+            return 2
+        except (ConfigurationError, RuntimeError, OSError, ValueError, TypeError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
+
+    if args.command == "modern-benchmark":
+        try:
+            from diffeoforge.modern_benchmark import (
+                REPORT_HTML_NAME,
+                REPORT_JSON_NAME,
+                benchmark_modern_objective,
+            )
+
+            report_directory = benchmark_modern_objective(
+                args.config,
+                subject_count=args.subjects,
+                repeats=args.repeats,
+                warmup_evaluations=args.warmups,
+                destination=args.output,
+                overwrite=args.force,
+            )
+            report = json.loads(
+                (report_directory / REPORT_JSON_NAME).read_text(encoding="utf-8")
+            )
+            wall_ms = report["summary"]["wall_time_ns"]["median"] / 1_000_000
+            peak_mib = (
+                report["summary"]["sampled_peak_rss_bytes"]["median"] / 1024**2
+            )
+            print(f"Modern objective benchmark created: {report_directory}")
+            print(f"Selected subjects: {report['input']['selected_subject_count']}")
+            print(f"Fresh-process repeats: {report['configuration']['repeats']}")
+            print(f"Median measured objective+gradient wall time: {wall_ms:.3f} ms")
+            print(f"Median sampled process RSS: {peak_mib:.2f} MiB")
+            print(f"Machine-readable report: {report_directory / REPORT_JSON_NAME}")
+            print(f"Review report: {report_directory / REPORT_HTML_NAME}")
+            print("WARNING: Do not extrapolate this objective-only measurement to 300 subjects.")
+        except ImportError as error:
+            print(
+                "ERROR: Modern benchmark dependencies are missing; install "
                 "diffeoforge[modern-engine].",
                 file=sys.stderr,
             )

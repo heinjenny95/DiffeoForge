@@ -107,7 +107,10 @@ This repository currently provides:
   invent peak-RAM or runtime predictions;
 - versioned live workflow and committed optimizer-decision events used by the
   CLI and designed for reuse by the future desktop worker protocol, without
-  invented percent-complete or ETA claims.
+  invented percent-complete or ETA claims;
+- an opt-in fresh-process objective/gradient benchmark with explicit subject
+  selection, raw repeats, sampled process RSS, exact provenance, and no
+  extrapolation to full-cohort runtime.
 
 The experimental modern path is a public CLI/application-service workflow, but
 it is not yet the shared production backend behind a GUI and does not provide
@@ -147,6 +150,8 @@ diffeoforge modern-init "C:\path\to\meshes" --units millimeter
 # Review modern-atlas.yaml. Generated parameter values are exploratory.
 diffeoforge modern-plan modern-atlas.yaml
 # Review modern-atlas.workload/workload.html. It is not a runtime forecast.
+# Optional measured microbenchmark; subject count is always explicit.
+diffeoforge modern-benchmark modern-atlas.yaml --subjects 5
 diffeoforge modern-run modern-atlas.yaml
 diffeoforge modern-verify modern-atlas-run
 ```
@@ -220,6 +225,7 @@ and workflow for another mesh directory.
 - [Deterministic mesh-quality evidence](docs/MESH_QUALITY.md)
 - [Modern dense-engine workload planning](docs/MODERN_WORKLOAD.md)
 - [Versioned modern progress events](docs/MODERN_PROGRESS.md)
+- [Modern objective/gradient benchmark protocol](docs/MODERN_BENCHMARK.md)
 - [Landmark-based Procrustes alignment](docs/PROCRUSTES_ALIGNMENT.md)
 - [PCA of atlas-derived subject features](docs/ATLAS_PCA.md)
 - [Desktop executable and installer architecture](docs/DESKTOP_DISTRIBUTION.md)

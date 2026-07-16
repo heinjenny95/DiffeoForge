@@ -51,6 +51,17 @@ has committed an initial, accepted, stationary, or failed record; rejected
 line-search candidates are not shown as accepted progress. See
 [modern progress events](MODERN_PROGRESS.md).
 
+For an optional measured CPU microbenchmark before a full run, choose the
+subject prefix explicitly:
+
+```powershell
+diffeoforge modern-benchmark modern-atlas.yaml --subjects 5
+```
+
+This measures fresh-process objective/gradient repeats, not the complete
+optimizer or workflow. See the
+[modern benchmark protocol](MODERN_BENCHMARK.md).
+
 ## End-to-end contract
 
 For every run, DiffeoForge:

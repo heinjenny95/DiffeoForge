@@ -53,6 +53,11 @@ completed workflow stages and committed optimizer decisions. The desktop
 worker may serialize those events across a process boundary, but must not turn
 stage/decision counts into an unmeasured runtime percentage or ETA.
 
+`modern-benchmark` provides measured objective/gradient observations for a
+user-selected subject count. A GUI can render its strict JSON and raw repeats,
+but must retain the 5 ms sampled-RSS limitation and must not extrapolate a
+microbenchmark into a full-run ETA or a 300-subject feasibility verdict.
+
 Deformetrica 4.3 remains an external reference backend. Its Python 3.8 stack is
 not copied into the desktop executable. `doctor` will detect a separately
 installed version-checked native/container route and explain how it differs

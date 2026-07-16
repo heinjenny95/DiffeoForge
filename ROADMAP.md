@@ -48,7 +48,8 @@ This roadmap describes evidence gates rather than promised dates.
 - [ ] Parameter explanations and safe presets
 - [x] Pre-compute dense-operation and known-payload workload report
 - [x] Versioned workflow-stage and committed optimizer-decision reporting
-- [ ] Measured runtime and peak-memory calibration
+- [x] Fresh-process objective/gradient wall-time and sampled-RSS protocol
+- [ ] Prospective multi-size end-to-end runtime and peak-memory calibration
 - [ ] Cross-platform CPU distribution
 - [ ] Validated NVIDIA GPU distribution
 - [ ] Apptainer workflow for HPC environments
