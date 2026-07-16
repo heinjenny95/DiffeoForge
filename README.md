@@ -113,7 +113,8 @@ This repository currently provides:
   extrapolation to full-cohort runtime;
 - explicit non-approximate blockwise Gaussian convolution, x-gradient,
   Current, and Varifold primitives with bounded tile tensors and dense
-  forward/autograd parity, not yet enabled in public atlas runs.
+  forward/autograd parity, plus an explicit opt-in plan through the complete
+  objective and optimizer; public atlas runs remain dense-only.
 
 The experimental modern path is a public CLI/application-service workflow, but
 it is not yet the shared production backend behind a GUI and does not provide

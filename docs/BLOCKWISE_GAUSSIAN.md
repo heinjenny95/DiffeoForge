@@ -1,9 +1,10 @@
 # Explicit blockwise Gaussian primitives
 
-Status: **implemented isolated primitives; not enabled in atlas workflows**
+Status: **complete opt-in engine path; not enabled in public atlas workflows**
 
-Tracked prospectively by
-[engineering issue #40](https://github.com/heinjenny95/DiffeoForge/issues/40).
+Tracked prospectively by [primitive issue
+#40](https://github.com/heinjenny95/DiffeoForge/issues/40) and [full-objective
+issue #42](https://github.com/heinjenny95/DiffeoForge/issues/42).
 
 ## Why this slice exists
 
@@ -46,6 +47,25 @@ query normals. Varifold tiles calculate local area, orientation-similarity,
 and Gaussian matrices, then accumulate a scalar. No complete face-by-face
 kernel or orientation matrix is materialized.
 
+## Opt-in full-objective contract
+
+The low-level deformation energy, shooting, and point-flow functions, as well
+as `subject_objective`, `atlas_objective`, and `optimize_atlas`, accept the
+keyword-only argument `gaussian_tile_plan`. The default is exactly `None` and
+retains the dense correctness path. A caller must construct and pass a
+`GaussianTilePlan` explicitly to select blockwise execution, for example:
+
+```python
+plan = GaussianTilePlan(query_rows=256, source_rows=512)
+result = subject_objective(..., gaussian_tile_plan=plan)
+```
+
+There is no automatic threshold, inferred tile size, environment-variable
+override, or fallback between algorithms. The same declared plan controls
+every Gaussian deformation, flow, Current, and Varifold operation reached by
+that objective or optimizer call. Invalid plan types fail before numerical
+integration begins.
+
 ## Numerical contract and evidence
 
 The algorithm is non-approximate, but source-tile accumulation changes
@@ -61,23 +81,25 @@ Tests currently require:
 - Current/Varifold forward parity on the open 320-face CC0 meshes;
 - unchanged orientation and joint-translation contracts; and
 - runtime instrumentation proving every observed pair tile stays within the
-  declared row/column bounds.
+  declared row/column bounds;
+- full Current and Varifold subject trajectory, endpoint, objective-component,
+  and template/control-point/momenta-gradient parity; and
+- two-subject atlas objective/all-parameter-gradient parity plus one complete
+  optimizer-cycle decision-history and final-parameter parity for both
+  attachment types.
 
 The dense path remains the correctness oracle and continues to match the
-frozen Deformetrica primitive/objective evidence. The blockwise path is not yet
-used by `subject_objective`, `optimize_atlas`, `modern-run`, `modern-plan`, or
-`modern-benchmark`.
+frozen Deformetrica primitive/objective evidence. The blockwise path is now
+available only through direct engine APIs; `modern-run`, `modern-plan`, and
+`modern-benchmark` remain dense-only.
 
 ## Gates before workflow integration
 
-1. thread tile sizes through the full subject/atlas objective without hidden
-   defaults;
-2. extend the workload model and immutable configuration/run schemas;
-3. prove full objective, parameter-gradient, optimizer-history, endpoint,
-   PCA, and mesh-quality parity against dense mode;
-4. benchmark several explicit tile sizes using the measured protocol; and
-5. determine whether checkpoint/recomputation or a custom backward pass is
+1. extend the workload model and immutable configuration/run schemas;
+2. prove downstream immutable endpoint, PCA, and mesh-quality artifact parity;
+3. benchmark several explicit tile sizes using the measured protocol;
+4. determine whether checkpoint/recomputation or a custom backward pass is
    required to reduce retained autograd memory; and
-6. select evidence-based safe presets separately from user overrides.
+5. select evidence-based safe presets separately from user overrides.
 
 Only after those gates may blockwise mode become a selectable atlas backend.

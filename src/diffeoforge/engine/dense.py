@@ -275,19 +275,76 @@ def gaussian_convolve_gradient_blockwise(
     return torch.cat(outputs, dim=0)
 
 
+def _validate_gaussian_tile_plan(
+    value: GaussianTilePlan | None,
+) -> GaussianTilePlan | None:
+    if value is not None and not isinstance(value, GaussianTilePlan):
+        raise TypeError("gaussian_tile_plan must be a GaussianTilePlan or None")
+    return value
+
+
+def _gaussian_convolve_with_plan(
+    x: torch.Tensor,
+    y: torch.Tensor,
+    weights: torch.Tensor,
+    kernel_width: float,
+    plan: GaussianTilePlan | None,
+) -> torch.Tensor:
+    if plan is None:
+        return gaussian_convolve(x, y, weights, kernel_width)
+    return gaussian_convolve_blockwise(
+        x,
+        y,
+        weights,
+        kernel_width,
+        query_tile_size=plan.query_rows,
+        source_tile_size=plan.source_rows,
+    )
+
+
+def _gaussian_convolve_gradient_with_plan(
+    left_weights: torch.Tensor,
+    x: torch.Tensor,
+    kernel_width: float,
+    plan: GaussianTilePlan | None,
+) -> torch.Tensor:
+    if plan is None:
+        return gaussian_convolve_gradient(
+            left_weights,
+            x,
+            kernel_width=kernel_width,
+        )
+    return gaussian_convolve_gradient_blockwise(
+        left_weights,
+        x,
+        kernel_width=kernel_width,
+        query_tile_size=plan.query_rows,
+        source_tile_size=plan.source_rows,
+    )
+
+
 def deformation_energy(
     control_points: torch.Tensor,
     momenta: torch.Tensor,
     kernel_width: float,
+    *,
+    gaussian_tile_plan: GaussianTilePlan | None = None,
 ) -> torch.Tensor:
     """Return the Deformetrica deformation norm squared ``p^T K(q,q) p``."""
 
+    plan = _validate_gaussian_tile_plan(gaussian_tile_plan)
     _validate_float_matrix("control_points", control_points, columns=3)
     _validate_float_matrix("momenta", momenta, columns=3)
     _validate_compatible("momenta", momenta, control_points)
     if momenta.shape != control_points.shape:
         raise ValueError("momenta must have the same shape as control_points")
-    velocity = gaussian_convolve(control_points, control_points, momenta, kernel_width)
+    velocity = _gaussian_convolve_with_plan(
+        control_points,
+        control_points,
+        momenta,
+        kernel_width,
+        plan,
+    )
     return torch.sum(momenta * velocity)
 
 
@@ -296,20 +353,35 @@ def _rk2_shooting_step(
     momenta: torch.Tensor,
     kernel_width: float,
     step: float,
+    gaussian_tile_plan: GaussianTilePlan | None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    points_velocity = gaussian_convolve(
-        control_points, control_points, momenta, kernel_width
+    points_velocity = _gaussian_convolve_with_plan(
+        control_points,
+        control_points,
+        momenta,
+        kernel_width,
+        gaussian_tile_plan,
     )
-    momenta_velocity = -gaussian_convolve_gradient(
-        momenta, control_points, kernel_width=kernel_width
+    momenta_velocity = -_gaussian_convolve_gradient_with_plan(
+        momenta,
+        control_points,
+        kernel_width,
+        gaussian_tile_plan,
     )
     midpoint_points = control_points + 0.5 * step * points_velocity
     midpoint_momenta = momenta + 0.5 * step * momenta_velocity
-    next_points = control_points + step * gaussian_convolve(
-        midpoint_points, midpoint_points, midpoint_momenta, kernel_width
+    next_points = control_points + step * _gaussian_convolve_with_plan(
+        midpoint_points,
+        midpoint_points,
+        midpoint_momenta,
+        kernel_width,
+        gaussian_tile_plan,
     )
-    next_momenta = momenta - step * gaussian_convolve_gradient(
-        midpoint_momenta, midpoint_points, kernel_width=kernel_width
+    next_momenta = momenta - step * _gaussian_convolve_gradient_with_plan(
+        midpoint_momenta,
+        midpoint_points,
+        kernel_width,
+        gaussian_tile_plan,
     )
     return next_points, next_momenta
 
@@ -321,9 +393,11 @@ def shoot(
     number_of_time_points: int,
     *,
     integrator: Literal["euler", "rk2"] = "rk2",
+    gaussian_tile_plan: GaussianTilePlan | None = None,
 ) -> ShootingTrajectory:
     """Integrate control points and momenta from time zero to one."""
 
+    plan = _validate_gaussian_tile_plan(gaussian_tile_plan)
     _validate_float_matrix("control_points", control_points, columns=3)
     _validate_float_matrix("momenta", momenta, columns=3)
     _validate_compatible("momenta", momenta, control_points)
@@ -341,11 +415,18 @@ def shoot(
     momenta_path = [momenta_state]
 
     for _ in range(time_points - 1):
-        points_velocity = gaussian_convolve(
-            points_state, points_state, momenta_state, width
+        points_velocity = _gaussian_convolve_with_plan(
+            points_state,
+            points_state,
+            momenta_state,
+            width,
+            plan,
         )
-        momenta_velocity = -gaussian_convolve_gradient(
-            momenta_state, points_state, kernel_width=width
+        momenta_velocity = -_gaussian_convolve_gradient_with_plan(
+            momenta_state,
+            points_state,
+            width,
+            plan,
         )
         if integrator == "euler":
             next_points = points_state + step * points_velocity
@@ -356,6 +437,7 @@ def shoot(
                 momenta_state,
                 width,
                 step,
+                plan,
             )
         points_state = next_points
         momenta_state = next_momenta
@@ -374,6 +456,7 @@ def flow_points(
     kernel_width: float,
     *,
     integrator: Literal["euler", "heun", "deformetrica_heun"] = "heun",
+    gaussian_tile_plan: GaussianTilePlan | None = None,
 ) -> torch.Tensor:
     """Flow template/landmark points along a stored shooting trajectory.
 
@@ -382,6 +465,7 @@ def flow_points(
     trajectory and exists only to make that observable legacy behavior explicit.
     """
 
+    plan = _validate_gaussian_tile_plan(gaussian_tile_plan)
     _validate_float_matrix("points", points, columns=3)
     if not isinstance(trajectory, ShootingTrajectory):
         raise TypeError("trajectory must be a ShootingTrajectory")
@@ -417,11 +501,12 @@ def flow_points(
     state = points
     path = [state]
     for index in range(trajectory.control_points.shape[0] - 1):
-        velocity = gaussian_convolve(
+        velocity = _gaussian_convolve_with_plan(
             state,
             trajectory.control_points[index],
             trajectory.momenta[index],
             width,
+            plan,
         )
         if integrator == "euler":
             next_state = state + step * velocity
@@ -438,12 +523,14 @@ def flow_points(
                     trajectory.momenta[-1],
                     width,
                     step,
+                    plan,
                 )
-            next_velocity = gaussian_convolve(
+            next_velocity = _gaussian_convolve_with_plan(
                 predictor,
                 next_control_points,
                 next_momenta,
                 width,
+                plan,
             )
             next_state = state + 0.5 * step * (velocity + next_velocity)
         state = next_state
@@ -503,9 +590,7 @@ def _current_inner_product(
     normals_b: torch.Tensor,
     kernel_width: float,
 ) -> torch.Tensor:
-    return torch.sum(
-        normals_a * gaussian_convolve(centers_a, centers_b, normals_b, kernel_width)
-    )
+    return torch.sum(normals_a * gaussian_convolve(centers_a, centers_b, normals_b, kernel_width))
 
 
 def current_squared_distance(
@@ -518,15 +603,9 @@ def current_squared_distance(
     """Return the orientation-sensitive current squared distance between surfaces."""
 
     centers_a, normals_a = _surface_geometry(vertices_a, triangles_a)
-    centers_b, normals_b = _surface_geometry(
-        vertices_b, triangles_b, reference_vertices=vertices_a
-    )
-    self_a = _current_inner_product(
-        centers_a, normals_a, centers_a, normals_a, kernel_width
-    )
-    self_b = _current_inner_product(
-        centers_b, normals_b, centers_b, normals_b, kernel_width
-    )
+    centers_b, normals_b = _surface_geometry(vertices_b, triangles_b, reference_vertices=vertices_a)
+    self_a = _current_inner_product(centers_a, normals_a, centers_a, normals_a, kernel_width)
+    self_b = _current_inner_product(centers_b, normals_b, centers_b, normals_b, kernel_width)
     cross = _current_inner_product(centers_a, normals_a, centers_b, normals_b, kernel_width)
     return self_a + self_b - 2.0 * cross
 
@@ -607,18 +686,10 @@ def varifold_squared_distance(
     """Return the orientation-insensitive varifold squared distance between surfaces."""
 
     centers_a, normals_a = _surface_geometry(vertices_a, triangles_a)
-    centers_b, normals_b = _surface_geometry(
-        vertices_b, triangles_b, reference_vertices=vertices_a
-    )
-    self_a = _varifold_inner_product(
-        centers_a, normals_a, centers_a, normals_a, kernel_width
-    )
-    self_b = _varifold_inner_product(
-        centers_b, normals_b, centers_b, normals_b, kernel_width
-    )
-    cross = _varifold_inner_product(
-        centers_a, normals_a, centers_b, normals_b, kernel_width
-    )
+    centers_b, normals_b = _surface_geometry(vertices_b, triangles_b, reference_vertices=vertices_a)
+    self_a = _varifold_inner_product(centers_a, normals_a, centers_a, normals_a, kernel_width)
+    self_b = _varifold_inner_product(centers_b, normals_b, centers_b, normals_b, kernel_width)
+    cross = _varifold_inner_product(centers_a, normals_a, centers_b, normals_b, kernel_width)
     return self_a + self_b - 2.0 * cross
 
 
@@ -646,9 +717,7 @@ def _varifold_inner_product_blockwise(
             source_units = unit_b[source_start : source_start + plan.source_rows]
             _, kernel = _gaussian_tile(query_centers, source_centers, width)
             orientation = (query_units @ source_units.T).square()
-            result = result + torch.sum(
-                query_areas * ((kernel * orientation) @ source_areas)
-            )
+            result = result + torch.sum(query_areas * ((kernel * orientation) @ source_areas))
     return result
 
 

@@ -116,9 +116,10 @@ Below the application layer, the engine now contains an explicit blockwise
 Gaussian primitive family. Query and source tile sizes bound each pairwise XYZ
 difference tensor; Current and Varifold inner products accumulate tiles
 without full face-by-face kernel/orientation matrices. This path is
-non-approximate but changes floating reduction order. It remains an isolated
-primitive until configuration, workload accounting, result provenance, and
-full-objective parity gates are complete. The tile shape bounds a single
+non-approximate but changes floating reduction order. It remains a direct
+engine opt-in through the complete objective and optimizer until configuration,
+workload accounting, result provenance, and artifact-level parity gates are
+complete. The tile shape bounds a single
 pairwise allocation; standard autograd may still retain multiple tile graphs,
 so reduced peak RAM remains a measurement gate.
 
