@@ -102,9 +102,10 @@ This repository currently provides:
 - deterministic raw/effective-input and generated-output mesh-quality evidence
   with explicit topology/triangle gates, JSON/CSV reports, local face-area
   ratios, atomic rejection, and verifier-side recomputation;
-- a pre-compute dense-engine workload plan with instrumented operation-count
-  formulas, known tensor payloads, host observations, and explicit refusal to
-  invent peak-RAM or runtime predictions;
+- a pre-compute configured-engine workload plan with instrumented all-pairs
+  operation-count formulas, exact dense/blockwise execution-tile payloads,
+  host observations, and explicit refusal to invent peak-RAM or runtime
+  predictions;
 - versioned live workflow and committed optimizer-decision events used by the
   CLI and designed for reuse by the future desktop worker protocol, without
   invented percent-complete or ETA claims;
@@ -169,8 +170,10 @@ diffeoforge modern-init "C:\path\to\meshes" --units millimeter `
   --pairwise-mode blockwise --query-tile-size 256 --source-tile-size 256
 ```
 
-Those tile values are user choices, not validated presets. Blockwise
-`modern-plan` and `modern-benchmark` support remain a separate measured gate.
+Those tile values are user choices, not validated presets. Both `modern-plan`
+and `modern-benchmark` execute the reviewed dense or blockwise plan and record
+logical all-pairs dimensions separately from the largest single execution
+tile. They do not claim that the tile bound is total or peak RAM.
 
 ## Developer quick start
 
@@ -239,7 +242,7 @@ and workflow for another mesh directory.
 - [Immutable modern atlas result bundle](docs/MODERN_ATLAS_BUNDLE.md)
 - [Experimental modern mesh-folder workflow](docs/MODERN_WORKFLOW.md)
 - [Deterministic mesh-quality evidence](docs/MESH_QUALITY.md)
-- [Modern dense-engine workload planning](docs/MODERN_WORKLOAD.md)
+- [Modern configured-engine workload planning](docs/MODERN_WORKLOAD.md)
 - [Versioned modern progress events](docs/MODERN_PROGRESS.md)
 - [Modern objective/gradient benchmark protocol](docs/MODERN_BENCHMARK.md)
 - [Bounded-memory blockwise Gaussian primitives](docs/BLOCKWISE_GAUSSIAN.md)

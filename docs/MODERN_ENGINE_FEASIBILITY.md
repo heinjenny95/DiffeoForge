@@ -143,8 +143,9 @@ Current/Varifold attachments, the complete subject/atlas objective, and the
 block optimizer. Random uneven shapes, tetrahedral surface gradients, the
 320-face CC0 meshes, all full-objective parameter gradients, and one-cycle
 optimizer decisions match the dense baseline within declared float64
-tolerances. It remains a direct engine opt-in, not a public workflow setting.
-See
+tolerances. It is now an explicit public workflow setting carried through
+immutable provenance, workload planning, and fresh-process benchmarking. It is
+not an automatic default or evidence-backed performance preset. See
 [blockwise Gaussian primitives](BLOCKWISE_GAUSSIAN.md).
 
 ## Gates before a usable atlas engine
@@ -162,8 +163,10 @@ See
    primitive slice.
 6. ~~Integrate an explicit opt-in blockwise mode through the full objective and
    optimizer and prove full objective/gradient/history parity.~~ Completed.
-7. Integrate blockwise mode through the workload model, public configuration,
-   and immutable run provenance, then prove artifact-level parity.
+7. ~~Integrate blockwise mode through the workload model, public configuration,
+   and immutable run provenance, then prove artifact-level parity.~~ Completed
+   as an explicit v0.2 configuration and report path with immutable plan
+   cross-checks and fresh-process execution coverage.
 8. Benchmark runtime and peak memory over mesh, control-point, and subject count.
 9. Define evidence-derived tolerances before accepting a production backend.
 10. Integrate the engine through immutable run manifests without weakening the

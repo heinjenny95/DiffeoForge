@@ -194,7 +194,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     modern_plan_parser = subparsers.add_parser(
         "modern-plan",
-        help="Inspect dense-engine workload and known tensor payloads without computing.",
+        help="Inspect configured-engine workload and known tensor payloads without computing.",
     )
     modern_plan_parser.add_argument("config", type=Path)
     modern_plan_parser.add_argument(
@@ -210,7 +210,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     modern_benchmark_parser = subparsers.add_parser(
         "modern-benchmark",
-        help="Measure isolated dense objective/gradient repeats without extrapolation.",
+        help="Measure configured objective/gradient repeats without extrapolation.",
     )
     modern_benchmark_parser.add_argument("config", type=Path)
     modern_benchmark_parser.add_argument(
@@ -583,6 +583,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             report = json.loads(
                 (report_directory / REPORT_JSON_NAME).read_text(encoding="utf-8")
             )
+            largest_execution_bytes = report["payload_model"][
+                "largest_single_execution_xyz_difference_tensor_bytes"
+            ]
             print(f"Modern workload plan created: {report_directory}")
             print(f"Subject meshes: {report['input']['subject_count']}")
             print(
@@ -590,10 +593,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                 f"{report['optimizer_bound']['objective_gradient_evaluation_upper_bound']}"
             )
             print(
-                "Largest dense XYZ-difference tensor: "
-                f"{report['payload_model']['largest_single_dense_xyz_difference_tensor_bytes']} "
-                "bytes"
+                "Largest single execution XYZ-difference tensor: "
+                f"{largest_execution_bytes} bytes"
             )
+            print(f"Pairwise execution: {report['engine']['pairwise_evaluation']['mode']}")
             print(f"Machine-readable report: {report_directory / REPORT_JSON_NAME}")
             print(f"Review report: {report_directory / REPORT_HTML_NAME}")
             print("WARNING: This is not a peak-RAM estimate or runtime forecast.")
@@ -636,6 +639,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"Modern objective benchmark created: {report_directory}")
             print(f"Selected subjects: {report['input']['selected_subject_count']}")
             print(f"Fresh-process repeats: {report['configuration']['repeats']}")
+            print(
+                "Pairwise execution: "
+                f"{report['configuration']['pairwise_evaluation']['mode']}"
+            )
             print(f"Median measured objective+gradient wall time: {wall_ms:.3f} ms")
             print(f"Median sampled process RSS: {peak_mib:.2f} MiB")
             print(f"Machine-readable report: {report_directory / REPORT_JSON_NAME}")

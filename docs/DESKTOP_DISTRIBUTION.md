@@ -44,8 +44,9 @@ and validation difference.
 
 The shared-core `modern-plan` workload report is the first implementation of
 the resource-review step. A future GUI may render its strict JSON, but must
-retain the report's distinction between exact dense operation counts, known
-payload subtotals, and unknown measured peak RAM/runtime.
+retain the report's distinction between exact logical all-pairs counts, the
+largest configured dense or blockwise execution tile, known payload subtotals,
+and unknown measured peak RAM/runtime.
 
 The shared-core `modern-run` callback is the first implementation of the
 worker-to-UI progress payload. Its strict v0.1 JSON shape reports seven
@@ -54,9 +55,10 @@ worker may serialize those events across a process boundary, but must not turn
 stage/decision counts into an unmeasured runtime percentage or ETA.
 
 `modern-benchmark` provides measured objective/gradient observations for a
-user-selected subject count. A GUI can render its strict JSON and raw repeats,
-but must retain the 5 ms sampled-RSS limitation and must not extrapolate a
-microbenchmark into a full-run ETA or a 300-subject feasibility verdict.
+user-selected subject count and the explicitly configured dense or blockwise
+plan. A GUI can render its strict JSON and raw repeats, but must retain the 5 ms
+sampled-RSS limitation and must not extrapolate a microbenchmark into a
+full-run ETA or a 300-subject feasibility verdict.
 
 Deformetrica 4.3 remains an external reference backend. Its Python 3.8 stack is
 not copied into the desktop executable. `doctor` will detect a separately

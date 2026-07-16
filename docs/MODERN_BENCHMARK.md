@@ -3,7 +3,9 @@
 Status: **implemented measured microbenchmark; not a full-run predictor**
 
 Tracked prospectively by
-[engineering issue #38](https://github.com/heinjenny95/DiffeoForge/issues/38).
+[engineering issue #38](https://github.com/heinjenny95/DiffeoForge/issues/38)
+and extended for configured blockwise execution by
+[engineering issue #46](https://github.com/heinjenny95/DiffeoForge/issues/46).
 
 ## Safe user path
 
@@ -23,9 +25,10 @@ diffeoforge modern-benchmark modern-atlas.yaml `
 ```
 
 The deterministic prefix comes from the same validated subject-path order as
-the workflow. Version 0.1 rejects Procrustes-enabled configurations because it
-benchmarks the numerical objective directly rather than pretending to measure
-the preprocessing pipeline.
+the workflow. Version 0.2 executes the exact dense or blockwise pairwise plan
+declared in the reviewed configuration. It rejects Procrustes-enabled
+configurations because it benchmarks the numerical objective directly rather
+than pretending to measure the preprocessing pipeline.
 
 The default output is `modern-atlas.benchmark/`:
 
@@ -48,11 +51,12 @@ Every repeat uses a fresh process created with Python's cross-platform
 2. constructs CPU float64 tensors and deterministic farthest-template control
    points exactly as the modern workflow does;
 3. applies the configured PyTorch thread count and random seed;
-4. performs the declared number of unmeasured warm-up evaluations;
-5. starts a 5 ms process-RSS sampler;
-6. measures one atlas objective and one gradient for the first configured
+4. applies the declared dense or blockwise plan to every Gaussian operation;
+5. performs the declared number of unmeasured warm-up evaluations;
+6. starts a 5 ms process-RSS sampler;
+7. measures one atlas objective and one gradient for the first configured
    optimizer block with `perf_counter_ns`; and
-7. returns only finite numerical and resource observations.
+8. returns only finite numerical and resource observations.
 
 Tensor/input preparation and warm-up are outside the wall-time interval. The
 absolute sampled RSS still includes the prepared process, tensors, imported
@@ -73,8 +77,9 @@ Strict JSON records:
 - Python, DiffeoForge, NumPy, PyTorch, psutil, operating-system, CPU-thread,
   random-seed, and physical-memory observations;
 - warm-up/repeat counts, process-isolation method, and sampling interval;
-- the exact dense Gaussian calls/pair elements from the versioned workload
-  model for this selected subset;
+- the exact logical Gaussian calls/pair elements, largest logical pair, and
+  largest configured execution tile from the versioned workload model for
+  this selected subset;
 - every raw wall-time/RSS/objective/gradient repeat;
 - minimum, median, and maximum descriptive summaries; and
 - the declared numerical consistency tolerance and observed spans.
@@ -82,7 +87,9 @@ Strict JSON records:
 CSV is a direct open handoff of the repeat rows. HTML is an escaped review
 view. Measurements are inherently not byte-repeatable; configuration,
 selection, software, protocol, and raw observations are preserved so they can
-be independently interpreted.
+be independently interpreted. Schema validation and semantic arithmetic checks
+reject inconsistent repeat, summary, numerical, logical-pair, or execution-tile
+records before publication.
 
 ## Scientific boundary
 
@@ -97,3 +104,9 @@ to 300 subjects is produced. A paper-grade feasibility claim still requires a
 prospectively frozen multi-size design on representative simplified meshes,
 multiple independent runs, full-workflow measurements, and explicit handling
 of thermal, background-load, and cache effects.
+
+A dense/blockwise or tile-size comparison additionally requires separate
+reports for every prospectively declared configuration under the same frozen
+protocol. One faster repeat or lower sampled RSS value is not evidence of a
+causal performance difference, and a blockwise tile bound is not a measured
+peak-memory bound.

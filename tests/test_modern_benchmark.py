@@ -51,27 +51,46 @@ class _StructureParser(HTMLParser):
         self.tags.append(tag)
 
 
-def test_dense_v01_benchmark_refuses_blockwise_config_before_spawning(
+def _write_portable_config(path: Path, *, mode: str = "dense") -> Path:
+    config = yaml.safe_load(EXAMPLE.read_text(encoding="utf-8"))
+    mesh_directory = ROOT / "examples" / "synthetic" / "meshes"
+    config["input"]["directory"] = str(mesh_directory)
+    config["input"]["template"] = str(mesh_directory / "template.vtk")
+    config["output"]["directory"] = str(path.parent / "future-run")
+    if mode == "blockwise":
+        config["runtime"]["pairwise_evaluation"] = {
+            "mode": "blockwise",
+            "query_tile_size": 64,
+            "source_tile_size": 64,
+        }
+    path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+    return path
+
+
+def test_blockwise_collection_binds_configured_plan_to_worker_and_report(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    config = yaml.safe_load(EXAMPLE.read_text(encoding="utf-8"))
-    config["runtime"]["pairwise_evaluation"] = {
-        "mode": "blockwise",
-        "query_tile_size": 64,
-        "source_tile_size": 64,
-    }
-    path = tmp_path / "blockwise.yaml"
-    path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+    path = _write_portable_config(tmp_path / "blockwise.yaml", mode="blockwise")
+    config = yaml.safe_load(path.read_text(encoding="utf-8"))
 
     import diffeoforge.modern_benchmark as module
 
-    def fail(*_args, **_kwargs):
-        raise AssertionError("fresh benchmark process must not spawn")
+    calls = []
 
-    monkeypatch.setattr(module, "_run_fresh_sample", fail)
-    with pytest.raises(ModernBenchmarkError, match="will not be silently reported as dense"):
-        collect_modern_benchmark(path, subject_count=1, repeats=1)
+    def fixed_worker(*args):
+        calls.append(args)
+        return _sample(1)
+
+    monkeypatch.setattr(module, "_run_fresh_sample", fixed_worker)
+    report = collect_modern_benchmark(path, subject_count=1, repeats=1)
+
+    assert len(calls) == 1
+    assert report["configuration"]["pairwise_evaluation"] == config["runtime"][
+        "pairwise_evaluation"
+    ]
+    assert report["operation_model"]["largest_execution_tile"]["tile_rows"] == 64
+    assert report["operation_model"]["largest_execution_tile"]["tile_columns"] == 64
 
 
 def test_collection_binds_selection_operations_and_descriptive_samples(
@@ -99,8 +118,8 @@ def test_collection_binds_selection_operations_and_descriptive_samples(
         "subject-02.vtk",
     ]
     assert report["input"]["available_subject_count"] == 5
-    assert report["operation_model"]["dense_gaussian_calls_per_evaluation"] == 80
-    assert report["operation_model"]["dense_gaussian_pair_elements_per_evaluation"] == 642_426
+    assert report["operation_model"]["gaussian_calls_per_evaluation"] == 80
+    assert report["operation_model"]["gaussian_pair_elements_per_evaluation"] == 642_426
     assert report["summary"]["wall_time_ns"] == {
         "minimum": 100,
         "median": 200,
@@ -172,6 +191,20 @@ def test_reports_are_escaped_atomic_and_refuse_unrelated_overwrite(
     with pytest.raises(ModernBenchmarkError, match="RSS delta"):
         write_modern_benchmark_report(inconsistent, tmp_path / "inconsistent")
 
+    inconsistent_tile = json.loads(json.dumps(report))
+    inconsistent_tile["operation_model"]["largest_execution_tile"][
+        "float64_matrix_bytes"
+    ] += 8
+    with pytest.raises(ModernBenchmarkError, match="execution-tile payload"):
+        write_modern_benchmark_report(inconsistent_tile, tmp_path / "inconsistent-tile")
+
+    inconsistent_operation = json.loads(json.dumps(report))
+    inconsistent_operation["operation_model"]["gaussian_calls_per_evaluation"] += 1
+    with pytest.raises(ModernBenchmarkError, match="inventory and configuration"):
+        write_modern_benchmark_report(
+            inconsistent_operation, tmp_path / "inconsistent-operation"
+        )
+
     def fail_render(_report):
         raise RuntimeError("injected rendering failure")
 
@@ -241,3 +274,41 @@ def test_cli_runs_one_real_fresh_process_measurement(
     assert report["numerical_consistency"]["consistent"] is True
     assert report["numerical_consistency"]["objective_span"] <= 1e-12
     assert report["numerical_consistency"]["gradient_norm_span"] <= 1e-12
+
+
+def test_cli_runs_one_real_fresh_blockwise_process_measurement(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config = _write_portable_config(tmp_path / "blockwise.yaml", mode="blockwise")
+    output = tmp_path / "blockwise-benchmark"
+    code = main(
+        [
+            "modern-benchmark",
+            str(config),
+            "--subjects",
+            "1",
+            "--repeats",
+            "1",
+            "--warmups",
+            "0",
+            "--output",
+            str(output),
+        ]
+    )
+    captured = capsys.readouterr()
+
+    assert code == 0
+    assert "Pairwise execution: blockwise" in captured.out
+    report = json.loads((output / REPORT_JSON_NAME).read_text(encoding="utf-8"))
+    assert report["configuration"]["pairwise_evaluation"] == {
+        "mode": "blockwise",
+        "query_tile_size": 64,
+        "source_tile_size": 64,
+    }
+    assert report["operation_model"]["largest_execution_tile"]["tile_rows"] == 64
+    assert report["operation_model"]["largest_execution_tile"]["tile_columns"] == 64
+    assert report["samples"][0]["wall_time_ns"] > 0
+    assert report["samples"][0]["sampled_peak_rss_bytes"] > 0
+    assert report["samples"][0]["rss_sample_count"] >= 2
+    assert report["numerical_consistency"]["consistent"] is True
