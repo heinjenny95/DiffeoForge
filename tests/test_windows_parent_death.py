@@ -145,6 +145,40 @@ def test_reference_controller_timeout_terminates_descendant_tree(tmp_path: Path)
     assert not request.destination.exists()
 
 
+def test_reference_parent_death_audit_terminates_suspended_worker(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "Reference parent death Käfer"
+    root.mkdir()
+    config = root / "atlas.yaml"
+    shutil.copyfile(ROOT / "examples" / "minimal-atlas-container.yaml", config)
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "tools/audit_frozen_reference_parent_death.py",
+            sys.executable,
+            str(config),
+        ],
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=20,
+        creationflags=subprocess.CREATE_NO_WINDOW,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    summary = json.loads(completed.stdout)
+    assert summary["controller_exit_code"] == 73
+    assert summary["job_assignment_completed"] is True
+    assert summary["worker_started_suspended"] is True
+    assert summary["worker_stopped"] is True
+    assert summary["destination_exists"] is False
+    assert not (root / "runs" / "frozen-reference-parent-death-evidence").exists()
+
+
 def test_hard_parent_exit_terminates_controller_worker(tmp_path: Path) -> None:
     root = tmp_path / "Parent death Käfer"
     root.mkdir()

@@ -132,7 +132,10 @@ the exact harness lifecycle, and independently reverifies the request. The
 evidence build now freezes this harness as the sibling
 `DiffeoForgeReferenceWorker.exe` and makes its exact three-event
 `stopped_before_prepare` smoke mandatory before v0.2 bundle evidence can be
-written. No run is prepared and no reference compute control is enabled.
+written. A second mandatory audit starts that frozen worker suspended, assigns
+it through the real controller to the Windows kill-on-close Job, hard-exits the
+controller, and verifies bounded worker termination. No run is prepared and no
+reference compute control is enabled.
 
 ## Bundle and installer decisions
 
@@ -184,7 +187,8 @@ demonstrate on a clean Windows VM with no Python/developer tools:
 - Authenticode signature, SHA-256 checksums, SBOM, and license inventory;
 - Windows Defender scan and DLL inventory;
 - interruption/crash recovery without a surviving worker or mutable partial
-  result presented as complete (Windows parent-death worker termination exists;
+  result presented as complete (Windows parent-death termination evidence now
+  exists for both the Modern and frozen-reference worker boundaries;
   power-loss and abandoned-state reconciliation remain open);
 - installer/uninstaller logs and preservation of user projects;
 - no network requests by default;

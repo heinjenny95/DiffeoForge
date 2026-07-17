@@ -77,6 +77,7 @@ This roadmap describes evidence gates rather than promised dates.
   - [x] Real-pipe nonnumerical reference worker harness stopping before prepare
   - [x] Bounded nonnumerical reference harness parent controller with Windows Job containment
   - [x] Frozen sibling reference harness with mandatory v0.2 bundle evidence smoke
+  - [x] Frozen reference-worker hard-parent-death Job containment evidence
   - [ ] User-approved private-run reconciliation, reference supervision, and native mesh rendering
 - [ ] Parameter explanations and safe presets
 - [x] Pre-compute configured all-pairs and known-payload workload report
