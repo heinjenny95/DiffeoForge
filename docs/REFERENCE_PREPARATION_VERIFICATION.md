@@ -68,3 +68,8 @@ interpretation are valid.
 Use `reference-plan` again for a new current-state preview. A future explicit
 preparation gate must compare its reviewed plan to the bytes it will actually
 stage; this verifier does not grant preparation or execution permission.
+
+To record explicit intent for one exact reviewed fingerprint, create and later
+fresh-state verify a
+[reference preparation-only approval request](REFERENCE_PREPARATION_APPROVAL.md).
+That artifact still does not prepare a run or authorize engine execution.

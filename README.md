@@ -39,6 +39,9 @@ diffeoforge reference-plan atlas.yaml --run-id experiment-001
 # Optionally create an offline browser review while retaining JSON on stdout:
 diffeoforge reference-plan atlas.yaml --run-id experiment-001 --report experiment-001-preparation.html > experiment-001-preparation.json
 diffeoforge reference-plan-verify experiment-001-preparation.json --report experiment-001-preparation.html
+# After human review, record preparation-only approval for that exact fingerprint:
+diffeoforge reference-plan-approve atlas.yaml --run-id experiment-001 --approve-fingerprint REVIEWED_SHA256 --output experiment-001-approval.json
+diffeoforge reference-plan-approval-verify experiment-001-approval.json --current-config atlas.yaml
 diffeoforge prepare atlas.yaml --run-id experiment-001
 # Inspect manifest.json and engine/*.xml before committing compute time.
 diffeoforge execute runs/experiment-001
@@ -55,6 +58,10 @@ diffeoforge resume runs/experiment-001 --run-id experiment-001-resume-01
 If the Python Scripts directory is not available on `PATH`, the packaged
 fallback `python -m diffeoforge` invokes this exact same parser and commands;
 it is not a separate workflow implementation.
+
+The approval artifact currently records and verifies intent only. The existing
+`prepare` command does not consume it yet; an approval-aware atomic preparation
+worker is a separate roadmap slice. Approval never authorizes engine execution.
 
 Prepared run directories are write-once. DiffeoForge refuses to overwrite or
 execute one a second time. Resume creates a new immutable successor and preserves
@@ -85,6 +92,9 @@ This repository currently provides:
   run directories;
 - a versioned read-only reference preparation plan with exact future staged
   paths, effective YAML, Deformetrica XML contents/hashes, and command preview;
+- a deterministic preparation-only approval request bound to a freshly
+  recomputed exact plan, plus strict internal and optional current-state
+  verification without preparation or engine authorization;
 - explicit Deformetrica XML generation and native or Windows-to-WSL launchers;
 - exact command, environment, lifecycle, convergence, result, and output
   inventories;
@@ -401,6 +411,7 @@ and workflow for another mesh directory.
 - [Desktop reference prelaunch contract](docs/REFERENCE_PRELAUNCH.md)
 - [Read-only reference preparation plan](docs/REFERENCE_PREPARATION_PLAN.md)
 - [Saved reference preparation verification](docs/REFERENCE_PREPARATION_VERIFICATION.md)
+- [Reference preparation-only approval](docs/REFERENCE_PREPARATION_APPROVAL.md)
 - [Versioned reference worker lifecycle protocol](docs/REFERENCE_WORKER_PROTOCOL.md)
 - [Nonnumerical reference worker pipe harness](docs/REFERENCE_WORKER_HARNESS.md)
 - [Nonnumerical reference harness controller](docs/REFERENCE_HARNESS_CONTROLLER.md)

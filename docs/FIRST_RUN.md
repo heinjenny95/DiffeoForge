@@ -155,6 +155,25 @@ unchanged. An independently recorded `--expect-fingerprint` adds external
 tamper binding. See
 [saved reference preparation verification](REFERENCE_PREPARATION_VERIFICATION.md).
 
+Optionally record that the exact reviewed plan — and only its immutable staging
+step — was approved:
+
+```powershell
+diffeoforge reference-plan-approve atlas.yaml --run-id pilot-001 `
+  --approve-fingerprint REVIEWED_SHA256 `
+  --output pilot-001-approval.json
+
+diffeoforge reference-plan-approval-verify pilot-001-approval.json `
+  --current-config atlas.yaml
+```
+
+This request embeds the full plan, fresh-matches it to the copied fingerprint,
+and permanently fixes engine authorization to false. It is not an identity or
+signature record. The current `prepare` command does not yet consume the
+approval; this deliberately transparent seam precedes the future atomic
+approval-aware preparation worker. See
+[reference preparation-only approval](REFERENCE_PREPARATION_APPROVAL.md).
+
 For a cohort of hundreds of specimens, start with a small representative pilot
 and inspect the objective curves, lifecycle, evidence checks, and output
 inventory before committing the full dataset. The result report deliberately

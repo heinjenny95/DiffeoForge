@@ -18,6 +18,7 @@ from diffeoforge.reference_preparation_plan import (
     reference_preparation_plan_fingerprint,
     render_reference_preparation_plan_html,
 )
+from diffeoforge.strict_json import load_strict_json_object
 
 SCHEMA_VERSION = "0.1"
 STATUS = "verified_saved_reference_preparation_plan"
@@ -65,40 +66,6 @@ def _read_required_file(path: Path, label: str) -> bytes:
         raise ConfigurationError(f"Could not read {label.lower()} {path}: {error}") from error
 
 
-def _unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
-    result: dict[str, Any] = {}
-    for key, value in pairs:
-        if key in result:
-            raise ConfigurationError(f"Saved plan contains duplicate JSON object key: {key}")
-        result[key] = value
-    return result
-
-
-def _reject_constant(value: str) -> None:
-    raise ConfigurationError(f"Saved plan contains unsupported JSON constant: {value}")
-
-
-def _load_strict_plan(payload: bytes, path: Path) -> dict[str, Any]:
-    try:
-        text = payload.decode("utf-8")
-    except UnicodeDecodeError as error:
-        raise ConfigurationError(f"Saved plan is not strict UTF-8: {path}") from error
-    try:
-        value = json.loads(
-            text,
-            object_pairs_hook=_unique_object,
-            parse_constant=_reject_constant,
-        )
-    except json.JSONDecodeError as error:
-        raise ConfigurationError(
-            f"Saved plan is not one valid JSON document at line {error.lineno}, "
-            f"column {error.colno}: {path}"
-        ) from error
-    if not isinstance(value, dict):
-        raise ConfigurationError(f"Saved plan JSON root must be an object: {path}")
-    return value
-
-
 def _normalize_expected_fingerprint(value: str | None) -> str | None:
     if value is None:
         return None
@@ -121,7 +88,7 @@ def verify_saved_reference_preparation_plan(
     normalized_expected = _normalize_expected_fingerprint(expected_fingerprint)
 
     plan_bytes = _read_required_file(source, "Saved plan")
-    plan = _load_strict_plan(plan_bytes, source)
+    plan = load_strict_json_object(plan_bytes, source, label="Saved plan")
     fingerprint = reference_preparation_plan_fingerprint(plan)
     if normalized_expected is not None and fingerprint != normalized_expected:
         raise ConfigurationError(

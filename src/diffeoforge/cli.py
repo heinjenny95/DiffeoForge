@@ -17,6 +17,11 @@ from diffeoforge.initialization import (
     initialize_project,
 )
 from diffeoforge.reference import compare_reference_run
+from diffeoforge.reference_preparation_approval import (
+    create_reference_preparation_approval,
+    verify_saved_reference_preparation_approval,
+    write_reference_preparation_approval,
+)
 from diffeoforge.reference_preparation_plan import (
     plan_reference_preparation,
     write_reference_preparation_plan_report,
@@ -475,6 +480,41 @@ def build_parser() -> argparse.ArgumentParser:
     reference_plan_verify_parser.add_argument(
         "--expect-fingerprint",
         help="Optional externally recorded canonical plan SHA-256.",
+    )
+    reference_plan_approve_parser = subparsers.add_parser(
+        "reference-plan-approve",
+        help="Bind preparation-only approval to one freshly recomputed exact plan.",
+    )
+    reference_plan_approve_parser.add_argument(
+        "config", type=Path, help="Path to the current reference atlas YAML file."
+    )
+    reference_plan_approve_parser.add_argument(
+        "--run-id",
+        required=True,
+        help="Exact future run identifier reviewed in the approved plan.",
+    )
+    reference_plan_approve_parser.add_argument(
+        "--approve-fingerprint",
+        required=True,
+        help="Canonical SHA-256 copied from the previously reviewed exact plan.",
+    )
+    reference_plan_approve_parser.add_argument(
+        "--output",
+        type=Path,
+        required=True,
+        help="New immutable approval request JSON; an existing path is never replaced.",
+    )
+    reference_plan_approval_verify_parser = subparsers.add_parser(
+        "reference-plan-approval-verify",
+        help="Strictly verify a saved preparation-only approval without mutation.",
+    )
+    reference_plan_approval_verify_parser.add_argument(
+        "request", type=Path, help="Saved reference preparation approval request JSON."
+    )
+    reference_plan_approval_verify_parser.add_argument(
+        "--current-config",
+        type=Path,
+        help="Also require a fresh current plan to match the embedded approved plan exactly.",
     )
     prepare_parser = subparsers.add_parser(
         "prepare",
@@ -1353,6 +1393,36 @@ def main(argv: Sequence[str] | None = None) -> int:
                 args.plan,
                 report_path=args.report,
                 expected_fingerprint=args.expect_fingerprint,
+            )
+            json.dump(evidence, sys.stdout, indent=2, ensure_ascii=True, sort_keys=True)
+            sys.stdout.write("\n")
+        except (ConfigurationError, OSError, TypeError, ValueError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
+
+    if args.command == "reference-plan-approve":
+        try:
+            request = create_reference_preparation_approval(
+                args.config,
+                run_id=args.run_id,
+                approved_fingerprint=args.approve_fingerprint,
+            )
+            written = write_reference_preparation_approval(request, args.output)
+            json.dump(request, sys.stdout, indent=2, ensure_ascii=True, sort_keys=True)
+            sys.stdout.write("\n")
+            encoded_path = json.dumps(str(written), ensure_ascii=True)
+            print(f"Reference preparation approval: {encoded_path}", file=sys.stderr)
+        except (ConfigurationError, OSError, TypeError, ValueError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
+
+    if args.command == "reference-plan-approval-verify":
+        try:
+            evidence = verify_saved_reference_preparation_approval(
+                args.request,
+                current_config_path=args.current_config,
             )
             json.dump(evidence, sys.stdout, indent=2, ensure_ascii=True, sort_keys=True)
             sys.stdout.write("\n")
