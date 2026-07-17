@@ -11,6 +11,8 @@ and result review tracked by
 [engineering issue #85](https://github.com/heinjenny95/DiffeoForge/issues/85).
 The read-only reference-environment card is tracked by
 [engineering issue #95](https://github.com/heinjenny95/DiffeoForge/issues/95).
+The native template projection preview is tracked by
+[engineering issue #97](https://github.com/heinjenny95/DiffeoForge/issues/97).
 The distribution architecture and its stricter release gates remain in
 [Desktop executable and installer architecture](DESKTOP_DISTRIBUTION.md).
 
@@ -31,22 +33,25 @@ terminal:
    summary;
 7. continue to a second screen that reads the effective values back from the
    validated configuration and explains their role;
-8. for the modern route, generate and render the existing exact-count
+8. optionally load the exact selected template outside the event loop and view
+   native aspect-preserving XY, XZ, or YZ wireframe projections with source
+   hash and displayed/total edge counts;
+9. for the modern route, generate and render the existing exact-count
    `modern-plan` JSON/HTML evidence; or, for the reference route, render the
    existing preflight parameter ratios and external-engine boundary, then
    optionally diagnose the exact configured container engine and image without
    changing or starting either one;
-9. for a reviewed Modern project, continue to a third screen that binds the
+10. for a reviewed Modern project, continue to a third screen that binds the
    exact reviewed configuration SHA-256, displays and refreshes the read-only
    destination/private-state evidence, checks it again immediately before
    starting the separate worker, shows real workflow stages and committed
    optimizer decisions, and offers one cooperative cancel action; and
-10. expose the result directory only after the parent controller independently
+11. expose the result directory only after the parent controller independently
     verifies the published workflow, manifest hash, subject count, and bundle;
-11. continue to a fourth screen only after a fresh full verification of the
+12. continue to a fourth screen only after a fresh full verification of the
     workflow, nested bundle, exact inventories, hashes, mesh QC, and static SVG
     safety checks; and
-12. inspect bounded Atlas, optimizer, momenta-PCA, and QC summaries, then open
+13. inspect bounded Atlas, optimizer, momenta-PCA, and QC summaries, then open
     only inventoried VTK/CSV/JSON/SVG artifacts whose manifest bindings, size,
     and SHA-256 pass again immediately before handoff to a local application.
 
@@ -83,6 +88,10 @@ python -m diffeoforge.desktop --smoke
 - Existing configurations and reports are never silently overwritten.
 - Review refreshes only reports that carry the expected DiffeoForge generator
   markers; researcher-owned paths are refused.
+- Template preview loading runs outside the GUI event loop, checks the source
+  SHA-256 before and after parsing, and never rewrites or decimates the mesh.
+  Projection switches reuse the same immutable model. A deterministic 20,000-
+  edge display budget is always shown when it omits edges.
 - The reference-environment check parses the exact reviewed configuration
   bytes, uses their configured container engine/image, and checks the file hash
   again afterward. It shows raw doctor evidence but performs no install, image
@@ -113,10 +122,11 @@ python -m diffeoforge.desktop --smoke
 
 ## Current limitations
 
-The GUI does not yet edit scientific parameters, render meshes natively, resume
-a Modern atlas, reconcile an already dead parent application, or supervise the
+The GUI does not yet edit scientific parameters, render meshes interactively in
+3D, place landmarks, resume a Modern atlas, reconcile an already dead parent application, or supervise the
 external Deformetrica engine. Its reference card is environment diagnosis only;
-the start button remains disabled even when every check passes. Step 4 is a detailed read-only evidence and
+the start button remains disabled even when every check passes. The projection
+preview is not mesh QC or registration evidence. Step 4 is a detailed read-only evidence and
 artifact-handoff view, not an interactive 3D renderer or a scientific
 interpretation system. The application is not frozen with PyInstaller and is
 not wrapped in an Inno Setup installer. Those capabilities require their own
