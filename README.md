@@ -141,7 +141,10 @@ can now create and review a starter project through the GUI preview, bind the
 launch to the reviewed configuration hash, show exact workflow/optimizer
 events, request cooperative cancellation, and expose a detailed result view
 only after the workflow, nested bundle, inventories, hashes, mesh QC, and SVG
-safety checks pass again. Each selected result artifact is rechecked by size
+safety checks pass again. Before worker launch, step 3 now shows the exact
+destination, existing-result state, and any private candidate status/path/reason;
+it checks again immediately before launch and never mutates recovery state.
+Each selected result artifact is rechecked by size
 and SHA-256 immediately before it is opened by a local application. The
 external Deformetrica route is not yet supervised by the GUI, and
 the Modern path does not provide checkpoint/resume. Windows parent death now

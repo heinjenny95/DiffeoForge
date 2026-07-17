@@ -41,7 +41,8 @@ from diffeoforge.desktop.result_review import (
 )
 from diffeoforge.desktop.reviewed_run import (
     DesktopReviewedRunError,
-    build_reviewed_worker_request,
+    DesktopReviewedRunReadiness,
+    check_reviewed_run_readiness,
 )
 from diffeoforge.desktop.worker_controller import (
     DesktopWorkerController,
@@ -91,6 +92,15 @@ QProgressBar::chunk { background: #54c6a1; border-radius: 5px; }
 QPlainTextEdit { background: #f7f9f9; border: 1px solid #dbe4e6; border-radius: 6px;
                  color: #314f53; font-family: Consolas, monospace; font-size: 12px; }
 """
+
+_PRIVATE_STATUS_EXPLANATIONS = {
+    "active": "Ein Prozess hält die Lease; dies beweist noch keinen Fortschritt.",
+    "abandoned": "Die gültige Lease ist frei; der private Zustand kann verwaist sein.",
+    "unattributed": "Dem passenden Verzeichnis fehlt ein vertrauenswürdiger Marker.",
+    "invalid_metadata": "Marker oder Lease erfüllen den gebundenen Vertrag nicht.",
+    "indeterminate": "Rechte oder Dateisystemverhalten erlauben keine sichere Entscheidung.",
+    "unsafe_link": "Der passende Pfad ist ein Link und wurde nicht verfolgt.",
+}
 
 
 class _WorkerSignals(QObject):
@@ -254,6 +264,7 @@ class DiffeoForgeWindow(QMainWindow):
         ) = None
         self._result: ProjectSetupResult | None = None
         self._review: ProjectReviewResult | None = None
+        self._run_readiness: DesktopReviewedRunReadiness | None = None
         self._run_result: DesktopWorkerControllerResult | None = None
         self._result_review: ModernResultReview | None = None
         self._close_after_worker = False
@@ -537,6 +548,33 @@ class DiffeoForgeWindow(QMainWindow):
         summary_layout.addWidget(summary_title)
         summary_layout.addWidget(self.run_summary_label)
         layout.addWidget(summary)
+
+        readiness = QFrame()
+        readiness.setObjectName("card")
+        readiness_layout = QVBoxLayout(readiness)
+        readiness_layout.setContentsMargins(24, 22, 24, 24)
+        readiness_layout.setSpacing(10)
+        readiness_title = QLabel("Privater Zielstatus vor Workerstart")
+        readiness_title.setObjectName("sectionTitle")
+        self.run_readiness_status_label = QLabel("Zielstatus wurde noch nicht geprüft.")
+        self.run_readiness_status_label.setObjectName("status")
+        self.run_readiness_status_label.setWordWrap(True)
+        self.run_readiness_detail_label = QLabel(
+            "Die Prüfung ist rein lesend und löscht, benennt, publiziert oder startet nichts."
+        )
+        self.run_readiness_detail_label.setObjectName("reviewDetail")
+        self.run_readiness_detail_label.setWordWrap(True)
+        self.run_readiness_detail_label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+        )
+        self.refresh_run_readiness_button = QPushButton("Zielstatus erneut prüfen")
+        self.refresh_run_readiness_button.setObjectName("secondary")
+        self.refresh_run_readiness_button.clicked.connect(self._refresh_run_readiness)
+        readiness_layout.addWidget(readiness_title)
+        readiness_layout.addWidget(self.run_readiness_status_label)
+        readiness_layout.addWidget(self.run_readiness_detail_label)
+        readiness_layout.addWidget(self.refresh_run_readiness_button, 0, Qt.AlignmentFlag.AlignLeft)
+        layout.addWidget(readiness)
 
         progress = QFrame()
         progress.setObjectName("card")
@@ -1011,6 +1049,7 @@ class DiffeoForgeWindow(QMainWindow):
         self.result_card.hide()
         self._result = None
         self._review = None
+        self._run_readiness = None
         self._run_result = None
         self._result_review = None
         self.review_button.setEnabled(False)
@@ -1075,6 +1114,7 @@ class DiffeoForgeWindow(QMainWindow):
     def _review_succeeded(self, review: ProjectReviewResult) -> None:
         self._worker = None
         self._review = review
+        self._run_readiness = None
         self._populate_review_rows(self.parameter_review_layout, review.parameters)
         self._populate_review_rows(self.workload_review_layout, review.workload)
         self.review_boundary_label.setText(review.scientific_boundary)
@@ -1114,15 +1154,108 @@ class DiffeoForgeWindow(QMainWindow):
             or self._worker is not None
         ):
             return
-        self.run_summary_label.setText(
-            f"Projekt: {self._review.project_name}\n"
-            f"Konfiguration: {self._wrappable_path(self._review.config_path)}\n"
-            f"Geprüfter SHA-256: {self._review.config_sha256}\n"
-            "Ziel: wird unverändert aus dieser Konfiguration abgeleitet"
-        )
-        self.start_atlas_button.setEnabled(self._run_result is None)
+        self._refresh_run_readiness()
         self._set_active_step(2)
         self.page_stack.setCurrentIndex(2)
+
+    @Slot()
+    def _refresh_run_readiness(self) -> DesktopReviewedRunReadiness | None:
+        review = self._review
+        if review is None or review.engine is not DesktopEngine.MODERN_CPU:
+            return None
+        try:
+            readiness = check_reviewed_run_readiness(
+                review,
+                request_id=f"desktop-{uuid.uuid4().hex}",
+            )
+        except (DesktopReviewedRunError, OSError, RuntimeError, TypeError, ValueError) as error:
+            self._run_readiness = None
+            self.run_summary_label.setText(
+                f"Projekt: {review.project_name}\n"
+                f"Konfiguration: {self._wrappable_path(review.config_path)}\n"
+                f"Geprüfter SHA-256: {review.config_sha256}\n"
+                "Ziel: konnte nicht sicher aus der geprüften Konfiguration gebunden werden"
+            )
+            self.run_readiness_status_label.setObjectName("statusError")
+            self.run_readiness_status_label.setStyleSheet("")
+            self.run_readiness_status_label.setText(f"Zielstatus nicht prüfbar: {error}")
+            self.run_readiness_detail_label.setText(
+                "Kein Worker wurde gestartet. Es wurden keine privaten oder publizierten "
+                "Dateien verändert."
+            )
+            self.run_state_label.setObjectName("statusError")
+            self.run_state_label.setStyleSheet("")
+            self.run_state_label.setText(
+                "Kein Worker gestartet. Ziel und Konfigurationsbindung konnten nicht sicher "
+                "geprüft werden."
+            )
+            self.start_atlas_button.setEnabled(False)
+            return None
+        self._apply_run_readiness(readiness)
+        return readiness
+
+    def _apply_run_readiness(self, readiness: DesktopReviewedRunReadiness) -> None:
+        self._run_readiness = readiness
+        request = readiness.request
+        discovery = readiness.discovery
+        self.run_summary_label.setText(
+            f"Projekt: {self._review.project_name if self._review else 'unbekannt'}\n"
+            f"Konfiguration: {self._wrappable_path(request.config_path)}\n"
+            f"Gebundener SHA-256: {request.expected_config_sha256}\n"
+            f"Nicht überschreibbares Ziel: {self._wrappable_path(request.destination)}"
+        )
+        details = [
+            f"Exaktes Ziel: {self._wrappable_path(discovery.destination)}",
+            f"Discovery-Status: {discovery.status}",
+            f"Ziel existiert: {'ja' if discovery.destination_exists else 'nein'}",
+        ]
+        if discovery.candidates:
+            details.append("Private unveröffentlichte Kandidaten:")
+            for candidate in discovery.candidates:
+                details.append(
+                    f"[{candidate.status}] {self._wrappable_path(candidate.path)}\n"
+                    f"  Bedeutung: {_PRIVATE_STATUS_EXPLANATIONS[candidate.status]}\n"
+                    f"  Technischer Grund: {candidate.reason}"
+                )
+        else:
+            details.append("Private unveröffentlichte Kandidaten: keine")
+        details.append(
+            "Aktion dieser Prüfung: nur gelesen; nichts gelöscht, umbenannt, fortgesetzt "
+            "oder publiziert."
+        )
+        self.run_readiness_detail_label.setText("\n".join(details))
+        can_start = (
+            readiness.ready_for_worker
+            and self._run_result is None
+            and self._worker is None
+        )
+        self.start_atlas_button.setEnabled(can_start)
+        if readiness.ready_for_worker:
+            self.run_readiness_status_label.setObjectName("statusSuccess")
+            self.run_readiness_status_label.setStyleSheet("")
+            self.run_readiness_status_label.setText(
+                "Ziel ist frei: kein publiziertes Ergebnis und kein exakter privater "
+                "Kandidat gefunden."
+            )
+            if self._worker is None:
+                self.run_state_label.setObjectName("status")
+                self.run_state_label.setStyleSheet("")
+                self.run_state_label.setText(
+                    "Bereit; Zielstatus ist rein lesend geprüft. Vor dem Start wird erneut geprüft."
+                )
+        else:
+            self.run_readiness_status_label.setObjectName("statusError")
+            self.run_readiness_status_label.setStyleSheet("")
+            self.run_readiness_status_label.setText(
+                "Atlasstart blockiert: dieses exakte Ziel ist nicht frei."
+            )
+            if self._worker is None:
+                self.run_state_label.setObjectName("statusError")
+                self.run_state_label.setStyleSheet("")
+                self.run_state_label.setText(
+                    "Kein Worker gestartet. Privater oder publizierter Zielzustand verlangt "
+                    "explizite Prüfung."
+                )
 
     @Slot()
     def _show_review_page(self) -> None:
@@ -1140,17 +1273,10 @@ class DiffeoForgeWindow(QMainWindow):
             or self._run_result is not None
         ):
             return
-        try:
-            request = build_reviewed_worker_request(
-                self._review,
-                request_id=f"desktop-{uuid.uuid4().hex}",
-            )
-        except (DesktopReviewedRunError, OSError, RuntimeError, TypeError, ValueError) as error:
-            self.run_state_label.setObjectName("statusError")
-            self.run_state_label.setStyleSheet("")
-            self.run_state_label.setText(f"Atlasstart abgewiesen: {error}")
-            self.start_atlas_button.setEnabled(False)
+        readiness = self._refresh_run_readiness()
+        if readiness is None or not readiness.ready_for_worker:
             return
+        request = readiness.request
 
         worker = _AtlasWorker(DesktopWorkerController(request))
         worker.signals.event.connect(self._atlas_event)
@@ -1178,6 +1304,7 @@ class DiffeoForgeWindow(QMainWindow):
             f"Nicht überschreibbares Ziel: {self._wrappable_path(request.destination)}"
         )
         self.start_atlas_button.setEnabled(False)
+        self.refresh_run_readiness_button.setEnabled(False)
         self.cancel_atlas_button.setEnabled(True)
         self.run_back_button.setEnabled(False)
         self._thread_pool.start(worker)
@@ -1254,6 +1381,7 @@ class DiffeoForgeWindow(QMainWindow):
     def _atlas_succeeded(self, result: DesktopWorkerControllerResult) -> None:
         self._worker = None
         self.cancel_atlas_button.setEnabled(False)
+        self.refresh_run_readiness_button.setEnabled(True)
         self.run_back_button.setEnabled(True)
         terminal = result.terminal_event
         if result.completed:
@@ -1290,6 +1418,7 @@ class DiffeoForgeWindow(QMainWindow):
     def _atlas_failed(self, message: str) -> None:
         self._worker = None
         self.cancel_atlas_button.setEnabled(False)
+        self.refresh_run_readiness_button.setEnabled(True)
         self.run_back_button.setEnabled(True)
         self.run_state_label.setObjectName("statusError")
         self.run_state_label.setStyleSheet("")

@@ -27,6 +27,14 @@ Discovery only considers siblings matching the exact generated form
 Similarly named directories for other destinations and malformed suffixes are
 ignored. Matching symbolic links are reported and never followed.
 
+Desktop step 3 uses the same Qt-independent service after the parameter review.
+It displays the exact destination, top-level discovery status, destination
+existence, and every candidate's raw status, path, and reason. A dedicated
+read-only refresh button repeats the inspection. The service runs again
+immediately before worker construction; a changed configuration, newly
+published destination, or newly visible private candidate disables launch
+without starting a child process.
+
 ## Marker and lease
 
 Immediately after creating its private directory, `modern-run` creates:

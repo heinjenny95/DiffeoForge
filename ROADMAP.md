@@ -69,6 +69,7 @@ This roadmap describes evidence gates rather than promised dates.
   - [x] Clean-commit Windows one-directory engineering build with separate frozen worker
   - [x] Windows parent-death worker-tree termination and cross-platform pipe-EOF fallback
   - [x] Read-only exact-destination private-run discovery with process lease
+  - [x] Transparent read-only private destination readiness in desktop step 3
   - [ ] User-approved private-run reconciliation, reference supervision, and native mesh rendering
 - [ ] Parameter explanations and safe presets
 - [x] Pre-compute configured all-pairs and known-payload workload report

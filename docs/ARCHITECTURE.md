@@ -123,6 +123,12 @@ inventory and atomic publication. The shared service and
 deletion, rename, resume, or result promotion. See
 [the private-run discovery contract](PRIVATE_RUN_DISCOVERY.md).
 
+Desktop step 3 consumes that same Qt-independent readiness object. It binds the
+reviewed configuration hash to the exact worker request, displays the discovery
+status and candidate evidence, and repeats the binding plus discovery directly
+before constructing the controller. The GUI never supplies a weaker alternate
+classification and does not expose a destructive recovery action.
+
 Desktop step 4 consumes no alternate scientific model. A Qt-independent result
 reviewer first invokes the complete outer Modern verifier, binds the unchanged
 outer and nested manifest hashes, and reads only schema- and inventory-named

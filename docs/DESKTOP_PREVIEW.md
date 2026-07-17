@@ -33,9 +33,10 @@ terminal:
    `modern-plan` JSON/HTML evidence; or, for the reference route, render the
    existing preflight parameter ratios and external-engine boundary;
 9. for a reviewed Modern project, continue to a third screen that binds the
-   exact reviewed configuration SHA-256, starts the separate worker, shows its
-   real workflow stages and committed optimizer decisions, and offers one
-   cooperative cancel action; and
+   exact reviewed configuration SHA-256, displays and refreshes the read-only
+   destination/private-state evidence, checks it again immediately before
+   starting the separate worker, shows real workflow stages and committed
+   optimizer decisions, and offers one cooperative cancel action; and
 10. expose the result directory only after the parent controller independently
     verifies the published workflow, manifest hash, subject count, and bundle;
 11. continue to a fourth screen only after a fresh full verification of the
@@ -81,6 +82,10 @@ python -m diffeoforge.desktop --smoke
   Qt receives only validated events through queued signals.
 - The launch must match the SHA-256 captured by the completed review. An edited
   configuration is refused until it is reviewed again.
+- Before launch, the compute page shows the exact destination, whether it
+  exists, and every exact-name private candidate's raw status, path, and reason.
+  Refresh and the mandatory immediate pre-launch recheck are read-only; the GUI
+  exposes no delete, rename, resume, or publish action for private state.
 - The compute page shows exact completed stages and optimizer decisions. It
   does not turn them into an ETA, runtime estimate, peak-memory claim, or
   invented percentage.
