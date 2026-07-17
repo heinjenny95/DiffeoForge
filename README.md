@@ -87,8 +87,9 @@ This repository currently provides:
 - a deterministic CC0 synthetic mesh cohort for public integration tests;
 - versioned Deformetrica outputs and a tolerance-based reference comparator;
 - a read-only environment doctor and transparent mesh-directory initializer;
-- an optional first PySide6 desktop slice for non-overwriting mesh-folder
-  validation and modern/reference project creation through the shared core;
+- an optional PySide6 desktop preview for non-overwriting mesh-folder
+  validation, modern/reference project creation, effective-parameter review,
+  and shared-core workload/preflight evidence without starting an atlas;
 - a self-contained HTML input-validation and parameter-scale report;
 - a self-contained HTML convergence, lifecycle, and result report;
 - terminal interruption capture, explicit unclean-stop recovery, and
@@ -131,9 +132,10 @@ This repository currently provides:
   workflow setting or peak-RAM claim.
 
 The experimental modern path is a public CLI/application-service workflow and
-can now create a starter project through the first GUI slice, but the GUI does
-not yet start or supervise numerical work and the modern path does not provide
-checkpoint/resume. DiffeoForge also does **not** yet ship a desktop installer,
+can now create and review a starter project through the GUI preview, including
+the exact configured-engine workload contract. The GUI does not yet start or
+supervise numerical work and the modern path does not provide checkpoint/resume.
+DiffeoForge also does **not** yet ship a desktop installer,
 provide mesh-quality rendering or self-intersection detection, or promise CPU/GPU equivalence or
 300-specimen production performance. See the [modern-workflow
 documentation](docs/MODERN_WORKFLOW.md) and [reference-backend

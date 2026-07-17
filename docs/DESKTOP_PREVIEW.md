@@ -1,8 +1,9 @@
-# Desktop project-setup preview
+# Desktop project setup and review preview
 
-Status: **first graphical slice; no installer and no atlas execution**
+Status: **two graphical steps; no installer and no atlas execution**
 
-Tracked by [engineering issue #75](https://github.com/heinjenny95/DiffeoForge/issues/75).
+Tracked by [engineering issue #75](https://github.com/heinjenny95/DiffeoForge/issues/75)
+and [engineering issue #77](https://github.com/heinjenny95/DiffeoForge/issues/77).
 The distribution architecture and its stricter release gates remain in
 [Desktop executable and installer architecture](DESKTOP_DISTRIBUTION.md).
 
@@ -20,13 +21,19 @@ terminal:
 5. validate schemas, paths, mesh geometry, and the engine-specific setup
    contract through the same application services used by the CLI;
 6. create a non-overwriting starter configuration and review a visible result
-   summary.
+   summary;
+7. continue to a second screen that reads the effective values back from the
+   validated configuration and explains their role;
+8. for the modern route, generate and render the existing exact-count
+   `modern-plan` JSON/HTML evidence; or, for the reference route, render the
+   existing preflight parameter ratios and external-engine boundary.
 
 The reference path creates `atlas.yaml` and `atlas.preflight.html`. The modern
 path creates `modern-atlas.yaml` after its stronger mesh-quality,
-initialization, optional Procrustes, and PCA-dimension checks pass. Both paths
-label geometry-scaled values as exploratory. Neither path starts numerical
-work.
+initialization, optional Procrustes, and PCA-dimension checks pass. Its second
+screen publishes `modern-atlas.workload/workload.json` and `workload.html`.
+Both paths label geometry-scaled values as exploratory. Neither path starts
+numerical work.
 
 ## Developer launch
 
@@ -49,6 +56,8 @@ python -m diffeoforge.desktop --smoke
 ## Safety and privacy boundary
 
 - Existing configurations and reports are never silently overwritten.
+- Review refreshes only reports that carry the expected DiffeoForge generator
+  markers; researcher-owned paths are refused.
 - Mesh inspection runs in a background GUI thread; numerical atlas computation
   remains outside this slice and will use a separate worker process.
 - Project files stay in the user-selected directory, separate from future
@@ -60,11 +69,11 @@ python -m diffeoforge.desktop --smoke
 
 ## Current limitations
 
-The GUI does not yet edit all scientific parameters, render meshes, display the
-workload report, start/cancel/resume an atlas, or open atlas/PCA results. It is
-not frozen with PyInstaller and is not wrapped in an Inno Setup installer.
-Those capabilities require their own tests and release gates rather than being
-hidden behind inactive controls.
+The GUI does not yet edit scientific parameters, render meshes,
+start/cancel/resume an atlas, or open atlas/PCA results. It is not frozen with
+PyInstaller and is not wrapped in an Inno Setup installer. Those capabilities
+require their own tests and release gates rather than being hidden behind
+inactive controls.
 
 ## Preliminary Qt licensing boundary
 

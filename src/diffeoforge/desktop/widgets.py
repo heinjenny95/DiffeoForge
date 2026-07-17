@@ -17,10 +17,12 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QPushButton,
     QScrollArea,
+    QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
 
+from diffeoforge.desktop.project_review import ProjectReviewResult, review_project
 from diffeoforge.desktop.project_setup import (
     DesktopEngine,
     ProjectSetupRequest,
@@ -60,6 +62,8 @@ QPushButton#primary:disabled { background: #a9bdb9; border-color: #a9bdb9; }
 QLabel#status { background: #f2f5f6; border-radius: 7px; color: #526b70; padding: 10px; }
 QLabel#statusSuccess { background: #e5f5ed; border-radius: 7px; color: #176345; padding: 10px; }
 QLabel#statusError { background: #fff0ed; border-radius: 7px; color: #a13a2d; padding: 10px; }
+QLabel#reviewValue { color: #123b3a; font-weight: 700; }
+QLabel#reviewDetail { color: #526b70; font-size: 12px; }
 """
 
 
@@ -84,6 +88,22 @@ class _ProjectWorker(QRunnable):
         self.signals.succeeded.emit(result)
 
 
+class _ReviewWorker(QRunnable):
+    def __init__(self, result: ProjectSetupResult) -> None:
+        super().__init__()
+        self.result = result
+        self.signals = _WorkerSignals()
+
+    @Slot()
+    def run(self) -> None:
+        try:
+            review = review_project(self.result.config_path, self.result.engine)
+        except (OSError, RuntimeError, TypeError, ValueError) as error:
+            self.signals.failed.emit(str(error))
+            return
+        self.signals.succeeded.emit(review)
+
+
 def _path_row(edit: QLineEdit, button: QPushButton) -> QWidget:
     row = QWidget()
     layout = QHBoxLayout(row)
@@ -105,8 +125,9 @@ class DiffeoForgeWindow(QMainWindow):
         self.setMinimumSize(900, 650)
         self.setStyleSheet(_STYLE)
         self._thread_pool = QThreadPool.globalInstance()
-        self._worker: _ProjectWorker | None = None
+        self._worker: _ProjectWorker | _ReviewWorker | None = None
         self._result: ProjectSetupResult | None = None
+        self._review: ProjectReviewResult | None = None
         self._build_ui()
         self._update_engine_explanation()
         self._sync_ready_state()
@@ -117,7 +138,11 @@ class DiffeoForgeWindow(QMainWindow):
         root_layout.setContentsMargins(0, 0, 0, 0)
         root_layout.setSpacing(0)
         root_layout.addWidget(self._build_rail())
-        root_layout.addWidget(self._build_content(), 1)
+        self.page_stack = QStackedWidget()
+        self.page_stack.setObjectName("pageStack")
+        self.page_stack.addWidget(self._build_setup_content())
+        self.page_stack.addWidget(self._build_review_content())
+        root_layout.addWidget(self.page_stack, 1)
         self.setCentralWidget(root)
 
     def _build_rail(self) -> QWidget:
@@ -147,15 +172,17 @@ class DiffeoForgeWindow(QMainWindow):
         layout.addSpacing(38)
 
         steps = (
-            ("1  Daten & Engine", True),
-            ("2  Parameter prüfen", False),
-            ("3  Atlas berechnen", False),
-            ("4  Ergebnisse & PCA", False),
+            "1  Daten & Engine",
+            "2  Parameter prüfen",
+            "3  Atlas berechnen",
+            "4  Ergebnisse & PCA",
         )
-        for text, active in steps:
+        self.rail_steps: list[QLabel] = []
+        for index, text in enumerate(steps):
             label = QLabel(text)
-            label.setObjectName("stepActive" if active else "stepFuture")
+            label.setObjectName("stepActive" if index == 0 else "stepFuture")
             layout.addWidget(label)
+            self.rail_steps.append(label)
         layout.addStretch()
         boundary = QLabel("PRE-ALPHA\nKeine wissenschaftliche Validierung")
         boundary.setObjectName("railCaption")
@@ -163,7 +190,7 @@ class DiffeoForgeWindow(QMainWindow):
         layout.addWidget(boundary)
         return rail
 
-    def _build_content(self) -> QWidget:
+    def _build_setup_content(self) -> QWidget:
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
@@ -228,6 +255,125 @@ class DiffeoForgeWindow(QMainWindow):
         content_layout.addWidget(scroll, 1)
         content_layout.addWidget(footer)
         return content
+
+    def _build_review_content(self) -> QWidget:
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        container = QWidget()
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(52, 40, 52, 24)
+        layout.setSpacing(15)
+
+        eyebrow = QLabel("SCHRITT 2 VON 4")
+        eyebrow.setObjectName("eyebrow")
+        title = QLabel("Parameter und Aufwand prüfen")
+        title.setObjectName("title")
+        subtitle = QLabel(
+            "Sieh die tatsächlich gespeicherten Werte und nachprüfbare Rechenoperationen, "
+            "bevor irgendeine Engine gestartet wird."
+        )
+        subtitle.setObjectName("subtitle")
+        subtitle.setWordWrap(True)
+        layout.addWidget(eyebrow)
+        layout.addWidget(title)
+        layout.addWidget(subtitle)
+
+        boundary = QFrame()
+        boundary.setObjectName("boundary")
+        boundary_layout = QHBoxLayout(boundary)
+        boundary_layout.setContentsMargins(13, 9, 13, 9)
+        self.review_boundary_label = QLabel()
+        self.review_boundary_label.setObjectName("boundaryText")
+        self.review_boundary_label.setWordWrap(True)
+        boundary_layout.addWidget(self.review_boundary_label)
+        layout.addWidget(boundary)
+
+        summary = QFrame()
+        summary.setObjectName("card")
+        summary_layout = QVBoxLayout(summary)
+        summary_layout.setContentsMargins(24, 22, 24, 24)
+        summary_title = QLabel("Geprüftes Projekt")
+        summary_title.setObjectName("sectionTitle")
+        self.review_summary_label = QLabel()
+        self.review_summary_label.setObjectName("reviewSummary")
+        self.review_summary_label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+        )
+        self.review_summary_label.setWordWrap(True)
+        summary_layout.addWidget(summary_title)
+        summary_layout.addWidget(self.review_summary_label)
+        layout.addWidget(summary)
+
+        layout.addWidget(self._build_review_card("Effektive Parameter", "parameterReview"))
+        self.workload_card = self._build_review_card("Workload-Evidenz", "workloadReview")
+        layout.addWidget(self.workload_card)
+
+        warnings = QFrame()
+        warnings.setObjectName("card")
+        warnings_layout = QVBoxLayout(warnings)
+        warnings_layout.setContentsMargins(24, 22, 24, 24)
+        warnings_title = QLabel("Grenzen und Hinweise")
+        warnings_title.setObjectName("sectionTitle")
+        self.review_warnings_label = QLabel()
+        self.review_warnings_label.setObjectName("reviewWarnings")
+        self.review_warnings_label.setWordWrap(True)
+        self.review_warnings_label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+        )
+        warnings_layout.addWidget(warnings_title)
+        warnings_layout.addWidget(self.review_warnings_label)
+        layout.addWidget(warnings)
+        layout.addStretch()
+        scroll.setWidget(container)
+
+        footer = QFrame()
+        footer.setObjectName("footer")
+        footer_layout = QHBoxLayout(footer)
+        footer_layout.setContentsMargins(28, 14, 28, 14)
+        footer_layout.setSpacing(12)
+        back = QPushButton("Zurück zu Daten & Engine")
+        back.setObjectName("secondary")
+        back.clicked.connect(self._show_setup_page)
+        footer_layout.addWidget(back)
+        self.open_review_report_button = QPushButton("Prüfbericht öffnen")
+        self.open_review_report_button.setObjectName("secondary")
+        self.open_review_report_button.clicked.connect(self._open_review_report)
+        footer_layout.addWidget(self.open_review_report_button)
+        footer_layout.addStretch()
+        future = QPushButton("Atlasstart folgt in Schritt 3")
+        future.setObjectName("primary")
+        future.setEnabled(False)
+        footer_layout.addWidget(future)
+
+        page = QWidget()
+        page_layout = QVBoxLayout(page)
+        page_layout.setContentsMargins(0, 0, 0, 0)
+        page_layout.setSpacing(0)
+        page_layout.addWidget(scroll, 1)
+        page_layout.addWidget(footer)
+        return page
+
+    def _build_review_card(self, title: str, object_name: str) -> QWidget:
+        card = QFrame()
+        card.setObjectName("card")
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(24, 22, 24, 24)
+        heading = QLabel(title)
+        heading.setObjectName("sectionTitle")
+        layout.addWidget(heading)
+        rows = QWidget()
+        rows.setObjectName(object_name)
+        rows_layout = QVBoxLayout(rows)
+        rows_layout.setContentsMargins(0, 4, 0, 0)
+        rows_layout.setSpacing(13)
+        layout.addWidget(rows)
+        if object_name == "parameterReview":
+            self.parameter_review_layout = rows_layout
+        else:
+            self.workload_review_layout = rows_layout
+        return card
 
     def _build_form_card(self) -> QWidget:
         card = QFrame()
@@ -350,9 +496,14 @@ class DiffeoForgeWindow(QMainWindow):
         open_folder = QPushButton("Projektordner öffnen")
         open_folder.setObjectName("secondary")
         open_folder.clicked.connect(self._open_project_directory)
+        self.review_button = QPushButton("Parameter & Aufwand prüfen")
+        self.review_button.setObjectName("primary")
+        self.review_button.clicked.connect(self._review_project)
+        self.review_button.setEnabled(False)
         button_row.addWidget(open_config)
         button_row.addWidget(open_folder)
         button_row.addStretch()
+        button_row.addWidget(self.review_button)
         layout.addLayout(button_row)
         return card
 
@@ -453,6 +604,8 @@ class DiffeoForgeWindow(QMainWindow):
     def _create_project(self) -> None:
         self.result_card.hide()
         self._result = None
+        self._review = None
+        self.review_button.setEnabled(False)
         self.status_label.setObjectName("status")
         self.status_label.setStyleSheet("")
         self.status_label.setText("Meshes und Konfiguration werden geprüft …")
@@ -480,6 +633,7 @@ class DiffeoForgeWindow(QMainWindow):
             f"Wichtige Hinweise:\n{notices}"
         )
         self.result_card.show()
+        self.review_button.setEnabled(True)
         self._sync_ready_state()
 
     @Slot(str)
@@ -489,6 +643,100 @@ class DiffeoForgeWindow(QMainWindow):
         self.status_label.setStyleSheet("")
         self.status_label.setText(f"Projekt konnte nicht angelegt werden: {message}")
         self._sync_ready_state()
+
+    @Slot()
+    def _review_project(self) -> None:
+        if self._result is None or self._worker is not None:
+            return
+        self.review_button.setEnabled(False)
+        self.status_label.setObjectName("status")
+        self.status_label.setStyleSheet("")
+        self.status_label.setText(
+            "Effektive Parameter und vorhandene Workload-Evidenz werden gesammelt …"
+        )
+        self._worker = _ReviewWorker(self._result)
+        self._worker.signals.succeeded.connect(self._review_succeeded)
+        self._worker.signals.failed.connect(self._review_failed)
+        self._thread_pool.start(self._worker)
+
+    @Slot(object)
+    def _review_succeeded(self, review: ProjectReviewResult) -> None:
+        self._worker = None
+        self._review = review
+        self._populate_review_rows(self.parameter_review_layout, review.parameters)
+        self._populate_review_rows(self.workload_review_layout, review.workload)
+        self.review_boundary_label.setText(review.scientific_boundary)
+        engine_label = (
+            "DiffeoForge Modern CPU (experimentell)"
+            if review.engine is DesktopEngine.MODERN_CPU
+            else "Deformetrica 4.3 Referenz (extern)"
+        )
+        config_display = self._wrappable_path(review.config_path)
+        report_display = self._wrappable_path(review.report_path)
+        self.review_summary_label.setText(
+            f"Projekt: {review.project_name}\n"
+            f"Engine: {engine_label}\n"
+            f"Probanden: {review.subject_count}\n"
+            f"Konfiguration: {config_display}\n"
+            f"{review.report_label}: {report_display}"
+        )
+        self.review_warnings_label.setText("\n".join(f"• {warning}" for warning in review.warnings))
+        self.open_review_report_button.setText(f"{review.report_label} öffnen")
+        self._set_active_step(1)
+        self.page_stack.setCurrentIndex(1)
+        self.review_button.setEnabled(True)
+        self._sync_ready_state()
+
+    @staticmethod
+    def _wrappable_path(path: Path) -> str:
+        return str(path).replace("\\", "\\\u200b").replace("/", "/\u200b")
+
+    @Slot(str)
+    def _review_failed(self, message: str) -> None:
+        self._worker = None
+        self.review_button.setEnabled(self._result is not None)
+        self.status_label.setObjectName("statusError")
+        self.status_label.setStyleSheet("")
+        self.status_label.setText(f"Parameterprüfung fehlgeschlagen: {message}")
+        self._sync_ready_state()
+
+    def _populate_review_rows(self, layout: QVBoxLayout, items: tuple) -> None:
+        while layout.count():
+            child = layout.takeAt(0)
+            widget = child.widget()
+            if widget is not None:
+                widget.deleteLater()
+        for item in items:
+            row = QWidget()
+            row_layout = QVBoxLayout(row)
+            row_layout.setContentsMargins(0, 0, 0, 0)
+            row_layout.setSpacing(2)
+            value = QLabel(f"{item.label}:  {item.value}")
+            value.setObjectName("reviewValue")
+            value.setWordWrap(True)
+            value.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+            detail = QLabel(item.explanation)
+            detail.setObjectName("reviewDetail")
+            detail.setWordWrap(True)
+            detail.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+            row_layout.addWidget(value)
+            row_layout.addWidget(detail)
+            layout.addWidget(row)
+
+    def _set_active_step(self, active: int) -> None:
+        for index, label in enumerate(self.rail_steps):
+            label.setObjectName("stepActive" if index == active else "stepFuture")
+            label.setStyleSheet("")
+
+    @Slot()
+    def _show_setup_page(self) -> None:
+        self._set_active_step(0)
+        self.page_stack.setCurrentIndex(0)
+
+    @Slot()
+    def _open_review_report(self) -> None:
+        if self._review is not None:
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(self._review.report_path)))
 
     @Slot()
     def _open_config(self) -> None:
