@@ -119,6 +119,12 @@ or starting a process. The eventual supervisor must consume and reverify this
 request inside its contained child; this contract alone does not unlock the
 reference button.
 
+The reference route also has a separate schema-valid worker event vocabulary
+and parent-side lifecycle ledger. Unlike Modern cancellation, it explicitly
+distinguishes stopping before preparation, retaining an immutable prepared run,
+and interrupting active execution with a terminal result hash. No reference
+worker or subprocess controller consumes that vocabulary yet.
+
 ## Bundle and installer decisions
 
 The first evidence build now uses pinned PyInstaller 6.21.0 in one-directory

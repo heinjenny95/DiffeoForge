@@ -147,6 +147,14 @@ no preparation or execution and remains only an input contract for a future
 contained supervisor. See
 [the desktop reference-prelaunch contract](REFERENCE_PRELAUNCH.md).
 
+Reference worker transport now has a separate versioned event vocabulary and
+parent-side ledger because its phase-dependent stop states cannot reuse the
+Modern worker's nonpublishing cancellation claim. The ledger distinguishes no
+destination, an immutable prepared destination, and a terminal interrupted run,
+while rejecting sequence, phase, terminal, and evidence contradictions. This is
+still a non-executing protocol seam; see
+[the reference worker protocol](REFERENCE_WORKER_PROTOCOL.md).
+
 Both setup routes can also pass their already selected template path to a
 Qt-independent immutable preview model. The model reuses the strict VTK parser,
 binds the source SHA-256 before and after loading, freezes vertices, triangles,

@@ -1,0 +1,137 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DiffeoForge desktop reference worker event",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "reference_worker_event_version",
+    "request_id",
+    "sequence",
+    "kind",
+    "payload"
+  ],
+  "properties": {
+    "reference_worker_event_version": {"const": "0.1"},
+    "request_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+    },
+    "sequence": {"type": "integer", "minimum": 0},
+    "kind": {"enum": ["accepted", "phase", "terminal"]},
+    "payload": {"type": "object"}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"kind": {"const": "accepted"}}},
+      "then": {"properties": {"payload": {"$ref": "#/$defs/accepted"}}}
+    },
+    {
+      "if": {"properties": {"kind": {"const": "phase"}}},
+      "then": {"properties": {"payload": {"$ref": "#/$defs/phase"}}}
+    },
+    {
+      "if": {"properties": {"kind": {"const": "terminal"}}},
+      "then": {"properties": {"payload": {"$ref": "#/$defs/terminal"}}}
+    }
+  ],
+  "$defs": {
+    "accepted": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "engine",
+        "config_sha256",
+        "destination",
+        "cancellation"
+      ],
+      "properties": {
+        "engine": {"const": "deformetrica_reference"},
+        "config_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "destination": {"type": "string", "minLength": 1},
+        "cancellation": {"const": "phase_dependent"}
+      }
+    },
+    "phase": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["phase", "message"],
+      "properties": {
+        "phase": {
+          "enum": [
+            "verify_request",
+            "preflight",
+            "prepare",
+            "execute",
+            "finalize",
+            "verify_result"
+          ]
+        },
+        "message": {"type": "string", "minLength": 1}
+      }
+    },
+    "terminal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "outcome",
+        "destination",
+        "destination_exists",
+        "result_sha256",
+        "message"
+      ],
+      "properties": {
+        "outcome": {
+          "enum": [
+            "completed",
+            "stopped_before_prepare",
+            "prepared_not_executed",
+            "interrupted",
+            "failed"
+          ]
+        },
+        "destination": {"type": "string", "minLength": 1},
+        "destination_exists": {"type": "boolean"},
+        "result_sha256": {
+          "type": ["string", "null"],
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "message": {"type": "string", "minLength": 1}
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "outcome": {"const": "completed"},
+            "destination_exists": {"const": true},
+            "result_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+          }
+        },
+        {
+          "properties": {
+            "outcome": {"const": "stopped_before_prepare"},
+            "destination_exists": {"const": false},
+            "result_sha256": {"type": "null"}
+          }
+        },
+        {
+          "properties": {
+            "outcome": {"const": "prepared_not_executed"},
+            "destination_exists": {"const": true},
+            "result_sha256": {"type": "null"}
+          }
+        },
+        {
+          "properties": {
+            "outcome": {"const": "interrupted"},
+            "destination_exists": {"const": true},
+            "result_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+          }
+        },
+        {
+          "properties": {
+            "outcome": {"const": "failed"}
+          }
+        }
+      ]
+    }
+  }
+}

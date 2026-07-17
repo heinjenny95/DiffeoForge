@@ -73,6 +73,7 @@ This roadmap describes evidence gates rather than promised dates.
   - [x] Hash-bound read-only external reference environment diagnosis
   - [x] Native read-only XY/XZ/YZ template wireframe preview
   - [x] Versioned hash-bound read-only reference prelaunch request
+  - [x] Strict phase-dependent reference worker lifecycle protocol
   - [ ] User-approved private-run reconciliation, reference supervision, and native mesh rendering
 - [ ] Parameter explanations and safe presets
 - [x] Pre-compute configured all-pairs and known-payload workload report

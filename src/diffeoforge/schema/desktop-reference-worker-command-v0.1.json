@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DiffeoForge desktop reference worker command",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["reference_worker_command_version", "request_id", "command"],
+  "properties": {
+    "reference_worker_command_version": {"const": "0.1"},
+    "request_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+    },
+    "command": {"const": "cancel"}
+  }
+}
