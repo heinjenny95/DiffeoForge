@@ -1,0 +1,124 @@
+# Windows one-directory freeze evidence
+
+Status: **developer-machine engineering evidence, not a release, installer, or
+redistributable binary**
+
+DiffeoForge can be frozen on a 64-bit Windows development machine into one
+directory containing two entry points:
+
+- `DiffeoForge.exe` is the windowed Qt application and does not allocate a
+  console;
+- `DiffeoForgeWorker.exe` is the pipe-only numerical worker launched by the
+  desktop parent.
+
+The worker remains separate so the parent can enforce the existing versioned
+request/event protocol, cooperative cancellation, immutable destination, and
+independent result verification. A frozen parent resolves the worker beside
+its own executable; a source checkout continues to use
+`python -m diffeoforge.desktop.worker`.
+
+This slice uses PyInstaller 6.21.0 in its documented one-directory mode. The
+builder-only pin is in `distribution/windows/freeze-requirements.txt`; it is
+not a complete release lock or SBOM. The build spec collects the DiffeoForge
+schemas and creates the two executables in one shared bundle. It does not
+include the external Deformetrica 4.3 environment.
+
+## Reproduce the evidence build
+
+Start from a clean Git checkout on 64-bit Windows with Python 3.12. The build
+script deliberately refuses a dirty worktree and refuses to overwrite either
+its bundle or work directory.
+
+```powershell
+py -3.12 -m venv .freeze-venv
+.freeze-venv\Scripts\python.exe -m pip install -e ".[desktop,modern-engine]"
+.freeze-venv\Scripts\python.exe -m pip install -r distribution\windows\freeze-requirements.txt
+```
+
+For the stronger smoke, create a public synthetic Modern configuration outside
+tracked source files. A path with spaces and non-ASCII characters is useful
+because both the JSON-lines transport and Windows process boundary must retain
+it exactly.
+
+```powershell
+.freeze-venv\Scripts\diffeoforge.exe modern-init `
+  examples\synthetic\meshes `
+  --units millimeter `
+  --config "dist\Frozen Smoke Käfer\modern.yaml" `
+  --output-directory "dist\Frozen Smoke Käfer\configured output" `
+  --max-cycles 1
+
+powershell -File distribution\windows\build-evidence.ps1 `
+  -Python .freeze-venv\Scripts\python.exe `
+  -DistPath "dist\Frozen Evidence Käfer" `
+  -WorkPath "dist\Frozen Evidence Work Käfer" `
+  -SmokeConfig "dist\Frozen Smoke Käfer\modern.yaml" `
+  -SmokeDestination "dist\Frozen Smoke Käfer\atlas result"
+```
+
+The script checks the Python, PyInstaller, CPU-only PyTorch, Windows, x86-64,
+and clean-source boundaries. It then:
+
+1. builds the one-directory bundle;
+2. launches the frozen GUI's noninteractive `--smoke` path;
+3. optionally runs the supplied public configuration through the frozen worker
+   using the production parent controller;
+4. records the exact source commit, builder/runtime package versions, every
+   bundled relative path, byte count, file SHA-256, aggregate byte count, and
+   inventory SHA-256;
+5. writes `freeze-evidence.json` and its `freeze-evidence.sha256` sidecar;
+6. immediately re-verifies the sidecar and exact file inventory.
+
+`tools/desktop_bundle_evidence.py verify <bundle>` can repeat the final
+verification. It fails closed on a changed manifest, unsafe path, missing,
+extra, reordered, resized, or rehashed file, unexpected entry point, or a
+status outside the versioned engineering-evidence schema. Evidence creation is
+non-overwriting.
+
+## First developer-host observation
+
+A pre-commit packaging diagnostic on 17 July 2026 produced 2,600 inventoried
+files totalling 604,863,934 bytes (576.84 MiB). The environment used Python
+3.12.13, PyInstaller 6.21.0, PySide6-Essentials/Shiboken6 6.11.1, CPU-only
+PyTorch 2.13.0, and NumPy 2.5.1. The GUI smoke passed, and a five-subject public
+synthetic Modern workflow completed through the frozen worker/controller with
+15 accepted protocol events in a destination path containing spaces and
+`Käfer`. This diagnostic found and then confirmed the repair of a Windows
+console-code-page corruption at the worker boundary.
+
+These numbers describe that one diagnostic, not a size promise or final
+artifact. Every clean-commit build records its own complete resolved package
+map, byte total, file count, and hashes in `freeze-evidence.json`; that manifest
+is authoritative for its directory.
+
+## What this proves
+
+One successful evidence build proves only that the recorded clean source commit
+was frozen on the recorded Windows developer host, its two entry points were
+present, the GUI smoke exited successfully, the optional recorded synthetic
+workflow completed through the real frozen worker/controller boundary, and the
+resulting directory matched its exact-file inventory at verification time.
+
+The manifest intentionally labels itself
+`engineering_evidence_not_a_release`. It is not evidence of:
+
+- an installer or uninstaller;
+- Authenticode signing or Windows Defender acceptance;
+- a complete dependency lock, SBOM, third-party license inventory, or
+  redistribution approval;
+- installation and execution on a clean Windows VM without Python;
+- absence of network access;
+- recovery after parent death, power loss, or forced termination;
+- numerical release equivalence, biological validity, GPU behavior, or
+  feasibility for 300-specimen cohorts.
+
+Those remain explicit release gates in
+[Desktop executable and installer architecture](DESKTOP_DISTRIBUTION.md) and
+must not be inferred from a developer-machine smoke.
+
+## Primary packaging references
+
+- [PyInstaller usage and one-directory mode](https://pyinstaller.org/en/stable/usage.html)
+- [PyInstaller spec files](https://pyinstaller.org/en/stable/spec-files.html)
+- [Qt for Python deployment options](https://doc.qt.io/qtforpython-6/deployment/index.html)
+- [Qt for Python deployment with PyInstaller](https://doc.qt.io/qtforpython-6/deployment/deployment-pyinstaller.html)

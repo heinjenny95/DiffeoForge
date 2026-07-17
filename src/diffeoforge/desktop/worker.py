@@ -236,6 +236,10 @@ def main(
 def _process_main() -> None:
     """Flush the dedicated transport process and bypass a blocked daemon stdin reader."""
 
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if callable(reconfigure):
+            reconfigure(encoding="utf-8", errors="strict", write_through=True)
     exit_code = main(stdin=_UnbufferedUtf8LineInput(sys.stdin.fileno()))
     try:
         sys.stdout.flush()

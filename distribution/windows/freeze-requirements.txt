@@ -1,0 +1,4 @@
+# Evidence-spike builder pin. This is not a complete release lock or SBOM.
+# PyPI release: 2026-06-13. Resolved transitive versions are recorded in the
+# generated exact-file evidence manifest.
+PyInstaller==6.21.0

@@ -31,6 +31,7 @@ DesktopWorkerControllerState = Literal[
 ]
 DesktopWorkerEventCallback = Callable[[DesktopWorkerEvent], None]
 TERMINAL_EXIT_TIMEOUT_SECONDS = 5
+FROZEN_WORKER_BASENAME = "DiffeoForgeWorker"
 
 
 class DesktopWorkerControllerError(RuntimeError):
@@ -75,6 +76,17 @@ class DesktopWorkerExecutionError(DesktopWorkerControllerError):
         self.event = event
         self.exit_code = exit_code
         self.stderr = stderr
+
+
+def default_desktop_worker_command() -> tuple[str, ...]:
+    """Resolve the source worker module or a sibling frozen worker executable."""
+
+    if getattr(sys, "frozen", False):
+        desktop_executable = Path(sys.executable).resolve()
+        suffix = ".exe" if os.name == "nt" else ""
+        worker = desktop_executable.with_name(f"{FROZEN_WORKER_BASENAME}{suffix}")
+        return (str(worker),)
+    return (sys.executable, "-m", "diffeoforge.desktop.worker")
 
 
 @dataclass(frozen=True)
@@ -199,7 +211,7 @@ class DesktopWorkerController:
         if not isinstance(request, DesktopWorkerRequest):
             raise TypeError("request must be a DesktopWorkerRequest")
         command = (
-            (sys.executable, "-m", "diffeoforge.desktop.worker")
+            default_desktop_worker_command()
             if worker_command is None
             else tuple(worker_command)
         )

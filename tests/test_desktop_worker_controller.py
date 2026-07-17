@@ -15,6 +15,7 @@ from diffeoforge.desktop.worker_controller import (
     DesktopWorkerExecutionError,
     DesktopWorkerProcessError,
     DesktopWorkerProtocolViolation,
+    default_desktop_worker_command,
 )
 from diffeoforge.desktop.worker_protocol import (
     DesktopWorkerEvent,
@@ -26,6 +27,27 @@ from diffeoforge.modern_progress import ModernProgressEvent
 
 ROOT = Path(__file__).parents[1]
 MESH_DIRECTORY = ROOT / "examples" / "synthetic" / "meshes"
+
+
+def test_default_worker_command_distinguishes_source_and_frozen_layout(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.delattr(worker_controller.sys, "frozen", raising=False)
+    assert default_desktop_worker_command() == (
+        sys.executable,
+        "-m",
+        "diffeoforge.desktop.worker",
+    )
+
+    desktop = tmp_path / "DiffeoForge.exe"
+    monkeypatch.setattr(worker_controller.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(worker_controller.sys, "executable", str(desktop))
+    suffix = ".exe" if worker_controller.os.name == "nt" else ""
+
+    assert default_desktop_worker_command() == (
+        str(tmp_path.resolve() / f"DiffeoForgeWorker{suffix}"),
+    )
 
 
 def _protocol_request(tmp_path: Path) -> DesktopWorkerRequest:
