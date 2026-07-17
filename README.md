@@ -115,8 +115,8 @@ This repository currently provides:
   invented percent-complete or ETA claims;
 - an opt-in fresh-process objective/gradient benchmark with explicit subject
   selection, raw repeats, sampled process RSS, exact provenance, explicit
-  standard/recompute blockwise measurement, and no extrapolation to full-cohort
-  runtime;
+  standard/recompute blockwise measurement, separately recorded benchmark-only
+  effective rectangular tile plans, and no extrapolation to full-cohort runtime;
 - an immutable prospective paired-benchmark design that freezes config/input
   hashes, subject-prefix sizes, repeats, and deterministic condition order
   before standard/recompute observations exist;
@@ -177,6 +177,15 @@ experimental recompute graph in separate fresh processes with
 `--tile-autograd-strategy recompute`. This is a benchmark-only override, not a
 `modern-run` setting, safe preset, peak-RAM claim, or automatic comparison.
 
+It can also measure one effective rectangular tile plan without editing the
+reviewed YAML. Both sizes are required together, and the resulting strict v0.4
+report preserves source-declared and effective plans separately:
+
+```powershell
+diffeoforge modern-benchmark modern-atlas.yaml --subjects 5 `
+  --query-tile-size 128 --source-tile-size 256
+```
+
 Before collecting a paired study, freeze its pre-results design:
 
 ```powershell
@@ -208,9 +217,10 @@ diffeoforge modern-benchmark-study-verify modern-atlas.benchmark-study.run
 ```
 
 A future full-factorial multi-tile study is specified in
-[ADR 0004](docs/decisions/0004-prospective-multi-tile-matrix.md). It is not yet
-implemented and will use new versioned contracts without changing existing
-single-tile evidence.
+[ADR 0004](docs/decisions/0004-prospective-multi-tile-matrix.md). Its raw
+effective-plan report contract exists, but the matrix design and runner are not
+yet implemented. They will use new versioned contracts without changing
+existing single-tile evidence.
 
 Generated configurations declare dense evaluation explicitly. The exact
 non-approximate blockwise path can instead be requested without code:
