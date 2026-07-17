@@ -1,7 +1,8 @@
 # Desktop executable and installer architecture
 
-Status: **project setup, parameter/workload review, and source-level verified
-Modern start/live-event/cancel exist; no frozen executable or installer yet**
+Status: **project setup, parameter/workload review, source-level verified Modern
+start/live-event/cancel, and verified result review exist; no frozen executable
+or installer yet**
 
 Tracked by [engineering issue #22](https://github.com/heinjenny95/DiffeoForge/issues/22)
 and [ADR 0003](decisions/0003-windows-desktop-distribution.md). The
@@ -47,8 +48,11 @@ events to the reviewed request, enforces lifecycle/exit-code agreement, bounds
   stderr, and independently verifies successful output. Source GUI step 3 now
   binds the reviewed configuration hash, runs that controller outside the Qt
   event loop, displays exact events, and requests cooperative cancellation.
-  Parent-death recovery and frozen-process packaging remain separate unfinished
-  slices.
+  Source GUI step 4 reruns the full shared-core Modern verifier outside the GUI
+  thread, presents bounded Atlas/optimizer/PCA/QC evidence, and rechecks the two
+  manifest hashes plus selected artifact size/SHA-256 immediately before OS
+  handoff. It does not implement an internal VTK renderer. Parent-death recovery
+  and frozen-process packaging remain separate unfinished slices.
 
 The CPU modern engine is the first bundled numerical variant. A future NVIDIA
 build is a separate artifact with separate numerical evidence; the application

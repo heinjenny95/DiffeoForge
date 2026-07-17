@@ -78,6 +78,7 @@ jobs:
           tests/test_modern_benchmark.py tests/test_desktop_project_setup.py
           tests/test_desktop_project_review.py tests/test_desktop_worker.py
           tests/test_desktop_worker_controller.py tests/test_desktop_reviewed_run.py
+          tests/test_desktop_result_review.py
 
   desktop:
     name: Desktop smoke (Windows)
@@ -100,7 +101,7 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -e ".[dev,desktop]"
 
-      - name: Test desktop setup, review, compute screen, and worker controller
+      - name: Test desktop setup, review, compute, and result screens
         run: >-
           pytest tests/test_desktop_app.py tests/test_desktop_project_setup.py
           tests/test_desktop_project_review.py tests/test_desktop_reviewed_run.py

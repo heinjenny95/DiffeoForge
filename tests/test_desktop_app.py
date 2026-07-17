@@ -366,3 +366,125 @@ def test_desktop_window_starts_bound_worker_and_shows_only_reconciled_result(
     assert "Probanden: 5" in window.run_result_label.text()
     assert window.start_atlas_button.isEnabled() is False
     application.processEvents()
+
+
+def test_desktop_window_verifies_and_renders_step_four_before_artifact_handoff(
+    monkeypatch, tmp_path
+) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QLabel, QWidget
+
+    from diffeoforge.desktop.result_review import (
+        ModernResultArtifact,
+        ModernResultReview,
+        ResultReviewItem,
+    )
+    from diffeoforge.desktop.widgets import (
+        DiffeoForgeWindow,
+        _ArtifactWorker,
+        _ResultReviewWorker,
+    )
+    from diffeoforge.desktop.worker_controller import DesktopWorkerControllerResult
+    from diffeoforge.desktop.worker_protocol import DesktopWorkerEvent, sha256_file
+
+    application = QApplication.instance() or QApplication(["diffeoforge-results-test"])
+    run = (tmp_path / "run").resolve()
+    bundle = run / "bundle"
+    bundle.mkdir(parents=True)
+    workflow_manifest = run / "workflow-manifest.json"
+    bundle_manifest = bundle / "bundle-manifest.json"
+    artifact_path = bundle / "pca-scree.svg"
+    workflow_manifest.write_text("workflow\n", encoding="utf-8")
+    bundle_manifest.write_text("bundle\n", encoding="utf-8")
+    artifact_path.write_text("<svg/>\n", encoding="utf-8")
+    item = ResultReviewItem("Projekt", "Käfer-Atlas", "Manifestierter Wert.")
+    artifact = ModernResultArtifact(
+        key="pca-scree",
+        label="PCA-Screeplot (SVG)",
+        path=artifact_path,
+        kind="svg",
+        bytes=artifact_path.stat().st_size,
+        sha256=sha256_file(artifact_path),
+        description="Statisches SVG.",
+    )
+    review = ModernResultReview(
+        run_directory=run,
+        bundle_directory=bundle,
+        project_name="Käfer-Atlas",
+        created_at="2026-07-17T12:00:00+00:00",
+        workflow_manifest_path=workflow_manifest,
+        workflow_manifest_sha256=sha256_file(workflow_manifest),
+        bundle_manifest_path=bundle_manifest,
+        bundle_manifest_sha256=sha256_file(bundle_manifest),
+        overview=(item,),
+        optimization=(
+            ResultReviewItem(
+                "Terminierung",
+                "max_cycles · converged=false",
+                "Technischer Zustand, keine biologische Validität.",
+            ),
+        ),
+        pca=(ResultReviewItem("PC1", "75%", "Vorzeichen ist konventionell."),),
+        quality=(ResultReviewItem("Output-QC", "9 Meshes", "Recomputet."),),
+        artifacts=(artifact,),
+        scientific_boundaries=("No biological validity claim is made.",),
+    )
+    terminal = DesktopWorkerEvent(
+        request_id="desktop-results",
+        sequence=1,
+        kind="completed",
+        payload={
+            "destination": str(run),
+            "manifest_sha256": "f" * 64,
+            "subject_count": 5,
+            "bundle_path": "bundle/bundle-manifest.json",
+        },
+    )
+    result = DesktopWorkerControllerResult(
+        request_id="desktop-results",
+        exit_code=0,
+        terminal_event=terminal,
+        events=(terminal,),
+        stderr="",
+    )
+    queued = []
+
+    class FakePool:
+        def start(self, worker) -> None:
+            queued.append(worker)
+
+    window = DiffeoForgeWindow()
+    window._thread_pool = FakePool()  # type: ignore[assignment]
+    window._run_result = result
+
+    window._review_run_result()
+
+    assert isinstance(window._worker, _ResultReviewWorker)
+    assert isinstance(queued[-1], _ResultReviewWorker)
+    assert "vollständig" in window.run_state_label.text()
+
+    window._result_review_succeeded(review)
+    application.processEvents()
+
+    assert window.page_stack.currentIndex() == 3
+    assert window.rail_steps[3].objectName() == "stepActive"
+    assert "Käfer-Atlas" in window.result_summary_label.text()
+    assert "biological validity" in window.result_boundary_label.text()
+    result_pca = window.findChild(QWidget, "resultPca")
+    assert result_pca is not None
+    assert "PC1" in result_pca.findChildren(QLabel)[0].text()
+    assert len(window.result_artifact_buttons) == 1
+
+    window._open_result_artifact("pca-scree")
+
+    assert isinstance(window._worker, _ArtifactWorker)
+    assert isinstance(queued[-1], _ArtifactWorker)
+    assert window.result_artifact_buttons[0].isEnabled() is False
+    window._artifact_failed("tamper detected")
+    assert "nicht geöffnet" in window.result_status_label.text()
+    assert window.result_artifact_buttons[0].isEnabled() is True
+    window._show_run_page_from_results()
+    assert window.page_stack.currentIndex() == 2
+    window.close()
+    application.processEvents()

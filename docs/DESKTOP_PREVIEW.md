@@ -1,11 +1,14 @@
 # Desktop setup, review, and Modern compute preview
 
-Status: **three graphical steps with verified Modern CPU execution; no installer**
+Status: **four graphical steps with verified Modern CPU execution and result review;
+no installer**
 
 Tracked by [engineering issue #75](https://github.com/heinjenny95/DiffeoForge/issues/75)
 and [engineering issue #77](https://github.com/heinjenny95/DiffeoForge/issues/77),
 with the compute screen tracked by
-[engineering issue #83](https://github.com/heinjenny95/DiffeoForge/issues/83).
+[engineering issue #83](https://github.com/heinjenny95/DiffeoForge/issues/83)
+and result review tracked by
+[engineering issue #85](https://github.com/heinjenny95/DiffeoForge/issues/85).
 The distribution architecture and its stricter release gates remain in
 [Desktop executable and installer architecture](DESKTOP_DISTRIBUTION.md).
 
@@ -34,7 +37,13 @@ terminal:
    real workflow stages and committed optimizer decisions, and offers one
    cooperative cancel action; and
 10. expose the result directory only after the parent controller independently
-    verifies the published workflow, manifest hash, subject count, and bundle.
+    verifies the published workflow, manifest hash, subject count, and bundle;
+11. continue to a fourth screen only after a fresh full verification of the
+    workflow, nested bundle, exact inventories, hashes, mesh QC, and static SVG
+    safety checks; and
+12. inspect bounded Atlas, optimizer, momenta-PCA, and QC summaries, then open
+    only inventoried VTK/CSV/JSON/SVG artifacts whose manifest bindings, size,
+    and SHA-256 pass again immediately before handoff to a local application.
 
 The reference path creates `atlas.yaml` and `atlas.preflight.html`. The modern
 path creates `modern-atlas.yaml` after its stronger mesh-quality,
@@ -77,6 +86,9 @@ python -m diffeoforge.desktop --smoke
   invented percentage.
 - Normal window close while compute is active requests cooperative cancellation
   and keeps the window alive until the worker has a reconciled terminal state.
+- Result review and per-artifact verification also run outside the GUI event
+  loop. A close request waits for those read-only checks to finish; it never
+  opens an artifact after a close was requested.
 - Project files stay in the user-selected directory, separate from future
   application files.
 - The window performs no upload, telemetry, update check, or network request.
@@ -86,13 +98,13 @@ python -m diffeoforge.desktop --smoke
 
 ## Current limitations
 
-The GUI does not yet edit scientific parameters, render meshes, resume a Modern
-atlas, reconcile an already dead parent application, supervise the external
-Deformetrica engine, or provide detailed mesh/PCA result inspection. Step 3 can
-open the independently verified result directory, but it is not yet the final
-results dashboard. The application is not frozen with PyInstaller and is not
-wrapped in an Inno Setup installer. Those capabilities require their own tests
-and release gates.
+The GUI does not yet edit scientific parameters, render meshes natively, resume
+a Modern atlas, reconcile an already dead parent application, or supervise the
+external Deformetrica engine. Step 4 is a detailed read-only evidence and
+artifact-handoff view, not an interactive 3D renderer or a scientific
+interpretation system. The application is not frozen with PyInstaller and is
+not wrapped in an Inno Setup installer. Those capabilities require their own
+tests and release gates.
 
 ## Preliminary Qt licensing boundary
 

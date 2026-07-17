@@ -33,6 +33,12 @@ from diffeoforge.desktop.project_setup import (
     ProjectSetupResult,
     create_project,
 )
+from diffeoforge.desktop.result_review import (
+    ModernResultReview,
+    ModernResultReviewError,
+    review_modern_result,
+    verify_result_artifact,
+)
 from diffeoforge.desktop.reviewed_run import (
     DesktopReviewedRunError,
     build_reviewed_worker_request,
@@ -124,6 +130,43 @@ class _ReviewWorker(QRunnable):
         self.signals.succeeded.emit(review)
 
 
+class _ResultReviewWorker(QRunnable):
+    """Fully verify one completed Modern workflow outside the GUI thread."""
+
+    def __init__(self, directory: Path) -> None:
+        super().__init__()
+        self.directory = directory
+        self.signals = _WorkerSignals()
+
+    @Slot()
+    def run(self) -> None:
+        try:
+            review = review_modern_result(self.directory)
+        except (ModernResultReviewError, OSError, RuntimeError, TypeError, ValueError) as error:
+            self.signals.failed.emit(str(error))
+            return
+        self.signals.succeeded.emit(review)
+
+
+class _ArtifactWorker(QRunnable):
+    """Recheck one reviewed artifact immediately before handing it to the OS."""
+
+    def __init__(self, review: ModernResultReview, key: str) -> None:
+        super().__init__()
+        self.review = review
+        self.key = key
+        self.signals = _WorkerSignals()
+
+    @Slot()
+    def run(self) -> None:
+        try:
+            path = verify_result_artifact(self.review, self.key)
+        except (ModernResultReviewError, OSError, RuntimeError, TypeError, ValueError) as error:
+            self.signals.failed.emit(str(error))
+            return
+        self.signals.succeeded.emit(path)
+
+
 class _AtlasWorkerSignals(QObject):
     event = Signal(object)
     succeeded = Signal(object)
@@ -201,10 +244,18 @@ class DiffeoForgeWindow(QMainWindow):
         self.setMinimumSize(900, 650)
         self.setStyleSheet(_STYLE)
         self._thread_pool = QThreadPool.globalInstance()
-        self._worker: _ProjectWorker | _ReviewWorker | _AtlasWorker | None = None
+        self._worker: (
+            _ProjectWorker
+            | _ReviewWorker
+            | _ResultReviewWorker
+            | _ArtifactWorker
+            | _AtlasWorker
+            | None
+        ) = None
         self._result: ProjectSetupResult | None = None
         self._review: ProjectReviewResult | None = None
         self._run_result: DesktopWorkerControllerResult | None = None
+        self._result_review: ModernResultReview | None = None
         self._close_after_worker = False
         self._build_ui()
         self._update_engine_explanation()
@@ -221,6 +272,7 @@ class DiffeoForgeWindow(QMainWindow):
         self.page_stack.addWidget(self._build_setup_content())
         self.page_stack.addWidget(self._build_review_content())
         self.page_stack.addWidget(self._build_run_content())
+        self.page_stack.addWidget(self._build_results_content())
         root_layout.addWidget(self.page_stack, 1)
         self.setCentralWidget(root)
 
@@ -481,9 +533,7 @@ class DiffeoForgeWindow(QMainWindow):
         summary_title.setObjectName("sectionTitle")
         self.run_summary_label = QLabel()
         self.run_summary_label.setWordWrap(True)
-        self.run_summary_label.setTextInteractionFlags(
-            Qt.TextInteractionFlag.TextSelectableByMouse
-        )
+        self.run_summary_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         summary_layout.addWidget(summary_title)
         summary_layout.addWidget(self.run_summary_label)
         layout.addWidget(summary)
@@ -529,15 +579,21 @@ class DiffeoForgeWindow(QMainWindow):
         result_title.setObjectName("sectionTitle")
         self.run_result_label = QLabel()
         self.run_result_label.setWordWrap(True)
-        self.run_result_label.setTextInteractionFlags(
-            Qt.TextInteractionFlag.TextSelectableByMouse
-        )
+        self.run_result_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         self.open_run_result_button = QPushButton("Ergebnisordner öffnen")
         self.open_run_result_button.setObjectName("secondary")
         self.open_run_result_button.clicked.connect(self._open_run_result)
+        self.review_run_result_button = QPushButton("Ergebnisse & PCA prüfen")
+        self.review_run_result_button.setObjectName("primary")
+        self.review_run_result_button.clicked.connect(self._review_run_result)
+        self.review_run_result_button.setEnabled(False)
+        result_button_row = QHBoxLayout()
+        result_button_row.addWidget(self.open_run_result_button)
+        result_button_row.addWidget(self.review_run_result_button)
+        result_button_row.addStretch()
         result_layout.addWidget(result_title)
         result_layout.addWidget(self.run_result_label)
-        result_layout.addWidget(self.open_run_result_button, 0, Qt.AlignmentFlag.AlignLeft)
+        result_layout.addLayout(result_button_row)
         self.run_result_card.hide()
         layout.addWidget(self.run_result_card)
         layout.addStretch()
@@ -571,6 +627,139 @@ class DiffeoForgeWindow(QMainWindow):
         page_layout.addWidget(scroll, 1)
         page_layout.addWidget(footer)
         return page
+
+    def _build_results_content(self) -> QWidget:
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        container = QWidget()
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(52, 40, 52, 24)
+        layout.setSpacing(15)
+
+        eyebrow = QLabel("SCHRITT 4 VON 4")
+        eyebrow.setObjectName("eyebrow")
+        title = QLabel("Verifizierte Ergebnisse & PCA")
+        title.setObjectName("title")
+        subtitle = QLabel(
+            "Lies eine gebundene Zusammenfassung und öffne nur Artefakte, deren Größe und "
+            "SHA-256 unmittelbar vorher erneut geprüft wurden."
+        )
+        subtitle.setObjectName("subtitle")
+        subtitle.setWordWrap(True)
+        layout.addWidget(eyebrow)
+        layout.addWidget(title)
+        layout.addWidget(subtitle)
+
+        boundary = QFrame()
+        boundary.setObjectName("boundary")
+        boundary_layout = QHBoxLayout(boundary)
+        boundary_layout.setContentsMargins(13, 9, 13, 9)
+        self.result_boundary_label = QLabel(
+            "Technische Verifikation ist keine wissenschaftliche Validierung."
+        )
+        self.result_boundary_label.setObjectName("boundaryText")
+        self.result_boundary_label.setWordWrap(True)
+        self.result_boundary_label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+        )
+        boundary_layout.addWidget(self.result_boundary_label)
+        layout.addWidget(boundary)
+
+        summary = QFrame()
+        summary.setObjectName("card")
+        summary_layout = QVBoxLayout(summary)
+        summary_layout.setContentsMargins(24, 22, 24, 24)
+        summary_title = QLabel("Gebundener Ergebnis-Snapshot")
+        summary_title.setObjectName("sectionTitle")
+        self.result_summary_label = QLabel()
+        self.result_summary_label.setWordWrap(True)
+        self.result_summary_label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+        )
+        summary_layout.addWidget(summary_title)
+        summary_layout.addWidget(self.result_summary_label)
+        layout.addWidget(summary)
+
+        overview_card, self.result_overview_layout = self._build_result_items_card(
+            "Atlas und Datensatz", "resultOverview"
+        )
+        optimization_card, self.result_optimization_layout = self._build_result_items_card(
+            "Optimierung", "resultOptimization"
+        )
+        pca_card, self.result_pca_layout = self._build_result_items_card("PCA", "resultPca")
+        quality_card, self.result_quality_layout = self._build_result_items_card(
+            "Verifikations- und Qualitätsnachweise", "resultQuality"
+        )
+        layout.addWidget(overview_card)
+        layout.addWidget(optimization_card)
+        layout.addWidget(pca_card)
+        layout.addWidget(quality_card)
+
+        artifacts = QFrame()
+        artifacts.setObjectName("card")
+        artifacts_layout = QVBoxLayout(artifacts)
+        artifacts_layout.setContentsMargins(24, 22, 24, 24)
+        artifacts_title = QLabel("Geprüfte offene Artefakte")
+        artifacts_title.setObjectName("sectionTitle")
+        artifacts_hint = QLabel(
+            "DiffeoForge rendert VTK derzeit nicht intern. VTK, CSV, JSON und statische SVGs "
+            "werden an die lokal zugeordnete Anwendung übergeben."
+        )
+        artifacts_hint.setObjectName("hint")
+        artifacts_hint.setWordWrap(True)
+        self.result_artifacts_widget = QWidget()
+        self.result_artifacts_widget.setObjectName("resultArtifacts")
+        self.result_artifacts_layout = QVBoxLayout(self.result_artifacts_widget)
+        self.result_artifacts_layout.setContentsMargins(0, 4, 0, 0)
+        self.result_artifacts_layout.setSpacing(10)
+        self.result_artifact_buttons: list[QPushButton] = []
+        artifacts_layout.addWidget(artifacts_title)
+        artifacts_layout.addWidget(artifacts_hint)
+        artifacts_layout.addWidget(self.result_artifacts_widget)
+        layout.addWidget(artifacts)
+        layout.addStretch()
+        scroll.setWidget(container)
+
+        footer = QFrame()
+        footer.setObjectName("footer")
+        footer_layout = QHBoxLayout(footer)
+        footer_layout.setContentsMargins(28, 14, 28, 14)
+        footer_layout.setSpacing(12)
+        self.result_back_button = QPushButton("Zurück zum Atlaslauf")
+        self.result_back_button.setObjectName("secondary")
+        self.result_back_button.clicked.connect(self._show_run_page_from_results)
+        self.result_status_label = QLabel("Noch kein Ergebnis-Snapshot geladen.")
+        self.result_status_label.setObjectName("status")
+        self.result_status_label.setWordWrap(True)
+        footer_layout.addWidget(self.result_back_button)
+        footer_layout.addWidget(self.result_status_label, 1)
+
+        page = QWidget()
+        page_layout = QVBoxLayout(page)
+        page_layout.setContentsMargins(0, 0, 0, 0)
+        page_layout.setSpacing(0)
+        page_layout.addWidget(scroll, 1)
+        page_layout.addWidget(footer)
+        return page
+
+    @staticmethod
+    def _build_result_items_card(title: str, object_name: str) -> tuple[QWidget, QVBoxLayout]:
+        card = QFrame()
+        card.setObjectName("card")
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(24, 22, 24, 24)
+        heading = QLabel(title)
+        heading.setObjectName("sectionTitle")
+        rows = QWidget()
+        rows.setObjectName(object_name)
+        rows_layout = QVBoxLayout(rows)
+        rows_layout.setContentsMargins(0, 4, 0, 0)
+        rows_layout.setSpacing(13)
+        layout.addWidget(heading)
+        layout.addWidget(rows)
+        return card, rows_layout
 
     def _build_review_card(self, title: str, object_name: str) -> QWidget:
         card = QFrame()
@@ -823,9 +1012,11 @@ class DiffeoForgeWindow(QMainWindow):
         self._result = None
         self._review = None
         self._run_result = None
+        self._result_review = None
         self.review_button.setEnabled(False)
         self.show_run_button.setEnabled(False)
         self.start_atlas_button.setEnabled(False)
+        self.review_run_result_button.setEnabled(False)
         self.run_result_card.hide()
         self.status_label.setObjectName("status")
         self.status_label.setStyleSheet("")
@@ -967,7 +1158,9 @@ class DiffeoForgeWindow(QMainWindow):
         worker.signals.failed.connect(self._atlas_failed)
         worker.signals.cancel_failed.connect(self._atlas_cancel_failed)
         self._worker = worker
+        self._result_review = None
         self.run_result_card.hide()
+        self.review_run_result_button.setEnabled(False)
         self.run_event_log.clear()
         self.run_progress_bar.setValue(0)
         self.run_stage_label.setText("Workflow-Stufe: Worker wird gestartet")
@@ -1055,9 +1248,7 @@ class DiffeoForgeWindow(QMainWindow):
             self.run_state_label.setText(
                 "Worker meldet einen Fehler; Parent gleicht Prozessende ab."
             )
-        self.run_event_log.appendPlainText(
-            f"#{event.sequence} {event.kind}: {message}"
-        )
+        self.run_event_log.appendPlainText(f"#{event.sequence} {event.kind}: {message}")
 
     @Slot(object)
     def _atlas_succeeded(self, result: DesktopWorkerControllerResult) -> None:
@@ -1080,6 +1271,7 @@ class DiffeoForgeWindow(QMainWindow):
                 f"Prozess-Exitcode: {result.exit_code}"
             )
             self.run_result_card.show()
+            self.review_run_result_button.setEnabled(True)
             self.start_atlas_button.setEnabled(False)
         else:
             self.run_state_label.setObjectName("status")
@@ -1089,6 +1281,7 @@ class DiffeoForgeWindow(QMainWindow):
                 "keinen Checkpoint und muss bei Bedarf neu gestartet werden."
             )
             self.start_atlas_button.setEnabled(True)
+            self.review_run_result_button.setEnabled(False)
         if self._close_after_worker:
             self._close_after_worker = False
             self.close()
@@ -1103,9 +1296,167 @@ class DiffeoForgeWindow(QMainWindow):
         self.run_state_label.setText(f"Atlaslauf fehlgeschlagen oder abgewiesen: {message}")
         self.run_event_log.appendPlainText(f"Parent: Fehler: {message}")
         self.start_atlas_button.setEnabled(True)
+        self.review_run_result_button.setEnabled(False)
         if self._close_after_worker:
             self._close_after_worker = False
             self.close()
+
+    @Slot()
+    def _review_run_result(self) -> None:
+        if self._run_result is None or not self._run_result.completed or self._worker is not None:
+            return
+        destination = Path(self._run_result.terminal_event.payload["destination"])
+        worker = _ResultReviewWorker(destination)
+        worker.signals.succeeded.connect(self._result_review_succeeded)
+        worker.signals.failed.connect(self._result_review_failed)
+        self._worker = worker
+        self.review_run_result_button.setEnabled(False)
+        self.run_back_button.setEnabled(False)
+        self.run_state_label.setObjectName("status")
+        self.run_state_label.setStyleSheet("")
+        self.run_state_label.setText(
+            "Workflow, Bundle, Inventar, Mesh-QC und statische SVGs werden vollständig "
+            "neu verifiziert; erst danach wird die Ergebnisansicht freigegeben."
+        )
+        self._thread_pool.start(worker)
+
+    @Slot(object)
+    def _result_review_succeeded(self, review: ModernResultReview) -> None:
+        self._worker = None
+        self._result_review = review
+        self._populate_review_rows(self.result_overview_layout, review.overview)
+        self._populate_review_rows(self.result_optimization_layout, review.optimization)
+        self._populate_review_rows(self.result_pca_layout, review.pca)
+        self._populate_review_rows(self.result_quality_layout, review.quality)
+        self.result_boundary_label.setText(
+            "\n".join(f"• {boundary}" for boundary in review.scientific_boundaries)
+        )
+        self.result_summary_label.setText(
+            f"Projekt: {review.project_name}\n"
+            f"Erstellt: {review.created_at}\n"
+            f"Workflow: {self._wrappable_path(review.run_directory)}\n"
+            f"Workflow-Manifest SHA-256: {review.workflow_manifest_sha256}\n"
+            f"Bundle-Manifest SHA-256: {review.bundle_manifest_sha256}"
+        )
+        self._populate_result_artifacts(review)
+        self.result_status_label.setObjectName("statusSuccess")
+        self.result_status_label.setStyleSheet("")
+        self.result_status_label.setText(
+            "Snapshot vollständig verifiziert. Vor jedem Öffnen wird das gewählte Artefakt "
+            "erneut an beide Manifest-Hashes, Dateigröße und SHA-256 gebunden."
+        )
+        self.run_back_button.setEnabled(True)
+        self.review_run_result_button.setEnabled(True)
+        self._set_active_step(3)
+        self.page_stack.setCurrentIndex(3)
+        if self._close_after_worker:
+            self._close_after_worker = False
+            self.close()
+
+    @Slot(str)
+    def _result_review_failed(self, message: str) -> None:
+        self._worker = None
+        self._result_review = None
+        self.run_back_button.setEnabled(True)
+        self.review_run_result_button.setEnabled(self._run_result is not None)
+        self.run_state_label.setObjectName("statusError")
+        self.run_state_label.setStyleSheet("")
+        self.run_state_label.setText(
+            f"Ergebnisansicht gesperrt: der vollständige Snapshot verifiziert nicht: {message}"
+        )
+        if self._close_after_worker:
+            self._close_after_worker = False
+            self.close()
+
+    def _populate_result_artifacts(self, review: ModernResultReview) -> None:
+        while self.result_artifacts_layout.count():
+            child = self.result_artifacts_layout.takeAt(0)
+            widget = child.widget()
+            if widget is not None:
+                widget.deleteLater()
+        self.result_artifact_buttons.clear()
+        for artifact in review.artifacts:
+            row = QWidget()
+            row_layout = QHBoxLayout(row)
+            row_layout.setContentsMargins(0, 0, 0, 0)
+            row_layout.setSpacing(12)
+            description = QLabel(
+                f"{artifact.label}\n{artifact.description}\n"
+                f"{artifact.kind.upper()} · {artifact.bytes} Bytes · SHA-256 {artifact.sha256}"
+            )
+            description.setObjectName("reviewDetail")
+            description.setWordWrap(True)
+            description.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+            button = QPushButton("Erneut prüfen & öffnen")
+            button.setObjectName("secondary")
+            button.clicked.connect(
+                lambda checked=False, key=artifact.key: self._open_result_artifact(key)
+            )
+            row_layout.addWidget(description, 1)
+            row_layout.addWidget(button)
+            self.result_artifacts_layout.addWidget(row)
+            self.result_artifact_buttons.append(button)
+
+    @Slot(str)
+    def _open_result_artifact(self, key: str) -> None:
+        if self._result_review is None or self._worker is not None:
+            return
+        try:
+            artifact = self._result_review.artifact(key)
+        except KeyError:
+            self.result_status_label.setObjectName("statusError")
+            self.result_status_label.setStyleSheet("")
+            self.result_status_label.setText("Unbekanntes Artefakt; nichts wurde geöffnet.")
+            return
+        worker = _ArtifactWorker(self._result_review, key)
+        worker.signals.succeeded.connect(self._artifact_succeeded)
+        worker.signals.failed.connect(self._artifact_failed)
+        self._worker = worker
+        self._set_result_controls_enabled(False)
+        self.result_status_label.setObjectName("status")
+        self.result_status_label.setStyleSheet("")
+        self.result_status_label.setText(
+            f"{artifact.label} wird unmittelbar vor der Übergabe erneut geprüft …"
+        )
+        self._thread_pool.start(worker)
+
+    @Slot(object)
+    def _artifact_succeeded(self, path: Path) -> None:
+        self._worker = None
+        self._set_result_controls_enabled(True)
+        if self._close_after_worker:
+            self._close_after_worker = False
+            self.close()
+            return
+        self.result_status_label.setObjectName("statusSuccess")
+        self.result_status_label.setStyleSheet("")
+        self.result_status_label.setText(
+            f"Hash- und Größenprüfung bestanden: {path.name}. Lokale Anwendung wird geöffnet."
+        )
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
+
+    @Slot(str)
+    def _artifact_failed(self, message: str) -> None:
+        self._worker = None
+        self._set_result_controls_enabled(True)
+        self.result_status_label.setObjectName("statusError")
+        self.result_status_label.setStyleSheet("")
+        self.result_status_label.setText(f"Artefakt nicht geöffnet: {message}")
+        if self._close_after_worker:
+            self._close_after_worker = False
+            self.close()
+
+    def _set_result_controls_enabled(self, enabled: bool) -> None:
+        self.result_back_button.setEnabled(enabled)
+        for button in self.result_artifact_buttons:
+            button.setEnabled(enabled)
+
+    @Slot()
+    def _show_run_page_from_results(self) -> None:
+        if self._worker is not None:
+            return
+        self._set_active_step(2)
+        self.page_stack.setCurrentIndex(2)
 
     @staticmethod
     def _wrappable_path(path: Path) -> str:
@@ -1185,6 +1536,18 @@ class DiffeoForgeWindow(QMainWindow):
                 "Fenster bleibt bis zum bestätigten sicheren Worker-Ende geöffnet. "
                 "Der Abbruch wurde angefordert."
             )
+            event.ignore()
+            return
+        if isinstance(self._worker, (_ResultReviewWorker, _ArtifactWorker)):
+            self._close_after_worker = True
+            if isinstance(self._worker, _ResultReviewWorker):
+                self.run_state_label.setText(
+                    "Fenster bleibt bis zum Ende der laufenden Ergebnisverifikation geöffnet."
+                )
+            else:
+                self.result_status_label.setText(
+                    "Fenster bleibt bis zum Ende der laufenden Artefaktprüfung geöffnet."
+                )
             event.ignore()
             return
         super().closeEvent(event)
