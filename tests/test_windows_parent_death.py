@@ -1,13 +1,14 @@
 from __future__ import annotations
 
+import ctypes
 import json
 import os
 import subprocess
 import sys
 import time
+from ctypes import wintypes
 from pathlib import Path
 
-import psutil
 import pytest
 
 from diffeoforge.desktop.windows_job import WindowsKillOnCloseJob
@@ -23,13 +24,50 @@ ROOT = Path(__file__).parents[1]
 pytestmark = pytest.mark.skipif(os.name != "nt", reason="Windows Job Object evidence")
 
 
+def _process_is_active(process_id: int) -> bool:
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
+    kernel32.OpenProcess.restype = wintypes.HANDLE
+    kernel32.WaitForSingleObject.argtypes = (wintypes.HANDLE, wintypes.DWORD)
+    kernel32.WaitForSingleObject.restype = wintypes.DWORD
+    kernel32.CloseHandle.argtypes = (wintypes.HANDLE,)
+    kernel32.CloseHandle.restype = wintypes.BOOL
+    synchronize = 0x00100000
+    wait_timeout = 0x00000102
+    handle = kernel32.OpenProcess(synchronize, False, process_id)
+    if not handle:
+        return False
+    try:
+        return kernel32.WaitForSingleObject(handle, 0) == wait_timeout
+    finally:
+        kernel32.CloseHandle(handle)
+
+
+def _terminate_process_id(process_id: int) -> None:
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
+    kernel32.OpenProcess.restype = wintypes.HANDLE
+    kernel32.TerminateProcess.argtypes = (wintypes.HANDLE, wintypes.UINT)
+    kernel32.TerminateProcess.restype = wintypes.BOOL
+    kernel32.CloseHandle.argtypes = (wintypes.HANDLE,)
+    kernel32.CloseHandle.restype = wintypes.BOOL
+    process_terminate = 0x0001
+    handle = kernel32.OpenProcess(process_terminate, False, process_id)
+    if not handle:
+        return
+    try:
+        kernel32.TerminateProcess(handle, 1)
+    finally:
+        kernel32.CloseHandle(handle)
+
+
 def _wait_until_stopped(process_id: int, timeout: float = 10) -> bool:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        if not psutil.pid_exists(process_id):
+        if not _process_is_active(process_id):
             return True
         time.sleep(0.05)
-    return not psutil.pid_exists(process_id)
+    return not _process_is_active(process_id)
 
 
 def test_kill_on_close_job_terminates_assigned_process() -> None:
@@ -133,6 +171,6 @@ def test_hard_parent_exit_terminates_controller_worker(tmp_path: Path) -> None:
     try:
         assert _wait_until_stopped(worker_pid)
     finally:
-        if psutil.pid_exists(worker_pid):
-            psutil.Process(worker_pid).kill()
+        if _process_is_active(worker_pid):
+            _terminate_process_id(worker_pid)
     assert not request.destination.exists()
