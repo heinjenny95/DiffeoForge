@@ -393,6 +393,7 @@ and workflow for another mesh directory.
 - [Desktop project-setup preview](docs/DESKTOP_PREVIEW.md)
 - [Desktop reference prelaunch contract](docs/REFERENCE_PRELAUNCH.md)
 - [Versioned reference worker lifecycle protocol](docs/REFERENCE_WORKER_PROTOCOL.md)
+- [Nonnumerical reference worker pipe harness](docs/REFERENCE_WORKER_HARNESS.md)
 - [Open synthetic validation dataset](docs/SYNTHETIC_DATASET.md)
 - [Synthetic numerical reference](reference/synthetic-v1/README.md)
 - [Frozen Deformetrica CPU container](docs/CONTAINER_REFERENCE.md)

@@ -155,6 +155,12 @@ while rejecting sequence, phase, terminal, and evidence contradictions. This is
 still a non-executing protocol seam; see
 [the reference worker protocol](REFERENCE_WORKER_PROTOCOL.md).
 
+A deliberately nonnumerical reference worker harness now exercises that request
+and event vocabulary over a real child-process stdio boundary. It revalidates
+the exact request in the child and terminates with `stopped_before_prepare`;
+tests prove the project tree remains byte-identical. It is not the production
+worker and creates no descendant process, run directory, or engine artifact.
+
 Both setup routes can also pass their already selected template path to a
 Qt-independent immutable preview model. The model reuses the strict VTK parser,
 binds the source SHA-256 before and after loading, freezes vertices, triangles,

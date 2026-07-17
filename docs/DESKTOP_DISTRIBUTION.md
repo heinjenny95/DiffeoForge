@@ -125,6 +125,11 @@ distinguishes stopping before preparation, retaining an immutable prepared run,
 and interrupting active execution with a terminal result hash. No reference
 worker or subprocess controller consumes that vocabulary yet.
 
+A source-level nonnumerical harness now consumes it over real stdin/stdout,
+rechecks the prelaunch request in the child process, and guarantees a terminal
+stop before preparation. This validates transport packaging only; no desktop
+controller launches the harness and no reference compute control is enabled.
+
 ## Bundle and installer decisions
 
 The first evidence build now uses pinned PyInstaller 6.21.0 in one-directory

@@ -49,3 +49,8 @@ recovery, resume, or GUI enablement. Later code must consume the existing
 hash-bound prelaunch request, emit this protocol, and prove operating-system
 process-tree containment and terminal result verification before the reference
 button can be enabled.
+
+The first executable consumer is deliberately nonnumerical: it verifies the
+request across a real stdio child-process boundary and always emits
+`stopped_before_prepare`. See
+[the reference worker pipe harness](REFERENCE_WORKER_HARNESS.md).
