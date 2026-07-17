@@ -43,6 +43,7 @@ it exactly.
 ```powershell
 .freeze-venv\Scripts\diffeoforge.exe modern-init `
   examples\synthetic\meshes `
+  --units millimeter `
   --config "dist\Frozen Smoke Käfer\modern.yaml" `
   --output-directory "dist\Frozen Smoke Käfer\configured output" `
   --max-cycles 1
