@@ -1,8 +1,10 @@
 # Versioned desktop worker protocol
 
-Status: **implemented source-level Modern CPU transport; not yet connected to GUI controls**
+Status: **implemented source-level Modern CPU transport and verified parent
+controller; not yet connected to GUI controls**
 
-Tracked by [engineering issue #79](https://github.com/heinjenny95/DiffeoForge/issues/79).
+Tracked by [engineering issue #79](https://github.com/heinjenny95/DiffeoForge/issues/79)
+and [parent-controller issue #81](https://github.com/heinjenny95/DiffeoForge/issues/81).
 
 ## Purpose and boundary
 
@@ -78,28 +80,70 @@ This is distinct from the external Deformetrica reference lifecycle, whose
 inventoried checkpoints can create immutable successor runs. The desktop must
 not present that reference capability as Modern-engine resume support.
 
-## Parent implementation requirements
+## Verified parent controller
 
-A desktop controller must:
+`DesktopWorkerController` implements the parent side without importing Qt. It:
 
-1. create the request only after parameter/workload review;
-2. keep standard input open while compute is active;
-3. read standard output and standard error without blocking either pipe;
-4. reject unknown versions, skipped/duplicate event sequences, and malformed
+1. creates the request only after parameter/workload review;
+2. keeps standard input open while compute is active;
+3. reads standard output and standard error without blocking either pipe;
+4. rejects unknown versions, skipped/duplicate event sequences, and malformed
    nested progress;
-5. send at most one matching cancellation command;
-6. wait for the process and reconcile the terminal event with its exit code;
-7. independently verify the published workflow before showing success; and
-8. retain failure diagnostics without treating a partial directory as a result.
+5. sends at most one matching cancellation command;
+6. waits for the process and reconciles the terminal event with its exit code;
+7. independently verifies the published workflow before showing success; and
+8. retains failure diagnostics without treating a partial directory as a result.
 
-GUI start/cancel controls, crash reconciliation, checkpoint/recovery,
-reference-engine process supervision, and result inspection are later slices.
-The protocol is intentionally usable and testable before those controls exist.
+Every event must match the reviewed request identifier and destination. The
+`started` event must additionally reproduce its engine and configuration hash.
+Sequences begin at zero, remain contiguous, follow the declared lifecycle, and
+contain exactly one terminal event. The controller reconciles `completed`,
+`cancelled`, and `failed` with exit codes 0, 130, and 1 respectively. A
+completed event is accepted only after independently re-verifying the workflow
+and cross-checking manifest SHA-256, subject count, and bundle path.
+
+A cancellation requested during process creation is queued until the complete
+launch request has been written. This prevents a fast GUI click from becoming
+the first input line and being misread as the worker request. Repeated clicks
+do not emit duplicate commands.
+
+Standard error is drained concurrently so a verbose dependency cannot block
+the JSON protocol. Diagnostics are retained up to 65,536 characters and then
+explicitly marked truncated. After a terminal event the parent closes the
+command pipe and allows five seconds for a clean process exit before stopping a
+nonconforming process. Started, progress, and terminal events remain raw
+transport observations; only a successful controller return is reconciled
+completion.
+
+## Windows lifecycle hardening
+
+The worker imports the Modern numerical runtime before starting its blocking
+command-reader thread. A real Windows parent-process test found that importing
+PyTorch concurrently with the already blocked pipe reader could stall before
+the first workflow event. The dedicated process therefore establishes the
+runtime first, emits `started`, and only then begins cooperative command input.
+A cancel command sent while the runtime loads remains buffered by the operating
+system and is observed before substantive workflow work.
+
+After `run_worker` has emitted and flushed its terminal event, the module entry
+point exits the dedicated process directly. This deliberately bypasses Python
+interpreter shutdown waiting on a daemon reader whose parent may keep stdin
+open. Scientific cleanup and atomic publication have already completed inside
+`run_worker`; operating-system process teardown then releases the isolated
+runtime. Direct in-process tests continue to call and return from `run_worker`
+normally.
+
+GUI start/cancel controls, crash reconciliation after the parent application
+itself dies, checkpoint/recovery, reference-engine process supervision, and
+result inspection are later slices. The protocol and controller are
+intentionally usable and testable before those controls exist.
 
 ## Verification evidence
 
 Automated tests cover strict schema composition, deep event immutability,
-configuration hash binding, Qt/numerical-engine-independent protocol import,
-real subprocess completion, real subprocess cancellation, malformed commands,
-destination nonpublication, and private temporary-directory cleanup on both
-Windows and Ubuntu Modern-engine CI.
+configuration hash binding, Qt/numerical-engine-independent protocol and
+controller imports, real subprocess completion and cancellation, malformed
+commands, adversarial identities/sequences/lifecycles/exit codes, bounded
+stderr, independent result verification, destination nonpublication, and
+private temporary-directory cleanup on both Windows and Ubuntu Modern-engine
+CI.

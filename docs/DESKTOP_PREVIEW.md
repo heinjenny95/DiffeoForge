@@ -59,8 +59,9 @@ python -m diffeoforge.desktop --smoke
 - Review refreshes only reports that carry the expected DiffeoForge generator
   markers; researcher-owned paths are refused.
 - Mesh inspection runs in a background GUI thread; numerical atlas computation
-  remains outside this GUI slice. A tested separate Modern worker protocol now
-  exists, but no start/cancel control is connected here yet.
+  remains outside this GUI slice. A tested separate Modern worker protocol and
+  fail-closed parent controller now exist, but no start/cancel control is
+  connected here yet.
 - Project files stay in the user-selected directory, separate from future
   application files.
 - The window performs no upload, telemetry, update check, or network request.

@@ -105,8 +105,11 @@ dense optimizer's committed decision records without exposing rejected
 line-search candidates as accepted progress. CLI output and the source-level
 desktop worker protocol consume this same contract. The worker adds a strict
 request/command/event envelope, configuration-hash binding, child-process
-isolation, and nonpublishing cooperative cancellation. Counts describe
-completed stages and decisions, not elapsed-time percentages or ETA.
+isolation, and nonpublishing cooperative cancellation. A Qt-independent parent
+controller enforces identity, sequence, lifecycle, terminal/exit agreement,
+bounded stderr capture, and independent completed-run verification before a
+caller may accept success. Counts describe completed stages and decisions, not
+elapsed-time percentages or ETA.
 
 The application layer also exposes an opt-in `modern-benchmark` service. The
 user must declare a deterministic subject-prefix size. Each repeat runs one
