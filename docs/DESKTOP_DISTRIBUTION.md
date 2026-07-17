@@ -1,6 +1,6 @@
 # Desktop executable and installer architecture
 
-Status: **first project-setup GUI exists; no frozen executable or installer exists yet**
+Status: **project setup and read-only parameter/workload review exist; no frozen executable or installer exists yet**
 
 Tracked by [engineering issue #22](https://github.com/heinjenny95/DiffeoForge/issues/22)
 and [ADR 0003](decisions/0003-windows-desktop-distribution.md). The
@@ -47,11 +47,13 @@ official installer already distinguishes Windows CPU and CUDA selections, so a
 single ambiguous "works everywhere" bundle would hide a material dependency
 and validation difference.
 
-The shared-core `modern-plan` workload report is the first implementation of
-the resource-review step. A future GUI may render its strict JSON, but must
-retain the report's distinction between exact logical all-pairs counts, the
-largest configured dense or blockwise execution tile, known payload subtotals,
-and unknown measured peak RAM/runtime.
+The desktop preview renders the shared-core `modern-plan` workload contract in
+its second step and publishes the strict JSON/HTML report beside the generated
+configuration. It retains the distinction between exact logical all-pairs
+counts, the largest configured dense or blockwise execution tile, known payload
+subtotals, host observations, and unknown measured peak RAM/runtime. The
+Deformetrica route instead renders its existing preflight parameter ratios and
+labels resource use as unmodelled because computation remains external.
 
 The shared-core `modern-run` callback is the first implementation of the
 worker-to-UI progress payload. Its strict v0.1 JSON shape reports seven

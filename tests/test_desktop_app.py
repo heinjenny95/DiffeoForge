@@ -79,3 +79,55 @@ def test_desktop_window_exposes_required_project_controls(monkeypatch) -> None:
     assert window.landmarks_edit.isEnabled() is False
     window.close()
     application.processEvents()
+
+
+def test_desktop_window_renders_parameter_review_as_second_step(monkeypatch, tmp_path) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QLabel, QWidget
+
+    from diffeoforge.desktop.project_review import ProjectReviewResult, ReviewItem
+    from diffeoforge.desktop.project_setup import DesktopEngine
+    from diffeoforge.desktop.widgets import DiffeoForgeWindow
+
+    application = QApplication.instance() or QApplication(["diffeoforge-desktop-review-test"])
+    window = DiffeoForgeWindow()
+    report = tmp_path / "workload.html"
+    report.write_text("report\n", encoding="utf-8")
+    review = ProjectReviewResult(
+        engine=DesktopEngine.MODERN_CPU,
+        project_name="Käfer Atlas",
+        config_path=tmp_path / "modern-atlas.yaml",
+        report_path=report,
+        report_label="Modern-Workload-Report",
+        subject_count=305,
+        parameters=(ReviewItem("Kontrollpunkte", "9", "Effektiver Wert."),),
+        workload=(
+            ReviewItem(
+                "Peak-RAM und Laufzeit",
+                "unbekannt · Pilotmessung erforderlich",
+                "Keine erfundene Prognose.",
+            ),
+        ),
+        warnings=("Produktionsskalierung ist nicht validiert.",),
+        scientific_boundary="Kein Atlas wurde gestartet.",
+    )
+
+    window._review_succeeded(review)
+    application.processEvents()
+
+    assert window.page_stack.currentIndex() == 1
+    assert window.rail_steps[1].objectName() == "stepActive"
+    assert "Käfer Atlas" in window.review_summary_label.text()
+    assert "Kein Atlas" in window.review_boundary_label.text()
+    parameter_rows = window.findChild(QWidget, "parameterReview")
+    workload_rows = window.findChild(QWidget, "workloadReview")
+    assert parameter_rows is not None
+    assert workload_rows is not None
+    assert "Kontrollpunkte" in parameter_rows.findChildren(QLabel)[0].text()
+    assert "unbekannt" in workload_rows.findChildren(QLabel)[0].text()
+    assert "Produktionsskalierung" in window.review_warnings_label.text()
+    window._show_setup_page()
+    assert window.page_stack.currentIndex() == 0
+    window.close()
+    application.processEvents()
