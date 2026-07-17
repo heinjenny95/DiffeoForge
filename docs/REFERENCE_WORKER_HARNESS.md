@@ -32,10 +32,17 @@ It creates no output root, destination, XML, manifest, event file, log, or
 result. Unit and real-subprocess integration tests inventory the complete test
 project tree byte-for-byte before and after the pipe round trip.
 
+## Parent controller
+
+A separate Qt-independent controller now launches this harness, assigns it to a
+kill-on-close Job Object on Windows before writing the request, bounds stdout and
+stderr, enforces a timeout, reconciles the exact three-event lifecycle and exit
+code, and independently repeats request and destination verification. See
+[the nonnumerical reference harness controller](REFERENCE_HARNESS_CONTROLLER.md).
+
 ## Current boundary
 
-This is not the production reference worker or controller. It has no cancel
-reader, Windows job attachment, parent-death handling, descendant process,
-preparation, result verification, recovery, resume, or GUI wiring. Its terminal
-stop is an engineering transport proof, not a completed atlas and not
-scientific evidence.
+This is not the production reference worker. The harness has no cancel reader,
+descendant process, preparation, result verification, recovery, resume, or GUI
+wiring. Its terminal stop and the controller's verified result are engineering
+transport evidence, not a completed atlas and not scientific evidence.

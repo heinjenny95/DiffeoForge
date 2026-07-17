@@ -1,6 +1,6 @@
 # Versioned desktop reference worker protocol
 
-Status: **transport and lifecycle contract only; no worker or engine launch**
+Status: **transport contract with nonnumerical harness consumer; no engine launch**
 
 The external Deformetrica lifecycle cannot reuse the Modern worker's
 nonpublishing cancellation semantics. A Modern cancellation removes private
@@ -43,14 +43,17 @@ requires the destination but no result hash.
 
 ## Current boundary
 
-This slice supplies no executable worker, subprocess controller, pipe reader,
-signal delivery, container containment, run preparation, Deformetrica start,
-recovery, resume, or GUI enablement. Later code must consume the existing
-hash-bound prelaunch request, emit this protocol, and prove operating-system
-process-tree containment and terminal result verification before the reference
+The executable consumer remains deliberately restricted to the nonnumerical
+harness. Its parent controller provides a bounded pipe reader, timeout, Windows
+Job containment and exact `stopped_before_prepare` reconciliation, but supplies
+no signal delivery, run preparation, Deformetrica start, result publication,
+recovery, resume, or GUI enablement. Later code must preserve this request and
+protocol boundary and prove terminal result verification before the reference
 button can be enabled.
 
 The first executable consumer is deliberately nonnumerical: it verifies the
 request across a real stdio child-process boundary and always emits
 `stopped_before_prepare`. See
 [the reference worker pipe harness](REFERENCE_WORKER_HARNESS.md).
+Its parent-side contract is documented in
+[the reference harness controller](REFERENCE_HARNESS_CONTROLLER.md).

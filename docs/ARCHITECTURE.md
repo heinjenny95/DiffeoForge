@@ -161,6 +161,15 @@ the exact request in the child and terminates with `stopped_before_prepare`;
 tests prove the project tree remains byte-identical. It is not the production
 worker and creates no descendant process, run directory, or engine artifact.
 
+A dedicated Qt-independent parent controller now launches only that harness. It
+assigns the child to a Windows kill-on-close Job before sending the request,
+enforces a finite timeout and bounded stdout/stderr, requires the exact
+three-event harness lifecycle and matching exit code, and repeats the complete
+request/destination verification after child success. This closes the
+nonnumerical supervision seam but does not prepare a run, start the reference
+engine, or enable GUI computation. See
+[the reference harness controller](REFERENCE_HARNESS_CONTROLLER.md).
+
 Both setup routes can also pass their already selected template path to a
 Qt-independent immutable preview model. The model reuses the strict VTK parser,
 binds the source SHA-256 before and after loading, freezes vertices, triangles,

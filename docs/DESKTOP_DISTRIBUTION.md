@@ -122,13 +122,15 @@ reference button.
 The reference route also has a separate schema-valid worker event vocabulary
 and parent-side lifecycle ledger. Unlike Modern cancellation, it explicitly
 distinguishes stopping before preparation, retaining an immutable prepared run,
-and interrupting active execution with a terminal result hash. No reference
-worker or subprocess controller consumes that vocabulary yet.
+and interrupting active execution with a terminal result hash.
 
-A source-level nonnumerical harness now consumes it over real stdin/stdout,
-rechecks the prelaunch request in the child process, and guarantees a terminal
-stop before preparation. This validates transport packaging only; no desktop
-controller launches the harness and no reference compute control is enabled.
+A source-level nonnumerical harness consumes it over real stdin/stdout, rechecks
+the prelaunch request in the child process, and guarantees a terminal stop
+before preparation. A Qt-independent parent controller now attaches that child
+to the Windows kill-on-close Job, bounds output, enforces a timeout, reconciles
+the exact harness lifecycle, and independently reverifies the request. The
+evidence build does not yet include the planned frozen sibling reference worker;
+no run is prepared and no reference compute control is enabled.
 
 ## Bundle and installer decisions
 
