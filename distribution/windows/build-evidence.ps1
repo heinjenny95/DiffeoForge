@@ -63,6 +63,12 @@ try {
     if ($LASTEXITCODE -ne 0) {
         throw "Frozen nonnumerical reference worker/controller smoke failed."
     }
+    & $Python tools\audit_frozen_reference_parent_death.py `
+        (Join-Path $bundle "DiffeoForgeReferenceWorker.exe") `
+        examples\minimal-atlas-container.yaml
+    if ($LASTEXITCODE -ne 0) {
+        throw "Frozen reference worker hard-parent-death audit failed."
+    }
     $commit = (& git rev-parse HEAD).Trim()
     if ($LASTEXITCODE -ne 0) {
         throw "Could not resolve the source commit."

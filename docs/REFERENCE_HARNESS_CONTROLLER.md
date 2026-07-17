@@ -60,5 +60,8 @@ child-created destination.
 This is not reference atlas execution. The controller sends no cancel command,
 does not invoke Docker or Deformetrica, does not prepare a run, and is not wired
 to the GUI. It proves the source and frozen parent/process boundary only. The
-next gates are frozen-boundary parent-death evidence and then a separately
-reviewed preparation-only lifecycle before any numerical process is reachable.
+frozen build now also hard-exits a real controller after assigning a suspended
+reference worker and requires Job-driven worker termination; see
+[the frozen parent-death evidence](FROZEN_REFERENCE_PARENT_DEATH.md). The next
+gate is a separately reviewed preparation-only lifecycle before any numerical
+process is reachable.

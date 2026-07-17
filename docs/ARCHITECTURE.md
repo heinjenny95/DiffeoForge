@@ -177,6 +177,14 @@ harness through its controller before evidence is written. Verification retains
 version-dispatched v0.1 compatibility without granting the legacy two-entry-point
 artifact any v0.2 claim.
 
+The clean Windows build additionally audits hard parent death at this exact
+frozen boundary. It creates the reference worker suspended, lets the real
+controller complete Job assignment, then terminates that controller without
+cleanup and requires the worker PID to stop. Suspension prevents normal harness
+exit or pipe EOF from masquerading as Job-driven containment. This is termination
+evidence only, not crash recovery or reference execution; see
+[the frozen reference parent-death evidence](FROZEN_REFERENCE_PARENT_DEATH.md).
+
 Both setup routes can also pass their already selected template path to a
 Qt-independent immutable preview model. The model reuses the strict VTK parser,
 binds the source SHA-256 before and after loading, freezes vertices, triangles,

@@ -395,6 +395,7 @@ and workflow for another mesh directory.
 - [Versioned reference worker lifecycle protocol](docs/REFERENCE_WORKER_PROTOCOL.md)
 - [Nonnumerical reference worker pipe harness](docs/REFERENCE_WORKER_HARNESS.md)
 - [Nonnumerical reference harness controller](docs/REFERENCE_HARNESS_CONTROLLER.md)
+- [Frozen reference-worker parent-death evidence](docs/FROZEN_REFERENCE_PARENT_DEATH.md)
 - [Open synthetic validation dataset](docs/SYNTHETIC_DATASET.md)
 - [Synthetic numerical reference](reference/synthetic-v1/README.md)
 - [Frozen Deformetrica CPU container](docs/CONTAINER_REFERENCE.md)

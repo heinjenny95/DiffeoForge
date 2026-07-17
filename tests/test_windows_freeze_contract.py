@@ -38,5 +38,7 @@ def test_windows_freeze_has_separate_desktop_and_pipe_worker_entry_points() -> N
     assert "DiffeoForgeWorker.exe" in build
     assert "DiffeoForgeReferenceWorker.exe" in build
     assert "smoke_frozen_reference_worker.py" in build
+    assert "audit_frozen_reference_parent_death.py" in build
+    assert "hard-parent-death audit failed" in build
     assert "desktop_bundle_evidence.py create" in build
     assert "desktop_bundle_evidence.py verify" in build

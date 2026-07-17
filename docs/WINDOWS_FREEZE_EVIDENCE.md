@@ -67,11 +67,14 @@ and clean-source boundaries. It then:
 4. always runs the frozen nonnumerical reference harness through its contained
    parent controller, requires the exact three-event `stopped_before_prepare`
    lifecycle, and verifies that it created no destination;
-5. records the exact source commit, builder/runtime package versions, every
+5. hard-exits a real controller immediately after it assigns a suspended frozen
+   reference worker to the Windows kill-on-close Job, then requires that worker
+   to terminate within the bounded audit deadline;
+6. records the exact source commit, builder/runtime package versions, every
    bundled relative path, byte count, file SHA-256, aggregate byte count, and
    inventory SHA-256;
-6. writes `freeze-evidence.json` and its `freeze-evidence.sha256` sidecar;
-7. immediately re-verifies the sidecar and exact file inventory.
+7. writes `freeze-evidence.json` and its `freeze-evidence.sha256` sidecar;
+8. immediately re-verifies the sidecar and exact file inventory.
 
 `tools/desktop_bundle_evidence.py verify <bundle>` can repeat the final
 verification. It fails closed on a changed manifest, unsafe path, missing,
@@ -103,6 +106,8 @@ One successful evidence build proves only that the recorded clean source commit
 was frozen on the recorded Windows developer host, its three entry points were
 present, the GUI smoke exited successfully, the nonnumerical reference harness
 stopped before preparation through its real frozen worker/controller boundary,
+the suspended reference worker terminated after hard controller death through
+the real Windows Job boundary,
 the optional recorded synthetic Modern workflow completed through its real
 frozen worker/controller boundary, and the resulting directory matched its
 exact-file inventory at verification time.
@@ -116,13 +121,18 @@ The manifest intentionally labels itself
   redistribution approval;
 - installation and execution on a clean Windows VM without Python;
 - absence of network access;
-- recovery after parent death, power loss, or forced termination;
+- crash reconciliation or recovery after parent death, power loss, or forced
+  termination;
 - numerical release equivalence, biological validity, GPU behavior, or
   feasibility for 300-specimen cohorts.
 
 Those remain explicit release gates in
 [Desktop executable and installer architecture](DESKTOP_DISTRIBUTION.md) and
 must not be inferred from a developer-machine smoke.
+
+The exact hard-exit method and why a suspended child rules out pipe-EOF or
+normal-exit false positives are documented in
+[Frozen reference-worker parent-death evidence](FROZEN_REFERENCE_PARENT_DEATH.md).
 
 ## Primary packaging references
 
