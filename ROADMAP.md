@@ -67,7 +67,8 @@ This roadmap describes evidence gates rather than promised dates.
   - [x] Modern GUI start, exact live events, cooperative cancel, and verified result handoff
   - [x] Detailed verified Modern Atlas/PCA/QC summary and hash-bound artifact opening
   - [x] Clean-commit Windows one-directory engineering build with separate frozen worker
-  - [ ] Parent-death crash recovery, reference supervision, and native mesh rendering
+  - [x] Windows parent-death worker-tree termination and cross-platform pipe-EOF fallback
+  - [ ] Abandoned-private-run reconciliation, reference supervision, and native mesh rendering
 - [ ] Parameter explanations and safe presets
 - [x] Pre-compute configured all-pairs and known-payload workload report
 - [x] Versioned workflow-stage and committed optimizer-decision reporting

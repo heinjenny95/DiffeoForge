@@ -144,7 +144,10 @@ only after the workflow, nested bundle, inventories, hashes, mesh QC, and SVG
 safety checks pass again. Each selected result artifact is rechecked by size
 and SHA-256 immediately before it is opened by a local application. The
 external Deformetrica route is not yet supervised by the GUI, and
-the Modern path does not provide checkpoint/resume or parent-death recovery.
+the Modern path does not provide checkpoint/resume. Windows parent death now
+terminates the contained worker tree and command-pipe EOF requests cooperative
+cancellation on every platform; power-loss and abandoned temporary-run
+reconciliation remain open.
 DiffeoForge also does **not** yet ship a desktop installer or redistributable
 binary. A clean-commit, exact-inventory Windows one-directory
 [engineering build](docs/WINDOWS_FREEZE_EVIDENCE.md) now exercises the GUI and

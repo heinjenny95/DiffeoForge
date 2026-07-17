@@ -105,4 +105,4 @@ jobs:
         run: >-
           pytest tests/test_desktop_app.py tests/test_desktop_project_setup.py
           tests/test_desktop_project_review.py tests/test_desktop_reviewed_run.py
-          tests/test_desktop_worker_controller.py
+          tests/test_desktop_worker_controller.py tests/test_windows_parent_death.py

@@ -129,6 +129,7 @@ def run_worker(
         )
 
     cancel_event = threading.Event()
+    parent_disconnected = threading.Event()
     command_errors: list[DesktopWorkerProtocolError] = []
 
     def read_commands() -> None:
@@ -155,6 +156,8 @@ def run_worker(
                 return
             cancel_event.set()
             return
+        parent_disconnected.set()
+        cancel_event.set()
 
     emit(
         "started",
@@ -183,6 +186,8 @@ def run_worker(
         if command_errors:
             return fail(command_errors[0])
         manifest = verify_modern_workflow(run_directory)
+        if parent_disconnected.is_set():
+            return 0
         emit(
             "completed",
             {
@@ -196,6 +201,8 @@ def run_worker(
     except ModernWorkflowCancelled:
         if command_errors:
             return fail(command_errors[0])
+        if parent_disconnected.is_set():
+            return 130
         if request.destination.exists():
             return fail(RuntimeError("Cancelled worker unexpectedly found a published destination"))
         emit(
@@ -212,6 +219,8 @@ def run_worker(
         )
         return 130
     except (OSError, RuntimeError, TypeError, ValueError) as error:
+        if parent_disconnected.is_set():
+            return 1
         return fail(error)
 
 

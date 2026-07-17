@@ -52,7 +52,10 @@ events to the reviewed request, enforces lifecycle/exit-code agreement, bounds
   thread, presents bounded Atlas/optimizer/PCA/QC evidence, and rechecks the two
   manifest hashes plus selected artifact size/SHA-256 immediately before OS
   handoff. It does not implement an internal VTK renderer. Parent-death recovery
-  remain separate unfinished slices. The first frozen-process engineering
+  and abandoned-private-directory reconciliation remain separate unfinished
+  slices. The Windows controller now contains each worker in a dedicated
+  kill-on-close Job Object and treats command-pipe EOF as cross-platform
+  cooperative parent disconnect. The first frozen-process engineering
   slice is documented in [Windows one-directory freeze evidence](WINDOWS_FREEZE_EVIDENCE.md):
   it creates separate windowed-parent and pipe-worker executables, exercises
   their production protocol on a public synthetic configuration, and binds an
@@ -151,7 +154,8 @@ demonstrate on a clean Windows VM with no Python/developer tools:
 - Authenticode signature, SHA-256 checksums, SBOM, and license inventory;
 - Windows Defender scan and DLL inventory;
 - interruption/crash recovery without a surviving worker or mutable partial
-  result presented as complete;
+  result presented as complete (Windows parent-death worker termination exists;
+  power-loss and abandoned-state reconciliation remain open);
 - installer/uninstaller logs and preservation of user projects;
 - no network requests by default;
 - CPU numerical validation on the exact bundled artifact.
