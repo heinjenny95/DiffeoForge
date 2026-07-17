@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from diffeoforge.desktop.project_review import ProjectReviewResult
 from diffeoforge.desktop.project_setup import DesktopEngine
 from diffeoforge.desktop.worker_protocol import (
@@ -9,10 +11,27 @@ from diffeoforge.desktop.worker_protocol import (
     build_worker_request,
     sha256_file,
 )
+from diffeoforge.private_runs import PrivateRunDiscovery, discover_private_runs
 
 
 class DesktopReviewedRunError(RuntimeError):
     """Raised when a GUI launch no longer matches its completed review."""
+
+
+@dataclass(frozen=True)
+class DesktopReviewedRunReadiness:
+    """Exact reviewed request plus observational destination safety state."""
+
+    request: DesktopWorkerRequest
+    discovery: PrivateRunDiscovery
+
+    def __post_init__(self) -> None:
+        if self.request.destination.resolve() != self.discovery.destination.resolve():
+            raise ValueError("Reviewed request and private-run discovery target different paths")
+
+    @property
+    def ready_for_worker(self) -> bool:
+        return self.discovery.ready_for_new_run
 
 
 def build_reviewed_worker_request(
@@ -47,3 +66,15 @@ def build_reviewed_worker_request(
             "Project configuration changed while the reviewed launch was being prepared"
         )
     return request
+
+
+def check_reviewed_run_readiness(
+    review: ProjectReviewResult,
+    *,
+    request_id: str,
+) -> DesktopReviewedRunReadiness:
+    """Bind reviewed bytes and inspect their exact destination without mutation."""
+
+    request = build_reviewed_worker_request(review, request_id=request_id)
+    discovery = discover_private_runs(request.destination)
+    return DesktopReviewedRunReadiness(request=request, discovery=discovery)

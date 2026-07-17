@@ -88,7 +88,10 @@ def test_desktop_window_renders_parameter_review_as_second_step(monkeypatch, tmp
 
     from diffeoforge.desktop.project_review import ProjectReviewResult, ReviewItem
     from diffeoforge.desktop.project_setup import DesktopEngine
+    from diffeoforge.desktop.reviewed_run import DesktopReviewedRunReadiness
     from diffeoforge.desktop.widgets import DiffeoForgeWindow
+    from diffeoforge.desktop.worker_protocol import DesktopWorkerRequest
+    from diffeoforge.private_runs import PrivateRunDiscovery
 
     application = QApplication.instance() or QApplication(["diffeoforge-desktop-review-test"])
     window = DiffeoForgeWindow()
@@ -112,6 +115,20 @@ def test_desktop_window_renders_parameter_review_as_second_step(monkeypatch, tmp
         ),
         warnings=("Produktionsskalierung ist nicht validiert.",),
         scientific_boundary="Kein Atlas wurde gestartet.",
+    )
+    destination = (tmp_path / "modern-result").resolve()
+    request = DesktopWorkerRequest(
+        request_id="desktop-review",
+        config_path=review.config_path,
+        destination=destination,
+        expected_config_sha256=review.config_sha256,
+    )
+    monkeypatch.setattr(
+        "diffeoforge.desktop.widgets.check_reviewed_run_readiness",
+        lambda *_args, **_kwargs: DesktopReviewedRunReadiness(
+            request=request,
+            discovery=PrivateRunDiscovery(destination, False, ()),
+        ),
     )
 
     window._review_succeeded(review)
@@ -284,9 +301,11 @@ def test_desktop_window_starts_bound_worker_and_shows_only_reconciled_result(
 
     from diffeoforge.desktop.project_review import ProjectReviewResult
     from diffeoforge.desktop.project_setup import DesktopEngine
+    from diffeoforge.desktop.reviewed_run import DesktopReviewedRunReadiness
     from diffeoforge.desktop.widgets import DiffeoForgeWindow, _AtlasWorker
     from diffeoforge.desktop.worker_controller import DesktopWorkerControllerResult
     from diffeoforge.desktop.worker_protocol import DesktopWorkerEvent, DesktopWorkerRequest
+    from diffeoforge.private_runs import PrivateRunDiscovery
 
     application = QApplication.instance() or QApplication(["diffeoforge-run-test"])
     config = (tmp_path / "modern-atlas.yaml").resolve()
@@ -312,15 +331,20 @@ def test_desktop_window_starts_bound_worker_and_shows_only_reconciled_result(
         scientific_boundary="boundary",
     )
     queued = []
+    readiness_checks = []
 
     class FakePool:
         def start(self, worker) -> None:
             queued.append(worker)
 
-    monkeypatch.setattr(
-        "diffeoforge.desktop.widgets.build_reviewed_worker_request",
-        lambda review, request_id: request,
-    )
+    def readiness(_review, *, request_id):
+        readiness_checks.append(request_id)
+        return DesktopReviewedRunReadiness(
+            request=request,
+            discovery=PrivateRunDiscovery(destination, False, ()),
+        )
+
+    monkeypatch.setattr("diffeoforge.desktop.widgets.check_reviewed_run_readiness", readiness)
     window = DiffeoForgeWindow()
     window._thread_pool = FakePool()  # type: ignore[assignment]
     window._review_succeeded(review)
@@ -328,11 +352,15 @@ def test_desktop_window_starts_bound_worker_and_shows_only_reconciled_result(
 
     window._start_atlas()
 
+    assert len(readiness_checks) == 2
     assert len(queued) == 1
     assert isinstance(window._worker, _AtlasWorker)
     assert window.start_atlas_button.isEnabled() is False
     assert window.cancel_atlas_button.isEnabled() is True
+    assert window.refresh_run_readiness_button.isEnabled() is False
     assert "desktop-bound" in window.run_summary_label.text()
+    assert "Ziel ist frei" in window.run_readiness_status_label.text()
+    assert "nur gelesen" in window.run_readiness_detail_label.text()
     window._cancel_atlas()
     assert window.cancel_atlas_button.isEnabled() is False
     assert "nächsten sicheren Punkt" in window.run_state_label.text()
@@ -365,6 +393,85 @@ def test_desktop_window_starts_bound_worker_and_shows_only_reconciled_result(
     assert "unabhängig verifiziert" in window.run_state_label.text()
     assert "Probanden: 5" in window.run_result_label.text()
     assert window.start_atlas_button.isEnabled() is False
+    assert window.refresh_run_readiness_button.isEnabled() is True
+    application.processEvents()
+
+
+def test_desktop_window_blocks_private_candidate_before_worker_launch(
+    monkeypatch, tmp_path
+) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from diffeoforge.desktop.project_review import ProjectReviewResult
+    from diffeoforge.desktop.project_setup import DesktopEngine
+    from diffeoforge.desktop.reviewed_run import DesktopReviewedRunReadiness
+    from diffeoforge.desktop.widgets import DiffeoForgeWindow
+    from diffeoforge.desktop.worker_protocol import DesktopWorkerRequest
+    from diffeoforge.private_runs import PrivateRunCandidate, PrivateRunDiscovery
+
+    application = QApplication.instance() or QApplication(["diffeoforge-private-state-test"])
+    config = (tmp_path / "modern-atlas.yaml").resolve()
+    config.write_text("reviewed\n", encoding="utf-8")
+    destination = (tmp_path / "modern-result").resolve()
+    private = tmp_path / f".{destination.name}.tmp-{'a' * 32}"
+    request = DesktopWorkerRequest(
+        request_id="desktop-blocked",
+        config_path=config,
+        destination=destination,
+        expected_config_sha256="d" * 64,
+    )
+    review = ProjectReviewResult(
+        engine=DesktopEngine.MODERN_CPU,
+        project_name="Blocked run",
+        config_path=config,
+        config_sha256="d" * 64,
+        report_path=tmp_path / "workload.html",
+        report_label="Modern-Workload-Report",
+        subject_count=5,
+        parameters=(),
+        workload=(),
+        warnings=(),
+        scientific_boundary="boundary",
+    )
+    candidate = PrivateRunCandidate(
+        path=private,
+        status="abandoned",
+        reason="No process holds the valid private-run lease; explicit review is required.",
+    )
+    readiness = DesktopReviewedRunReadiness(
+        request=request,
+        discovery=PrivateRunDiscovery(destination, False, (candidate,)),
+    )
+    current_readiness = [readiness]
+    monkeypatch.setattr(
+        "diffeoforge.desktop.widgets.check_reviewed_run_readiness",
+        lambda *_args, **_kwargs: current_readiness[0],
+    )
+    window = DiffeoForgeWindow()
+    window._review_succeeded(review)
+
+    window._show_run_page()
+    window._start_atlas()
+
+    assert window._worker is None
+    assert window.start_atlas_button.isEnabled() is False
+    assert window.refresh_run_readiness_button.isEnabled() is True
+    assert "blockiert" in window.run_readiness_status_label.text()
+    assert "[abandoned]" in window.run_readiness_detail_label.text()
+    assert str(private) in window.run_readiness_detail_label.text().replace("\u200b", "")
+    assert "nichts gelöscht" in window.run_readiness_detail_label.text()
+    assert "Kein Worker gestartet" in window.run_state_label.text()
+
+    current_readiness[0] = DesktopReviewedRunReadiness(
+        request=request,
+        discovery=PrivateRunDiscovery(destination, False, ()),
+    )
+    window.refresh_run_readiness_button.click()
+    assert window._worker is None
+    assert window.start_atlas_button.isEnabled() is True
+    assert "Ziel ist frei" in window.run_readiness_status_label.text()
     application.processEvents()
 
 
