@@ -97,7 +97,8 @@ For every run, DiffeoForge:
 
 1. resolves the template and subject glob in stable filename order;
 2. preflights and hashes every selected VTK file;
-3. copies the raw source bytes into a private temporary run directory;
+3. creates a versioned private marker and process-held lease, then copies the
+   raw source bytes into that private temporary run directory;
 4. reads both float/double vertices and complete triangle connectivity from
    supported ASCII or big-endian binary legacy VTK PolyData;
 5. optionally applies recorded landmark-derived Procrustes transforms to
@@ -108,12 +109,16 @@ For every run, DiffeoForge:
    farthest-template-vertex rule and initializes all momenta to zero;
 8. executes the declared dense or exact blockwise CPU/float64 atlas optimizer;
 9. creates and verifies the nested immutable atlas/PCA/quality bundle;
-10. verifies the outer workflow schema, exact file inventory, hashes, raw and
+10. removes private-only marker/lease state, then verifies the outer workflow
+   schema, exact file inventory, hashes, raw and
    aligned geometry, effective configuration, and nested bundle; and
 11. atomically renames the temporary directory to the requested destination.
 
 Any failure before publication removes the temporary directory. Existing
-destinations are never overwritten or reused.
+destinations are never overwritten or reused. A hard exit can bypass cleanup;
+`modern-private-status DESTINATION` then performs exact-name read-only discovery
+without deleting, renaming, resuming, or publishing. See
+[private unpublished run discovery](PRIVATE_RUN_DISCOVERY.md).
 
 ## Run directory
 

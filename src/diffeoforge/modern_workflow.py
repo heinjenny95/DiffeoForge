@@ -65,6 +65,11 @@ from diffeoforge.modern_progress import (
     ModernProgressPhase,
     ModernProgressStatus,
 )
+from diffeoforge.private_runs import (
+    PrivateRunLease,
+    acquire_private_run_lease,
+    discover_private_runs,
+)
 
 CONFIG_VERSION = "0.2"
 WORKFLOW_VERSION = "0.1"
@@ -754,10 +759,21 @@ def run_modern_workflow(
     )
     if output.exists():
         raise FileExistsError(f"Modern workflow destination already exists: {output}")
+    private_state = discover_private_runs(output)
+    if private_state.candidates:
+        observed = ", ".join(
+            f"{candidate.path.name} ({candidate.status})"
+            for candidate in private_state.candidates
+        )
+        raise ModernWorkflowError(
+            "Private unpublished run state already exists for this destination; "
+            f"no new computation was started: {observed}"
+        )
     timestamp = _timestamp(created_at)
     output.parent.mkdir(parents=True, exist_ok=True)
     temporary = output.parent / f".{output.name}.tmp-{uuid.uuid4().hex}"
     temporary.mkdir()
+    private_lease: PrivateRunLease | None = None
     previous_threads = torch.get_num_threads()
     progress_sequence = 0
 
@@ -793,6 +809,11 @@ def run_modern_workflow(
         progress_sequence += 1
 
     try:
+        private_lease = acquire_private_run_lease(
+            temporary,
+            output,
+            operation="modern_workflow",
+        )
         emit_progress("workflow", "started", "Modern workflow started", 0)
         check_cancellation()
         source_copy = temporary / "config" / "source.yaml"
@@ -1025,6 +1046,7 @@ def run_modern_workflow(
                 )
             )
         ]
+        private_lease.remove_for_publication()
         artifact_paths = sorted(path for path in temporary.rglob("*") if path.is_file())
         artifacts = [_artifact(temporary, path) for path in artifact_paths]
         manifest = {
@@ -1096,10 +1118,17 @@ def run_modern_workflow(
             raise FileExistsError(f"Modern workflow destination appeared during creation: {output}")
         temporary.rename(output)
     except Exception:
+        if private_lease is not None and private_lease.open:
+            try:
+                private_lease.close()
+            except OSError:
+                pass
         if temporary.exists():
             shutil.rmtree(temporary)
         raise
     finally:
+        if private_lease is not None and private_lease.open:
+            private_lease.close()
         torch.set_num_threads(previous_threads)
     return output
 

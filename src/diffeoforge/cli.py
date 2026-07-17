@@ -207,6 +207,21 @@ def build_parser() -> argparse.ArgumentParser:
         help="Override the exact previously nonexistent run destination.",
     )
 
+    modern_private_status_parser = subparsers.add_parser(
+        "modern-private-status",
+        help="Inspect private unpublished state for one exact destination without mutation.",
+    )
+    modern_private_status_parser.add_argument(
+        "destination",
+        type=Path,
+        help="Exact prospective Modern workflow destination to inspect.",
+    )
+    modern_private_status_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Print the versioned machine-readable discovery report.",
+    )
+
     modern_plan_parser = subparsers.add_parser(
         "modern-plan",
         help="Inspect configured-engine workload and known tensor payloads without computing.",
@@ -667,6 +682,31 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"ERROR: {error}", file=sys.stderr)
             return 2
         return 0
+
+    if args.command == "modern-private-status":
+        try:
+            from diffeoforge.private_runs import discover_private_runs
+
+            discovery = discover_private_runs(args.destination)
+            report = discovery.as_dict()
+            if args.json:
+                print(json.dumps(report, indent=2, ensure_ascii=False))
+            else:
+                print(f"Destination: {discovery.destination}")
+                print(f"Status: {discovery.status}")
+                print(f"Ready for new run: {'yes' if discovery.ready_for_new_run else 'no'}")
+                if discovery.candidates:
+                    print("Private unpublished candidates:")
+                    for candidate in discovery.candidates:
+                        print(f"  [{candidate.status}] {candidate.path}")
+                        print(f"      {candidate.reason}")
+                else:
+                    print("Private unpublished candidates: none")
+                print("No files were deleted, renamed, resumed, published, or rewritten.")
+        except (OSError, RuntimeError, ValueError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0 if discovery.ready_for_new_run else 1
 
     if args.command == "modern-run":
         try:

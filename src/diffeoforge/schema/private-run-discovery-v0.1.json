@@ -1,0 +1,120 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DiffeoForge private unpublished run discovery",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "discovery_version",
+    "kind",
+    "destination",
+    "destination_exists",
+    "status",
+    "ready_for_new_run",
+    "mutation_performed",
+    "candidates",
+    "limitations"
+  ],
+  "properties": {
+    "discovery_version": {"const": "0.1"},
+    "kind": {"const": "diffeoforge_private_run_discovery"},
+    "destination": {"type": "string", "minLength": 1},
+    "destination_exists": {"type": "boolean"},
+    "status": {"enum": ["clear", "destination_exists", "attention_required"]},
+    "ready_for_new_run": {"type": "boolean"},
+    "mutation_performed": {"const": false},
+    "candidates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "directory_name", "status", "reason", "marker"],
+        "properties": {
+          "path": {"type": "string", "minLength": 1},
+          "directory_name": {"type": "string", "minLength": 1},
+          "status": {
+            "enum": [
+              "active",
+              "abandoned",
+              "unattributed",
+              "invalid_metadata",
+              "indeterminate",
+              "unsafe_link"
+            ]
+          },
+          "reason": {"type": "string", "minLength": 1},
+          "marker": {
+            "oneOf": [
+              {"type": "null"},
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "marker_version",
+                  "kind",
+                  "safety_status",
+                  "operation",
+                  "destination",
+                  "private_directory",
+                  "run_token",
+                  "pid",
+                  "created_at",
+                  "diffeoforge_version",
+                  "lease_file"
+                ],
+                "properties": {
+                  "marker_version": {"const": "0.1"},
+                  "kind": {"const": "diffeoforge_private_run"},
+                  "safety_status": {"const": "private_unpublished_not_a_result"},
+                  "operation": {"type": "string", "pattern": "^[a-z][a-z0-9_]{0,63}$"},
+                  "destination": {"type": "string", "minLength": 1},
+                  "private_directory": {"type": "string", "minLength": 1},
+                  "run_token": {"type": "string", "pattern": "^[0-9a-f]{32}$"},
+                  "pid": {"type": "integer", "minimum": 1},
+                  "created_at": {"type": "string", "format": "date-time"},
+                  "diffeoforge_version": {"type": "string", "minLength": 1},
+                  "lease_file": {"const": ".diffeoforge-private-run.lock"}
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    "limitations": {
+      "type": "array",
+      "minItems": 2,
+      "items": {"type": "string", "minLength": 1}
+    }
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"status": {"const": "clear"}}},
+      "then": {
+        "properties": {
+          "destination_exists": {"const": false},
+          "ready_for_new_run": {"const": true},
+          "candidates": {"maxItems": 0}
+        }
+      }
+    },
+    {
+      "if": {"properties": {"status": {"const": "destination_exists"}}},
+      "then": {
+        "properties": {
+          "destination_exists": {"const": true},
+          "ready_for_new_run": {"const": false},
+          "candidates": {"maxItems": 0}
+        }
+      }
+    },
+    {
+      "if": {"properties": {"status": {"const": "attention_required"}}},
+      "then": {
+        "properties": {
+          "ready_for_new_run": {"const": false},
+          "candidates": {"minItems": 1}
+        }
+      }
+    }
+  ]
+}

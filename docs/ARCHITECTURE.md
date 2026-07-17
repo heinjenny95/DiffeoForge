@@ -114,6 +114,15 @@ and transports the validated event objects through Qt signals without a second
 scientific progress model. Counts describe completed stages and decisions, not
 elapsed-time percentages or ETA.
 
+Private Modern computation is now bound to a versioned marker and an exclusive
+process lease. Exact-destination discovery reports held leases as active and
+released valid leases as abandoned; missing, malformed, indeterminate, and
+symbolic-link state fails closed. Marker and lease are removed before artifact
+inventory and atomic publication. The shared service and
+`modern-private-status` command are observational only and implement no
+deletion, rename, resume, or result promotion. See
+[the private-run discovery contract](PRIVATE_RUN_DISCOVERY.md).
+
 Desktop step 4 consumes no alternate scientific model. A Qt-independent result
 reviewer first invokes the complete outer Modern verifier, binds the unchanged
 outer and nested manifest hashes, and reads only schema- and inventory-named

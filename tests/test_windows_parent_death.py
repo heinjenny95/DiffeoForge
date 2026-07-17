@@ -97,6 +97,7 @@ def test_hard_parent_exit_terminates_controller_worker(tmp_path: Path) -> None:
     config = root / "modern.yaml"
     config.write_text("test config\n", encoding="utf-8")
     pid_path = root / "worker.pid"
+    stderr_path = root / "parent.stderr"
     request = DesktopWorkerRequest(
         request_id="hard-parent-exit",
         config_path=config.resolve(),
@@ -149,17 +150,19 @@ def test_hard_parent_exit_terminates_controller_worker(tmp_path: Path) -> None:
             "controller.run(event_callback=hard_exit_after_started)",
         )
     )
-    parent = subprocess.run(
-        [sys.executable, "-c", launcher_code],
-        cwd=ROOT,
-        check=False,
-        timeout=20,
-        creationflags=subprocess.CREATE_NO_WINDOW,
-        capture_output=True,
-        text=True,
-    )
+    with stderr_path.open("w", encoding="utf-8", newline="\n") as stderr_handle:
+        parent = subprocess.run(
+            [sys.executable, "-c", launcher_code],
+            cwd=ROOT,
+            check=False,
+            timeout=20,
+            creationflags=subprocess.CREATE_NO_WINDOW,
+            stdout=subprocess.DEVNULL,
+            stderr=stderr_handle,
+            text=True,
+        )
 
-    assert parent.returncode == 73, parent.stderr
+    assert parent.returncode == 73, stderr_path.read_text(encoding="utf-8")
     worker_pid = int(pid_path.read_text(encoding="ascii"))
     try:
         assert _wait_until_stopped(worker_pid)
