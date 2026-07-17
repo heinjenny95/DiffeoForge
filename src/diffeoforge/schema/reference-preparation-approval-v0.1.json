@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://diffeoforge.org/schema/reference-preparation-approval-v0.1.json",
+  "title": "DiffeoForge reference preparation-only approval request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "status", "approval", "plan", "scientific_boundary"],
+  "properties": {
+    "schema_version": { "const": "0.1" },
+    "status": { "const": "approved_reference_preparation_not_prepared" },
+    "approval": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scope",
+        "statement",
+        "approved_plan_fingerprint",
+        "engine_execution_authorized"
+      ],
+      "properties": {
+        "scope": { "const": "preparation_only" },
+        "statement": {
+          "const": "I reviewed the embedded exact preparation plan and approve creation of its immutable staged run directory only; no engine execution is authorized."
+        },
+        "approved_plan_fingerprint": { "$ref": "#/$defs/sha256" },
+        "engine_execution_authorized": { "const": false }
+      }
+    },
+    "plan": {
+      "type": "object",
+      "required": ["schema_version", "status", "run", "inputs", "protected_files"]
+    },
+    "scientific_boundary": {
+      "const": "This deterministic request records preparation-only approval for the embedded exact reference plan. It creates no run directory and launches no process. A future consumer must freshly recompute and match the complete plan immediately before atomic preparation. The request never authorizes Docker, Deformetrica, or other engine execution and does not validate parameters, convergence, registration, or biological interpretation."
+    }
+  },
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+  }
+}

@@ -209,6 +209,16 @@ current mesh sources or reinterpret an old absent-destination observation as
 current state. See
 [saved reference preparation verification](REFERENCE_PREPARATION_VERIFICATION.md).
 
+A separate deterministic v0.1 approval request binds explicit
+preparation-only intent to one complete embedded plan and its reviewed canonical
+fingerprint. Request creation freshly replans and fails on any mismatch; strict
+verification can additionally replan against a current config and require the
+destination to remain absent. The record fixes engine authorization to false,
+has no identity/signature claim, and is not consumed by the existing prepare
+path. A future atomic consumer must fresh-replan again immediately before
+staging and must stop before execution. See
+[reference preparation-only approval](REFERENCE_PREPARATION_APPROVAL.md).
+
 Both setup routes can also pass their already selected template path to a
 Qt-independent immutable preview model. The model reuses the strict VTK parser,
 binds the source SHA-256 before and after loading, freezes vertices, triangles,

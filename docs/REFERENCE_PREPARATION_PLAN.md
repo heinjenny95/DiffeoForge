@@ -43,6 +43,11 @@ recorded canonical fingerprint. See
 [saved reference preparation verification](REFERENCE_PREPARATION_VERIFICATION.md)
 for the exact checks and narrower interpretation boundary.
 
+After review, the fingerprint can be bound to a deterministic preparation-only
+approval request. The command freshly recomputes the complete plan and refuses
+stale approval; see
+[reference preparation-only approval](REFERENCE_PREPARATION_APPROVAL.md).
+
 ## Versioned contents
 
 Schema `reference-preparation-plan-v0.1.json` records:
