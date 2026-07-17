@@ -323,18 +323,31 @@ def test_reference_controller_rejects_adversarial_event_streams(
     assert not request.destination.exists()
 
 
-def test_reference_controller_bounds_stdout_lines_and_stderr(tmp_path: Path) -> None:
+def test_reference_controller_rejects_oversized_stdout_line(tmp_path: Path) -> None:
     request = _request(tmp_path)
     controller = _fake_controller(
         request,
         ["x" * 200],
         exit_code=2,
-        stderr_characters=100_000,
         stdout_line_limit=64,
+    )
+
+    with pytest.raises(ReferenceHarnessProtocolViolation, match="exceeds"):
+        controller.run()
+
+
+def test_reference_controller_drains_and_bounds_stderr(tmp_path: Path) -> None:
+    request = _request(tmp_path)
+    failed = _terminal(request, sequence=0, outcome="failed")
+    controller = _fake_controller(
+        request,
+        [failed.to_json_line()],
+        exit_code=1,
+        stderr_characters=100_000,
         stderr_limit=128,
     )
 
-    with pytest.raises(ReferenceHarnessProtocolViolation, match="exceeds") as raised:
+    with pytest.raises(ReferenceHarnessExecutionError) as raised:
         controller.run()
     assert raised.value.stderr.startswith("x" * 128)
     assert raised.value.stderr.endswith("[stderr truncated by DiffeoForge]")
