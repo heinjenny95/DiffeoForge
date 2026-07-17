@@ -141,6 +141,34 @@ def test_progress_observer_mirrors_committed_history_without_changing_results() 
     assert torch.equal(with_progress.momenta, without_progress.momenta)
 
 
+def test_cooperative_cancellation_stops_before_an_uncommitted_block() -> None:
+    arguments, keywords = _problem()
+    observed = []
+    cancellation = {"requested": False}
+
+    def observe(record) -> None:
+        observed.append(record)
+        cancellation["requested"] = True
+
+    with pytest.raises(engine.AtlasOptimizationCancelled, match="cancellation requested"):
+        optimize_atlas(
+            *arguments,
+            **keywords,
+            max_cycles=2,
+            progress_callback=observe,
+            cancel_requested=lambda: cancellation["requested"],
+        )
+
+    assert [record.status for record in observed] == ["initial"]
+
+
+def test_cancellation_callback_must_return_bool() -> None:
+    arguments, keywords = _problem(subjects=1)
+
+    with pytest.raises(TypeError, match="must return bool"):
+        optimize_atlas(*arguments, **keywords, cancel_requested=lambda: 1)
+
+
 def test_progress_observer_reports_failed_decision_not_rejected_candidates() -> None:
     arguments, keywords = _problem(subjects=1)
     observed = []

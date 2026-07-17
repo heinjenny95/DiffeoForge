@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DiffeoForge desktop worker request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "worker_request_version",
+    "request_id",
+    "engine",
+    "config_path",
+    "destination",
+    "expected_config_sha256"
+  ],
+  "properties": {
+    "worker_request_version": {"const": "0.1"},
+    "request_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+    },
+    "engine": {"const": "modern_cpu"},
+    "config_path": {"type": "string", "minLength": 1},
+    "destination": {"type": "string", "minLength": 1},
+    "expected_config_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}

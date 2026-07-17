@@ -1,6 +1,7 @@
 # Versioned modern workflow progress
 
-Status: **implemented observer contract; not an ETA or checkpoint protocol**
+Status: **implemented observer and desktop transport contract; not an ETA or
+checkpoint protocol**
 
 Tracked prospectively by
 [engineering issue #36](https://github.com/heinjenny95/DiffeoForge/issues/36).
@@ -68,11 +69,15 @@ that observed and unobserved runs have identical parameters and history.
 
 ## Desktop boundary and current limits
 
-The CLI is the first consumer. A later child-process worker can serialize the
-same event dictionary to the GUI instead of inventing separate scientific
-logic. The current contract does not implement cancellation, checkpointing,
-resume, background workers, persisted partial runs, runtime calibration,
-peak-memory measurement, or ETA prediction.
+The CLI and the source-level desktop child worker consume the same event
+dictionary instead of inventing separate scientific logic. The worker wraps it
+unchanged in strict JSON Lines events and accepts one cooperative cancellation
+command. Safe-point cancellation removes private temporary work and publishes
+no destination. See [Versioned desktop worker protocol](DESKTOP_WORKER.md).
+
+The worker transport does not add checkpoints, resume, persisted partial runs,
+runtime calibration, peak-memory measurement, or ETA prediction. GUI execution
+controls and crash reconciliation are not yet connected.
 
 ## Frozen benchmark-study progress
 

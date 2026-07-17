@@ -234,7 +234,10 @@ def test_five_subject_workflow_is_verified_and_byte_repeatable(tmp_path: Path) -
         progress_callback=progress.append,
     )
     second = workflow.run_modern_workflow(
-        config, destination=tmp_path / "second", created_at=FIXED_TIME
+        config,
+        destination=tmp_path / "second",
+        created_at=FIXED_TIME,
+        cancel_requested=lambda: False,
     )
 
     first_manifest = workflow.verify_modern_workflow(first)
@@ -764,3 +767,49 @@ def test_progress_callback_failure_preserves_atomic_nonpublication(tmp_path: Pat
 
     assert not destination.exists()
     assert not tuple(tmp_path.glob(".unpublished.tmp-*"))
+
+
+def test_cooperative_cancellation_removes_private_work_and_publishes_nothing(
+    tmp_path: Path,
+) -> None:
+    config = _write_config(tmp_path / "workflow.yaml")
+    destination = tmp_path / "cancelled"
+    cancellation = {"requested": False}
+    progress = []
+
+    def observe(event) -> None:
+        progress.append(event)
+        if event.phase == "quality":
+            cancellation["requested"] = True
+
+    with pytest.raises(workflow.ModernWorkflowCancelled, match="cancellation requested"):
+        workflow.run_modern_workflow(
+            config,
+            destination=destination,
+            progress_callback=observe,
+            cancel_requested=lambda: cancellation["requested"],
+        )
+
+    assert [(event.phase, event.status) for event in progress] == [
+        ("workflow", "started"),
+        ("inputs", "completed"),
+        ("preprocessing", "completed"),
+        ("quality", "completed"),
+    ]
+    assert not destination.exists()
+    assert not tuple(tmp_path.glob(".cancelled.tmp-*"))
+
+
+def test_workflow_cancellation_callback_must_return_bool(tmp_path: Path) -> None:
+    config = _write_config(tmp_path / "workflow.yaml")
+    destination = tmp_path / "cancelled"
+
+    with pytest.raises(TypeError, match="must return bool"):
+        workflow.run_modern_workflow(
+            config,
+            destination=destination,
+            cancel_requested=lambda: "yes",
+        )
+
+    assert not destination.exists()
+    assert not tuple(tmp_path.glob(".cancelled.tmp-*"))

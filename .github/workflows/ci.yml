@@ -76,7 +76,7 @@ jobs:
           tests/test_modern_workflow.py tests/test_mesh_quality.py
           tests/test_modern_workload.py tests/test_modern_progress.py
           tests/test_modern_benchmark.py tests/test_desktop_project_setup.py
-          tests/test_desktop_project_review.py
+          tests/test_desktop_project_review.py tests/test_desktop_worker.py
 
   desktop:
     name: Desktop smoke (Windows)

@@ -1,6 +1,7 @@
 # Desktop executable and installer architecture
 
-Status: **project setup and read-only parameter/workload review exist; no frozen executable or installer exists yet**
+Status: **project setup, parameter/workload review, and a source-level Modern
+worker protocol exist; no frozen executable or installer exists yet**
 
 Tracked by [engineering issue #22](https://github.com/heinjenny95/DiffeoForge/issues/22)
 and [ADR 0003](decisions/0003-windows-desktop-distribution.md). The
@@ -38,7 +39,10 @@ before locking exact tool versions.
 The GUI may call fast shared-core validation and report functions in process.
 Numerical compute runs in a child worker process with an immutable run
 directory. This isolates PyTorch memory, makes cancellation observable, and
-keeps a GUI failure from silently corrupting accepted run state.
+keeps a GUI failure from silently corrupting accepted run state. The strict
+source-level Modern CPU transport is now implemented and documented in
+[Versioned desktop worker protocol](DESKTOP_WORKER.md); GUI execution controls
+and frozen-process packaging remain separate unfinished slices.
 
 The CPU modern engine is the first bundled numerical variant. A future NVIDIA
 build is a separate artifact with separate numerical evidence; the application
@@ -55,11 +59,14 @@ subtotals, host observations, and unknown measured peak RAM/runtime. The
 Deformetrica route instead renders its existing preflight parameter ratios and
 labels resource use as unmodelled because computation remains external.
 
-The shared-core `modern-run` callback is the first implementation of the
-worker-to-UI progress payload. Its strict v0.1 JSON shape reports seven
-completed workflow stages and committed optimizer decisions. The desktop
-worker may serialize those events across a process boundary, but must not turn
-stage/decision counts into an unmeasured runtime percentage or ETA.
+The shared-core `modern-run` callback supplies the worker-to-UI progress
+payload. The v0.1 worker serializes the same strict dictionaries across the
+process boundary inside its own versioned event envelope. It also accepts one
+versioned cooperative cancellation command and guarantees that cancellation at
+a safe point removes private temporary work without publishing a destination.
+The Modern path remains explicitly nonresumable because it has no checkpoints.
+Neither worker nor GUI may turn stage/decision counts into an unmeasured
+runtime percentage or ETA.
 
 `modern-benchmark` provides measured objective/gradient observations for a
 user-selected subject count and the explicitly configured dense or blockwise
