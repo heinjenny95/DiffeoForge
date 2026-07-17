@@ -200,6 +200,15 @@ plan object. It owns no backend or preparation behavior, has no active content o
 network dependency, and is published only to an explicitly selected absent path.
 The unchanged JSON stdout remains the machine-readable contract.
 
+A separate read-only verifier parses a saved plan under strict JSON rules,
+revalidates its versioned schema, computes the canonical content fingerprint,
+optionally binds an externally recorded fingerprint, and requires any supplied
+HTML to equal deterministic regeneration byte-for-byte. Its own v0.1 evidence
+schema reports saved-artifact consistency only; it deliberately does not reread
+current mesh sources or reinterpret an old absent-destination observation as
+current state. See
+[saved reference preparation verification](REFERENCE_PREPARATION_VERIFICATION.md).
+
 Both setup routes can also pass their already selected template path to a
 Qt-independent immutable preview model. The model reuses the strict VTK parser,
 binds the source SHA-256 before and after loading, freezes vertices, triangles,

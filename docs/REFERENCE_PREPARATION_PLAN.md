@@ -30,6 +30,19 @@ inventories, generated effective YAML and XML, backend constants, and exact
 command vector. The report is created exclusively and never replaces an
 existing file. Its parent directory is created when necessary.
 
+Saved JSON and HTML can later be checked without touching the current config,
+meshes, or run destination:
+
+```powershell
+diffeoforge reference-plan-verify review/pilot-001-preparation.json `
+  --report review/pilot-001-preparation.html
+```
+
+Add `--expect-fingerprint SHA256` to bind the saved plan to an independently
+recorded canonical fingerprint. See
+[saved reference preparation verification](REFERENCE_PREPARATION_VERIFICATION.md)
+for the exact checks and narrower interpretation boundary.
+
 ## Versioned contents
 
 Schema `reference-preparation-plan-v0.1.json` records:

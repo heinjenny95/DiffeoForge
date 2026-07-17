@@ -1,0 +1,110 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://diffeoforge.org/schema/reference-preparation-plan-verification-v0.1.json",
+  "title": "DiffeoForge saved reference preparation plan verification",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "status",
+    "verifier",
+    "plan",
+    "report",
+    "recorded_plan",
+    "checks",
+    "scientific_boundary"
+  ],
+  "properties": {
+    "schema_version": { "const": "0.1" },
+    "status": { "const": "verified_saved_reference_preparation_plan" },
+    "verifier": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["diffeoforge"],
+      "properties": {
+        "diffeoforge": { "type": "string", "minLength": 1 }
+      }
+    },
+    "plan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "bytes",
+        "sha256",
+        "canonical_fingerprint",
+        "expected_fingerprint"
+      ],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "bytes": { "type": "integer", "minimum": 2 },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "canonical_fingerprint": { "$ref": "#/$defs/sha256" },
+        "expected_fingerprint": {
+          "anyOf": [
+            { "type": "null" },
+            { "$ref": "#/$defs/sha256" }
+          ]
+        }
+      }
+    },
+    "report": {
+      "anyOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["path", "bytes", "sha256", "matches_deterministic_regeneration"],
+          "properties": {
+            "path": { "type": "string", "minLength": 1 },
+            "bytes": { "type": "integer", "minimum": 1 },
+            "sha256": { "$ref": "#/$defs/sha256" },
+            "matches_deterministic_regeneration": { "const": true }
+          }
+        }
+      ]
+    },
+    "recorded_plan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "run_id",
+        "destination",
+        "templates",
+        "subjects",
+        "protected_files",
+        "total_protected_bytes"
+      ],
+      "properties": {
+        "schema_version": { "const": "0.1" },
+        "run_id": { "type": "string", "minLength": 1 },
+        "destination": { "type": "string", "minLength": 1 },
+        "templates": { "const": 1 },
+        "subjects": { "type": "integer", "minimum": 2 },
+        "protected_files": { "type": "integer", "minimum": 8 },
+        "total_protected_bytes": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "checks": {
+      "type": "array",
+      "minItems": 5,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "plan_strict_utf8_single_json_document",
+          "plan_unique_object_keys_and_finite_constants",
+          "plan_schema_valid",
+          "plan_canonical_fingerprint_computed",
+          "plan_fingerprint_matches_expected",
+          "report_exact_deterministic_regeneration",
+          "supplied_artifacts_unchanged_during_verification"
+        ]
+      }
+    },
+    "scientific_boundary": { "type": "string", "minLength": 1 }
+  },
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+  }
+}

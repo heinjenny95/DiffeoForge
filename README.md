@@ -38,6 +38,7 @@ diffeoforge reference-plan atlas.yaml --run-id experiment-001
 # Review exact paths, staged inputs, effective YAML, XML bytes/hashes, and command.
 # Optionally create an offline browser review while retaining JSON on stdout:
 diffeoforge reference-plan atlas.yaml --run-id experiment-001 --report experiment-001-preparation.html > experiment-001-preparation.json
+diffeoforge reference-plan-verify experiment-001-preparation.json --report experiment-001-preparation.html
 diffeoforge prepare atlas.yaml --run-id experiment-001
 # Inspect manifest.json and engine/*.xml before committing compute time.
 diffeoforge execute runs/experiment-001
@@ -399,6 +400,7 @@ and workflow for another mesh directory.
 - [Desktop project-setup preview](docs/DESKTOP_PREVIEW.md)
 - [Desktop reference prelaunch contract](docs/REFERENCE_PRELAUNCH.md)
 - [Read-only reference preparation plan](docs/REFERENCE_PREPARATION_PLAN.md)
+- [Saved reference preparation verification](docs/REFERENCE_PREPARATION_VERIFICATION.md)
 - [Versioned reference worker lifecycle protocol](docs/REFERENCE_WORKER_PROTOCOL.md)
 - [Nonnumerical reference worker pipe harness](docs/REFERENCE_WORKER_HARNESS.md)
 - [Nonnumerical reference harness controller](docs/REFERENCE_HARNESS_CONTROLLER.md)
