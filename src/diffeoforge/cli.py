@@ -17,6 +17,7 @@ from diffeoforge.initialization import (
     initialize_project,
 )
 from diffeoforge.reference import compare_reference_run
+from diffeoforge.reference_preparation_plan import plan_reference_preparation
 from diffeoforge.report import (
     collect_preflight,
     default_preflight_report_path,
@@ -435,6 +436,18 @@ def build_parser() -> argparse.ArgumentParser:
         "--force-report",
         action="store_true",
         help="Explicitly replace an existing preflight report.",
+    )
+    reference_plan_parser = subparsers.add_parser(
+        "reference-plan",
+        help="Print the exact read-only preparation plan for one explicit run ID.",
+    )
+    reference_plan_parser.add_argument(
+        "config", type=Path, help="Path to a reference atlas YAML file."
+    )
+    reference_plan_parser.add_argument(
+        "--run-id",
+        required=True,
+        help="Explicit future run identifier; no destination is created.",
     )
     prepare_parser = subparsers.add_parser(
         "prepare",
@@ -1287,6 +1300,16 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
             print(f"Prepared run: {run_directory}")
         except ConfigurationError as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
+
+    if args.command == "reference-plan":
+        try:
+            plan = plan_reference_preparation(args.config, run_id=args.run_id)
+            json.dump(plan, sys.stdout, indent=2, ensure_ascii=True, sort_keys=True)
+            sys.stdout.write("\n")
+        except (ConfigurationError, OSError, TypeError, ValueError) as error:
             print(f"ERROR: {error}", file=sys.stderr)
             return 2
         return 0

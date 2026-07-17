@@ -120,10 +120,19 @@ or equivalence between numerical engines.
 After reviewing `atlas.yaml` and the report:
 
 ```powershell
+diffeoforge reference-plan atlas.yaml --run-id pilot-001
+# Review the exact future run layout, generated XML, hashes, and command.
 diffeoforge prepare atlas.yaml --run-id pilot-001
 diffeoforge execute runs\pilot-001
 diffeoforge report runs\pilot-001
 ```
+
+`reference-plan` is a read-only JSON preview. It requires the same explicit run
+ID that will later be supplied to `prepare`, inventories every selected mesh,
+renders the exact future effective YAML and Deformetrica XML bytes in memory,
+and confirms that the destination does not exist. It does not create the output
+root or contact the configured launcher. See
+[read-only reference preparation plan](REFERENCE_PREPARATION_PLAN.md).
 
 For a cohort of hundreds of specimens, start with a small representative pilot
 and inspect the objective curves, lifecycle, evidence checks, and output

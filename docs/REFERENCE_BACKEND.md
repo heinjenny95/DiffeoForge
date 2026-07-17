@@ -47,9 +47,16 @@ record the resolved image ID and repository digests.
 
 ```bash
 diffeoforge validate atlas.yaml
+diffeoforge reference-plan atlas.yaml --run-id trial-001
 diffeoforge prepare atlas.yaml --run-id trial-001
 diffeoforge status runs/trial-001
 ```
+
+The second command is a versioned, nonmutating exact-byte preview of the third.
+It exposes source/staged paths and hashes, effective YAML, all three generated
+XML payloads, protected-file byte totals, destination, and command without
+creating an output root. See
+[the reference preparation plan contract](REFERENCE_PREPARATION_PLAN.md).
 
 At this point inspect `manifest.json`, `config/effective-config.yaml`, and the
 three files under `engine/`. Preparation has not started Deformetrica.
