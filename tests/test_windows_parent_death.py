@@ -97,7 +97,6 @@ def test_hard_parent_exit_terminates_controller_worker(tmp_path: Path) -> None:
     config = root / "modern.yaml"
     config.write_text("test config\n", encoding="utf-8")
     pid_path = root / "worker.pid"
-    error_path = root / "controller.error"
     request = DesktopWorkerRequest(
         request_id="hard-parent-exit",
         config_path=config.resolve(),
@@ -129,7 +128,7 @@ def test_hard_parent_exit_terminates_controller_worker(tmp_path: Path) -> None:
     )
     launcher_code = "\n".join(
         (
-            "import os,sys,threading,time",
+            "import os,sys",
             "from pathlib import Path",
             "from diffeoforge.desktop.worker_controller import DesktopWorkerController",
             "from diffeoforge.desktop.worker_protocol import DesktopWorkerRequest",
@@ -138,21 +137,16 @@ def test_hard_parent_exit_terminates_controller_worker(tmp_path: Path) -> None:
                 "controller=DesktopWorkerController(request, "
                 f"worker_command=(sys.executable,'-c',{worker_code!r}), cwd={str(ROOT)!r})"
             ),
-            "def supervise():",
-            "    try:",
-            "        controller.run()",
-            "    except BaseException as error:",
-            f"        Path({str(error_path)!r}).write_text(repr(error), encoding='utf-8')",
-            "threading.Thread(target=supervise, daemon=True).start()",
-            "deadline=time.monotonic()+10",
+            "def hard_exit_after_started(event):",
+            "    assert event.kind == 'started'",
+            "    process=controller._process",
+            "    assert process is not None",
             (
-                f"while (controller._process is None or not Path({str(pid_path)!r}).is_file()) "
-                "and time.monotonic()<deadline: time.sleep(0.01)"
+                f"    observed=Path({str(pid_path)!r}).read_text(encoding='ascii')"
             ),
-            (
-                f"assert controller._process is not None and Path({str(pid_path)!r}).is_file()"
-            ),
-            "os._exit(73)",
+            "    assert observed.isdecimal(), observed",
+            "    os._exit(73)",
+            "controller.run(event_callback=hard_exit_after_started)",
         )
     )
     parent = subprocess.run(
@@ -165,8 +159,7 @@ def test_hard_parent_exit_terminates_controller_worker(tmp_path: Path) -> None:
         text=True,
     )
 
-    diagnostic = error_path.read_text(encoding="utf-8") if error_path.is_file() else ""
-    assert parent.returncode == 73, f"{parent.stderr}\n{diagnostic}"
+    assert parent.returncode == 73, parent.stderr
     worker_pid = int(pid_path.read_text(encoding="ascii"))
     try:
         assert _wait_until_stopped(worker_pid)
