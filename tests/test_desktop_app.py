@@ -192,6 +192,100 @@ def test_desktop_window_keeps_reference_compute_route_explicitly_unavailable(
     assert window.page_stack.currentIndex() == 1
     assert window.show_run_button.isEnabled() is False
     assert "noch nicht verbunden" in window.show_run_button.text()
+    assert window.reference_readiness_card.isHidden() is False
+    assert window.refresh_reference_readiness_button.isEnabled() is True
+    assert "noch nicht geprüft" in window.reference_readiness_status_label.text()
+    window.close()
+    application.processEvents()
+
+
+def test_desktop_reference_environment_check_is_read_only_and_keeps_start_locked(
+    monkeypatch, tmp_path
+) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from diffeoforge.desktop.project_review import ProjectReviewResult
+    from diffeoforge.desktop.project_setup import DesktopEngine
+    from diffeoforge.desktop.reference_readiness import DesktopReferenceReadiness
+    from diffeoforge.desktop.widgets import DiffeoForgeWindow, _ReferenceReadinessWorker
+    from diffeoforge.diagnostics import DoctorCheck, DoctorReport
+
+    application = QApplication.instance() or QApplication(
+        ["diffeoforge-reference-readiness-test"]
+    )
+    config = (tmp_path / "atlas.yaml").resolve()
+    config.write_text("reviewed\n", encoding="utf-8")
+    review = ProjectReviewResult(
+        engine=DesktopEngine.DEFORMETRICA_REFERENCE,
+        project_name="Reference",
+        config_path=config,
+        config_sha256="c" * 64,
+        report_path=tmp_path / "preflight.html",
+        report_label="Preflight-Report",
+        subject_count=8,
+        parameters=(),
+        workload=(),
+        warnings=(),
+        scientific_boundary="Reference boundary",
+    )
+    report = DoctorReport(
+        status="ready",
+        workspace=str(tmp_path.resolve()),
+        engine="docker",
+        image="local-reference:test",
+        checks=(
+            DoctorCheck("container_cli", "Container command", "pass", "docker.exe"),
+            DoctorCheck(
+                "reference_image",
+                "Reference image",
+                "pass",
+                "sha256:abc",
+            ),
+        ),
+    )
+    readiness = DesktopReferenceReadiness(
+        config_path=config,
+        config_sha256=review.config_sha256,
+        workspace=tmp_path.resolve(),
+        engine="docker",
+        image="local-reference:test",
+        report=report,
+    )
+    monkeypatch.setattr(
+        "diffeoforge.desktop.widgets.check_reference_environment",
+        lambda observed: readiness if observed is review else pytest.fail("wrong review"),
+    )
+    queued = []
+
+    class FakePool:
+        def start(self, worker) -> None:
+            queued.append(worker)
+
+    window = DiffeoForgeWindow()
+    window._thread_pool = FakePool()  # type: ignore[assignment]
+    window._review_succeeded(review)
+
+    window.refresh_reference_readiness_button.click()
+
+    assert len(queued) == 1
+    assert isinstance(queued[0], _ReferenceReadinessWorker)
+    assert window.refresh_reference_readiness_button.isEnabled() is False
+    assert "Kein Referenz-Run" in window.reference_readiness_detail_label.text()
+    queued[0].run()
+    application.processEvents()
+
+    detail = window.reference_readiness_detail_label.text().replace("\u200b", "")
+    assert "local-reference:test" in detail
+    assert "[PASS] Container command: docker.exe" in detail
+    assert "sha256:abc" in detail
+    assert "nichts installiert" in detail
+    assert "bereit" in window.reference_readiness_status_label.text()
+    assert window.refresh_reference_readiness_button.isEnabled() is True
+    assert window.show_run_button.isEnabled() is False
+    assert "noch nicht verbunden" in window.show_run_button.text()
+    assert window.page_stack.currentIndex() == 1
     window.close()
     application.processEvents()
 

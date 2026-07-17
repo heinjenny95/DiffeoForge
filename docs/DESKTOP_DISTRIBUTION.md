@@ -100,9 +100,11 @@ and not extrapolate a microbenchmark into a full-run ETA or a 300-subject
 feasibility verdict.
 
 Deformetrica 4.3 remains an external reference backend. Its Python 3.8 stack is
-not copied into the desktop executable. `doctor` will detect a separately
-installed version-checked native/container route and explain how it differs
-from the bundled modern CPU engine.
+not copied into the desktop executable. Desktop step 2 can now bind the exact
+reviewed container engine/image to the existing read-only `doctor` checks and
+show their raw status, summary, and guidance outside the GUI thread. It neither
+installs nor starts that environment, and the reference compute button remains
+disabled until a separately tested process supervisor exists.
 
 ## Bundle and installer decisions
 

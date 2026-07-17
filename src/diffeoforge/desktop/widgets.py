@@ -33,6 +33,11 @@ from diffeoforge.desktop.project_setup import (
     ProjectSetupResult,
     create_project,
 )
+from diffeoforge.desktop.reference_readiness import (
+    DesktopReferenceReadiness,
+    DesktopReferenceReadinessError,
+    check_reference_environment,
+)
 from diffeoforge.desktop.result_review import (
     ModernResultReview,
     ModernResultReviewError,
@@ -138,6 +143,30 @@ class _ReviewWorker(QRunnable):
             self.signals.failed.emit(str(error))
             return
         self.signals.succeeded.emit(review)
+
+
+class _ReferenceReadinessWorker(QRunnable):
+    """Run exact-config external environment diagnostics outside the GUI thread."""
+
+    def __init__(self, review: ProjectReviewResult) -> None:
+        super().__init__()
+        self.review = review
+        self.signals = _WorkerSignals()
+
+    @Slot()
+    def run(self) -> None:
+        try:
+            readiness = check_reference_environment(self.review)
+        except (
+            DesktopReferenceReadinessError,
+            OSError,
+            RuntimeError,
+            TypeError,
+            ValueError,
+        ) as error:
+            self.signals.failed.emit(str(error))
+            return
+        self.signals.succeeded.emit(readiness)
 
 
 class _ResultReviewWorker(QRunnable):
@@ -257,6 +286,7 @@ class DiffeoForgeWindow(QMainWindow):
         self._worker: (
             _ProjectWorker
             | _ReviewWorker
+            | _ReferenceReadinessWorker
             | _ResultReviewWorker
             | _ArtifactWorker
             | _AtlasWorker
@@ -264,6 +294,7 @@ class DiffeoForgeWindow(QMainWindow):
         ) = None
         self._result: ProjectSetupResult | None = None
         self._review: ProjectReviewResult | None = None
+        self._reference_readiness: DesktopReferenceReadiness | None = None
         self._run_readiness: DesktopReviewedRunReadiness | None = None
         self._run_result: DesktopWorkerControllerResult | None = None
         self._result_review: ModernResultReview | None = None
@@ -451,6 +482,46 @@ class DiffeoForgeWindow(QMainWindow):
         layout.addWidget(self._build_review_card("Effektive Parameter", "parameterReview"))
         self.workload_card = self._build_review_card("Workload-Evidenz", "workloadReview")
         layout.addWidget(self.workload_card)
+
+        reference_readiness = QFrame()
+        reference_readiness.setObjectName("card")
+        reference_readiness_layout = QVBoxLayout(reference_readiness)
+        reference_readiness_layout.setContentsMargins(24, 22, 24, 24)
+        reference_readiness_layout.setSpacing(10)
+        reference_readiness_title = QLabel("Externe Deformetrica-Referenzumgebung")
+        reference_readiness_title.setObjectName("sectionTitle")
+        self.reference_readiness_status_label = QLabel(
+            "Die konfigurierte Container-Umgebung wurde noch nicht geprüft."
+        )
+        self.reference_readiness_status_label.setObjectName("status")
+        self.reference_readiness_status_label.setWordWrap(True)
+        self.reference_readiness_detail_label = QLabel(
+            "Diese Diagnose ist rein lesend. Sie installiert, baut, startet, bereitet oder "
+            "repariert nichts."
+        )
+        self.reference_readiness_detail_label.setObjectName("reviewDetail")
+        self.reference_readiness_detail_label.setWordWrap(True)
+        self.reference_readiness_detail_label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+        )
+        self.refresh_reference_readiness_button = QPushButton(
+            "Referenzumgebung read-only prüfen"
+        )
+        self.refresh_reference_readiness_button.setObjectName("secondary")
+        self.refresh_reference_readiness_button.clicked.connect(
+            self._check_reference_readiness
+        )
+        reference_readiness_layout.addWidget(reference_readiness_title)
+        reference_readiness_layout.addWidget(self.reference_readiness_status_label)
+        reference_readiness_layout.addWidget(self.reference_readiness_detail_label)
+        reference_readiness_layout.addWidget(
+            self.refresh_reference_readiness_button,
+            0,
+            Qt.AlignmentFlag.AlignLeft,
+        )
+        self.reference_readiness_card = reference_readiness
+        self.reference_readiness_card.hide()
+        layout.addWidget(self.reference_readiness_card)
 
         warnings = QFrame()
         warnings.setObjectName("card")
@@ -1049,6 +1120,7 @@ class DiffeoForgeWindow(QMainWindow):
         self.result_card.hide()
         self._result = None
         self._review = None
+        self._reference_readiness = None
         self._run_readiness = None
         self._run_result = None
         self._result_review = None
@@ -1114,6 +1186,7 @@ class DiffeoForgeWindow(QMainWindow):
     def _review_succeeded(self, review: ProjectReviewResult) -> None:
         self._worker = None
         self._review = review
+        self._reference_readiness = None
         self._run_readiness = None
         self._populate_review_rows(self.parameter_review_layout, review.parameters)
         self._populate_review_rows(self.workload_review_layout, review.workload)
@@ -1136,14 +1209,121 @@ class DiffeoForgeWindow(QMainWindow):
         self.review_warnings_label.setText("\n".join(f"• {warning}" for warning in review.warnings))
         self.open_review_report_button.setText(f"{review.report_label} öffnen")
         if review.engine is DesktopEngine.MODERN_CPU:
+            self.reference_readiness_card.hide()
             self.show_run_button.setText("Weiter zu Atlasstart")
             self.show_run_button.setEnabled(True)
         else:
+            self.reference_readiness_card.show()
+            self.reference_readiness_status_label.setObjectName("status")
+            self.reference_readiness_status_label.setStyleSheet("")
+            self.reference_readiness_status_label.setText(
+                "Die konfigurierte Container-Umgebung wurde noch nicht geprüft."
+            )
+            self.reference_readiness_detail_label.setText(
+                "Die Prüfung wird an den angezeigten Konfigurations-SHA-256 gebunden und "
+                "ist rein lesend. Sie installiert, baut, startet, bereitet oder repariert "
+                "nichts."
+            )
+            self.refresh_reference_readiness_button.setEnabled(True)
             self.show_run_button.setText("Referenzstart noch nicht verbunden")
             self.show_run_button.setEnabled(False)
         self._set_active_step(1)
         self.page_stack.setCurrentIndex(1)
         self.review_button.setEnabled(True)
+        self._sync_ready_state()
+
+    @Slot()
+    def _check_reference_readiness(self) -> None:
+        if (
+            self._review is None
+            or self._review.engine is not DesktopEngine.DEFORMETRICA_REFERENCE
+            or self._worker is not None
+        ):
+            return
+        worker = _ReferenceReadinessWorker(self._review)
+        worker.signals.succeeded.connect(self._reference_readiness_succeeded)
+        worker.signals.failed.connect(self._reference_readiness_failed)
+        self._worker = worker
+        self._reference_readiness = None
+        self.refresh_reference_readiness_button.setEnabled(False)
+        self.reference_readiness_status_label.setObjectName("status")
+        self.reference_readiness_status_label.setStyleSheet("")
+        self.reference_readiness_status_label.setText(
+            "Host, Projektordner, Containerdienst und exakt konfiguriertes Image werden "
+            "read-only geprüft …"
+        )
+        self.reference_readiness_detail_label.setText(
+            "Kein Referenz-Run wird vorbereitet oder gestartet. Die Konfiguration wird "
+            "vor und nach den externen Beobachtungen an ihren Review-Hash gebunden."
+        )
+        self._sync_ready_state()
+        self._thread_pool.start(worker)
+
+    @Slot(object)
+    def _reference_readiness_succeeded(
+        self, readiness: DesktopReferenceReadiness
+    ) -> None:
+        self._worker = None
+        self._reference_readiness = readiness
+        details = [
+            f"Konfiguration: {self._wrappable_path(readiness.config_path)}",
+            f"Gebundener SHA-256: {readiness.config_sha256}",
+            f"Projektordner: {self._wrappable_path(readiness.workspace)}",
+            f"Container-Engine: {readiness.engine}",
+            f"Referenz-Image: {readiness.image}",
+            "Beobachtete Checks:",
+        ]
+        for check in readiness.report.checks:
+            details.append(f"[{check.status.upper()}] {check.label}: {check.summary}")
+            if check.guidance:
+                details.append(f"  Hinweis: {check.guidance}")
+        details.append(
+            "Aktion: nur beobachtet; nichts installiert, gebaut, gestartet, vorbereitet, "
+            "fortgesetzt oder repariert."
+        )
+        self.reference_readiness_detail_label.setText("\n".join(details))
+        if readiness.report.status == "ready":
+            self.reference_readiness_status_label.setObjectName("statusSuccess")
+            message = (
+                "Externe Referenzumgebung ist für die beobachteten Checks bereit. "
+                "Der Referenzstart bleibt bis zur separaten Prozessaufsicht gesperrt."
+            )
+        elif readiness.report.status == "warning":
+            self.reference_readiness_status_label.setObjectName("status")
+            message = (
+                "Externe Referenzumgebung ist ohne blockierenden Fehler, aber mit Warnungen. "
+                "Der Referenzstart bleibt gesperrt."
+            )
+        else:
+            self.reference_readiness_status_label.setObjectName("statusError")
+            message = (
+                "Externe Referenzumgebung ist blockiert. Hinweise stehen unten; es wurde "
+                "nichts verändert oder gestartet."
+            )
+        self.reference_readiness_status_label.setStyleSheet("")
+        self.reference_readiness_status_label.setText(message)
+        self.refresh_reference_readiness_button.setEnabled(True)
+        self.review_button.setEnabled(self._result is not None)
+        self._sync_ready_state()
+
+    @Slot(str)
+    def _reference_readiness_failed(self, message: str) -> None:
+        self._worker = None
+        self._reference_readiness = None
+        self.reference_readiness_status_label.setObjectName("statusError")
+        self.reference_readiness_status_label.setStyleSheet("")
+        self.reference_readiness_status_label.setText(
+            f"Referenzumgebung nicht sicher prüfbar: {message}"
+        )
+        self.reference_readiness_detail_label.setText(
+            "Diagnose verworfen. Kein Referenz-Run wurde vorbereitet oder gestartet; "
+            "keine Umgebungseinstellung wurde verändert."
+        )
+        self.refresh_reference_readiness_button.setEnabled(
+            self._review is not None
+            and self._review.engine is DesktopEngine.DEFORMETRICA_REFERENCE
+        )
+        self.review_button.setEnabled(self._result is not None)
         self._sync_ready_state()
 
     @Slot()

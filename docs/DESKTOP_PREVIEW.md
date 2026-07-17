@@ -9,6 +9,8 @@ with the compute screen tracked by
 [engineering issue #83](https://github.com/heinjenny95/DiffeoForge/issues/83)
 and result review tracked by
 [engineering issue #85](https://github.com/heinjenny95/DiffeoForge/issues/85).
+The read-only reference-environment card is tracked by
+[engineering issue #95](https://github.com/heinjenny95/DiffeoForge/issues/95).
 The distribution architecture and its stricter release gates remain in
 [Desktop executable and installer architecture](DESKTOP_DISTRIBUTION.md).
 
@@ -31,7 +33,9 @@ terminal:
    validated configuration and explains their role;
 8. for the modern route, generate and render the existing exact-count
    `modern-plan` JSON/HTML evidence; or, for the reference route, render the
-   existing preflight parameter ratios and external-engine boundary;
+   existing preflight parameter ratios and external-engine boundary, then
+   optionally diagnose the exact configured container engine and image without
+   changing or starting either one;
 9. for a reviewed Modern project, continue to a third screen that binds the
    exact reviewed configuration SHA-256, displays and refreshes the read-only
    destination/private-state evidence, checks it again immediately before
@@ -52,7 +56,9 @@ initialization, optional Procrustes, and PCA-dimension checks pass. Its second
 screen publishes `modern-atlas.workload/workload.json` and `workload.html`.
 Both paths label geometry-scaled values as exploratory. Only the Modern route
 can currently continue to numerical work; the external reference button stays
-explicitly unavailable rather than implying unsupported supervision.
+explicitly unavailable rather than implying unsupported supervision. A passed
+reference diagnostic proves only its listed host/container observations; it is
+not a hidden launch prerequisite or evidence of a completed atlas.
 
 ## Developer launch
 
@@ -77,6 +83,10 @@ python -m diffeoforge.desktop --smoke
 - Existing configurations and reports are never silently overwritten.
 - Review refreshes only reports that carry the expected DiffeoForge generator
   markers; researcher-owned paths are refused.
+- The reference-environment check parses the exact reviewed configuration
+  bytes, uses their configured container engine/image, and checks the file hash
+  again afterward. It shows raw doctor evidence but performs no install, image
+  build/pull, run preparation, backend start, resume, recovery, or repair.
 - Mesh inspection runs in a background GUI thread. Modern numerical work runs
   in a separate child process supervised by the fail-closed parent controller;
   Qt receives only validated events through queued signals.
@@ -105,7 +115,8 @@ python -m diffeoforge.desktop --smoke
 
 The GUI does not yet edit scientific parameters, render meshes natively, resume
 a Modern atlas, reconcile an already dead parent application, or supervise the
-external Deformetrica engine. Step 4 is a detailed read-only evidence and
+external Deformetrica engine. Its reference card is environment diagnosis only;
+the start button remains disabled even when every check passes. Step 4 is a detailed read-only evidence and
 artifact-handoff view, not an interactive 3D renderer or a scientific
 interpretation system. The application is not frozen with PyInstaller and is
 not wrapped in an Inno Setup installer. Those capabilities require their own

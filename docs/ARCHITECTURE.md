@@ -129,6 +129,15 @@ status and candidate evidence, and repeats the binding plus discovery directly
 before constructing the controller. The GUI never supplies a weaker alternate
 classification and does not expose a destructive recovery action.
 
+The external reference path has a separate observational readiness seam in
+desktop step 2. It parses the exact bytes captured by the completed review,
+extracts the configured container engine and image, and runs the existing
+read-only doctor service outside the GUI thread. A second hash check discards
+the report if the configuration changes during observation. Passing this check
+does not prepare or launch Deformetrica and does not weaken the separate open
+gate for reference-process supervision. See
+[the desktop reference-readiness contract](REFERENCE_DESKTOP_READINESS.md).
+
 Desktop step 4 consumes no alternate scientific model. A Qt-independent result
 reviewer first invokes the complete outer Modern verifier, binds the unchanged
 outer and nested manifest hashes, and reads only schema- and inventory-named
