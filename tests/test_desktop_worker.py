@@ -182,19 +182,26 @@ def test_worker_refuses_an_existing_destination_before_started_event(tmp_path: P
 
 def test_worker_subprocess_transports_progress_and_verified_completion(tmp_path: Path) -> None:
     request = _request(tmp_path)
-    completed = subprocess.run(
+    process = subprocess.Popen(
         [sys.executable, "-m", "diffeoforge.desktop.worker"],
         cwd=ROOT,
-        input=json.dumps(request.as_dict()) + "\n",
-        capture_output=True,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
         text=True,
-        check=False,
-        timeout=90,
     )
+    assert process.stdin is not None
+    assert process.stdout is not None
+    assert process.stderr is not None
+    process.stdin.write(json.dumps(request.as_dict()) + "\n")
+    process.stdin.flush()
+    stdout = process.stdout.read()
+    stderr = process.stderr.read()
+    return_code = process.wait(timeout=90)
 
-    assert completed.returncode == 0, completed.stderr
-    assert completed.stderr == ""
-    events = _events(completed.stdout)
+    assert return_code == 0, stderr
+    assert stderr == ""
+    events = _events(stdout)
     assert [event.sequence for event in events] == list(range(len(events)))
     assert events[0].kind == "started"
     assert events[-1].kind == "completed"
@@ -207,6 +214,37 @@ def test_worker_subprocess_transports_progress_and_verified_completion(tmp_path:
     assert events[-1].payload["manifest_sha256"] == sha256_file(
         request.destination / "workflow-manifest.json"
     )
+
+
+def test_worker_command_pipe_eof_requests_unpublished_parent_disconnect_cancel(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    request = _request(tmp_path)
+
+    def wait_for_disconnect(*_args, cancel_requested, **_kwargs):
+        deadline = time.monotonic() + 5
+        while not cancel_requested():
+            if time.monotonic() > deadline:
+                raise AssertionError("parent disconnect was not observed")
+            time.sleep(0.001)
+        raise ModernWorkflowCancelled("parent disconnected")
+
+    monkeypatch.setattr(
+        "diffeoforge.modern_workflow.run_modern_workflow",
+        wait_for_disconnect,
+    )
+    stdout = io.StringIO()
+
+    return_code = run_worker(
+        stdin=io.StringIO(json.dumps(request.as_dict()) + "\n"),
+        stdout=stdout,
+        stderr=io.StringIO(),
+    )
+
+    assert return_code == 130
+    assert [event.kind for event in _events(stdout.getvalue())] == ["started"]
+    assert not request.destination.exists()
 
 
 def test_worker_subprocess_accepts_cancel_command_and_publishes_nothing(tmp_path: Path) -> None:

@@ -1,12 +1,14 @@
 # Versioned desktop worker protocol
 
-Status: **implemented source-level Modern CPU transport, verified parent
-controller, and source GUI start/live-event/cancel integration**
+Status: **implemented Modern CPU transport, verified parent controller,
+source GUI integration, and native Windows parent-death process containment**
 
 Tracked by [engineering issue #79](https://github.com/heinjenny95/DiffeoForge/issues/79)
 and [parent-controller issue #81](https://github.com/heinjenny95/DiffeoForge/issues/81),
 with GUI integration tracked by
-[engineering issue #83](https://github.com/heinjenny95/DiffeoForge/issues/83).
+[engineering issue #83](https://github.com/heinjenny95/DiffeoForge/issues/83) and
+parent-death containment by
+[engineering issue #89](https://github.com/heinjenny95/DiffeoForge/issues/89).
 
 ## Purpose and boundary
 
@@ -119,6 +121,42 @@ completion.
 
 ## Windows lifecycle hardening
 
+Every Windows controller now creates a dedicated unnamed Job Object with
+`JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` before it launches a worker. The child is
+assigned before the reviewed request line is written. The controller retains
+the only Job handle throughout supervision and closes it on every exit. If the
+GUI process crashes or is forcibly terminated, Windows closes that handle and
+terminates the associated worker process tree. Job creation, configuration, or
+assignment failure is fail-closed: the uncontained child is stopped and no
+request is sent.
+
+There is necessarily a short interval between `Popen` creating the child and
+`AssignProcessToJobObject` returning. The production worker provides a second,
+cross-platform boundary for that interval: EOF on its command pipe means the
+parent disappeared and requests cooperative cancellation at the next declared
+safe point. It emits no misleading terminal event to a disconnected parent. If
+atomic publication already won the final race, the verified result may remain;
+otherwise the normal exception path removes private temporary work.
+
+The Job Object behavior follows Microsoft's documented assignment and
+kill-on-last-handle-close contracts. Nested Job Objects require Windows 8 or
+Windows Server 2012 or newer, consistent with the project's current Windows 11
+target. A native hard-parent-exit test launches a real controller parent, waits
+until its child is contained, calls `os._exit`, and verifies that the child PID
+disappears without a destination.
+
+This does not make a power-loss recovery claim. A force kill can interrupt the
+worker before Python cleanup executes and may leave a private
+`.NAME.tmp-UUID` directory. Read-only discovery and explicit reconciliation of
+such state remain the next separate slice; DiffeoForge does not automatically
+delete it or present it as a result.
+
+Primary platform references:
+
+- [Microsoft: Job Objects](https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects)
+- [Microsoft: AssignProcessToJobObject](https://learn.microsoft.com/en-us/windows/win32/api/jobapi2/nf-jobapi2-assignprocesstojobobject)
+- [Microsoft: SetInformationJobObject](https://learn.microsoft.com/en-us/windows/win32/api/jobapi2/nf-jobapi2-setinformationjobobject)
+
 The worker imports the Modern numerical runtime before starting its blocking
 command-reader thread. A real Windows parent-process test found that importing
 PyTorch concurrently with the already blocked pipe reader could stall before
@@ -152,10 +190,10 @@ reconciled the process and independently verified the published result.
 
 A normal window-close request while a GUI-launched worker is active requests
 cooperative cancellation and is deferred until a reconciled worker outcome.
-This does not solve operating-system termination or power loss: crash
-reconciliation after the parent application itself dies, checkpoint/recovery,
-reference-engine process supervision, and detailed result inspection remain
-later evidence gates.
+Hard Windows parent termination now stops the contained worker process tree,
+while command-pipe EOF supplies cooperative fallback on every platform. Power
+loss and abandoned-private-directory reconciliation, checkpoint/recovery, and
+reference-engine process supervision remain later evidence gates.
 
 ## Verification evidence
 

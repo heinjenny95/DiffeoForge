@@ -89,6 +89,14 @@ def default_desktop_worker_command() -> tuple[str, ...]:
     return (sys.executable, "-m", "diffeoforge.desktop.worker")
 
 
+def _create_windows_worker_job():
+    if os.name != "nt":
+        return None
+    from diffeoforge.desktop.windows_job import WindowsKillOnCloseJob
+
+    return WindowsKillOnCloseJob()
+
+
 @dataclass(frozen=True)
 class DesktopWorkerControllerResult:
     """One reconciled completed or cancelled worker outcome."""
@@ -275,9 +283,12 @@ class DesktopWorkerController:
             ) from error
 
         creationflags = 0
+        worker_job = None
+        process: subprocess.Popen[str] | None = None
         if os.name == "nt":
             creationflags = subprocess.CREATE_NO_WINDOW
         try:
+            worker_job = _create_windows_worker_job()
             process = subprocess.Popen(
                 self.worker_command,
                 cwd=self.cwd,
@@ -290,14 +301,25 @@ class DesktopWorkerController:
                 bufsize=1,
                 creationflags=creationflags,
             )
+            if worker_job is not None:
+                worker_job.assign(process)
         except OSError as error:
+            if process is not None:
+                self._stop_process(process)
+            if worker_job is not None:
+                try:
+                    worker_job.close()
+                except OSError:
+                    pass
             with self._lock:
                 self._state = "failed"
             raise DesktopWorkerProcessError(
-                f"Could not launch desktop worker: {error}",
+                f"Could not launch and contain desktop worker: {error}",
                 exit_code=None,
                 stderr="",
             ) from error
+
+        assert process is not None
 
         with self._lock:
             self._process = process
@@ -409,6 +431,18 @@ class DesktopWorkerController:
             self._close_pipe(process.stderr)
             with self._lock:
                 self._process = None
+            if worker_job is not None:
+                try:
+                    worker_job.close()
+                except OSError as error:
+                    if not failed:
+                        with self._lock:
+                            self._state = "failed"
+                        raise DesktopWorkerProcessError(
+                            f"Could not close Windows worker Job Object: {error}",
+                            exit_code=process.poll(),
+                            stderr=stderr_buffer.render(),
+                        ) from error
 
     @staticmethod
     def _drain_stderr(stream: TextIO | None, buffer: _BoundedText) -> None:

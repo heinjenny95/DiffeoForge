@@ -208,6 +208,40 @@ def test_controller_import_does_not_import_qt_or_numerical_engine() -> None:
     assert completed.returncode == 0, completed.stderr
 
 
+def test_controller_fails_closed_if_worker_job_assignment_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    request = _protocol_request(tmp_path)
+
+    class FailingJob:
+        def __init__(self) -> None:
+            self.assigned_pid: int | None = None
+            self.closed = False
+
+        def assign(self, process: subprocess.Popen[str]) -> None:
+            self.assigned_pid = process.pid
+            raise OSError("synthetic assignment failure")
+
+        def close(self) -> None:
+            self.closed = True
+
+    job = FailingJob()
+    monkeypatch.setattr(worker_controller, "_create_windows_worker_job", lambda: job)
+    controller = DesktopWorkerController(
+        request,
+        worker_command=(sys.executable, "-c", "import time; time.sleep(300)"),
+    )
+
+    with pytest.raises(DesktopWorkerProcessError, match="launch and contain"):
+        controller.run()
+
+    assert job.assigned_pid is not None
+    assert job.closed is True
+    assert controller.state == "failed"
+    assert not request.destination.exists()
+
+
 def test_schema_valid_worker_failure_is_preserved_as_typed_execution_error(
     tmp_path: Path,
 ) -> None:
