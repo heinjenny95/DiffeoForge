@@ -10,10 +10,25 @@ copies a mesh, writes XML, or starts a process.
 diffeoforge reference-plan atlas.yaml --run-id pilot-001
 ```
 
-An explicit run ID is mandatory. The command prints one ASCII-safe JSON document
-to stdout and writes no report or sidecar. It normalizes the run ID with the same
-function used by `prepare`, resolves the configured destination, and refuses to
-plan over an existing destination.
+An explicit run ID is mandatory. Without additional options, the command prints
+one ASCII-safe JSON document to stdout and writes no report or sidecar. It
+normalizes the run ID with the same function used by `prepare`, resolves the
+configured destination, and refuses to plan over an existing destination.
+
+For a non-programmer review copy, explicitly choose a new HTML path:
+
+```powershell
+diffeoforge reference-plan atlas.yaml --run-id pilot-001 `
+  --report review/pilot-001-preparation.html > review/pilot-001-preparation.json
+```
+
+JSON remains the only stdout payload; the written report path is announced on
+stderr. The HTML is rendered from the same validated in-memory plan and is
+deterministic: it has no timestamp, JavaScript, network call, or external asset.
+It includes the plan identity and fingerprint, full input and protected-file
+inventories, generated effective YAML and XML, backend constants, and exact
+command vector. The report is created exclusively and never replaces an
+existing file. Its parent directory is created when necessary.
 
 ## Versioned contents
 
@@ -37,9 +52,9 @@ Schema `reference-preparation-plan-v0.1.json` records:
 - the exact backend command, working directory, and controlled environment that
   the prepared manifest would contain.
 
-The plan deliberately contains full local paths and specimen filenames. Treat a
-saved copy as private provenance unless those names have been reviewed for
-publication.
+The plan and HTML report deliberately contain full local paths and specimen
+filenames. Treat saved copies as private provenance unless those names have been
+reviewed for publication.
 
 ## Shared exact-byte renderer
 

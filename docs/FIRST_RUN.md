@@ -134,6 +134,16 @@ and confirms that the destination does not exist. It does not create the output
 root or contact the configured launcher. See
 [read-only reference preparation plan](REFERENCE_PREPARATION_PLAN.md).
 
+Add an explicit new report path when a browser-readable review copy is useful:
+
+```powershell
+diffeoforge reference-plan atlas.yaml --run-id pilot-001 `
+  --report pilot-001-preparation.html > pilot-001-preparation.json
+```
+
+The HTML is offline and self-contained, and it refuses to replace any existing
+file. It contains full specimen paths and names, so review it before sharing.
+
 For a cohort of hundreds of specimens, start with a small representative pilot
 and inspect the objective curves, lifecycle, evidence checks, and output
 inventory before committing the full dataset. The result report deliberately

@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import hashlib
+import html
 import json
 import os
 import shutil
 import subprocess
 import sys
+from copy import deepcopy
+from html.parser import HTMLParser
 from pathlib import Path
 
 import pytest
@@ -13,7 +16,12 @@ import pytest
 import diffeoforge.reference_preparation_plan as preparation_plan_module
 from diffeoforge.backends import render_engine_file_bytes
 from diffeoforge.config import ConfigurationError, load_config
-from diffeoforge.reference_preparation_plan import plan_reference_preparation
+from diffeoforge.reference_preparation_plan import (
+    plan_reference_preparation,
+    reference_preparation_plan_fingerprint,
+    render_reference_preparation_plan_html,
+    write_reference_preparation_plan_report,
+)
 from diffeoforge.runs import prepare_run, verify_prepared_run
 
 ROOT = Path(__file__).parents[1]
@@ -31,6 +39,23 @@ POSIX_XML_HASHES = {
         "4a4599f1e6e00bae5fdc53ee26e893c5cf92c1bc2b6e237f3798686e6a4fa71e"
     ),
 }
+
+
+class _ActiveContentCollector(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__()
+        self.tags: list[str] = []
+        self.url_attributes: list[tuple[str, str]] = []
+
+    def handle_starttag(
+        self,
+        tag: str,
+        attrs: list[tuple[str, str | None]],
+    ) -> None:
+        self.tags.append(tag)
+        self.url_attributes.extend(
+            (name, value or "") for name, value in attrs if name in {"href", "src"}
+        )
 
 
 def _project(tmp_path: Path) -> Path:
@@ -177,3 +202,144 @@ def test_reference_plan_cli_emits_ascii_safe_json_without_mutation(tmp_path: Pat
     assert plan["run"]["destination_exists"] is False
     assert _tree_inventory(root) == before
     assert not (root / "runs").exists()
+
+
+def test_reference_preparation_html_is_deterministic_complete_and_escaped(
+    tmp_path: Path,
+) -> None:
+    root = _project(tmp_path)
+    plan = plan_reference_preparation(root / "atlas.yaml", run_id="html-review")
+    hostile = deepcopy(plan)
+    hostile["scientific_boundary"] += ' <script src="https://invalid.example/x.js">&unsafe</script>'
+
+    first = render_reference_preparation_plan_html(hostile)
+    second = render_reference_preparation_plan_html(hostile)
+
+    assert first == second
+    assert reference_preparation_plan_fingerprint(hostile) in first
+    assert "Review only - destination absent - nothing prepared" in first
+    assert hostile["source_config"]["sha256"] in first
+    assert all(item["geometry"]["sha256"] in first for item in hostile["inputs"])
+    assert all(item["sha256"] in first for item in hostile["protected_files"])
+    assert all(
+        html.escape(item["content_utf8"]) in first
+        for item in hostile["protected_files"]
+        if item["kind"] == "generated"
+    )
+    assert (
+        "&lt;script src=&quot;https://invalid.example/x.js&quot;&gt;"
+        "&amp;unsafe&lt;/script&gt;"
+    ) in first
+    collector = _ActiveContentCollector()
+    collector.feed(first)
+    assert not {"script", "link", "iframe", "img", "object", "embed"}.intersection(
+        collector.tags
+    )
+    assert collector.url_attributes == []
+
+
+def test_reference_preparation_html_report_is_exclusive(tmp_path: Path) -> None:
+    root = _project(tmp_path)
+    plan = plan_reference_preparation(root / "atlas.yaml", run_id="write-once")
+    report = tmp_path / "nested" / "reference-plan.html"
+
+    written = write_reference_preparation_plan_report(plan, report)
+    original = report.read_bytes()
+
+    assert written == report.resolve()
+    assert original.decode("utf-8") == render_reference_preparation_plan_html(plan)
+    with pytest.raises(ConfigurationError, match="will not be overwritten"):
+        write_reference_preparation_plan_report(plan, report)
+    assert report.read_bytes() == original
+
+
+def test_reference_preparation_html_scales_to_305_subject_inventory(
+    tmp_path: Path,
+) -> None:
+    root = _project(tmp_path)
+    mesh_directory = root / "synthetic" / "meshes"
+    source = mesh_directory / "subject-01.vtk"
+    for index in range(6, 306):
+        shutil.copyfile(source, mesh_directory / f"subject-{index:03d}.vtk")
+
+    plan = plan_reference_preparation(root / "atlas.yaml", run_id="large-review")
+    rendered = render_reference_preparation_plan_html(plan)
+
+    assert plan["input_count"] == {"templates": 1, "subjects": 305}
+    assert plan["protected_file_count"] == 311
+    assert "Subjects<strong>305</strong>" in rendered
+    assert "input/subjects/subject-305.vtk" in rendered
+    assert plan["inputs"][-1]["geometry"]["sha256"] in rendered
+    assert not (root / "runs").exists()
+
+
+def test_reference_plan_cli_optionally_writes_html_without_changing_json_stdout(
+    tmp_path: Path,
+) -> None:
+    root = _project(tmp_path)
+    config = root / "atlas.yaml"
+    report = root / "review" / "reference-plan.html"
+    before = _tree_inventory(root)
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "diffeoforge",
+            "reference-plan",
+            str(config),
+            "--run-id",
+            "report-001",
+            "--report",
+            str(report),
+        ],
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+        text=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr.decode("utf-8", errors="replace")
+    assert all(byte < 128 for byte in completed.stdout)
+    plan = json.loads(completed.stdout.decode("ascii"))
+    assert plan["run"]["destination_exists"] is False
+    assert report.read_bytes().decode("utf-8") == render_reference_preparation_plan_html(plan)
+    assert all(byte < 128 for byte in completed.stderr)
+    assert completed.stderr.decode("ascii").strip() == (
+        "Reference preparation report: "
+        f"{json.dumps(str(report.resolve()), ensure_ascii=True)}"
+    )
+    after = _tree_inventory(root)
+    assert set(after) - set(before) == {"review/reference-plan.html"}
+    assert not (root / "runs").exists()
+
+
+def test_reference_plan_cli_refuses_existing_report_before_emitting_json(
+    tmp_path: Path,
+) -> None:
+    root = _project(tmp_path)
+    report = root / "owned.html"
+    report.write_text("user content\n", encoding="utf-8")
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "diffeoforge",
+            "reference-plan",
+            str(root / "atlas.yaml"),
+            "--run-id",
+            "blocked-report",
+            "--report",
+            str(report),
+        ],
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 2
+    assert completed.stdout == ""
+    assert "will not be overwritten" in completed.stderr
+    assert report.read_text(encoding="utf-8") == "user content\n"

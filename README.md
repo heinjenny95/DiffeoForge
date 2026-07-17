@@ -36,6 +36,8 @@ The current command-line workflow is:
 diffeoforge validate atlas.yaml
 diffeoforge reference-plan atlas.yaml --run-id experiment-001
 # Review exact paths, staged inputs, effective YAML, XML bytes/hashes, and command.
+# Optionally create an offline browser review while retaining JSON on stdout:
+diffeoforge reference-plan atlas.yaml --run-id experiment-001 --report experiment-001-preparation.html > experiment-001-preparation.json
 diffeoforge prepare atlas.yaml --run-id experiment-001
 # Inspect manifest.json and engine/*.xml before committing compute time.
 diffeoforge execute runs/experiment-001
