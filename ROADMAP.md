@@ -71,6 +71,7 @@ This roadmap describes evidence gates rather than promised dates.
   - [x] Read-only exact-destination private-run discovery with process lease
   - [x] Transparent read-only private destination readiness in desktop step 3
   - [x] Hash-bound read-only external reference environment diagnosis
+  - [x] Native read-only XY/XZ/YZ template wireframe preview
   - [ ] User-approved private-run reconciliation, reference supervision, and native mesh rendering
 - [ ] Parameter explanations and safe presets
 - [x] Pre-compute configured all-pairs and known-payload workload report

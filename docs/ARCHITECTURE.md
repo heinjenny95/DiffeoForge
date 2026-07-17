@@ -138,6 +138,15 @@ does not prepare or launch Deformetrica and does not weaken the separate open
 gate for reference-process supervision. See
 [the desktop reference-readiness contract](REFERENCE_DESKTOP_READINESS.md).
 
+Both setup routes can also pass their already selected template path to a
+Qt-independent immutable preview model. The model reuses the strict VTK parser,
+binds the source SHA-256 before and after loading, freezes vertices, triangles,
+bounds, and sorted unique edges, and computes deterministic aspect-preserving
+XY/XZ/YZ projections without rereading the file. A QPainter widget receives
+only this model and draws at most the disclosed display-edge budget. This is a
+native inspection seam, not a second QC service or an interactive 3D/landmark
+system. See [the template-preview contract](TEMPLATE_PREVIEW.md).
+
 Desktop step 4 consumes no alternate scientific model. A Qt-independent result
 reviewer first invokes the complete outer Modern verifier, binds the unchanged
 outer and nested manifest hashes, and reads only schema- and inventory-named

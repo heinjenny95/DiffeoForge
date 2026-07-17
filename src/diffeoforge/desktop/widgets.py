@@ -26,6 +26,13 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from diffeoforge.desktop.mesh_preview import (
+    DEFAULT_EDGE_BUDGET,
+    MeshPreviewError,
+    MeshPreviewModel,
+    load_mesh_preview,
+)
+from diffeoforge.desktop.mesh_preview_widget import MeshPreviewCanvas
 from diffeoforge.desktop.project_review import ProjectReviewResult, review_project
 from diffeoforge.desktop.project_setup import (
     DesktopEngine,
@@ -143,6 +150,24 @@ class _ReviewWorker(QRunnable):
             self.signals.failed.emit(str(error))
             return
         self.signals.succeeded.emit(review)
+
+
+class _TemplatePreviewWorker(QRunnable):
+    """Load one immutable template preview model outside the GUI thread."""
+
+    def __init__(self, template_path: Path) -> None:
+        super().__init__()
+        self.template_path = template_path
+        self.signals = _WorkerSignals()
+
+    @Slot()
+    def run(self) -> None:
+        try:
+            model = load_mesh_preview(self.template_path)
+        except (MeshPreviewError, OSError, RuntimeError, TypeError, ValueError) as error:
+            self.signals.failed.emit(str(error))
+            return
+        self.signals.succeeded.emit(model)
 
 
 class _ReferenceReadinessWorker(QRunnable):
@@ -286,6 +311,7 @@ class DiffeoForgeWindow(QMainWindow):
         self._worker: (
             _ProjectWorker
             | _ReviewWorker
+            | _TemplatePreviewWorker
             | _ReferenceReadinessWorker
             | _ResultReviewWorker
             | _ArtifactWorker
@@ -294,6 +320,7 @@ class DiffeoForgeWindow(QMainWindow):
         ) = None
         self._result: ProjectSetupResult | None = None
         self._review: ProjectReviewResult | None = None
+        self._template_preview: MeshPreviewModel | None = None
         self._reference_readiness: DesktopReferenceReadiness | None = None
         self._run_readiness: DesktopReviewedRunReadiness | None = None
         self._run_result: DesktopWorkerControllerResult | None = None
@@ -478,6 +505,58 @@ class DiffeoForgeWindow(QMainWindow):
         summary_layout.addWidget(summary_title)
         summary_layout.addWidget(self.review_summary_label)
         layout.addWidget(summary)
+
+        template_preview = QFrame()
+        template_preview.setObjectName("card")
+        template_preview_layout = QVBoxLayout(template_preview)
+        template_preview_layout.setContentsMargins(24, 22, 24, 24)
+        template_preview_layout.setSpacing(10)
+        template_preview_title = QLabel("Native Template-Vorschau")
+        template_preview_title.setObjectName("sectionTitle")
+        self.template_preview_status_label = QLabel(
+            "Die read-only-Wireframe-Vorschau wurde noch nicht geladen."
+        )
+        self.template_preview_status_label.setObjectName("status")
+        self.template_preview_status_label.setWordWrap(True)
+        self.template_preview_canvas = MeshPreviewCanvas()
+        self.template_preview_plane_combo = QComboBox()
+        self.template_preview_plane_combo.setObjectName("templatePreviewPlane")
+        self.template_preview_plane_combo.addItem("XY · Ansicht entlang Z", "xy")
+        self.template_preview_plane_combo.addItem("XZ · Ansicht entlang Y", "xz")
+        self.template_preview_plane_combo.addItem("YZ · Ansicht entlang X", "yz")
+        self.template_preview_plane_combo.setEnabled(False)
+        self.template_preview_plane_combo.currentIndexChanged.connect(
+            self._update_template_preview_plane
+        )
+        self.template_preview_detail_label = QLabel(
+            "Diese Projektion verändert das Mesh nicht und ersetzt weder 3D-Inspektion "
+            "noch Mesh-QC oder Landmark-Picking."
+        )
+        self.template_preview_detail_label.setObjectName("reviewDetail")
+        self.template_preview_detail_label.setWordWrap(True)
+        self.template_preview_detail_label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+        )
+        self.refresh_template_preview_button = QPushButton(
+            "Template read-only laden"
+        )
+        self.refresh_template_preview_button.setObjectName("secondary")
+        self.refresh_template_preview_button.clicked.connect(
+            self._load_template_preview
+        )
+        preview_controls = QHBoxLayout()
+        preview_controls.addWidget(QLabel("Projektion"))
+        preview_controls.addWidget(self.template_preview_plane_combo)
+        preview_controls.addStretch()
+        preview_controls.addWidget(self.refresh_template_preview_button)
+        template_preview_layout.addWidget(template_preview_title)
+        template_preview_layout.addWidget(self.template_preview_status_label)
+        template_preview_layout.addWidget(self.template_preview_canvas)
+        template_preview_layout.addLayout(preview_controls)
+        template_preview_layout.addWidget(self.template_preview_detail_label)
+        self.template_preview_card = template_preview
+        self.template_preview_card.hide()
+        layout.addWidget(self.template_preview_card)
 
         layout.addWidget(self._build_review_card("Effektive Parameter", "parameterReview"))
         self.workload_card = self._build_review_card("Workload-Evidenz", "workloadReview")
@@ -1120,10 +1199,13 @@ class DiffeoForgeWindow(QMainWindow):
         self.result_card.hide()
         self._result = None
         self._review = None
+        self._template_preview = None
         self._reference_readiness = None
         self._run_readiness = None
         self._run_result = None
         self._result_review = None
+        self.template_preview_card.hide()
+        self.template_preview_canvas.set_model(None)
         self.review_button.setEnabled(False)
         self.show_run_button.setEnabled(False)
         self.start_atlas_button.setEnabled(False)
@@ -1186,6 +1268,7 @@ class DiffeoForgeWindow(QMainWindow):
     def _review_succeeded(self, review: ProjectReviewResult) -> None:
         self._worker = None
         self._review = review
+        self._template_preview = None
         self._reference_readiness = None
         self._run_readiness = None
         self._populate_review_rows(self.parameter_review_layout, review.parameters)
@@ -1208,6 +1291,26 @@ class DiffeoForgeWindow(QMainWindow):
         )
         self.review_warnings_label.setText("\n".join(f"• {warning}" for warning in review.warnings))
         self.open_review_report_button.setText(f"{review.report_label} öffnen")
+        if (
+            self._result is not None
+            and self._result.config_path.resolve() == review.config_path.resolve()
+        ):
+            self.template_preview_card.show()
+            self.template_preview_canvas.set_model(None)
+            self.template_preview_plane_combo.setEnabled(False)
+            self.refresh_template_preview_button.setEnabled(True)
+            self.template_preview_status_label.setObjectName("status")
+            self.template_preview_status_label.setStyleSheet("")
+            self.template_preview_status_label.setText(
+                "Die read-only-Wireframe-Vorschau wurde noch nicht geladen."
+            )
+            self.template_preview_detail_label.setText(
+                f"Template: {self._wrappable_path(self._result.template_path)}\n"
+                "Diese Projektion verändert das Mesh nicht und ersetzt weder "
+                "3D-Inspektion noch Mesh-QC oder Landmark-Picking."
+            )
+        else:
+            self.template_preview_card.hide()
         if review.engine is DesktopEngine.MODERN_CPU:
             self.reference_readiness_card.hide()
             self.show_run_button.setText("Weiter zu Atlasstart")
@@ -1230,6 +1333,116 @@ class DiffeoForgeWindow(QMainWindow):
         self._set_active_step(1)
         self.page_stack.setCurrentIndex(1)
         self.review_button.setEnabled(True)
+        self._sync_ready_state()
+
+    @Slot()
+    def _load_template_preview(self) -> None:
+        if (
+            self._result is None
+            or self._review is None
+            or self._result.config_path.resolve() != self._review.config_path.resolve()
+            or self._worker is not None
+        ):
+            return
+        worker = _TemplatePreviewWorker(self._result.template_path.resolve())
+        worker.signals.succeeded.connect(self._template_preview_succeeded)
+        worker.signals.failed.connect(self._template_preview_failed)
+        self._worker = worker
+        self._template_preview = None
+        self.template_preview_canvas.set_model(None)
+        self.template_preview_plane_combo.setEnabled(False)
+        self.refresh_template_preview_button.setEnabled(False)
+        self.template_preview_status_label.setObjectName("status")
+        self.template_preview_status_label.setStyleSheet("")
+        self.template_preview_status_label.setText(
+            "Template-Geometrie und eindeutige Kanten werden außerhalb des Event-Loops "
+            "read-only geladen …"
+        )
+        self.template_preview_detail_label.setText(
+            "Die Quelldatei wird vor und nach dem Laden gehasht. Es werden keine Punkte, "
+            "Flächen oder Dateien verändert."
+        )
+        self._sync_ready_state()
+        self._thread_pool.start(worker)
+
+    @Slot(object)
+    def _template_preview_succeeded(self, model: MeshPreviewModel) -> None:
+        self._worker = None
+        if (
+            self._result is None
+            or model.path.resolve() != self._result.template_path.resolve()
+        ):
+            self._template_preview_failed(
+                "Geladenes Vorschaumodell gehört nicht zum aktuellen Template"
+            )
+            return
+        self._template_preview = model
+        self.template_preview_plane_combo.setEnabled(True)
+        self.refresh_template_preview_button.setEnabled(True)
+        self.review_button.setEnabled(self._result is not None)
+        self._update_template_preview_plane(self.template_preview_plane_combo.currentIndex())
+        self._sync_ready_state()
+
+    @Slot(int)
+    def _update_template_preview_plane(self, _index: int) -> None:
+        model = self._template_preview
+        if model is None:
+            return
+        plane = self.template_preview_plane_combo.currentData()
+        try:
+            projection = model.project(plane, edge_budget=DEFAULT_EDGE_BUDGET)
+        except (MeshPreviewError, TypeError, ValueError) as error:
+            self.template_preview_canvas.set_model(None)
+            self.template_preview_status_label.setObjectName("statusError")
+            self.template_preview_status_label.setStyleSheet("")
+            self.template_preview_status_label.setText(
+                f"{str(plane).upper()}-Projektion nicht darstellbar: {error}"
+            )
+            return
+
+        self.template_preview_canvas.set_plane(plane)
+        self.template_preview_canvas.set_model(model)
+        sampling = (
+            "deterministisch ausgedünnte Anzeige"
+            if projection.sampled
+            else "alle eindeutigen Kanten angezeigt"
+        )
+        bounds = ", ".join(f"{value:.6g}" for value in model.bounds)
+        self.template_preview_detail_label.setText(
+            f"Template: {self._wrappable_path(model.path)}\n"
+            f"SHA-256: {model.sha256}\n"
+            f"Geometrie: {model.point_count} Punkte · {model.triangle_count} Dreiecke · "
+            f"{model.edge_count} eindeutige Kanten\n"
+            f"Bounds (xmin, xmax, ymin, ymax, zmin, zmax): {bounds}\n"
+            f"Anzeige: {projection.displayed_edge_count} von "
+            f"{projection.total_edge_count} Kanten · {sampling}.\n"
+            "Nur orthografische Inspektionsvorschau; keine 3D-, QC-, Registrierungs-, "
+            "Landmark- oder biologische Bewertung."
+        )
+        self.template_preview_status_label.setObjectName("statusSuccess")
+        self.template_preview_status_label.setStyleSheet("")
+        self.template_preview_status_label.setText(
+            f"{str(plane).upper()}-Wireframe aus unverändertem Template gerendert."
+        )
+
+    @Slot(str)
+    def _template_preview_failed(self, message: str) -> None:
+        self._worker = None
+        self._template_preview = None
+        self.template_preview_canvas.set_model(None)
+        self.template_preview_plane_combo.setEnabled(False)
+        self.refresh_template_preview_button.setEnabled(
+            self._result is not None and self._review is not None
+        )
+        self.template_preview_status_label.setObjectName("statusError")
+        self.template_preview_status_label.setStyleSheet("")
+        self.template_preview_status_label.setText(
+            f"Template-Vorschau nicht geladen: {message}"
+        )
+        self.template_preview_detail_label.setText(
+            "Keine Vorschau freigegeben; die Template-Datei wurde nicht verändert."
+        )
+        self.review_button.setEnabled(self._result is not None)
         self._sync_ready_state()
 
     @Slot()

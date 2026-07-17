@@ -55,6 +55,47 @@ def test_desktop_window_constructs_in_offscreen_smoke() -> None:
     assert completed.stderr == ""
 
 
+def test_native_mesh_preview_canvas_renders_non_background_pixels(
+    monkeypatch, tmp_path: Path
+) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtGui import QColor, QImage
+    from PySide6.QtWidgets import QApplication
+
+    from diffeoforge.desktop.mesh_preview import load_mesh_preview
+    from diffeoforge.desktop.mesh_preview_widget import MeshPreviewCanvas
+    from diffeoforge.mesh import write_vtk_polydata
+
+    source = write_vtk_polydata(
+        tmp_path / "template.vtk",
+        (
+            (0.0, 0.0, 0.0),
+            (2.0, 0.0, 0.0),
+            (0.0, 1.0, 0.0),
+            (0.0, 0.0, 3.0),
+        ),
+        ((0, 2, 1), (0, 1, 3), (1, 2, 3), (2, 0, 3)),
+    )
+    application = QApplication.instance() or QApplication(["mesh-preview-canvas-test"])
+    canvas = MeshPreviewCanvas()
+    canvas.resize(420, 300)
+    canvas.set_model(load_mesh_preview(source))
+    canvas.set_plane("xz")
+    image = QImage(canvas.size(), QImage.Format.Format_ARGB32)
+    image.fill(QColor("white"))
+    canvas.render(image)
+
+    background = QColor("#f7f9f9").rgba()
+    non_background = sum(
+        image.pixel(x, y) != background
+        for y in range(image.height())
+        for x in range(image.width())
+    )
+    assert non_background > 100
+    application.processEvents()
+
+
 def test_desktop_window_exposes_required_project_controls(monkeypatch) -> None:
     pytest.importorskip("PySide6")
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
@@ -286,6 +327,100 @@ def test_desktop_reference_environment_check_is_read_only_and_keeps_start_locked
     assert window.show_run_button.isEnabled() is False
     assert "noch nicht verbunden" in window.show_run_button.text()
     assert window.page_stack.currentIndex() == 1
+    window.close()
+    application.processEvents()
+
+
+def test_desktop_loads_native_template_preview_without_modifying_source(
+    monkeypatch, tmp_path
+) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from diffeoforge.desktop.mesh_preview import load_mesh_preview
+    from diffeoforge.desktop.project_review import ProjectReviewResult
+    from diffeoforge.desktop.project_setup import (
+        DesktopEngine,
+        ProjectSetupResult,
+    )
+    from diffeoforge.desktop.widgets import DiffeoForgeWindow, _TemplatePreviewWorker
+    from diffeoforge.mesh import write_vtk_polydata
+
+    application = QApplication.instance() or QApplication(
+        ["diffeoforge-template-preview-test"]
+    )
+    template = write_vtk_polydata(
+        tmp_path / "template.vtk",
+        (
+            (0.0, 0.0, 0.0),
+            (2.0, 0.0, 0.0),
+            (0.0, 1.0, 0.0),
+            (0.0, 0.0, 3.0),
+        ),
+        ((0, 2, 1), (0, 1, 3), (1, 2, 3), (2, 0, 3)),
+    )
+    config = tmp_path / "modern-atlas.yaml"
+    config.write_text("reviewed\n", encoding="utf-8")
+    result = ProjectSetupResult(
+        engine=DesktopEngine.MODERN_CPU,
+        config_path=config,
+        template_path=template,
+        subject_count=5,
+        report_path=None,
+        notices=(),
+    )
+    review = ProjectReviewResult(
+        engine=DesktopEngine.MODERN_CPU,
+        project_name="Preview",
+        config_path=config,
+        config_sha256="e" * 64,
+        report_path=tmp_path / "workload.html",
+        report_label="Modern-Workload-Report",
+        subject_count=5,
+        parameters=(),
+        workload=(),
+        warnings=(),
+        scientific_boundary="preview boundary",
+    )
+    model = load_mesh_preview(template)
+    before = template.read_bytes()
+    monkeypatch.setattr(
+        "diffeoforge.desktop.widgets.load_mesh_preview",
+        lambda observed: model if observed == template.resolve() else pytest.fail("wrong mesh"),
+    )
+    queued = []
+
+    class FakePool:
+        def start(self, worker) -> None:
+            queued.append(worker)
+
+    window = DiffeoForgeWindow()
+    window._thread_pool = FakePool()  # type: ignore[assignment]
+    window._result = result
+    window._review_succeeded(review)
+
+    assert window.template_preview_card.isHidden() is False
+    assert window.template_preview_plane_combo.isEnabled() is False
+    window.refresh_template_preview_button.click()
+    assert len(queued) == 1
+    assert isinstance(queued[0], _TemplatePreviewWorker)
+    assert window.refresh_template_preview_button.isEnabled() is False
+    queued[0].run()
+    application.processEvents()
+
+    assert template.read_bytes() == before
+    assert window.template_preview_plane_combo.isEnabled() is True
+    assert "XY-Wireframe" in window.template_preview_status_label.text()
+    assert "4 Punkte · 4 Dreiecke · 6 eindeutige Kanten" in (
+        window.template_preview_detail_label.text()
+    )
+    assert "6 von 6 Kanten" in window.template_preview_detail_label.text()
+    assert "keine 3D-" in window.template_preview_detail_label.text()
+    window.template_preview_plane_combo.setCurrentIndex(1)
+    application.processEvents()
+    assert "XZ-Wireframe" in window.template_preview_status_label.text()
+    assert window.show_run_button.isEnabled() is True
     window.close()
     application.processEvents()
 

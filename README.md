@@ -154,17 +154,23 @@ terminates the contained worker tree and command-pipe EOF requests cooperative
 cancellation on every platform. Versioned private markers and OS-released
 leases now support exact-destination, read-only discovery after hard crashes;
 automatic deletion, resume, and reconciliation remain deliberately open.
+DiffeoForge can also load the selected template outside the GUI thread and
+render deterministic native XY/XZ/YZ wireframe projections with an explicit
+display-edge budget and exact source hash. This is an inspection preview, not
+interactive 3D rendering, mesh QC, registration evidence, or landmark picking.
 DiffeoForge also does **not** yet ship a desktop installer or redistributable
 binary. A clean-commit, exact-inventory Windows one-directory
 [engineering build](docs/WINDOWS_FREEZE_EVIDENCE.md) now exercises the GUI and
 separate frozen worker, but it does not satisfy the installer/release gates.
-DiffeoForge still does not provide native mesh rendering or self-intersection
-detection, or promise
+DiffeoForge still does not provide interactive native 3D mesh rendering or
+self-intersection detection, or promise
 CPU/GPU equivalence or 300-specimen production performance. See the [modern-workflow
 documentation](docs/MODERN_WORKFLOW.md) and [reference-backend
 documentation](docs/REFERENCE_BACKEND.md) for the exact boundaries.
 The desktop reference diagnostic has its own
 [non-mutation contract](docs/REFERENCE_DESKTOP_READINESS.md).
+The native projection preview is specified in
+[Template projection preview](docs/TEMPLATE_PREVIEW.md).
 
 ## First run from a mesh directory
 
