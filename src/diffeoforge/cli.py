@@ -34,6 +34,21 @@ from diffeoforge.runs import (
 _AUTO_REPORT = Path("__diffeoforge_auto_report__")
 
 
+def _tile_shape_argument(value: str) -> tuple[int, int]:
+    parts = value.lower().split("x")
+    if len(parts) != 2 or not all(parts):
+        raise argparse.ArgumentTypeError("tile shape must use QUERYxSOURCE, for example 64x128")
+    try:
+        query_tile_size, source_tile_size = (int(part) for part in parts)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError(
+            "tile shape must contain integer query and source sizes"
+        ) from error
+    if not 1 <= query_tile_size <= 999_999 or not 1 <= source_tile_size <= 999_999:
+        raise argparse.ArgumentTypeError("tile dimensions must be between 1 and 999999")
+    return query_tile_size, source_tile_size
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="diffeoforge",
@@ -278,6 +293,48 @@ def build_parser() -> argparse.ArgumentParser:
         "--output",
         type=Path,
         help="New immutable design directory (default: CONFIG_NAME.benchmark-study).",
+    )
+
+    modern_benchmark_matrix_design_parser = subparsers.add_parser(
+        "modern-benchmark-matrix-design",
+        help="Freeze a full-factorial multi-tile design without running it.",
+    )
+    modern_benchmark_matrix_design_parser.add_argument("config", type=Path)
+    modern_benchmark_matrix_design_parser.add_argument(
+        "--subjects",
+        type=int,
+        nargs="+",
+        required=True,
+        help="One or more unique deterministic subject-prefix sizes.",
+    )
+    modern_benchmark_matrix_design_parser.add_argument(
+        "--tile-shape",
+        type=_tile_shape_argument,
+        action="append",
+        required=True,
+        metavar="QUERYxSOURCE",
+        help="Ordered tile pair; repeat for each unique full-factorial level.",
+    )
+    modern_benchmark_matrix_design_parser.add_argument("--repeats", type=int, default=5)
+    modern_benchmark_matrix_design_parser.add_argument("--warmups", type=int, default=1)
+    modern_benchmark_matrix_design_parser.add_argument(
+        "--order-seed",
+        type=int,
+        default=20260717,
+        help="Seed for the versioned deterministic cell and within-cell order.",
+    )
+    modern_benchmark_matrix_design_parser.add_argument(
+        "--output",
+        type=Path,
+        help="New immutable design directory (default: CONFIG_NAME.benchmark-matrix).",
+    )
+
+    modern_benchmark_matrix_design_verify_parser = subparsers.add_parser(
+        "modern-benchmark-matrix-design-verify",
+        help="Strictly verify an immutable multi-tile design without running it.",
+    )
+    modern_benchmark_matrix_design_verify_parser.add_argument(
+        "design_directory", type=Path
     )
 
     modern_benchmark_study_parser = subparsers.add_parser(
@@ -778,6 +835,96 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"       {error}", file=sys.stderr)
             return 2
         except (ConfigurationError, RuntimeError, OSError, ValueError, TypeError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
+
+    if args.command == "modern-benchmark-matrix-design":
+        try:
+            from diffeoforge.modern_benchmark_matrix_design import (
+                MATRIX_DESIGN_HTML_NAME,
+                MATRIX_DESIGN_JSON_NAME,
+                MATRIX_DESIGN_SIDECAR_NAME,
+                collect_modern_benchmark_matrix_design,
+                default_modern_benchmark_matrix_design_path,
+                verify_modern_benchmark_matrix_design,
+                write_modern_benchmark_matrix_design,
+            )
+
+            prospective_design = collect_modern_benchmark_matrix_design(
+                args.config,
+                subject_counts=args.subjects,
+                tile_shapes=args.tile_shape,
+                repeats_per_condition=args.repeats,
+                warmup_evaluations=args.warmups,
+                order_seed=args.order_seed,
+            )
+            prospective_protocol = prospective_design["protocol"]
+            print(
+                "Pre-publication full-factorial review: "
+                f"{prospective_protocol['cell_count']} cells; "
+                f"{prospective_protocol['condition_count']}/"
+                f"{prospective_protocol['maximum_condition_count']} conditions."
+            )
+            design_directory = (
+                default_modern_benchmark_matrix_design_path(args.config)
+                if args.output is None
+                else args.output
+            )
+            design_directory = write_modern_benchmark_matrix_design(
+                prospective_design, design_directory
+            )
+            design = verify_modern_benchmark_matrix_design(design_directory)
+            protocol = design["protocol"]
+            print(f"Prospective benchmark matrix design created: {design_directory}")
+            print(f"Subject-prefix sizes: {protocol['subject_counts']}")
+            print(
+                "Ordered query/source tile shapes: "
+                + ", ".join(
+                    f"{shape['query_tile_size']}x{shape['source_tile_size']}"
+                    for shape in protocol["tile_shapes"]
+                )
+            )
+            print(f"Frozen full-factorial cells: {protocol['cell_count']}")
+            print(
+                "Frozen condition count: "
+                f"{protocol['condition_count']}/{protocol['maximum_condition_count']}"
+            )
+            print(f"Deterministic order seed: {protocol['order_seed']}")
+            print(f"Machine-readable design: {design_directory / MATRIX_DESIGN_JSON_NAME}")
+            print(f"Integrity sidecar: {design_directory / MATRIX_DESIGN_SIDECAR_NAME}")
+            print(f"Review page: {design_directory / MATRIX_DESIGN_HTML_NAME}")
+            print("WARNING: No benchmark has been run and no performance claim is made.")
+        except ImportError as error:
+            print(
+                "ERROR: Modern benchmark dependencies are missing; install "
+                "diffeoforge[modern-engine].",
+                file=sys.stderr,
+            )
+            print(f"       {error}", file=sys.stderr)
+            return 2
+        except (ConfigurationError, RuntimeError, OSError, ValueError, TypeError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
+
+    if args.command == "modern-benchmark-matrix-design-verify":
+        try:
+            from diffeoforge.modern_benchmark_matrix_design import (
+                verify_modern_benchmark_matrix_design,
+            )
+
+            design_directory = args.design_directory.expanduser().resolve()
+            design = verify_modern_benchmark_matrix_design(design_directory)
+            protocol = design["protocol"]
+            print(f"Prospective benchmark matrix design verified: {design_directory}")
+            print(f"Frozen full-factorial cells: {protocol['cell_count']}")
+            print(
+                "Frozen condition count: "
+                f"{protocol['condition_count']}/{protocol['maximum_condition_count']}"
+            )
+            print("No benchmark result or performance claim is present.")
+        except (RuntimeError, OSError, ValueError, TypeError) as error:
             print(f"ERROR: {error}", file=sys.stderr)
             return 2
         return 0

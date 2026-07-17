@@ -216,11 +216,28 @@ diffeoforge modern-benchmark-study-status modern-atlas.benchmark-study.run
 diffeoforge modern-benchmark-study-verify modern-atlas.benchmark-study.run
 ```
 
-A future full-factorial multi-tile study is specified in
-[ADR 0004](docs/decisions/0004-prospective-multi-tile-matrix.md). Its raw
-effective-plan report contract exists, but the matrix design and runner are not
-yet implemented. They will use new versioned contracts without changing
-existing single-tile evidence.
+Freeze a prospective full-factorial multi-tile design from the same reviewed
+base config, without running any condition:
+
+```powershell
+diffeoforge modern-benchmark-matrix-design modern-atlas.yaml `
+  --subjects 5 20 50 `
+  --tile-shape 64x64 --tile-shape 128x256 --repeats 7
+```
+
+The CLI reviews the exact cell and condition count before atomically publishing
+strict `matrix-design.json`, SHA-256 sidecar, and escaped HTML. Ordered query ×
+source shapes remain distinct, every cell contains adjacent `standard` and
+`recompute` conditions, and a 1000-condition ceiling catches accidental
+combinatorial explosions. This implements only the pre-results design gate in
+[ADR 0004](docs/decisions/0004-prospective-multi-tile-matrix.md): there is no
+matrix runner or analysis yet, and the existing v0.1 single-tile study remains
+unchanged.
+
+```powershell
+diffeoforge modern-benchmark-matrix-design-verify `
+  modern-atlas.benchmark-matrix
+```
 
 Generated configurations declare dense evaluation explicitly. The exact
 non-approximate blockwise path can instead be requested without code:

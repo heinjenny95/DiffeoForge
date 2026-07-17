@@ -1,0 +1,223 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DiffeoForge prospective multi-tile benchmark matrix design",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "matrix_design_version",
+    "design_id",
+    "created_at",
+    "software",
+    "source_config",
+    "input",
+    "configuration",
+    "protocol",
+    "conditions",
+    "scientific_boundary"
+  ],
+  "$defs": {
+    "mesh": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["label", "role", "bytes", "sha256", "points", "triangles"],
+      "properties": {
+        "label": {"type": "string", "minLength": 1},
+        "role": {"enum": ["template", "subject"]},
+        "bytes": {"type": "integer", "minimum": 1},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "points": {"type": "integer", "minimum": 1},
+        "triangles": {"type": "integer", "minimum": 1}
+      }
+    },
+    "blockwise_plan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "query_tile_size", "source_tile_size"],
+      "properties": {
+        "mode": {"const": "blockwise"},
+        "query_tile_size": {"type": "integer", "minimum": 1, "maximum": 999999},
+        "source_tile_size": {"type": "integer", "minimum": 1, "maximum": 999999}
+      }
+    },
+    "tile_shape": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["query_tile_size", "source_tile_size"],
+      "properties": {
+        "query_tile_size": {"type": "integer", "minimum": 1, "maximum": 999999},
+        "source_tile_size": {"type": "integer", "minimum": 1, "maximum": 999999}
+      }
+    }
+  },
+  "properties": {
+    "matrix_design_version": {"const": "0.1"},
+    "design_id": {"const": "full_factorial_subject_tile_autograd"},
+    "created_at": {"type": "string", "minLength": 1},
+    "software": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["diffeoforge", "benchmark_version"],
+      "properties": {
+        "diffeoforge": {"type": "string", "minLength": 1},
+        "benchmark_version": {"const": "0.4"}
+      }
+    },
+    "source_config": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["filename", "sha256", "project"],
+      "properties": {
+        "filename": {"type": "string", "minLength": 1},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "project": {"type": "string", "minLength": 1}
+      }
+    },
+    "input": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["template", "subjects", "available_subject_count", "selection"],
+      "properties": {
+        "template": {"$ref": "#/$defs/mesh"},
+        "subjects": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/mesh"}
+        },
+        "available_subject_count": {"type": "integer", "minimum": 1},
+        "selection": {"const": "first subjects in validated deterministic path order"}
+      }
+    },
+    "configuration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "control_points",
+        "timepoints",
+        "attachment_type",
+        "shooting_integrator",
+        "flow_integrator",
+        "gradient_block",
+        "threads",
+        "random_seed",
+        "source_pairwise_evaluation"
+      ],
+      "properties": {
+        "control_points": {"type": "integer", "minimum": 1},
+        "timepoints": {"type": "integer", "minimum": 2},
+        "attachment_type": {"enum": ["current", "varifold"]},
+        "shooting_integrator": {"enum": ["euler", "rk2"]},
+        "flow_integrator": {"enum": ["euler", "heun", "deformetrica_heun"]},
+        "gradient_block": {"enum": ["momenta", "template", "control_points"]},
+        "threads": {"type": "integer", "minimum": 1},
+        "random_seed": {"type": "integer", "minimum": 0},
+        "source_pairwise_evaluation": {"$ref": "#/$defs/blockwise_plan"}
+      }
+    },
+    "protocol": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "frozen_before_results",
+        "strategies",
+        "subject_counts",
+        "tile_shapes",
+        "cell_count",
+        "condition_count",
+        "maximum_condition_count",
+        "repeats_per_condition",
+        "warmup_evaluations_per_repeat",
+        "order_seed",
+        "order_algorithm",
+        "pairing",
+        "analysis_policy"
+      ],
+      "properties": {
+        "frozen_before_results": {"const": true},
+        "strategies": {
+          "type": "array",
+          "prefixItems": [{"const": "standard"}, {"const": "recompute"}],
+          "items": false,
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "subject_counts": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"type": "integer", "minimum": 1, "maximum": 100000}
+        },
+        "tile_shapes": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/tile_shape"}
+        },
+        "cell_count": {"type": "integer", "minimum": 1, "maximum": 500},
+        "condition_count": {"type": "integer", "minimum": 2, "maximum": 1000},
+        "maximum_condition_count": {"const": 1000},
+        "repeats_per_condition": {"type": "integer", "minimum": 1, "maximum": 100},
+        "warmup_evaluations_per_repeat": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 20
+        },
+        "order_seed": {"type": "integer", "minimum": 0, "maximum": 2147483647},
+        "order_algorithm": {
+          "const": "sha256-ranked-subject-tile-cells-and-within-cell-strategies-v0.1"
+        },
+        "pairing": {
+          "const": "standard and recompute are adjacent within each subject-prefix and ordered query/source tile-shape cell"
+        },
+        "analysis_policy": {
+          "const": "Preserve separate raw reports; do not automatically select a winner, calculate speedup or significance, choose a preset, or extrapolate to a full workflow or larger cohort."
+        }
+      }
+    },
+    "conditions": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 1000,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "sequence",
+          "condition_id",
+          "cell_id",
+          "subject_count",
+          "effective_pairwise_evaluation",
+          "tile_autograd_strategy",
+          "output_directory",
+          "argv"
+        ],
+        "properties": {
+          "sequence": {"type": "integer", "minimum": 1, "maximum": 1000},
+          "condition_id": {
+            "type": "string",
+            "pattern": "^condition-[0-9]{4}-subjects-[0-9]{6}-tiles-q[0-9]{6}-s[0-9]{6}-(standard|recompute)$"
+          },
+          "cell_id": {
+            "type": "string",
+            "pattern": "^subjects-[0-9]{6}-tiles-q[0-9]{6}-s[0-9]{6}$"
+          },
+          "subject_count": {"type": "integer", "minimum": 1, "maximum": 100000},
+          "effective_pairwise_evaluation": {"$ref": "#/$defs/blockwise_plan"},
+          "tile_autograd_strategy": {"enum": ["standard", "recompute"]},
+          "output_directory": {
+            "type": "string",
+            "pattern": "^conditions/condition-[0-9]{4}-subjects-[0-9]{6}-tiles-q[0-9]{6}-s[0-9]{6}-(standard|recompute)$"
+          },
+          "argv": {
+            "type": "array",
+            "minItems": 17,
+            "maxItems": 17,
+            "items": {"type": "string", "minLength": 1}
+          }
+        }
+      }
+    },
+    "scientific_boundary": {
+      "const": "This artifact freezes a full-factorial subject-prefix, tile-shape, and autograd-strategy benchmark design before results exist. It performs no benchmark, statistical analysis, peak-memory measurement, full-workflow measurement, safe-preset selection, scaling inference, or 300-subject feasibility test."
+    }
+  }
+}
