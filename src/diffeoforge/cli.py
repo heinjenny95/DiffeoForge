@@ -337,6 +337,37 @@ def build_parser() -> argparse.ArgumentParser:
         "design_directory", type=Path
     )
 
+    modern_benchmark_matrix_study_parser = subparsers.add_parser(
+        "modern-benchmark-matrix-study",
+        help="Execute or resume one frozen multi-tile matrix without comparing it.",
+    )
+    modern_benchmark_matrix_study_parser.add_argument("design_directory", type=Path)
+    modern_benchmark_matrix_study_parser.add_argument("config", type=Path)
+    modern_benchmark_matrix_study_parser.add_argument(
+        "--output",
+        type=Path,
+        help="Matrix study run directory (default: DESIGN_DIRECTORY.run).",
+    )
+
+    modern_benchmark_matrix_study_status_parser = subparsers.add_parser(
+        "modern-benchmark-matrix-study-status",
+        help="Strictly inspect partial or complete matrix evidence without changing it.",
+    )
+    modern_benchmark_matrix_study_status_parser.add_argument(
+        "run_directory", type=Path
+    )
+    modern_benchmark_matrix_study_status_parser.add_argument(
+        "--json", action="store_true"
+    )
+
+    modern_benchmark_matrix_study_verify_parser = subparsers.add_parser(
+        "modern-benchmark-matrix-study-verify",
+        help="Verify a completed matrix study and every separate raw v0.4 report.",
+    )
+    modern_benchmark_matrix_study_verify_parser.add_argument(
+        "run_directory", type=Path
+    )
+
     modern_benchmark_study_parser = subparsers.add_parser(
         "modern-benchmark-study",
         help="Execute or resume one frozen design without comparing conditions.",
@@ -924,6 +955,118 @@ def main(argv: Sequence[str] | None = None) -> int:
                 f"{protocol['condition_count']}/{protocol['maximum_condition_count']}"
             )
             print("No benchmark result or performance claim is present.")
+        except (RuntimeError, OSError, ValueError, TypeError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
+
+    if args.command == "modern-benchmark-matrix-study":
+        try:
+            from diffeoforge.modern_benchmark_matrix_study import (
+                MANIFEST_NAME,
+                run_modern_benchmark_matrix_study,
+                verify_modern_benchmark_matrix_study_run,
+            )
+
+            def show_matrix_study_progress(event) -> None:
+                condition = ""
+                if event.condition is not None:
+                    condition = (
+                        f"; {event.condition.condition_id}; "
+                        f"{event.condition.tile_autograd_strategy}; "
+                        f"{event.condition.subject_count} subjects; "
+                        f"tiles {event.condition.query_tile_size}x"
+                        f"{event.condition.source_tile_size}"
+                    )
+                print(
+                    "Matrix study progress "
+                    f"[{event.completed_conditions}/{event.total_conditions} conditions] "
+                    f"{event.status}{condition}: {event.message}",
+                    flush=True,
+                )
+
+            run_directory = run_modern_benchmark_matrix_study(
+                args.design_directory,
+                args.config,
+                destination=args.output,
+                progress_callback=show_matrix_study_progress,
+            )
+            manifest = verify_modern_benchmark_matrix_study_run(run_directory)
+            print(f"Frozen benchmark matrix study completed and verified: {run_directory}")
+            print(f"Separate raw v0.4 condition reports: {len(manifest['conditions'])}")
+            print(f"Completion manifest: {run_directory / MANIFEST_NAME}")
+            print("WARNING: No automatic comparison or performance claim was produced.")
+        except ImportError as error:
+            print(
+                "ERROR: Modern benchmark dependencies are missing; install "
+                "diffeoforge[modern-engine].",
+                file=sys.stderr,
+            )
+            print(f"       {error}", file=sys.stderr)
+            return 2
+        except (ConfigurationError, RuntimeError, OSError, ValueError, TypeError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
+
+    if args.command == "modern-benchmark-matrix-study-status":
+        try:
+            from diffeoforge.modern_benchmark_matrix_study import (
+                inspect_modern_benchmark_matrix_study_run,
+            )
+
+            status = inspect_modern_benchmark_matrix_study_run(args.run_directory)
+            if args.json:
+                print(json.dumps(status, indent=2, ensure_ascii=False, sort_keys=True))
+            else:
+                print(f"Matrix study status: {status['status']}")
+                print(
+                    "Strictly verified raw v0.4 reports: "
+                    f"{status['verified_report_count']}/{status['total_condition_count']}"
+                )
+                print(
+                    "State-recorded completed conditions: "
+                    f"{status['state_completed_condition_count']}"
+                )
+                print(f"Execution lock: {status['lock']['status']}")
+                if status["next_condition"] is not None:
+                    condition = status["next_condition"]
+                    plan = condition["effective_pairwise_evaluation"]
+                    print(
+                        "Next frozen matrix condition: "
+                        f"{condition['condition_id']} "
+                        f"({condition['tile_autograd_strategy']}, "
+                        f"{condition['subject_count']} subjects, "
+                        f"tiles {plan['query_tile_size']}x{plan['source_tile_size']})"
+                    )
+                if status["reconciliation_required"]:
+                    print(
+                        "RECOVERABLE: Valid report evidence is ahead of atomic state; "
+                        "the matrix runner can reconcile it."
+                    )
+                print(
+                    "Completion manifest: "
+                    f"{status['completion_manifest_status']}; "
+                    f"verified={str(status['completion_manifest_verified']).lower()}"
+                )
+        except (RuntimeError, OSError, ValueError, TypeError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
+
+    if args.command == "modern-benchmark-matrix-study-verify":
+        try:
+            from diffeoforge.modern_benchmark_matrix_study import (
+                MANIFEST_NAME,
+                verify_modern_benchmark_matrix_study_run,
+            )
+
+            run_directory = args.run_directory.resolve()
+            manifest = verify_modern_benchmark_matrix_study_run(run_directory)
+            print(f"Completed benchmark matrix study verified: {run_directory}")
+            print(f"Separate raw v0.4 condition reports: {len(manifest['conditions'])}")
+            print(f"Completion manifest: {run_directory / MANIFEST_NAME}")
+            print("No automatic comparison or performance claim is present.")
         except (RuntimeError, OSError, ValueError, TypeError) as error:
             print(f"ERROR: {error}", file=sys.stderr)
             return 2

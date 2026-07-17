@@ -87,10 +87,11 @@ unchanged.
 
 This is a separate command, Python module, schema, and artifact family. The
 existing `modern-benchmark-design` v0.1 and `modern-benchmark-study` service
-retain their single-source-tile benchmark v0.3 meaning. The current study runner
-cannot consume a matrix design. A later execution gate must introduce explicit
-versioned dispatch, progress, interruption recovery, completion evidence, and
-full verification.
+retain their single-source-tile benchmark v0.3 meaning. The separate
+`modern-benchmark-matrix-study` service consumes only matrix-design v0.1 and
+publishes study-run/progress v0.2 evidence. Wrong design families are rejected;
+no fields are guessed or silently migrated. See the
+[matrix study protocol](MODERN_BENCHMARK_MATRIX_STUDY.md).
 
 The artifact does not establish that one tile shape or strategy is faster, uses
 less peak memory, is a safe preset, or makes a 300-subject atlas feasible.
