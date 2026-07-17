@@ -3,6 +3,7 @@ from __future__ import annotations
 import ctypes
 import json
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -11,6 +12,11 @@ from pathlib import Path
 
 import pytest
 
+from diffeoforge.desktop.reference_prelaunch import DesktopReferenceLaunchRequest
+from diffeoforge.desktop.reference_worker_controller import (
+    ReferenceHarnessController,
+    ReferenceHarnessProcessError,
+)
 from diffeoforge.desktop.windows_job import WindowsKillOnCloseJob
 from diffeoforge.desktop.worker_protocol import (
     DesktopWorkerEvent,
@@ -89,6 +95,54 @@ def test_kill_on_close_job_terminates_assigned_process() -> None:
     assert job.closed is True
     assert process.poll() is not None
     assert time.monotonic() - started < 10
+
+
+def test_reference_controller_timeout_terminates_descendant_tree(tmp_path: Path) -> None:
+    config = (tmp_path / "atlas.yaml").resolve()
+    shutil.copyfile(ROOT / "examples" / "minimal-atlas-container.yaml", config)
+    pid_path = tmp_path / "descendant.pid"
+    request = DesktopReferenceLaunchRequest(
+        request_id="reference-timeout-tree",
+        config_path=config,
+        destination=(tmp_path / "runs" / "pilot-001").resolve(),
+        run_id="pilot-001",
+        expected_config_sha256=sha256_file(config),
+        launcher_engine="docker",
+        launcher_image="diffeoforge-deformetrica:4.3.0-cpu",
+    )
+    descendant_code = "import time;time.sleep(300)"
+    worker_code = ";".join(
+        (
+            "import pathlib,subprocess,sys,time",
+            (
+                "child=subprocess.Popen("
+                f"[sys.executable,'-c',{descendant_code!r}], "
+                "creationflags=subprocess.CREATE_NO_WINDOW)"
+            ),
+            (
+                f"pathlib.Path({str(pid_path)!r}).write_text("
+                "str(child.pid), encoding='ascii')"
+            ),
+            "time.sleep(300)",
+        )
+    )
+    controller = ReferenceHarnessController(
+        request,
+        worker_command=(sys.executable, "-c", worker_code),
+        supervision_timeout=3,
+    )
+
+    with pytest.raises(ReferenceHarnessProcessError, match="timeout"):
+        controller.run()
+
+    descendant_pid = int(pid_path.read_text(encoding="ascii"))
+    try:
+        assert _wait_until_stopped(descendant_pid)
+    finally:
+        if _process_is_active(descendant_pid):
+            _terminate_process_id(descendant_pid)
+    assert controller.state == "failed"
+    assert not request.destination.exists()
 
 
 def test_hard_parent_exit_terminates_controller_worker(tmp_path: Path) -> None:
