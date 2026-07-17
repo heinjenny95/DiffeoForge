@@ -146,7 +146,9 @@ destination, existing-result state, and any private candidate status/path/reason
 it checks again immediately before launch and never mutates recovery state.
 Each selected result artifact is rechecked by size
 and SHA-256 immediately before it is opened by a local application. The
-external Deformetrica route is not yet supervised by the GUI, and
+external Deformetrica route can now run an explicit read-only, configuration-
+hash-bound diagnostic of its exact container engine and image from review
+step 2. It still is not started or supervised by the GUI, and
 the Modern path does not provide checkpoint/resume. Windows parent death now
 terminates the contained worker tree and command-pipe EOF requests cooperative
 cancellation on every platform. Versioned private markers and OS-released
@@ -161,6 +163,8 @@ detection, or promise
 CPU/GPU equivalence or 300-specimen production performance. See the [modern-workflow
 documentation](docs/MODERN_WORKFLOW.md) and [reference-backend
 documentation](docs/REFERENCE_BACKEND.md) for the exact boundaries.
+The desktop reference diagnostic has its own
+[non-mutation contract](docs/REFERENCE_DESKTOP_READINESS.md).
 
 ## First run from a mesh directory
 
