@@ -192,9 +192,12 @@ default.
 
 The prospective extension from one tile shape to a full factorial tile matrix
 is specified separately in
-[ADR 0004](decisions/0004-prospective-multi-tile-matrix.md). It deliberately
-requires new benchmark/design/run versions and keeps every v0.1 artifact
-unchanged. No multi-tile override or runner is implemented by that decision.
+[ADR 0004](decisions/0004-prospective-multi-tile-matrix.md). Benchmark report
+v0.4 and the isolated matrix-design v0.1 artifact are implemented. The existing
+study service does not import, accept, or execute that design; no matrix runner
+exists yet. This keeps every v0.1 single-tile artifact unchanged and makes the
+next execution gate an explicit versioned change. See
+[the matrix-design protocol](MODERN_BENCHMARK_MATRIX_DESIGN.md).
 
 ## Exact-count progress, not ETA
 

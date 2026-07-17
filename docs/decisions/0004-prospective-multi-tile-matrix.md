@@ -4,6 +4,7 @@
 - Date: 2026-07-16
 - Tracking: [issue #62](https://github.com/heinjenny95/DiffeoForge/issues/62)
 - Gate 1: implemented by [issue #64](https://github.com/heinjenny95/DiffeoForge/issues/64)
+- Gate 2: implemented by [issue #71](https://github.com/heinjenny95/DiffeoForge/issues/71)
 
 ## Context
 
@@ -120,8 +121,10 @@ runtime. Matrix completion is not a 300-subject feasibility verdict.
    report, including real fresh-process Windows/Ubuntu smoke coverage.~~
    Implemented as raw benchmark report v0.4; representative measurements are
    not part of this gate.
-2. Add matrix design collection, semantic reconstruction, immutable
-   publication, and condition-count review; do not execute it yet.
+2. ~~Add matrix design collection, semantic reconstruction, immutable
+   publication, and condition-count review; do not execute it yet.~~
+   Implemented as the separate matrix-design v0.1 artifact and CLI; it has no
+   execution path.
 3. Extend execution, progress, status, completion, and full verification with
    interruption/reconciliation tests while retaining v0.1 fixtures.
 4. Freeze a real representative design before collecting results.

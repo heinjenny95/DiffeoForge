@@ -48,6 +48,8 @@ def test_package_module_entrypoint_exposes_the_same_cli(tmp_path: Path) -> None:
     assert version.stderr == ""
     assert help_result.returncode == 0
     assert help_result.stdout.startswith("usage: diffeoforge ")
+    assert "modern-benchmark-matrix-design" in help_result.stdout
+    assert "modern-benchmark-matrix-design-verify" in help_result.stdout
     assert "modern-benchmark-study-verify" in help_result.stdout
     assert help_result.stderr == ""
 

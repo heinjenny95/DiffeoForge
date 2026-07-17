@@ -154,11 +154,14 @@ ETA, runtime forecast, or comparative result. Tests require callback presence
 to leave all published evidence byte-identical.
 
 The next multi-tile study is governed by
-[ADR 0004](decisions/0004-prospective-multi-tile-matrix.md). It will use one
-hashed base config plus explicit benchmark-only effective tile plans, not a bag
-of hand-edited YAML files. The raw v0.4 effective-plan report gate is now
-implemented; new matrix-design/run versions and explicit version dispatch remain
-mandatory. Current v0.1 study artifacts retain their exact single-tile meaning.
+[ADR 0004](decisions/0004-prospective-multi-tile-matrix.md). It uses one hashed
+base config plus explicit benchmark-only effective tile plans, not a bag of
+hand-edited YAML files. The raw v0.4 report gate and separate matrix-design v0.1
+gate are implemented. The matrix designer reconstructs every full-factorial
+condition semantically and publishes immutable JSON/sidecar/HTML evidence, but
+has no execution path. It is deliberately not accepted by the existing study
+service; a later matrix runner requires explicit versioned dispatch. Current
+v0.1 single-tile study artifacts retain their exact meaning.
 
 Below the application layer, the engine now contains an explicit blockwise
 Gaussian primitive family. Query and source tile sizes bound each pairwise XYZ

@@ -86,7 +86,41 @@ This does not rewrite the source YAML or change `PairwiseEvaluationPlan`,
 `modern-run`, atlas estimation, reconstruction, or PCA. Omitting both options
 continues to produce the existing v0.3 shape. Existing v0.1 paired-study designs
 and runners intentionally continue to require and produce v0.3 reports; the
-multi-tile matrix is a later versioned gate.
+separate matrix-design v0.1 contract generates prospective v0.4 command lines
+but cannot execute them.
+
+## Prospective multi-tile matrix design
+
+`modern-benchmark-matrix-design` freezes multiple effective tile shapes without
+editing the reviewed source YAML and without running a benchmark:
+
+```powershell
+diffeoforge modern-benchmark-matrix-design modern-atlas.yaml `
+  --subjects 5 20 50 `
+  --tile-shape 64x64 --tile-shape 128x256 `
+  --repeats 7 --warmups 1
+```
+
+Each repeated `--tile-shape QUERYxSOURCE` is an ordered factor level. Exact
+duplicates fail; a transposed pair is distinct. The design is the complete
+Cartesian product of subject prefixes, tile shapes, and the two strategies
+`standard` and `recompute`. It reviews `subjects × shapes` cells and twice as
+many conditions before immutable publication, with a hard ceiling of 1000
+conditions. Tile dimensions are limited to `1..999999` as an artifact-ID
+contract, not as a claim that those sizes are computationally safe.
+
+The new named SHA-256 ordering ranks cells, then ranks the two strategies inside
+each cell while keeping them adjacent. Stable IDs include the subject prefix
+and both tile dimensions. Every stored argv has both tile overrides, so a future
+executor must produce raw v0.4 reports. Strict schema validation plus semantic
+reconstruction rejects reordered, skipped, duplicated, or altered conditions.
+The default `CONFIG_NAME.benchmark-matrix` directory contains only
+`matrix-design.json`, `matrix-design.sha256`, and `matrix-design.html`.
+
+This command has no runner, resume behavior, result field, automatic comparison,
+or preset selection. See
+[the matrix-design protocol](MODERN_BENCHMARK_MATRIX_DESIGN.md) and
+[ADR 0004](decisions/0004-prospective-multi-tile-matrix.md).
 
 ## What one repeat measures
 
