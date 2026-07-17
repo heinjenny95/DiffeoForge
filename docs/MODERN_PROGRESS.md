@@ -79,8 +79,9 @@ workflow evidence before accepting success. See
 [Versioned desktop worker protocol](DESKTOP_WORKER.md).
 
 The worker transport does not add checkpoints, resume, persisted partial runs,
-runtime calibration, peak-memory measurement, or ETA prediction. GUI execution
-controls and crash reconciliation are not yet connected.
+runtime calibration, peak-memory measurement, or ETA prediction. The source
+GUI now shows these exact events and can request cooperative cancellation;
+parent-death crash reconciliation remains unimplemented.
 
 ## Frozen benchmark-study progress
 

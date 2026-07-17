@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from diffeoforge.desktop.project_setup import DesktopEngine
+from diffeoforge.desktop.worker_protocol import sha256_file
 from diffeoforge.report import (
     collect_preflight,
     default_preflight_report_path,
@@ -31,6 +32,7 @@ class ProjectReviewResult:
     engine: DesktopEngine
     project_name: str
     config_path: Path
+    config_sha256: str
     report_path: Path
     report_label: str
     subject_count: int
@@ -71,7 +73,7 @@ def _setting(value: Any, *, none: str = "automatisches Maximum") -> str:
     return str(value)
 
 
-def _reference_review(config_path: Path) -> ProjectReviewResult:
+def _reference_review(config_path: Path, config_sha256: str) -> ProjectReviewResult:
     preflight = collect_preflight(config_path)
     config = preflight.config
     model = config["model"]
@@ -190,6 +192,7 @@ def _reference_review(config_path: Path) -> ProjectReviewResult:
         engine=DesktopEngine.DEFORMETRICA_REFERENCE,
         project_name=str(config["project"]["name"]),
         config_path=config_path,
+        config_sha256=config_sha256,
         report_path=report_path,
         report_label="Preflight-Report",
         subject_count=len(preflight.subjects),
@@ -204,7 +207,7 @@ def _reference_review(config_path: Path) -> ProjectReviewResult:
     )
 
 
-def _modern_review(config_path: Path) -> ProjectReviewResult:
+def _modern_review(config_path: Path, config_sha256: str) -> ProjectReviewResult:
     try:
         from diffeoforge.modern_workflow import load_modern_workflow_config
         from diffeoforge.modern_workload import (
@@ -397,6 +400,7 @@ def _modern_review(config_path: Path) -> ProjectReviewResult:
         engine=DesktopEngine.MODERN_CPU,
         project_name=str(config["project"]["name"]),
         config_path=config_path,
+        config_sha256=config_sha256,
         report_path=report_path,
         report_label="Modern-Workload-Report",
         subject_count=report["input"]["subject_count"],
@@ -421,6 +425,11 @@ def review_project(
 
     source = Path(config_path).expanduser().resolve()
     selected = DesktopEngine(engine)
+    hash_before = sha256_file(source)
     if selected is DesktopEngine.MODERN_CPU:
-        return _modern_review(source)
-    return _reference_review(source)
+        result = _modern_review(source, hash_before)
+    else:
+        result = _reference_review(source, hash_before)
+    if sha256_file(source) != hash_before:
+        raise RuntimeError("Project configuration changed while it was being reviewed")
+    return result

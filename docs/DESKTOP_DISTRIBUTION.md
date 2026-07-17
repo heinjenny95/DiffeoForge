@@ -1,7 +1,7 @@
 # Desktop executable and installer architecture
 
-Status: **project setup, parameter/workload review, and a source-level Modern
-worker protocol exist; no frozen executable or installer exists yet**
+Status: **project setup, parameter/workload review, and source-level verified
+Modern start/live-event/cancel exist; no frozen executable or installer yet**
 
 Tracked by [engineering issue #22](https://github.com/heinjenny95/DiffeoForge/issues/22)
 and [ADR 0003](decisions/0003-windows-desktop-distribution.md). The
@@ -44,8 +44,11 @@ source-level Modern CPU transport and its fail-closed parent controller are now
 implemented and documented in
 [Versioned desktop worker protocol](DESKTOP_WORKER.md). The controller binds
 events to the reviewed request, enforces lifecycle/exit-code agreement, bounds
-stderr, and independently verifies successful output; GUI execution controls
-and frozen-process packaging remain separate unfinished slices.
+  stderr, and independently verifies successful output. Source GUI step 3 now
+  binds the reviewed configuration hash, runs that controller outside the Qt
+  event loop, displays exact events, and requests cooperative cancellation.
+  Parent-death recovery and frozen-process packaging remain separate unfinished
+  slices.
 
 The CPU modern engine is the first bundled numerical variant. A future NVIDIA
 build is a separate artifact with separate numerical evidence; the application
@@ -70,6 +73,12 @@ a safe point removes private temporary work without publishing a destination.
 The Modern path remains explicitly nonresumable because it has no checkpoints.
 Neither worker nor GUI may turn stage/decision counts into an unmeasured
 runtime percentage or ETA.
+
+The Qt bridge queues a cancel request even if it arrives before its thread-pool
+task starts. A normal window close during compute is deferred while the same
+cooperative cancellation completes. This is not operating-system crash
+recovery; forced termination and power loss still require a future startup-time
+reconciliation contract.
 
 `modern-benchmark` provides measured objective/gradient observations for a
 user-selected subject count and the explicitly configured dense or blockwise

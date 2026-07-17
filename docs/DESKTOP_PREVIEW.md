@@ -1,9 +1,11 @@
-# Desktop project setup and review preview
+# Desktop setup, review, and Modern compute preview
 
-Status: **two graphical steps; no installer and no atlas execution**
+Status: **three graphical steps with verified Modern CPU execution; no installer**
 
 Tracked by [engineering issue #75](https://github.com/heinjenny95/DiffeoForge/issues/75)
-and [engineering issue #77](https://github.com/heinjenny95/DiffeoForge/issues/77).
+and [engineering issue #77](https://github.com/heinjenny95/DiffeoForge/issues/77),
+with the compute screen tracked by
+[engineering issue #83](https://github.com/heinjenny95/DiffeoForge/issues/83).
 The distribution architecture and its stricter release gates remain in
 [Desktop executable and installer architecture](DESKTOP_DISTRIBUTION.md).
 
@@ -26,14 +28,21 @@ terminal:
    validated configuration and explains their role;
 8. for the modern route, generate and render the existing exact-count
    `modern-plan` JSON/HTML evidence; or, for the reference route, render the
-   existing preflight parameter ratios and external-engine boundary.
+   existing preflight parameter ratios and external-engine boundary;
+9. for a reviewed Modern project, continue to a third screen that binds the
+   exact reviewed configuration SHA-256, starts the separate worker, shows its
+   real workflow stages and committed optimizer decisions, and offers one
+   cooperative cancel action; and
+10. expose the result directory only after the parent controller independently
+    verifies the published workflow, manifest hash, subject count, and bundle.
 
 The reference path creates `atlas.yaml` and `atlas.preflight.html`. The modern
 path creates `modern-atlas.yaml` after its stronger mesh-quality,
 initialization, optional Procrustes, and PCA-dimension checks pass. Its second
 screen publishes `modern-atlas.workload/workload.json` and `workload.html`.
-Both paths label geometry-scaled values as exploratory. Neither path starts
-numerical work.
+Both paths label geometry-scaled values as exploratory. Only the Modern route
+can currently continue to numerical work; the external reference button stays
+explicitly unavailable rather than implying unsupported supervision.
 
 ## Developer launch
 
@@ -58,10 +67,16 @@ python -m diffeoforge.desktop --smoke
 - Existing configurations and reports are never silently overwritten.
 - Review refreshes only reports that carry the expected DiffeoForge generator
   markers; researcher-owned paths are refused.
-- Mesh inspection runs in a background GUI thread; numerical atlas computation
-  remains outside this GUI slice. A tested separate Modern worker protocol and
-  fail-closed parent controller now exist, but no start/cancel control is
-  connected here yet.
+- Mesh inspection runs in a background GUI thread. Modern numerical work runs
+  in a separate child process supervised by the fail-closed parent controller;
+  Qt receives only validated events through queued signals.
+- The launch must match the SHA-256 captured by the completed review. An edited
+  configuration is refused until it is reviewed again.
+- The compute page shows exact completed stages and optimizer decisions. It
+  does not turn them into an ETA, runtime estimate, peak-memory claim, or
+  invented percentage.
+- Normal window close while compute is active requests cooperative cancellation
+  and keeps the window alive until the worker has a reconciled terminal state.
 - Project files stay in the user-selected directory, separate from future
   application files.
 - The window performs no upload, telemetry, update check, or network request.
@@ -71,11 +86,13 @@ python -m diffeoforge.desktop --smoke
 
 ## Current limitations
 
-The GUI does not yet edit scientific parameters, render meshes,
-start/cancel/resume an atlas, or open atlas/PCA results. It is not frozen with
-PyInstaller and is not wrapped in an Inno Setup installer. Those capabilities
-require their own tests and release gates rather than being hidden behind
-inactive controls.
+The GUI does not yet edit scientific parameters, render meshes, resume a Modern
+atlas, reconcile an already dead parent application, supervise the external
+Deformetrica engine, or provide detailed mesh/PCA result inspection. Step 3 can
+open the independently verified result directory, but it is not yet the final
+results dashboard. The application is not frozen with PyInstaller and is not
+wrapped in an Inno Setup installer. Those capabilities require their own tests
+and release gates.
 
 ## Preliminary Qt licensing boundary
 

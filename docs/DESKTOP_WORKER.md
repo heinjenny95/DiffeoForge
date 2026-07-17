@@ -1,10 +1,12 @@
 # Versioned desktop worker protocol
 
-Status: **implemented source-level Modern CPU transport and verified parent
-controller; not yet connected to GUI controls**
+Status: **implemented source-level Modern CPU transport, verified parent
+controller, and source GUI start/live-event/cancel integration**
 
 Tracked by [engineering issue #79](https://github.com/heinjenny95/DiffeoForge/issues/79)
-and [parent-controller issue #81](https://github.com/heinjenny95/DiffeoForge/issues/81).
+and [parent-controller issue #81](https://github.com/heinjenny95/DiffeoForge/issues/81),
+with GUI integration tracked by
+[engineering issue #83](https://github.com/heinjenny95/DiffeoForge/issues/83).
 
 ## Purpose and boundary
 
@@ -133,10 +135,27 @@ open. Scientific cleanup and atomic publication have already completed inside
 runtime. Direct in-process tests continue to call and return from `run_worker`
 normally.
 
-GUI start/cancel controls, crash reconciliation after the parent application
-itself dies, checkpoint/recovery, reference-engine process supervision, and
-result inspection are later slices. The protocol and controller are
-intentionally usable and testable before those controls exist.
+## Source GUI integration
+
+Desktop step 3 now places the synchronous controller in a Qt thread-pool task
+and forwards its already validated event objects through Qt signals. It does
+not parse a second event format or call numerical services in the GUI process.
+The complete review captures the configuration SHA-256; launch is refused if
+the file differs before or during request creation.
+
+The screen displays the exact workflow phase/status/message, completed-stage
+count, and committed optimizer decision fields. It does not derive an ETA,
+runtime forecast, peak-memory claim, or percent-complete value. A cancel click
+is idempotent and remains queueable even before the Qt task begins or while the
+child process is being created. Success appears only after the controller has
+reconciled the process and independently verified the published result.
+
+A normal window-close request while a GUI-launched worker is active requests
+cooperative cancellation and is deferred until a reconciled worker outcome.
+This does not solve operating-system termination or power loss: crash
+reconciliation after the parent application itself dies, checkpoint/recovery,
+reference-engine process supervision, and detailed result inspection remain
+later evidence gates.
 
 ## Verification evidence
 

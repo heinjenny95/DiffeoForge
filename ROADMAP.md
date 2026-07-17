@@ -64,7 +64,8 @@ This roadmap describes evidence gates rather than promised dates.
   - [x] Read-only effective-parameter and workload/preflight review
   - [x] Versioned Modern worker transport and nonpublishing cooperative cancellation
   - [x] Fail-closed parent controller with lifecycle, exit, and result verification
-  - [ ] GUI execution controls, crash recovery, and result inspection
+  - [x] Modern GUI start, exact live events, cooperative cancel, and verified result handoff
+  - [ ] Parent-death crash recovery, reference supervision, and detailed result inspection
 - [ ] Parameter explanations and safe presets
 - [x] Pre-compute configured all-pairs and known-payload workload report
 - [x] Versioned workflow-stage and committed optimizer-decision reporting

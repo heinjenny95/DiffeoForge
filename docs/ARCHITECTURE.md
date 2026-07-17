@@ -108,7 +108,10 @@ request/command/event envelope, configuration-hash binding, child-process
 isolation, and nonpublishing cooperative cancellation. A Qt-independent parent
 controller enforces identity, sequence, lifecycle, terminal/exit agreement,
 bounded stderr capture, and independent completed-run verification before a
-caller may accept success. Counts describe completed stages and decisions, not
+caller may accept success. Desktop step 3 runs that controller in a Qt worker
+task, refuses a configuration whose bytes no longer match the completed review,
+and transports the validated event objects through Qt signals without a second
+scientific progress model. Counts describe completed stages and decisions, not
 elapsed-time percentages or ETA.
 
 The application layer also exposes an opt-in `modern-benchmark` service. The

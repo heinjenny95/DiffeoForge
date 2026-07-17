@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import threading
+import uuid
 from pathlib import Path
 
 from PySide6.QtCore import QObject, QRunnable, Qt, QThreadPool, QUrl, Signal, Slot
-from PySide6.QtGui import QDesktopServices
+from PySide6.QtGui import QCloseEvent, QDesktopServices
 from PySide6.QtWidgets import (
     QComboBox,
     QFileDialog,
@@ -15,6 +17,8 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMainWindow,
+    QPlainTextEdit,
+    QProgressBar,
     QPushButton,
     QScrollArea,
     QStackedWidget,
@@ -29,6 +33,16 @@ from diffeoforge.desktop.project_setup import (
     ProjectSetupResult,
     create_project,
 )
+from diffeoforge.desktop.reviewed_run import (
+    DesktopReviewedRunError,
+    build_reviewed_worker_request,
+)
+from diffeoforge.desktop.worker_controller import (
+    DesktopWorkerController,
+    DesktopWorkerControllerError,
+    DesktopWorkerControllerResult,
+)
+from diffeoforge.desktop.worker_protocol import DesktopWorkerEvent
 from diffeoforge.initialization import SUPPORTED_UNITS, detect_template
 
 _STYLE = """
@@ -59,11 +73,17 @@ QPushButton#primary { background: #167c6b; border: 1px solid #167c6b; color: #ff
                       min-height: 42px; padding: 2px 20px; }
 QPushButton#primary:hover { background: #116858; }
 QPushButton#primary:disabled { background: #a9bdb9; border-color: #a9bdb9; }
+QPushButton#danger { background: #fff0ed; border: 1px solid #d98a7d; color: #8d3025; }
 QLabel#status { background: #f2f5f6; border-radius: 7px; color: #526b70; padding: 10px; }
 QLabel#statusSuccess { background: #e5f5ed; border-radius: 7px; color: #176345; padding: 10px; }
 QLabel#statusError { background: #fff0ed; border-radius: 7px; color: #a13a2d; padding: 10px; }
 QLabel#reviewValue { color: #123b3a; font-weight: 700; }
 QLabel#reviewDetail { color: #526b70; font-size: 12px; }
+QProgressBar { border: 1px solid #bdcbce; border-radius: 6px; text-align: center;
+               background: #eef3f4; min-height: 26px; }
+QProgressBar::chunk { background: #54c6a1; border-radius: 5px; }
+QPlainTextEdit { background: #f7f9f9; border: 1px solid #dbe4e6; border-radius: 6px;
+                 color: #314f53; font-family: Consolas, monospace; font-size: 12px; }
 """
 
 
@@ -104,6 +124,62 @@ class _ReviewWorker(QRunnable):
         self.signals.succeeded.emit(review)
 
 
+class _AtlasWorkerSignals(QObject):
+    event = Signal(object)
+    succeeded = Signal(object)
+    failed = Signal(str)
+    cancel_failed = Signal(str)
+
+
+class _AtlasWorker(QRunnable):
+    """Run one controller off the GUI thread and bridge validated events to Qt."""
+
+    def __init__(self, controller: DesktopWorkerController) -> None:
+        super().__init__()
+        self.controller = controller
+        self.signals = _AtlasWorkerSignals()
+        self._lock = threading.Lock()
+        self._cancel_requested = False
+        self._finished = False
+
+    def request_cancel(self) -> bool:
+        with self._lock:
+            if self._finished or self._cancel_requested:
+                return False
+            self._cancel_requested = True
+            idle = self.controller.state == "idle"
+        if idle:
+            return True
+        try:
+            self.controller.request_cancel()
+        except DesktopWorkerControllerError as error:
+            self.signals.cancel_failed.emit(str(error))
+        return True
+
+    def _forward_event(self, event: DesktopWorkerEvent) -> None:
+        with self._lock:
+            cancel_requested = self._cancel_requested
+        if cancel_requested:
+            self.controller.request_cancel()
+        self.signals.event.emit(event)
+
+    @Slot()
+    def run(self) -> None:
+        try:
+            result = self.controller.run(event_callback=self._forward_event)
+        except DesktopWorkerControllerError as error:
+            message = str(error)
+            stderr = getattr(error, "stderr", "").strip()
+            if stderr:
+                message = f"{message}\n\nWorker stderr:\n{stderr}"
+            self.signals.failed.emit(message)
+        else:
+            self.signals.succeeded.emit(result)
+        finally:
+            with self._lock:
+                self._finished = True
+
+
 def _path_row(edit: QLineEdit, button: QPushButton) -> QWidget:
     row = QWidget()
     layout = QHBoxLayout(row)
@@ -125,9 +201,11 @@ class DiffeoForgeWindow(QMainWindow):
         self.setMinimumSize(900, 650)
         self.setStyleSheet(_STYLE)
         self._thread_pool = QThreadPool.globalInstance()
-        self._worker: _ProjectWorker | _ReviewWorker | None = None
+        self._worker: _ProjectWorker | _ReviewWorker | _AtlasWorker | None = None
         self._result: ProjectSetupResult | None = None
         self._review: ProjectReviewResult | None = None
+        self._run_result: DesktopWorkerControllerResult | None = None
+        self._close_after_worker = False
         self._build_ui()
         self._update_engine_explanation()
         self._sync_ready_state()
@@ -142,6 +220,7 @@ class DiffeoForgeWindow(QMainWindow):
         self.page_stack.setObjectName("pageStack")
         self.page_stack.addWidget(self._build_setup_content())
         self.page_stack.addWidget(self._build_review_content())
+        self.page_stack.addWidget(self._build_run_content())
         root_layout.addWidget(self.page_stack, 1)
         self.setCentralWidget(root)
 
@@ -342,10 +421,148 @@ class DiffeoForgeWindow(QMainWindow):
         self.open_review_report_button.clicked.connect(self._open_review_report)
         footer_layout.addWidget(self.open_review_report_button)
         footer_layout.addStretch()
-        future = QPushButton("Atlasstart folgt in Schritt 3")
-        future.setObjectName("primary")
-        future.setEnabled(False)
-        footer_layout.addWidget(future)
+        self.show_run_button = QPushButton("Atlasstart folgt in Schritt 3")
+        self.show_run_button.setObjectName("primary")
+        self.show_run_button.clicked.connect(self._show_run_page)
+        self.show_run_button.setEnabled(False)
+        footer_layout.addWidget(self.show_run_button)
+
+        page = QWidget()
+        page_layout = QVBoxLayout(page)
+        page_layout.setContentsMargins(0, 0, 0, 0)
+        page_layout.setSpacing(0)
+        page_layout.addWidget(scroll, 1)
+        page_layout.addWidget(footer)
+        return page
+
+    def _build_run_content(self) -> QWidget:
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        container = QWidget()
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(52, 40, 52, 24)
+        layout.setSpacing(15)
+
+        eyebrow = QLabel("SCHRITT 3 VON 4")
+        eyebrow.setObjectName("eyebrow")
+        title = QLabel("Modern-Atlas berechnen")
+        title.setObjectName("title")
+        subtitle = QLabel(
+            "Starte genau die geprüfte Konfiguration in einem getrennten Prozess und "
+            "beobachte echte Workflow-Ereignisse."
+        )
+        subtitle.setObjectName("subtitle")
+        subtitle.setWordWrap(True)
+        layout.addWidget(eyebrow)
+        layout.addWidget(title)
+        layout.addWidget(subtitle)
+
+        boundary = QFrame()
+        boundary.setObjectName("boundary")
+        boundary_layout = QHBoxLayout(boundary)
+        boundary_layout.setContentsMargins(13, 9, 13, 9)
+        boundary_text = QLabel(
+            "Experimentelle Modern-CPU-Route. Es werden weder Laufzeit noch Peak-RAM oder "
+            "Prozentfortschritt geschätzt. Abbruch wirkt nur an ausgewiesenen sicheren Punkten "
+            "und ist derzeit nicht wiederaufnehmbar."
+        )
+        boundary_text.setObjectName("boundaryText")
+        boundary_text.setWordWrap(True)
+        boundary_layout.addWidget(boundary_text)
+        layout.addWidget(boundary)
+
+        summary = QFrame()
+        summary.setObjectName("card")
+        summary_layout = QVBoxLayout(summary)
+        summary_layout.setContentsMargins(24, 22, 24, 24)
+        summary_title = QLabel("Gebundener Start")
+        summary_title.setObjectName("sectionTitle")
+        self.run_summary_label = QLabel()
+        self.run_summary_label.setWordWrap(True)
+        self.run_summary_label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+        )
+        summary_layout.addWidget(summary_title)
+        summary_layout.addWidget(self.run_summary_label)
+        layout.addWidget(summary)
+
+        progress = QFrame()
+        progress.setObjectName("card")
+        progress_layout = QVBoxLayout(progress)
+        progress_layout.setContentsMargins(24, 22, 24, 24)
+        progress_layout.setSpacing(10)
+        progress_title = QLabel("Verifizierte Live-Ereignisse")
+        progress_title.setObjectName("sectionTitle")
+        self.run_state_label = QLabel("Bereit; noch kein Worker gestartet.")
+        self.run_state_label.setObjectName("status")
+        self.run_state_label.setWordWrap(True)
+        self.run_stage_label = QLabel("Workflow-Stufe: noch nicht gestartet")
+        self.run_stage_label.setObjectName("reviewValue")
+        self.run_stage_label.setWordWrap(True)
+        self.run_progress_bar = QProgressBar()
+        self.run_progress_bar.setRange(0, 7)
+        self.run_progress_bar.setValue(0)
+        self.run_progress_bar.setFormat("Abgeschlossene Stufen: %v von %m")
+        self.run_optimizer_label = QLabel("Noch keine Optimierungsentscheidung.")
+        self.run_optimizer_label.setObjectName("reviewDetail")
+        self.run_optimizer_label.setWordWrap(True)
+        self.run_event_log = QPlainTextEdit()
+        self.run_event_log.setObjectName("workerEventLog")
+        self.run_event_log.setReadOnly(True)
+        self.run_event_log.setMaximumBlockCount(500)
+        self.run_event_log.setMaximumHeight(220)
+        progress_layout.addWidget(progress_title)
+        progress_layout.addWidget(self.run_state_label)
+        progress_layout.addWidget(self.run_stage_label)
+        progress_layout.addWidget(self.run_progress_bar)
+        progress_layout.addWidget(self.run_optimizer_label)
+        progress_layout.addWidget(self.run_event_log)
+        layout.addWidget(progress)
+
+        self.run_result_card = QFrame()
+        self.run_result_card.setObjectName("card")
+        result_layout = QVBoxLayout(self.run_result_card)
+        result_layout.setContentsMargins(24, 22, 24, 24)
+        result_title = QLabel("Unabhängig verifiziertes Ergebnis")
+        result_title.setObjectName("sectionTitle")
+        self.run_result_label = QLabel()
+        self.run_result_label.setWordWrap(True)
+        self.run_result_label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+        )
+        self.open_run_result_button = QPushButton("Ergebnisordner öffnen")
+        self.open_run_result_button.setObjectName("secondary")
+        self.open_run_result_button.clicked.connect(self._open_run_result)
+        result_layout.addWidget(result_title)
+        result_layout.addWidget(self.run_result_label)
+        result_layout.addWidget(self.open_run_result_button, 0, Qt.AlignmentFlag.AlignLeft)
+        self.run_result_card.hide()
+        layout.addWidget(self.run_result_card)
+        layout.addStretch()
+        scroll.setWidget(container)
+
+        footer = QFrame()
+        footer.setObjectName("footer")
+        footer_layout = QHBoxLayout(footer)
+        footer_layout.setContentsMargins(28, 14, 28, 14)
+        footer_layout.setSpacing(12)
+        self.run_back_button = QPushButton("Zurück zur Parameterprüfung")
+        self.run_back_button.setObjectName("secondary")
+        self.run_back_button.clicked.connect(self._show_review_page)
+        self.cancel_atlas_button = QPushButton("Sicher abbrechen")
+        self.cancel_atlas_button.setObjectName("danger")
+        self.cancel_atlas_button.clicked.connect(self._cancel_atlas)
+        self.cancel_atlas_button.setEnabled(False)
+        self.start_atlas_button = QPushButton("Geprüften Modern-Atlas starten")
+        self.start_atlas_button.setObjectName("primary")
+        self.start_atlas_button.clicked.connect(self._start_atlas)
+        self.start_atlas_button.setEnabled(False)
+        footer_layout.addWidget(self.run_back_button)
+        footer_layout.addStretch()
+        footer_layout.addWidget(self.cancel_atlas_button)
+        footer_layout.addWidget(self.start_atlas_button)
 
         page = QWidget()
         page_layout = QVBoxLayout(page)
@@ -605,7 +822,11 @@ class DiffeoForgeWindow(QMainWindow):
         self.result_card.hide()
         self._result = None
         self._review = None
+        self._run_result = None
         self.review_button.setEnabled(False)
+        self.show_run_button.setEnabled(False)
+        self.start_atlas_button.setEnabled(False)
+        self.run_result_card.hide()
         self.status_label.setObjectName("status")
         self.status_label.setStyleSheet("")
         self.status_label.setText("Meshes und Konfiguration werden geprüft …")
@@ -678,14 +899,213 @@ class DiffeoForgeWindow(QMainWindow):
             f"Engine: {engine_label}\n"
             f"Probanden: {review.subject_count}\n"
             f"Konfiguration: {config_display}\n"
+            f"Geprüfter SHA-256: {review.config_sha256}\n"
             f"{review.report_label}: {report_display}"
         )
         self.review_warnings_label.setText("\n".join(f"• {warning}" for warning in review.warnings))
         self.open_review_report_button.setText(f"{review.report_label} öffnen")
+        if review.engine is DesktopEngine.MODERN_CPU:
+            self.show_run_button.setText("Weiter zu Atlasstart")
+            self.show_run_button.setEnabled(True)
+        else:
+            self.show_run_button.setText("Referenzstart noch nicht verbunden")
+            self.show_run_button.setEnabled(False)
         self._set_active_step(1)
         self.page_stack.setCurrentIndex(1)
         self.review_button.setEnabled(True)
         self._sync_ready_state()
+
+    @Slot()
+    def _show_run_page(self) -> None:
+        if (
+            self._review is None
+            or self._review.engine is not DesktopEngine.MODERN_CPU
+            or self._worker is not None
+        ):
+            return
+        self.run_summary_label.setText(
+            f"Projekt: {self._review.project_name}\n"
+            f"Konfiguration: {self._wrappable_path(self._review.config_path)}\n"
+            f"Geprüfter SHA-256: {self._review.config_sha256}\n"
+            "Ziel: wird unverändert aus dieser Konfiguration abgeleitet"
+        )
+        self.start_atlas_button.setEnabled(self._run_result is None)
+        self._set_active_step(2)
+        self.page_stack.setCurrentIndex(2)
+
+    @Slot()
+    def _show_review_page(self) -> None:
+        if isinstance(self._worker, _AtlasWorker):
+            return
+        self._set_active_step(1)
+        self.page_stack.setCurrentIndex(1)
+
+    @Slot()
+    def _start_atlas(self) -> None:
+        if (
+            self._review is None
+            or self._review.engine is not DesktopEngine.MODERN_CPU
+            or self._worker is not None
+            or self._run_result is not None
+        ):
+            return
+        try:
+            request = build_reviewed_worker_request(
+                self._review,
+                request_id=f"desktop-{uuid.uuid4().hex}",
+            )
+        except (DesktopReviewedRunError, OSError, RuntimeError, TypeError, ValueError) as error:
+            self.run_state_label.setObjectName("statusError")
+            self.run_state_label.setStyleSheet("")
+            self.run_state_label.setText(f"Atlasstart abgewiesen: {error}")
+            self.start_atlas_button.setEnabled(False)
+            return
+
+        worker = _AtlasWorker(DesktopWorkerController(request))
+        worker.signals.event.connect(self._atlas_event)
+        worker.signals.succeeded.connect(self._atlas_succeeded)
+        worker.signals.failed.connect(self._atlas_failed)
+        worker.signals.cancel_failed.connect(self._atlas_cancel_failed)
+        self._worker = worker
+        self.run_result_card.hide()
+        self.run_event_log.clear()
+        self.run_progress_bar.setValue(0)
+        self.run_stage_label.setText("Workflow-Stufe: Worker wird gestartet")
+        self.run_optimizer_label.setText("Noch keine Optimierungsentscheidung.")
+        self.run_state_label.setObjectName("status")
+        self.run_state_label.setStyleSheet("")
+        self.run_state_label.setText(
+            "Kindprozess wird gestartet; Konfigurationsbindung und Zielpfad werden erneut geprüft."
+        )
+        self.run_summary_label.setText(
+            f"Projekt: {self._review.project_name}\n"
+            f"Request-ID: {request.request_id}\n"
+            f"Konfiguration: {self._wrappable_path(request.config_path)}\n"
+            f"Gebundener SHA-256: {request.expected_config_sha256}\n"
+            f"Nicht überschreibbares Ziel: {self._wrappable_path(request.destination)}"
+        )
+        self.start_atlas_button.setEnabled(False)
+        self.cancel_atlas_button.setEnabled(True)
+        self.run_back_button.setEnabled(False)
+        self._thread_pool.start(worker)
+
+    @Slot()
+    def _cancel_atlas(self) -> None:
+        worker = self._worker
+        if not isinstance(worker, _AtlasWorker) or not worker.request_cancel():
+            return
+        self.cancel_atlas_button.setEnabled(False)
+        self.run_state_label.setObjectName("status")
+        self.run_state_label.setStyleSheet("")
+        self.run_state_label.setText(
+            "Abbruch angefordert. Der aktuelle Tensor-Operator darf enden; DiffeoForge "
+            "bricht am nächsten sicheren Punkt ab und publiziert keinen halbfertigen Run."
+        )
+        self.run_event_log.appendPlainText("GUI: kooperativer Abbruch angefordert")
+
+    @Slot(str)
+    def _atlas_cancel_failed(self, message: str) -> None:
+        self.run_state_label.setObjectName("statusError")
+        self.run_state_label.setStyleSheet("")
+        self.run_state_label.setText(
+            f"Abbruchkommando konnte nicht bestätigt werden: {message}. "
+            "Der Parent überwacht den Kindprozess weiter."
+        )
+        self.run_event_log.appendPlainText(f"GUI: Abbruchübertragung fehlgeschlagen: {message}")
+
+    @Slot(object)
+    def _atlas_event(self, event: DesktopWorkerEvent) -> None:
+        message: str
+        if event.kind == "started":
+            message = "Worker gestartet; überprüfte Konfiguration ist gebunden."
+            self.run_state_label.setText(message)
+        elif event.kind == "progress":
+            progress = event.payload["modern_progress"]
+            message = str(progress["message"])
+            completed = int(progress["completed_stages"])
+            total = int(progress["total_stages"])
+            self.run_progress_bar.setRange(0, total)
+            self.run_progress_bar.setValue(completed)
+            self.run_stage_label.setText(
+                f"Workflow-Stufe: {progress['phase']} · {progress['status']} · {message}"
+            )
+            optimizer = progress["optimizer"]
+            if optimizer is not None:
+                block = optimizer["block"] or "initial"
+                gradient = optimizer["gradient_norm"]
+                gradient_text = "nicht berechnet" if gradient is None else f"{gradient:.6g}"
+                self.run_optimizer_label.setText(
+                    "Optimierung: "
+                    f"Entscheidung {optimizer['completed_decisions']} von "
+                    f"{optimizer['maximum_decisions']} · Zyklus {optimizer['cycle']} von "
+                    f"{optimizer['max_cycles']} · Block {block} · Status "
+                    f"{optimizer['status']} · Objective {optimizer['objective']:.6g} · "
+                    f"Gradientennorm {gradient_text}"
+                )
+        elif event.kind == "completed":
+            message = "Worker meldet Fertigstellung; Parent-Verifikation läuft."
+            self.run_state_label.setText(message)
+        elif event.kind == "cancelled":
+            message = str(event.payload["message"])
+            self.run_state_label.setText(
+                "Worker meldet sicheren Abbruch; Parent prüft den Ausgang."
+            )
+        else:
+            message = str(event.payload["message"])
+            self.run_state_label.setText(
+                "Worker meldet einen Fehler; Parent gleicht Prozessende ab."
+            )
+        self.run_event_log.appendPlainText(
+            f"#{event.sequence} {event.kind}: {message}"
+        )
+
+    @Slot(object)
+    def _atlas_succeeded(self, result: DesktopWorkerControllerResult) -> None:
+        self._worker = None
+        self.cancel_atlas_button.setEnabled(False)
+        self.run_back_button.setEnabled(True)
+        terminal = result.terminal_event
+        if result.completed:
+            self._run_result = result
+            self.run_state_label.setObjectName("statusSuccess")
+            self.run_state_label.setStyleSheet("")
+            self.run_state_label.setText(
+                "Atlas und PCA wurden publiziert und vom Parent unabhängig verifiziert."
+            )
+            self.run_result_label.setText(
+                f"Ziel: {self._wrappable_path(Path(terminal.payload['destination']))}\n"
+                f"Probanden: {terminal.payload['subject_count']}\n"
+                f"Manifest SHA-256: {terminal.payload['manifest_sha256']}\n"
+                f"Resultat-Bundle: {terminal.payload['bundle_path']}\n"
+                f"Prozess-Exitcode: {result.exit_code}"
+            )
+            self.run_result_card.show()
+            self.start_atlas_button.setEnabled(False)
+        else:
+            self.run_state_label.setObjectName("status")
+            self.run_state_label.setStyleSheet("")
+            self.run_state_label.setText(
+                "Sicher abgebrochen: kein Ziel wurde publiziert. Dieser Modern-Run besitzt "
+                "keinen Checkpoint und muss bei Bedarf neu gestartet werden."
+            )
+            self.start_atlas_button.setEnabled(True)
+        if self._close_after_worker:
+            self._close_after_worker = False
+            self.close()
+
+    @Slot(str)
+    def _atlas_failed(self, message: str) -> None:
+        self._worker = None
+        self.cancel_atlas_button.setEnabled(False)
+        self.run_back_button.setEnabled(True)
+        self.run_state_label.setObjectName("statusError")
+        self.run_state_label.setStyleSheet("")
+        self.run_state_label.setText(f"Atlaslauf fehlgeschlagen oder abgewiesen: {message}")
+        self.run_event_log.appendPlainText(f"Parent: Fehler: {message}")
+        self.start_atlas_button.setEnabled(True)
+        if self._close_after_worker:
+            self._close_after_worker = False
+            self.close()
 
     @staticmethod
     def _wrappable_path(path: Path) -> str:
@@ -730,6 +1150,8 @@ class DiffeoForgeWindow(QMainWindow):
 
     @Slot()
     def _show_setup_page(self) -> None:
+        if isinstance(self._worker, _AtlasWorker):
+            return
         self._set_active_step(0)
         self.page_stack.setCurrentIndex(0)
 
@@ -747,3 +1169,22 @@ class DiffeoForgeWindow(QMainWindow):
     def _open_project_directory(self) -> None:
         if self._result is not None:
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(self._result.config_path.parent)))
+
+    @Slot()
+    def _open_run_result(self) -> None:
+        if self._run_result is None or not self._run_result.completed:
+            return
+        destination = Path(self._run_result.terminal_event.payload["destination"])
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(destination)))
+
+    def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802 - Qt API name
+        if isinstance(self._worker, _AtlasWorker):
+            self._close_after_worker = True
+            self._cancel_atlas()
+            self.run_state_label.setText(
+                "Fenster bleibt bis zum bestätigten sicheren Worker-Ende geöffnet. "
+                "Der Abbruch wurde angefordert."
+            )
+            event.ignore()
+            return
+        super().closeEvent(event)

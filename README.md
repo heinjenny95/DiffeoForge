@@ -89,7 +89,8 @@ This repository currently provides:
 - a read-only environment doctor and transparent mesh-directory initializer;
 - an optional PySide6 desktop preview for non-overwriting mesh-folder
   validation, modern/reference project creation, effective-parameter review,
-  and shared-core workload/preflight evidence without starting an atlas;
+  shared-core workload/preflight evidence, and a verified Modern-only
+  start/live-event/cancel screen;
 - a self-contained HTML input-validation and parameter-scale report;
 - a self-contained HTML convergence, lifecycle, and result report;
 - terminal interruption capture, explicit unclean-stop recovery, and
@@ -135,11 +136,11 @@ This repository currently provides:
   workflow setting or peak-RAM claim.
 
 The experimental modern path is a public CLI/application-service workflow and
-can now create and review a starter project through the GUI preview, including
-the exact configured-engine workload contract. A tested source-level worker and
-parent controller can run, supervise, independently verify, and cooperatively
-cancel Modern compute in a separate process, but the GUI does not yet expose
-those controls and the Modern path does not provide checkpoint/resume.
+can now create and review a starter project through the GUI preview, bind the
+launch to the reviewed configuration hash, show exact workflow/optimizer
+events, request cooperative cancellation, and expose only a parent-verified
+result. The external Deformetrica route is not yet supervised by the GUI, and
+the Modern path does not provide checkpoint/resume or parent-death recovery.
 DiffeoForge also does **not** yet ship a desktop installer,
 provide mesh-quality rendering or self-intersection detection, or promise CPU/GPU equivalence or
 300-specimen production performance. See the [modern-workflow

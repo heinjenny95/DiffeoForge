@@ -12,6 +12,7 @@ from diffeoforge.desktop.project_setup import (
     ProjectSetupRequest,
     create_project,
 )
+from diffeoforge.desktop.worker_protocol import sha256_file
 
 ROOT = Path(__file__).parents[1]
 MESH_DIRECTORY = ROOT / "examples" / "synthetic" / "meshes"
@@ -32,6 +33,7 @@ def test_reference_review_uses_effective_preflight_parameters(tmp_path: Path) ->
     values = {item.label: item.value for item in review.parameters}
     evidence = {item.label: item.value for item in review.workload}
     assert review.engine is DesktopEngine.DEFORMETRICA_REFERENCE
+    assert review.config_sha256 == sha256_file(setup.config_path)
     assert review.subject_count == 5
     assert review.report_path == setup.report_path
     assert review.report_path.is_file()
@@ -60,6 +62,7 @@ def test_modern_review_publishes_existing_exact_workload_contract(tmp_path: Path
     values = {item.label: item.value for item in review.parameters}
     evidence = {item.label: item.value for item in review.workload}
     assert review.engine is DesktopEngine.MODERN_CPU
+    assert review.config_sha256 == sha256_file(setup.config_path)
     assert review.subject_count == 5
     assert review.report_path.name == "workload.html"
     assert review.report_path.is_file()
