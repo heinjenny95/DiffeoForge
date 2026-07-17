@@ -157,11 +157,12 @@ The next multi-tile study is governed by
 [ADR 0004](decisions/0004-prospective-multi-tile-matrix.md). It uses one hashed
 base config plus explicit benchmark-only effective tile plans, not a bag of
 hand-edited YAML files. The raw v0.4 report gate and separate matrix-design v0.1
-gate are implemented. The matrix designer reconstructs every full-factorial
-condition semantically and publishes immutable JSON/sidecar/HTML evidence, but
-has no execution path. It is deliberately not accepted by the existing study
-service; a later matrix runner requires explicit versioned dispatch. Current
-v0.1 single-tile study artifacts retain their exact meaning.
+gate feed a separate matrix-study run v0.2 service. It executes explicit tile
+overrides in frozen order, preserves every raw v0.4 report, supports strict
+prefix recovery, and publishes a tile-aware manifest. Progress v0.2 carries the
+cell and effective plan without ETA. Separate commands and verifiers provide
+explicit version dispatch; the existing v0.1 single-tile study artifacts and
+service retain their exact meaning.
 
 Below the application layer, the engine now contains an explicit blockwise
 Gaussian primitive family. Query and source tile sizes bound each pairwise XYZ

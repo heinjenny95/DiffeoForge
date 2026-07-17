@@ -193,11 +193,12 @@ default.
 The prospective extension from one tile shape to a full factorial tile matrix
 is specified separately in
 [ADR 0004](decisions/0004-prospective-multi-tile-matrix.md). Benchmark report
-v0.4 and the isolated matrix-design v0.1 artifact are implemented. The existing
-study service does not import, accept, or execute that design; no matrix runner
-exists yet. This keeps every v0.1 single-tile artifact unchanged and makes the
-next execution gate an explicit versioned change. See
-[the matrix-design protocol](MODERN_BENCHMARK_MATRIX_DESIGN.md).
+v0.4, matrix-design v0.1, and the isolated matrix-study/progress v0.2 contracts
+are implemented. The existing service still does not import or accept matrix
+designs; separate matrix commands provide explicit dispatch. This keeps every
+v0.1 single-tile artifact unchanged. See the
+[matrix-design protocol](MODERN_BENCHMARK_MATRIX_DESIGN.md) and
+[matrix study protocol](MODERN_BENCHMARK_MATRIX_STUDY.md).
 
 ## Exact-count progress, not ETA
 

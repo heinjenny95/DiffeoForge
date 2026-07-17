@@ -5,6 +5,7 @@
 - Tracking: [issue #62](https://github.com/heinjenny95/DiffeoForge/issues/62)
 - Gate 1: implemented by [issue #64](https://github.com/heinjenny95/DiffeoForge/issues/64)
 - Gate 2: implemented by [issue #71](https://github.com/heinjenny95/DiffeoForge/issues/71)
+- Gate 3: implemented by [issue #73](https://github.com/heinjenny95/DiffeoForge/issues/73)
 
 ## Context
 
@@ -125,8 +126,10 @@ runtime. Matrix completion is not a 300-subject feasibility verdict.
    publication, and condition-count review; do not execute it yet.~~
    Implemented as the separate matrix-design v0.1 artifact and CLI; it has no
    execution path.
-3. Extend execution, progress, status, completion, and full verification with
-   interruption/reconciliation tests while retaining v0.1 fixtures.
+3. ~~Extend execution, progress, status, completion, and full verification with
+   interruption/reconciliation tests while retaining v0.1 fixtures.~~
+   Implemented as the separate matrix study-run and progress v0.2 contracts;
+   all v0.1 fixtures and commands retain their original meaning.
 4. Freeze a real representative design before collecting results.
 5. Define a separate prospective analysis plan before calculating comparisons.
 6. Consider a public preset only after representative full-workflow evidence.

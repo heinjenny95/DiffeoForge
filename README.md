@@ -230,14 +230,32 @@ strict `matrix-design.json`, SHA-256 sidecar, and escaped HTML. Ordered query ×
 source shapes remain distinct, every cell contains adjacent `standard` and
 `recompute` conditions, and a 1000-condition ceiling catches accidental
 combinatorial explosions. This implements only the pre-results design gate in
-[ADR 0004](docs/decisions/0004-prospective-multi-tile-matrix.md): there is no
-matrix runner or analysis yet, and the existing v0.1 single-tile study remains
-unchanged.
+[ADR 0004](docs/decisions/0004-prospective-multi-tile-matrix.md). The existing
+v0.1 single-tile study remains unchanged.
 
 ```powershell
 diffeoforge modern-benchmark-matrix-design-verify `
   modern-atlas.benchmark-matrix
 ```
+
+Execute or resume the exact frozen matrix, then inspect or fully verify its
+separate raw v0.4 reports:
+
+```powershell
+diffeoforge modern-benchmark-matrix-study `
+  modern-atlas.benchmark-matrix modern-atlas.yaml
+diffeoforge modern-benchmark-matrix-study-status `
+  modern-atlas.benchmark-matrix.run
+diffeoforge modern-benchmark-matrix-study-verify `
+  modern-atlas.benchmark-matrix.run
+```
+
+The v0.2 matrix runner follows only a verified contiguous prefix, reconciles a
+valid report found ahead of atomic state after interruption, and rejects the
+unsafe inverse. Progress contains exact condition counts and tile identity, not
+percentages or ETA. It never aggregates results, chooses a winner, or creates a
+preset. See the
+[matrix study protocol](docs/MODERN_BENCHMARK_MATRIX_STUDY.md).
 
 Generated configurations declare dense evaluation explicitly. The exact
 non-approximate blockwise path can instead be requested without code:
