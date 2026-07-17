@@ -17,7 +17,10 @@ from diffeoforge.initialization import (
     initialize_project,
 )
 from diffeoforge.reference import compare_reference_run
-from diffeoforge.reference_preparation_plan import plan_reference_preparation
+from diffeoforge.reference_preparation_plan import (
+    plan_reference_preparation,
+    write_reference_preparation_plan_report,
+)
 from diffeoforge.report import (
     collect_preflight,
     default_preflight_report_path,
@@ -448,6 +451,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--run-id",
         required=True,
         help="Explicit future run identifier; no destination is created.",
+    )
+    reference_plan_parser.add_argument(
+        "--report",
+        type=Path,
+        help="Write a new self-contained HTML review page without replacing any file.",
     )
     prepare_parser = subparsers.add_parser(
         "prepare",
@@ -1307,8 +1315,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "reference-plan":
         try:
             plan = plan_reference_preparation(args.config, run_id=args.run_id)
+            report_path = None
+            if args.report is not None:
+                report_path = write_reference_preparation_plan_report(plan, args.report)
             json.dump(plan, sys.stdout, indent=2, ensure_ascii=True, sort_keys=True)
             sys.stdout.write("\n")
+            if report_path is not None:
+                encoded_path = json.dumps(str(report_path), ensure_ascii=True)
+                print(f"Reference preparation report: {encoded_path}", file=sys.stderr)
         except (ConfigurationError, OSError, TypeError, ValueError) as error:
             print(f"ERROR: {error}", file=sys.stderr)
             return 2

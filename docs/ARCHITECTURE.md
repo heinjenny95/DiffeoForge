@@ -195,6 +195,11 @@ match the plan exactly. This is read-only transparency, not a prepared run or a
 desktop execution permission; see
 [the reference preparation plan](REFERENCE_PREPARATION_PLAN.md).
 
+An optional deterministic HTML view is derived directly from that same validated
+plan object. It owns no backend or preparation behavior, has no active content or
+network dependency, and is published only to an explicitly selected absent path.
+The unchanged JSON stdout remains the machine-readable contract.
+
 Both setup routes can also pass their already selected template path to a
 Qt-independent immutable preview model. The model reuses the strict VTK parser,
 binds the source SHA-256 before and after loading, freezes vertices, triangles,

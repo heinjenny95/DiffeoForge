@@ -79,6 +79,7 @@ This roadmap describes evidence gates rather than promised dates.
   - [x] Frozen sibling reference harness with mandatory v0.2 bundle evidence smoke
   - [x] Frozen reference-worker hard-parent-death Job containment evidence
   - [x] Versioned read-only reference preparation plan with exact XML parity
+  - [x] Deterministic offline HTML review derived from the reference preparation plan
   - [ ] User-approved private-run reconciliation, reference supervision, and native mesh rendering
 - [ ] Parameter explanations and safe presets
 - [x] Pre-compute configured all-pairs and known-payload workload report
