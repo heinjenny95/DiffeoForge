@@ -129,8 +129,10 @@ the prelaunch request in the child process, and guarantees a terminal stop
 before preparation. A Qt-independent parent controller now attaches that child
 to the Windows kill-on-close Job, bounds output, enforces a timeout, reconciles
 the exact harness lifecycle, and independently reverifies the request. The
-evidence build does not yet include the planned frozen sibling reference worker;
-no run is prepared and no reference compute control is enabled.
+evidence build now freezes this harness as the sibling
+`DiffeoForgeReferenceWorker.exe` and makes its exact three-event
+`stopped_before_prepare` smoke mandatory before v0.2 bundle evidence can be
+written. No run is prepared and no reference compute control is enabled.
 
 ## Bundle and installer decisions
 

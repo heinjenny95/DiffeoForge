@@ -71,13 +71,44 @@ worker_executable = EXE(
     disable_windowed_traceback=False,
 )
 
+reference_worker_analysis = Analysis(
+    [str(entrypoints / "diffeoforge_reference_worker.py")],
+    pathex=[str(source)],
+    binaries=[],
+    datas=schema_data,
+    hiddenimports=hidden_imports,
+    hookspath=[],
+    hooksconfig={},
+    runtime_hooks=[],
+    excludes=excluded_modules,
+    noarchive=False,
+    optimize=0,
+)
+reference_worker_pyz = PYZ(reference_worker_analysis.pure)
+reference_worker_executable = EXE(
+    reference_worker_pyz,
+    reference_worker_analysis.scripts,
+    [],
+    exclude_binaries=True,
+    name="DiffeoForgeReferenceWorker",
+    debug=False,
+    bootloader_ignore_signals=False,
+    strip=False,
+    upx=False,
+    console=True,
+    disable_windowed_traceback=False,
+)
+
 bundle = COLLECT(
     desktop_executable,
     worker_executable,
+    reference_worker_executable,
     desktop_analysis.binaries,
     desktop_analysis.datas,
     worker_analysis.binaries,
     worker_analysis.datas,
+    reference_worker_analysis.binaries,
+    reference_worker_analysis.datas,
     strip=False,
     upx=False,
     name="DiffeoForge",

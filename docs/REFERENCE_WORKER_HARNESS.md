@@ -40,6 +40,13 @@ stderr, enforces a timeout, reconciles the exact three-event lifecycle and exit
 code, and independently repeats request and destination verification. See
 [the nonnumerical reference harness controller](REFERENCE_HARNESS_CONTROLLER.md).
 
+The Windows one-directory evidence bundle exposes the same module as the
+sibling `DiffeoForgeReferenceWorker.exe`. Its build cannot publish v0.2 freeze
+evidence unless that executable completes the controller round trip with exactly
+three events, outcome `stopped_before_prepare`, exit code 0, empty stderr, and no
+destination. Legacy v0.1 evidence remains verifiable but does not claim this
+third entry point.
+
 ## Current boundary
 
 This is not the production reference worker. The harness has no cancel reader,

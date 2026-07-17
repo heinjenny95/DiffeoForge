@@ -4,23 +4,24 @@ Status: **developer-machine engineering evidence, not a release, installer, or
 redistributable binary**
 
 DiffeoForge can be frozen on a 64-bit Windows development machine into one
-directory containing two entry points:
+directory containing three entry points:
 
 - `DiffeoForge.exe` is the windowed Qt application and does not allocate a
   console;
 - `DiffeoForgeWorker.exe` is the pipe-only numerical worker launched by the
-  desktop parent.
+  desktop parent;
+- `DiffeoForgeReferenceWorker.exe` is the pipe-only, deliberately
+  nonnumerical reference harness supervised by its dedicated parent controller.
 
-The worker remains separate so the parent can enforce the existing versioned
-request/event protocol, cooperative cancellation, immutable destination, and
-independent result verification. A frozen parent resolves the worker beside
-its own executable; a source checkout continues to use
-`python -m diffeoforge.desktop.worker`.
+The workers remain separate so their parents can enforce the corresponding
+versioned request/event protocols, containment, immutable destinations, and
+independent verification. A frozen parent resolves its worker beside its own
+executable. A source checkout continues to use Python module entry points.
 
 This slice uses PyInstaller 6.21.0 in its documented one-directory mode. The
 builder-only pin is in `distribution/windows/freeze-requirements.txt`; it is
 not a complete release lock or SBOM. The build spec collects the DiffeoForge
-schemas and creates the two executables in one shared bundle. It does not
+schemas and creates the three executables in one shared bundle. It does not
 include the external Deformetrica 4.3 environment.
 
 ## Reproduce the evidence build
@@ -63,17 +64,22 @@ and clean-source boundaries. It then:
 2. launches the frozen GUI's noninteractive `--smoke` path;
 3. optionally runs the supplied public configuration through the frozen worker
    using the production parent controller;
-4. records the exact source commit, builder/runtime package versions, every
+4. always runs the frozen nonnumerical reference harness through its contained
+   parent controller, requires the exact three-event `stopped_before_prepare`
+   lifecycle, and verifies that it created no destination;
+5. records the exact source commit, builder/runtime package versions, every
    bundled relative path, byte count, file SHA-256, aggregate byte count, and
    inventory SHA-256;
-5. writes `freeze-evidence.json` and its `freeze-evidence.sha256` sidecar;
-6. immediately re-verifies the sidecar and exact file inventory.
+6. writes `freeze-evidence.json` and its `freeze-evidence.sha256` sidecar;
+7. immediately re-verifies the sidecar and exact file inventory.
 
 `tools/desktop_bundle_evidence.py verify <bundle>` can repeat the final
 verification. It fails closed on a changed manifest, unsafe path, missing,
 extra, reordered, resized, or rehashed file, unexpected entry point, or a
 status outside the versioned engineering-evidence schema. Evidence creation is
-non-overwriting.
+non-overwriting. New evidence uses schema v0.2 and requires all three entry
+points. The verifier retains explicit read-only support for genuine v0.1
+two-entry-point manifests; it never silently reinterprets them as v0.2.
 
 ## First developer-host observation
 
@@ -94,10 +100,12 @@ is authoritative for its directory.
 ## What this proves
 
 One successful evidence build proves only that the recorded clean source commit
-was frozen on the recorded Windows developer host, its two entry points were
-present, the GUI smoke exited successfully, the optional recorded synthetic
-workflow completed through the real frozen worker/controller boundary, and the
-resulting directory matched its exact-file inventory at verification time.
+was frozen on the recorded Windows developer host, its three entry points were
+present, the GUI smoke exited successfully, the nonnumerical reference harness
+stopped before preparation through its real frozen worker/controller boundary,
+the optional recorded synthetic Modern workflow completed through its real
+frozen worker/controller boundary, and the resulting directory matched its
+exact-file inventory at verification time.
 
 The manifest intentionally labels itself
 `engineering_evidence_not_a_release`. It is not evidence of:

@@ -14,13 +14,15 @@ from pathlib import Path, PurePosixPath
 
 from jsonschema import Draft202012Validator, FormatChecker
 
-SCHEMA_VERSION = "0.1"
+SCHEMA_VERSION = "0.2"
+SUPPORTED_SCHEMA_VERSIONS = ("0.1", SCHEMA_VERSION)
 STATUS = "engineering_evidence_not_a_release"
 TARGET = "windows-x86_64-cpu"
 MANIFEST_NAME = "freeze-evidence.json"
 SIDECAR_NAME = "freeze-evidence.sha256"
 DESKTOP_EXECUTABLE = "DiffeoForge.exe"
 WORKER_EXECUTABLE = "DiffeoForgeWorker.exe"
+REFERENCE_WORKER_EXECUTABLE = "DiffeoForgeReferenceWorker.exe"
 SCIENTIFIC_BOUNDARY = (
     "This exact-file inventory is engineering evidence for one Windows CPU freeze. "
     "It is not an installer, signature, SBOM, license approval, clean-machine result, "
@@ -74,13 +76,30 @@ class DesktopFreezeEvidenceError(RuntimeError):
     """Raised when a frozen desktop bundle or its evidence fails closed."""
 
 
-def _schema() -> dict:
-    resource = files("diffeoforge.schema").joinpath("desktop-freeze-evidence-v0.1.json")
+def _schema(version: str) -> dict:
+    if version not in SUPPORTED_SCHEMA_VERSIONS:
+        raise DesktopFreezeEvidenceError(
+            f"Unsupported desktop freeze evidence schema_version: {version!r}"
+        )
+    resource = files("diffeoforge.schema").joinpath(
+        f"desktop-freeze-evidence-v{version}.json"
+    )
     return json.loads(resource.read_text(encoding="utf-8"))
 
 
 def _validate_schema(value: object) -> None:
-    validator = Draft202012Validator(_schema(), format_checker=FormatChecker())
+    if not isinstance(value, Mapping):
+        raise DesktopFreezeEvidenceError(
+            "Desktop freeze evidence must be a JSON object"
+        )
+    version = value.get("schema_version")
+    if not isinstance(version, str):
+        raise DesktopFreezeEvidenceError(
+            "Desktop freeze evidence schema_version must be a string"
+        )
+    validator = Draft202012Validator(
+        _schema(version), format_checker=FormatChecker()
+    )
     errors = sorted(validator.iter_errors(value), key=lambda error: list(error.path))
     if errors:
         first = errors[0]
@@ -187,8 +206,15 @@ def _package_versions(value: Mapping[str, str] | None) -> dict[str, str]:
     return dict(sorted(supplied.items()))
 
 
-def _require_entry_points(root: Path) -> None:
-    for name in (DESKTOP_EXECUTABLE, WORKER_EXECUTABLE):
+def _entry_point_names(version: str) -> tuple[str, ...]:
+    names = (DESKTOP_EXECUTABLE, WORKER_EXECUTABLE)
+    if version == SCHEMA_VERSION:
+        names += (REFERENCE_WORKER_EXECUTABLE,)
+    return names
+
+
+def _require_entry_points(root: Path, version: str) -> None:
+    for name in _entry_point_names(version):
         path = root / name
         if path.is_symlink() or not path.is_file():
             raise DesktopFreezeEvidenceError(
@@ -233,7 +259,7 @@ def create_desktop_freeze_evidence(
     if not isinstance(observed_python, str) or not observed_python:
         raise ValueError("python_version must be a nonempty string")
     versions = _package_versions(package_versions)
-    _require_entry_points(root)
+    _require_entry_points(root, SCHEMA_VERSION)
     records = _inventory(root)
     manifest = {
         "schema_version": SCHEMA_VERSION,
@@ -252,6 +278,7 @@ def create_desktop_freeze_evidence(
         "entry_points": {
             "desktop": DESKTOP_EXECUTABLE,
             "worker": WORKER_EXECUTABLE,
+            "reference_worker": REFERENCE_WORKER_EXECUTABLE,
         },
         "bundle": {
             "directory_name": root.name,
@@ -327,7 +354,7 @@ def verify_desktop_freeze_evidence(directory: Path | str) -> dict:
     _validate_created_at(manifest["created_at"])
     if manifest["bundle"]["directory_name"] != root.name:
         raise DesktopFreezeEvidenceError("Desktop bundle directory name differs from evidence")
-    _require_entry_points(root)
+    _require_entry_points(root, manifest["schema_version"])
 
     records = manifest["bundle"]["files"]
     paths = [record["path"] for record in records]

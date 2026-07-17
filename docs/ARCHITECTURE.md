@@ -170,6 +170,13 @@ nonnumerical supervision seam but does not prepare a run, start the reference
 engine, or enable GUI computation. See
 [the reference harness controller](REFERENCE_HARNESS_CONTROLLER.md).
 
+The Windows one-directory build now freezes that same harness as a third sibling
+entry point. Freeze-evidence schema v0.2 requires the GUI, Modern worker, and
+reference harness in the exact inventory, and the build must exercise the frozen
+harness through its controller before evidence is written. Verification retains
+version-dispatched v0.1 compatibility without granting the legacy two-entry-point
+artifact any v0.2 claim.
+
 Both setup routes can also pass their already selected template path to a
 Qt-independent immutable preview model. The model reuses the strict VTK parser,
 binds the source SHA-256 before and after loading, freezes vertices, triangles,
