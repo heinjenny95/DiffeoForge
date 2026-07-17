@@ -114,6 +114,16 @@ and transports the validated event objects through Qt signals without a second
 scientific progress model. Counts describe completed stages and decisions, not
 elapsed-time percentages or ETA.
 
+Desktop step 4 consumes no alternate scientific model. A Qt-independent result
+reviewer first invokes the complete outer Modern verifier, binds the unchanged
+outer and nested manifest hashes, and reads only schema- and inventory-named
+optimizer, PCA, deformation, and mesh-quality evidence. The Qt task exposes
+bounded display values and the scientific boundaries recorded by those
+manifests. Before a selected VTK, CSV, JSON, or SVG is handed to the operating
+system, a second read-only task rechecks both manifest hashes and that artifact's
+path containment, regular-file status, byte size, and SHA-256. This is an
+auditable file handoff, not native rendering or biological interpretation.
+
 The application layer also exposes an opt-in `modern-benchmark` service. The
 user must declare a deterministic subject-prefix size. Each repeat runs one
 configured dense or blockwise objective plus gradient in a fresh spawned CPU
@@ -198,8 +208,9 @@ tradeoff;
 saved-tensor counts are not peak-RAM claims.
 
 This vertical path is not yet the common production backend shown above. Its
-child-process transport now exists, but it does not implement the reference
-lifecycle's checkpoint/resume operations, GUI supervision, or crash recovery.
+child-process transport and source GUI supervision now exist, but it does not
+implement the reference lifecycle's checkpoint/resume operations, parent-death
+crash recovery, or reference-engine supervision.
 An optimized kernel or GPU path must reproduce the dense baseline before it can
 replace this correctness implementation.
 

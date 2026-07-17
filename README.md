@@ -90,7 +90,8 @@ This repository currently provides:
 - an optional PySide6 desktop preview for non-overwriting mesh-folder
   validation, modern/reference project creation, effective-parameter review,
   shared-core workload/preflight evidence, and a verified Modern-only
-  start/live-event/cancel screen;
+  start/live-event/cancel screen followed by a fully reverified Atlas/PCA/QC
+  summary with inventory-bound artifact handoff;
 - a self-contained HTML input-validation and parameter-scale report;
 - a self-contained HTML convergence, lifecycle, and result report;
 - terminal interruption capture, explicit unclean-stop recovery, and
@@ -138,12 +139,15 @@ This repository currently provides:
 The experimental modern path is a public CLI/application-service workflow and
 can now create and review a starter project through the GUI preview, bind the
 launch to the reviewed configuration hash, show exact workflow/optimizer
-events, request cooperative cancellation, and expose only a parent-verified
-result. The external Deformetrica route is not yet supervised by the GUI, and
+events, request cooperative cancellation, and expose a detailed result view
+only after the workflow, nested bundle, inventories, hashes, mesh QC, and SVG
+safety checks pass again. Each selected result artifact is rechecked by size
+and SHA-256 immediately before it is opened by a local application. The
+external Deformetrica route is not yet supervised by the GUI, and
 the Modern path does not provide checkpoint/resume or parent-death recovery.
 DiffeoForge also does **not** yet ship a desktop installer,
-provide mesh-quality rendering or self-intersection detection, or promise CPU/GPU equivalence or
-300-specimen production performance. See the [modern-workflow
+provide native mesh rendering or self-intersection detection, or promise
+CPU/GPU equivalence or 300-specimen production performance. See the [modern-workflow
 documentation](docs/MODERN_WORKFLOW.md) and [reference-backend
 documentation](docs/REFERENCE_BACKEND.md) for the exact boundaries.
 
