@@ -146,8 +146,9 @@ and SHA-256 immediately before it is opened by a local application. The
 external Deformetrica route is not yet supervised by the GUI, and
 the Modern path does not provide checkpoint/resume. Windows parent death now
 terminates the contained worker tree and command-pipe EOF requests cooperative
-cancellation on every platform; power-loss and abandoned temporary-run
-reconciliation remain open.
+cancellation on every platform. Versioned private markers and OS-released
+leases now support exact-destination, read-only discovery after hard crashes;
+automatic deletion, resume, and reconciliation remain deliberately open.
 DiffeoForge also does **not** yet ship a desktop installer or redistributable
 binary. A clean-commit, exact-inventory Windows one-directory
 [engineering build](docs/WINDOWS_FREEZE_EVIDENCE.md) now exercises the GUI and
@@ -192,7 +193,14 @@ diffeoforge modern-plan modern-atlas.yaml
 diffeoforge modern-benchmark modern-atlas.yaml --subjects 5
 diffeoforge modern-run modern-atlas.yaml
 diffeoforge modern-verify modern-atlas-run
+# If a prior hard crash left private state, inspect it without changing files:
+diffeoforge modern-private-status modern-atlas-run
 ```
+
+The status command classifies a held lease as active and a released valid lease
+as abandoned. Unattributed, invalid, indeterminate, and symbolic-link candidates
+fail closed and require explicit review. It never deletes, renames, resumes, or
+publishes. See the [private-run discovery contract](docs/PRIVATE_RUN_DISCOVERY.md).
 
 For a configured blockwise plan, the microbenchmark can explicitly measure the
 experimental recompute graph in separate fresh processes with

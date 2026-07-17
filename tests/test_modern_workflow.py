@@ -15,6 +15,11 @@ workflow = pytest.importorskip("diffeoforge.modern_workflow")
 from diffeoforge.cli import main  # noqa: E402
 from diffeoforge.config import ConfigurationError  # noqa: E402
 from diffeoforge.mesh import read_vtk_polydata, sha256_file, write_vtk_polydata  # noqa: E402
+from diffeoforge.private_runs import (  # noqa: E402
+    LEASE_NAME,
+    MARKER_NAME,
+    acquire_private_run_lease,
+)
 
 ROOT = Path(__file__).parents[1]
 MESH_DIRECTORY = ROOT / "examples" / "synthetic" / "meshes"
@@ -515,6 +520,36 @@ def test_bundle_failure_is_atomic_and_existing_destination_is_never_reused(
     assert marker.read_text(encoding="utf-8") == "user data"
 
 
+def test_existing_private_candidate_blocks_before_computation_and_is_preserved(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = _write_config(tmp_path / "workflow.yaml")
+    destination = tmp_path / "blocked"
+    private = tmp_path / f".{destination.name}.tmp-{'a' * 32}"
+    private.mkdir()
+    lease = acquire_private_run_lease(private, destination, operation="modern_workflow")
+    marker_before = (private / MARKER_NAME).read_bytes()
+    lease_size_before = (private / LEASE_NAME).stat().st_size
+    called = False
+
+    def should_not_compute(*_args, **_kwargs):
+        nonlocal called
+        called = True
+        raise AssertionError("optimizer must not start")
+
+    monkeypatch.setattr(workflow, "optimize_atlas", should_not_compute)
+    try:
+        with pytest.raises(workflow.ModernWorkflowError, match="active"):
+            workflow.run_modern_workflow(config, destination=destination)
+    finally:
+        lease.close()
+
+    assert called is False
+    assert not destination.exists()
+    assert (private / MARKER_NAME).read_bytes() == marker_before
+    assert (private / LEASE_NAME).stat().st_size == lease_size_before
+
+
 def test_final_outer_verification_failure_removes_temporary_run(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -535,6 +570,8 @@ def test_final_outer_verification_failure_removes_temporary_run(
 def test_verifier_rejects_extra_or_tampered_files(tmp_path: Path) -> None:
     config = _write_config(tmp_path / "workflow.yaml")
     run = workflow.run_modern_workflow(config, destination=tmp_path / "run", created_at=FIXED_TIME)
+    assert not (run / MARKER_NAME).exists()
+    assert not (run / LEASE_NAME).exists()
     extra = run / "nested" / workflow.MANIFEST_NAME
     extra.parent.mkdir()
     extra.write_text("unexpected", encoding="utf-8")

@@ -147,9 +147,13 @@ disappears without a destination.
 
 This does not make a power-loss recovery claim. A force kill can interrupt the
 worker before Python cleanup executes and may leave a private
-`.NAME.tmp-UUID` directory. Read-only discovery and explicit reconciliation of
-such state remain the next separate slice; DiffeoForge does not automatically
-delete it or present it as a result.
+`.NAME.tmp-UUID` directory. Modern runs now hold a versioned marker and native
+file lease while that directory is active. The shared read-only discovery
+service and `modern-private-status` command classify exact-destination
+candidates without following links or changing files. Explicit user-approved
+reconciliation remains a separate slice; DiffeoForge does not automatically
+delete private state or present it as a result. See
+[the private-run discovery contract](PRIVATE_RUN_DISCOVERY.md).
 
 Primary platform references:
 
