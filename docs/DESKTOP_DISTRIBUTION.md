@@ -1,8 +1,8 @@
 # Desktop executable and installer architecture
 
-Status: **project setup, parameter/workload review, source-level verified Modern
-start/live-event/cancel, and verified result review exist; no frozen executable
-or installer yet**
+Status: **project setup, parameter/workload review, verified Modern
+start/live-event/cancel/result review, and a developer-only Windows one-directory
+evidence build exist; no distributable binary or installer yet**
 
 Tracked by [engineering issue #22](https://github.com/heinjenny95/DiffeoForge/issues/22)
 and [ADR 0003](decisions/0003-windows-desktop-distribution.md). The
@@ -52,7 +52,11 @@ events to the reviewed request, enforces lifecycle/exit-code agreement, bounds
   thread, presents bounded Atlas/optimizer/PCA/QC evidence, and rechecks the two
   manifest hashes plus selected artifact size/SHA-256 immediately before OS
   handoff. It does not implement an internal VTK renderer. Parent-death recovery
-  and frozen-process packaging remain separate unfinished slices.
+  remain separate unfinished slices. The first frozen-process engineering
+  slice is documented in [Windows one-directory freeze evidence](WINDOWS_FREEZE_EVIDENCE.md):
+  it creates separate windowed-parent and pipe-worker executables, exercises
+  their production protocol on a public synthetic configuration, and binds an
+  exact-file inventory to a clean source commit. It is not release evidence.
 
 The CPU modern engine is the first bundled numerical variant. A future NVIDIA
 build is a separate artifact with separate numerical evidence; the application
@@ -99,8 +103,8 @@ from the bundled modern CPU engine.
 
 ## Bundle and installer decisions
 
-The first evidence build uses PyInstaller's default one-directory mode, not a
-single-file executable. PyInstaller documents that one-file applications
+The first evidence build now uses pinned PyInstaller 6.21.0 in one-directory
+mode, not a single-file executable. PyInstaller documents that one-file applications
 extract bundled content into a temporary directory at launch. A large,
 long-running scientific application containing Qt and PyTorch benefits from an
 inspectable installed directory, no repeated temporary extraction, simpler DLL
@@ -113,9 +117,9 @@ silent installs for clean-VM CI. The installer contains the already frozen
 one-directory application; it does not resolve Python packages on the user's
 computer.
 
-Exact PyInstaller, Qt, PyTorch, and Inno Setup versions belong in a release lock
-and SBOM, not this architectural contract. No unpinned `latest` downloads may
-occur during a release build.
+The evidence pin is not the future release lock. Exact Qt, PyTorch, transitive
+dependencies, and Inno Setup versions still belong in a reviewed release lock
+and SBOM. No unpinned `latest` downloads may occur during a release build.
 
 Primary packaging references:
 

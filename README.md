@@ -145,8 +145,12 @@ safety checks pass again. Each selected result artifact is rechecked by size
 and SHA-256 immediately before it is opened by a local application. The
 external Deformetrica route is not yet supervised by the GUI, and
 the Modern path does not provide checkpoint/resume or parent-death recovery.
-DiffeoForge also does **not** yet ship a desktop installer,
-provide native mesh rendering or self-intersection detection, or promise
+DiffeoForge also does **not** yet ship a desktop installer or redistributable
+binary. A clean-commit, exact-inventory Windows one-directory
+[engineering build](docs/WINDOWS_FREEZE_EVIDENCE.md) now exercises the GUI and
+separate frozen worker, but it does not satisfy the installer/release gates.
+DiffeoForge still does not provide native mesh rendering or self-intersection
+detection, or promise
 CPU/GPU equivalence or 300-specimen production performance. See the [modern-workflow
 documentation](docs/MODERN_WORKFLOW.md) and [reference-backend
 documentation](docs/REFERENCE_BACKEND.md) for the exact boundaries.
@@ -359,6 +363,7 @@ and workflow for another mesh directory.
 - [Landmark-based Procrustes alignment](docs/PROCRUSTES_ALIGNMENT.md)
 - [PCA of atlas-derived subject features](docs/ATLAS_PCA.md)
 - [Desktop executable and installer architecture](docs/DESKTOP_DISTRIBUTION.md)
+- [Windows one-directory freeze evidence](docs/WINDOWS_FREEZE_EVIDENCE.md)
 - [Versioned desktop worker protocol](docs/DESKTOP_WORKER.md)
 - [Desktop project-setup preview](docs/DESKTOP_PREVIEW.md)
 - [Open synthetic validation dataset](docs/SYNTHETIC_DATASET.md)
