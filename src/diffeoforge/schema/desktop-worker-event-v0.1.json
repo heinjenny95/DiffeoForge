@@ -1,0 +1,111 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DiffeoForge desktop worker event",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["worker_event_version", "request_id", "sequence", "kind", "payload"],
+  "properties": {
+    "worker_event_version": {"const": "0.1"},
+    "request_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+    },
+    "sequence": {"type": "integer", "minimum": 0},
+    "kind": {
+      "enum": ["started", "progress", "completed", "cancelled", "failed"]
+    },
+    "payload": {"type": "object"}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"kind": {"const": "started"}}},
+      "then": {
+        "properties": {
+          "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["engine", "config_sha256", "destination", "cancellation"],
+            "properties": {
+              "engine": {"const": "modern_cpu"},
+              "config_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+              "destination": {"type": "string", "minLength": 1},
+              "cancellation": {"const": "cooperative_safe_points"}
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {"properties": {"kind": {"const": "progress"}}},
+      "then": {
+        "properties": {
+          "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["modern_progress"],
+            "properties": {"modern_progress": {"type": "object"}}
+          }
+        }
+      }
+    },
+    {
+      "if": {"properties": {"kind": {"const": "completed"}}},
+      "then": {
+        "properties": {
+          "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "destination",
+              "manifest_sha256",
+              "subject_count",
+              "bundle_path"
+            ],
+            "properties": {
+              "destination": {"type": "string", "minLength": 1},
+              "manifest_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+              "subject_count": {"type": "integer", "minimum": 2},
+              "bundle_path": {"type": "string", "minLength": 1}
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {"properties": {"kind": {"const": "cancelled"}}},
+      "then": {
+        "properties": {
+          "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["destination", "published", "resumable", "message"],
+            "properties": {
+              "destination": {"type": "string", "minLength": 1},
+              "published": {"const": false},
+              "resumable": {"const": false},
+              "message": {"type": "string", "minLength": 1}
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {"properties": {"kind": {"const": "failed"}}},
+      "then": {
+        "properties": {
+          "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["error_type", "message", "destination", "destination_exists"],
+            "properties": {
+              "error_type": {"type": "string", "minLength": 1},
+              "message": {"type": "string", "minLength": 1},
+              "destination": {"type": "string", "minLength": 1},
+              "destination_exists": {"type": "boolean"}
+            }
+          }
+        }
+      }
+    }
+  ]
+}

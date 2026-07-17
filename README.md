@@ -114,8 +114,9 @@ This repository currently provides:
   host observations, and explicit refusal to invent peak-RAM or runtime
   predictions;
 - versioned live workflow and committed optimizer-decision events used by the
-  CLI and designed for reuse by the future desktop worker protocol, without
-  invented percent-complete or ETA claims;
+  CLI and transported unchanged by a strict child-process desktop worker,
+  including reviewed-configuration hash binding and nonpublishing cooperative
+  cancellation without invented percent-complete or ETA claims;
 - an opt-in fresh-process objective/gradient benchmark with explicit subject
   selection, raw repeats, sampled process RSS, exact provenance, explicit
   standard/recompute blockwise measurement, separately recorded benchmark-only
@@ -133,8 +134,10 @@ This repository currently provides:
 
 The experimental modern path is a public CLI/application-service workflow and
 can now create and review a starter project through the GUI preview, including
-the exact configured-engine workload contract. The GUI does not yet start or
-supervise numerical work and the modern path does not provide checkpoint/resume.
+the exact configured-engine workload contract. A tested source-level worker can
+run and cooperatively cancel Modern compute in a separate process, but the GUI
+does not yet expose or supervise those controls and the Modern path does not
+provide checkpoint/resume.
 DiffeoForge also does **not** yet ship a desktop installer,
 provide mesh-quality rendering or self-intersection detection, or promise CPU/GPU equivalence or
 300-specimen production performance. See the [modern-workflow
@@ -349,6 +352,7 @@ and workflow for another mesh directory.
 - [Landmark-based Procrustes alignment](docs/PROCRUSTES_ALIGNMENT.md)
 - [PCA of atlas-derived subject features](docs/ATLAS_PCA.md)
 - [Desktop executable and installer architecture](docs/DESKTOP_DISTRIBUTION.md)
+- [Versioned desktop worker protocol](docs/DESKTOP_WORKER.md)
 - [Desktop project-setup preview](docs/DESKTOP_PREVIEW.md)
 - [Open synthetic validation dataset](docs/SYNTHETIC_DATASET.md)
 - [Synthetic numerical reference](reference/synthetic-v1/README.md)

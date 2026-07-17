@@ -62,7 +62,8 @@ This roadmap describes evidence gates rather than promised dates.
 - [ ] Local graphical interface backed by the shared core
   - [x] First non-overwriting mesh-folder and project-setup slice
   - [x] Read-only effective-parameter and workload/preflight review
-  - [ ] Worker execution, recovery, and result inspection
+  - [x] Versioned Modern worker transport and nonpublishing cooperative cancellation
+  - [ ] GUI execution controls, crash recovery, and result inspection
 - [ ] Parameter explanations and safe presets
 - [x] Pre-compute configured all-pairs and known-payload workload report
 - [x] Versioned workflow-stage and committed optimizer-decision reporting

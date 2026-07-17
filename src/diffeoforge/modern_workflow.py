@@ -10,7 +10,7 @@ import re
 import shutil
 import unicodedata
 import uuid
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime
 from importlib.resources import files
 from pathlib import Path, PurePosixPath
@@ -25,7 +25,11 @@ from diffeoforge import __version__
 from diffeoforge.analysis.procrustes import generalized_procrustes
 from diffeoforge.config import ConfigurationError, InputSummary, validate_input_paths
 from diffeoforge.engine import PairwiseEvaluationPlan
-from diffeoforge.engine.atlas_optimizer import AtlasOptimizationRecord, optimize_atlas
+from diffeoforge.engine.atlas_optimizer import (
+    AtlasOptimizationCancelled,
+    AtlasOptimizationRecord,
+    optimize_atlas,
+)
 from diffeoforge.initialization import SUPPORTED_UNITS, detect_template
 from diffeoforge.mesh import (
     MeshMetadata,
@@ -78,6 +82,10 @@ SCIENTIFIC_BOUNDARY = (
 
 class ModernWorkflowError(RuntimeError):
     """Raised when a modern workflow run cannot be created or verified safely."""
+
+
+class ModernWorkflowCancelled(ModernWorkflowError):
+    """Raised after cooperative cancellation removes all private workflow state."""
 
 
 def _schema(name: str) -> dict[str, Any]:
@@ -725,11 +733,14 @@ def run_modern_workflow(
     destination: Path | str | None = None,
     created_at: str | None = None,
     progress_callback: ModernProgressCallback | None = None,
+    cancel_requested: Callable[[], bool] | None = None,
 ) -> Path:
     """Atomically execute a configured mesh-folder workflow and publish its evidence."""
 
     if progress_callback is not None and not callable(progress_callback):
         raise TypeError("progress_callback must be callable or None")
+    if cancel_requested is not None and not callable(cancel_requested):
+        raise TypeError("cancel_requested must be callable or None")
     source_config = Path(config_path).expanduser().resolve()
     config = load_modern_workflow_config(source_config)
     pairwise_evaluation = pairwise_evaluation_from_config(config)
@@ -749,6 +760,15 @@ def run_modern_workflow(
     temporary.mkdir()
     previous_threads = torch.get_num_threads()
     progress_sequence = 0
+
+    def check_cancellation() -> None:
+        if cancel_requested is None:
+            return
+        requested = cancel_requested()
+        if not isinstance(requested, bool):
+            raise TypeError("cancel_requested must return bool")
+        if requested:
+            raise ModernWorkflowCancelled("Modern workflow cancellation requested")
 
     def emit_progress(
         phase: ModernProgressPhase,
@@ -774,6 +794,7 @@ def run_modern_workflow(
 
     try:
         emit_progress("workflow", "started", "Modern workflow started", 0)
+        check_cancellation()
         source_copy = temporary / "config" / "source.yaml"
         _copy_exclusive(source_config, source_copy)
         effective_path = temporary / "config" / "effective-config.json"
@@ -782,6 +803,7 @@ def run_modern_workflow(
         source_paths = (inputs.template, *inputs.subjects)
         raw_paths: list[Path] = []
         for index, source in enumerate(source_paths):
+            check_cancellation()
             role = "template" if index == 0 else "subject"
             raw_path = temporary / "input" / "raw" / f"{role}-{index:04d}-{_slug(source.stem)}.vtk"
             _copy_exclusive(source, raw_path)
@@ -789,6 +811,7 @@ def run_modern_workflow(
         raw_path_tuple = tuple(raw_paths)
         geometries = tuple(read_vtk_polydata(path) for path in raw_path_tuple)
         emit_progress("inputs", "completed", "Input meshes copied and parsed", 1)
+        check_cancellation()
 
         procrustes = config["preprocessing"]["procrustes"]
         if procrustes["enabled"]:
@@ -813,12 +836,14 @@ def run_modern_workflow(
                 "termination_reason": None,
             }
         emit_progress("preprocessing", "completed", "Preprocessing completed", 2)
+        check_cancellation()
 
         quality_settings = MeshQualitySettings.from_mapping(config["quality_control"])
         quality_descriptors: list[dict[str, str]] = []
         for index, (source, raw_path, aligned_path) in enumerate(
             zip(source_paths, raw_path_tuple, aligned_paths, strict=True)
         ):
+            check_cancellation()
             role = "template" if index == 0 else "subject"
             quality_descriptors.extend(
                 [
@@ -846,6 +871,7 @@ def run_modern_workflow(
         _write_json_exclusive(quality_report_path, quality_report)
         _write_csv_exclusive(quality_csv_path, mesh_quality_csv_rows(quality_report))
         emit_progress("quality", "completed", "Input mesh quality gates passed", 3)
+        check_cancellation()
 
         count = config["initialization"]["control_points"]["count"]
         control_indices = farthest_template_vertex_indices(vertices[0], count)
@@ -863,6 +889,7 @@ def run_modern_workflow(
             (len(target_tensors), control_points.shape[0], 3), dtype=torch.float64
         )
         emit_progress("initialization", "completed", "Atlas tensors initialized", 4)
+        check_cancellation()
         model = config["model"]
         deformation = model["deformation"]
         attachment = model["attachment"]
@@ -904,33 +931,43 @@ def run_modern_workflow(
         emit_progress("optimization", "started", "Atlas optimization started", 4)
         with torch.random.fork_rng(devices=[]):
             torch.manual_seed(runtime["random_seed"])
-            result = optimize_atlas(
-                template_tensor,
-                triangle_tensor,
-                target_tensors,
-                control_points,
-                momenta,
-                deformation_kernel_width=deformation["kernel_width"],
-                attachment_kernel_width=attachment["kernel_width"],
-                noise_variance=model["noise_variance"],
-                number_of_time_points=deformation["timepoints"],
-                attachment_type=attachment["type"],
-                shooting_integrator=deformation["shooting_integrator"],
-                flow_integrator=deformation["flow_integrator"],
-                gaussian_tile_plan=pairwise_evaluation.gaussian_tile_plan,
-                max_cycles=optimizer["max_cycles"],
-                block_order=optimizer["block_order"],
-                momenta_step_size=optimizer["momenta_step_size"],
-                template_step_size=optimizer["template_step_size"],
-                control_points_step_size=optimizer["control_points_step_size"],
-                backtracking_factor=optimizer["backtracking_factor"],
-                armijo_constant=optimizer["armijo_constant"],
-                gradient_tolerance=optimizer["gradient_tolerance"],
-                minimum_step_size=optimizer["minimum_step_size"],
-                max_line_search_iterations=optimizer["max_line_search_iterations"],
-                progress_callback=observe_optimizer if progress_callback is not None else None,
-            )
+            try:
+                result = optimize_atlas(
+                    template_tensor,
+                    triangle_tensor,
+                    target_tensors,
+                    control_points,
+                    momenta,
+                    deformation_kernel_width=deformation["kernel_width"],
+                    attachment_kernel_width=attachment["kernel_width"],
+                    noise_variance=model["noise_variance"],
+                    number_of_time_points=deformation["timepoints"],
+                    attachment_type=attachment["type"],
+                    shooting_integrator=deformation["shooting_integrator"],
+                    flow_integrator=deformation["flow_integrator"],
+                    gaussian_tile_plan=pairwise_evaluation.gaussian_tile_plan,
+                    max_cycles=optimizer["max_cycles"],
+                    block_order=optimizer["block_order"],
+                    momenta_step_size=optimizer["momenta_step_size"],
+                    template_step_size=optimizer["template_step_size"],
+                    control_points_step_size=optimizer["control_points_step_size"],
+                    backtracking_factor=optimizer["backtracking_factor"],
+                    armijo_constant=optimizer["armijo_constant"],
+                    gradient_tolerance=optimizer["gradient_tolerance"],
+                    minimum_step_size=optimizer["minimum_step_size"],
+                    max_line_search_iterations=optimizer["max_line_search_iterations"],
+                    progress_callback=(
+                        observe_optimizer if progress_callback is not None else None
+                    ),
+                    cancel_requested=cancel_requested,
+                )
+            except AtlasOptimizationCancelled as error:
+                raise ModernWorkflowCancelled(
+                    "Modern workflow cancellation requested during optimization"
+                ) from error
+        check_cancellation()
         emit_progress("optimization", "completed", "Atlas optimization completed", 5)
+        check_cancellation()
         model_settings = ModernAtlasModelSettings(
             deformation_kernel_width=deformation["kernel_width"],
             attachment_kernel_width=attachment["kernel_width"],
@@ -957,6 +994,7 @@ def run_modern_workflow(
         )
         bundle_manifest = verify_modern_atlas_bundle(bundle_path)
         emit_progress("bundle", "completed", "Atlas and PCA bundle verified", 6)
+        check_cancellation()
 
         template_record = _mesh_record(
             index=0,
@@ -1053,6 +1091,7 @@ def run_modern_workflow(
             handle.write(f"{sha256_file(manifest_path)}  {MANIFEST_NAME}\n")
         verify_modern_workflow(temporary)
         emit_progress("verification", "completed", "Workflow evidence verified", 7)
+        check_cancellation()
         if output.exists():
             raise FileExistsError(f"Modern workflow destination appeared during creation: {output}")
         temporary.rename(output)

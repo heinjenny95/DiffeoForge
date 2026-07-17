@@ -71,11 +71,12 @@ reviewed plan, and selected known tensor payloads. It does not predict peak
 RAM or runtime. See [modern workload planning](MODERN_WORKLOAD.md).
 
 During `modern-run`, the CLI prints live stage and optimizer-decision events.
-They come from the same versioned application-service callback intended for a
-future desktop worker. A decision event is emitted only after the optimizer
-has committed an initial, accepted, stationary, or failed record; rejected
-line-search candidates are not shown as accepted progress. See
-[modern progress events](MODERN_PROGRESS.md).
+They come from the same versioned application-service callback transported by
+the source-level desktop worker. A decision event is emitted only after the
+optimizer has committed an initial, accepted, stationary, or failed record;
+rejected line-search candidates are not shown as accepted progress. See
+[modern progress events](MODERN_PROGRESS.md) and the
+[desktop worker protocol](DESKTOP_WORKER.md).
 
 For an optional measured CPU microbenchmark before a full run, choose the
 subject prefix explicitly:

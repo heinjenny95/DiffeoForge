@@ -102,9 +102,11 @@ runtime or peak-memory prediction.
 `modern-run` now accepts a synchronous read-only progress observer. The
 application service emits versioned workflow-stage events and translates the
 dense optimizer's committed decision records without exposing rejected
-line-search candidates as accepted progress. CLI output and the future worker
-protocol consume this same contract. Counts describe completed stages and
-decisions, not elapsed-time percentages or ETA.
+line-search candidates as accepted progress. CLI output and the source-level
+desktop worker protocol consume this same contract. The worker adds a strict
+request/command/event envelope, configuration-hash binding, child-process
+isolation, and nonpublishing cooperative cancellation. Counts describe
+completed stages and decisions, not elapsed-time percentages or ETA.
 
 The application layer also exposes an opt-in `modern-benchmark` service. The
 user must declare a deterministic subject-prefix size. Each repeat runs one
@@ -189,10 +191,11 @@ processes, but a prospective representative study still has to establish the
 tradeoff;
 saved-tensor counts are not peak-RAM claims.
 
-This vertical path is not yet the common production backend shown above: it
-does not implement the reference lifecycle's checkpoint/resume operations or
-the child-process transport around the progress contract. An optimized kernel or GPU path must reproduce the dense
-baseline before it can replace this correctness implementation.
+This vertical path is not yet the common production backend shown above. Its
+child-process transport now exists, but it does not implement the reference
+lifecycle's checkpoint/resume operations, GUI supervision, or crash recovery.
+An optimized kernel or GPU path must reproduce the dense baseline before it can
+replace this correctness implementation.
 
 ## Security and privacy boundary
 

@@ -50,6 +50,11 @@ class AtlasOptimizationRecord:
 
 
 AtlasProgressCallback = Callable[[AtlasOptimizationRecord], None]
+AtlasCancellationCallback = Callable[[], bool]
+
+
+class AtlasOptimizationCancelled(RuntimeError):
+    """Raised when a caller requests cancellation at a safe optimizer boundary."""
 
 
 @dataclass(frozen=True)
@@ -194,6 +199,7 @@ def optimize_atlas(
     minimum_step_size: float = 1e-12,
     max_line_search_iterations: int = 20,
     progress_callback: AtlasProgressCallback | None = None,
+    cancel_requested: AtlasCancellationCallback | None = None,
 ) -> AtlasOptimizationResult:
     """Maximize the atlas objective over all three declared parameter blocks.
 
@@ -206,6 +212,18 @@ def optimize_atlas(
     cycles = _integer("max_cycles", max_cycles, minimum=0)
     if progress_callback is not None and not callable(progress_callback):
         raise TypeError("progress_callback must be callable or None")
+    if cancel_requested is not None and not callable(cancel_requested):
+        raise TypeError("cancel_requested must be callable or None")
+
+    def check_cancellation() -> None:
+        if cancel_requested is None:
+            return
+        requested = cancel_requested()
+        if not isinstance(requested, bool):
+            raise TypeError("cancel_requested must return bool")
+        if requested:
+            raise AtlasOptimizationCancelled("Atlas optimization cancellation requested")
+
     line_search_limit = _integer(
         "max_line_search_iterations", max_line_search_iterations, minimum=1
     )
@@ -266,6 +284,7 @@ def optimize_atlas(
         momenta: torch.Tensor,
         block: AtlasParameterBlock,
     ) -> _BlockEvaluation | None:
+        check_cancellation()
         parameters = {
             "template": template_vertices.detach().clone(),
             "control_points": control_points.detach().clone(),
@@ -282,9 +301,11 @@ def optimize_atlas(
                 parameters["momenta"],
                 **objective_keywords,
             )
+            check_cancellation()
             if not bool(torch.isfinite(objective.total)):
                 return None
             (gradient,) = torch.autograd.grad(objective.total, variable)
+        check_cancellation()
         if not bool(torch.isfinite(gradient).all()):
             return None
         gradient_norm = torch.linalg.vector_norm(gradient)
@@ -345,6 +366,7 @@ def optimize_atlas(
         failed_block: AtlasParameterBlock | None,
         cycles_completed: int,
     ) -> AtlasOptimizationResult:
+        check_cancellation()
         return AtlasOptimizationResult(
             template_vertices=current.template_vertices.clone(),
             control_points=current.control_points.clone(),
