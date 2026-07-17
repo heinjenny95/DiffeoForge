@@ -105,9 +105,12 @@ This remains an engine-level prototype. Public `PairwiseEvaluationPlan`,
 `modern-init`, YAML, manifests, `modern-run`, and workload reports continue to
 construct standard-autograd tile plans only. `modern-benchmark` v0.3 can apply
 an explicit benchmark-only override in its fresh worker and records it in the
-strict report. There is no automatic activation, environment override, or
-public atlas-workflow setting. Invalid or misspelled strategies fail rather
-than falling back.
+strict report. Benchmark v0.4 additionally accepts a paired positive
+query/source tile-shape override for a configured blockwise base plan, recording
+the source and effective plans separately. There is no automatic activation,
+environment override, or public atlas-workflow setting. Invalid or misspelled
+strategies and partial or dense-base tile overrides fail rather than falling
+back.
 
 ## Numerical contract and evidence
 
@@ -152,18 +155,22 @@ same plan explicitly and records it in both immutable manifests. Subject
 reconstructions, PCA endpoints, and mesh-quality evidence use the declared
 mode. `modern-plan` v0.2 and `modern-benchmark` v0.3 also accept it: their strict
 reports bind the configured tile sizes to exact workload accounting and to
-the measured fresh-process objective/gradient path.
+the measured fresh-process objective/gradient path. Benchmark v0.4 can instead
+bind one explicit effective rectangular tile plan to that same operation model
+and worker without changing the workflow configuration.
 
 ## Gates before workflow integration
 
 1. ~~extend the workload and benchmark schemas/models;~~ completed in v0.2;
-2. benchmark several prospectively declared tile sizes using the measured
+2. ~~add a strict benchmark-only effective tile-plan override;~~ completed in
+   benchmark report v0.4;
+3. benchmark several prospectively declared tile sizes using the measured
    protocol on representative simplified meshes;
-3. use the now-available fresh-process benchmark protocol in a prospective,
+4. use the now-available fresh-process benchmark protocol in a prospective,
    representative multi-size study, including recompute's additional backward
    compute, before exposing public configuration or deciding whether a custom
    backward pass is preferable; and
-4. select evidence-based safe presets separately from user overrides.
+5. select evidence-based safe presets separately from user overrides.
 
 Blockwise mode is selectable only by an explicit user plan. It must not become
 an automatic default or claim a safe preset until the remaining gates pass.

@@ -30,6 +30,7 @@ from diffeoforge import __version__
 from diffeoforge.config import ConfigurationError, validate_input_paths
 from diffeoforge.diagnostics import _physical_memory_bytes
 from diffeoforge.engine.dense import GaussianTilePlan, TileAutogradStrategy
+from diffeoforge.engine.execution import PairwiseEvaluationPlan
 from diffeoforge.engine.objective import atlas_objective
 from diffeoforge.mesh import inspect_vtk, read_vtk_polydata, sha256_file
 from diffeoforge.modern_workflow import (
@@ -40,6 +41,11 @@ from diffeoforge.modern_workflow import (
 from diffeoforge.modern_workload import _mesh_record, _operation_model
 
 BENCHMARK_VERSION = "0.3"
+TILE_OVERRIDE_BENCHMARK_VERSION = "0.4"
+BENCHMARK_SCHEMA_NAMES = {
+    BENCHMARK_VERSION: "modern-benchmark-v0.3.json",
+    TILE_OVERRIDE_BENCHMARK_VERSION: "modern-benchmark-v0.4.json",
+}
 REPORT_JSON_NAME = "benchmark.json"
 REPORT_CSV_NAME = "samples.csv"
 REPORT_HTML_NAME = "benchmark.html"
@@ -69,14 +75,22 @@ class ModernBenchmarkError(RuntimeError):
     """Raised when an objective benchmark cannot be measured or published safely."""
 
 
-def _schema() -> dict[str, Any]:
-    resource = files("diffeoforge.schema").joinpath("modern-benchmark-v0.3.json")
+def _schema(version: str = BENCHMARK_VERSION) -> dict[str, Any]:
+    try:
+        name = BENCHMARK_SCHEMA_NAMES[version]
+    except (KeyError, TypeError) as error:
+        raise ModernBenchmarkError(f"Unsupported modern benchmark version: {version!r}") from error
+    resource = files("diffeoforge.schema").joinpath(name)
     return json.loads(resource.read_text(encoding="utf-8"))
 
 
 def _validate_report(report: dict[str, Any]) -> None:
+    version = report.get("benchmark_version")
+    if not isinstance(version, str) or version not in BENCHMARK_SCHEMA_NAMES:
+        raise ModernBenchmarkError(f"Unsupported modern benchmark version: {version!r}")
+    schema = _schema(version)
     try:
-        jsonschema.Draft202012Validator(_schema()).validate(report)
+        jsonschema.Draft202012Validator(schema).validate(report)
     except jsonschema.ValidationError as error:
         location = ".".join(str(part) for part in error.absolute_path) or "document"
         raise ModernBenchmarkError(
@@ -99,9 +113,7 @@ def _validate_report(report: dict[str, Any]) -> None:
     for sample in samples:
         if not math.isfinite(sample["objective"]) or not math.isfinite(sample["gradient_norm"]):
             raise ModernBenchmarkError("Benchmark numerical observations must be finite")
-        expected_delta = max(
-            0, sample["sampled_peak_rss_bytes"] - sample["rss_before_bytes"]
-        )
+        expected_delta = max(0, sample["sampled_peak_rss_bytes"] - sample["rss_before_bytes"])
         if sample["sampled_rss_delta_bytes"] != expected_delta:
             raise ModernBenchmarkError("Sampled RSS delta is internally inconsistent")
     expected_summary = {
@@ -167,8 +179,23 @@ def _validate_report(report: dict[str, Any]) -> None:
         or tile["float64_xyz_difference_tensor_bytes"] != tile_elements * 24
     ):
         raise ModernBenchmarkError("Largest execution-tile payload is internally inconsistent")
-    pairwise = report["configuration"]["pairwise_evaluation"]
-    autograd_strategy = report["configuration"]["tile_autograd_strategy"]
+    configuration = report["configuration"]
+    if version == BENCHMARK_VERSION:
+        source_pairwise = PairwiseEvaluationPlan.from_mapping(configuration["pairwise_evaluation"])
+        effective_pairwise = source_pairwise
+    else:
+        source_pairwise = PairwiseEvaluationPlan.from_mapping(
+            configuration["source_pairwise_evaluation"]
+        )
+        effective_pairwise = PairwiseEvaluationPlan.from_mapping(
+            configuration["effective_pairwise_evaluation"]
+        )
+        if source_pairwise.mode != "blockwise" or effective_pairwise.mode != "blockwise":
+            raise ModernBenchmarkError(
+                "Benchmark v0.4 requires blockwise source and effective pairwise plans"
+            )
+    pairwise = effective_pairwise.as_manifest()
+    autograd_strategy = configuration["tile_autograd_strategy"]
     if pairwise["mode"] == "dense" and autograd_strategy != "standard":
         raise ModernBenchmarkError("Dense benchmark execution requires standard autograd")
     if pairwise["mode"] == "dense":
@@ -179,12 +206,9 @@ def _validate_report(report: dict[str, Any]) -> None:
         or tile["tile_columns"] > pairwise["source_tile_size"]
     ):
         raise ModernBenchmarkError("Blockwise execution tile exceeds its configured row bounds")
-    configuration = report["configuration"]
     expected = _operation_model(
         {
-            "initialization": {
-                "control_points": {"count": configuration["control_points"]}
-            },
+            "initialization": {"control_points": {"count": configuration["control_points"]}},
             "model": {
                 "attachment": {"type": configuration["attachment_type"]},
                 "deformation": {
@@ -199,9 +223,7 @@ def _validate_report(report: dict[str, Any]) -> None:
         input_record["subjects"],
     )
     expected_benchmark_operation = {
-        "gaussian_calls_per_evaluation": expected["one_objective_forward"][
-            "gaussian_calls"
-        ],
+        "gaussian_calls_per_evaluation": expected["one_objective_forward"]["gaussian_calls"],
         "gaussian_pair_elements_per_evaluation": expected["one_objective_forward"][
             "gaussian_pair_elements"
         ],
@@ -230,6 +252,46 @@ def _tile_autograd_strategy(value: str) -> TileAutogradStrategy:
     return value
 
 
+def _tile_override_value(name: str, value: int | None) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise TypeError(f"{name} must be an integer")
+    if value < 1:
+        raise ValueError(f"{name} must be at least 1")
+    return value
+
+
+def _effective_pairwise_plan(
+    source_plan: PairwiseEvaluationPlan,
+    query_tile_size: int | None,
+    source_tile_size: int | None,
+) -> tuple[PairwiseEvaluationPlan, bool]:
+    query_rows = _tile_override_value("query_tile_size", query_tile_size)
+    source_rows = _tile_override_value("source_tile_size", source_tile_size)
+    if (query_rows is None) != (source_rows is None):
+        raise ValueError("query_tile_size and source_tile_size must be supplied together")
+    if query_rows is None:
+        return source_plan, False
+    if source_plan.mode != "blockwise":
+        raise ConfigurationError(
+            "benchmark tile-size overrides require configured blockwise execution"
+        )
+    return PairwiseEvaluationPlan("blockwise", query_rows, source_rows), True
+
+
+def _config_with_pairwise_plan(
+    config: dict[str, Any], plan: PairwiseEvaluationPlan
+) -> dict[str, Any]:
+    return {
+        **config,
+        "runtime": {
+            **config["runtime"],
+            "pairwise_evaluation": plan.as_manifest(),
+        },
+    }
+
+
 def _timestamp(value: str | None) -> str:
     if value is None:
         return datetime.now(UTC).isoformat(timespec="seconds")
@@ -251,9 +313,7 @@ def _prepare_problem(
     source = Path(config_path).resolve()
     config = load_modern_workflow_config(source)
     if config["preprocessing"]["procrustes"]["enabled"]:
-        raise ConfigurationError(
-            "modern-benchmark requires preprocessing.procrustes.enabled=false"
-        )
+        raise ConfigurationError("modern-benchmark requires preprocessing.procrustes.enabled=false")
     inputs = validate_input_paths(config, source)
     if subject_count > len(inputs.subjects):
         raise ConfigurationError(
@@ -283,6 +343,8 @@ def _objective_gradient(
     config: dict[str, Any],
     problem: tuple[Any, ...],
     tile_autograd_strategy: TileAutogradStrategy,
+    query_tile_size: int | None = None,
+    source_tile_size: int | None = None,
 ) -> tuple[float, float]:
     template, triangles, targets, controls, momenta = problem
     block = config["optimization"]["block_order"][0]
@@ -296,7 +358,12 @@ def _objective_gradient(
     model = config["model"]
     deformation = model["deformation"]
     attachment = model["attachment"]
-    pairwise_evaluation = pairwise_evaluation_from_config(config)
+    source_pairwise_evaluation = pairwise_evaluation_from_config(config)
+    pairwise_evaluation, _ = _effective_pairwise_plan(
+        source_pairwise_evaluation,
+        query_tile_size,
+        source_tile_size,
+    )
     if pairwise_evaluation.mode == "dense" and tile_autograd_strategy != "standard":
         raise ModernBenchmarkError("Dense benchmark execution requires standard autograd")
     gaussian_tile_plan = pairwise_evaluation.gaussian_tile_plan
@@ -335,6 +402,8 @@ def _measure_once(
     subject_count: int,
     warmup_evaluations: int,
     tile_autograd_strategy: TileAutogradStrategy,
+    query_tile_size: int | None,
+    source_tile_size: int | None,
 ) -> dict[str, Any]:
     config, problem = _prepare_problem(config_path, subject_count)
     torch.set_num_threads(config["runtime"]["threads"])
@@ -342,7 +411,13 @@ def _measure_once(
         raise ModernBenchmarkError("PyTorch did not apply the requested CPU thread count")
     torch.manual_seed(config["runtime"]["random_seed"])
     for _ in range(warmup_evaluations):
-        _objective_gradient(config, problem, tile_autograd_strategy)
+        _objective_gradient(
+            config,
+            problem,
+            tile_autograd_strategy,
+            query_tile_size,
+            source_tile_size,
+        )
     gc.collect()
 
     process = psutil.Process()
@@ -359,7 +434,11 @@ def _measure_once(
     started = time.perf_counter_ns()
     try:
         objective, gradient_norm = _objective_gradient(
-            config, problem, tile_autograd_strategy
+            config,
+            problem,
+            tile_autograd_strategy,
+            query_tile_size,
+            source_tile_size,
         )
     finally:
         elapsed = time.perf_counter_ns() - started
@@ -384,6 +463,8 @@ def _benchmark_worker(
     subject_count: int,
     warmups: int,
     tile_autograd_strategy: TileAutogradStrategy,
+    query_tile_size: int | None,
+    source_tile_size: int | None,
 ) -> None:
     try:
         connection.send(
@@ -394,6 +475,8 @@ def _benchmark_worker(
                     subject_count,
                     warmups,
                     tile_autograd_strategy,
+                    query_tile_size,
+                    source_tile_size,
                 ),
             }
         )
@@ -414,6 +497,8 @@ def _run_fresh_sample(
     subject_count: int,
     warmup_evaluations: int,
     tile_autograd_strategy: TileAutogradStrategy,
+    query_tile_size: int | None = None,
+    source_tile_size: int | None = None,
 ) -> dict[str, Any]:
     context = get_context("spawn")
     receiver, sender = context.Pipe(duplex=False)
@@ -425,6 +510,8 @@ def _run_fresh_sample(
             subject_count,
             warmup_evaluations,
             tile_autograd_strategy,
+            query_tile_size,
+            source_tile_size,
         ),
         name="diffeoforge-modern-benchmark",
     )
@@ -474,27 +561,30 @@ def collect_modern_benchmark(
     repeats: int = 3,
     warmup_evaluations: int = 1,
     tile_autograd_strategy: str = "standard",
+    query_tile_size: int | None = None,
+    source_tile_size: int | None = None,
     created_at: str | None = None,
 ) -> dict[str, Any]:
     """Measure isolated objective/gradient repeats without extrapolating them."""
 
     selected_count = _positive_integer("subject_count", subject_count, minimum=1, maximum=1000)
     repeat_count = _positive_integer("repeats", repeats, minimum=1, maximum=50)
-    warmups = _positive_integer(
-        "warmup_evaluations", warmup_evaluations, minimum=0, maximum=20
-    )
+    warmups = _positive_integer("warmup_evaluations", warmup_evaluations, minimum=0, maximum=20)
     autograd_strategy = _tile_autograd_strategy(tile_autograd_strategy)
     source = Path(config_path).expanduser().resolve()
     config = load_modern_workflow_config(source)
-    pairwise_evaluation = pairwise_evaluation_from_config(config)
-    if pairwise_evaluation.mode == "dense" and autograd_strategy != "standard":
+    source_pairwise_evaluation = pairwise_evaluation_from_config(config)
+    effective_pairwise_evaluation, has_tile_override = _effective_pairwise_plan(
+        source_pairwise_evaluation,
+        query_tile_size,
+        source_tile_size,
+    )
+    if effective_pairwise_evaluation.mode == "dense" and autograd_strategy != "standard":
         raise ConfigurationError(
             "tile_autograd_strategy=recompute requires configured blockwise execution"
         )
     if config["preprocessing"]["procrustes"]["enabled"]:
-        raise ConfigurationError(
-            "modern-benchmark requires preprocessing.procrustes.enabled=false"
-        )
+        raise ConfigurationError("modern-benchmark requires preprocessing.procrustes.enabled=false")
     inputs = validate_input_paths(config, source)
     if selected_count > len(inputs.subjects):
         raise ConfigurationError(
@@ -509,7 +599,8 @@ def collect_modern_benchmark(
         _mesh_record(path.name, "subject", metadata)
         for path, metadata in zip(selected_paths, selected_metadata, strict=True)
     ]
-    operation = _operation_model(config, template, subjects)
+    effective_config = _config_with_pairwise_plan(config, effective_pairwise_evaluation)
+    operation = _operation_model(effective_config, template, subjects)
     samples = []
     for repeat in range(1, repeat_count + 1):
         sample = _run_fresh_sample(
@@ -517,6 +608,8 @@ def collect_modern_benchmark(
             selected_count,
             warmups,
             autograd_strategy,
+            effective_pairwise_evaluation.query_tile_size if has_tile_override else None,
+            effective_pairwise_evaluation.source_tile_size if has_tile_override else None,
         )
         samples.append({"repeat": repeat, **sample})
     objectives = [sample["objective"] for sample in samples]
@@ -527,8 +620,7 @@ def collect_modern_benchmark(
         math.isclose(value, objective_reference, rel_tol=1e-12, abs_tol=1e-12)
         for value in objectives
     ) and all(
-        math.isclose(value, gradient_reference, rel_tol=1e-12, abs_tol=1e-12)
-        for value in gradients
+        math.isclose(value, gradient_reference, rel_tol=1e-12, abs_tol=1e-12) for value in gradients
     )
     warnings = [
         "Sampled process RSS can miss peaks shorter than the 5 ms sampling interval.",
@@ -542,8 +634,33 @@ def collect_modern_benchmark(
     if not consistent:
         warnings.append("Numerical results differed across fresh-process repeats.")
     host_memory = _physical_memory_bytes()
+    report_version = TILE_OVERRIDE_BENCHMARK_VERSION if has_tile_override else BENCHMARK_VERSION
+    configuration = {
+        "gradient_block": config["optimization"]["block_order"][0],
+        "control_points": config["initialization"]["control_points"]["count"],
+        "timepoints": config["model"]["deformation"]["timepoints"],
+        "attachment_type": config["model"]["attachment"]["type"],
+        "shooting_integrator": config["model"]["deformation"]["shooting_integrator"],
+        "flow_integrator": config["model"]["deformation"]["flow_integrator"],
+        "threads": config["runtime"]["threads"],
+        "random_seed": config["runtime"]["random_seed"],
+        "warmup_evaluations_per_repeat": warmups,
+        "repeats": repeat_count,
+        "rss_sampling_interval_ms": RSS_SAMPLING_INTERVAL_SECONDS * 1000,
+        "process_isolation": "fresh multiprocessing spawn process per repeat",
+        "tile_autograd_strategy": autograd_strategy,
+    }
+    if has_tile_override:
+        configuration.update(
+            {
+                "source_pairwise_evaluation": source_pairwise_evaluation.as_manifest(),
+                "effective_pairwise_evaluation": effective_pairwise_evaluation.as_manifest(),
+            }
+        )
+    else:
+        configuration["pairwise_evaluation"] = source_pairwise_evaluation.as_manifest()
     report = {
-        "benchmark_version": BENCHMARK_VERSION,
+        "benchmark_version": report_version,
         "benchmark_id": "declared_objective_gradient",
         "created_at": _timestamp(created_at),
         "source_config": {
@@ -558,22 +675,7 @@ def collect_modern_benchmark(
             "selected_subject_count": selected_count,
             "selection": "first subjects in validated deterministic path order",
         },
-        "configuration": {
-            "gradient_block": config["optimization"]["block_order"][0],
-            "control_points": config["initialization"]["control_points"]["count"],
-            "timepoints": config["model"]["deformation"]["timepoints"],
-            "attachment_type": config["model"]["attachment"]["type"],
-            "shooting_integrator": config["model"]["deformation"]["shooting_integrator"],
-            "flow_integrator": config["model"]["deformation"]["flow_integrator"],
-            "threads": config["runtime"]["threads"],
-            "random_seed": config["runtime"]["random_seed"],
-            "warmup_evaluations_per_repeat": warmups,
-            "repeats": repeat_count,
-            "rss_sampling_interval_ms": RSS_SAMPLING_INTERVAL_SECONDS * 1000,
-            "process_isolation": "fresh multiprocessing spawn process per repeat",
-            "pairwise_evaluation": pairwise_evaluation.as_manifest(),
-            "tile_autograd_strategy": autograd_strategy,
-        },
+        "configuration": configuration,
         "environment": {
             "diffeoforge": __version__,
             "python": platform.python_version(),
@@ -586,9 +688,7 @@ def collect_modern_benchmark(
             "parent_executable": Path(sys.executable).name,
         },
         "operation_model": {
-            "gaussian_calls_per_evaluation": operation["one_objective_forward"][
-                "gaussian_calls"
-            ],
+            "gaussian_calls_per_evaluation": operation["one_objective_forward"]["gaussian_calls"],
             "gaussian_pair_elements_per_evaluation": operation["one_objective_forward"][
                 "gaussian_pair_elements"
             ],
@@ -632,13 +732,35 @@ def render_modern_benchmark_html(report: dict[str, Any]) -> str:
     config = report["configuration"]
     input_record = report["input"]
     operation = report["operation_model"]
-    pairwise = config["pairwise_evaluation"]
+    if report["benchmark_version"] == BENCHMARK_VERSION:
+        pairwise = config["pairwise_evaluation"]
+        source_pairwise = pairwise
+    else:
+        source_pairwise = config["source_pairwise_evaluation"]
+        pairwise = config["effective_pairwise_evaluation"]
     autograd_strategy = config["tile_autograd_strategy"]
     tile_rows = (
         "not applicable"
         if pairwise["mode"] == "dense"
         else f"{pairwise['query_tile_size']} × {pairwise['source_tile_size']}"
     )
+    if report["benchmark_version"] == BENCHMARK_VERSION:
+        pairwise_protocol_html = (
+            f"<li>Pairwise execution: {html.escape(pairwise['mode'])}</li>\n"
+            f"<li>Tile autograd strategy: {html.escape(autograd_strategy)}</li>\n"
+            f"<li>Query/source tile rows: {tile_rows}</li>"
+        )
+    else:
+        source_tile_rows = (
+            f"{source_pairwise['query_tile_size']} × {source_pairwise['source_tile_size']}"
+        )
+        pairwise_protocol_html = (
+            "<li>Source-declared pairwise execution: blockwise "
+            f"({source_tile_rows})</li>\n"
+            "<li>Effective benchmark-only pairwise execution: blockwise "
+            f"({tile_rows})</li>\n"
+            f"<li>Tile autograd strategy: {html.escape(autograd_strategy)}</li>"
+        )
     sample_rows = "".join(
         "<tr>"
         f"<td>{sample['repeat']}</td>"
@@ -664,35 +786,33 @@ padding:.45rem;text-align:left}} th{{background:#eef4f8}}
 .warning{{border-left:5px solid #c27b00;padding:.75rem 1rem;background:#fff6df}}
 </style></head><body>
 <h1>DiffeoForge modern objective benchmark</h1>
-<p><strong>Project:</strong> {html.escape(source['project'])}<br>
-<strong>Config:</strong> {html.escape(source['filename'])}<br>
-<strong>Created:</strong> {html.escape(report['created_at'])}</p>
+<p><strong>Project:</strong> {html.escape(source["project"])}<br>
+<strong>Config:</strong> {html.escape(source["filename"])}<br>
+<strong>Created:</strong> {html.escape(report["created_at"])}</p>
 <div class="warning"><strong>Interpretation boundary:</strong>
-{html.escape(report['scientific_boundary'])}</div>
+{html.escape(report["scientific_boundary"])}</div>
 <h2>Measured protocol</h2>
-<ul><li>Subjects: {input_record['selected_subject_count']} of
-{input_record['available_subject_count']}</li>
-<li>Gradient block: {html.escape(config['gradient_block'])}</li>
-<li>Warm-ups per repeat: {config['warmup_evaluations_per_repeat']}</li>
-<li>Fresh-process repeats: {config['repeats']}</li>
-<li>Threads: {config['threads']}</li>
-<li>Pairwise execution: {html.escape(pairwise['mode'])}</li>
-<li>Tile autograd strategy: {html.escape(autograd_strategy)}</li>
-<li>Query/source tile rows: {tile_rows}</li>
-<li>RSS sampling interval: {config['rss_sampling_interval_ms']:.3f} ms</li>
+<ul><li>Subjects: {input_record["selected_subject_count"]} of
+{input_record["available_subject_count"]}</li>
+<li>Gradient block: {html.escape(config["gradient_block"])}</li>
+<li>Warm-ups per repeat: {config["warmup_evaluations_per_repeat"]}</li>
+<li>Fresh-process repeats: {config["repeats"]}</li>
+<li>Threads: {config["threads"]}</li>
+{pairwise_protocol_html}
+<li>RSS sampling interval: {config["rss_sampling_interval_ms"]:.3f} ms</li>
 <li>Logical Gaussian pair elements/evaluation:
-{operation['gaussian_pair_elements_per_evaluation']:,}</li>
+{operation["gaussian_pair_elements_per_evaluation"]:,}</li>
 <li>Largest execution XYZ tile:
-{_format_bytes(operation['largest_execution_tile']['float64_xyz_difference_tensor_bytes'])}</li></ul>
+{_format_bytes(operation["largest_execution_tile"]["float64_xyz_difference_tensor_bytes"])}</li></ul>
 <h2>Descriptive summary</h2>
 <ul><li>Median measured wall time:
-{summary['wall_time_ns']['median'] / 1_000_000:.3f} ms</li>
+{summary["wall_time_ns"]["median"] / 1_000_000:.3f} ms</li>
 <li>Median sampled peak RSS:
-{_format_bytes(summary['sampled_peak_rss_bytes']['median'])}</li>
+{_format_bytes(summary["sampled_peak_rss_bytes"]["median"])}</li>
 <li>Median sampled RSS delta after warm-up:
-{_format_bytes(summary['sampled_rss_delta_bytes']['median'])}</li>
+{_format_bytes(summary["sampled_rss_delta_bytes"]["median"])}</li>
 <li>Numerically consistent within declared tolerance:
-{str(report['numerical_consistency']['consistent']).lower()}</li></ul>
+{str(report["numerical_consistency"]["consistent"]).lower()}</li></ul>
 <h2>Per-repeat observations</h2>
 <table><thead><tr><th>Repeat</th><th>Wall ms</th><th>RSS before</th>
 <th>Sampled peak RSS</th><th>Sampled delta</th><th>Objective</th>
@@ -732,8 +852,7 @@ def verify_modern_benchmark_report(directory: Path | str) -> dict[str, Any]:
             raise ModernBenchmarkError("Benchmark CSV columns do not match the protocol")
         observed_rows = list(reader)
     expected_rows = [
-        {column: str(sample[column]) for column in REPORT_COLUMNS}
-        for sample in report["samples"]
+        {column: str(sample[column]) for column in REPORT_COLUMNS} for sample in report["samples"]
     ]
     if observed_rows != expected_rows:
         raise ModernBenchmarkError("Benchmark CSV rows differ from the strict JSON report")
@@ -764,14 +883,10 @@ def write_modern_benchmark_report(
     backup = output.parent / f".{output.name}.backup-{uuid.uuid4().hex}"
     temporary.mkdir()
     try:
-        with (temporary / REPORT_JSON_NAME).open(
-            "x", encoding="utf-8", newline="\n"
-        ) as handle:
+        with (temporary / REPORT_JSON_NAME).open("x", encoding="utf-8", newline="\n") as handle:
             json.dump(report, handle, indent=2, ensure_ascii=False, sort_keys=True)
             handle.write("\n")
-        with (temporary / REPORT_CSV_NAME).open(
-            "x", encoding="utf-8", newline=""
-        ) as handle:
+        with (temporary / REPORT_CSV_NAME).open("x", encoding="utf-8", newline="") as handle:
             writer = csv.writer(handle, lineterminator="\n")
             writer.writerow(REPORT_COLUMNS)
             for sample in report["samples"]:
@@ -807,6 +922,8 @@ def benchmark_modern_objective(
     repeats: int = 3,
     warmup_evaluations: int = 1,
     tile_autograd_strategy: str = "standard",
+    query_tile_size: int | None = None,
+    source_tile_size: int | None = None,
     destination: Path | str | None = None,
     overwrite: bool = False,
 ) -> Path:
@@ -816,8 +933,8 @@ def benchmark_modern_objective(
         repeats=repeats,
         warmup_evaluations=warmup_evaluations,
         tile_autograd_strategy=tile_autograd_strategy,
+        query_tile_size=query_tile_size,
+        source_tile_size=source_tile_size,
     )
-    output = (
-        default_modern_benchmark_path(config_path) if destination is None else destination
-    )
+    output = default_modern_benchmark_path(config_path) if destination is None else destination
     return write_modern_benchmark_report(report, output, overwrite=overwrite)

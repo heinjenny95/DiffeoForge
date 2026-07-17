@@ -3,6 +3,7 @@
 - Status: Accepted for staged implementation
 - Date: 2026-07-16
 - Tracking: [issue #62](https://github.com/heinjenny95/DiffeoForge/issues/62)
+- Gate 1: implemented by [issue #64](https://github.com/heinjenny95/DiffeoForge/issues/64)
 
 ## Context
 
@@ -115,8 +116,10 @@ runtime. Matrix completion is not a 300-subject feasibility verdict.
 
 ## Staged implementation gates
 
-1. Add and test the benchmark-only effective tile override and its new strict
-   report, including real fresh-process Windows/Ubuntu smoke coverage.
+1. ~~Add and test the benchmark-only effective tile override and its new strict
+   report, including real fresh-process Windows/Ubuntu smoke coverage.~~
+   Implemented as raw benchmark report v0.4; representative measurements are
+   not part of this gate.
 2. Add matrix design collection, semantic reconstruction, immutable
    publication, and condition-count review; do not execute it yet.
 3. Extend execution, progress, status, completion, and full verification with

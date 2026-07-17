@@ -6,6 +6,8 @@ Tracked prospectively by
 [engineering issue #38](https://github.com/heinjenny95/DiffeoForge/issues/38)
 and extended for configured blockwise execution by
 [engineering issue #46](https://github.com/heinjenny95/DiffeoForge/issues/46).
+Benchmark-only effective tile plans are tracked by
+[engineering issue #64](https://github.com/heinjenny95/DiffeoForge/issues/64).
 
 ## Safe user path
 
@@ -25,10 +27,10 @@ diffeoforge modern-benchmark modern-atlas.yaml `
 ```
 
 The deterministic prefix comes from the same validated subject-path order as
-the workflow. Version 0.3 executes the exact dense or blockwise pairwise plan
-declared in the reviewed configuration. It rejects Procrustes-enabled
-configurations because it benchmarks the numerical objective directly rather
-than pretending to measure the preprocessing pipeline.
+the workflow. Without tile-size overrides, version 0.3 executes the exact dense
+or blockwise pairwise plan declared in the reviewed configuration. It rejects
+Procrustes-enabled configurations because it benchmarks the numerical objective
+directly rather than pretending to measure the preprocessing pipeline.
 
 The default output is `modern-atlas.benchmark/`:
 
@@ -61,6 +63,31 @@ observations, run two commands with separate output directories. DiffeoForge
 does not combine them, select a winner, calculate a speedup, or convert them
 into a workflow setting.
 
+## Benchmark-only effective tile shape
+
+A reviewed blockwise configuration can measure one explicit effective
+query/source tile shape without editing the hashed YAML:
+
+```powershell
+diffeoforge modern-benchmark modern-atlas.yaml `
+  --subjects 5 --query-tile-size 128 --source-tile-size 256 `
+  --output modern-atlas.tiles-128x256.benchmark
+```
+
+Both tile options are mandatory together and must be positive integers. A
+partial override, dense base configuration, or invalid dimension fails before
+any worker starts. Supplying both options selects strict benchmark report v0.4.
+Its configuration records the source-declared blockwise plan separately from
+the effective benchmark-only plan. The effective plan crosses the fresh-process
+spawn boundary explicitly and drives the Gaussian worker, operation model,
+largest execution tile, and review HTML.
+
+This does not rewrite the source YAML or change `PairwiseEvaluationPlan`,
+`modern-run`, atlas estimation, reconstruction, or PCA. Omitting both options
+continues to produce the existing v0.3 shape. Existing v0.1 paired-study designs
+and runners intentionally continue to require and produce v0.3 reports; the
+multi-tile matrix is a later versioned gate.
+
 ## What one repeat measures
 
 Every repeat uses a fresh process created with Python's cross-platform
@@ -70,8 +97,9 @@ Every repeat uses a fresh process created with Python's cross-platform
 2. constructs CPU float64 tensors and deterministic farthest-template control
    points exactly as the modern workflow does;
 3. applies the configured PyTorch thread count and random seed;
-4. applies the declared dense or blockwise plan and explicit benchmark
-   autograd strategy to every Gaussian operation;
+4. applies the declared plan, or the separately recorded effective
+   benchmark-only tile plan, plus the explicit autograd strategy to every
+   Gaussian operation;
 5. performs the declared number of unmeasured warm-up evaluations;
 6. starts a 5 ms process-RSS sampler;
 7. measures one atlas objective and one gradient for the first configured
@@ -90,7 +118,10 @@ the current 7.x major in the modern-engine dependency set.
 
 ## Auditable evidence
 
-Strict `modern-benchmark-v0.3.json` records:
+Strict `modern-benchmark-v0.3.json` records the source-declared plan. Strict
+`modern-benchmark-v0.4.json` retains the same observation contract and records
+both source-declared and effective benchmark-only blockwise plans. Reports also
+record:
 
 - config and selected input SHA-256 values, filenames, points, triangles, and
   deterministic selection rule;

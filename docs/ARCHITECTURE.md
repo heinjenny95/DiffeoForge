@@ -114,8 +114,11 @@ and 5 ms process-RSS samples. The strict report binds measurements to
 config/input hashes, pairwise plan, and the same exact operation model as
 `modern-plan`. Version 0.3 can replace standard with recompute only inside a
 configured blockwise benchmark worker and records that benchmark-only choice;
-it performs no automatic comparison, scaling extrapolation, or hardware
-verdict.
+version 0.4 can additionally carry explicit positive query/source tile sizes
+across the spawn boundary for a configured blockwise base plan. The v0.4 report
+separates source-declared and effective plans, and its worker, operation model,
+semantic validator, and HTML all use the effective plan. Neither version
+performs an automatic comparison, scaling extrapolation, or hardware verdict.
 
 `modern-benchmark-design` sits immediately before measurement. Its immutable
 v0.1 JSON/sidecar/HTML artifact binds the complete input inventory, reviewed
@@ -153,9 +156,9 @@ to leave all published evidence byte-identical.
 The next multi-tile study is governed by
 [ADR 0004](decisions/0004-prospective-multi-tile-matrix.md). It will use one
 hashed base config plus explicit benchmark-only effective tile plans, not a bag
-of hand-edited YAML files. New report/design/run versions and explicit version
-dispatch are mandatory; current v0.1 study artifacts retain their exact
-single-tile meaning.
+of hand-edited YAML files. The raw v0.4 effective-plan report gate is now
+implemented; new matrix-design/run versions and explicit version dispatch remain
+mandatory. Current v0.1 study artifacts retain their exact single-tile meaning.
 
 Below the application layer, the engine now contains an explicit blockwise
 Gaussian primitive family. Query and source tile sizes bound each pairwise XYZ
@@ -166,9 +169,10 @@ workflow setting now carries the plan through the complete optimizer,
 reconstructions, PCA endpoints, nested bundle, outer run provenance, and
 verifier cross-checks. Workload v0.2 accounts for exact logical pairs and the
 configured execution tile, and benchmark v0.3 measures that same plan; a
-prospective multi-size scaling study remains open. The tile shape bounds a single
-pairwise allocation; standard autograd may still retain multiple tile graphs,
-so reduced peak RAM remains a measurement gate.
+v0.4 benchmark can measure one separately recorded effective blockwise tile
+shape. A prospective multi-size scaling study remains open. The tile shape
+bounds a single pairwise allocation; standard autograd may still retain
+multiple tile graphs, so reduced peak RAM remains a measurement gate.
 
 The low-level primitives and direct `GaussianTilePlan` expose a `recompute`
 strategy that places deterministic tile calculations behind non-reentrant

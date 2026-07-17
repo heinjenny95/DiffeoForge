@@ -92,13 +92,60 @@ def test_blockwise_collection_binds_configured_plan_to_worker_and_report(
     )
 
     assert len(calls) == 1
-    assert report["configuration"]["pairwise_evaluation"] == config["runtime"][
-        "pairwise_evaluation"
-    ]
-    assert calls[0][-1] == "recompute"
+    assert (
+        report["configuration"]["pairwise_evaluation"] == config["runtime"]["pairwise_evaluation"]
+    )
+    assert calls[0][-3:] == ("recompute", None, None)
     assert report["configuration"]["tile_autograd_strategy"] == "recompute"
     assert report["operation_model"]["largest_execution_tile"]["tile_rows"] == 64
     assert report["operation_model"]["largest_execution_tile"]["tile_columns"] == 64
+
+
+def test_rectangular_tile_override_binds_worker_operation_model_and_v04_contract(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = _write_portable_config(tmp_path / "blockwise.yaml", mode="blockwise")
+    calls = []
+
+    import diffeoforge.modern_benchmark as module
+
+    def fixed_worker(*args):
+        calls.append(args)
+        return _sample(1)
+
+    monkeypatch.setattr(module, "_run_fresh_sample", fixed_worker)
+    report = collect_modern_benchmark(
+        path,
+        subject_count=1,
+        repeats=1,
+        tile_autograd_strategy="recompute",
+        query_tile_size=3,
+        source_tile_size=5,
+        created_at=FIXED_TIME,
+    )
+
+    assert report["benchmark_version"] == "0.4"
+    assert report["configuration"]["source_pairwise_evaluation"] == {
+        "mode": "blockwise",
+        "query_tile_size": 64,
+        "source_tile_size": 64,
+    }
+    assert report["configuration"]["effective_pairwise_evaluation"] == {
+        "mode": "blockwise",
+        "query_tile_size": 3,
+        "source_tile_size": 5,
+    }
+    assert "pairwise_evaluation" not in report["configuration"]
+    assert calls[0][-3:] == ("recompute", 3, 5)
+    assert report["operation_model"]["largest_execution_tile"]["tile_rows"] == 3
+    assert report["operation_model"]["largest_execution_tile"]["tile_columns"] == 5
+    assert _schema("0.4")["title"].endswith("effective tile override")
+    rendered = render_modern_benchmark_html(report)
+    assert "Source-declared pairwise execution: blockwise (64 × 64)" in rendered
+    assert "Effective benchmark-only pairwise execution: blockwise (3 × 5)" in rendered
+    output = write_modern_benchmark_report(report, tmp_path / "v04-report")
+    assert verify_modern_benchmark_report(output) == report
 
 
 def test_collection_binds_selection_operations_and_descriptive_samples(
@@ -106,8 +153,24 @@ def test_collection_binds_selection_operations_and_descriptive_samples(
 ) -> None:
     calls = []
 
-    def fixed_worker(config_path, subject_count, warmups, autograd_strategy):
-        calls.append((config_path, subject_count, warmups, autograd_strategy))
+    def fixed_worker(
+        config_path,
+        subject_count,
+        warmups,
+        autograd_strategy,
+        query_tile_size,
+        source_tile_size,
+    ):
+        calls.append(
+            (
+                config_path,
+                subject_count,
+                warmups,
+                autograd_strategy,
+                query_tile_size,
+                source_tile_size,
+            )
+        )
         return _sample(len(calls))
 
     import diffeoforge.modern_benchmark as module
@@ -136,11 +199,24 @@ def test_collection_binds_selection_operations_and_descriptive_samples(
     assert report["numerical_consistency"]["consistent"] is True
     assert report["created_at"] == FIXED_TIME
     assert report["benchmark_version"] == "0.3"
+    assert "source_pairwise_evaluation" not in report["configuration"]
+    assert "effective_pairwise_evaluation" not in report["configuration"]
     assert report["configuration"]["tile_autograd_strategy"] == "standard"
     assert len(calls) == 3
     assert all(
-        subject_count == 2 and warmups == 1 and strategy == "standard"
-        for _, subject_count, warmups, strategy in calls
+        subject_count == 2
+        and warmups == 1
+        and strategy == "standard"
+        and query_tile_size is None
+        and source_tile_size is None
+        for (
+            _,
+            subject_count,
+            warmups,
+            strategy,
+            query_tile_size,
+            source_tile_size,
+        ) in calls
     )
     assert "hardware pass/fail verdict" in report["scientific_boundary"]
     assert _schema()["title"] == "DiffeoForge modern objective benchmark"
@@ -221,25 +297,24 @@ def test_reports_are_escaped_atomic_and_refuse_unrelated_overwrite(
         write_modern_benchmark_report(inconsistent, tmp_path / "inconsistent")
 
     inconsistent_tile = json.loads(json.dumps(report))
-    inconsistent_tile["operation_model"]["largest_execution_tile"][
-        "float64_matrix_bytes"
-    ] += 8
+    inconsistent_tile["operation_model"]["largest_execution_tile"]["float64_matrix_bytes"] += 8
     with pytest.raises(ModernBenchmarkError, match="execution-tile payload"):
         write_modern_benchmark_report(inconsistent_tile, tmp_path / "inconsistent-tile")
 
     inconsistent_operation = json.loads(json.dumps(report))
     inconsistent_operation["operation_model"]["gaussian_calls_per_evaluation"] += 1
     with pytest.raises(ModernBenchmarkError, match="inventory and configuration"):
-        write_modern_benchmark_report(
-            inconsistent_operation, tmp_path / "inconsistent-operation"
-        )
+        write_modern_benchmark_report(inconsistent_operation, tmp_path / "inconsistent-operation")
 
     inconsistent_strategy = json.loads(json.dumps(report))
     inconsistent_strategy["configuration"]["tile_autograd_strategy"] = "recompute"
     with pytest.raises(ModernBenchmarkError, match="Dense benchmark execution"):
-        write_modern_benchmark_report(
-            inconsistent_strategy, tmp_path / "inconsistent-strategy"
-        )
+        write_modern_benchmark_report(inconsistent_strategy, tmp_path / "inconsistent-strategy")
+
+    unsupported = json.loads(json.dumps(report))
+    unsupported["benchmark_version"] = "0.5"
+    with pytest.raises(ModernBenchmarkError, match="Unsupported modern benchmark version"):
+        write_modern_benchmark_report(unsupported, tmp_path / "unsupported-version")
 
     def fail_render(_report):
         raise RuntimeError("injected rendering failure")
@@ -267,9 +342,7 @@ def test_subject_selection_and_procrustes_scope_fail_before_workers(
 
     config = yaml.safe_load(EXAMPLE.read_text(encoding="utf-8"))
     config["input"]["directory"] = str(ROOT / "examples" / "synthetic" / "meshes")
-    config["input"]["template"] = str(
-        ROOT / "examples" / "synthetic" / "meshes" / "template.vtk"
-    )
+    config["input"]["template"] = str(ROOT / "examples" / "synthetic" / "meshes" / "template.vtk")
     config["preprocessing"]["procrustes"]["enabled"] = True
     config["preprocessing"]["procrustes"]["landmarks_file"] = "not-read.csv"
     path = tmp_path / "procrustes.yaml"
@@ -284,6 +357,64 @@ def test_subject_selection_and_procrustes_scope_fail_before_workers(
             repeats=1,
             tile_autograd_strategy="recompute",
         )
+
+    blockwise = _write_portable_config(tmp_path / "blockwise.yaml", mode="blockwise")
+    with pytest.raises(ValueError, match="must be supplied together"):
+        collect_modern_benchmark(
+            blockwise,
+            subject_count=1,
+            repeats=1,
+            query_tile_size=3,
+        )
+    with pytest.raises(ValueError, match="must be at least 1"):
+        collect_modern_benchmark(
+            blockwise,
+            subject_count=1,
+            repeats=1,
+            query_tile_size=0,
+            source_tile_size=5,
+        )
+    with pytest.raises(TypeError, match="must be an integer"):
+        collect_modern_benchmark(
+            blockwise,
+            subject_count=1,
+            repeats=1,
+            query_tile_size=True,
+            source_tile_size=5,
+        )
+    with pytest.raises(ConfigurationError, match="tile-size overrides require configured"):
+        collect_modern_benchmark(
+            EXAMPLE,
+            subject_count=1,
+            repeats=1,
+            query_tile_size=3,
+            source_tile_size=5,
+        )
+
+
+def test_cli_rejects_partial_tile_override_before_output(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config = _write_portable_config(tmp_path / "blockwise.yaml", mode="blockwise")
+    output = tmp_path / "partial"
+    code = main(
+        [
+            "modern-benchmark",
+            str(config),
+            "--subjects",
+            "1",
+            "--query-tile-size",
+            "3",
+            "--output",
+            str(output),
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert code == 2
+    assert "must be supplied together" in captured.err
+    assert not output.exists()
 
 
 def test_cli_runs_one_real_fresh_process_measurement(
@@ -363,3 +494,47 @@ def test_cli_runs_one_real_fresh_blockwise_process_measurement(
     assert report["samples"][0]["sampled_peak_rss_bytes"] > 0
     assert report["samples"][0]["rss_sample_count"] >= 2
     assert report["numerical_consistency"]["consistent"] is True
+
+
+@pytest.mark.parametrize("autograd_strategy", ["standard", "recompute"])
+def test_cli_runs_rectangular_override_in_one_real_fresh_process(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    autograd_strategy: str,
+) -> None:
+    config = _write_portable_config(tmp_path / "blockwise.yaml", mode="blockwise")
+    output = tmp_path / f"rectangular-{autograd_strategy}"
+    code = main(
+        [
+            "modern-benchmark",
+            str(config),
+            "--subjects",
+            "1",
+            "--repeats",
+            "1",
+            "--warmups",
+            "0",
+            "--tile-autograd-strategy",
+            autograd_strategy,
+            "--query-tile-size",
+            "3",
+            "--source-tile-size",
+            "5",
+            "--output",
+            str(output),
+        ]
+    )
+    captured = capsys.readouterr()
+
+    assert code == 0
+    assert "Source-declared tile rows: 64 x 64" in captured.out
+    assert "Effective benchmark-only tile rows: 3 x 5" in captured.out
+    report = verify_modern_benchmark_report(output)
+    assert report["benchmark_version"] == "0.4"
+    assert report["configuration"]["effective_pairwise_evaluation"] == {
+        "mode": "blockwise",
+        "query_tile_size": 3,
+        "source_tile_size": 5,
+    }
+    assert report["configuration"]["tile_autograd_strategy"] == autograd_strategy
+    assert report["samples"][0]["wall_time_ns"] > 0

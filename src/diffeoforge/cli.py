@@ -228,6 +228,22 @@ def build_parser() -> argparse.ArgumentParser:
         help="Benchmark-only override; recompute requires configured blockwise execution.",
     )
     modern_benchmark_parser.add_argument(
+        "--query-tile-size",
+        type=int,
+        help=(
+            "Benchmark-only query tile rows; requires --source-tile-size and configured "
+            "blockwise execution."
+        ),
+    )
+    modern_benchmark_parser.add_argument(
+        "--source-tile-size",
+        type=int,
+        help=(
+            "Benchmark-only source tile rows; requires --query-tile-size and configured "
+            "blockwise execution."
+        ),
+    )
+    modern_benchmark_parser.add_argument(
         "--output",
         type=Path,
         help="Report directory (default: CONFIG_NAME.benchmark).",
@@ -637,9 +653,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 destination=args.output,
                 overwrite=args.force,
             )
-            report = json.loads(
-                (report_directory / REPORT_JSON_NAME).read_text(encoding="utf-8")
-            )
+            report = json.loads((report_directory / REPORT_JSON_NAME).read_text(encoding="utf-8"))
             largest_execution_bytes = report["payload_model"][
                 "largest_single_execution_xyz_difference_tensor_bytes"
             ]
@@ -650,8 +664,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 f"{report['optimizer_bound']['objective_gradient_evaluation_upper_bound']}"
             )
             print(
-                "Largest single execution XYZ-difference tensor: "
-                f"{largest_execution_bytes} bytes"
+                f"Largest single execution XYZ-difference tensor: {largest_execution_bytes} bytes"
             )
             print(f"Pairwise execution: {report['engine']['pairwise_evaluation']['mode']}")
             print(f"Machine-readable report: {report_directory / REPORT_JSON_NAME}")
@@ -684,27 +697,33 @@ def main(argv: Sequence[str] | None = None) -> int:
                 repeats=args.repeats,
                 warmup_evaluations=args.warmups,
                 tile_autograd_strategy=args.tile_autograd_strategy,
+                query_tile_size=args.query_tile_size,
+                source_tile_size=args.source_tile_size,
                 destination=args.output,
                 overwrite=args.force,
             )
-            report = json.loads(
-                (report_directory / REPORT_JSON_NAME).read_text(encoding="utf-8")
-            )
+            report = json.loads((report_directory / REPORT_JSON_NAME).read_text(encoding="utf-8"))
             wall_ms = report["summary"]["wall_time_ns"]["median"] / 1_000_000
-            peak_mib = (
-                report["summary"]["sampled_peak_rss_bytes"]["median"] / 1024**2
-            )
+            peak_mib = report["summary"]["sampled_peak_rss_bytes"]["median"] / 1024**2
             print(f"Modern objective benchmark created: {report_directory}")
             print(f"Selected subjects: {report['input']['selected_subject_count']}")
             print(f"Fresh-process repeats: {report['configuration']['repeats']}")
-            print(
-                "Pairwise execution: "
-                f"{report['configuration']['pairwise_evaluation']['mode']}"
-            )
-            print(
-                "Tile autograd strategy: "
-                f"{report['configuration']['tile_autograd_strategy']}"
-            )
+            if report["benchmark_version"] == "0.4":
+                source_pairwise = report["configuration"]["source_pairwise_evaluation"]
+                pairwise = report["configuration"]["effective_pairwise_evaluation"]
+                print(
+                    "Source-declared tile rows: "
+                    f"{source_pairwise['query_tile_size']} x "
+                    f"{source_pairwise['source_tile_size']}"
+                )
+                print(
+                    "Effective benchmark-only tile rows: "
+                    f"{pairwise['query_tile_size']} x {pairwise['source_tile_size']}"
+                )
+            else:
+                pairwise = report["configuration"]["pairwise_evaluation"]
+            print(f"Pairwise execution: {pairwise['mode']}")
+            print(f"Tile autograd strategy: {report['configuration']['tile_autograd_strategy']}")
             print(f"Median measured objective+gradient wall time: {wall_ms:.3f} ms")
             print(f"Median sampled process RSS: {peak_mib:.2f} MiB")
             print(f"Machine-readable report: {report_directory / REPORT_JSON_NAME}")
