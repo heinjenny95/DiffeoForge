@@ -61,7 +61,9 @@ def utc_now() -> str:
     return datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
-def _slug(value: object) -> str:
+def normalize_run_id(value: object) -> str:
+    """Normalize one user-visible reference run identifier."""
+
     cleaned = re.sub(r"[^A-Za-z0-9._-]+", "-", str(value)).strip("-._")
     if not cleaned:
         raise ConfigurationError("Project or run name is empty after normalization.")
@@ -70,7 +72,7 @@ def _slug(value: object) -> str:
 
 def default_run_id(config: Mapping[str, Any]) -> str:
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-    return f"{stamp}-{_slug(config['project']['name'])}"
+    return f"{stamp}-{normalize_run_id(config['project']['name'])}"
 
 
 def _write_json_exclusive(path: Path, value: object) -> None:
@@ -170,7 +172,7 @@ def _validate_resume_schema(provenance: Mapping[str, Any]) -> None:
         )
 
 
-def _effective_config(
+def effective_reference_config(
     config: Mapping[str, Any],
     input_directory: Path,
     template: Path,
@@ -193,7 +195,7 @@ def _copy_and_verify(source: Path, destination: Path, expected_hash: str) -> Non
         )
 
 
-def _input_record(
+def reference_input_record(
     role: str,
     source: Path,
     staged: Path,
@@ -246,7 +248,7 @@ def prepare_run(
         else resolve_output_directory(config, source_config)
     )
     output_root.mkdir(parents=True, exist_ok=True)
-    resolved_run_id = _slug(run_id or default_run_id(config))
+    resolved_run_id = normalize_run_id(run_id or default_run_id(config))
     final_directory = output_root / resolved_run_id
     if final_directory.exists():
         raise ConfigurationError(f"Run directory already exists: {final_directory}")
@@ -276,7 +278,7 @@ def prepare_run(
 
         staged_subject_relatives: list[Path] = []
         input_records = [
-            _input_record(
+            reference_input_record(
                 "template",
                 summary.template,
                 staged_template_relative,
@@ -287,11 +289,13 @@ def prepare_run(
             staged_relative = Path("input") / "subjects" / source.name
             _copy_and_verify(source, temp_directory / staged_relative, metadata.sha256)
             staged_subject_relatives.append(staged_relative)
-            input_records.append(_input_record("subject", source, staged_relative, metadata))
+            input_records.append(
+                reference_input_record("subject", source, staged_relative, metadata)
+            )
 
         source_config_copy = config_directory / "source-config.yaml"
         shutil.copy2(source_config, source_config_copy)
-        effective = _effective_config(
+        effective = effective_reference_config(
             config,
             summary.input_directory,
             summary.template,
@@ -993,7 +997,9 @@ def prepare_resume_run(
 
     output_root = source_run.parent
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-    resolved_run_id = _slug(run_id or f"{source_manifest['run_id']}-resume-{stamp}")
+    resolved_run_id = normalize_run_id(
+        run_id or f"{source_manifest['run_id']}-resume-{stamp}"
+    )
     final_directory = output_root / resolved_run_id
     if final_directory.exists():
         raise ConfigurationError(f"Run directory already exists: {final_directory}")

@@ -34,6 +34,8 @@ The current command-line workflow is:
 
 ```bash
 diffeoforge validate atlas.yaml
+diffeoforge reference-plan atlas.yaml --run-id experiment-001
+# Review exact paths, staged inputs, effective YAML, XML bytes/hashes, and command.
 diffeoforge prepare atlas.yaml --run-id experiment-001
 # Inspect manifest.json and engine/*.xml before committing compute time.
 diffeoforge execute runs/experiment-001
@@ -78,6 +80,8 @@ This repository currently provides:
 - geometry-aware preflight for classic and VTK 5.1 triangular PolyData;
 - deterministic input discovery, staging, SHA-256 inventories, and immutable
   run directories;
+- a versioned read-only reference preparation plan with exact future staged
+  paths, effective YAML, Deformetrica XML contents/hashes, and command preview;
 - explicit Deformetrica XML generation and native or Windows-to-WSL launchers;
 - exact command, environment, lifecycle, convergence, result, and output
   inventories;
@@ -392,6 +396,7 @@ and workflow for another mesh directory.
 - [Versioned desktop worker protocol](docs/DESKTOP_WORKER.md)
 - [Desktop project-setup preview](docs/DESKTOP_PREVIEW.md)
 - [Desktop reference prelaunch contract](docs/REFERENCE_PRELAUNCH.md)
+- [Read-only reference preparation plan](docs/REFERENCE_PREPARATION_PLAN.md)
 - [Versioned reference worker lifecycle protocol](docs/REFERENCE_WORKER_PROTOCOL.md)
 - [Nonnumerical reference worker pipe harness](docs/REFERENCE_WORKER_HARNESS.md)
 - [Nonnumerical reference harness controller](docs/REFERENCE_HARNESS_CONTROLLER.md)

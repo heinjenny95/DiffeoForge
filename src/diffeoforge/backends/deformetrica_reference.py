@@ -9,6 +9,7 @@ import subprocess
 import xml.etree.ElementTree as ET
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from io import BytesIO, TextIOWrapper
 from pathlib import Path, PureWindowsPath
 from typing import Any
 
@@ -76,16 +77,21 @@ def _add_text(parent: ET.Element, tag: str, value: object) -> ET.Element:
     return child
 
 
-def _write_xml(root: ET.Element, path: Path) -> None:
+def _render_xml(root: ET.Element) -> bytes:
     _indent_xml(root)
-    ET.ElementTree(root).write(path, encoding="utf-8", xml_declaration=True)
+    buffer = BytesIO()
+    stream = TextIOWrapper(buffer, encoding="utf-8", newline=None)
+    ET.ElementTree(root).write(stream, encoding="unicode", xml_declaration=True)
+    stream.flush()
+    payload = buffer.getvalue()
+    stream.detach()
+    return payload
 
 
 def _model_xml(
     config: Mapping[str, Any],
-    path: Path,
     staged_template: Path,
-) -> None:
+) -> bytes:
     model = config["model"]
     runtime = config["runtime"]
 
@@ -114,14 +120,13 @@ def _model_xml(
     _add_text(deformation, "kernel-type", runtime["kernel_backend"])
     _add_text(deformation, "kernel-device", "cpu")
     _add_text(deformation, "number-of-timepoints", model["deformation"]["timepoints"])
-    _write_xml(root, path)
+    return _render_xml(root)
 
 
 def _dataset_xml(
     config: Mapping[str, Any],
-    path: Path,
     staged_subjects: Sequence[Path],
-) -> None:
+) -> bytes:
     root = ET.Element("data_set")
     for subject_path in staged_subjects:
         subject = ET.SubElement(root, "subject", {"id": subject_path.name})
@@ -132,15 +137,14 @@ def _dataset_xml(
             {"object_id": config["model"]["object_id"]},
         )
         filename.text = subject_path.as_posix()
-    _write_xml(root, path)
+    return _render_xml(root)
 
 
 def _optimization_xml(
     config: Mapping[str, Any],
-    path: Path,
     *,
     state_file: str | None = None,
-) -> None:
+) -> bytes:
     optimization = config["optimization"]
     method = {
         "gradient_ascent": "GradientAscent",
@@ -191,7 +195,22 @@ def _optimization_xml(
     )
     if state_file is not None:
         _add_text(root, "state-file", state_file)
-    _write_xml(root, path)
+    return _render_xml(root)
+
+
+def render_engine_file_bytes(
+    config: Mapping[str, Any],
+    staged_template: Path,
+    staged_subjects: Sequence[Path],
+) -> dict[str, bytes]:
+    """Render the exact three Deformetrica XML inputs without writing files."""
+
+    validate_reference_config(config)
+    return {
+        "model.xml": _model_xml(config, staged_template),
+        "data_set.xml": _dataset_xml(config, staged_subjects),
+        "optimization_parameters.xml": _optimization_xml(config),
+    }
 
 
 def generate_engine_files(
@@ -203,12 +222,13 @@ def generate_engine_files(
     """Generate the three explicit XML inputs used by Deformetrica 4.3."""
 
     validate_reference_config(config)
+    rendered = render_engine_file_bytes(config, staged_template, staged_subjects)
     model_path = engine_directory / "model.xml"
     dataset_path = engine_directory / "data_set.xml"
     optimization_path = engine_directory / "optimization_parameters.xml"
-    _model_xml(config, model_path, staged_template)
-    _dataset_xml(config, dataset_path, staged_subjects)
-    _optimization_xml(config, optimization_path)
+    model_path.write_bytes(rendered["model.xml"])
+    dataset_path.write_bytes(rendered["data_set.xml"])
+    optimization_path.write_bytes(rendered["optimization_parameters.xml"])
     return model_path, dataset_path, optimization_path
 
 
@@ -219,10 +239,11 @@ def generate_resume_optimization_file(
     """Generate optimization XML that resumes from the run-local state file."""
 
     validate_reference_config(config)
-    _optimization_xml(
-        config,
-        path,
-        state_file="../output/deformetrica-state.p",
+    path.write_bytes(
+        _optimization_xml(
+            config,
+            state_file="../output/deformetrica-state.p",
+        )
     )
     return path
 

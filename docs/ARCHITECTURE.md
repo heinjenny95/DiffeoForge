@@ -185,6 +185,16 @@ exit or pipe EOF from masquerading as Job-driven containment. This is terminatio
 evidence only, not crash recovery or reference execution; see
 [the frozen reference parent-death evidence](FROZEN_REFERENCE_PARENT_DEATH.md).
 
+Before any preparation mutation, a separate shared-core service can now derive a
+strict v0.1 reference preparation plan for an explicit run ID. It inventories
+and rechecks all input bytes, resolves the absent destination, renders the exact
+effective YAML and three Deformetrica XML payloads in memory, and exposes every
+future protected path/hash plus the command preview. The real atomic prepare path
+uses the same byte renderer, and parity tests require its protected artifacts to
+match the plan exactly. This is read-only transparency, not a prepared run or a
+desktop execution permission; see
+[the reference preparation plan](REFERENCE_PREPARATION_PLAN.md).
+
 Both setup routes can also pass their already selected template path to a
 Qt-independent immutable preview model. The model reuses the strict VTK parser,
 binds the source SHA-256 before and after loading, freezes vertices, triangles,
