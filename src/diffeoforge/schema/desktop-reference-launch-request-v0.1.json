@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DiffeoForge desktop reference launch request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "reference_launch_request_version",
+    "request_id",
+    "engine",
+    "config_path",
+    "expected_config_sha256",
+    "run_id",
+    "destination",
+    "launcher"
+  ],
+  "properties": {
+    "reference_launch_request_version": {"const": "0.1"},
+    "request_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+    },
+    "engine": {"const": "deformetrica_reference"},
+    "config_path": {"type": "string", "minLength": 1},
+    "expected_config_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "run_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+    },
+    "destination": {"type": "string", "minLength": 1},
+    "launcher": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "engine", "image"],
+      "properties": {
+        "type": {"const": "container"},
+        "engine": {"type": "string", "minLength": 1},
+        "image": {"type": "string", "minLength": 1}
+      }
+    }
+  }
+}

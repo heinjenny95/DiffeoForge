@@ -55,3 +55,7 @@ This service does not:
 Its result is observational evidence at one moment. Container state may change
 afterward, so a future reference supervisor must perform its own immediate
 pre-launch checks rather than trusting this display as authorization.
+
+The next read-only seam converts a matching ready observation into an exact,
+schema-validatable future-supervisor request without preparing a run. See
+[the desktop reference prelaunch contract](REFERENCE_PRELAUNCH.md).

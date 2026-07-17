@@ -138,6 +138,15 @@ does not prepare or launch Deformetrica and does not weaken the separate open
 gate for reference-process supervision. See
 [the desktop reference-readiness contract](REFERENCE_DESKTOP_READINESS.md).
 
+A separate Qt-independent reference prelaunch seam now binds that matching
+review/readiness pair to a versioned request containing the exact config hash,
+container engine/image, normalized run ID, and resolved absolute destination.
+The request is round-trip schema validated and repeatably rechecks bytes,
+launcher settings, output resolution, and destination nonexistence. It performs
+no preparation or execution and remains only an input contract for a future
+contained supervisor. See
+[the desktop reference-prelaunch contract](REFERENCE_PRELAUNCH.md).
+
 Both setup routes can also pass their already selected template path to a
 Qt-independent immutable preview model. The model reuses the strict VTK parser,
 binds the source SHA-256 before and after loading, freezes vertices, triangles,

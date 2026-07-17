@@ -112,6 +112,13 @@ show their raw status, summary, and guidance outside the GUI thread. It neither
 installs nor starts that environment, and the reference compute button remains
 disabled until a separately tested process supervisor exists.
 
+The read-only prelaunch layer can now serialize the exact reviewed hash,
+container settings, normalized run ID, and resolved destination through a
+versioned JSON Schema. It rechecks those inputs without creating the destination
+or starting a process. The eventual supervisor must consume and reverify this
+request inside its contained child; this contract alone does not unlock the
+reference button.
+
 ## Bundle and installer decisions
 
 The first evidence build now uses pinned PyInstaller 6.21.0 in one-directory

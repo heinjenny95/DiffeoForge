@@ -61,7 +61,9 @@ def _reviewed_config_bytes(review: ProjectReviewResult) -> bytes:
     return content
 
 
-def _parse_reviewed_config(content: bytes) -> Mapping[str, Any]:
+def parse_reference_config_bytes(content: bytes) -> Mapping[str, Any]:
+    """Parse and validate one exact in-memory reference configuration."""
+
     try:
         text = content.decode("utf-8")
         loaded = yaml.safe_load(text)
@@ -96,7 +98,7 @@ def check_reference_environment(
         )
 
     content = _reviewed_config_bytes(review)
-    config = _parse_reviewed_config(content)
+    config = parse_reference_config_bytes(content)
     launcher = config["runtime"]["launcher"]
     if launcher["type"] != "container":
         raise DesktopReferenceReadinessError(

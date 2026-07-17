@@ -89,6 +89,7 @@ This repository currently provides:
 - a read-only environment doctor and transparent mesh-directory initializer;
 - an optional PySide6 desktop preview for non-overwriting mesh-folder
   validation, modern/reference project creation, effective-parameter review,
+  hash-bound reference-environment and future-prelaunch inspection,
   shared-core workload/preflight evidence, and a verified Modern-only
   start/live-event/cancel screen followed by a fully reverified Atlas/PCA/QC
   summary with inventory-bound artifact handoff;
@@ -390,6 +391,7 @@ and workflow for another mesh directory.
 - [Windows one-directory freeze evidence](docs/WINDOWS_FREEZE_EVIDENCE.md)
 - [Versioned desktop worker protocol](docs/DESKTOP_WORKER.md)
 - [Desktop project-setup preview](docs/DESKTOP_PREVIEW.md)
+- [Desktop reference prelaunch contract](docs/REFERENCE_PRELAUNCH.md)
 - [Open synthetic validation dataset](docs/SYNTHETIC_DATASET.md)
 - [Synthetic numerical reference](reference/synthetic-v1/README.md)
 - [Frozen Deformetrica CPU container](docs/CONTAINER_REFERENCE.md)
