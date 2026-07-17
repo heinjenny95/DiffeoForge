@@ -10,7 +10,11 @@ import pytest
 
 from diffeoforge.desktop.freeze_evidence import (
     MANIFEST_NAME,
+    MISSING_RELEASE_GATES,
+    SCIENTIFIC_BOUNDARY,
     SIDECAR_NAME,
+    STATUS,
+    TARGET,
     DesktopFreezeEvidenceError,
     create_desktop_freeze_evidence,
     verify_desktop_freeze_evidence,
@@ -29,12 +33,16 @@ VERSIONS = {
 }
 
 
-def _bundle(tmp_path: Path) -> Path:
+def _bundle(tmp_path: Path, *, include_reference_worker: bool = True) -> Path:
     root = tmp_path / "DiffeoForge"
     internal = root / "_internal" / "diffeoforge" / "schema"
     internal.mkdir(parents=True)
     (root / "DiffeoForge.exe").write_bytes(b"desktop executable")
     (root / "DiffeoForgeWorker.exe").write_bytes(b"worker executable")
+    if include_reference_worker:
+        (root / "DiffeoForgeReferenceWorker.exe").write_bytes(
+            b"reference worker executable"
+        )
     (internal / "schema.json").write_text('{"schema": true}\n', encoding="utf-8")
     return root
 
@@ -71,6 +79,7 @@ def test_desktop_freeze_evidence_is_exact_non_overwriting_and_self_verifying(
     manifest = verify_desktop_freeze_evidence(root)
 
     assert manifest_path == root / MANIFEST_NAME
+    assert manifest["schema_version"] == "0.2"
     assert manifest["status"] == "engineering_evidence_not_a_release"
     assert manifest["target"] == "windows-x86_64-cpu"
     assert manifest["builder"] == {
@@ -82,9 +91,10 @@ def test_desktop_freeze_evidence_is_exact_non_overwriting_and_self_verifying(
     }
     assert manifest["entry_points"] == {
         "desktop": "DiffeoForge.exe",
+        "reference_worker": "DiffeoForgeReferenceWorker.exe",
         "worker": "DiffeoForgeWorker.exe",
     }
-    assert manifest["bundle"]["file_count"] == 3
+    assert manifest["bundle"]["file_count"] == 4
     assert [record["path"] for record in manifest["bundle"]["files"]] == sorted(
         record["path"] for record in manifest["bundle"]["files"]
     )
@@ -124,6 +134,11 @@ def test_desktop_freeze_creation_requires_windows_entry_points_and_clean_provena
     with pytest.raises(DesktopFreezeEvidenceError, match="entry point"):
         _create(missing_worker)
 
+    missing_reference_worker = _bundle(tmp_path / "missing-reference-worker")
+    (missing_reference_worker / "DiffeoForgeReferenceWorker.exe").unlink()
+    with pytest.raises(DesktopFreezeEvidenceError, match="entry point"):
+        _create(missing_reference_worker)
+
     non_windows = _bundle(tmp_path / "non-windows")
     with pytest.raises(DesktopFreezeEvidenceError, match="Windows host"):
         create_desktop_freeze_evidence(
@@ -158,6 +173,19 @@ def test_desktop_freeze_verifier_rejects_manifest_path_traversal(tmp_path: Path)
         verify_desktop_freeze_evidence(root)
 
 
+def test_desktop_freeze_verifier_rejects_unknown_schema_version(
+    tmp_path: Path,
+) -> None:
+    root = _bundle(tmp_path)
+    _create(root)
+    manifest = json.loads((root / MANIFEST_NAME).read_text(encoding="utf-8"))
+    manifest["schema_version"] = "0.3"
+    _rewrite_manifest(root, manifest)
+
+    with pytest.raises(DesktopFreezeEvidenceError, match="Unsupported.*0.3"):
+        verify_desktop_freeze_evidence(root)
+
+
 @pytest.mark.parametrize(
     ("mutation", "match"),
     [
@@ -165,6 +193,12 @@ def test_desktop_freeze_verifier_rejects_manifest_path_traversal(tmp_path: Path)
         (lambda value: value.update(target="linux-x86_64-cpu"), "schema violation"),
         (
             lambda value: value["entry_points"].update(worker="other.exe"),
+            "schema violation",
+        ),
+        (
+            lambda value: value["entry_points"].update(
+                reference_worker="other-reference.exe"
+            ),
             "schema violation",
         ),
     ],
@@ -200,4 +234,66 @@ def test_desktop_freeze_evidence_cli_verifies_existing_bundle(tmp_path: Path) ->
     assert completed.returncode == 0, completed.stderr
     summary = json.loads(completed.stdout)
     assert summary["source_commit"] == SOURCE_COMMIT
-    assert summary["file_count"] == 3
+    assert summary["file_count"] == 4
+
+
+def test_desktop_freeze_verifier_retains_legacy_v01_compatibility(
+    tmp_path: Path,
+) -> None:
+    root = _bundle(tmp_path / "legacy", include_reference_worker=False)
+    records = []
+    for path in sorted(root.rglob("*"), key=lambda candidate: candidate.as_posix()):
+        if not path.is_file():
+            continue
+        records.append(
+            {
+                "path": path.relative_to(root).as_posix(),
+                "bytes": path.stat().st_size,
+                "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+            }
+        )
+    inventory_payload = json.dumps(
+        records,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+    manifest = {
+        "schema_version": "0.1",
+        "status": STATUS,
+        "created_at": FIXED_TIME,
+        "target": TARGET,
+        "source": {"commit_sha": SOURCE_COMMIT, "dirty_worktree_allowed": False},
+        "builder": {
+            "name": "PyInstaller",
+            "version": VERSIONS["pyinstaller"],
+            "mode": "onedir",
+            "python": "3.12.13",
+            "platform": "Windows-11-10.0.26100-SP0",
+        },
+        "runtime_packages": VERSIONS,
+        "entry_points": {
+            "desktop": "DiffeoForge.exe",
+            "worker": "DiffeoForgeWorker.exe",
+        },
+        "bundle": {
+            "directory_name": root.name,
+            "file_count": len(records),
+            "total_bytes": sum(record["bytes"] for record in records),
+            "inventory_sha256": hashlib.sha256(
+                inventory_payload.encode("utf-8")
+            ).hexdigest(),
+            "files": records,
+        },
+        "missing_release_gates": list(MISSING_RELEASE_GATES),
+        "scientific_boundary": SCIENTIFIC_BOUNDARY,
+    }
+    _rewrite_manifest(root, manifest)
+
+    verified = verify_desktop_freeze_evidence(root)
+
+    assert verified["schema_version"] == "0.1"
+    assert verified["entry_points"] == {
+        "desktop": "DiffeoForge.exe",
+        "worker": "DiffeoForgeWorker.exe",
+    }

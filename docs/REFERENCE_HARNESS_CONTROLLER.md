@@ -18,8 +18,10 @@ launch or Job assignment stops the process and fails closed.
 The parent writes one canonical UTF-8 JSON request line and immediately closes
 stdin. The source command is
 `python -m diffeoforge.desktop.reference_worker_harness`. Frozen desktop code
-resolves a future sibling `DiffeoForgeReferenceWorker.exe`; that artifact is not
-yet part of the evidence build, so frozen reference execution remains disabled.
+resolves the sibling `DiffeoForgeReferenceWorker.exe`. The Windows evidence
+build now includes that entry point and must pass the same controller round trip
+before freeze evidence is created. This packages only the nonnumerical harness;
+frozen reference atlas execution remains disabled.
 
 ## Bounded supervision
 
@@ -57,6 +59,6 @@ child-created destination.
 
 This is not reference atlas execution. The controller sends no cancel command,
 does not invoke Docker or Deformetrica, does not prepare a run, and is not wired
-to the GUI. It proves the parent/process boundary only. The next gates are a
-frozen sibling-worker artifact with parent-death evidence, then a separately
+to the GUI. It proves the source and frozen parent/process boundary only. The
+next gates are frozen-boundary parent-death evidence and then a separately
 reviewed preparation-only lifecycle before any numerical process is reachable.

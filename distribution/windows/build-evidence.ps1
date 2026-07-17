@@ -57,6 +57,12 @@ try {
             throw "Frozen worker/controller smoke failed."
         }
     }
+    & $Python tools\smoke_frozen_reference_worker.py `
+        (Join-Path $bundle "DiffeoForgeReferenceWorker.exe") `
+        examples\minimal-atlas-container.yaml
+    if ($LASTEXITCODE -ne 0) {
+        throw "Frozen nonnumerical reference worker/controller smoke failed."
+    }
     $commit = (& git rev-parse HEAD).Trim()
     if ($LASTEXITCODE -ne 0) {
         throw "Could not resolve the source commit."
