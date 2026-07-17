@@ -143,6 +143,17 @@ diffeoforge reference-plan atlas.yaml --run-id pilot-001 `
 
 The HTML is offline and self-contained, and it refuses to replace any existing
 file. It contains full specimen paths and names, so review it before sharing.
+Verify a saved pair later with:
+
+```powershell
+diffeoforge reference-plan-verify pilot-001-preparation.json `
+  --report pilot-001-preparation.html
+```
+
+This checks the saved artifacts only; it does not claim the current meshes are
+unchanged. An independently recorded `--expect-fingerprint` adds external
+tamper binding. See
+[saved reference preparation verification](REFERENCE_PREPARATION_VERIFICATION.md).
 
 For a cohort of hundreds of specimens, start with a small representative pilot
 and inspect the objective curves, lifecycle, evidence checks, and output
