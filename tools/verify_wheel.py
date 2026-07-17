@@ -13,6 +13,7 @@ from pathlib import Path, PurePosixPath
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_ROOT = ROOT / "src" / "diffeoforge" / "schema"
 CONSOLE_ENTRY_POINT = "diffeoforge.cli:main"
+GUI_ENTRY_POINT = "diffeoforge.desktop.app:main"
 
 
 class WheelContractError(RuntimeError):
@@ -90,6 +91,13 @@ def verify_wheel(path: Path | str) -> WheelEvidence:
     if observed_entry != CONSOLE_ENTRY_POINT:
         raise WheelContractError(
             "Wheel console entry point differs from diffeoforge = " + CONSOLE_ENTRY_POINT
+        )
+    if not parser.has_section("gui_scripts"):
+        raise WheelContractError("Wheel has no [gui_scripts] entry-point section")
+    observed_gui_entry = parser.get("gui_scripts", "diffeoforge-desktop", fallback=None)
+    if observed_gui_entry != GUI_ENTRY_POINT:
+        raise WheelContractError(
+            "Wheel GUI entry point differs from diffeoforge-desktop = " + GUI_ENTRY_POINT
         )
     return WheelEvidence(
         wheel=wheel,

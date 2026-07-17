@@ -18,6 +18,7 @@ sys.modules[SPEC.name] = WHEEL_VERIFIER
 SPEC.loader.exec_module(WHEEL_VERIFIER)
 
 CONSOLE_ENTRY_POINT = WHEEL_VERIFIER.CONSOLE_ENTRY_POINT
+GUI_ENTRY_POINT = WHEEL_VERIFIER.GUI_ENTRY_POINT
 WheelContractError = WHEEL_VERIFIER.WheelContractError
 expected_package_members = WHEEL_VERIFIER.expected_package_members
 main = WHEEL_VERIFIER.main
@@ -31,6 +32,7 @@ def _write_wheel(
     *,
     omitted: str | None = None,
     console_entry: str = CONSOLE_ENTRY_POINT,
+    gui_entry: str = GUI_ENTRY_POINT,
     extra_members: tuple[str, ...] = (),
 ) -> Path:
     with zipfile.ZipFile(path, "w") as archive:
@@ -39,7 +41,8 @@ def _write_wheel(
         archive.writestr(f"{DIST_INFO}/METADATA", "Metadata-Version: 2.4\n")
         archive.writestr(
             f"{DIST_INFO}/entry_points.txt",
-            f"[console_scripts]\ndiffeoforge = {console_entry}\n",
+            f"[console_scripts]\ndiffeoforge = {console_entry}\n"
+            f"[gui_scripts]\ndiffeoforge-desktop = {gui_entry}\n",
         )
         for member in extra_members:
             archive.writestr(member, "test\n")
@@ -81,6 +84,16 @@ def test_verifier_rejects_wrong_console_entry_point(tmp_path: Path) -> None:
     )
 
     with pytest.raises(WheelContractError, match="console entry point differs"):
+        verify_wheel(wheel)
+
+
+def test_verifier_rejects_wrong_gui_entry_point(tmp_path: Path) -> None:
+    wheel = _write_wheel(
+        tmp_path / "gui-entry.whl",
+        gui_entry="diffeoforge.desktop.other:main",
+    )
+
+    with pytest.raises(WheelContractError, match="GUI entry point differs"):
         verify_wheel(wheel)
 
 

@@ -1,6 +1,6 @@
 # Desktop executable and installer architecture
 
-Status: **architecture and release gates only; no installer exists yet**
+Status: **first project-setup GUI exists; no frozen executable or installer exists yet**
 
 Tracked by [engineering issue #22](https://github.com/heinjenny95/DiffeoForge/issues/22)
 and [ADR 0003](decisions/0003-windows-desktop-distribution.md). The
@@ -22,11 +22,16 @@ without a pre-existing Python installation. The planned user path is:
    the user explicitly includes them.
 
 PySide6 is the current GUI direction because it is the official Qt for Python
-binding and supports Windows, Linux, and macOS. It is not added as a runtime
-dependency until the first GUI slice exists and its LGPLv3/GPLv3/commercial
-licensing obligations have been reviewed. Qt's official documentation lists
-both PyInstaller and the Nuitka-based `pyside6-deploy`; the first packaging
-spike will compare their frozen artifacts before locking exact tool versions.
+binding and supports Windows, Linux, and macOS. The first source-only GUI slice
+is available through the optional `desktop` dependency and is documented in
+[Desktop project-setup preview](DESKTOP_PREVIEW.md). Only the official
+`PySide6-Essentials` distribution is currently required; PySide6 remains absent
+from the base CLI dependencies. Its preliminary LGPLv3/GPLv3/commercial boundary is
+documented, but exact-module licensing, notices, corresponding-source and
+relinking obligations still block redistribution of a frozen binary. Qt's
+official documentation lists both PyInstaller and the Nuitka-based
+`pyside6-deploy`; the first packaging spike will compare their frozen artifacts
+before locking exact tool versions.
 
 ## Process and backend boundary
 

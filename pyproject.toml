@@ -38,6 +38,9 @@ dependencies = [
 analysis = [
   "numpy>=2,<3",
 ]
+desktop = [
+  "PySide6-Essentials>=6.8,<7",
+]
 dev = [
   "build>=1.2,<2",
   "pytest>=8.3,<10",
@@ -51,6 +54,9 @@ modern-engine = [
 
 [project.scripts]
 diffeoforge = "diffeoforge.cli:main"
+
+[project.gui-scripts]
+diffeoforge-desktop = "diffeoforge.desktop.app:main"
 
 [project.urls]
 Repository = "https://github.com/heinjenny95/DiffeoForge"

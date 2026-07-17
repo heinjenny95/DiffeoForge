@@ -87,6 +87,8 @@ This repository currently provides:
 - a deterministic CC0 synthetic mesh cohort for public integration tests;
 - versioned Deformetrica outputs and a tolerance-based reference comparator;
 - a read-only environment doctor and transparent mesh-directory initializer;
+- an optional first PySide6 desktop slice for non-overwriting mesh-folder
+  validation and modern/reference project creation through the shared core;
 - a self-contained HTML input-validation and parameter-scale report;
 - a self-contained HTML convergence, lifecycle, and result report;
 - terminal interruption capture, explicit unclean-stop recovery, and
@@ -128,8 +130,9 @@ This repository currently provides:
   objective/optimizer parity and saved-tensor evidence, not yet a public
   workflow setting or peak-RAM claim.
 
-The experimental modern path is a public CLI/application-service workflow, but
-it is not yet the shared production backend behind a GUI and does not provide
+The experimental modern path is a public CLI/application-service workflow and
+can now create a starter project through the first GUI slice, but the GUI does
+not yet start or supervise numerical work and the modern path does not provide
 checkpoint/resume. DiffeoForge also does **not** yet ship a desktop installer,
 provide mesh-quality rendering or self-intersection detection, or promise CPU/GPU equivalence or
 300-specimen production performance. See the [modern-workflow
@@ -344,6 +347,7 @@ and workflow for another mesh directory.
 - [Landmark-based Procrustes alignment](docs/PROCRUSTES_ALIGNMENT.md)
 - [PCA of atlas-derived subject features](docs/ATLAS_PCA.md)
 - [Desktop executable and installer architecture](docs/DESKTOP_DISTRIBUTION.md)
+- [Desktop project-setup preview](docs/DESKTOP_PREVIEW.md)
 - [Open synthetic validation dataset](docs/SYNTHETIC_DATASET.md)
 - [Synthetic numerical reference](reference/synthetic-v1/README.md)
 - [Frozen Deformetrica CPU container](docs/CONTAINER_REFERENCE.md)
