@@ -116,7 +116,9 @@ This repository currently provides:
 - versioned live workflow and committed optimizer-decision events used by the
   CLI and transported unchanged by a strict child-process desktop worker,
   including reviewed-configuration hash binding and nonpublishing cooperative
-  cancellation without invented percent-complete or ETA claims;
+  cancellation; a Qt-independent parent controller validates event identity,
+  sequence, lifecycle, exit status, bounded diagnostics, and completed results
+  without invented percent-complete or ETA claims;
 - an opt-in fresh-process objective/gradient benchmark with explicit subject
   selection, raw repeats, sampled process RSS, exact provenance, explicit
   standard/recompute blockwise measurement, separately recorded benchmark-only
@@ -134,10 +136,10 @@ This repository currently provides:
 
 The experimental modern path is a public CLI/application-service workflow and
 can now create and review a starter project through the GUI preview, including
-the exact configured-engine workload contract. A tested source-level worker can
-run and cooperatively cancel Modern compute in a separate process, but the GUI
-does not yet expose or supervise those controls and the Modern path does not
-provide checkpoint/resume.
+the exact configured-engine workload contract. A tested source-level worker and
+parent controller can run, supervise, independently verify, and cooperatively
+cancel Modern compute in a separate process, but the GUI does not yet expose
+those controls and the Modern path does not provide checkpoint/resume.
 DiffeoForge also does **not** yet ship a desktop installer,
 provide mesh-quality rendering or self-intersection detection, or promise CPU/GPU equivalence or
 300-specimen production performance. See the [modern-workflow

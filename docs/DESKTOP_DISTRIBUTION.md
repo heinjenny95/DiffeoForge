@@ -40,8 +40,11 @@ The GUI may call fast shared-core validation and report functions in process.
 Numerical compute runs in a child worker process with an immutable run
 directory. This isolates PyTorch memory, makes cancellation observable, and
 keeps a GUI failure from silently corrupting accepted run state. The strict
-source-level Modern CPU transport is now implemented and documented in
-[Versioned desktop worker protocol](DESKTOP_WORKER.md); GUI execution controls
+source-level Modern CPU transport and its fail-closed parent controller are now
+implemented and documented in
+[Versioned desktop worker protocol](DESKTOP_WORKER.md). The controller binds
+events to the reviewed request, enforces lifecycle/exit-code agreement, bounds
+stderr, and independently verifies successful output; GUI execution controls
 and frozen-process packaging remain separate unfinished slices.
 
 The CPU modern engine is the first bundled numerical variant. A future NVIDIA

@@ -73,7 +73,10 @@ The CLI and the source-level desktop child worker consume the same event
 dictionary instead of inventing separate scientific logic. The worker wraps it
 unchanged in strict JSON Lines events and accepts one cooperative cancellation
 command. Safe-point cancellation removes private temporary work and publishes
-no destination. See [Versioned desktop worker protocol](DESKTOP_WORKER.md).
+no destination. A Qt-independent parent controller now checks the outer event
+identity, sequence, lifecycle, exit status, bounded diagnostics, and completed
+workflow evidence before accepting success. See
+[Versioned desktop worker protocol](DESKTOP_WORKER.md).
 
 The worker transport does not add checkpoints, resume, persisted partial runs,
 runtime calibration, peak-memory measurement, or ETA prediction. GUI execution
