@@ -164,12 +164,10 @@ def write_reference_preparation_approval(
     return destination
 
 
-def verify_saved_reference_preparation_approval(
+def load_saved_reference_preparation_approval(
     request_path: Path | str,
-    *,
-    current_config_path: Path | str | None = None,
-) -> dict[str, Any]:
-    """Verify internal approval and optionally a freshly recomputed current plan."""
+) -> tuple[dict[str, Any], bytes]:
+    """Strictly load and validate one saved approval request without mutation."""
 
     source = Path(request_path).expanduser().resolve()
     request_bytes = _read_required_file(source, "Saved approval request")
@@ -178,6 +176,19 @@ def verify_saved_reference_preparation_approval(
         source,
         label="Saved approval request",
     )
+    _validate_request(request)
+    return request, request_bytes
+
+
+def verify_saved_reference_preparation_approval(
+    request_path: Path | str,
+    *,
+    current_config_path: Path | str | None = None,
+) -> dict[str, Any]:
+    """Verify internal approval and optionally a freshly recomputed current plan."""
+
+    source = Path(request_path).expanduser().resolve()
+    request, request_bytes = load_saved_reference_preparation_approval(source)
     fingerprint = _validate_request(request)
     embedded_plan = request["plan"]
 

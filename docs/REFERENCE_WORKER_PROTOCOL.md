@@ -51,6 +51,14 @@ recovery, resume, or GUI enablement. Later code must preserve this request and
 protocol boundary and prove terminal result verification before the reference
 button can be enabled.
 
+A shared-core approval-aware preparation service now exists outside this worker
+transport and proves exact private staging plus pristine prepared state. The
+current harness does not import or call it. A future request version must bind
+the approval path and complete request SHA-256 and must preserve the existing
+parent ledger's `prepared_not_executed` boundary before this mutation can cross
+the frozen worker pipe. See
+[approved reference preparation](REFERENCE_APPROVED_PREPARATION.md).
+
 The first executable consumer is deliberately nonnumerical: it verifies the
 request across a real stdio child-process boundary and always emits
 `stopped_before_prepare`. See

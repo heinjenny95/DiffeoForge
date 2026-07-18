@@ -219,6 +219,18 @@ path. A future atomic consumer must fresh-replan again immediately before
 staging and must stop before execution. See
 [reference preparation-only approval](REFERENCE_PREPARATION_APPROVAL.md).
 
+The approval-aware preparation service adds the first intentionally mutating
+consumer without weakening the execution boundary. It requires an external hash
+of the complete request, freshly exact-matches the embedded plan, stages under a
+private temporary directory, compares all plan-bound manifest and protected-byte
+fields, and rereads the request immediately before publication. Windows uses a
+non-replacing rename and Linux uses `renameat2(RENAME_NOREPLACE)` so a destination
+appearing during staging is preserved. Only after schema-valid evidence exists
+is the directory published; the service then invokes the full prepared-run
+verifier and returns status `prepared_approved_reference_run_not_executed`. It
+does not call the engine or alter the frozen worker harness. See
+[approved reference preparation](REFERENCE_APPROVED_PREPARATION.md).
+
 Both setup routes can also pass their already selected template path to a
 Qt-independent immutable preview model. The model reuses the strict VTK parser,
 binds the source SHA-256 before and after loading, freezes vertices, triangles,

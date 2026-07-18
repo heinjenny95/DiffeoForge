@@ -1,0 +1,106 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://diffeoforge.org/schema/reference-approved-preparation-v0.1.json",
+  "title": "DiffeoForge approved reference preparation evidence",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "status",
+    "preparer",
+    "approval_request",
+    "approved_plan",
+    "prepared_run",
+    "checks",
+    "scientific_boundary"
+  ],
+  "properties": {
+    "schema_version": { "const": "0.1" },
+    "status": { "const": "prepared_approved_reference_run_not_executed" },
+    "preparer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["diffeoforge"],
+      "properties": { "diffeoforge": { "type": "string", "minLength": 1 } }
+    },
+    "approval_request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "bytes", "sha256", "expected_sha256"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "bytes": { "type": "integer", "minimum": 2 },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "expected_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "approved_plan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "canonical_fingerprint",
+        "run_id",
+        "destination",
+        "subjects",
+        "protected_files",
+        "total_protected_bytes"
+      ],
+      "properties": {
+        "canonical_fingerprint": { "$ref": "#/$defs/sha256" },
+        "run_id": { "type": "string", "minLength": 1 },
+        "destination": { "type": "string", "minLength": 1 },
+        "subjects": { "type": "integer", "minimum": 2 },
+        "protected_files": { "type": "integer", "minimum": 8 },
+        "total_protected_bytes": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "prepared_run": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "manifest_path",
+        "manifest_bytes",
+        "manifest_sha256",
+        "protected_files",
+        "lifecycle_last_event",
+        "output_empty",
+        "engine_execution_started"
+      ],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "manifest_path": { "type": "string", "minLength": 1 },
+        "manifest_bytes": { "type": "integer", "minimum": 2 },
+        "manifest_sha256": { "$ref": "#/$defs/sha256" },
+        "protected_files": { "type": "integer", "minimum": 8 },
+        "lifecycle_last_event": { "const": "prepared" },
+        "output_empty": { "const": true },
+        "engine_execution_started": { "const": false }
+      }
+    },
+    "checks": {
+      "type": "array",
+      "minItems": 10,
+      "maxItems": 10,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "approval_request_strict_and_schema_valid",
+          "approval_request_matches_external_sha256",
+          "embedded_plan_matches_approval_fingerprint",
+          "fresh_current_plan_exactly_matches_approved_plan",
+          "private_stage_exactly_matches_approved_protected_bytes",
+          "approval_request_unchanged_before_atomic_publication",
+          "destination_published_atomically_without_replace",
+          "prepared_manifest_and_protected_files_verified",
+          "prepared_lifecycle_has_no_execution_event",
+          "prepared_output_is_pristine"
+        ]
+      }
+    },
+    "scientific_boundary": { "type": "string", "minLength": 1 }
+  },
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+  }
+}

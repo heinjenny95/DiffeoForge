@@ -3,8 +3,9 @@
 Status: **versioned immutable intent record; no preparation or engine execution**
 
 The approval command closes the gap between reviewing an exact preparation
-plan and recording which exact bytes were accepted. It does not create a run
-directory and is not consumed by `prepare` yet.
+plan and recording which exact bytes were accepted. Approval creation itself
+does not create a run directory. The generic `prepare` command ignores the
+artifact; only the separate `reference-prepare-approved` command consumes it.
 
 First save and review a plan and its offline HTML page:
 
@@ -80,11 +81,14 @@ trailing documents, schema violations, embedded-plan/fingerprint disagreement,
 and request changes during verification. The verifier prints versioned
 `reference-preparation-approval-verification-v0.1` evidence and writes nothing.
 
-## Future atomic consumer boundary
+## Atomic consumer boundary
 
-This release intentionally stops before mutation. A future preparation worker
-must accept the approval request explicitly, freshly recompute the entire plan
-immediately before staging, require exact canonical fingerprint equality and an
-absent destination, then atomically create only that immutable staged run. It
-must stop before engine execution. The existing `diffeoforge prepare` command
-does not yet consume or enforce this approval artifact.
+The CLI now has a separate approval-aware mutating consumer. It additionally
+requires an independently recorded hash of the complete request, freshly
+recomputes the plan, exact-matches private staged bytes, publishes without
+replacement, verifies the pristine prepared run, and stops before execution.
+See [atomically prepare an approved reference plan](REFERENCE_APPROVED_PREPARATION.md).
+
+The generic `diffeoforge prepare` command still does not consume this approval
+artifact. The frozen desktop reference worker also remains nonmutating until a
+separate parent-supervised worker slice is reviewed.

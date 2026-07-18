@@ -42,7 +42,7 @@ diffeoforge reference-plan-verify experiment-001-preparation.json --report exper
 # After human review, record preparation-only approval for that exact fingerprint:
 diffeoforge reference-plan-approve atlas.yaml --run-id experiment-001 --approve-fingerprint REVIEWED_SHA256 --output experiment-001-approval.json
 diffeoforge reference-plan-approval-verify experiment-001-approval.json --current-config atlas.yaml
-diffeoforge prepare atlas.yaml --run-id experiment-001
+diffeoforge reference-prepare-approved experiment-001-approval.json --current-config atlas.yaml --expect-request-sha256 REVIEWED_REQUEST_SHA256
 # Inspect manifest.json and engine/*.xml before committing compute time.
 diffeoforge execute runs/experiment-001
 diffeoforge status runs/experiment-001
@@ -59,9 +59,10 @@ If the Python Scripts directory is not available on `PATH`, the packaged
 fallback `python -m diffeoforge` invokes this exact same parser and commands;
 it is not a separate workflow implementation.
 
-The approval artifact currently records and verifies intent only. The existing
-`prepare` command does not consume it yet; an approval-aware atomic preparation
-worker is a separate roadmap slice. Approval never authorizes engine execution.
+The generic `prepare` command does not consume an approval. The stricter
+`reference-prepare-approved` path requires an externally recorded request hash,
+exact-matches private staging to the approved plan, publishes atomically, and
+stops before execution. Approval never authorizes engine execution.
 
 Prepared run directories are write-once. DiffeoForge refuses to overwrite or
 execute one a second time. Resume creates a new immutable successor and preserves
@@ -95,6 +96,9 @@ This repository currently provides:
 - a deterministic preparation-only approval request bound to a freshly
   recomputed exact plan, plus strict internal and optional current-state
   verification without preparation or engine authorization;
+- an approval-aware atomic reference preparation path that externally binds the
+  request bytes, exact-matches private staging, never replaces an appearing
+  destination, and verifies pristine `prepared` state without engine launch;
 - explicit Deformetrica XML generation and native or Windows-to-WSL launchers;
 - exact command, environment, lifecycle, convergence, result, and output
   inventories;
@@ -412,6 +416,7 @@ and workflow for another mesh directory.
 - [Read-only reference preparation plan](docs/REFERENCE_PREPARATION_PLAN.md)
 - [Saved reference preparation verification](docs/REFERENCE_PREPARATION_VERIFICATION.md)
 - [Reference preparation-only approval](docs/REFERENCE_PREPARATION_APPROVAL.md)
+- [Atomically prepare an approved reference plan](docs/REFERENCE_APPROVED_PREPARATION.md)
 - [Versioned reference worker lifecycle protocol](docs/REFERENCE_WORKER_PROTOCOL.md)
 - [Nonnumerical reference worker pipe harness](docs/REFERENCE_WORKER_HARNESS.md)
 - [Nonnumerical reference harness controller](docs/REFERENCE_HARNESS_CONTROLLER.md)
