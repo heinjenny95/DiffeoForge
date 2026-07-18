@@ -389,6 +389,7 @@ def _verifier_observation(
     expected_command = [
         "release",
         "verify-asset",
+        RELEASE_TAG,
         str(asset),
         "--repo",
         REPOSITORY,

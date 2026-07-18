@@ -41,7 +41,8 @@ def test_installer_contract_pins_authentic_current_x64_toolchain() -> None:
             "valid_authenticode_publisher_pyrsys_b_v",
         ],
         "release_attestation_command": (
-            "gh release verify-asset <asset> --repo jrsoftware/issrc --format json"
+            "gh release verify-asset is-7_0_2 <asset> "
+            "--repo jrsoftware/issrc --format json"
         ),
         "compiler": "ISCC.exe",
         "compiler_mode": "console_noninteractive",

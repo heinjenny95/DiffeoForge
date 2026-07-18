@@ -120,6 +120,7 @@ $observedAt = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffffffZ")
 $commandArguments = @(
     "release",
     "verify-asset",
+    "is-7_0_2",
     $resolvedAsset.FullName,
     "--repo",
     "jrsoftware/issrc",

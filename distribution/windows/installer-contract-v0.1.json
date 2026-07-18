@@ -22,7 +22,7 @@
       "exact_sha256",
       "valid_authenticode_publisher_pyrsys_b_v"
     ],
-    "release_attestation_command": "gh release verify-asset <asset> --repo jrsoftware/issrc --format json",
+    "release_attestation_command": "gh release verify-asset is-7_0_2 <asset> --repo jrsoftware/issrc --format json",
     "compiler": "ISCC.exe",
     "compiler_mode": "console_noninteractive",
     "unpinned_latest_or_package_manager_resolution": false

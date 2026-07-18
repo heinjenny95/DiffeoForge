@@ -114,8 +114,8 @@
         "version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
         "command": {
           "type": "array",
-          "minItems": 7,
-          "maxItems": 7,
+          "minItems": 8,
+          "maxItems": 8,
           "items": { "type": "string", "minLength": 1 }
         },
         "exit_code": { "const": 0 }

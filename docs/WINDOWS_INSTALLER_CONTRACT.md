@@ -38,7 +38,8 @@ SHA-256
 `5ad54ca3def786f8f4212552e54cc6d8d61329e2d24a1cfee0571d42c2684ff1`,
 from immutable release tag `is-7_0_2` in `jrsoftware/issrc`. A future build must
 run the official release-specific
-`gh release verify-asset <asset> --repo jrsoftware/issrc --format json` check,
+`gh release verify-asset is-7_0_2 <asset> --repo jrsoftware/issrc --format json`
+check with the positional tag fixed rather than resolving `latest`,
 not the generic artifact-attestation command, and validate the
 Authenticode publisher `Pyrsys B.V.` before executing the downloaded tool. The
 hash check is necessary but does not replace the authenticity checks.
