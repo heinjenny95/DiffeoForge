@@ -239,8 +239,19 @@ ledger requires all three preparation phases in order and accepts
 `prepared_not_executed` only when the nested preparation evidence, manifest,
 destination, approval hash, and plan fingerprint agree. The worker performs no
 engine launch. It intentionally leaves the frozen nonmutating worker untouched;
-parent containment, freezing, cancel semantics, and GUI enablement remain open.
+freezing, dedicated hard-parent-death evidence, cancel semantics, and GUI
+enablement remain open.
 See [the approval-bound preparation worker](REFERENCE_PREPARATION_WORKER.md).
+
+Its distinct Qt-independent parent controller now prevalidates the request,
+assigns the source child to a Windows kill-on-close Job before sending an
+ASCII-safe request line, and bounds time, event count, line size, and stderr. It
+accepts only the exact five-event lifecycle with exit code 0, then independently
+verifies the prepared run and binds the observed manifest, run ID, copied config
+hash, and backend to the request. Failure preserves any published destination
+or private crash stage. The controller is not frozen or GUI-wired and performs
+no deletion, reconciliation, cancellation, or execution. See
+[the preparation parent controller](REFERENCE_PREPARATION_CONTROLLER.md).
 
 Both setup routes can also pass their already selected template path to a
 Qt-independent immutable preview model. The model reuses the strict VTK parser,

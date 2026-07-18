@@ -81,9 +81,12 @@ Run the source harness only as a protocol child:
 python -m diffeoforge.desktop.reference_preparation_worker_harness
 ```
 
-The harness is not yet wired into the GUI, an installer, the frozen Windows
-bundle, or a kill-on-close parent controller. It has no cancel channel and no
-reference-engine process tree. Those are separate review gates. In particular,
-this slice proves approval-bound preparation across a real pipe; it does not
+The source harness now has a separate Qt-independent
+[bounded parent controller](REFERENCE_PREPARATION_CONTROLLER.md). On Windows the
+controller assigns it to a kill-on-close Job before delivering the request and
+accepts success only after independent prepared-run verification. The harness
+is still not wired into the GUI, an installer, or the frozen Windows bundle. It
+has no cancel channel and no reference-engine process tree. In particular, this
+boundary proves approval-bound preparation across a real pipe; it does not
 estimate an atlas, validate scientific parameters, establish approver identity,
 or authorize execution.

@@ -141,8 +141,15 @@ A separate source-level child can now consume an independently hash-bound
 preparation-only approval and atomically publish a verified immutable run with
 terminal outcome `prepared_not_executed`. It has its own narrow request/event
 schemas and does not alter the frozen worker. It is not yet included in the
-bundle, attached to a kill-on-close parent controller, or exposed by the GUI;
-those remain distribution gates before this mutating boundary can ship.
+bundle or exposed by the GUI; those remain distribution gates before this
+mutating boundary can ship.
+
+The source child now has a Qt-independent parent controller that performs that
+Job assignment before request delivery, bounds transport and runtime, and
+independently verifies the published prepared run. The controller explicitly
+refuses default resolution from a frozen desktop process because the required
+sibling is not yet part of the bundle. Freeze inventory, hard-parent-death
+evidence for this child, installer integration, and GUI enablement remain open.
 
 ## Bundle and installer decisions
 

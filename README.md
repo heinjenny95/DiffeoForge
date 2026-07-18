@@ -173,8 +173,10 @@ hash-bound diagnostic of its exact container engine and image from review
 step 2. A separate source-level child can also consume an independently
 hash-bound preparation-only approval and atomically publish a verified
 `prepared_not_executed` run through a strict pipe. It still cannot start or
-supervise Deformetrica, is not frozen or GUI-wired, and the Modern path does
-not provide checkpoint/resume. Windows parent death now
+supervise Deformetrica. A Qt-independent parent now contains this source child,
+bounds its transport and independently verifies the prepared run, but it is not
+frozen or GUI-wired. The Modern path does not provide checkpoint/resume.
+Windows parent death now
 terminates the contained worker tree and command-pipe EOF requests cooperative
 cancellation on every platform. Versioned private markers and OS-released
 leases now support exact-destination, read-only discovery after hard crashes;
@@ -421,6 +423,7 @@ and workflow for another mesh directory.
 - [Reference preparation-only approval](docs/REFERENCE_PREPARATION_APPROVAL.md)
 - [Atomically prepare an approved reference plan](docs/REFERENCE_APPROVED_PREPARATION.md)
 - [Approval-bound reference preparation worker](docs/REFERENCE_PREPARATION_WORKER.md)
+- [Approval-bound reference preparation parent controller](docs/REFERENCE_PREPARATION_CONTROLLER.md)
 - [Versioned reference worker lifecycle protocol](docs/REFERENCE_WORKER_PROTOCOL.md)
 - [Nonnumerical reference worker pipe harness](docs/REFERENCE_WORKER_HARNESS.md)
 - [Nonnumerical reference harness controller](docs/REFERENCE_HARNESS_CONTROLLER.md)

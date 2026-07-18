@@ -109,3 +109,4 @@ jobs:
           tests/test_desktop_reference_preparation_request.py
           tests/test_desktop_reference_preparation_worker_protocol.py
           tests/test_desktop_reference_preparation_worker_harness.py
+          tests/test_desktop_reference_preparation_worker_controller.py
