@@ -83,6 +83,7 @@ This roadmap describes evidence gates rather than promised dates.
   - [x] Strict saved-plan/fingerprint/HTML read-only verification evidence
   - [x] Versioned preparation-only approval request and fresh current-plan verification
   - [x] Approval-aware exact private staging and atomic prepared-not-executed publication
+  - [x] Approval-bound real-pipe preparation worker with strict prepared-not-executed evidence
   - [ ] User-approved private-run reconciliation, reference supervision, and native mesh rendering
 - [ ] Parameter explanations and safe presets
 - [x] Pre-compute configured all-pairs and known-payload workload report

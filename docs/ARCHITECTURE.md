@@ -231,6 +231,17 @@ verifier and returns status `prepared_approved_reference_run_not_executed`. It
 does not call the engine or alter the frozen worker harness. See
 [approved reference preparation](REFERENCE_APPROVED_PREPARATION.md).
 
+A distinct source-level preparation worker now carries that exact authorization
+across a real child-process pipe. Its immutable request binds the complete
+approval hash, current config hash, approved plan fingerprint, run ID, and
+destination while fixing engine authorization to false. Its separate event
+ledger requires all three preparation phases in order and accepts
+`prepared_not_executed` only when the nested preparation evidence, manifest,
+destination, approval hash, and plan fingerprint agree. The worker performs no
+engine launch. It intentionally leaves the frozen nonmutating worker untouched;
+parent containment, freezing, cancel semantics, and GUI enablement remain open.
+See [the approval-bound preparation worker](REFERENCE_PREPARATION_WORKER.md).
+
 Both setup routes can also pass their already selected template path to a
 Qt-independent immutable preview model. The model reuses the strict VTK parser,
 binds the source SHA-256 before and after loading, freezes vertices, triangles,

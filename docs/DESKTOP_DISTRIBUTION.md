@@ -137,6 +137,13 @@ it through the real controller to the Windows kill-on-close Job, hard-exits the
 controller, and verifies bounded worker termination. No run is prepared and no
 reference compute control is enabled.
 
+A separate source-level child can now consume an independently hash-bound
+preparation-only approval and atomically publish a verified immutable run with
+terminal outcome `prepared_not_executed`. It has its own narrow request/event
+schemas and does not alter the frozen worker. It is not yet included in the
+bundle, attached to a kill-on-close parent controller, or exposed by the GUI;
+those remain distribution gates before this mutating boundary can ship.
+
 ## Bundle and installer decisions
 
 The first evidence build now uses pinned PyInstaller 6.21.0 in one-directory

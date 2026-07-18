@@ -1,6 +1,6 @@
 # Versioned desktop reference worker protocol
 
-Status: **transport contract with nonnumerical harness consumer; no engine launch**
+Status: **versioned phase-dependent transport contracts; no engine launch**
 
 The external Deformetrica lifecycle cannot reuse the Modern worker's
 nonpublishing cancellation semantics. A Modern cancellation removes private
@@ -51,13 +51,18 @@ recovery, resume, or GUI enablement. Later code must preserve this request and
 protocol boundary and prove terminal result verification before the reference
 button can be enabled.
 
-A shared-core approval-aware preparation service now exists outside this worker
-transport and proves exact private staging plus pristine prepared state. The
-current harness does not import or call it. A future request version must bind
-the approval path and complete request SHA-256 and must preserve the existing
-parent ledger's `prepared_not_executed` boundary before this mutation can cross
-the frozen worker pipe. See
-[approved reference preparation](REFERENCE_APPROVED_PREPARATION.md).
+A separate, narrower v0.1 preparation request and event vocabulary now binds an
+approval path, the independently recorded complete approval SHA-256, current
+config hash, approved plan fingerprint, run ID, exact destination, and
+`engine_execution_authorized: false`. Its ledger requires the complete
+`verify_request`, `prepare_approved`, `verify_prepared_run` sequence and
+cross-checks the nested approved-preparation evidence before accepting
+`prepared_not_executed`. See the
+[approval-bound preparation worker](REFERENCE_PREPARATION_WORKER.md).
+
+This new source harness does not modify the frozen nonnumerical request,
+protocol, controller, executable, or evidence bundle. Parent containment and
+freeze integration for the mutating child remain separate review gates.
 
 The first executable consumer is deliberately nonnumerical: it verifies the
 request across a real stdio child-process boundary and always emits

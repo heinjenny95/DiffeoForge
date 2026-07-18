@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://diffeoforge.org/schema/desktop-reference-preparation-request-v0.1.json",
+  "title": "DiffeoForge desktop approval-bound reference preparation request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "reference_preparation_request_version",
+    "request_id",
+    "operation",
+    "engine",
+    "approval_path",
+    "expected_approval_sha256",
+    "config_path",
+    "expected_config_sha256",
+    "approved_plan_fingerprint",
+    "run_id",
+    "destination",
+    "engine_execution_authorized"
+  ],
+  "properties": {
+    "reference_preparation_request_version": { "const": "0.1" },
+    "request_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+    },
+    "operation": { "const": "prepare_approved_only" },
+    "engine": { "const": "deformetrica_reference" },
+    "approval_path": { "type": "string", "minLength": 1 },
+    "expected_approval_sha256": { "$ref": "#/$defs/sha256" },
+    "config_path": { "type": "string", "minLength": 1 },
+    "expected_config_sha256": { "$ref": "#/$defs/sha256" },
+    "approved_plan_fingerprint": { "$ref": "#/$defs/sha256" },
+    "run_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+    },
+    "destination": { "type": "string", "minLength": 1 },
+    "engine_execution_authorized": { "const": false }
+  },
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+  }
+}
