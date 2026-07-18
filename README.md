@@ -119,6 +119,8 @@ This repository currently provides:
   project-independent first desktop screen,
   exact non-overwriting CLI evidence exports for saved plan and approval
   verification,
+  a manual clean-runner Windows freeze workflow that executes the complete
+  engineering smoke contract while withholding the unsigned binary bundle,
   shared-core workload/preflight evidence, and a verified Modern-only
   start/live-event/cancel screen followed by a fully reverified Atlas/PCA/QC
   summary with inventory-bound artifact handoff;

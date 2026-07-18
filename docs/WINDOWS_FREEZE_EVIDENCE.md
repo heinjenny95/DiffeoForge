@@ -3,6 +3,36 @@
 Status: **developer-machine engineering evidence, not a release, installer, or
 redistributable binary**
 
+## Manual clean-runner workflow
+
+`.github/workflows/windows-freeze-evidence.yml` provides a deliberately manual
+`workflow_dispatch` path for repeating this engineering build on a fresh
+GitHub-hosted `windows-latest` runner. It has read-only repository permission,
+uses pinned checkout/setup/upload action commits, selects Python 3.12, checks
+the pinned PyInstaller and CPU-only Torch boundary, and stages all public
+synthetic configs, meshes, approval, and destinations under `RUNNER_TEMP` so
+the checkout remains clean.
+
+The workflow invokes the same `build-evidence.ps1` contract. Therefore a
+successful run must pass the frozen GUI smoke, full public Modern
+worker/controller smoke, nonnumerical reference harness, reference
+hard-parent-death audit, preparation-worker hard-parent-death audit, real
+approval-bound prepared-not-executed worker/controller smoke, exact bundle
+inventory creation, and an independent final verification.
+
+The unsigned one-directory bundle is intentionally not uploaded. Until code
+signing, SBOM, dependency-license clearance, antivirus review, and installer
+gates exist, the workflow copies exactly `freeze-evidence.json` and
+`freeze-evidence.sha256` to a separate two-file upload boundary and retains
+that small artifact for 14 days. The copied manifest hash is checked against
+the sidecar immediately before upload. The workflow does not run on pushes or
+pull requests and therefore cannot silently consume a large Windows runner for
+ordinary changes.
+
+The workflow's existence is not a successful clean-runner observation. Each
+manual run must be linked and its downloaded two-file artifact independently
+inspected before it is cited as engineering evidence.
+
 DiffeoForge can be frozen on a 64-bit Windows development machine into one
 directory containing four entry points:
 
