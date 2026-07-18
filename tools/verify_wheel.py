@@ -14,6 +14,10 @@ ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_ROOT = ROOT / "src" / "diffeoforge" / "schema"
 CONSOLE_ENTRY_POINT = "diffeoforge.cli:main"
 GUI_ENTRY_POINT = "diffeoforge.desktop.app:main"
+REQUIRED_MODULES = {
+    "diffeoforge/__main__.py",
+    "diffeoforge/desktop/sbom.py",
+}
 
 
 class WheelContractError(RuntimeError):
@@ -39,7 +43,7 @@ def expected_package_members() -> frozenset[str]:
     }
     if not schemas:
         raise WheelContractError("Repository contains no versioned JSON schemas")
-    return frozenset({"diffeoforge/__main__.py", *schemas})
+    return frozenset({*REQUIRED_MODULES, *schemas})
 
 
 def _safe_member_name(name: str) -> bool:
@@ -102,7 +106,7 @@ def verify_wheel(path: Path | str) -> WheelEvidence:
     return WheelEvidence(
         wheel=wheel,
         member_count=len(names),
-        schema_count=len(expected) - 1,
+        schema_count=sum(member.endswith(".json") for member in expected),
         dist_info_directory=dist_info[0],
     )
 

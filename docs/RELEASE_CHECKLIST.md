@@ -82,6 +82,11 @@ decision and reviewer:
 - [ ] Test and example data have recorded provenance and redistribution-compatible licenses.
 - [ ] Logs, examples, and screenshots contain no credentials, usernames, or sensitive absolute paths.
 - [ ] New dependencies and bundled components have compatible licenses and pinned provenance.
+- [ ] The deterministic CycloneDX SBOM verifies against externally recorded
+  freeze, dependency-evidence, and SBOM SHA-256 values.
+- [ ] A named human reviewer has completed the separate license inventory,
+  compatibility analysis, and redistribution decision; schema validity alone
+  is not accepted as legal review.
 - [ ] Python Pickle checkpoints are documented as trusted-source-only inputs.
 - [ ] Security-relevant limitations and reporting instructions are current.
 
