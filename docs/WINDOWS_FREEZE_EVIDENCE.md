@@ -91,15 +91,25 @@ no unresolved `License-File` declaration. Exact artifact hashes, package-field
 counts, timings, and the unchanged license/SBOM non-claims are documented in
 [Frozen dependency metadata evidence](DESKTOP_DEPENDENCY_METADATA_EVIDENCE.md).
 
-### Pending six-file SBOM observation
+### Rejected first six-file diagnostic and pending observation
 
-The workflow source now requires the pinned builder-only SBOM dependency,
-creates the deterministic CycloneDX pair only after both source-evidence pairs
-verify, reconstructs the SBOM through the independent download verifier, and
-fails unless the upload directory contains exactly the six approved regular,
-non-reparse files. This integration is not itself an observation. A new manual
-run, independent artifact download, exact hash audit, and documentation update
-are still required before a clean-runner SBOM is cited.
+[Workflow run 29637970611](https://github.com/heinjenny95/DiffeoForge/actions/runs/29637970611)
+successfully produced and independently verified exactly six evidence files
+from clean source commit `c2b18a26a4669d3b47ec4736de44596c0f855551`.
+It is deliberately **not accepted as the first clean-runner SBOM observation**.
+The PyInstaller log showed `diffeoforge.desktop.sbom` being analysed as a
+hidden import after the builder-only extra had been installed. Each of the four
+EXE containers was exactly 89,639 bytes larger than in the preceding four-file
+run. The file manifest cannot disprove embedded Python modules because they
+reside inside the executable's Python archive rather than as separate paths.
+
+The freeze specification now filters the SBOM implementation from collected
+DiffeoForge submodules, excludes it and all builder-only transitive module
+names, and fails the build if an excluded prefix nevertheless appears in any
+of the four `Analysis.pure` tables. This is a build-tool/runtime boundary fix;
+it does not change the generated SBOM content. A new clean-runner build, all
+frozen-process smokes, independent six-file artifact audit, and documentation
+update are still required before a clean-runner SBOM is cited.
 
 DiffeoForge can be frozen on a 64-bit Windows development machine into one
 directory containing four entry points:
