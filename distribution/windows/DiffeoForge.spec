@@ -13,14 +13,15 @@ schema_data = [
     for path in sorted(schema_directory.glob("*.json"))
 ]
 
-# The post-build SBOM tool runs from source after the frozen bundle has been
-# verified.  Its implementation and third-party builder dependencies must not
-# become part of any runtime executable merely because the clean-runner job
-# installs the ``sbom-builder`` extra before invoking PyInstaller.
+# The post-build SBOM and installer-plan tools run from source after the frozen
+# bundle has been verified. Their implementations and third-party builder
+# dependencies must not become part of any runtime executable merely because
+# the clean-runner job installs the ``sbom-builder`` extra before PyInstaller.
 builder_only_module_prefixes = (
     "boolean",
     "cyclonedx",
     "defusedxml",
+    "diffeoforge.desktop.installer_plan",
     "diffeoforge.desktop.sbom",
     "license_expression",
     "packageurl",

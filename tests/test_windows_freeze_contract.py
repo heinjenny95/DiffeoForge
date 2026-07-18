@@ -34,6 +34,7 @@ def test_windows_freeze_excludes_and_audits_builder_only_sbom_modules() -> None:
         "boolean",
         "cyclonedx",
         "defusedxml",
+        "diffeoforge.desktop.installer_plan",
         "diffeoforge.desktop.sbom",
         "license_expression",
         "packageurl",

@@ -1,0 +1,189 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://diffeoforge.org/schema/desktop-installer-build-plan-v0.1.json",
+  "title": "DiffeoForge Windows installer build plan",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "status",
+    "target",
+    "source",
+    "toolchain",
+    "inputs",
+    "output",
+    "compiler",
+    "missing_release_gates",
+    "scientific_boundary"
+  ],
+  "properties": {
+    "schema_version": { "const": "0.1" },
+    "status": { "const": "installer_build_plan_not_an_installer_or_release_artifact" },
+    "target": { "const": "windows-x86_64-cpu" },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "commit_sha",
+        "application_version",
+        "development_version",
+        "release_candidate"
+      ],
+      "properties": {
+        "commit_sha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+        "application_version": { "type": "string", "minLength": 1 },
+        "development_version": { "type": "boolean" },
+        "release_candidate": { "type": "boolean" }
+      }
+    },
+    "toolchain": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "version",
+        "edition",
+        "release_repository",
+        "release_tag",
+        "asset",
+        "asset_bytes",
+        "asset_sha256",
+        "compiler",
+        "execution_authorized"
+      ],
+      "properties": {
+        "name": { "const": "Inno Setup" },
+        "version": { "const": "7.0.2" },
+        "edition": { "const": "x64" },
+        "release_repository": { "const": "jrsoftware/issrc" },
+        "release_tag": { "const": "is-7_0_2" },
+        "asset": { "const": "innosetup-7.0.2-x64.exe" },
+        "asset_bytes": { "const": 17020192 },
+        "asset_sha256": {
+          "const": "5ad54ca3def786f8f4212552e54cc6d8d61329e2d24a1cfee0571d42c2684ff1"
+        },
+        "compiler": { "const": "ISCC.exe" },
+        "execution_authorized": { "const": false }
+      }
+    },
+    "inputs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bundle", "evidence", "installer_script", "installer_contract", "project", "license"],
+      "properties": {
+        "bundle": { "$ref": "#/$defs/bundle" },
+        "evidence": { "$ref": "#/$defs/evidence" },
+        "installer_script": { "$ref": "#/$defs/file" },
+        "installer_contract": { "$ref": "#/$defs/file" },
+        "project": { "$ref": "#/$defs/file" },
+        "license": { "$ref": "#/$defs/file" }
+      }
+    },
+    "output": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "directory",
+        "setup_filename",
+        "setup_path",
+        "plan_filename",
+        "sidecar_filename",
+        "overwrite"
+      ],
+      "properties": {
+        "directory": { "type": "string", "minLength": 1 },
+        "setup_filename": {
+          "type": "string",
+          "pattern": "^DiffeoForge-[A-Za-z0-9._-]+-Windows-CPU-x86_64-Setup\\.exe$"
+        },
+        "setup_path": { "type": "string", "minLength": 1 },
+        "plan_filename": { "const": "installer-build-plan.json" },
+        "sidecar_filename": { "const": "installer-build-plan.sha256" },
+        "overwrite": { "const": false }
+      }
+    },
+    "compiler": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["program", "arguments", "shell", "execution_authorized"],
+      "properties": {
+        "program": { "const": "ISCC.exe" },
+        "arguments": {
+          "type": "array",
+          "minItems": 9,
+          "maxItems": 9,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "shell": { "const": false },
+        "execution_authorized": { "const": false }
+      }
+    },
+    "missing_release_gates": {
+      "type": "array",
+      "minItems": 10,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "scientific_boundary": { "type": "string", "minLength": 1 }
+  },
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "file": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "bytes", "sha256"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "bytes": { "type": "integer", "minimum": 1 },
+        "sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "bundle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "directory",
+        "freeze_evidence_sha256",
+        "inventory_sha256",
+        "file_count",
+        "total_bytes"
+      ],
+      "properties": {
+        "directory": { "type": "string", "minLength": 1 },
+        "freeze_evidence_sha256": { "$ref": "#/$defs/sha256" },
+        "inventory_sha256": { "$ref": "#/$defs/sha256" },
+        "file_count": { "type": "integer", "minimum": 4 },
+        "total_bytes": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "directory",
+        "exact_file_count",
+        "freeze_evidence_sha256",
+        "dependency_evidence_sha256",
+        "sbom_sha256",
+        "package_set_sha256",
+        "sbom_serial_number",
+        "sbom_component_count",
+        "sbom_composition"
+      ],
+      "properties": {
+        "directory": { "type": "string", "minLength": 1 },
+        "exact_file_count": { "const": 6 },
+        "freeze_evidence_sha256": { "$ref": "#/$defs/sha256" },
+        "dependency_evidence_sha256": { "$ref": "#/$defs/sha256" },
+        "sbom_sha256": { "$ref": "#/$defs/sha256" },
+        "package_set_sha256": { "$ref": "#/$defs/sha256" },
+        "sbom_serial_number": {
+          "type": "string",
+          "pattern": "^urn:uuid:[0-9a-f-]{36}$"
+        },
+        "sbom_component_count": { "type": "integer", "minimum": 1 },
+        "sbom_composition": { "const": "incomplete" }
+      }
+    }
+  }
+}

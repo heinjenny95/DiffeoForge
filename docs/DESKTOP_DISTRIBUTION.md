@@ -1,8 +1,9 @@
 # Desktop executable and installer architecture
 
 Status: **project setup, parameter/workload review, verified Modern
-start/live-event/cancel/result review, and a developer-only Windows one-directory
-evidence build exist; no distributable binary or installer yet**
+start/live-event/cancel/result review, a developer-only Windows one-directory
+evidence build, and a non-executing installer plan exist; no distributable
+binary or installer yet**
 
 Tracked by [engineering issue #22](https://github.com/heinjenny95/DiffeoForge/issues/22)
 and [ADR 0003](decisions/0003-windows-desktop-distribution.md). The
@@ -194,8 +195,12 @@ noninteractively, install per-user or administratively, create signed
 installers/uninstallers, log setup, support extended-length and Unicode paths,
 and perform silent installs for clean-VM CI. The future installer contains the
 already frozen one-directory application; it does not resolve Python packages
-on the user's computer. No installer executable has been implemented or
-distributed merely because this design is accepted.
+on the user's computer. The exact offline `.iss` script and a hash-bound,
+non-overwriting build-plan generator are implemented. The generator verifies
+the full bundle and exact six-file downloaded evidence, then records an
+explicit non-shell compiler argument vector with execution disabled. No Inno
+Setup tool is downloaded or executed, and no installer executable is created
+or distributed merely because this planning slice exists.
 
 The freeze evidence pin is not the future release lock. Exact Qt, PyTorch, and
 transitive dependencies still belong in a reviewed release lock and SBOM. The

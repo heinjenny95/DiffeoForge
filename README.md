@@ -206,7 +206,9 @@ interactive 3D rendering, mesh QC, registration evidence, or landmark picking.
 DiffeoForge also does **not** yet ship a desktop installer or redistributable
 binary. A clean-commit, exact-inventory Windows one-directory
 [engineering build](docs/WINDOWS_FREEZE_EVIDENCE.md) now exercises the GUI and
-separate frozen workers, but it does not satisfy the installer/release gates.
+separate frozen workers. An exact offline Inno Setup script and independently
+verifiable, non-executing installer build plan now exist, but neither produces
+an installer nor satisfies the installer/release gates.
 DiffeoForge still does not provide interactive native 3D mesh rendering or
 self-intersection detection, or promise
 CPU/GPU equivalence or 300-specimen production performance. See the [modern-workflow
