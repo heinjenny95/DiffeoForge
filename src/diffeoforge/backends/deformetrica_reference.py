@@ -248,8 +248,12 @@ def generate_resume_optimization_file(
     return path
 
 
-def _windows_to_wsl(path: Path) -> str:
-    raw = str(path.resolve())
+def _command_run_directory(path: Path, *, follow_symlinks: bool) -> Path:
+    return path.resolve() if follow_symlinks else path.absolute()
+
+
+def _windows_to_wsl(path: Path, *, follow_symlinks: bool = True) -> str:
+    raw = str(_command_run_directory(path, follow_symlinks=follow_symlinks))
     match = re.match(r"^([A-Za-z]):[\\/](.*)$", raw)
     if not match:
         raise ConfigurationError(f"Cannot translate path to WSL: {path}")
@@ -257,7 +261,12 @@ def _windows_to_wsl(path: Path) -> str:
     return "/mnt/{}/{}".format(match.group(1).lower(), "/".join(remainder))
 
 
-def build_command(config: Mapping[str, Any], run_directory: Path) -> CommandSpec:
+def build_command(
+    config: Mapping[str, Any],
+    run_directory: Path,
+    *,
+    follow_run_directory_symlinks: bool = True,
+) -> CommandSpec:
     """Resolve the exact native or WSL command for a prepared run."""
 
     validate_reference_config(config)
@@ -278,12 +287,16 @@ def build_command(config: Mapping[str, Any], run_directory: Path) -> CommandSpec
         "-v",
         runtime["verbosity"],
     )
+    command_run_directory = _command_run_directory(
+        run_directory,
+        follow_symlinks=follow_run_directory_symlinks,
+    )
 
     if launcher["type"] == "native":
         executable = launcher["executable"]
         return CommandSpec(
             argv=(executable, *arguments),
-            working_directory=str(run_directory.resolve()),
+            working_directory=str(command_run_directory),
             environment=environment,
         )
 
@@ -292,7 +305,10 @@ def build_command(config: Mapping[str, Any], run_directory: Path) -> CommandSpec
             raise ConfigurationError("The WSL launcher is only available from Windows.")
         if shutil.which("wsl.exe") is None:
             raise ConfigurationError("wsl.exe is not available on PATH.")
-        wsl_directory = _windows_to_wsl(run_directory)
+        wsl_directory = _windows_to_wsl(
+            run_directory,
+            follow_symlinks=follow_run_directory_symlinks,
+        )
         env_arguments = tuple(f"{key}={value}" for key, value in environment.items())
         return CommandSpec(
             argv=(
@@ -307,7 +323,7 @@ def build_command(config: Mapping[str, Any], run_directory: Path) -> CommandSpec
                 launcher["executable"],
                 *arguments,
             ),
-            working_directory=str(run_directory.resolve()),
+            working_directory=str(command_run_directory),
             environment=environment,
         )
 
@@ -315,7 +331,7 @@ def build_command(config: Mapping[str, Any], run_directory: Path) -> CommandSpec
         engine = launcher["engine"]
         image = launcher["image"]
         mount = (
-            f"type=bind,source={run_directory.resolve()},"
+            f"type=bind,source={command_run_directory},"
             f"target={CONTAINER_WORKING_DIRECTORY}"
         )
         container_environment = tuple(
@@ -346,7 +362,7 @@ def build_command(config: Mapping[str, Any], run_directory: Path) -> CommandSpec
                 image,
                 *arguments,
             ),
-            working_directory=str(run_directory.resolve()),
+            working_directory=str(command_run_directory),
             environment=environment,
         )
 

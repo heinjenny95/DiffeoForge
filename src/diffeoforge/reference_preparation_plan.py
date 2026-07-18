@@ -482,7 +482,11 @@ def plan_reference_preparation(
         "protected_files": protected_files,
         "protected_file_count": len(protected_files),
         "total_protected_bytes": sum(int(item["bytes"]) for item in protected_files),
-        "command_preview": build_command(config, destination).as_manifest(),
+        "command_preview": build_command(
+            config,
+            destination,
+            follow_run_directory_symlinks=not allow_existing_destination,
+        ).as_manifest(),
         "scientific_boundary": SCIENTIFIC_BOUNDARY,
     }
     _validate_plan(plan)
