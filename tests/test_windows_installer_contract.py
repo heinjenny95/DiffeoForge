@@ -21,8 +21,12 @@ def test_installer_contract_pins_authentic_current_x64_toolchain() -> None:
         "edition": "x64",
         "release_repository": "jrsoftware/issrc",
         "release_tag": "is-7_0_2",
+        "release_database_id": 352_994_135,
+        "release_tag_object_sha1": "d2509df69f828a7148294e29b2ca252c3250210c",
+        "release_commit_sha1": "c25dc6479cdc3be28e682a025fcf60765bba3de0",
         "release_immutable": True,
         "asset": "innosetup-7.0.2-x64.exe",
+        "asset_id": 475_225_237,
         "asset_bytes": 17_020_192,
         "asset_sha256": (
             "5ad54ca3def786f8f4212552e54cc6d8d61329e2d24a1cfee0571d42c2684ff1"
@@ -36,6 +40,9 @@ def test_installer_contract_pins_authentic_current_x64_toolchain() -> None:
             "exact_sha256",
             "valid_authenticode_publisher_pyrsys_b_v",
         ],
+        "release_attestation_command": (
+            "gh release verify-asset <asset> --repo jrsoftware/issrc --format json"
+        ),
         "compiler": "ISCC.exe",
         "compiler_mode": "console_noninteractive",
         "unpinned_latest_or_package_manager_resolution": False,

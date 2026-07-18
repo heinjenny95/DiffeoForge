@@ -1,0 +1,157 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://diffeoforge.org/schema/desktop-inno-toolchain-evidence-v0.1.json",
+  "title": "DiffeoForge Inno Setup toolchain authenticity observation",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "status",
+    "target",
+    "observed_at",
+    "source",
+    "asset",
+    "release_attestation",
+    "authenticode",
+    "verifier",
+    "execution_authorized",
+    "missing_release_gates",
+    "scientific_boundary"
+  ],
+  "properties": {
+    "schema_version": { "const": "0.1" },
+    "status": {
+      "const": "toolchain_authenticity_observation_not_execution_or_release_authorization"
+    },
+    "target": { "const": "windows-x86_64-cpu" },
+    "observed_at": { "type": "string", "format": "date-time" },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["commit_sha", "diffeoforge_version", "project", "contract", "wrapper"],
+      "properties": {
+        "commit_sha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+        "diffeoforge_version": { "type": "string", "minLength": 1 },
+        "project": { "$ref": "#/$defs/file" },
+        "contract": { "$ref": "#/$defs/file" },
+        "wrapper": { "$ref": "#/$defs/file" }
+      }
+    },
+    "asset": { "$ref": "#/$defs/asset" },
+    "release_attestation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "raw",
+        "repository",
+        "repository_id",
+        "release_tag",
+        "release_database_id",
+        "release_tag_object_sha1",
+        "release_purl",
+        "predicate_type",
+        "certificate_subject_alternative_name",
+        "verified_timestamp",
+        "timestamp_authority",
+        "asset_name",
+        "asset_sha256"
+      ],
+      "properties": {
+        "raw": { "$ref": "#/$defs/file" },
+        "repository": { "const": "jrsoftware/issrc" },
+        "repository_id": { "const": 2527983 },
+        "release_tag": { "const": "is-7_0_2" },
+        "release_database_id": { "const": 352994135 },
+        "release_tag_object_sha1": {
+          "const": "d2509df69f828a7148294e29b2ca252c3250210c"
+        },
+        "release_purl": { "const": "pkg:github/jrsoftware/issrc@is-7_0_2" },
+        "predicate_type": { "const": "https://in-toto.io/attestation/release/v0.2" },
+        "certificate_subject_alternative_name": {
+          "const": "https://dotcom.releases.github.com"
+        },
+        "verified_timestamp": { "type": "string", "format": "date-time" },
+        "timestamp_authority": { "const": "timestamp.githubapp.com" },
+        "asset_name": { "const": "innosetup-7.0.2-x64.exe" },
+        "asset_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "authenticode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "raw",
+        "status",
+        "signer_subject",
+        "signer_issuer",
+        "signer_thumbprint",
+        "signer_not_before",
+        "signer_not_after",
+        "timestamp_subject",
+        "timestamp_thumbprint"
+      ],
+      "properties": {
+        "raw": { "$ref": "#/$defs/file" },
+        "status": { "const": "Valid" },
+        "signer_subject": {
+          "const": "CN=Pyrsys B.V., O=Pyrsys B.V., S=Noord-Holland, C=NL"
+        },
+        "signer_issuer": { "type": "string", "minLength": 1 },
+        "signer_thumbprint": { "type": "string", "pattern": "^[0-9A-F]{40}$" },
+        "signer_not_before": { "type": "string", "format": "date-time" },
+        "signer_not_after": { "type": "string", "format": "date-time" },
+        "timestamp_subject": { "type": "string", "minLength": 1 },
+        "timestamp_thumbprint": { "type": "string", "pattern": "^[0-9A-F]{40}$" }
+      }
+    },
+    "verifier": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["raw", "program", "version", "command", "exit_code"],
+      "properties": {
+        "raw": { "$ref": "#/$defs/file" },
+        "program": { "$ref": "#/$defs/file" },
+        "version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+        "command": {
+          "type": "array",
+          "minItems": 7,
+          "maxItems": 7,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "exit_code": { "const": 0 }
+      }
+    },
+    "execution_authorized": { "const": false },
+    "missing_release_gates": {
+      "type": "array",
+      "minItems": 10,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "scientific_boundary": { "type": "string", "minLength": 1 }
+  },
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "file": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "bytes", "sha256"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "bytes": { "type": "integer", "minimum": 1 },
+        "sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "asset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "bytes", "sha256", "release_asset_id"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "bytes": { "type": "integer", "minimum": 1 },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "release_asset_id": { "const": 475225237 }
+      }
+    }
+  }
+}

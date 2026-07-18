@@ -201,6 +201,11 @@ the full bundle and exact six-file downloaded evidence, then records an
 explicit non-shell compiler argument vector with execution disabled. No Inno
 Setup tool is downloaded or executed, and no installer executable is created
 or distributed merely because this planning slice exists.
+The separate
+[toolchain-authenticity evidence workflow](INNO_TOOLCHAIN_EVIDENCE.md) now
+checks the exact release attestation and Windows Authenticode publisher for a
+pre-downloaded asset, records the verifier and raw observations, and still
+leaves both downloaded-asset and compiler execution unauthorized.
 
 The freeze evidence pin is not the future release lock. Exact Qt, PyTorch, and
 transitive dependencies still belong in a reviewed release lock and SBOM. The
