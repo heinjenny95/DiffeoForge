@@ -279,6 +279,16 @@ unpublished private stage, but it never deletes, publishes, resumes, repairs,
 or executes one. See
 [approval-bound preparation status](REFERENCE_PREPARATION_RECONCILIATION.md).
 
+Desktop step 2 consumes that report through a separate Qt-independent bounded
+view model. It first binds the current config bytes to the completed desktop
+review, delegates all reconciliation semantics to the shared core, and checks
+the review binding again before returning. The background Qt task discards a
+result if the approval path/hash or reviewed config binding changed while it
+ran. The view exposes raw status/reason/hash evidence and never turns a clear
+destination or verified private stage into preparation or publication
+authority. See
+[desktop reference preparation status](DESKTOP_REFERENCE_PREPARATION_STATUS.md).
+
 Both setup routes can also pass their already selected template path to a
 Qt-independent immutable preview model. The model reuses the strict VTK parser,
 binds the source SHA-256 before and after loading, freezes vertices, triangles,

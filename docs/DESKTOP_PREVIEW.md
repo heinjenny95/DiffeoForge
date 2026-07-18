@@ -11,6 +11,8 @@ and result review tracked by
 [engineering issue #85](https://github.com/heinjenny95/DiffeoForge/issues/85).
 The read-only reference-environment card is tracked by
 [engineering issue #95](https://github.com/heinjenny95/DiffeoForge/issues/95).
+The approval-bound read-only preparation-status card is tracked by
+[engineering issue #133](https://github.com/heinjenny95/DiffeoForge/issues/133).
 The native template projection preview is tracked by
 [engineering issue #97](https://github.com/heinjenny95/DiffeoForge/issues/97).
 The distribution architecture and its stricter release gates remain in
@@ -40,7 +42,9 @@ terminal:
    `modern-plan` JSON/HTML evidence; or, for the reference route, render the
    existing preflight parameter ratios and external-engine boundary, then
    optionally diagnose the exact configured container engine and image without
-   changing or starting either one;
+   changing or starting either one, then inspect one externally hash-bound
+   preparation approval and its exact destination/private-stage state through
+   the shared read-only reconciliation core;
 10. for a reviewed Modern project, continue to a third screen that binds the
    exact reviewed configuration SHA-256, displays and refreshes the read-only
    destination/private-state evidence, checks it again immediately before
@@ -96,6 +100,11 @@ python -m diffeoforge.desktop --smoke
   bytes, uses their configured container engine/image, and checks the file hash
   again afterward. It shows raw doctor evidence but performs no install, image
   build/pull, run preparation, backend start, resume, recovery, or repair.
+- The reference preparation-status check requires the previously reviewed
+  approval file plus its independently recorded complete-file SHA-256. It runs
+  outside the event loop, remains bound to the completed config review, and
+  discards results after any approval/config input drift. It exposes no prepare,
+  publish, delete, rename, repair, resume, recovery, or execute action.
 - Mesh inspection runs in a background GUI thread. Modern numerical work runs
   in a separate child process supervised by the fail-closed parent controller;
   Qt receives only validated events through queued signals.
@@ -124,13 +133,15 @@ python -m diffeoforge.desktop --smoke
 
 The GUI does not yet edit scientific parameters, render meshes interactively in
 3D, place landmarks, resume a Modern atlas, reconcile an already dead parent application, or supervise the
-external Deformetrica engine. Its reference card is environment diagnosis only;
+external Deformetrica engine. Its reference cards are read-only environment and
+preparation-state diagnosis only;
 the start button remains disabled even when every check passes. The projection
 preview is not mesh QC or registration evidence. Step 4 is a detailed read-only evidence and
 artifact-handoff view, not an interactive 3D renderer or a scientific
-interpretation system. The application is not frozen with PyInstaller and is
-not wrapped in an Inno Setup installer. Those capabilities require their own
-tests and release gates.
+interpretation system. A developer-machine PyInstaller one-directory evidence
+freeze exists, but it is not a redistributable release and is not wrapped in an
+Inno Setup installer. Those capabilities require their own tests and release
+gates.
 
 ## Preliminary Qt licensing boundary
 
