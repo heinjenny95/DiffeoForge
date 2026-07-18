@@ -22,15 +22,16 @@ inventory creation, and an independent final verification.
 
 The unsigned one-directory bundle is intentionally not uploaded. Until code
 signing, SBOM, dependency-license clearance, antivirus review, and installer
-gates exist, the workflow copies exactly `freeze-evidence.json` and
-`freeze-evidence.sha256` to a separate two-file upload boundary and retains
-that small artifact for 14 days. The copied manifest hash is checked against
-the sidecar immediately before upload. The workflow does not run on pushes or
-pull requests and therefore cannot silently consume a large Windows runner for
-ordinary changes.
+gates exist, the workflow copies `freeze-evidence.json` and its sidecar, then
+creates a separately hash-bound, explicitly unreviewed installed-distribution
+metadata inventory and sidecar. The exact four-file boundary is retained for
+14 days. Both pairs are independently verified immediately before upload. See
+[Frozen dependency metadata evidence](DESKTOP_DEPENDENCY_METADATA_EVIDENCE.md).
+The workflow does not run on pushes or pull requests and therefore cannot
+silently consume a large Windows runner for ordinary changes.
 
 The workflow's existence is not a successful clean-runner observation. Each
-manual run must be linked and its downloaded two-file artifact independently
+manual run must be linked and its downloaded exact artifact independently
 inspected before it is cited as engineering evidence.
 
 ### First clean-runner observation
@@ -57,7 +58,8 @@ The run observed all of the following through the frozen executables:
   `prepared_not_executed` outcome, published an independently verified
   destination, and did not start engine execution.
 
-The independently downloaded artifact contained exactly
+This first observation predates the dependency-metadata extension. Its
+independently downloaded artifact contained exactly
 `freeze-evidence.json` and `freeze-evidence.sha256`. The manifest is schema
 `desktop-freeze-evidence-v0.3`, has SHA-256
 `69b208e178bb6181ec7c73bd7abd8f9c409fc4a4deeeb246bb374ee033c6c4b6`,

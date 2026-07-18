@@ -99,8 +99,14 @@ def test_windows_freeze_workflow_is_manual_pinned_and_evidence_only() -> None:
     assert build.count("Copy-Item -LiteralPath (Join-Path $bundle") == 2
     assert '"freeze-evidence.json"' in build
     assert '"freeze-evidence.sha256"' in build
-    assert "uploadedFiles.Count -ne 2" in build
+    assert "tools/desktop_dependency_metadata_evidence.py create" in build
+    assert "tools/desktop_dependency_metadata_evidence.py verify" in build
+    assert '"freeze-dependency-metadata.json"' in build
+    assert '"freeze-dependency-metadata.sha256"' in build
+    assert "--expect-freeze-evidence-sha256 $observed" in build
+    assert "uploadedFiles.Count -ne 4" in build
     assert "Copied freeze evidence does not match its SHA-256 sidecar" in build
+    assert "License/redistribution review: not reviewed" in build
 
     upload = next(step for step in steps if step["name"] == "Upload exact evidence only")
     assert upload["with"] == {

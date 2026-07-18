@@ -95,17 +95,36 @@ jobs:
           New-Item -ItemType Directory -Path $evidenceDirectory | Out-Null
           Copy-Item -LiteralPath (Join-Path $bundle "freeze-evidence.json") -Destination $evidenceDirectory
           Copy-Item -LiteralPath (Join-Path $bundle "freeze-evidence.sha256") -Destination $evidenceDirectory
-          $uploadedFiles = @(Get-ChildItem -LiteralPath $evidenceDirectory -File)
-          if ($uploadedFiles.Count -ne 2) {
-            throw "Evidence upload boundary must contain exactly two files."
-          }
           $expected = ((Get-Content -LiteralPath (Join-Path $evidenceDirectory "freeze-evidence.sha256") -Raw).Trim() -split "\s+")[0]
           $observed = (Get-FileHash -LiteralPath (Join-Path $evidenceDirectory "freeze-evidence.json") -Algorithm SHA256).Hash.ToLowerInvariant()
           if ($expected -ne $observed) {
             throw "Copied freeze evidence does not match its SHA-256 sidecar."
           }
 
+          & python tools/desktop_dependency_metadata_evidence.py create $bundle `
+            --expect-freeze-evidence-sha256 $observed `
+            --output-directory $evidenceDirectory
+          if ($LASTEXITCODE -ne 0) {
+            throw "Dependency metadata evidence creation failed."
+          }
+          $dependencyEvidence = Join-Path $evidenceDirectory "freeze-dependency-metadata.json"
+          & python tools/desktop_dependency_metadata_evidence.py verify $dependencyEvidence `
+            --expect-freeze-evidence-sha256 $observed
+          if ($LASTEXITCODE -ne 0) {
+            throw "Independent dependency metadata evidence verification failed."
+          }
+          $dependencyExpected = ((Get-Content -LiteralPath (Join-Path $evidenceDirectory "freeze-dependency-metadata.sha256") -Raw).Trim() -split "\s+")[0]
+          $dependencyObserved = (Get-FileHash -LiteralPath $dependencyEvidence -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($dependencyExpected -ne $dependencyObserved) {
+            throw "Dependency metadata evidence does not match its SHA-256 sidecar."
+          }
+          $uploadedFiles = @(Get-ChildItem -LiteralPath $evidenceDirectory -File)
+          if ($uploadedFiles.Count -ne 4) {
+            throw "Evidence upload boundary must contain exactly four files."
+          }
+
           $manifest = Get-Content -LiteralPath (Join-Path $evidenceDirectory "freeze-evidence.json") -Raw | ConvertFrom-Json
+          $dependencies = Get-Content -LiteralPath $dependencyEvidence -Raw | ConvertFrom-Json
           @(
             "## Windows clean-runner freeze evidence"
             ""
@@ -114,7 +133,10 @@ jobs:
             "- Bundle bytes: $($manifest.bundle.total_bytes)"
             "- Inventory SHA-256: $($manifest.bundle.inventory_sha256)"
             "- Evidence SHA-256: $observed"
-            "- Uploaded boundary: manifest and sidecar only; no executable bundle"
+            "- Dependency metadata packages: $($dependencies.package_count)"
+            "- Dependency metadata SHA-256: $dependencyObserved"
+            "- License/redistribution review: not reviewed"
+            "- Uploaded boundary: two evidence files and two sidecars only; no executable bundle"
           ) | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
           "FREEZE_EVIDENCE_UPLOAD=$evidenceDirectory" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
