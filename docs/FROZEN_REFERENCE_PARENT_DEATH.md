@@ -41,9 +41,11 @@ not depend on the active console code page.
 2. the optional frozen Modern numerical smoke when supplied;
 3. the mandatory frozen nonnumerical reference protocol smoke;
 4. the mandatory frozen reference hard-parent-death audit;
-5. v0.2 evidence creation and exact-inventory verification.
+5. the mandatory frozen approval-bound preparation worker/controller smoke;
+6. v0.3 evidence creation and exact-inventory verification.
 
-The manifest is not written if either reference-boundary audit fails.
+The manifest is not written if any mandatory reference-boundary smoke or audit
+fails.
 
 ## Boundary
 

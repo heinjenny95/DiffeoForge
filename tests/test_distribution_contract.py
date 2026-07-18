@@ -26,6 +26,9 @@ def test_desktop_contract_freezes_safe_first_distribution_boundary() -> None:
     assert variants["windows-cpu"]["release_order"] == 1
     assert variants["windows-nvidia"]["release_order"] > 1
     assert variants["deformetrica-reference"]["bundled"] is False
+    assert "engine execution unauthorized" in contract["process_boundaries"][
+        "reference_preparation_worker"
+    ]
     assert contract["data_ownership"]["uninstall_preserves_projects"] is True
 
 

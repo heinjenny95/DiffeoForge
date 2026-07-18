@@ -131,26 +131,27 @@ to the Windows kill-on-close Job, bounds output, enforces a timeout, reconciles
 the exact harness lifecycle, and independently reverifies the request. The
 evidence build now freezes this harness as the sibling
 `DiffeoForgeReferenceWorker.exe` and makes its exact three-event
-`stopped_before_prepare` smoke mandatory before v0.2 bundle evidence can be
+`stopped_before_prepare` smoke mandatory before bundle evidence can be
 written. A second mandatory audit starts that frozen worker suspended, assigns
 it through the real controller to the Windows kill-on-close Job, hard-exits the
 controller, and verifies bounded worker termination. No run is prepared and no
 reference compute control is enabled.
 
-A separate source-level child can now consume an independently hash-bound
+A separate child can consume an independently hash-bound
 preparation-only approval and atomically publish a verified immutable run with
 terminal outcome `prepared_not_executed`. It has its own narrow request/event
-schemas and does not alter the frozen worker. It is not yet included in the
-bundle or exposed by the GUI; those remain distribution gates before this
-mutating boundary can ship.
+schemas and does not alter the frozen nonnumerical worker. The evidence build
+now freezes it as `DiffeoForgeReferencePreparationWorker.exe` and requires a
+real five-event controller smoke using an externally created, independently
+hash-bound approval before v0.3 evidence can be written. It is not exposed by
+the GUI; that remains a separate product and safety gate.
 
-The source child now has a Qt-independent parent controller that performs that
+The child has a Qt-independent parent controller that performs that
 Job assignment before request delivery, bounds transport and runtime, and
-independently verifies the published prepared run. The controller explicitly
-refuses default resolution from a frozen desktop process because the required
-sibling is not yet part of the bundle. Freeze inventory, hard-parent-death
-evidence for a future frozen sibling, installer integration, and GUI enablement
-remain open. The source worker's real Job-assignment boundary now has a separate
+independently verifies the published prepared run. A source parent resolves the
+Python module; a frozen parent resolves only the dedicated sibling beside its
+own executable. Frozen preparation hard-parent-death evidence, installer
+integration, and GUI enablement remain open. The source worker's real Job-assignment boundary now has a separate
 suspended-worker hard-parent-death audit; that evidence does not satisfy the
 frozen bundle gate.
 

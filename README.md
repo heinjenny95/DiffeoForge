@@ -173,10 +173,12 @@ hash-bound diagnostic of its exact container engine and image from review
 step 2. A separate source-level child can also consume an independently
 hash-bound preparation-only approval and atomically publish a verified
 `prepared_not_executed` run through a strict pipe. It still cannot start or
-supervise Deformetrica. A Qt-independent parent now contains this source child,
-bounds its transport and independently verifies the prepared run, but it is not
-frozen or GUI-wired. The Modern path does not provide checkpoint/resume.
-The real source preparation worker also has suspended-process Windows
+supervise Deformetrica. A Qt-independent parent contains this child, bounds its
+transport and independently verifies the prepared run. The same child is now a
+fourth sibling in the evidence-only Windows freeze and has a mandatory real
+frozen controller smoke based on an externally created, independently
+hash-bound approval; it remains disabled in the GUI. The Modern path does not
+provide checkpoint/resume. The real source preparation worker also has suspended-process Windows
 hard-parent-death evidence before request delivery. For the Modern compute
 worker, Windows parent death terminates the contained worker tree and
 command-pipe EOF requests cooperative cancellation on every platform.
@@ -190,7 +192,7 @@ interactive 3D rendering, mesh QC, registration evidence, or landmark picking.
 DiffeoForge also does **not** yet ship a desktop installer or redistributable
 binary. A clean-commit, exact-inventory Windows one-directory
 [engineering build](docs/WINDOWS_FREEZE_EVIDENCE.md) now exercises the GUI and
-separate frozen worker, but it does not satisfy the installer/release gates.
+separate frozen workers, but it does not satisfy the installer/release gates.
 DiffeoForge still does not provide interactive native 3D mesh rendering or
 self-intersection detection, or promise
 CPU/GPU equivalence or 300-specimen production performance. See the [modern-workflow
@@ -425,6 +427,7 @@ and workflow for another mesh directory.
 - [Reference preparation-only approval](docs/REFERENCE_PREPARATION_APPROVAL.md)
 - [Atomically prepare an approved reference plan](docs/REFERENCE_APPROVED_PREPARATION.md)
 - [Approval-bound reference preparation worker](docs/REFERENCE_PREPARATION_WORKER.md)
+- [Frozen approval-bound reference preparation worker](docs/FROZEN_REFERENCE_PREPARATION_WORKER.md)
 - [Approval-bound reference preparation parent controller](docs/REFERENCE_PREPARATION_CONTROLLER.md)
 - [Source preparation-worker parent-death evidence](docs/REFERENCE_PREPARATION_PARENT_DEATH.md)
 - [Versioned reference worker lifecycle protocol](docs/REFERENCE_WORKER_PROTOCOL.md)

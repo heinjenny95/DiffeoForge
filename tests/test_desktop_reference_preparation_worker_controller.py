@@ -272,7 +272,7 @@ def _fake_controller(
     )
 
 
-def test_default_command_is_source_only_and_refuses_unfrozen_bundle(
+def test_default_command_resolves_source_or_dedicated_frozen_sibling(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.delattr(controller_module.sys, "frozen", raising=False)
@@ -283,8 +283,11 @@ def test_default_command_is_source_only_and_refuses_unfrozen_bundle(
     )
 
     monkeypatch.setattr(controller_module.sys, "frozen", True, raising=False)
-    with pytest.raises(ReferencePreparationControllerError, match="not included"):
-        default_reference_preparation_worker_command()
+    monkeypatch.setattr(controller_module.sys, "executable", str(ROOT / "DiffeoForge.exe"))
+    suffix = ".exe" if controller_module.os.name == "nt" else ""
+    assert default_reference_preparation_worker_command() == (
+        str((ROOT / f"DiffeoForgeReferencePreparationWorker{suffix}").resolve()),
+    )
 
 
 def test_controller_imports_no_gui_or_numerical_runtime() -> None:

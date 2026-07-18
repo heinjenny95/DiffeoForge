@@ -2,7 +2,7 @@
 
 Status: **real child-process preparation; verified stop before engine execution**
 
-This source-level harness is the first reference worker allowed to mutate a run
+This harness is the first reference worker allowed to mutate a run
 destination. It consumes one exact, independently hash-bound
 [preparation-only approval](REFERENCE_PREPARATION_APPROVAL.md), invokes the
 shared [atomic approved-preparation service](REFERENCE_APPROVED_PREPARATION.md),
@@ -81,12 +81,15 @@ Run the source harness only as a protocol child:
 python -m diffeoforge.desktop.reference_preparation_worker_harness
 ```
 
-The source harness now has a separate Qt-independent
+The harness has a separate Qt-independent
 [bounded parent controller](REFERENCE_PREPARATION_CONTROLLER.md). On Windows the
 controller assigns it to a kill-on-close Job before delivering the request and
-accepts success only after independent prepared-run verification. The harness
-is still not wired into the GUI, an installer, or the frozen Windows bundle. It
-has no cancel channel and no reference-engine process tree. In particular, this
+accepts success only after independent prepared-run verification. The
+evidence-only Windows one-directory build now contains the same harness as
+`DiffeoForgeReferencePreparationWorker.exe`; its build requires a real frozen
+controller smoke with an externally created, independently SHA-bound approval.
+The harness is still not wired into the GUI or an installer. It has no cancel
+channel and no reference-engine process tree. In particular, this
 boundary proves approval-bound preparation across a real pipe; it does not
 estimate an atlas, validate scientific parameters, establish approver identity,
 or authorize execution.
