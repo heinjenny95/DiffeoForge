@@ -1,12 +1,16 @@
 # Reproducible Windows installer build contract
 
-Status: **accepted design; no installer executable exists yet**
+Status: **accepted design plus verified non-executing build plan; no installer executable exists yet**
 
 The first DiffeoForge installer is deliberately specified before it is built.
 The human-readable decision is
 [ADR 0006](decisions/0006-reproducible-windows-installer-contract.md); the exact
 machine contract is
 `distribution/windows/installer-contract-v0.1.json`.
+
+The first implementation slice adds the exact offline script
+`distribution/windows/DiffeoForge.iss` and a deterministic plan generator. It
+does not download or run Inno Setup and cannot create an installer.
 
 ## What is fixed
 
@@ -53,6 +57,44 @@ before compilation. Existing output, symbolic or junction inputs, output under
 an input root, mismatched source/version/bundle bindings, nonzero compiler exit,
 or post-build verification failure are fatal.
 
+## Create and verify a non-executing build plan
+
+Install the source environment including the separately scoped SBOM builder,
+then provide a fully verified bundle, an exact six-file downloaded evidence
+directory, three hashes obtained independently from that download, and a new
+empty output directory outside the repository and both inputs:
+
+```powershell
+python tools/desktop_installer_plan.py create `
+  C:\exact\DiffeoForge `
+  C:\exact\six-file-evidence `
+  --project-file C:\source\DiffeoForge\pyproject.toml `
+  --output-directory C:\new-empty\installer-plan `
+  --expect-freeze-evidence-sha256 <64-hex> `
+  --expect-dependency-evidence-sha256 <64-hex> `
+  --expect-sbom-sha256 <64-hex>
+```
+
+The command writes only `installer-build-plan.json` and
+`installer-build-plan.sha256`. The plan fixes the future setup filename and
+the exact non-shell `ISCC.exe` argument vector while recording
+`execution_authorized: false`. Verify it against a separately retained plan
+hash with:
+
+```powershell
+python tools/desktop_installer_plan.py verify `
+  C:\new-empty\installer-plan\installer-build-plan.json `
+  --expect-plan-sha256 <64-hex>
+```
+
+Verification rechecks the complete bundle, all three external evidence hashes,
+the deterministic SBOM mapping, source commit, runtime/project version, script,
+contract, project metadata, license, future output path, and compiler
+arguments. Absolute paths are reviewed inputs; identical plan bytes require
+the same exact paths as well as identical file content. Existing entries,
+symbolic or junction paths, extra evidence, altered inputs, and release-candidate
+plans for development or local versions fail closed.
+
 ## Install and uninstall boundary
 
 The future script will use a stable application ID, `SetupArchitecture=x64`,
@@ -73,8 +115,9 @@ observation before a usable-installer claim.
 
 ## Output evidence, not deterministic bytes
 
-A later build produces a setup executable, its exact SHA-256 sidecar, and an
-installer-evidence document plus sidecar. That document binds the output to the
+A later, separately authorized build produces a setup executable, its exact
+SHA-256 sidecar, and an installer-evidence document plus sidecar. That document
+binds the output to the
 source commit, application version, installer script, verified Inno Setup
 asset, freeze manifest, dependency evidence, SBOM, bundle inventory, and setup
 hash.

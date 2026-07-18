@@ -16,6 +16,7 @@ CONSOLE_ENTRY_POINT = "diffeoforge.cli:main"
 GUI_ENTRY_POINT = "diffeoforge.desktop.app:main"
 REQUIRED_MODULES = {
     "diffeoforge/__main__.py",
+    "diffeoforge/desktop/installer_plan.py",
     "diffeoforge/desktop/sbom.py",
 }
 

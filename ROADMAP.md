@@ -109,7 +109,9 @@ This roadmap describes evidence gates rather than promised dates.
   - [x] Exact source-hash-bound CycloneDX 1.7 generator and independent
     deterministic downloaded-evidence verifier
   - [x] Manual clean-runner integration with an exact six-file SBOM evidence
-    boundary; first independent six-file observation pending
+    boundary and accepted independent six-file observation
+  - [x] Hash-bound, non-overwriting Windows installer script and deterministic
+    non-executing compiler build plan
   - [ ] Reviewed release lock, SBOM, license clearance, signed installer, and
     clean-VM installation/uninstallation evidence
   - [ ] Separately gated Linux and macOS CPU distributions
