@@ -57,9 +57,25 @@ def test_sbom_contract_is_deterministic_current_and_nonapproving() -> None:
 def test_sbom_adr_preserves_evidence_and_release_boundaries() -> None:
     text = ADR.read_text(encoding="utf-8")
 
-    assert "Status: Accepted design; generator not implemented" in text
+    assert "Status: Accepted; generator implemented, clean-runner observation pending" in text
     assert "cyclonedx-python-lib==11.11.0" in text
     assert "CycloneDX composition will therefore be `incomplete`" in text
     assert "they are not\nCycloneDX component hashes" in text
     assert "They do not imply\ncompatibility or redistribution approval" in text
-    assert "No SBOM file is\nuploaded merely because this ADR exists" in text
+    assert "No SBOM file is uploaded merely because this ADR exists" in text.replace(
+        "\n", " "
+    )
+
+
+def test_sbom_implementation_and_builder_pin_match_contract() -> None:
+    module = ROOT / "src" / "diffeoforge" / "desktop" / "sbom.py"
+    tool = ROOT / "tools" / "desktop_sbom.py"
+    pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+
+    assert module.is_file()
+    assert tool.is_file()
+    assert 'BUILDER_VERSION = "11.11.0"' in module.read_text(encoding="utf-8")
+    assert '"cyclonedx-python-lib==11.11.0"' in pyproject
+    assert "future_clean_runner_upload_file_count" in CONTRACT.read_text(
+        encoding="utf-8"
+    )

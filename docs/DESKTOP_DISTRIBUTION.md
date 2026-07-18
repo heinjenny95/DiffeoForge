@@ -72,7 +72,10 @@ events to the reviewed request, enforces lifecycle/exit-code agreement, bounds
   [installed-distribution metadata inventory](DESKTOP_DEPENDENCY_METADATA_EVIDENCE.md)
   with hashed license-related files. Every package remains explicitly
   unreviewed; this is an input to, not a substitute for, license review and an
-  SBOM.
+  SBOM. A separate [deterministic SBOM tool](DESKTOP_SBOM.md) can now create and
+  independently verify CycloneDX 1.7 from the exact freeze and dependency
+  evidence. The manual clean-runner workflow has not yet produced or uploaded
+  that pair, so its four-file observation boundary is unchanged.
 
 The CPU modern engine is the first bundled numerical variant. A future NVIDIA
 build is a separate artifact with separate numerical evidence; the application
@@ -193,8 +196,10 @@ The first SBOM design is now fixed by
 [ADR 0005](decisions/0005-cyclonedx-post-build-sbom.md) as deterministic
 CycloneDX 1.7 JSON generated only from externally hash-bound freeze and
 dependency evidence. The machine contract is
-`distribution/windows/sbom-contract-v0.1.json`. This accepted design does not
-yet create an SBOM and does not satisfy license or redistribution review.
+`distribution/windows/sbom-contract-v0.1.json`. The implemented generator
+requires exact external hashes for both source-evidence documents, refuses
+overwrite and output inside the bundle, and reconstructs the mapping during
+verification. This does not satisfy license or redistribution review.
 
 Primary packaging references:
 

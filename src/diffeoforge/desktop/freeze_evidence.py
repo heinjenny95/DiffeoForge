@@ -79,6 +79,11 @@ class DesktopFreezeEvidenceError(RuntimeError):
     """Raised when a frozen desktop bundle or its evidence fails closed."""
 
 
+def _is_symbolic_path(path: Path) -> bool:
+    is_junction = getattr(path, "is_junction", None)
+    return path.is_symlink() or bool(is_junction is not None and is_junction())
+
+
 def _schema(version: str) -> dict:
     if version not in SUPPORTED_SCHEMA_VERSIONS:
         raise DesktopFreezeEvidenceError(
@@ -229,6 +234,91 @@ def _require_entry_points(root: Path, version: str) -> None:
 
 def _json_bytes(value: dict) -> bytes:
     return (json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True) + "\n").encode("utf-8")
+
+
+def verify_desktop_freeze_evidence_document(
+    manifest_path: Path | str,
+    *,
+    expected_sha256: str,
+) -> dict:
+    """Verify one downloaded freeze manifest without claiming bundle verification.
+
+    This checks the exact manifest/sidecar pair, schema, canonical bytes, and all
+    aggregates that can be recomputed from the document. It deliberately cannot
+    re-hash the sealed bundle files; :func:`verify_desktop_freeze_evidence` remains
+    the stronger bundle verification path.
+    """
+
+    if not isinstance(expected_sha256, str):
+        raise ValueError("Expected freeze evidence SHA-256 must be a string")
+    expected = expected_sha256.lower()
+    if re.fullmatch(r"[0-9a-f]{64}", expected) is None:
+        raise ValueError(
+            "Expected freeze evidence SHA-256 must contain 64 hexadecimal characters"
+        )
+    path = Path(manifest_path).expanduser().absolute()
+    if path.name != MANIFEST_NAME:
+        raise DesktopFreezeEvidenceError(
+            f"Desktop freeze evidence must be named {MANIFEST_NAME}"
+        )
+    sidecar_path = path.with_name(SIDECAR_NAME)
+    if (
+        _is_symbolic_path(path)
+        or _is_symbolic_path(sidecar_path)
+        or not path.is_file()
+        or not sidecar_path.is_file()
+    ):
+        raise DesktopFreezeEvidenceError(
+            "Desktop freeze evidence document or sidecar is missing"
+        )
+    try:
+        payload = path.read_bytes()
+        manifest = json.loads(payload.decode("utf-8"))
+        sidecar = sidecar_path.read_bytes()
+    except (OSError, UnicodeError, json.JSONDecodeError) as error:
+        raise DesktopFreezeEvidenceError(
+            "Desktop freeze evidence document is not readable"
+        ) from error
+    _validate_schema(manifest)
+    observed = hashlib.sha256(payload).hexdigest()
+    if observed != expected:
+        raise DesktopFreezeEvidenceError(
+            "Desktop freeze evidence document differs from the externally expected SHA-256"
+        )
+    if sidecar != f"{observed}  {MANIFEST_NAME}\n".encode("ascii"):
+        raise DesktopFreezeEvidenceError(
+            "Desktop freeze evidence document sidecar is malformed"
+        )
+    if payload != _json_bytes(manifest):
+        raise DesktopFreezeEvidenceError(
+            "Desktop freeze evidence document is not canonical JSON"
+        )
+    _validate_created_at(manifest["created_at"])
+    records = manifest["bundle"]["files"]
+    paths = [record["path"] for record in records]
+    if paths != sorted(paths) or len(paths) != len(set(paths)):
+        raise DesktopFreezeEvidenceError(
+            "Desktop freeze evidence document paths are not unique and sorted"
+        )
+    if manifest["bundle"]["file_count"] != len(records):
+        raise DesktopFreezeEvidenceError(
+            "Desktop freeze evidence document file count differs"
+        )
+    if manifest["bundle"]["total_bytes"] != sum(
+        int(record["bytes"]) for record in records
+    ):
+        raise DesktopFreezeEvidenceError(
+            "Desktop freeze evidence document total byte count differs"
+        )
+    if manifest["bundle"]["inventory_sha256"] != _inventory_sha256(records):
+        raise DesktopFreezeEvidenceError(
+            "Desktop freeze evidence document inventory SHA-256 differs"
+        )
+    if set(manifest["entry_points"].values()) - set(paths):
+        raise DesktopFreezeEvidenceError(
+            "Desktop freeze evidence document entry point is not inventoried"
+        )
+    return manifest
 
 
 def create_desktop_freeze_evidence(

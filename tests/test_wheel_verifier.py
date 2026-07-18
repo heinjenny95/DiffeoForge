@@ -59,7 +59,9 @@ def test_verifier_accepts_complete_wheel_and_cli_reports_evidence(
     result = main([str(wheel)])
     output = capsys.readouterr()
 
-    assert evidence.schema_count == len(expected_package_members()) - 1
+    assert evidence.schema_count == sum(
+        member.endswith(".json") for member in expected_package_members()
+    )
     assert evidence.dist_info_directory == DIST_INFO
     assert result == 0
     assert "Verified wheel:" in output.out

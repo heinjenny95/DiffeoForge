@@ -123,7 +123,8 @@ This repository currently provides:
   complete engineering smoke contract while withholding the unsigned binary
   bundle and publishing only independently inspected exact-inventory evidence,
   plus a hash-bound, explicitly unreviewed installed-distribution metadata and
-  license-file inventory as input to later license/SBOM review,
+  license-file inventory and a deterministic CycloneDX 1.7 generator/verifier
+  that preserves incomplete-composition and nonapproval boundaries,
   shared-core workload/preflight evidence, and a verified Modern-only
   start/live-event/cancel screen followed by a fully reverified Atlas/PCA/QC
   summary with inventory-bound artifact handoff;
@@ -433,6 +434,7 @@ and workflow for another mesh directory.
 - [Desktop executable and installer architecture](docs/DESKTOP_DISTRIBUTION.md)
 - [Windows one-directory freeze evidence](docs/WINDOWS_FREEZE_EVIDENCE.md)
 - [Frozen dependency metadata evidence](docs/DESKTOP_DEPENDENCY_METADATA_EVIDENCE.md)
+- [Deterministic Windows CycloneDX 1.7 SBOM](docs/DESKTOP_SBOM.md)
 - [ADR 0005: deterministic CycloneDX 1.7 post-build SBOM](docs/decisions/0005-cyclonedx-post-build-sbom.md)
 - [Versioned desktop worker protocol](docs/DESKTOP_WORKER.md)
 - [Desktop project-setup preview](docs/DESKTOP_PREVIEW.md)
