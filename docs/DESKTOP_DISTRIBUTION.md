@@ -68,6 +68,11 @@ events to the reviewed request, enforces lifecycle/exit-code agreement, bounds
   2026 and its downloaded two-file evidence artifact was independently checked;
   its exact source, inventory, hashes, observations, and remaining release gates
   are recorded in the linked evidence document.
+  Current manual runs additionally create an exact, externally freeze-hash-bound
+  [installed-distribution metadata inventory](DESKTOP_DEPENDENCY_METADATA_EVIDENCE.md)
+  with hashed license-related files. Every package remains explicitly
+  unreviewed; this is an input to, not a substitute for, license review and an
+  SBOM.
 
 The CPU modern engine is the first bundled numerical variant. A future NVIDIA
 build is a separate artifact with separate numerical evidence; the application

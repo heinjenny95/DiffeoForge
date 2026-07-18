@@ -122,6 +122,8 @@ This repository currently provides:
   a manually observed clean-runner Windows freeze workflow that executes the
   complete engineering smoke contract while withholding the unsigned binary
   bundle and publishing only independently inspected exact-inventory evidence,
+  plus a hash-bound, explicitly unreviewed installed-distribution metadata and
+  license-file inventory as input to later license/SBOM review,
   shared-core workload/preflight evidence, and a verified Modern-only
   start/live-event/cancel screen followed by a fully reverified Atlas/PCA/QC
   summary with inventory-bound artifact handoff;
@@ -430,6 +432,7 @@ and workflow for another mesh directory.
 - [PCA of atlas-derived subject features](docs/ATLAS_PCA.md)
 - [Desktop executable and installer architecture](docs/DESKTOP_DISTRIBUTION.md)
 - [Windows one-directory freeze evidence](docs/WINDOWS_FREEZE_EVIDENCE.md)
+- [Frozen dependency metadata evidence](docs/DESKTOP_DEPENDENCY_METADATA_EVIDENCE.md)
 - [Versioned desktop worker protocol](docs/DESKTOP_WORKER.md)
 - [Desktop project-setup preview](docs/DESKTOP_PREVIEW.md)
 - [Desktop reference prelaunch contract](docs/REFERENCE_PRELAUNCH.md)

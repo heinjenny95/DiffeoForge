@@ -102,6 +102,8 @@ This roadmap describes evidence gates rather than promised dates.
 - [ ] Cross-platform CPU distribution
   - [x] Fresh GitHub-hosted Windows one-directory engineering freeze, complete
     frozen-process smoke contract, and independently inspected evidence artifact
+  - [x] Hash-bound, noninterpreting installed-distribution metadata and
+    license-file evidence contract for later human review
   - [ ] Reviewed release lock, SBOM, license clearance, signed installer, and
     clean-VM installation/uninstallation evidence
   - [ ] Separately gated Linux and macOS CPU distributions
