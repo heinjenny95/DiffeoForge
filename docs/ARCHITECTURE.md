@@ -286,7 +286,9 @@ the review binding again before returning. The background Qt task discards a
 result if the approval path/hash or reviewed config binding changed while it
 ran. The view exposes raw status/reason/hash evidence and never turns a clear
 destination or verified private stage into preparation or publication
-authority. See
+authority. A user may export the exact immutable, schema-valid report bytes to
+one explicitly selected new JSON file; exclusive creation prevents overwrite,
+and the GUI discloses the byte count, SHA-256, and private-path surface. See
 [desktop reference preparation status](DESKTOP_REFERENCE_PREPARATION_STATUS.md).
 
 Both setup routes can also pass their already selected template path to a

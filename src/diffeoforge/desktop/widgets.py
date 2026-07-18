@@ -43,6 +43,8 @@ from diffeoforge.desktop.project_setup import (
 from diffeoforge.desktop.reference_preparation_status import (
     DesktopReferencePreparationStatus,
     DesktopReferencePreparationStatusError,
+    DesktopReferencePreparationStatusExportError,
+    export_reference_preparation_status_report,
     review_reference_preparation_status,
 )
 from diffeoforge.desktop.reference_readiness import (
@@ -663,6 +665,7 @@ class DiffeoForgeWindow(QMainWindow):
         preparation_form = QFormLayout()
         preparation_form.setHorizontalSpacing(22)
         preparation_form.setVerticalSpacing(10)
+        preparation_form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
         self.reference_preparation_approval_edit = QLineEdit()
         self.reference_preparation_approval_edit.setObjectName(
             "referencePreparationApprovalEdit"
@@ -715,6 +718,22 @@ class DiffeoForgeWindow(QMainWindow):
         self.refresh_reference_preparation_status_button.clicked.connect(
             self._check_reference_preparation_status
         )
+        self.reference_preparation_export_label = QLabel(
+            "Export erst nach erfolgreicher Prüfung. Der vollständige Report enthält "
+            "absolute Pfade und Dateinamen und ist als private Provenienz zu behandeln."
+        )
+        self.reference_preparation_export_label.setObjectName("hint")
+        self.reference_preparation_export_label.setWordWrap(True)
+        self.reference_preparation_export_label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+        )
+        self.export_reference_preparation_status_button = QPushButton(
+            "Geprüften Status als neue JSON-Datei exportieren"
+        )
+        self.export_reference_preparation_status_button.setObjectName("secondary")
+        self.export_reference_preparation_status_button.clicked.connect(
+            self._export_reference_preparation_status
+        )
         reference_preparation_status_layout.addWidget(
             reference_preparation_status_title
         )
@@ -727,6 +746,14 @@ class DiffeoForgeWindow(QMainWindow):
         )
         reference_preparation_status_layout.addWidget(
             self.refresh_reference_preparation_status_button,
+            0,
+            Qt.AlignmentFlag.AlignLeft,
+        )
+        reference_preparation_status_layout.addWidget(
+            self.reference_preparation_export_label
+        )
+        reference_preparation_status_layout.addWidget(
+            self.export_reference_preparation_status_button,
             0,
             Qt.AlignmentFlag.AlignLeft,
         )
@@ -1305,6 +1332,12 @@ class DiffeoForgeWindow(QMainWindow):
             "Diese Ansicht prüft nur den exakt genehmigten Zielpfad und exakt benannte "
             "private Stages. Sie folgt keinen Links und verändert nichts."
         )
+        self.reference_preparation_export_label.setObjectName("hint")
+        self.reference_preparation_export_label.setStyleSheet("")
+        self.reference_preparation_export_label.setText(
+            "Export erst nach erfolgreicher Prüfung. Der vollständige Report enthält "
+            "absolute Pfade und Dateinamen und ist als private Provenienz zu behandeln."
+        )
         self._sync_reference_preparation_status_controls()
 
     def _reference_preparation_inputs_valid(self) -> bool:
@@ -1323,6 +1356,26 @@ class DiffeoForgeWindow(QMainWindow):
             and self._worker is None
         )
         self.refresh_reference_preparation_status_button.setEnabled(ready)
+        self.export_reference_preparation_status_button.setEnabled(
+            self._reference_preparation_status_matches_inputs()
+            and self._worker is None
+        )
+
+    def _reference_preparation_status_matches_inputs(self) -> bool:
+        status = self._reference_preparation_status
+        review = self._review
+        approval_text = self.reference_preparation_approval_edit.text().strip()
+        return bool(
+            status is not None
+            and review is not None
+            and review.engine is DesktopEngine.DEFORMETRICA_REFERENCE
+            and status.config_path == review.config_path.resolve()
+            and status.config_sha256 == review.config_sha256
+            and approval_text
+            and status.approval_path == Path(approval_text).expanduser().resolve()
+            and status.approval_sha256
+            == self.reference_preparation_hash_edit.text().strip().lower()
+        )
 
     @Slot()
     def _detect_template_from_text(self) -> None:
@@ -1786,6 +1839,12 @@ class DiffeoForgeWindow(QMainWindow):
             "Kein Pfad wird gelöscht, verschoben, publiziert, repariert, fortgesetzt, "
             "vorbereitet oder ausgeführt."
         )
+        self.reference_preparation_export_label.setObjectName("hint")
+        self.reference_preparation_export_label.setStyleSheet("")
+        self.reference_preparation_export_label.setText(
+            "Export gesperrt, bis diese read-only Prüfung erfolgreich und weiterhin "
+            "an exakt dieselben Eingaben gebunden ist."
+        )
         self._sync_ready_state()
         self._thread_pool.start(worker)
 
@@ -1816,6 +1875,12 @@ class DiffeoForgeWindow(QMainWindow):
             self.reference_preparation_detail_label.setText(
                 "Es wurde nichts verändert. Mit den aktuellen Eingaben erneut prüfen."
             )
+            self.reference_preparation_export_label.setObjectName("statusError")
+            self.reference_preparation_export_label.setStyleSheet("")
+            self.reference_preparation_export_label.setText(
+                "Kein Export: Das verworfene Ergebnis ist nicht mehr an die aktuellen "
+                "Eingaben gebunden."
+            )
             self._sync_ready_state()
             return
 
@@ -1832,6 +1897,9 @@ class DiffeoForgeWindow(QMainWindow):
             f"Approval-SHA-256: {status.approval_sha256}",
             f"Run-ID: {status.run_id}",
             f"Plan-Fingerprint: {status.plan_fingerprint}",
+            f"Report-Schema: {status.report_schema_version}",
+            f"Report-Bytes: {status.report_byte_count}",
+            f"Report-SHA-256: {status.report_sha256}",
             f"Ziel [{status.destination_status}]: "
             f"{self._wrappable_path(status.destination_path)}",
             f"Begründung: {status.destination_reason}",
@@ -1872,6 +1940,13 @@ class DiffeoForgeWindow(QMainWindow):
             )
         self.reference_preparation_status_label.setStyleSheet("")
         self.reference_preparation_status_label.setText(message)
+        self.reference_preparation_export_label.setObjectName("hint")
+        self.reference_preparation_export_label.setStyleSheet("")
+        self.reference_preparation_export_label.setText(
+            "Export bereit: Es werden exakt die oben gehashten Report-Bytes in eine neue "
+            "JSON-Datei geschrieben. Der Report enthält absolute Pfade und Dateinamen; "
+            "vor Weitergabe auf vertrauliche Provenienz prüfen."
+        )
         self.review_button.setEnabled(self._result is not None)
         self._sync_ready_state()
 
@@ -1897,8 +1972,69 @@ class DiffeoForgeWindow(QMainWindow):
             "Keine Statusfreigabe. Es wurde nichts gelöscht, verschoben, publiziert, "
             "repariert, fortgesetzt, vorbereitet oder ausgeführt."
         )
+        self.reference_preparation_export_label.setObjectName("statusError")
+        self.reference_preparation_export_label.setStyleSheet("")
+        self.reference_preparation_export_label.setText(
+            "Kein Export ohne aktuell gebundenen, vollständig validierten Statusreport."
+        )
         self.review_button.setEnabled(self._result is not None)
         self._sync_ready_state()
+
+    @Slot()
+    def _export_reference_preparation_status(self) -> None:
+        status = self._reference_preparation_status
+        if (
+            status is None
+            or not self._reference_preparation_status_matches_inputs()
+            or self._worker is not None
+        ):
+            self._sync_reference_preparation_status_controls()
+            return
+        default = status.config_path.parent / (
+            f"reference-preparation-status-{status.run_id}.json"
+        )
+        selected, _ = QFileDialog.getSaveFileName(
+            self,
+            "Neue Statusreport-Datei auswählen (kein Überschreiben)",
+            str(default),
+            "JSON-Dateien (*.json)",
+        )
+        if not selected:
+            return
+        if not self._reference_preparation_status_matches_inputs():
+            self.reference_preparation_export_label.setObjectName("statusError")
+            self.reference_preparation_export_label.setStyleSheet("")
+            self.reference_preparation_export_label.setText(
+                "Export verworfen, weil Review oder Approval-Eingaben nicht mehr exakt "
+                "zum geprüften Report passen."
+            )
+            self._sync_reference_preparation_status_controls()
+            return
+        try:
+            exported = export_reference_preparation_status_report(status, selected)
+        except (
+            DesktopReferencePreparationStatusExportError,
+            OSError,
+            TypeError,
+            ValueError,
+        ) as error:
+            self.reference_preparation_export_label.setObjectName("statusError")
+            self.reference_preparation_export_label.setStyleSheet("")
+            self.reference_preparation_export_label.setText(
+                f"Statusreport nicht exportiert: {error}"
+            )
+            self._sync_reference_preparation_status_controls()
+            return
+        self.reference_preparation_export_label.setObjectName("statusSuccess")
+        self.reference_preparation_export_label.setStyleSheet("")
+        self.reference_preparation_export_label.setText(
+            f"Statusreport neu geschrieben: {self._wrappable_path(exported.path)}\n"
+            f"Schema: {exported.schema_version} · Bytes: {exported.byte_count} · "
+            f"SHA-256: {exported.sha256}\n"
+            "Private Provenienz mit absoluten Pfaden; keine Run- oder Engine-Datei wurde "
+            "verändert."
+        )
+        self._sync_reference_preparation_status_controls()
 
     @Slot()
     def _show_run_page(self) -> None:

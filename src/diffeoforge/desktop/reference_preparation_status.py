@@ -3,14 +3,19 @@
 from __future__ import annotations
 
 import hashlib
+import json
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from diffeoforge.config import ConfigurationError
 from diffeoforge.desktop.project_review import ProjectReviewResult
 from diffeoforge.desktop.project_setup import DesktopEngine
 from diffeoforge.reference_preparation_reconciliation import (
     reconcile_reference_preparation,
+    serialize_reference_preparation_reconciliation,
+    validate_reference_preparation_reconciliation,
 )
 
 
@@ -18,11 +23,16 @@ class DesktopReferencePreparationStatusError(RuntimeError):
     """Raised when a desktop status view cannot remain review-bound."""
 
 
+class DesktopReferencePreparationStatusExportError(RuntimeError):
+    """Raised when a reviewed status report cannot be exported safely."""
+
+
 @dataclass(frozen=True)
 class DesktopReferencePrivateStage:
     """One exact private-stage observation safe for bounded desktop display."""
 
     directory_name: str
+    token: str
     path: Path
     status: str
     reason: str
@@ -51,6 +61,9 @@ class DesktopReferencePreparationStatus:
     state_stable_across_observations: bool
     mutation_performed: bool
     scientific_boundary: str
+    report_schema_version: str
+    report_bytes: bytes
+    report_sha256: str
 
     def __post_init__(self) -> None:
         if self.mutation_performed:
@@ -65,6 +78,113 @@ class DesktopReferencePreparationStatus:
             raise ValueError(f"Unsupported preparation status: {self.status}")
         if self.action_required != (self.status == "attention_required"):
             raise ValueError("Preparation action_required does not match status")
+        report = _validated_status_report(self.report_bytes, self.report_sha256)
+        if self.report_schema_version != str(report["schema_version"]):
+            raise ValueError("Desktop preparation status schema does not match report")
+        approval = report["approval_request"]
+        approved_plan = report["approved_plan"]
+        current_plan = report["current_plan"]
+        destination = report["destination"]
+        bindings = (
+            self.config_path,
+            self.config_sha256,
+            self.approval_path,
+            self.approval_sha256,
+            self.plan_fingerprint,
+            self.run_id,
+            self.status,
+            self.action_required,
+            self.destination_path,
+            self.destination_status,
+            self.destination_reason,
+            self.manifest_sha256,
+            self.engine_execution_started,
+            self.private_stages,
+            self.state_stable_across_observations,
+            self.mutation_performed,
+            self.scientific_boundary,
+        )
+        report_bindings = (
+            Path(str(current_plan["config_path"])),
+            str(current_plan["config_sha256"]),
+            Path(str(approval["path"])),
+            str(approval["sha256"]),
+            str(approved_plan["canonical_fingerprint"]),
+            str(approved_plan["run_id"]),
+            str(report["status"]),
+            bool(report["action_required"]),
+            Path(str(destination["path"])),
+            str(destination["status"]),
+            str(destination["reason"]),
+            (
+                str(destination["manifest_sha256"])
+                if destination["manifest_sha256"] is not None
+                else None
+            ),
+            destination["engine_execution_started"],
+            tuple(_private_stage(stage) for stage in report["private_stages"]),
+            bool(report["state_stable_across_observations"]),
+            bool(report["mutation_performed"]),
+            str(report["scientific_boundary"]),
+        )
+        if bindings != report_bindings:
+            raise ValueError("Desktop preparation status fields do not match report")
+        if (
+            str(approval["expected_sha256"]) != self.approval_sha256
+            or Path(str(approved_plan["destination"])) != self.destination_path
+            or str(current_plan["canonical_fingerprint"]) != self.plan_fingerprint
+            or current_plan["exactly_matches_approved"] is not True
+        ):
+            raise ValueError("Desktop preparation status report bindings are inconsistent")
+
+    @property
+    def report_byte_count(self) -> int:
+        """Return the exact number of bytes available for export."""
+
+        return len(self.report_bytes)
+
+
+@dataclass(frozen=True)
+class DesktopReferencePreparationStatusExport:
+    """Evidence for one non-overwriting deterministic JSON export."""
+
+    path: Path
+    byte_count: int
+    sha256: str
+    schema_version: str
+
+    def __post_init__(self) -> None:
+        if self.byte_count < 2:
+            raise ValueError("Exported preparation status report is unexpectedly short")
+        if len(self.sha256) != 64 or any(
+            character not in "0123456789abcdef" for character in self.sha256
+        ):
+            raise ValueError("Exported preparation status report has an invalid SHA-256")
+
+
+def _reject_nonfinite_json(value: str) -> None:
+    raise ValueError(f"Non-finite JSON constant is not allowed: {value}")
+
+
+def _validated_status_report(report_bytes: bytes, expected_sha256: str) -> dict[str, Any]:
+    if not isinstance(report_bytes, bytes):
+        raise ValueError("Desktop preparation status report must be immutable bytes")
+    observed_sha256 = hashlib.sha256(report_bytes).hexdigest()
+    if observed_sha256 != expected_sha256:
+        raise ValueError("Desktop preparation status report SHA-256 does not match bytes")
+    try:
+        value = json.loads(report_bytes, parse_constant=_reject_nonfinite_json)
+    except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as error:
+        raise ValueError(f"Desktop preparation status report is invalid JSON: {error}") from error
+    if not isinstance(value, dict):
+        raise ValueError("Desktop preparation status report must be a JSON object")
+    try:
+        validate_reference_preparation_reconciliation(value)
+    except (ConfigurationError, TypeError, ValueError) as error:
+        raise ValueError(f"Desktop preparation status report is invalid: {error}") from error
+    if serialize_reference_preparation_reconciliation(value) != report_bytes:
+        raise ValueError("Desktop preparation status report is not deterministic serialization")
+    return value
 
 
 def _reviewed_config_bytes(review: ProjectReviewResult) -> bytes:
@@ -86,6 +206,7 @@ def _reviewed_config_bytes(review: ProjectReviewResult) -> bytes:
 def _private_stage(value: dict[str, Any]) -> DesktopReferencePrivateStage:
     return DesktopReferencePrivateStage(
         directory_name=str(value["directory_name"]),
+        token=str(value["token"]),
         path=Path(str(value["path"])),
         status=str(value["status"]),
         reason=str(value["reason"]),
@@ -136,6 +257,7 @@ def review_reference_preparation_status(
         )
     approval = report["approval_request"]
     destination = report["destination"]
+    report_bytes = serialize_reference_preparation_reconciliation(report)
     try:
         return DesktopReferencePreparationStatus(
             config_path=review.config_path.resolve(),
@@ -163,8 +285,65 @@ def review_reference_preparation_status(
             ),
             mutation_performed=bool(report["mutation_performed"]),
             scientific_boundary=str(report["scientific_boundary"]),
+            report_schema_version=str(report["schema_version"]),
+            report_bytes=report_bytes,
+            report_sha256=hashlib.sha256(report_bytes).hexdigest(),
         )
     except (KeyError, TypeError, ValueError) as error:
         raise DesktopReferencePreparationStatusError(
             f"Preparation reconciliation returned an invalid desktop view: {error}"
         ) from error
+
+
+def export_reference_preparation_status_report(
+    status: DesktopReferencePreparationStatus,
+    destination: Path | str,
+) -> DesktopReferencePreparationStatusExport:
+    """Write one exact reviewed report to a new user-selected JSON file."""
+
+    if not isinstance(status, DesktopReferencePreparationStatus):
+        raise TypeError("status must be a DesktopReferencePreparationStatus")
+    report = _validated_status_report(status.report_bytes, status.report_sha256)
+    target = Path(destination).expanduser().absolute()
+    if target.exists() or target.is_symlink():
+        raise DesktopReferencePreparationStatusExportError(
+            f"Export destination already exists and will not be overwritten: {target}"
+        )
+    parent = target.parent
+    if not parent.exists() or parent.is_symlink() or not parent.is_dir():
+        raise DesktopReferencePreparationStatusExportError(
+            f"Export parent must be an existing real directory: {parent}"
+        )
+
+    flags = os.O_CREAT | os.O_EXCL | os.O_RDWR | getattr(os, "O_BINARY", 0)
+    try:
+        descriptor = os.open(target, flags, 0o600)
+    except FileExistsError as error:
+        raise DesktopReferencePreparationStatusExportError(
+            f"Export destination already exists and will not be overwritten: {target}"
+        ) from error
+    except OSError as error:
+        raise DesktopReferencePreparationStatusExportError(
+            f"Could not create preparation status export {target}: {error}"
+        ) from error
+    try:
+        with os.fdopen(descriptor, "w+b") as handle:
+            handle.write(status.report_bytes)
+            handle.flush()
+            os.fsync(handle.fileno())
+            handle.seek(0)
+            observed = handle.read()
+    except OSError as error:
+        raise DesktopReferencePreparationStatusExportError(
+            f"Could not complete preparation status export {target}: {error}"
+        ) from error
+    if observed != status.report_bytes:
+        raise DesktopReferencePreparationStatusExportError(
+            f"Preparation status export did not preserve exact bytes: {target}"
+        )
+    return DesktopReferencePreparationStatusExport(
+        path=target,
+        byte_count=len(observed),
+        sha256=hashlib.sha256(observed).hexdigest(),
+        schema_version=str(report["schema_version"]),
+    )
