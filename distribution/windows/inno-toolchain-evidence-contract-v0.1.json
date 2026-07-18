@@ -1,0 +1,69 @@
+{
+  "schema_version": "0.1",
+  "status": "accepted_authenticity_observation_contract_not_execution_authorization",
+  "target": "windows-x86_64-cpu",
+  "asset": {
+    "name": "innosetup-7.0.2-x64.exe",
+    "bytes": 17020192,
+    "sha256": "5ad54ca3def786f8f4212552e54cc6d8d61329e2d24a1cfee0571d42c2684ff1",
+    "repository": "jrsoftware/issrc",
+    "repository_id": 2527983,
+    "release_tag": "is-7_0_2",
+    "release_database_id": 352994135,
+    "release_tag_object_sha1": "d2509df69f828a7148294e29b2ca252c3250210c",
+    "release_commit_sha1": "c25dc6479cdc3be28e682a025fcf60765bba3de0",
+    "release_asset_id": 475225237,
+    "release_purl": "pkg:github/jrsoftware/issrc@is-7_0_2"
+  },
+  "release_attestation": {
+    "command": [
+      "release",
+      "verify-asset",
+      "<absolute-asset-path>",
+      "--repo",
+      "jrsoftware/issrc",
+      "--format",
+      "json"
+    ],
+    "predicate_type": "https://in-toto.io/attestation/release/v0.2",
+    "certificate_subject_alternative_name": "https://dotcom.releases.github.com",
+    "timestamp_authority": "timestamp.githubapp.com",
+    "generic_gh_attestation_verify_is_not_equivalent": true
+  },
+  "authenticode": {
+    "required_status": "Valid",
+    "required_signer_subject": "CN=Pyrsys B.V., O=Pyrsys B.V., S=Noord-Holland, C=NL",
+    "timestamp_certificate_required": true,
+    "leaf_thumbprint_is_observed_not_pinned": true
+  },
+  "observation": {
+    "windows_only": true,
+    "asset_must_be_regular_non_reparse_file": true,
+    "output_must_be_new_empty_real_directory_outside_inputs": true,
+    "wrapper_requires_exact_clean_source_commit": true,
+    "raw_files": [
+      "inno-release-attestation.json",
+      "inno-authenticode-observation.json",
+      "inno-release-verifier-observation.json"
+    ],
+    "evidence_files": [
+      "inno-toolchain-evidence.json",
+      "inno-toolchain-evidence.sha256"
+    ],
+    "canonical_evidence_json": true,
+    "overwrite": false,
+    "network_required_only_for_release_attestation_observation": true,
+    "offline_reverification_of_recorded_bindings": true,
+    "downloaded_asset_execution": false,
+    "compiler_execution": false,
+    "execution_authorized": false
+  },
+  "nonclaims": [
+    "cryptographic_reverification_without_the_recorded_verifier",
+    "installer_execution_or_installation",
+    "iscc_compilation",
+    "license_compatibility_or_redistribution_approval",
+    "setup_binary_or_release",
+    "clean_vm_security_numerical_or_scientific_validation"
+  ]
+}

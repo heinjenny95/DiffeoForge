@@ -112,6 +112,8 @@ This roadmap describes evidence gates rather than promised dates.
     boundary and accepted independent six-file observation
   - [x] Hash-bound, non-overwriting Windows installer script and deterministic
     non-executing compiler build plan
+  - [x] Release-attestation- and Authenticode-bound Inno Setup toolchain
+    authenticity observation with execution explicitly disabled
   - [ ] Reviewed release lock, SBOM, license clearance, signed installer, and
     clean-VM installation/uninstallation evidence
   - [ ] Separately gated Linux and macOS CPU distributions
