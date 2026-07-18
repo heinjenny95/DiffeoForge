@@ -234,7 +234,9 @@ def test_desktop_window_keeps_reference_compute_route_explicitly_unavailable(
     assert window.show_run_button.isEnabled() is False
     assert "noch nicht verbunden" in window.show_run_button.text()
     assert window.reference_readiness_card.isHidden() is False
+    assert window.reference_preparation_status_card.isHidden() is False
     assert window.refresh_reference_readiness_button.isEnabled() is True
+    assert window.refresh_reference_preparation_status_button.isEnabled() is False
     assert "noch nicht geprüft" in window.reference_readiness_status_label.text()
     window.close()
     application.processEvents()
@@ -327,6 +329,189 @@ def test_desktop_reference_environment_check_is_read_only_and_keeps_start_locked
     assert window.show_run_button.isEnabled() is False
     assert "noch nicht verbunden" in window.show_run_button.text()
     assert window.page_stack.currentIndex() == 1
+    window.close()
+    application.processEvents()
+
+
+def test_desktop_reference_preparation_status_is_read_only_and_keeps_start_locked(
+    monkeypatch, tmp_path
+) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from diffeoforge.desktop.project_review import ProjectReviewResult
+    from diffeoforge.desktop.project_setup import DesktopEngine
+    from diffeoforge.desktop.reference_preparation_status import (
+        DesktopReferencePreparationStatus,
+    )
+    from diffeoforge.desktop.widgets import (
+        DiffeoForgeWindow,
+        _ReferencePreparationStatusWorker,
+    )
+
+    application = QApplication.instance() or QApplication(
+        ["diffeoforge-reference-preparation-status-test"]
+    )
+    config = (tmp_path / "atlas.yaml").resolve()
+    config.write_text("reviewed\n", encoding="utf-8")
+    approval = (tmp_path / "approval.json").resolve()
+    approval.write_text("{}\n", encoding="utf-8")
+    digest = "d" * 64
+    review = ProjectReviewResult(
+        engine=DesktopEngine.DEFORMETRICA_REFERENCE,
+        project_name="Reference",
+        config_path=config,
+        config_sha256="c" * 64,
+        report_path=tmp_path / "preflight.html",
+        report_label="Preflight-Report",
+        subject_count=8,
+        parameters=(),
+        workload=(),
+        warnings=(),
+        scientific_boundary="Reference boundary",
+    )
+    status = DesktopReferencePreparationStatus(
+        config_path=config,
+        config_sha256=review.config_sha256,
+        approval_path=approval,
+        approval_sha256=digest,
+        plan_fingerprint="e" * 64,
+        run_id="reference-001",
+        status="published_prepared_not_executed_verified",
+        action_required=False,
+        destination_path=(tmp_path / "runs" / "reference-001").resolve(),
+        destination_status="verified_prepared_not_executed",
+        destination_reason="Exact prepared bytes verified.",
+        manifest_sha256="f" * 64,
+        engine_execution_started=False,
+        private_stages=(),
+        state_stable_across_observations=True,
+        mutation_performed=False,
+        scientific_boundary="Read-only engineering status only.",
+    )
+    monkeypatch.setattr(
+        "diffeoforge.desktop.widgets.review_reference_preparation_status",
+        lambda observed, path, expected: (
+            status
+            if observed is review
+            and Path(path).resolve() == approval
+            and expected == digest
+            else pytest.fail("wrong preparation status inputs")
+        ),
+    )
+    queued = []
+
+    class FakePool:
+        def start(self, worker) -> None:
+            queued.append(worker)
+
+    window = DiffeoForgeWindow()
+    window._thread_pool = FakePool()  # type: ignore[assignment]
+    window._review_succeeded(review)
+    window.reference_preparation_approval_edit.setText(str(approval))
+    window.reference_preparation_hash_edit.setText(digest)
+    application.processEvents()
+
+    assert window.refresh_reference_preparation_status_button.isEnabled() is True
+    window.refresh_reference_preparation_status_button.click()
+
+    assert len(queued) == 1
+    assert isinstance(queued[0], _ReferencePreparationStatusWorker)
+    assert window.refresh_reference_preparation_status_button.isEnabled() is False
+    queued[0].run()
+    application.processEvents()
+
+    detail = window.reference_preparation_detail_label.text().replace("\u200b", "")
+    assert "vollständig verifiziert" in window.reference_preparation_status_label.text()
+    assert "Mutation durch diese Prüfung: nein" in detail
+    assert "Engine-Ausführung gestartet: nein" in detail
+    assert "f" * 64 in detail
+    assert window._reference_preparation_status is status
+    assert window.show_run_button.isEnabled() is False
+    assert window.page_stack.currentIndex() == 1
+    window.close()
+    application.processEvents()
+
+
+def test_desktop_discards_preparation_status_after_inputs_change(
+    monkeypatch, tmp_path
+) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from diffeoforge.desktop.project_review import ProjectReviewResult
+    from diffeoforge.desktop.project_setup import DesktopEngine
+    from diffeoforge.desktop.reference_preparation_status import (
+        DesktopReferencePreparationStatus,
+    )
+    from diffeoforge.desktop.widgets import DiffeoForgeWindow
+
+    application = QApplication.instance() or QApplication(
+        ["diffeoforge-reference-preparation-stale-test"]
+    )
+    config = (tmp_path / "atlas.yaml").resolve()
+    config.write_text("reviewed\n", encoding="utf-8")
+    approval = (tmp_path / "approval.json").resolve()
+    approval.write_text("{}\n", encoding="utf-8")
+    digest = "a" * 64
+    review = ProjectReviewResult(
+        engine=DesktopEngine.DEFORMETRICA_REFERENCE,
+        project_name="Reference",
+        config_path=config,
+        config_sha256="b" * 64,
+        report_path=tmp_path / "preflight.html",
+        report_label="Preflight-Report",
+        subject_count=8,
+        parameters=(),
+        workload=(),
+        warnings=(),
+        scientific_boundary="Reference boundary",
+    )
+    status = DesktopReferencePreparationStatus(
+        config_path=config,
+        config_sha256=review.config_sha256,
+        approval_path=approval,
+        approval_sha256=digest,
+        plan_fingerprint="c" * 64,
+        run_id="reference-001",
+        status="clear_to_prepare",
+        action_required=False,
+        destination_path=(tmp_path / "runs" / "reference-001").resolve(),
+        destination_status="absent",
+        destination_reason="Destination absent.",
+        manifest_sha256=None,
+        engine_execution_started=None,
+        private_stages=(),
+        state_stable_across_observations=True,
+        mutation_performed=False,
+        scientific_boundary="Read-only engineering status only.",
+    )
+    monkeypatch.setattr(
+        "diffeoforge.desktop.widgets.review_reference_preparation_status",
+        lambda *_args, **_kwargs: status,
+    )
+    queued = []
+
+    class FakePool:
+        def start(self, worker) -> None:
+            queued.append(worker)
+
+    window = DiffeoForgeWindow()
+    window._thread_pool = FakePool()  # type: ignore[assignment]
+    window._review_succeeded(review)
+    window.reference_preparation_approval_edit.setText(str(approval))
+    window.reference_preparation_hash_edit.setText(digest)
+    window.refresh_reference_preparation_status_button.click()
+    window.reference_preparation_hash_edit.setText("9" * 64)
+    queued[0].run()
+    application.processEvents()
+
+    assert window._reference_preparation_status is None
+    assert "verworfen" in window.reference_preparation_status_label.text()
+    assert "nichts verändert" in window.reference_preparation_detail_label.text()
+    assert window.refresh_reference_preparation_status_button.isEnabled() is True
     window.close()
     application.processEvents()
 

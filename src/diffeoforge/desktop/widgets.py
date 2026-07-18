@@ -40,6 +40,11 @@ from diffeoforge.desktop.project_setup import (
     ProjectSetupResult,
     create_project,
 )
+from diffeoforge.desktop.reference_preparation_status import (
+    DesktopReferencePreparationStatus,
+    DesktopReferencePreparationStatusError,
+    review_reference_preparation_status,
+)
 from diffeoforge.desktop.reference_readiness import (
     DesktopReferenceReadiness,
     DesktopReferenceReadinessError,
@@ -194,6 +199,41 @@ class _ReferenceReadinessWorker(QRunnable):
         self.signals.succeeded.emit(readiness)
 
 
+class _ReferencePreparationStatusWorker(QRunnable):
+    """Reconcile one approval-bound preparation outside the GUI thread."""
+
+    def __init__(
+        self,
+        review: ProjectReviewResult,
+        approval_path: Path,
+        expected_approval_sha256: str,
+    ) -> None:
+        super().__init__()
+        self.review = review
+        self.approval_path = approval_path
+        self.expected_approval_sha256 = expected_approval_sha256
+        self.signals = _WorkerSignals()
+
+    @Slot()
+    def run(self) -> None:
+        try:
+            status = review_reference_preparation_status(
+                self.review,
+                self.approval_path,
+                self.expected_approval_sha256,
+            )
+        except (
+            DesktopReferencePreparationStatusError,
+            OSError,
+            RuntimeError,
+            TypeError,
+            ValueError,
+        ) as error:
+            self.signals.failed.emit(str(error))
+            return
+        self.signals.succeeded.emit(status)
+
+
 class _ResultReviewWorker(QRunnable):
     """Fully verify one completed Modern workflow outside the GUI thread."""
 
@@ -313,6 +353,7 @@ class DiffeoForgeWindow(QMainWindow):
             | _ReviewWorker
             | _TemplatePreviewWorker
             | _ReferenceReadinessWorker
+            | _ReferencePreparationStatusWorker
             | _ResultReviewWorker
             | _ArtifactWorker
             | _AtlasWorker
@@ -322,6 +363,7 @@ class DiffeoForgeWindow(QMainWindow):
         self._review: ProjectReviewResult | None = None
         self._template_preview: MeshPreviewModel | None = None
         self._reference_readiness: DesktopReferenceReadiness | None = None
+        self._reference_preparation_status: DesktopReferencePreparationStatus | None = None
         self._run_readiness: DesktopReviewedRunReadiness | None = None
         self._run_result: DesktopWorkerControllerResult | None = None
         self._result_review: ModernResultReview | None = None
@@ -601,6 +643,96 @@ class DiffeoForgeWindow(QMainWindow):
         self.reference_readiness_card = reference_readiness
         self.reference_readiness_card.hide()
         layout.addWidget(self.reference_readiness_card)
+
+        reference_preparation_status = QFrame()
+        reference_preparation_status.setObjectName("card")
+        reference_preparation_status_layout = QVBoxLayout(
+            reference_preparation_status
+        )
+        reference_preparation_status_layout.setContentsMargins(24, 22, 24, 24)
+        reference_preparation_status_layout.setSpacing(10)
+        reference_preparation_status_title = QLabel(
+            "Approval-bound Vorbereitungsstatus"
+        )
+        reference_preparation_status_title.setObjectName("sectionTitle")
+        self.reference_preparation_status_label = QLabel(
+            "Noch keine Approval-Datei read-only geprüft."
+        )
+        self.reference_preparation_status_label.setObjectName("status")
+        self.reference_preparation_status_label.setWordWrap(True)
+        preparation_form = QFormLayout()
+        preparation_form.setHorizontalSpacing(22)
+        preparation_form.setVerticalSpacing(10)
+        self.reference_preparation_approval_edit = QLineEdit()
+        self.reference_preparation_approval_edit.setObjectName(
+            "referencePreparationApprovalEdit"
+        )
+        self.reference_preparation_approval_edit.setPlaceholderText(
+            "Zuvor geprüfte preparation-only Approval-Datei"
+        )
+        self.reference_preparation_approval_edit.textChanged.connect(
+            self._reference_preparation_inputs_changed
+        )
+        reference_preparation_approval_button = QPushButton("Auswählen…")
+        reference_preparation_approval_button.setObjectName("secondary")
+        reference_preparation_approval_button.clicked.connect(
+            self._choose_reference_preparation_approval
+        )
+        preparation_form.addRow(
+            "Approval-Datei",
+            _path_row(
+                self.reference_preparation_approval_edit,
+                reference_preparation_approval_button,
+            ),
+        )
+        self.reference_preparation_hash_edit = QLineEdit()
+        self.reference_preparation_hash_edit.setObjectName(
+            "referencePreparationHashEdit"
+        )
+        self.reference_preparation_hash_edit.setPlaceholderText(
+            "Unabhängig notierter SHA-256 der kompletten Approval-Datei"
+        )
+        self.reference_preparation_hash_edit.textChanged.connect(
+            self._reference_preparation_inputs_changed
+        )
+        preparation_form.addRow(
+            "Approval-SHA-256",
+            self.reference_preparation_hash_edit,
+        )
+        self.reference_preparation_detail_label = QLabel(
+            "Diese Ansicht prüft nur den exakt genehmigten Zielpfad und exakt benannte "
+            "private Stages. Sie folgt keinen Links und verändert nichts."
+        )
+        self.reference_preparation_detail_label.setObjectName("reviewDetail")
+        self.reference_preparation_detail_label.setWordWrap(True)
+        self.reference_preparation_detail_label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+        )
+        self.refresh_reference_preparation_status_button = QPushButton(
+            "Vorbereitungsstatus read-only prüfen"
+        )
+        self.refresh_reference_preparation_status_button.setObjectName("secondary")
+        self.refresh_reference_preparation_status_button.clicked.connect(
+            self._check_reference_preparation_status
+        )
+        reference_preparation_status_layout.addWidget(
+            reference_preparation_status_title
+        )
+        reference_preparation_status_layout.addWidget(
+            self.reference_preparation_status_label
+        )
+        reference_preparation_status_layout.addLayout(preparation_form)
+        reference_preparation_status_layout.addWidget(
+            self.reference_preparation_detail_label
+        )
+        reference_preparation_status_layout.addWidget(
+            self.refresh_reference_preparation_status_button,
+            0,
+            Qt.AlignmentFlag.AlignLeft,
+        )
+        self.reference_preparation_status_card = reference_preparation_status
+        self.reference_preparation_status_card.hide()
+        layout.addWidget(self.reference_preparation_status_card)
 
         warnings = QFrame()
         warnings.setObjectName("card")
@@ -1141,6 +1273,58 @@ class DiffeoForgeWindow(QMainWindow):
             self.landmarks_edit.setText(selected)
 
     @Slot()
+    def _choose_reference_preparation_approval(self) -> None:
+        start = (
+            str(self._review.config_path.parent)
+            if self._review is not None
+            else self.project_edit.text().strip()
+        )
+        selected, _ = QFileDialog.getOpenFileName(
+            self,
+            "Preparation-only Approval auswählen",
+            start,
+            "JSON-Dateien (*.json)",
+        )
+        if selected:
+            self.reference_preparation_approval_edit.setText(selected)
+
+    @Slot()
+    def _reference_preparation_inputs_changed(self) -> None:
+        self._reference_preparation_status = None
+        self.reference_preparation_status_label.setObjectName("status")
+        self.reference_preparation_status_label.setStyleSheet("")
+        if isinstance(self._worker, _ReferencePreparationStatusWorker):
+            message = (
+                "Eingaben wurden während der Prüfung geändert; das laufende Ergebnis "
+                "wird verworfen."
+            )
+        else:
+            message = "Noch keine Approval-Datei read-only geprüft."
+        self.reference_preparation_status_label.setText(message)
+        self.reference_preparation_detail_label.setText(
+            "Diese Ansicht prüft nur den exakt genehmigten Zielpfad und exakt benannte "
+            "private Stages. Sie folgt keinen Links und verändert nichts."
+        )
+        self._sync_reference_preparation_status_controls()
+
+    def _reference_preparation_inputs_valid(self) -> bool:
+        digest = self.reference_preparation_hash_edit.text().strip().lower()
+        return bool(
+            self.reference_preparation_approval_edit.text().strip()
+            and len(digest) == 64
+            and all(character in "0123456789abcdef" for character in digest)
+        )
+
+    def _sync_reference_preparation_status_controls(self) -> None:
+        ready = bool(
+            self._review is not None
+            and self._review.engine is DesktopEngine.DEFORMETRICA_REFERENCE
+            and self._reference_preparation_inputs_valid()
+            and self._worker is None
+        )
+        self.refresh_reference_preparation_status_button.setEnabled(ready)
+
+    @Slot()
     def _detect_template_from_text(self) -> None:
         mesh_text = self.mesh_edit.text().strip()
         if not mesh_text or self.template_edit.text().strip():
@@ -1175,6 +1359,7 @@ class DiffeoForgeWindow(QMainWindow):
             and self.units_combo.currentData() is not None
         )
         self.create_button.setEnabled(ready and self._worker is None)
+        self._sync_reference_preparation_status_controls()
 
     def _request(self) -> ProjectSetupRequest:
         template = self.template_edit.text().strip()
@@ -1201,10 +1386,14 @@ class DiffeoForgeWindow(QMainWindow):
         self._review = None
         self._template_preview = None
         self._reference_readiness = None
+        self._reference_preparation_status = None
         self._run_readiness = None
         self._run_result = None
         self._result_review = None
         self.template_preview_card.hide()
+        self.reference_preparation_status_card.hide()
+        self.reference_preparation_approval_edit.clear()
+        self.reference_preparation_hash_edit.clear()
         self.template_preview_canvas.set_model(None)
         self.review_button.setEnabled(False)
         self.show_run_button.setEnabled(False)
@@ -1270,7 +1459,10 @@ class DiffeoForgeWindow(QMainWindow):
         self._review = review
         self._template_preview = None
         self._reference_readiness = None
+        self._reference_preparation_status = None
         self._run_readiness = None
+        self.reference_preparation_approval_edit.clear()
+        self.reference_preparation_hash_edit.clear()
         self._populate_review_rows(self.parameter_review_layout, review.parameters)
         self._populate_review_rows(self.workload_review_layout, review.workload)
         self.review_boundary_label.setText(review.scientific_boundary)
@@ -1313,10 +1505,12 @@ class DiffeoForgeWindow(QMainWindow):
             self.template_preview_card.hide()
         if review.engine is DesktopEngine.MODERN_CPU:
             self.reference_readiness_card.hide()
+            self.reference_preparation_status_card.hide()
             self.show_run_button.setText("Weiter zu Atlasstart")
             self.show_run_button.setEnabled(True)
         else:
             self.reference_readiness_card.show()
+            self.reference_preparation_status_card.show()
             self.reference_readiness_status_label.setObjectName("status")
             self.reference_readiness_status_label.setStyleSheet("")
             self.reference_readiness_status_label.setText(
@@ -1328,6 +1522,15 @@ class DiffeoForgeWindow(QMainWindow):
                 "nichts."
             )
             self.refresh_reference_readiness_button.setEnabled(True)
+            self.reference_preparation_status_label.setObjectName("status")
+            self.reference_preparation_status_label.setStyleSheet("")
+            self.reference_preparation_status_label.setText(
+                "Noch keine Approval-Datei read-only geprüft."
+            )
+            self.reference_preparation_detail_label.setText(
+                "Approval-Datei und unabhängig notierter SHA-256 sind erforderlich. "
+                "Die Prüfung verändert, publiziert, löscht oder startet nichts."
+            )
             self.show_run_button.setText("Referenzstart noch nicht verbunden")
             self.show_run_button.setEnabled(False)
         self._set_active_step(1)
@@ -1535,6 +1738,164 @@ class DiffeoForgeWindow(QMainWindow):
         self.refresh_reference_readiness_button.setEnabled(
             self._review is not None
             and self._review.engine is DesktopEngine.DEFORMETRICA_REFERENCE
+        )
+        self.review_button.setEnabled(self._result is not None)
+        self._sync_ready_state()
+
+    def _reference_preparation_worker_matches_inputs(
+        self,
+        worker: _ReferencePreparationStatusWorker,
+    ) -> bool:
+        approval_text = self.reference_preparation_approval_edit.text().strip()
+        digest = self.reference_preparation_hash_edit.text().strip().lower()
+        return bool(
+            self._review is worker.review
+            and approval_text
+            and Path(approval_text).expanduser().resolve()
+            == worker.approval_path.expanduser().resolve()
+            and digest == worker.expected_approval_sha256.strip().lower()
+        )
+
+    @Slot()
+    def _check_reference_preparation_status(self) -> None:
+        if (
+            self._review is None
+            or self._review.engine is not DesktopEngine.DEFORMETRICA_REFERENCE
+            or not self._reference_preparation_inputs_valid()
+            or self._worker is not None
+        ):
+            return
+        worker = _ReferencePreparationStatusWorker(
+            self._review,
+            Path(self.reference_preparation_approval_edit.text().strip()),
+            self.reference_preparation_hash_edit.text().strip(),
+        )
+        worker.signals.succeeded.connect(
+            self._reference_preparation_status_succeeded
+        )
+        worker.signals.failed.connect(self._reference_preparation_status_failed)
+        self._worker = worker
+        self._reference_preparation_status = None
+        self.reference_preparation_status_label.setObjectName("status")
+        self.reference_preparation_status_label.setStyleSheet("")
+        self.reference_preparation_status_label.setText(
+            "Approval, aktueller Plan, Zielpfad und private Stages werden zweimal "
+            "read-only geprüft …"
+        )
+        self.reference_preparation_detail_label.setText(
+            "Kein Pfad wird gelöscht, verschoben, publiziert, repariert, fortgesetzt, "
+            "vorbereitet oder ausgeführt."
+        )
+        self._sync_ready_state()
+        self._thread_pool.start(worker)
+
+    @Slot(object)
+    def _reference_preparation_status_succeeded(
+        self,
+        status: DesktopReferencePreparationStatus,
+    ) -> None:
+        worker = self._worker
+        self._worker = None
+        if (
+            not isinstance(worker, _ReferencePreparationStatusWorker)
+            or not self._reference_preparation_worker_matches_inputs(worker)
+            or self._review is None
+            or status.config_path != self._review.config_path.resolve()
+            or status.config_sha256 != self._review.config_sha256
+            or status.approval_path != worker.approval_path.expanduser().resolve()
+            or status.approval_sha256
+            != worker.expected_approval_sha256.strip().lower()
+        ):
+            self._reference_preparation_status = None
+            self.reference_preparation_status_label.setObjectName("statusError")
+            self.reference_preparation_status_label.setStyleSheet("")
+            self.reference_preparation_status_label.setText(
+                "Prüfergebnis verworfen, weil Review oder Approval-Eingaben nicht mehr "
+                "exakt übereinstimmen."
+            )
+            self.reference_preparation_detail_label.setText(
+                "Es wurde nichts verändert. Mit den aktuellen Eingaben erneut prüfen."
+            )
+            self._sync_ready_state()
+            return
+
+        self._reference_preparation_status = status
+        engine_started = (
+            "ja"
+            if status.engine_execution_started is True
+            else "nein"
+            if status.engine_execution_started is False
+            else "nicht sicher klassifizierbar"
+        )
+        details = [
+            f"Approval: {self._wrappable_path(status.approval_path)}",
+            f"Approval-SHA-256: {status.approval_sha256}",
+            f"Run-ID: {status.run_id}",
+            f"Plan-Fingerprint: {status.plan_fingerprint}",
+            f"Ziel [{status.destination_status}]: "
+            f"{self._wrappable_path(status.destination_path)}",
+            f"Begründung: {status.destination_reason}",
+            f"Engine-Ausführung gestartet: {engine_started}",
+            f"Exakt passende private Stages: {len(status.private_stages)}",
+        ]
+        if status.manifest_sha256 is not None:
+            details.append(f"Manifest-SHA-256: {status.manifest_sha256}")
+        for stage in status.private_stages:
+            details.append(
+                f"[{stage.status}] {self._wrappable_path(stage.path)}: {stage.reason}"
+            )
+        details.extend(
+            (
+                "Stabile Doppelbeobachtung: ja",
+                "Mutation durch diese Prüfung: nein",
+                f"Grenze: {status.scientific_boundary}",
+            )
+        )
+        self.reference_preparation_detail_label.setText("\n".join(details))
+        if status.status == "clear_to_prepare":
+            self.reference_preparation_status_label.setObjectName("statusSuccess")
+            message = (
+                "Genehmigter Zielpfad ist frei. Read-only-Prüfung bestanden; es wurde "
+                "nichts vorbereitet oder gestartet."
+            )
+        elif status.status == "published_prepared_not_executed_verified":
+            self.reference_preparation_status_label.setObjectName("statusSuccess")
+            message = (
+                "Vorbereiteter Referenz-Run ist vollständig verifiziert und wurde nicht "
+                "ausgeführt."
+            )
+        else:
+            self.reference_preparation_status_label.setObjectName("statusError")
+            message = (
+                "Der beobachtete Zustand benötigt eine explizite menschliche "
+                "Entscheidung. Es wurde nichts verändert."
+            )
+        self.reference_preparation_status_label.setStyleSheet("")
+        self.reference_preparation_status_label.setText(message)
+        self.review_button.setEnabled(self._result is not None)
+        self._sync_ready_state()
+
+    @Slot(str)
+    def _reference_preparation_status_failed(self, message: str) -> None:
+        worker = self._worker
+        self._worker = None
+        inputs_match = isinstance(
+            worker, _ReferencePreparationStatusWorker
+        ) and self._reference_preparation_worker_matches_inputs(worker)
+        self._reference_preparation_status = None
+        self.reference_preparation_status_label.setObjectName("statusError")
+        self.reference_preparation_status_label.setStyleSheet("")
+        if inputs_match:
+            self.reference_preparation_status_label.setText(
+                f"Vorbereitungsstatus nicht sicher prüfbar: {message}"
+            )
+        else:
+            self.reference_preparation_status_label.setText(
+                "Fehlerergebnis verworfen, weil die Approval-Eingaben geändert wurden."
+            )
+        self.reference_preparation_detail_label.setText(
+            "Keine Statusfreigabe. Es wurde nichts gelöscht, verschoben, publiziert, "
+            "repariert, fortgesetzt, vorbereitet oder ausgeführt."
         )
         self.review_button.setEnabled(self._result is not None)
         self._sync_ready_state()
