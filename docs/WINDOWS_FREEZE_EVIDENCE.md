@@ -33,6 +33,47 @@ The workflow's existence is not a successful clean-runner observation. Each
 manual run must be linked and its downloaded two-file artifact independently
 inspected before it is cited as engineering evidence.
 
+### First clean-runner observation
+
+[Workflow run 29634117568](https://github.com/heinjenny95/DiffeoForge/actions/runs/29634117568)
+successfully repeated the complete contract on a fresh GitHub-hosted
+`windows-latest` runner on 18 July 2026. The run was manually dispatched from
+clean source commit `a690473eb7527c9fc9b7a75068d7a9e6b730aeb3`, used Python
+3.12.10 and PyInstaller 6.21.0, and completed in 10 minutes 18 seconds. Its
+build-and-verify step took 8 minutes 34 seconds.
+
+The run observed all of the following through the frozen executables:
+
+- the GUI smoke exited successfully;
+- the public synthetic Modern worker completed with 21 accepted events and
+  published to a destination containing spaces and `Käfer`;
+- the nonnumerical reference harness emitted the exact three-event
+  `stopped_before_prepare` outcome and created no destination;
+- hard controller death stopped the suspended reference worker within the
+  audit deadline and created no destination;
+- hard controller death stopped the suspended preparation worker before
+  request delivery, with no destination, private stage, or engine start; and
+- the externally approved preparation request emitted the exact five-event
+  `prepared_not_executed` outcome, published an independently verified
+  destination, and did not start engine execution.
+
+The independently downloaded artifact contained exactly
+`freeze-evidence.json` and `freeze-evidence.sha256`. The manifest is schema
+`desktop-freeze-evidence-v0.3`, has SHA-256
+`69b208e178bb6181ec7c73bd7abd8f9c409fc4a4deeeb246bb374ee033c6c4b6`,
+and its sidecar matched exactly. It records four expected entry points, 2,656
+files, 671,170,553 bytes, and inventory SHA-256
+`b18be2d86ad9ae6fc2b301471abea0735f0f7c1980fcf2a14a0f42b9eae95c46`.
+The GitHub artifact was ID `8426575477`; its uploaded archive digest was
+`sha256:9e4b808af5930a5a4d08c3f2e14f05f0e7cf694a15abde7eeb6197f5b806fef3`.
+
+This observation remains `engineering_evidence_not_a_release`. In particular,
+the unsigned 671 MB executable directory was deliberately not uploaded, and
+the run did not satisfy Authenticode, SBOM, dependency-license, Windows
+Defender, no-network, installer/uninstaller, clean installed VM, crash
+reconciliation, CPU numerical release-validation, or scientific-validation
+gates.
+
 DiffeoForge can be frozen on a 64-bit Windows development machine into one
 directory containing four entry points:
 

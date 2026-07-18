@@ -64,6 +64,10 @@ events to the reviewed request, enforces lifecycle/exit-code agreement, bounds
   complete freeze and smoke contract on a fresh runner. It uploads only the
   exact manifest and hash sidecar, never the unsigned executable directory;
   each run remains engineering evidence and must be independently inspected.
+  The first such clean-runner observation completed successfully on 18 July
+  2026 and its downloaded two-file evidence artifact was independently checked;
+  its exact source, inventory, hashes, observations, and remaining release gates
+  are recorded in the linked evidence document.
 
 The CPU modern engine is the first bundled numerical variant. A future NVIDIA
 build is a separate artifact with separate numerical evidence; the application
