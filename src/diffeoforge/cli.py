@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 from collections.abc import Sequence
@@ -29,6 +30,11 @@ from diffeoforge.reference_preparation_plan import (
 )
 from diffeoforge.reference_preparation_reconciliation import (
     reconcile_reference_preparation,
+    serialize_reference_preparation_reconciliation,
+    write_reference_preparation_reconciliation,
+)
+from diffeoforge.reference_preparation_reconciliation_verification import (
+    verify_saved_reference_preparation_reconciliation,
 )
 from diffeoforge.reference_preparation_verification import (
     verify_saved_reference_preparation_plan,
@@ -48,6 +54,17 @@ from diffeoforge.runs import (
 )
 
 _AUTO_REPORT = Path("__diffeoforge_auto_report__")
+
+
+def _write_stdout_bytes(payload: bytes) -> None:
+    """Write exact machine-readable bytes when stdout exposes a binary buffer."""
+
+    buffer = getattr(sys.stdout, "buffer", None)
+    if buffer is None:
+        sys.stdout.write(payload.decode("utf-8"))
+        return
+    buffer.write(payload)
+    buffer.flush()
 
 
 def _tile_shape_argument(value: str) -> tuple[int, int]:
@@ -538,10 +555,30 @@ def build_parser() -> argparse.ArgumentParser:
         required=True,
         help="Independently recorded SHA-256 of the complete approval-request file.",
     )
-    reference_preparation_status_parser.add_argument(
+    reference_preparation_status_output = (
+        reference_preparation_status_parser.add_mutually_exclusive_group()
+    )
+    reference_preparation_status_output.add_argument(
         "--json",
         action="store_true",
         help="Print the complete versioned machine-readable reconciliation report.",
+    )
+    reference_preparation_status_output.add_argument(
+        "--output",
+        type=Path,
+        help="Write exact report bytes to a new file; an existing path is never replaced.",
+    )
+    reference_preparation_status_verify_parser = subparsers.add_parser(
+        "reference-preparation-status-verify",
+        help="Strictly verify one saved reconciliation report without external-state reads.",
+    )
+    reference_preparation_status_verify_parser.add_argument(
+        "report", type=Path, help="Saved deterministic reconciliation report JSON."
+    )
+    reference_preparation_status_verify_parser.add_argument(
+        "--expect-report-sha256",
+        required=True,
+        help="Independently recorded SHA-256 of the complete saved report file.",
     )
     reference_prepare_approved_parser = subparsers.add_parser(
         "reference-prepare-approved",
@@ -1484,8 +1521,21 @@ def main(argv: Sequence[str] | None = None) -> int:
                 expected_request_sha256=args.expect_request_sha256,
             )
             if args.json:
-                json.dump(report, sys.stdout, indent=2, ensure_ascii=True, sort_keys=True)
-                sys.stdout.write("\n")
+                _write_stdout_bytes(
+                    serialize_reference_preparation_reconciliation(report)
+                )
+            elif args.output is not None:
+                payload = serialize_reference_preparation_reconciliation(report)
+                written = write_reference_preparation_reconciliation(
+                    report,
+                    args.output,
+                )
+                if written.read_bytes() != payload:
+                    raise ConfigurationError(
+                        f"Saved reconciliation report changed after writing: {written}"
+                    )
+                print(f"Saved reconciliation report: {written}")
+                print(f"Report SHA-256: {hashlib.sha256(payload).hexdigest()}")
             else:
                 print(f"Status: {report['status']}")
                 print(f"Approved run: {report['approved_plan']['run_id']}")
@@ -1503,6 +1553,19 @@ def main(argv: Sequence[str] | None = None) -> int:
         except (ConfigurationError, OSError, TypeError, ValueError) as error:
             print(f"ERROR: {error}", file=sys.stderr)
             return 2
+
+    if args.command == "reference-preparation-status-verify":
+        try:
+            evidence = verify_saved_reference_preparation_reconciliation(
+                args.report,
+                expected_report_sha256=args.expect_report_sha256,
+            )
+            json.dump(evidence, sys.stdout, indent=2, ensure_ascii=True, sort_keys=True)
+            sys.stdout.write("\n")
+        except (ConfigurationError, OSError, TypeError, ValueError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
 
     if args.command == "reference-prepare-approved":
         try:

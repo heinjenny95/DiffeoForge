@@ -279,6 +279,13 @@ unpublished private stage, but it never deletes, publishes, resumes, repairs,
 or executes one. See
 [approval-bound preparation status](REFERENCE_PREPARATION_RECONCILIATION.md).
 
+A separate saved-report verifier strict-loads one reconciliation artifact,
+requires an external complete-file SHA-256, validates its schema and exact
+deterministic serialization, and rereads it before returning versioned
+verification evidence. It deliberately reads no current config, meshes,
+approval, run path, process, container, or engine state. See
+[saved status verification](REFERENCE_PREPARATION_RECONCILIATION_VERIFICATION.md).
+
 Desktop step 2 consumes that report through a separate Qt-independent bounded
 view model. It first binds the current config bytes to the completed desktop
 review, delegates all reconciliation semantics to the shared core, and checks

@@ -75,3 +75,6 @@ registration quality, or biological interpretation.
 
 The underlying versioned report is documented in
 [Approval-bound reference preparation status](REFERENCE_PREPARATION_RECONCILIATION.md).
+Its exact exported bytes can be checked later with the
+[saved status verifier](REFERENCE_PREPARATION_RECONCILIATION_VERIFICATION.md)
+without reopening current project or run state.
