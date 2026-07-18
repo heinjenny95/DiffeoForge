@@ -9,6 +9,13 @@ WINDOWS = ROOT / "distribution" / "windows"
 WORKFLOW = ROOT / ".github" / "workflows" / "windows-freeze-evidence.yml"
 
 
+def test_windows_builder_scripts_have_checkout_stable_line_endings() -> None:
+    attributes = (ROOT / ".gitattributes").read_text(encoding="utf-8")
+
+    assert "*.ps1 text eol=lf" in attributes
+    assert "*.iss text eol=lf" in attributes
+
+
 def test_windows_evidence_builder_is_explicitly_pinned_and_onedir() -> None:
     requirements = (WINDOWS / "freeze-requirements.txt").read_text(encoding="utf-8")
     spec = (WINDOWS / "DiffeoForge.spec").read_text(encoding="utf-8")
@@ -34,6 +41,7 @@ def test_windows_freeze_excludes_and_audits_builder_only_sbom_modules() -> None:
         "boolean",
         "cyclonedx",
         "defusedxml",
+        "diffeoforge.desktop.inno_portable_toolchain_evidence",
         "diffeoforge.desktop.inno_signature_evidence",
         "diffeoforge.desktop.inno_toolchain_evidence",
         "diffeoforge.desktop.installer_plan",

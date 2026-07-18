@@ -1,0 +1,101 @@
+{
+  "schema_version": "0.1",
+  "status": "accepted_portable_toolchain_probe_contract_not_release_authorization",
+  "target": "windows-x86_64-cpu",
+  "installer": {
+    "name": "innosetup-7.0.2-x64.exe",
+    "bytes": 17020192,
+    "sha256": "5ad54ca3def786f8f4212552e54cc6d8d61329e2d24a1cfee0571d42c2684ff1"
+  },
+  "required_prerequisite_evidence": {
+    "inno_toolchain_authenticity": true,
+    "issigtool_installer_signature": true,
+    "external_sha256_for_each_document": true,
+    "offline_reconstruction_before_installer_execution": true,
+    "both_documents_must_bind_the_exact_installer": true
+  },
+  "portable_install": {
+    "arguments": [
+      "/PORTABLE=1",
+      "/CURRENTUSER",
+      "/VERYSILENT",
+      "/SUPPRESSMSGBOXES",
+      "/NORESTART",
+      "/SP-",
+      "/NOICONS",
+      "/LANG=english",
+      "/DIR=<absolute-empty-toolchain-directory>",
+      "/LOG=<absolute-new-log-path>"
+    ],
+    "start_process_window_style": "Hidden",
+    "exit_code": 0,
+    "expected_file_count": 132,
+    "expected_directory_count": 5,
+    "expected_total_bytes": 51400648,
+    "uninstaller_file_count": 0,
+    "restart": false,
+    "system_install_claim": false
+  },
+  "critical_components": {
+    "required_authenticode_status": "Valid",
+    "required_signer_subject": "CN=Pyrsys B.V., O=Pyrsys B.V., S=Noord-Holland, C=NL",
+    "files": {
+      "ISCC.exe": {
+        "bytes": 2016160,
+        "sha256": "0ff6140d641f84b64204a2c4d52207c6fc437c9f4db8779c83083d84f7e3d70d"
+      },
+      "ISCmplr.dll": {
+        "bytes": 2249120,
+        "sha256": "d63233641c63eb56bbc067c8aa756157740e780a019aa7e5292f37610fbd24af"
+      },
+      "ISPP.dll": {
+        "bytes": 1601440,
+        "sha256": "174a012bbc0e69a9cb43336a04ae2b93ea8d2b93362135541ad49a8dadae2676"
+      },
+      "ISSigTool.exe": {
+        "bytes": 1398688,
+        "sha256": "d381ea69a33e6d4e8fb6f7adc089e8bcf3e7c6b99c20822cf9eb0979bccceae4"
+      }
+    }
+  },
+  "compiler_probe": {
+    "script": "InnoCompilerProbe.iss",
+    "script_bytes": 290,
+    "script_sha256": "3abf0abb493e821239157a9e1f14b027388f68b4b21fe5bb23a7bbab8ad780a4",
+    "arguments": [
+      "/Qp",
+      "/O+",
+      "/O<absolute-empty-probe-output-directory>",
+      "/FDiffeoForge-Compiler-Probe",
+      "<absolute-probe-script-path>"
+    ],
+    "expected_output_name": "DiffeoForge-Compiler-Probe.exe",
+    "expected_output_file_count": 1,
+    "exit_code": 0,
+    "payload_free": true,
+    "distribution_authorized": false
+  },
+  "observation": {
+    "windows_only": true,
+    "wrapper_requires_exact_clean_source_commit": true,
+    "three_new_empty_real_directories_outside_repository_and_inputs": true,
+    "raw_files": [
+      "inno-portable-install.log",
+      "inno-portable-install-observation.json",
+      "inno-portable-authenticode-observation.json",
+      "inno-compiler-probe-observation.json"
+    ],
+    "canonical_evidence_json": true,
+    "overwrite": false,
+    "offline_reverification_of_recorded_bindings": true,
+    "execution_authorized": false
+  },
+  "nonclaims": [
+    "system_wide_inno_setup_installation",
+    "diffeoforge_installer_build_or_distribution",
+    "bit_for_bit_compiler_output_determinism",
+    "license_compatibility_or_redistribution_approval",
+    "authenticode_for_diffeoforge_outputs",
+    "clean_vm_defender_no_network_numerical_or_scientific_validation"
+  ]
+}

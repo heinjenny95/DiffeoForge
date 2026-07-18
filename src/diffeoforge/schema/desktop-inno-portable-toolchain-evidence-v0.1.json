@@ -1,0 +1,244 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://diffeoforge.org/schema/desktop-inno-portable-toolchain-evidence-v0.1.json",
+  "title": "DiffeoForge portable Inno toolchain and compiler-probe evidence",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "status",
+    "target",
+    "observed_at",
+    "source",
+    "installer",
+    "prerequisite_evidence",
+    "portable_install",
+    "critical_authenticode",
+    "compiler_probe",
+    "installer_execution",
+    "compiler_execution",
+    "execution_authorized",
+    "missing_release_gates",
+    "scientific_boundary"
+  ],
+  "properties": {
+    "schema_version": { "const": "0.1" },
+    "status": {
+      "const": "portable_inno_toolchain_probe_not_diffeoforge_installer_or_release_authorization"
+    },
+    "target": { "const": "windows-x86_64-cpu" },
+    "observed_at": { "type": "string", "format": "date-time" },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "commit_sha",
+        "diffeoforge_version",
+        "project",
+        "contract",
+        "wrapper",
+        "probe_script"
+      ],
+      "properties": {
+        "commit_sha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+        "diffeoforge_version": { "type": "string", "minLength": 1 },
+        "project": { "$ref": "#/$defs/file" },
+        "contract": { "$ref": "#/$defs/file" },
+        "wrapper": { "$ref": "#/$defs/file" },
+        "probe_script": { "$ref": "#/$defs/file" }
+      }
+    },
+    "installer": { "$ref": "#/$defs/file" },
+    "prerequisite_evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["toolchain", "signature"],
+      "properties": {
+        "toolchain": { "$ref": "#/$defs/prerequisite" },
+        "signature": { "$ref": "#/$defs/prerequisite" }
+      }
+    },
+    "portable_install": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "raw",
+        "log",
+        "command",
+        "exit_code",
+        "installation_directory",
+        "installed_file_count",
+        "installed_directory_count",
+        "installed_total_bytes",
+        "inventory",
+        "uninstaller_file_count",
+        "portable_mode",
+        "current_user",
+        "restart",
+        "system_install_claim"
+      ],
+      "properties": {
+        "raw": { "$ref": "#/$defs/file" },
+        "log": { "$ref": "#/$defs/file" },
+        "command": {
+          "type": "array",
+          "minItems": 10,
+          "maxItems": 10,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "exit_code": { "const": 0 },
+        "installation_directory": { "type": "string", "minLength": 1 },
+        "installed_file_count": { "type": "integer", "minimum": 1 },
+        "installed_directory_count": { "type": "integer", "minimum": 0 },
+        "installed_total_bytes": { "type": "integer", "minimum": 1 },
+        "inventory": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/inventoryEntry" }
+        },
+        "uninstaller_file_count": { "const": 0 },
+        "portable_mode": { "const": true },
+        "current_user": { "const": true },
+        "restart": { "const": false },
+        "system_install_claim": { "const": false }
+      }
+    },
+    "critical_authenticode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["raw", "components"],
+      "properties": {
+        "raw": { "$ref": "#/$defs/file" },
+        "components": {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 4,
+          "items": { "$ref": "#/$defs/authenticodeComponent" }
+        }
+      }
+    },
+    "compiler_probe": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "raw",
+        "program",
+        "script",
+        "command",
+        "exit_code",
+        "output_lines",
+        "output",
+        "payload_free",
+        "distribution_authorized"
+      ],
+      "properties": {
+        "raw": { "$ref": "#/$defs/file" },
+        "program": { "$ref": "#/$defs/file" },
+        "script": { "$ref": "#/$defs/file" },
+        "command": {
+          "type": "array",
+          "minItems": 5,
+          "maxItems": 5,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "exit_code": { "const": 0 },
+        "output_lines": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "output": { "$ref": "#/$defs/file" },
+        "payload_free": { "const": true },
+        "distribution_authorized": { "const": false }
+      }
+    },
+    "installer_execution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["occurred", "scope", "system_install_claim"],
+      "properties": {
+        "occurred": { "const": true },
+        "scope": { "const": "prepare_exact_portable_inno_toolchain_only" },
+        "system_install_claim": { "const": false }
+      }
+    },
+    "compiler_execution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["occurred", "scope", "diffeoforge_installer_built"],
+      "properties": {
+        "occurred": { "const": true },
+        "scope": { "const": "compile_fixed_payload_free_probe_only" },
+        "diffeoforge_installer_built": { "const": false }
+      }
+    },
+    "execution_authorized": { "const": false },
+    "missing_release_gates": {
+      "type": "array",
+      "minItems": 10,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "scientific_boundary": { "type": "string", "minLength": 1 }
+  },
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "file": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "bytes", "sha256"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "bytes": { "type": "integer", "minimum": 1 },
+        "sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "prerequisite": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "bytes", "sha256", "expected_sha256", "source_commit_sha"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "bytes": { "type": "integer", "minimum": 1 },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "expected_sha256": { "$ref": "#/$defs/sha256" },
+        "source_commit_sha": { "type": "string", "pattern": "^[0-9a-f]{40}$" }
+      }
+    },
+    "inventoryEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "bytes", "sha256"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "bytes": { "type": "integer", "minimum": 1 },
+        "sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "authenticodeComponent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "file",
+        "status",
+        "signer_subject",
+        "signer_issuer",
+        "signer_thumbprint",
+        "timestamp_subject",
+        "timestamp_thumbprint"
+      ],
+      "properties": {
+        "name": { "enum": ["ISCC.exe", "ISCmplr.dll", "ISPP.dll", "ISSigTool.exe"] },
+        "file": { "$ref": "#/$defs/file" },
+        "status": { "const": "Valid" },
+        "signer_subject": {
+          "const": "CN=Pyrsys B.V., O=Pyrsys B.V., S=Noord-Holland, C=NL"
+        },
+        "signer_issuer": { "type": "string", "minLength": 1 },
+        "signer_thumbprint": { "type": "string", "pattern": "^[0-9A-F]{40}$" },
+        "timestamp_subject": { "type": "string", "minLength": 1 },
+        "timestamp_thumbprint": { "type": "string", "pattern": "^[0-9A-F]{40}$" }
+      }
+    }
+  }
+}

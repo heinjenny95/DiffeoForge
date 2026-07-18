@@ -48,6 +48,12 @@ workflow is documented in
 [Inno Setup toolchain authenticity evidence](INNO_TOOLCHAIN_EVIDENCE.md).
 The independent built-in signature check and its verifier trust chain are
 specified in [Inno Setup ISSigTool signature evidence](INNO_SIGNATURE_EVIDENCE.md).
+Before this contract permits any DiffeoForge installer build, a separate
+[portable toolchain and compiler-probe observation](INNO_PORTABLE_TOOLCHAIN_EVIDENCE.md)
+must establish that the authenticated installer prepares the exact expected
+compiler inventory and that `ISCC.exe` can compile the fixed payload-free probe.
+That observation alone still does not authorize a DiffeoForge installer build,
+signing, redistribution, or release.
 
 ## Required future build inputs
 

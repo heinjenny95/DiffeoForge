@@ -16,6 +16,7 @@ CONSOLE_ENTRY_POINT = "diffeoforge.cli:main"
 GUI_ENTRY_POINT = "diffeoforge.desktop.app:main"
 REQUIRED_MODULES = {
     "diffeoforge/__main__.py",
+    "diffeoforge/desktop/inno_portable_toolchain_evidence.py",
     "diffeoforge/desktop/inno_signature_evidence.py",
     "diffeoforge/desktop/inno_toolchain_evidence.py",
     "diffeoforge/desktop/installer_plan.py",
