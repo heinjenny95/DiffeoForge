@@ -156,6 +156,7 @@ def _verifier(program: Path, asset: Path) -> dict:
         "command": [
             "release",
             "verify-asset",
+            evidence_module.RELEASE_TAG,
             str(asset.resolve()),
             "--repo",
             evidence_module.REPOSITORY,
@@ -238,6 +239,7 @@ def test_evidence_is_canonical_deterministic_bound_and_nonexecuting(
     )
     assert evidence["verifier"]["version"] == "2.96.0"
     assert evidence["verifier"]["command"][1] == "verify-asset"
+    assert evidence["verifier"]["command"][2] == "is-7_0_2"
     assert evidence["execution_authorized"] is False
     assert (Path(sources["output"]) / SIDECAR_NAME).read_bytes() == (
         f"{digest}  {EVIDENCE_NAME}\n".encode("ascii")
@@ -408,6 +410,7 @@ def test_machine_contract_records_release_specific_verifier_and_nonclaims() -> N
     )
     assert contract["asset"]["release_asset_id"] == 475_225_237
     assert contract["release_attestation"]["command"][1] == "verify-asset"
+    assert contract["release_attestation"]["command"][2] == "is-7_0_2"
     assert contract["release_attestation"]["generic_gh_attestation_verify_is_not_equivalent"]
     assert contract["observation"]["downloaded_asset_execution"] is False
     assert contract["observation"]["compiler_execution"] is False

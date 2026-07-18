@@ -19,6 +19,7 @@
     "command": [
       "release",
       "verify-asset",
+      "is-7_0_2",
       "<absolute-asset-path>",
       "--repo",
       "jrsoftware/issrc",

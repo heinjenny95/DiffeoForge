@@ -22,12 +22,14 @@ The exact machine boundary is
 The official release-specific verification command is:
 
 ```powershell
-gh release verify-asset C:\exact\innosetup-7.0.2-x64.exe `
+gh release verify-asset is-7_0_2 C:\exact\innosetup-7.0.2-x64.exe `
   --repo jrsoftware/issrc --format json
 ```
 
-The generic `gh attestation verify` command is not interchangeable with this
-release-attestation command. The observer validates the returned DSSE payload,
+The positional tag is mandatory: without it, GitHub CLI resolves whichever
+release is latest at observation time. The generic `gh attestation verify`
+command is also not interchangeable with this release-attestation command. The
+observer validates the returned DSSE payload,
 verified statement, repository, IDs, tag, signed tag-object digest, predicate,
 attester identity, timestamp authority, asset name, and asset digest instead
 of trusting exit code alone.
@@ -63,7 +65,8 @@ The wrapper reads but never starts the downloaded asset. It writes exactly:
 - `inno-toolchain-evidence.sha256`.
 
 The raw verifier record binds the exact `gh.exe` path, bytes, SHA-256, reported
-version, seven-element command vector, and zero exit code. The canonical
+version, eight-element command vector including the pinned tag, and zero exit
+code. The canonical
 evidence additionally binds its source commit, DiffeoForge version, project,
 machine contract, observation wrapper, asset, all three raw files, certificate
 observations, and missing gates. Every file is non-overwriting; symbolic paths,
