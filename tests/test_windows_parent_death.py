@@ -259,6 +259,82 @@ def test_preparation_parent_death_audit_terminates_real_suspended_worker(
     assert config.read_bytes() == before_config
 
 
+def test_frozen_preparation_parent_death_audit_terminates_suspended_executable(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "Frozen preparation parent death Käfer"
+    shutil.copytree(ROOT / "examples" / "synthetic", root / "synthetic")
+    config = root / "atlas.yaml"
+    shutil.copyfile(ROOT / "examples" / "minimal-atlas-container.yaml", config)
+    run_id = "frozen-preparation-parent-death"
+    plan = plan_reference_preparation(config, run_id=run_id)
+    approval = create_reference_preparation_approval(
+        config,
+        run_id=run_id,
+        approved_fingerprint=reference_preparation_plan_fingerprint(plan),
+    )
+    approval_path = write_reference_preparation_approval(
+        approval,
+        root / "review" / "approval.json",
+    )
+    approval_hash = hashlib.sha256(approval_path.read_bytes()).hexdigest()
+    before_approval = approval_path.read_bytes()
+    before_config = config.read_bytes()
+    worker = root / "bundle" / "DiffeoForgeReferencePreparationWorker.exe"
+    worker.parent.mkdir()
+    shutil.copyfile(sys.executable, worker)
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "tools/audit_frozen_reference_preparation_parent_death.py",
+            str(worker),
+            str(approval_path),
+            str(config),
+            "--expect-request-sha256",
+            approval_hash,
+        ],
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="strict",
+        timeout=25,
+        creationflags=subprocess.CREATE_NO_WINDOW,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    evidence = json.loads(completed.stdout)
+    assert evidence["schema_version"] == "0.1"
+    assert evidence["status"] == (
+        "frozen_preparation_worker_terminated_after_hard_parent_death_before_request"
+    )
+    assert evidence["controller_exit_code"] == 73
+    assert evidence["job_assignment_completed"] is True
+    assert evidence["worker_started_suspended"] is True
+    assert evidence["worker_stopped"] is True
+    assert evidence["request_delivered"] is False
+    assert evidence["destination_exists"] is False
+    assert evidence["private_stage_count"] == 0
+    assert evidence["approval_request_sha256"] == approval_hash
+    assert evidence["approved_plan_fingerprint"] == (
+        approval["approval"]["approved_plan_fingerprint"]
+    )
+    assert evidence["worker"] == {
+        "basename": "DiffeoForgeReferencePreparationWorker.exe",
+        "executable": str(worker.resolve()),
+    }
+    assert evidence["engine_execution_started"] is False
+    destination = Path(plan["run"]["destination"])
+    assert not destination.exists()
+    assert not tuple(
+        destination.parent.glob(f".diffeoforge-preparing-{run_id}-*")
+    )
+    assert approval_path.read_bytes() == before_approval
+    assert config.read_bytes() == before_config
+
+
 def test_hard_parent_exit_terminates_controller_worker(tmp_path: Path) -> None:
     root = tmp_path / "Parent death Käfer"
     root.mkdir()

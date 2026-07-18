@@ -33,7 +33,10 @@ verification are identical in both modes.
 - an independently recorded SHA-256 of the complete approval file.
 
 The build does not generate approval or derive the external hash. The approved
-destination must be absent. The smoke tool constructs and prevalidates the
+destination must be absent. Before the successful smoke, the build uses the
+same authorization inputs in a mandatory hard-parent-death audit of the real
+frozen sibling. That audit must terminate the suspended worker before request
+delivery and leave the destination absent. The smoke tool then constructs and prevalidates the
 immutable child request, launches the frozen executable through the production
 parent controller, and accepts only:
 
@@ -61,7 +64,9 @@ manifests remain readable, but neither is upgraded or interpreted as v0.3.
 This proves one approval-bound, preparation-only operation through the real
 frozen stdio and parent-controller boundary on the recorded Windows developer
 host. It is not an installer, clean-machine, signing, antivirus, SBOM, license,
-recovery, engine-containment, Deformetrica-execution, numerical, biological, or
-300-specimen validation result. The source worker has a separate pre-request
-hard-parent-death audit; equivalent evidence for this frozen mutating sibling
-remains a later gate. The GUI remains disabled for reference preparation.
+recovery after preparation begins, engine-containment, Deformetrica-execution,
+numerical, biological, or 300-specimen validation result. Source and frozen
+workers now have separate pre-request hard-parent-death evidence. Neither proves
+recovery or containment after preparation begins. The GUI remains disabled for
+reference preparation. See
+[frozen preparation-worker parent-death evidence](FROZEN_REFERENCE_PREPARATION_PARENT_DEATH.md).

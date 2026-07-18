@@ -430,6 +430,7 @@ and workflow for another mesh directory.
 - [Frozen approval-bound reference preparation worker](docs/FROZEN_REFERENCE_PREPARATION_WORKER.md)
 - [Approval-bound reference preparation parent controller](docs/REFERENCE_PREPARATION_CONTROLLER.md)
 - [Source preparation-worker parent-death evidence](docs/REFERENCE_PREPARATION_PARENT_DEATH.md)
+- [Frozen preparation-worker parent-death evidence](docs/FROZEN_REFERENCE_PREPARATION_PARENT_DEATH.md)
 - [Versioned reference worker lifecycle protocol](docs/REFERENCE_WORKER_PROTOCOL.md)
 - [Nonnumerical reference worker pipe harness](docs/REFERENCE_WORKER_HARNESS.md)
 - [Nonnumerical reference harness controller](docs/REFERENCE_HARNESS_CONTROLLER.md)

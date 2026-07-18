@@ -1,4 +1,4 @@
-"""Prove hard-parent-death containment of the source preparation worker."""
+"""Prove hard-parent-death containment of a preparation worker."""
 
 from __future__ import annotations
 
@@ -34,12 +34,17 @@ UNEXPECTED_CONTROLLER_RETURN_CODE = 74
 DEFAULT_TIMEOUT_SECONDS = 10.0
 CREATE_SUSPENDED = 0x00000004
 WORKER_MODULE = "diffeoforge.desktop.reference_preparation_worker_harness"
-STATUS = "source_preparation_worker_terminated_after_hard_parent_death_before_request"
-CHECKS = [
+FROZEN_WORKER_BASENAME = "DiffeoForgeReferencePreparationWorker.exe"
+SOURCE_STATUS = (
+    "source_preparation_worker_terminated_after_hard_parent_death_before_request"
+)
+FROZEN_STATUS = (
+    "frozen_preparation_worker_terminated_after_hard_parent_death_before_request"
+)
+COMMON_CHECKS = [
     "approval_bound_request_preverified",
     "destination_absent_before_audit",
     "private_stage_absent_before_audit",
-    "real_preparation_worker_created_suspended",
     "windows_kill_on_close_job_assignment_completed",
     "controller_hard_exited_after_job_assignment",
     "worker_stopped_within_timeout",
@@ -49,11 +54,19 @@ CHECKS = [
     "approval_and_config_unchanged",
     "engine_execution_not_started",
 ]
-SCIENTIFIC_BOUNDARY = (
+SOURCE_SCIENTIFIC_BOUNDARY = (
     "This Windows engineering audit proves that the real source preparation-worker "
     "process was created suspended, assigned to a kill-on-close Job, and terminated "
     "after immediate hard controller death before any request was delivered. It does "
     "not prove frozen-bundle containment, termination after preparation starts, crash "
+    "recovery, engine execution or interruption, scientific validity, numerical "
+    "equivalence, registration quality, convergence, or biological interpretation."
+)
+FROZEN_SCIENTIFIC_BOUNDARY = (
+    "This Windows engineering audit proves that the real frozen preparation-worker "
+    "executable was created suspended, assigned to a kill-on-close Job, and terminated "
+    "after immediate hard controller death before any request was delivered. It does "
+    "not prove termination after the worker is resumed or preparation starts, crash "
     "recovery, engine execution or interruption, scientific validity, numerical "
     "equivalence, registration quality, convergence, or biological interpretation."
 )
@@ -65,6 +78,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("config", type=Path)
     parser.add_argument("--expect-request-sha256", required=True)
     parser.add_argument("--worker-python", type=Path, default=Path(sys.executable))
+    parser.add_argument("--worker-executable", type=Path, help=argparse.SUPPRESS)
+    parser.add_argument(
+        "--evidence-profile",
+        choices=("source", "frozen"),
+        default="source",
+        help=argparse.SUPPRESS,
+    )
     parser.add_argument("--timeout", type=float, default=DEFAULT_TIMEOUT_SECONDS)
     parser.add_argument("--controller-child", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--pid-path", type=Path, help=argparse.SUPPRESS)
@@ -79,12 +99,13 @@ def _request(
     approval: Path,
     config: Path,
     expected_request_sha256: str,
+    evidence_profile: str,
 ) -> DesktopReferencePreparationRequest:
     return build_reference_preparation_request(
         approval,
         config,
         expected_approval_sha256=expected_request_sha256,
-        request_id="source-preparation-parent-death-evidence",
+        request_id=f"{evidence_profile}-preparation-parent-death-evidence",
     )
 
 
@@ -117,11 +138,13 @@ def _run_controller_child(
     config: Path,
     expected_request_sha256: str,
     worker_python: Path,
+    worker_executable: Path | None,
+    evidence_profile: str,
     pid_path: Path,
 ) -> int:
     import diffeoforge.desktop.reference_preparation_worker_controller as controller_module
 
-    request = _request(approval, config, expected_request_sha256)
+    request = _request(approval, config, expected_request_sha256, evidence_profile)
     if request.destination.exists():
         raise FileExistsError(
             "Preparation parent-death audit destination already exists: "
@@ -144,7 +167,11 @@ def _run_controller_child(
     )
     controller = ReferencePreparationWorkerController(
         request,
-        worker_command=(str(worker_python), "-m", WORKER_MODULE),
+        worker_command=(
+            (str(worker_executable),)
+            if worker_executable is not None
+            else (str(worker_python), "-m", WORKER_MODULE)
+        ),
     )
     controller.run()
     return UNEXPECTED_CONTROLLER_RETURN_CODE
@@ -196,16 +223,19 @@ def _wait_until_stopped(process_id: int, timeout: float) -> bool:
     return not _process_is_active(process_id)
 
 
-def _evidence_schema() -> Mapping[str, Any]:
-    resource = files("diffeoforge.schema").joinpath(
-        "reference-preparation-parent-death-evidence-v0.1.json"
+def _evidence_schema(evidence_profile: str) -> Mapping[str, Any]:
+    filename = (
+        "frozen-reference-preparation-parent-death-evidence-v0.1.json"
+        if evidence_profile == "frozen"
+        else "reference-preparation-parent-death-evidence-v0.1.json"
     )
+    resource = files("diffeoforge.schema").joinpath(filename)
     return json.loads(resource.read_text(encoding="utf-8"))
 
 
-def _validate_evidence(evidence: Mapping[str, Any]) -> None:
+def _validate_evidence(evidence: Mapping[str, Any], evidence_profile: str) -> None:
     errors = sorted(
-        Draft202012Validator(_evidence_schema()).iter_errors(evidence),
+        Draft202012Validator(_evidence_schema(evidence_profile)).iter_errors(evidence),
         key=lambda error: list(error.path),
     )
     if not errors:
@@ -223,20 +253,44 @@ def _run_outer(
     config: Path,
     expected_request_sha256: str,
     worker_python: Path,
+    worker_executable: Path | None,
+    evidence_profile: str,
     timeout: float,
 ) -> int:
     if os.name != "nt":
         raise RuntimeError("Preparation parent-death audit requires Windows")
     if not math.isfinite(timeout) or timeout <= 0:
         raise ValueError("timeout must be a finite positive number")
-    if not worker_python.is_file() or worker_python.is_symlink():
+    if evidence_profile == "source" and worker_executable is not None:
+        raise ValueError("source evidence does not accept --worker-executable")
+    if evidence_profile == "frozen" and worker_executable is None:
+        raise ValueError("frozen evidence requires --worker-executable")
+    if evidence_profile == "source" and (
+        not worker_python.is_file() or worker_python.is_symlink()
+    ):
         raise FileNotFoundError(
             "Preparation worker Python does not exist or is symbolic: "
             f"{worker_python}"
         )
+    if worker_executable is not None:
+        if not worker_executable.is_file() or worker_executable.is_symlink():
+            raise FileNotFoundError(
+                "Frozen preparation worker does not exist or is symbolic: "
+                f"{worker_executable}"
+            )
+        if worker_executable.name != FROZEN_WORKER_BASENAME:
+            raise ValueError(
+                "Frozen preparation worker basename must be "
+                f"{FROZEN_WORKER_BASENAME}: {worker_executable}"
+            )
     approval_bytes = approval.read_bytes()
     config_bytes = config.read_bytes()
-    request = _request(approval, config, expected_request_sha256)
+    request = _request(
+        approval,
+        config,
+        expected_request_sha256,
+        evidence_profile,
+    )
     if request.destination.exists():
         raise FileExistsError(
             "Preparation parent-death audit destination already exists: "
@@ -261,12 +315,16 @@ def _run_outer(
             expected_request_sha256,
             "--worker-python",
             str(worker_python),
+            "--evidence-profile",
+            evidence_profile,
             "--timeout",
             str(timeout),
             "--controller-child",
             "--pid-path",
             str(pid_path),
         )
+        if worker_executable is not None:
+            command += ("--worker-executable", str(worker_executable))
         try:
             completed = subprocess.run(
                 command,
@@ -310,9 +368,27 @@ def _run_outer(
     if approval.read_bytes() != approval_bytes or config.read_bytes() != config_bytes:
         raise RuntimeError("Preparation parent-death audit changed approval or config bytes")
 
+    frozen = evidence_profile == "frozen"
+    checks = list(COMMON_CHECKS)
+    checks.insert(
+        3,
+        (
+            "real_frozen_preparation_worker_created_suspended"
+            if frozen
+            else "real_preparation_worker_created_suspended"
+        ),
+    )
+    worker = (
+        {
+            "executable": str(worker_executable),
+            "basename": FROZEN_WORKER_BASENAME,
+        }
+        if frozen
+        else {"python": str(worker_python), "module": WORKER_MODULE}
+    )
     evidence = {
         "schema_version": "0.1",
-        "status": STATUS,
+        "status": FROZEN_STATUS if frozen else SOURCE_STATUS,
         "platform": "windows",
         "controller_exit_code": HARD_PARENT_EXIT_CODE,
         "job_assignment_completed": True,
@@ -324,12 +400,14 @@ def _run_outer(
         "private_stage_count": 0,
         "approval_request_sha256": _sha256_bytes(approval_bytes),
         "approved_plan_fingerprint": request.approved_plan_fingerprint,
-        "worker": {"python": str(worker_python), "module": WORKER_MODULE},
+        "worker": worker,
         "engine_execution_started": False,
-        "checks": CHECKS,
-        "scientific_boundary": SCIENTIFIC_BOUNDARY,
+        "checks": checks,
+        "scientific_boundary": (
+            FROZEN_SCIENTIFIC_BOUNDARY if frozen else SOURCE_SCIENTIFIC_BOUNDARY
+        ),
     }
-    _validate_evidence(evidence)
+    _validate_evidence(evidence, evidence_profile)
     print(json.dumps(evidence, ensure_ascii=True, sort_keys=True))
     return 0
 
@@ -339,6 +417,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     approval = args.approval.expanduser().resolve()
     config = args.config.expanduser().resolve()
     worker_python = args.worker_python.expanduser().resolve()
+    worker_executable = (
+        args.worker_executable.expanduser().resolve()
+        if args.worker_executable is not None
+        else None
+    )
     try:
         if args.controller_child:
             if os.name != "nt" or args.pid_path is None:
@@ -348,6 +431,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 config,
                 args.expect_request_sha256,
                 worker_python,
+                worker_executable,
+                args.evidence_profile,
                 args.pid_path.expanduser().resolve(),
             )
         return _run_outer(
@@ -355,6 +440,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             config,
             args.expect_request_sha256,
             worker_python,
+            worker_executable,
+            args.evidence_profile,
             args.timeout,
         )
     except (OSError, RuntimeError, TypeError, ValueError) as error:

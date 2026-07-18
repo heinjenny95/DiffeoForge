@@ -90,6 +90,13 @@ try {
     if ($LASTEXITCODE -ne 0) {
         throw "Frozen reference worker hard-parent-death audit failed."
     }
+    & $Python tools\audit_frozen_reference_preparation_parent_death.py `
+        (Join-Path $bundle "DiffeoForgeReferencePreparationWorker.exe") `
+        $resolvedPreparationApproval $resolvedPreparationConfig `
+        --expect-request-sha256 $expectedPreparationApprovalSha256
+    if ($LASTEXITCODE -ne 0) {
+        throw "Frozen preparation worker hard-parent-death audit failed."
+    }
     & $Python tools\smoke_frozen_reference_preparation_worker.py `
         (Join-Path $bundle "DiffeoForgeReferencePreparationWorker.exe") `
         $resolvedPreparationApproval $resolvedPreparationConfig `

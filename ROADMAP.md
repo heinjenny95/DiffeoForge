@@ -87,6 +87,7 @@ This roadmap describes evidence gates rather than promised dates.
   - [x] Bounded approval-bound preparation parent controller with Windows Job containment
   - [x] Source preparation-worker hard-parent-death Job evidence before request delivery
   - [x] Frozen approval-bound preparation sibling with mandatory v0.3 bundle smoke
+  - [x] Frozen preparation-worker hard-parent-death Job evidence before request delivery
   - [ ] User-approved private-run reconciliation, reference supervision, and native mesh rendering
 - [ ] Parameter explanations and safe presets
 - [x] Pre-compute configured all-pairs and known-payload workload report
