@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import os
 import subprocess
@@ -11,6 +12,90 @@ import pytest
 from diffeoforge.desktop.app import build_parser
 
 ROOT = Path(__file__).parents[1]
+
+
+def _reference_preparation_status_fixture(
+    *,
+    config: Path,
+    config_sha256: str,
+    approval: Path,
+    approval_sha256: str,
+    destination: Path,
+    status: str,
+    destination_status: str,
+    destination_reason: str,
+    manifest_sha256: str | None,
+    engine_execution_started: bool | None,
+):
+    from diffeoforge.desktop.reference_preparation_status import (
+        DesktopReferencePreparationStatus,
+    )
+    from diffeoforge.reference_preparation_reconciliation import (
+        CHECKS,
+        serialize_reference_preparation_reconciliation,
+    )
+
+    plan_fingerprint = "e" * 64
+    scientific_boundary = "Read-only engineering status only."
+    report = {
+        "schema_version": "0.1",
+        "status": status,
+        "action_required": status == "attention_required",
+        "mutation_performed": False,
+        "approval_request": {
+            "path": str(approval.resolve()),
+            "bytes": 3,
+            "sha256": approval_sha256,
+            "expected_sha256": approval_sha256,
+        },
+        "approved_plan": {
+            "canonical_fingerprint": plan_fingerprint,
+            "run_id": "reference-001",
+            "destination": str(destination.resolve()),
+            "subjects": 8,
+            "protected_files": 8,
+        },
+        "current_plan": {
+            "config_path": str(config.resolve()),
+            "config_sha256": config_sha256,
+            "canonical_fingerprint": plan_fingerprint,
+            "exactly_matches_approved": True,
+        },
+        "destination": {
+            "path": str(destination.resolve()),
+            "status": destination_status,
+            "reason": destination_reason,
+            "manifest_sha256": manifest_sha256,
+            "engine_execution_started": engine_execution_started,
+        },
+        "private_stages": [],
+        "state_stable_across_observations": True,
+        "checks": list(CHECKS),
+        "scientific_boundary": scientific_boundary,
+    }
+    report_bytes = serialize_reference_preparation_reconciliation(report)
+    return DesktopReferencePreparationStatus(
+        config_path=config.resolve(),
+        config_sha256=config_sha256,
+        approval_path=approval.resolve(),
+        approval_sha256=approval_sha256,
+        plan_fingerprint=plan_fingerprint,
+        run_id="reference-001",
+        status=status,
+        action_required=status == "attention_required",
+        destination_path=destination.resolve(),
+        destination_status=destination_status,
+        destination_reason=destination_reason,
+        manifest_sha256=manifest_sha256,
+        engine_execution_started=engine_execution_started,
+        private_stages=(),
+        state_stable_across_observations=True,
+        mutation_performed=False,
+        scientific_boundary=scientific_boundary,
+        report_schema_version="0.1",
+        report_bytes=report_bytes,
+        report_sha256=hashlib.sha256(report_bytes).hexdigest(),
+    )
 
 
 def test_desktop_parser_is_available_without_importing_qt() -> None:
@@ -237,6 +322,7 @@ def test_desktop_window_keeps_reference_compute_route_explicitly_unavailable(
     assert window.reference_preparation_status_card.isHidden() is False
     assert window.refresh_reference_readiness_button.isEnabled() is True
     assert window.refresh_reference_preparation_status_button.isEnabled() is False
+    assert window.export_reference_preparation_status_button.isEnabled() is False
     assert "noch nicht geprüft" in window.reference_readiness_status_label.text()
     window.close()
     application.processEvents()
@@ -338,13 +424,10 @@ def test_desktop_reference_preparation_status_is_read_only_and_keeps_start_locke
 ) -> None:
     pytest.importorskip("PySide6")
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
-    from PySide6.QtWidgets import QApplication
+    from PySide6.QtWidgets import QApplication, QFileDialog
 
     from diffeoforge.desktop.project_review import ProjectReviewResult
     from diffeoforge.desktop.project_setup import DesktopEngine
-    from diffeoforge.desktop.reference_preparation_status import (
-        DesktopReferencePreparationStatus,
-    )
     from diffeoforge.desktop.widgets import (
         DiffeoForgeWindow,
         _ReferencePreparationStatusWorker,
@@ -371,24 +454,18 @@ def test_desktop_reference_preparation_status_is_read_only_and_keeps_start_locke
         warnings=(),
         scientific_boundary="Reference boundary",
     )
-    status = DesktopReferencePreparationStatus(
-        config_path=config,
+    destination = (tmp_path / "runs" / "reference-001").resolve()
+    status = _reference_preparation_status_fixture(
+        config=config,
         config_sha256=review.config_sha256,
-        approval_path=approval,
+        approval=approval,
         approval_sha256=digest,
-        plan_fingerprint="e" * 64,
-        run_id="reference-001",
+        destination=destination,
         status="published_prepared_not_executed_verified",
-        action_required=False,
-        destination_path=(tmp_path / "runs" / "reference-001").resolve(),
         destination_status="verified_prepared_not_executed",
         destination_reason="Exact prepared bytes verified.",
         manifest_sha256="f" * 64,
         engine_execution_started=False,
-        private_stages=(),
-        state_stable_across_observations=True,
-        mutation_performed=False,
-        scientific_boundary="Read-only engineering status only.",
     )
     monkeypatch.setattr(
         "diffeoforge.desktop.widgets.review_reference_preparation_status",
@@ -427,7 +504,41 @@ def test_desktop_reference_preparation_status_is_read_only_and_keeps_start_locke
     assert "Mutation durch diese Prüfung: nein" in detail
     assert "Engine-Ausführung gestartet: nein" in detail
     assert "f" * 64 in detail
+    assert status.report_sha256 in detail
     assert window._reference_preparation_status is status
+    assert window.export_reference_preparation_status_button.isEnabled() is True
+
+    export_path = tmp_path / "reviewed-status-Käfer.json"
+    monkeypatch.setattr(
+        QFileDialog,
+        "getSaveFileName",
+        lambda *_args, **_kwargs: (str(export_path), "JSON-Dateien (*.json)"),
+    )
+    window.export_reference_preparation_status_button.click()
+
+    assert export_path.read_bytes() == status.report_bytes
+    assert list(tmp_path.glob("reviewed-status-Käfer.json*")) == [export_path]
+    assert status.report_sha256 in window.reference_preparation_export_label.text()
+    assert "Private Provenienz" in window.reference_preparation_export_label.text()
+
+    preserved = export_path.read_bytes()
+    window.export_reference_preparation_status_button.click()
+    assert export_path.read_bytes() == preserved
+    assert "nicht exportiert" in window.reference_preparation_export_label.text()
+    assert window.export_reference_preparation_status_button.isEnabled() is True
+
+    drift_path = tmp_path / "must-not-exist.json"
+
+    def change_inputs_while_dialog_is_open(*_args, **_kwargs):
+        window.reference_preparation_hash_edit.setText("9" * 64)
+        return str(drift_path), "JSON-Dateien (*.json)"
+
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", change_inputs_while_dialog_is_open)
+    window.export_reference_preparation_status_button.click()
+    assert not drift_path.exists()
+    assert window._reference_preparation_status is None
+    assert window.export_reference_preparation_status_button.isEnabled() is False
+    assert "verworfen" in window.reference_preparation_export_label.text()
     assert window.show_run_button.isEnabled() is False
     assert window.page_stack.currentIndex() == 1
     window.close()
@@ -443,9 +554,6 @@ def test_desktop_discards_preparation_status_after_inputs_change(
 
     from diffeoforge.desktop.project_review import ProjectReviewResult
     from diffeoforge.desktop.project_setup import DesktopEngine
-    from diffeoforge.desktop.reference_preparation_status import (
-        DesktopReferencePreparationStatus,
-    )
     from diffeoforge.desktop.widgets import DiffeoForgeWindow
 
     application = QApplication.instance() or QApplication(
@@ -469,24 +577,17 @@ def test_desktop_discards_preparation_status_after_inputs_change(
         warnings=(),
         scientific_boundary="Reference boundary",
     )
-    status = DesktopReferencePreparationStatus(
-        config_path=config,
+    status = _reference_preparation_status_fixture(
+        config=config,
         config_sha256=review.config_sha256,
-        approval_path=approval,
+        approval=approval,
         approval_sha256=digest,
-        plan_fingerprint="c" * 64,
-        run_id="reference-001",
+        destination=(tmp_path / "runs" / "reference-001").resolve(),
         status="clear_to_prepare",
-        action_required=False,
-        destination_path=(tmp_path / "runs" / "reference-001").resolve(),
         destination_status="absent",
         destination_reason="Destination absent.",
         manifest_sha256=None,
         engine_execution_started=None,
-        private_stages=(),
-        state_stable_across_observations=True,
-        mutation_performed=False,
-        scientific_boundary="Read-only engineering status only.",
     )
     monkeypatch.setattr(
         "diffeoforge.desktop.widgets.review_reference_preparation_status",
@@ -512,6 +613,7 @@ def test_desktop_discards_preparation_status_after_inputs_change(
     assert "verworfen" in window.reference_preparation_status_label.text()
     assert "nichts verändert" in window.reference_preparation_detail_label.text()
     assert window.refresh_reference_preparation_status_button.isEnabled() is True
+    assert window.export_reference_preparation_status_button.isEnabled() is False
     window.close()
     application.processEvents()
 

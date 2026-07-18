@@ -77,6 +77,17 @@ def validate_reference_preparation_reconciliation(value: Mapping[str, Any]) -> N
     _validate(value)
 
 
+def serialize_reference_preparation_reconciliation(
+    value: Mapping[str, Any],
+) -> bytes:
+    """Render one validated report as deterministic UTF-8 JSON bytes."""
+
+    _validate(value)
+    return (
+        json.dumps(dict(value), indent=2, ensure_ascii=False, sort_keys=True) + "\n"
+    ).encode("utf-8")
+
+
 def _normalize_sha256(value: str) -> str:
     if not isinstance(value, str):
         raise ConfigurationError("Expected approval SHA-256 must be a string")

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import shutil
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -10,6 +12,8 @@ from diffeoforge.desktop.project_review import ProjectReviewResult
 from diffeoforge.desktop.project_setup import DesktopEngine
 from diffeoforge.desktop.reference_preparation_status import (
     DesktopReferencePreparationStatusError,
+    DesktopReferencePreparationStatusExportError,
+    export_reference_preparation_status_report,
     review_reference_preparation_status,
 )
 from diffeoforge.reference_approved_preparation import prepare_approved_reference_run
@@ -95,6 +99,13 @@ def test_desktop_status_maps_clear_report_without_mutation(tmp_path: Path) -> No
     assert status.mutation_performed is False
     assert status.state_stable_across_observations is True
     assert status.plan_fingerprint == request["approval"]["approved_plan_fingerprint"]
+    assert status.report_schema_version == "0.1"
+    assert status.report_byte_count == len(status.report_bytes)
+    assert status.report_sha256 == hashlib.sha256(status.report_bytes).hexdigest()
+    assert json.loads(status.report_bytes)["current_plan"]["config_sha256"] == (
+        status.config_sha256
+    )
+    assert "Käfer".encode() in status.report_bytes
     assert not Path(request["plan"]["run"]["output_root"]).exists()
     assert _surface(root) == before
 
@@ -151,10 +162,94 @@ def test_desktop_status_maps_verified_private_stage_as_attention(
     assert status.action_required is True
     assert status.destination_status == "absent"
     assert len(status.private_stages) == 1
+    assert status.private_stages[0].token == "d" * 32
     assert status.private_stages[0].path == private
     assert status.private_stages[0].status == "verified_complete_unpublished"
     assert status.private_stages[0].engine_execution_started is False
     assert _surface(root) == before
+
+
+def test_desktop_status_exports_exact_report_once_without_sidecar(tmp_path: Path) -> None:
+    root = _project(tmp_path)
+    approval, approval_hash, _request = _approval(root)
+    status = review_reference_preparation_status(
+        _review(root / "atlas.yaml"),
+        approval,
+        approval_hash,
+    )
+    destination = root / "review" / "status-Käfer.json"
+
+    exported = export_reference_preparation_status_report(status, destination)
+
+    assert exported.path == destination.absolute()
+    assert exported.byte_count == status.report_byte_count
+    assert exported.sha256 == status.report_sha256
+    assert exported.schema_version == status.report_schema_version
+    assert destination.read_bytes() == status.report_bytes
+    assert list(destination.parent.glob("status-Käfer.json*")) == [destination]
+
+    preserved = destination.read_bytes()
+    with pytest.raises(
+        DesktopReferencePreparationStatusExportError,
+        match="will not be overwritten",
+    ):
+        export_reference_preparation_status_report(status, destination)
+    assert destination.read_bytes() == preserved
+
+
+def test_desktop_status_export_requires_existing_real_parent(tmp_path: Path) -> None:
+    root = _project(tmp_path)
+    approval, approval_hash, _request = _approval(root)
+    status = review_reference_preparation_status(
+        _review(root / "atlas.yaml"), approval, approval_hash
+    )
+    destination = root / "missing" / "status.json"
+
+    with pytest.raises(
+        DesktopReferencePreparationStatusExportError,
+        match="existing real directory",
+    ):
+        export_reference_preparation_status_report(status, destination)
+
+    assert not destination.parent.exists()
+
+
+def test_desktop_status_export_rejects_symbolic_link_destination(tmp_path: Path) -> None:
+    root = _project(tmp_path)
+    approval, approval_hash, _request = _approval(root)
+    status = review_reference_preparation_status(
+        _review(root / "atlas.yaml"), approval, approval_hash
+    )
+    target = root / "review" / "unrelated.json"
+    target.write_text("preserve\n", encoding="utf-8")
+    destination = root / "review" / "status-link.json"
+    try:
+        destination.symlink_to(target)
+    except OSError as error:
+        pytest.skip(f"Symbolic-link creation is unavailable on this runner: {error}")
+
+    with pytest.raises(
+        DesktopReferencePreparationStatusExportError,
+        match="will not be overwritten",
+    ):
+        export_reference_preparation_status_report(status, destination)
+
+    assert target.read_text(encoding="utf-8") == "preserve\n"
+
+
+def test_desktop_status_rejects_report_or_display_binding_tampering(
+    tmp_path: Path,
+) -> None:
+    root = _project(tmp_path)
+    approval, approval_hash, _request = _approval(root)
+    status = review_reference_preparation_status(
+        _review(root / "atlas.yaml"), approval, approval_hash
+    )
+
+    with pytest.raises(ValueError, match="SHA-256 does not match bytes"):
+        replace(status, report_sha256="0" * 64)
+    with pytest.raises(ValueError, match="fields do not match report"):
+        replace(status, destination_reason="different display value")
 
 
 def test_desktop_status_rejects_config_changed_after_review(

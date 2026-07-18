@@ -71,6 +71,13 @@ approval hash, approved/current plan fingerprints, exact paths and statuses,
 manifest hashes only for verified candidates, and
 `engine_execution_started: false` only where that claim was actually verified.
 
+The shared library also exposes a deterministic UTF-8 serialization with
+sorted keys, two-space indentation, and one final newline. Desktop step 2
+retains those exact immutable bytes and their SHA-256, then can write them only
+to one explicitly selected new JSON file. That export never overwrites an
+existing path and must be treated as private provenance because the report
+contains absolute paths and file names.
+
 ## Boundary
 
 This command never deletes, renames, publishes, resumes, prepares, executes,
@@ -80,4 +87,5 @@ published, discarded, or retained. Those actions require a future explicit,
 user-approved policy and separate mutation evidence. It also makes no claim
 about crash recovery, engine containment, numerical validity, registration
 quality, convergence, or biological interpretation. It is not wired into the
-GUI.
+GUI as an execution or recovery authority; the desktop integration is limited
+to the same read-only status and the explicit provenance-file export.

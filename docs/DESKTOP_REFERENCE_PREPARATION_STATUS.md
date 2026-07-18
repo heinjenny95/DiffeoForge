@@ -26,9 +26,34 @@ private-stage, manifest, lifecycle, or path-surface classification.
 The background task returns a bounded immutable view model containing the
 approval/config bindings, run ID, plan fingerprint, exact destination status
 and reason, optional manifest hash, exact private stages, stable-observation
-flag, mutation flag, and scientific boundary. The GUI shows these values but
-does not treat `clear_to_prepare` as permission to prepare or
-`verified_complete_unpublished` as permission to publish.
+flag, mutation flag, scientific boundary, deterministic UTF-8 report bytes,
+schema version, byte count, and SHA-256. Construction fails closed unless the
+display fields and exact report bytes describe the same schema-valid core
+report. The GUI shows these values but does not treat `clear_to_prepare` as
+permission to prepare or `verified_complete_unpublished` as permission to
+publish.
+
+## Explicit deterministic export
+
+After a successful status check, the user can choose a destination for the
+exact already-validated report bytes. The export service:
+
+- revalidates the immutable bytes, schema, deterministic serialization, and
+  SHA-256 immediately before writing;
+- requires the status to remain bound to the current desktop review and
+  approval inputs;
+- requires an existing real parent directory;
+- creates exactly one new JSON file with exclusive-create semantics and never
+  overwrites an existing file or symbolic link;
+- flushes, synchronizes, and rereads the new file before returning its path,
+  schema version, byte count, and SHA-256; and
+- does not create a sidecar, directory, run file, approval, or engine artifact.
+
+The JSON contains complete engineering provenance, including absolute paths
+and file names. It must therefore be treated as private provenance and checked
+before publication or sharing. Its hash proves the bytes of that frozen
+observation; it does not prove that externally changing preparation state is
+still identical later.
 
 ## Stale-result boundary
 
@@ -40,11 +65,12 @@ leaves an earlier status visible as current.
 
 ## Explicit non-capabilities
 
-This path does not delete, rename, publish, repair, recover, resume, prepare,
+Except for the one explicitly selected provenance export, this path does not
+write. It does not delete, rename, publish, repair, recover, resume, prepare,
 execute, or cancel anything. It does not enable the reference start button and
 does not decide what should happen to a verified private stage. It makes no
-claim about process liveness, crash recovery, engine containment after request
-delivery, parameter suitability, numerical validity, convergence,
+claim about current process liveness, crash recovery, engine containment after
+request delivery, parameter suitability, numerical validity, convergence,
 registration quality, or biological interpretation.
 
 The underlying versioned report is documented in

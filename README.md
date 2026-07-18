@@ -112,7 +112,8 @@ This repository currently provides:
 - an optional PySide6 desktop preview for non-overwriting mesh-folder
   validation, modern/reference project creation, effective-parameter review,
   hash-bound reference-environment and future-prelaunch inspection plus
-  approval-bound read-only reference preparation status,
+  approval-bound read-only reference preparation status with an exact,
+  non-overwriting JSON provenance export,
   shared-core workload/preflight evidence, and a verified Modern-only
   start/live-event/cancel screen followed by a fully reverified Atlas/PCA/QC
   summary with inventory-bound artifact handoff;

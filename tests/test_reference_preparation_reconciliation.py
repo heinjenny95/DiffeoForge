@@ -23,6 +23,7 @@ from diffeoforge.reference_preparation_plan import (
 )
 from diffeoforge.reference_preparation_reconciliation import (
     reconcile_reference_preparation,
+    serialize_reference_preparation_reconciliation,
 )
 
 ROOT = Path(__file__).parents[1]
@@ -78,6 +79,20 @@ def test_reconciliation_reports_clear_without_creating_output_root(tmp_path: Pat
     assert report["current_plan"]["exactly_matches_approved"] is True
     assert not Path(request["plan"]["run"]["output_root"]).exists()
     assert request_path.read_bytes() == before
+
+
+def test_reconciliation_serialization_is_deterministic_utf8_json(tmp_path: Path) -> None:
+    root = _project(tmp_path)
+    request_path, _, request_hash = _approval(root)
+    report = _report(root, request_path, request_hash)
+
+    first = serialize_reference_preparation_reconciliation(report)
+    second = serialize_reference_preparation_reconciliation(dict(reversed(report.items())))
+
+    assert first == second
+    assert first.endswith(b"\n")
+    assert json.loads(first) == report
+    assert "Käfer".encode() in first
 
 
 def test_reconciliation_verifies_published_prepared_not_executed_run(
