@@ -436,6 +436,7 @@ and workflow for another mesh directory.
 - [Desktop executable and installer architecture](docs/DESKTOP_DISTRIBUTION.md)
 - [Reproducible Windows installer build contract](docs/WINDOWS_INSTALLER_CONTRACT.md)
 - [Inno Setup toolchain authenticity evidence](docs/INNO_TOOLCHAIN_EVIDENCE.md)
+- [Inno Setup ISSigTool signature evidence](docs/INNO_SIGNATURE_EVIDENCE.md)
 - [Windows one-directory freeze evidence](docs/WINDOWS_FREEZE_EVIDENCE.md)
 - [Frozen dependency metadata evidence](docs/DESKTOP_DEPENDENCY_METADATA_EVIDENCE.md)
 - [Deterministic Windows CycloneDX 1.7 SBOM](docs/DESKTOP_SBOM.md)

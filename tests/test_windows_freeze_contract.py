@@ -34,6 +34,7 @@ def test_windows_freeze_excludes_and_audits_builder_only_sbom_modules() -> None:
         "boolean",
         "cyclonedx",
         "defusedxml",
+        "diffeoforge.desktop.inno_signature_evidence",
         "diffeoforge.desktop.inno_toolchain_evidence",
         "diffeoforge.desktop.installer_plan",
         "diffeoforge.desktop.sbom",

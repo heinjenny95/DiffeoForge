@@ -1,0 +1,340 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://diffeoforge.org/schema/desktop-inno-signature-evidence-v0.1.json",
+  "title": "DiffeoForge ISSigTool installer-signature observation",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "status",
+    "target",
+    "observed_at",
+    "source",
+    "installer",
+    "signature",
+    "signature_tool",
+    "public_key",
+    "github_api_verifier",
+    "issigtool_execution",
+    "installer_execution_authorized",
+    "execution_authorized",
+    "missing_release_gates",
+    "scientific_boundary"
+  ],
+  "properties": {
+    "schema_version": { "const": "0.1" },
+    "status": {
+      "const": "inno_signature_observation_not_installer_execution_or_release_authorization"
+    },
+    "target": { "const": "windows-x86_64-cpu" },
+    "observed_at": { "type": "string", "format": "date-time" },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["commit_sha", "diffeoforge_version", "project", "contract", "wrapper"],
+      "properties": {
+        "commit_sha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+        "diffeoforge_version": { "type": "string", "minLength": 1 },
+        "project": { "$ref": "#/$defs/file" },
+        "contract": { "$ref": "#/$defs/file" },
+        "wrapper": { "$ref": "#/$defs/file" }
+      }
+    },
+    "installer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "bytes", "sha256", "release_asset_id"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "bytes": { "type": "integer", "minimum": 1 },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "release_asset_id": { "const": 475225237 }
+      }
+    },
+    "signature": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "bytes",
+        "sha256",
+        "release_asset_id",
+        "release_attestation",
+        "release_verifier"
+      ],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "bytes": { "type": "integer", "minimum": 1 },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "release_asset_id": { "const": 475225360 },
+        "release_attestation": { "$ref": "#/$defs/releaseAttestation" },
+        "release_verifier": { "$ref": "#/$defs/releaseVerifier" }
+      }
+    },
+    "signature_tool": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "bytes",
+        "sha256",
+        "release_asset_id",
+        "release_attestation",
+        "authenticode",
+        "release_verifier"
+      ],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "bytes": { "type": "integer", "minimum": 1 },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "release_asset_id": { "const": 430321504 },
+        "release_attestation": { "$ref": "#/$defs/releaseAttestation" },
+        "authenticode": { "$ref": "#/$defs/authenticode" },
+        "release_verifier": { "$ref": "#/$defs/releaseVerifier" }
+      }
+    },
+    "public_key": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "bytes", "sha256", "release_tag", "content"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "bytes": { "type": "integer", "minimum": 1 },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "release_tag": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "raw",
+            "tag",
+            "tag_object_sha1",
+            "commit_sha1",
+            "verified",
+            "reason",
+            "verified_at"
+          ],
+          "properties": {
+            "raw": { "$ref": "#/$defs/file" },
+            "tag": { "const": "is-7_0_2" },
+            "tag_object_sha1": {
+              "const": "d2509df69f828a7148294e29b2ca252c3250210c"
+            },
+            "commit_sha1": { "const": "c25dc6479cdc3be28e682a025fcf60765bba3de0" },
+            "verified": { "const": true },
+            "reason": { "const": "valid" },
+            "verified_at": { "type": "string", "format": "date-time" }
+          }
+        },
+        "content": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "raw",
+            "git_blob_sha1",
+            "release_commit_sha1",
+            "download_url",
+            "content_sha256"
+          ],
+          "properties": {
+            "raw": { "$ref": "#/$defs/file" },
+            "git_blob_sha1": { "const": "ab717206d876bd9d63a9bbb16bcf0e5f6928af73" },
+            "release_commit_sha1": {
+              "const": "c25dc6479cdc3be28e682a025fcf60765bba3de0"
+            },
+            "download_url": { "type": "string", "format": "uri" },
+            "content_sha256": { "$ref": "#/$defs/sha256" }
+          }
+        }
+      }
+    },
+    "github_api_verifier": { "$ref": "#/$defs/apiVerifier" },
+    "issigtool_execution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "raw",
+        "program",
+        "command",
+        "exit_code",
+        "output_lines",
+        "inputs_before",
+        "inputs_after",
+        "signature_tool_execution_scope",
+        "installer_execution"
+      ],
+      "properties": {
+        "raw": { "$ref": "#/$defs/file" },
+        "program": { "$ref": "#/$defs/file" },
+        "command": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "exit_code": { "const": 0 },
+        "output_lines": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "inputs_before": { "$ref": "#/$defs/inputHashes" },
+        "inputs_after": { "$ref": "#/$defs/inputHashes" },
+        "signature_tool_execution_scope": {
+          "const": "verify_exact_installer_signature_only"
+        },
+        "installer_execution": { "const": false }
+      }
+    },
+    "installer_execution_authorized": { "const": false },
+    "execution_authorized": { "const": false },
+    "missing_release_gates": {
+      "type": "array",
+      "minItems": 10,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "scientific_boundary": { "type": "string", "minLength": 1 }
+  },
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "file": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "bytes", "sha256"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "bytes": { "type": "integer", "minimum": 1 },
+        "sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "releaseAttestation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "raw",
+        "repository",
+        "repository_id",
+        "release_tag",
+        "release_database_id",
+        "release_tag_object_sha1",
+        "release_purl",
+        "predicate_type",
+        "certificate_subject_alternative_name",
+        "verified_timestamp",
+        "timestamp_authority",
+        "subject_name",
+        "subject_sha256"
+      ],
+      "properties": {
+        "raw": { "$ref": "#/$defs/file" },
+        "repository": { "const": "jrsoftware/issrc" },
+        "repository_id": { "const": 2527983 },
+        "release_tag": { "enum": ["is-6_7_3", "is-7_0_2"] },
+        "release_database_id": { "enum": [329538987, 352994135] },
+        "release_tag_object_sha1": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+        "release_purl": { "type": "string", "minLength": 1 },
+        "predicate_type": { "const": "https://in-toto.io/attestation/release/v0.2" },
+        "certificate_subject_alternative_name": {
+          "const": "https://dotcom.releases.github.com"
+        },
+        "verified_timestamp": { "type": "string", "format": "date-time" },
+        "timestamp_authority": { "const": "timestamp.githubapp.com" },
+        "subject_name": { "enum": ["ISSigTool.exe", "innosetup-7.0.2-x64.exe.issig"] },
+        "subject_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "authenticode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "raw",
+        "status",
+        "signer_subject",
+        "signer_issuer",
+        "signer_thumbprint",
+        "signer_not_before",
+        "signer_not_after",
+        "timestamp_subject",
+        "timestamp_thumbprint"
+      ],
+      "properties": {
+        "raw": { "$ref": "#/$defs/file" },
+        "status": { "const": "Valid" },
+        "signer_subject": {
+          "const": "CN=Pyrsys B.V., O=Pyrsys B.V., S=Noord-Holland, C=NL"
+        },
+        "signer_issuer": { "type": "string", "minLength": 1 },
+        "signer_thumbprint": { "type": "string", "pattern": "^[0-9A-F]{40}$" },
+        "signer_not_before": { "type": "string", "format": "date-time" },
+        "signer_not_after": { "type": "string", "format": "date-time" },
+        "timestamp_subject": { "type": "string", "minLength": 1 },
+        "timestamp_thumbprint": { "type": "string", "pattern": "^[0-9A-F]{40}$" }
+      }
+    },
+    "releaseVerifier": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["raw", "program", "version", "command", "exit_code"],
+      "properties": {
+        "raw": { "$ref": "#/$defs/file" },
+        "program": { "$ref": "#/$defs/file" },
+        "version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+        "command": {
+          "type": "array",
+          "minItems": 8,
+          "maxItems": 8,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "exit_code": { "const": 0 }
+      }
+    },
+    "apiVerifier": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["raw", "program", "version", "commands"],
+      "properties": {
+        "raw": { "$ref": "#/$defs/file" },
+        "program": { "$ref": "#/$defs/file" },
+        "version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+        "commands": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["arguments", "exit_code", "output_file", "output_sha256"],
+            "properties": {
+              "arguments": {
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 2,
+                "items": { "type": "string", "minLength": 1 }
+              },
+              "exit_code": { "const": 0 },
+              "output_file": { "type": "string", "minLength": 1 },
+              "output_sha256": { "$ref": "#/$defs/sha256" }
+            }
+          }
+        }
+      }
+    },
+    "inputHashes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "installer_sha256",
+        "signature_sha256",
+        "public_key_sha256",
+        "signature_tool_sha256"
+      ],
+      "properties": {
+        "installer_sha256": { "$ref": "#/$defs/sha256" },
+        "signature_sha256": { "$ref": "#/$defs/sha256" },
+        "public_key_sha256": { "$ref": "#/$defs/sha256" },
+        "signature_tool_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    }
+  }
+}
