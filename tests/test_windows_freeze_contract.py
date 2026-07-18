@@ -83,7 +83,10 @@ def test_windows_freeze_workflow_is_manual_pinned_and_evidence_only() -> None:
         "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
     ]
     install = next(step["run"] for step in steps if step["name"].startswith("Install"))
-    assert 'python -m pip install -e ".[dev,desktop,modern-engine]"' in install
+    assert (
+        'python -m pip install -e ".[dev,desktop,modern-engine,sbom-builder]"'
+        in install
+    )
     assert "distribution/windows/freeze-requirements.txt" in install
     assert "PyInstaller.__version__ == '6.21.0'" in install
     assert "torch.version.cuda is None" in install
@@ -104,9 +107,23 @@ def test_windows_freeze_workflow_is_manual_pinned_and_evidence_only() -> None:
     assert '"freeze-dependency-metadata.json"' in build
     assert '"freeze-dependency-metadata.sha256"' in build
     assert "--expect-freeze-evidence-sha256 $observed" in build
-    assert "uploadedFiles.Count -ne 4" in build
+    assert "tools/desktop_sbom.py create" in build
+    assert "tools/desktop_sbom.py verify" in build
+    assert '"freeze-sbom.cdx.json"' in build
+    assert '"freeze-sbom.cdx.sha256"' in build
+    assert "--expect-dependency-evidence-sha256 $dependencyObserved" in build
+    assert "--expect-sbom-sha256 $sbomObserved" in build
+    assert "uploadedEntries.Count -ne 6" in build
+    assert "uploadedFiles.Count -ne 6" in build
+    assert "unsafeUploadEntries.Count -ne 0" in build
+    assert "[IO.FileAttributes]::ReparsePoint" in build
+    assert "Compare-Object $expectedUploadNames $observedUploadNames" in build
+    assert "exactly the six approved files" in build
     assert "Copied freeze evidence does not match its SHA-256 sidecar" in build
+    assert "Independent CycloneDX SBOM verification failed" in build
+    assert '"- SBOM composition: $($sbom.compositions[0].aggregate)"' in build
     assert "License/redistribution review: not reviewed" in build
+    assert "three evidence files and three sidecars only" in build
 
     upload = next(step for step in steps if step["name"] == "Upload exact evidence only")
     assert upload["with"] == {

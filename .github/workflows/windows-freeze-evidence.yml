@@ -32,7 +32,7 @@ jobs:
         shell: pwsh
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -e ".[dev,desktop,modern-engine]"
+          python -m pip install -e ".[dev,desktop,modern-engine,sbom-builder]"
           python -m pip install -r distribution/windows/freeze-requirements.txt
           python -c "import platform, PyInstaller, torch; assert platform.python_version_tuple()[:2] == ('3', '12'); assert PyInstaller.__version__ == '6.21.0'; assert torch.version.cuda is None"
 
@@ -118,13 +118,51 @@ jobs:
           if ($dependencyExpected -ne $dependencyObserved) {
             throw "Dependency metadata evidence does not match its SHA-256 sidecar."
           }
-          $uploadedFiles = @(Get-ChildItem -LiteralPath $evidenceDirectory -File)
-          if ($uploadedFiles.Count -ne 4) {
-            throw "Evidence upload boundary must contain exactly four files."
+
+          & python tools/desktop_sbom.py create $bundle $dependencyEvidence `
+            --expect-freeze-evidence-sha256 $observed `
+            --expect-dependency-evidence-sha256 $dependencyObserved `
+            --output-directory $evidenceDirectory
+          if ($LASTEXITCODE -ne 0) {
+            throw "CycloneDX SBOM creation failed."
+          }
+          $sbomEvidence = Join-Path $evidenceDirectory "freeze-sbom.cdx.json"
+          $sbomExpected = ((Get-Content -LiteralPath (Join-Path $evidenceDirectory "freeze-sbom.cdx.sha256") -Raw).Trim() -split "\s+")[0]
+          $sbomObserved = (Get-FileHash -LiteralPath $sbomEvidence -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($sbomExpected -ne $sbomObserved) {
+            throw "CycloneDX SBOM does not match its SHA-256 sidecar."
+          }
+          & python tools/desktop_sbom.py verify $sbomEvidence `
+            (Join-Path $evidenceDirectory "freeze-evidence.json") `
+            $dependencyEvidence `
+            --expect-freeze-evidence-sha256 $observed `
+            --expect-dependency-evidence-sha256 $dependencyObserved `
+            --expect-sbom-sha256 $sbomObserved
+          if ($LASTEXITCODE -ne 0) {
+            throw "Independent CycloneDX SBOM verification failed."
+          }
+
+          $uploadedEntries = @(Get-ChildItem -LiteralPath $evidenceDirectory -Force)
+          $uploadedFiles = @($uploadedEntries | Where-Object { -not $_.PSIsContainer })
+          $unsafeUploadEntries = @($uploadedEntries | Where-Object {
+            $_.PSIsContainer -or ($_.Attributes -band [IO.FileAttributes]::ReparsePoint)
+          })
+          $expectedUploadNames = @(
+            "freeze-dependency-metadata.json",
+            "freeze-dependency-metadata.sha256",
+            "freeze-evidence.json",
+            "freeze-evidence.sha256",
+            "freeze-sbom.cdx.json",
+            "freeze-sbom.cdx.sha256"
+          )
+          $observedUploadNames = @($uploadedFiles.Name | Sort-Object)
+          if ($uploadedEntries.Count -ne 6 -or $uploadedFiles.Count -ne 6 -or $unsafeUploadEntries.Count -ne 0 -or (Compare-Object $expectedUploadNames $observedUploadNames)) {
+            throw "Evidence upload boundary must contain exactly the six approved files."
           }
 
           $manifest = Get-Content -LiteralPath (Join-Path $evidenceDirectory "freeze-evidence.json") -Raw | ConvertFrom-Json
           $dependencies = Get-Content -LiteralPath $dependencyEvidence -Raw | ConvertFrom-Json
+          $sbom = Get-Content -LiteralPath $sbomEvidence -Raw | ConvertFrom-Json
           @(
             "## Windows clean-runner freeze evidence"
             ""
@@ -135,8 +173,13 @@ jobs:
             "- Evidence SHA-256: $observed"
             "- Dependency metadata packages: $($dependencies.package_count)"
             "- Dependency metadata SHA-256: $dependencyObserved"
+            "- SBOM: $($sbom.bomFormat) $($sbom.specVersion)"
+            "- SBOM serial number: $($sbom.serialNumber)"
+            "- SBOM components: $($sbom.components.Count)"
+            "- SBOM composition: $($sbom.compositions[0].aggregate)"
+            "- SBOM SHA-256: $sbomObserved"
             "- License/redistribution review: not reviewed"
-            "- Uploaded boundary: two evidence files and two sidecars only; no executable bundle"
+            "- Uploaded boundary: three evidence files and three sidecars only; no executable bundle"
           ) | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
           "FREEZE_EVIDENCE_UPLOAD=$evidenceDirectory" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 

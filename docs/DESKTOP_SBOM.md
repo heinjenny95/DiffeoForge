@@ -1,7 +1,7 @@
 # Deterministic Windows post-build SBOM
 
-Status: **implemented evidence tool; not a release, license decision, or uploaded
-clean-runner observation**
+Status: **implemented and integrated into the manual evidence workflow; first
+six-file clean-runner observation pending**
 
 DiffeoForge can deterministically convert one exact Windows freeze manifest and
 its separately generated dependency-metadata evidence into CycloneDX 1.7 JSON.
@@ -115,8 +115,9 @@ that the manifest still matches a complete local bundle.
 ## Deliberate boundary
 
 A schema-valid SBOM is still not a human-reviewed license inventory,
-compatibility analysis, or redistribution approval. The current manual
-clean-runner workflow still uploads four files, not six; it has not yet produced
-or independently observed an SBOM artifact. Signing, installer/uninstaller,
-Defender, clean-VM, no-network, crash, CPU numerical, and scientific release
-evidence remain separate gates.
+compatibility analysis, or redistribution approval. The manual clean-runner
+workflow is now configured to create and verify the exact six-file boundary,
+but no successful six-file run has yet been independently observed; the latest
+downloaded observation still contains four files. Signing,
+installer/uninstaller, Defender, clean-VM, no-network, crash, CPU numerical,
+and scientific release evidence remain separate gates.
