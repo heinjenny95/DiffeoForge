@@ -50,6 +50,8 @@ from diffeoforge.desktop.reference_preparation_status import (
 from diffeoforge.desktop.reference_preparation_status_verification import (
     DesktopSavedReferencePreparationStatusVerification,
     DesktopSavedReferencePreparationStatusVerificationError,
+    DesktopSavedReferencePreparationStatusVerificationExportError,
+    export_saved_reference_preparation_status_verification,
     review_saved_reference_preparation_status,
 )
 from diffeoforge.desktop.reference_readiness import (
@@ -604,6 +606,24 @@ class DiffeoForgeWindow(QMainWindow):
         self.verify_saved_reference_status_button.clicked.connect(
             self._verify_saved_reference_status
         )
+        self.saved_reference_status_verification_export_label = QLabel(
+            "Evidence-Export erst nach erfolgreicher, weiterhin eingabegebundener "
+            "Prüfung. Die Datei enthält private Provenienz."
+        )
+        self.saved_reference_status_verification_export_label.setObjectName("hint")
+        self.saved_reference_status_verification_export_label.setWordWrap(True)
+        self.saved_reference_status_verification_export_label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+        )
+        self.export_saved_reference_status_verification_button = QPushButton(
+            "Geprüfte Evidence als neue JSON-Datei exportieren"
+        )
+        self.export_saved_reference_status_verification_button.setObjectName(
+            "secondary"
+        )
+        self.export_saved_reference_status_verification_button.clicked.connect(
+            self._export_saved_reference_status_verification
+        )
 
         layout.addWidget(title)
         layout.addWidget(self.saved_reference_status_verification_label)
@@ -611,6 +631,12 @@ class DiffeoForgeWindow(QMainWindow):
         layout.addWidget(self.saved_reference_status_verification_detail_label)
         layout.addWidget(
             self.verify_saved_reference_status_button,
+            0,
+            Qt.AlignmentFlag.AlignLeft,
+        )
+        layout.addWidget(self.saved_reference_status_verification_export_label)
+        layout.addWidget(
+            self.export_saved_reference_status_verification_button,
             0,
             Qt.AlignmentFlag.AlignLeft,
         )
@@ -1464,6 +1490,12 @@ class DiffeoForgeWindow(QMainWindow):
             "Diese Prüfung liest nur die gewählte Reportdatei. Sie öffnet weder Projekt, "
             "YAML, Approval, Run, Container noch Engine und verändert nichts."
         )
+        self.saved_reference_status_verification_export_label.setObjectName("hint")
+        self.saved_reference_status_verification_export_label.setStyleSheet("")
+        self.saved_reference_status_verification_export_label.setText(
+            "Evidence-Export erst nach erfolgreicher, weiterhin eingabegebundener "
+            "Prüfung. Die Datei enthält private Provenienz."
+        )
         self._sync_saved_reference_status_verification_controls()
 
     def _saved_reference_status_inputs_valid(self) -> bool:
@@ -1490,6 +1522,21 @@ class DiffeoForgeWindow(QMainWindow):
     def _sync_saved_reference_status_verification_controls(self) -> None:
         self.verify_saved_reference_status_button.setEnabled(
             self._saved_reference_status_inputs_valid() and self._worker is None
+        )
+        self.export_saved_reference_status_verification_button.setEnabled(
+            self._saved_reference_status_result_matches_inputs()
+            and self._worker is None
+        )
+
+    def _saved_reference_status_result_matches_inputs(self) -> bool:
+        result = self._saved_reference_preparation_status_verification
+        report_text = self.saved_reference_status_report_edit.text().strip()
+        return bool(
+            result is not None
+            and report_text
+            and result.report_path == Path(report_text).expanduser().resolve()
+            and result.expected_report_sha256
+            == self.saved_reference_status_hash_edit.text().strip().lower()
         )
 
     @Slot()
@@ -1578,6 +1625,12 @@ class DiffeoForgeWindow(QMainWindow):
             "Aktuelle Projekt-, Approval-, Run-, Container- und Engine-Zustände werden "
             "nicht gelesen."
         )
+        self.saved_reference_status_verification_export_label.setObjectName("hint")
+        self.saved_reference_status_verification_export_label.setStyleSheet("")
+        self.saved_reference_status_verification_export_label.setText(
+            "Evidence-Export gesperrt, bis die Prüfung erfolgreich und weiterhin an "
+            "exakt dieselben Eingaben gebunden ist."
+        )
         self._sync_ready_state()
         self._thread_pool.start(worker)
 
@@ -1612,6 +1665,14 @@ class DiffeoForgeWindow(QMainWindow):
             self.saved_reference_status_verification_detail_label.setText(
                 "Es wurde nichts verändert. Mit den aktuellen Eingaben erneut prüfen."
             )
+            self.saved_reference_status_verification_export_label.setObjectName(
+                "statusError"
+            )
+            self.saved_reference_status_verification_export_label.setStyleSheet("")
+            self.saved_reference_status_verification_export_label.setText(
+                "Kein Evidence-Export: Das verworfene Ergebnis ist nicht mehr an die "
+                "aktuellen Eingaben gebunden."
+            )
             self._sync_ready_state()
             return
 
@@ -1638,6 +1699,8 @@ class DiffeoForgeWindow(QMainWindow):
             f"Aufgezeichnete private Stages: {result.private_stage_count}",
             f"Verification-Schema: {result.verification_schema_version}",
             f"DiffeoForge-Verifier: {result.verifier_version}",
+            f"Evidence-Bytes: {result.evidence_byte_count}",
+            f"Evidence-SHA-256: {result.evidence_sha256}",
             f"Vollständige Prüfungen: {len(result.checks)}",
             "Report während der Prüfung unverändert: ja",
             "Mutation durch diese Prüfung: nein",
@@ -1653,6 +1716,12 @@ class DiffeoForgeWindow(QMainWindow):
         self.saved_reference_status_verification_label.setText(
             "Gespeicherter Statusreport stimmt exakt mit externem SHA-256, Schema und "
             "deterministischer Serialisierung überein."
+        )
+        self.saved_reference_status_verification_export_label.setObjectName("hint")
+        self.saved_reference_status_verification_export_label.setStyleSheet("")
+        self.saved_reference_status_verification_export_label.setText(
+            "Evidence-Export bereit: exakt die oben gehashten ASCII-JSON-Bytes werden "
+            "in eine neue Datei geschrieben. Vor Weitergabe private Provenienz prüfen."
         )
         self._sync_ready_state()
 
@@ -1680,7 +1749,80 @@ class DiffeoForgeWindow(QMainWindow):
             "Keine Artefaktfreigabe. Es wurde keine Datei repariert oder verändert und "
             "kein Projekt-, Run-, Container- oder Engine-Zustand gelesen."
         )
+        self.saved_reference_status_verification_export_label.setObjectName(
+            "statusError"
+        )
+        self.saved_reference_status_verification_export_label.setStyleSheet("")
+        self.saved_reference_status_verification_export_label.setText(
+            "Kein Evidence-Export ohne aktuell gebundene, vollständig validierte "
+            "Verifikation."
+        )
         self._sync_ready_state()
+
+    @Slot()
+    def _export_saved_reference_status_verification(self) -> None:
+        result = self._saved_reference_preparation_status_verification
+        if (
+            result is None
+            or not self._saved_reference_status_result_matches_inputs()
+            or self._worker is not None
+        ):
+            self._sync_saved_reference_status_verification_controls()
+            return
+        default = result.report_path.parent / (
+            f"reference-preparation-status-verification-{result.run_id}.json"
+        )
+        selected, _ = QFileDialog.getSaveFileName(
+            self,
+            "Neue Verification-Evidence-Datei auswählen (kein Überschreiben)",
+            str(default),
+            "JSON-Dateien (*.json)",
+        )
+        if not selected:
+            return
+        if not self._saved_reference_status_result_matches_inputs():
+            self.saved_reference_status_verification_export_label.setObjectName(
+                "statusError"
+            )
+            self.saved_reference_status_verification_export_label.setStyleSheet("")
+            self.saved_reference_status_verification_export_label.setText(
+                "Evidence-Export verworfen, weil Reportpfad oder Hash-Eingabe nicht "
+                "mehr exakt zur geprüften Evidence passen."
+            )
+            self._sync_saved_reference_status_verification_controls()
+            return
+        try:
+            exported = export_saved_reference_preparation_status_verification(
+                result,
+                selected,
+            )
+        except (
+            DesktopSavedReferencePreparationStatusVerificationExportError,
+            OSError,
+            TypeError,
+            ValueError,
+        ) as error:
+            self.saved_reference_status_verification_export_label.setObjectName(
+                "statusError"
+            )
+            self.saved_reference_status_verification_export_label.setStyleSheet("")
+            self.saved_reference_status_verification_export_label.setText(
+                f"Verification-Evidence nicht exportiert: {error}"
+            )
+            self._sync_saved_reference_status_verification_controls()
+            return
+        self.saved_reference_status_verification_export_label.setObjectName(
+            "statusSuccess"
+        )
+        self.saved_reference_status_verification_export_label.setStyleSheet("")
+        self.saved_reference_status_verification_export_label.setText(
+            f"Verification-Evidence neu geschrieben: "
+            f"{self._wrappable_path(exported.path)}\n"
+            f"Schema: {exported.schema_version} · Bytes: {exported.byte_count} · "
+            f"SHA-256: {exported.sha256}\n"
+            "Private Provenienz; keine Projekt-, Run- oder Engine-Datei wurde verändert."
+        )
+        self._sync_saved_reference_status_verification_controls()
 
     @Slot()
     def _detect_template_from_text(self) -> None:

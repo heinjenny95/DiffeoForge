@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 from collections.abc import Mapping
 from importlib.resources import files
@@ -65,6 +66,69 @@ def _validate_evidence(evidence: Mapping[str, Any]) -> None:
         "Reference preparation reconciliation verification schema violation at "
         f"{location}: {first.message}"
     )
+
+
+def serialize_reference_preparation_reconciliation_verification(
+    evidence: Mapping[str, Any],
+) -> bytes:
+    """Serialize validated verification evidence as deterministic ASCII JSON."""
+
+    _validate_evidence(evidence)
+    return (
+        json.dumps(evidence, indent=2, ensure_ascii=True, sort_keys=True) + "\n"
+    ).encode("ascii")
+
+
+def write_reference_preparation_reconciliation_verification(
+    evidence: Mapping[str, Any],
+    output_path: Path | str,
+) -> Path:
+    """Write exact verification evidence exclusively to an existing real directory."""
+
+    payload = serialize_reference_preparation_reconciliation_verification(evidence)
+    destination = Path(output_path).expanduser().absolute()
+    if destination.exists() or destination.is_symlink():
+        raise ConfigurationError(
+            "Reconciliation verification evidence already exists and will not be "
+            f"overwritten: {destination}"
+        )
+    parent = destination.parent
+    if not parent.exists() or parent.is_symlink() or not parent.is_dir():
+        raise ConfigurationError(
+            "Reconciliation verification evidence parent must be an existing real "
+            f"directory: {parent}"
+        )
+    flags = os.O_CREAT | os.O_EXCL | os.O_RDWR | getattr(os, "O_BINARY", 0)
+    try:
+        descriptor = os.open(destination, flags, 0o600)
+    except FileExistsError as error:
+        raise ConfigurationError(
+            "Reconciliation verification evidence already exists and will not be "
+            f"overwritten: {destination}"
+        ) from error
+    except OSError as error:
+        raise ConfigurationError(
+            f"Could not create reconciliation verification evidence {destination}: "
+            f"{error}"
+        ) from error
+    try:
+        with os.fdopen(descriptor, "w+b") as handle:
+            handle.write(payload)
+            handle.flush()
+            os.fsync(handle.fileno())
+            handle.seek(0)
+            observed = handle.read()
+    except OSError as error:
+        raise ConfigurationError(
+            f"Could not complete reconciliation verification evidence {destination}: "
+            f"{error}"
+        ) from error
+    if observed != payload:
+        raise ConfigurationError(
+            "Reconciliation verification evidence did not preserve exact bytes: "
+            f"{destination}"
+        )
+    return destination
 
 
 def _normalize_expected_sha256(value: str) -> str:

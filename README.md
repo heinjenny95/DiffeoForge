@@ -114,7 +114,8 @@ This repository currently provides:
   hash-bound reference-environment and future-prelaunch inspection plus
   approval-bound read-only reference preparation status with an exact,
   non-overwriting JSON provenance export and strict external-hash saved-report
-  verification in both CLI and the project-independent first desktop screen,
+  verification plus exact evidence export in both CLI and the
+  project-independent first desktop screen,
   shared-core workload/preflight evidence, and a verified Modern-only
   start/live-event/cancel screen followed by a fully reverified Atlas/PCA/QC
   summary with inventory-bound artifact handoff;

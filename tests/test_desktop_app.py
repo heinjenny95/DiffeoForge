@@ -102,8 +102,46 @@ def _saved_reference_status_verification_fixture(*, report: Path, digest: str):
     from diffeoforge.desktop.reference_preparation_status_verification import (
         DesktopSavedReferencePreparationStatusVerification,
     )
-    from diffeoforge.reference_preparation_reconciliation_verification import CHECKS
+    from diffeoforge.reference_preparation_reconciliation_verification import (
+        CHECKS,
+        serialize_reference_preparation_reconciliation_verification,
+    )
 
+    scientific_boundary = (
+        "Saved artifact only; reads no current project, config, approval, run, "
+        "container, or engine state."
+    )
+    evidence = {
+        "schema_version": "0.1",
+        "status": "verified_saved_reference_preparation_reconciliation",
+        "verifier": {"diffeoforge": "0.0.0.dev0"},
+        "report": {
+            "path": str(report.resolve()),
+            "bytes": 2649,
+            "sha256": digest,
+            "expected_sha256": digest,
+            "schema_version": "0.1",
+            "status": "published_prepared_not_executed_verified",
+            "action_required": False,
+            "mutation_performed": False,
+            "state_stable_across_observations": True,
+            "matches_deterministic_serialization": True,
+        },
+        "recorded_observation": {
+            "run_id": "saved-desktop-001",
+            "approval_sha256": "a" * 64,
+            "plan_fingerprint": "b" * 64,
+            "destination_status": "verified_prepared_not_executed",
+            "manifest_sha256": "c" * 64,
+            "engine_execution_started": False,
+            "private_stage_count": 0,
+        },
+        "checks": list(CHECKS),
+        "scientific_boundary": scientific_boundary,
+    }
+    evidence_bytes = serialize_reference_preparation_reconciliation_verification(
+        evidence
+    )
     return DesktopSavedReferencePreparationStatusVerification(
         report_path=report.resolve(),
         report_byte_count=2649,
@@ -126,10 +164,9 @@ def _saved_reference_status_verification_fixture(*, report: Path, digest: str):
         verification_status="verified_saved_reference_preparation_reconciliation",
         verifier_version="0.0.0.dev0",
         checks=CHECKS,
-        scientific_boundary=(
-            "Saved artifact only; reads no current project, config, approval, run, "
-            "container, or engine state."
-        ),
+        scientific_boundary=scientific_boundary,
+        evidence_bytes=evidence_bytes,
+        evidence_sha256=hashlib.sha256(evidence_bytes).hexdigest(),
     )
 
 
@@ -410,6 +447,9 @@ def test_desktop_verifies_saved_reference_status_without_a_project(
     assert window.page_stack.currentIndex() == 0
     assert window._review is None
     assert window.verify_saved_reference_status_button.isEnabled() is False
+    assert (
+        window.export_saved_reference_status_verification_button.isEnabled() is False
+    )
     window._choose_saved_reference_status_report()
     window.saved_reference_status_hash_edit.setText(digest)
     application.processEvents()
@@ -438,12 +478,53 @@ def test_desktop_verifies_saved_reference_status_without_a_project(
     assert "Mutation durch diese Prüfung: nein" in detail
     assert "reads no current project" in detail
     assert window.verify_saved_reference_status_button.isEnabled() is True
+    assert (
+        window.export_saved_reference_status_verification_button.isEnabled() is True
+    )
     assert window._review is None
     assert window.page_stack.currentIndex() == 0
 
-    window.saved_reference_status_hash_edit.setText("e" * 64)
+    evidence_path = tmp_path / "verification-evidence-Käfer.json"
+    monkeypatch.setattr(
+        QFileDialog,
+        "getSaveFileName",
+        lambda *_args, **_kwargs: (str(evidence_path), "JSON-Dateien (*.json)"),
+    )
+    window.export_saved_reference_status_verification_button.click()
+
+    assert evidence_path.read_bytes() == result.evidence_bytes
+    assert list(tmp_path.glob("verification-evidence-Käfer.json*")) == [
+        evidence_path
+    ]
+    assert result.evidence_sha256 in (
+        window.saved_reference_status_verification_export_label.text()
+    )
+
+    preserved = evidence_path.read_bytes()
+    window.export_saved_reference_status_verification_button.click()
+    assert evidence_path.read_bytes() == preserved
+    assert "nicht exportiert" in (
+        window.saved_reference_status_verification_export_label.text()
+    )
+
+    drift_path = tmp_path / "must-not-exist-verification.json"
+
+    def change_saved_inputs_while_dialog_is_open(*_args, **_kwargs):
+        window.saved_reference_status_hash_edit.setText("e" * 64)
+        return str(drift_path), "JSON-Dateien (*.json)"
+
+    monkeypatch.setattr(
+        QFileDialog,
+        "getSaveFileName",
+        change_saved_inputs_while_dialog_is_open,
+    )
+    window.export_saved_reference_status_verification_button.click()
+    assert not drift_path.exists()
     assert window._saved_reference_preparation_status_verification is None
     assert "Noch kein" in window.saved_reference_status_verification_label.text()
+    assert (
+        window.export_saved_reference_status_verification_button.isEnabled() is False
+    )
     window.close()
     application.processEvents()
 
@@ -492,6 +573,9 @@ def test_desktop_discards_saved_status_verification_after_inputs_change(
         window.saved_reference_status_verification_detail_label.text()
     )
     assert window.verify_saved_reference_status_button.isEnabled() is True
+    assert (
+        window.export_saved_reference_status_verification_button.isEnabled() is False
+    )
     window.close()
     application.processEvents()
 
@@ -535,6 +619,9 @@ def test_desktop_saved_status_verification_failure_is_read_only(
         window.saved_reference_status_verification_detail_label.text()
     )
     assert window.verify_saved_reference_status_button.isEnabled() is True
+    assert (
+        window.export_saved_reference_status_verification_button.isEnabled() is False
+    )
     window.close()
     application.processEvents()
 

@@ -34,7 +34,9 @@ from diffeoforge.reference_preparation_reconciliation import (
     write_reference_preparation_reconciliation,
 )
 from diffeoforge.reference_preparation_reconciliation_verification import (
+    serialize_reference_preparation_reconciliation_verification,
     verify_saved_reference_preparation_reconciliation,
+    write_reference_preparation_reconciliation_verification,
 )
 from diffeoforge.reference_preparation_verification import (
     verify_saved_reference_preparation_plan,
@@ -579,6 +581,14 @@ def build_parser() -> argparse.ArgumentParser:
         "--expect-report-sha256",
         required=True,
         help="Independently recorded SHA-256 of the complete saved report file.",
+    )
+    reference_preparation_status_verify_parser.add_argument(
+        "--output",
+        type=Path,
+        help=(
+            "Write exact verification evidence to a new file; an existing path is "
+            "never replaced."
+        ),
     )
     reference_prepare_approved_parser = subparsers.add_parser(
         "reference-prepare-approved",
@@ -1560,8 +1570,22 @@ def main(argv: Sequence[str] | None = None) -> int:
                 args.report,
                 expected_report_sha256=args.expect_report_sha256,
             )
-            json.dump(evidence, sys.stdout, indent=2, ensure_ascii=True, sort_keys=True)
-            sys.stdout.write("\n")
+            payload = serialize_reference_preparation_reconciliation_verification(
+                evidence
+            )
+            if args.output is None:
+                _write_stdout_bytes(payload)
+            else:
+                written = write_reference_preparation_reconciliation_verification(
+                    evidence,
+                    args.output,
+                )
+                if written.read_bytes() != payload:
+                    raise ConfigurationError(
+                        f"Saved reconciliation verification evidence changed: {written}"
+                    )
+                print(f"Saved reconciliation verification evidence: {written}")
+                print(f"Evidence SHA-256: {hashlib.sha256(payload).hexdigest()}")
         except (ConfigurationError, OSError, TypeError, ValueError) as error:
             print(f"ERROR: {error}", file=sys.stderr)
             return 2

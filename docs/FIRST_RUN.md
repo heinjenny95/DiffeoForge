@@ -195,8 +195,13 @@ the current project or run:
 $statusHash = (Get-FileHash pilot-001-preparation-status.json -Algorithm SHA256).Hash
 diffeoforge reference-preparation-status-verify `
   pilot-001-preparation-status.json `
-  --expect-report-sha256 $statusHash
+  --expect-report-sha256 $statusHash `
+  --output pilot-001-preparation-status-verification.json
 ```
+
+Hash the complete verification-evidence file independently before archiving or
+sharing it. Neither evidence creation nor verification reopens current project
+or run state.
 
 See [saved status verification](REFERENCE_PREPARATION_RECONCILIATION_VERIFICATION.md).
 

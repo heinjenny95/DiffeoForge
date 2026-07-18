@@ -11,6 +11,8 @@ import pytest
 
 from diffeoforge.desktop.reference_preparation_status_verification import (
     DesktopSavedReferencePreparationStatusVerificationError,
+    DesktopSavedReferencePreparationStatusVerificationExportError,
+    export_saved_reference_preparation_status_verification,
     review_saved_reference_preparation_status,
 )
 from diffeoforge.reference_preparation_approval import (
@@ -100,6 +102,9 @@ def test_desktop_saved_status_verification_requires_no_current_project_state(
     assert result.verification_status == (
         "verified_saved_reference_preparation_reconciliation"
     )
+    assert result.evidence_byte_count == len(result.evidence_bytes)
+    assert result.evidence_sha256 == hashlib.sha256(result.evidence_bytes).hexdigest()
+    assert all(byte < 128 for byte in result.evidence_bytes)
     assert "reads no current config" in result.scientific_boundary
     assert _inventory(report_path.parent) == before
 
@@ -131,6 +136,36 @@ def test_desktop_saved_status_view_rejects_inconsistent_fields(tmp_path: Path) -
         replace(result, mutation_performed=True)
     with pytest.raises(ValueError, match="checks are incomplete"):
         replace(result, checks=result.checks[:-1])
+    with pytest.raises(ValueError, match="SHA-256 does not match bytes"):
+        replace(result, evidence_bytes=result.evidence_bytes + b" ")
+
+
+def test_desktop_saved_status_exports_exact_evidence_once(tmp_path: Path) -> None:
+    _config, _approval, report_path, report_hash = _saved_report(tmp_path)
+    result = review_saved_reference_preparation_status(report_path, report_hash)
+    destination = report_path.parent / "verification-evidence-Käfer.json"
+
+    exported = export_saved_reference_preparation_status_verification(
+        result,
+        destination,
+    )
+
+    assert exported.path == destination.absolute()
+    assert exported.byte_count == result.evidence_byte_count
+    assert exported.sha256 == result.evidence_sha256
+    assert exported.schema_version == result.verification_schema_version
+    assert destination.read_bytes() == result.evidence_bytes
+    assert list(destination.parent.glob("verification-evidence-Käfer.json*")) == [
+        destination
+    ]
+
+    preserved = destination.read_bytes()
+    with pytest.raises(
+        DesktopSavedReferencePreparationStatusVerificationExportError,
+        match="will not be overwritten",
+    ):
+        export_saved_reference_preparation_status_verification(result, destination)
+    assert destination.read_bytes() == preserved
 
 
 def test_desktop_saved_status_service_imports_without_qt_or_compute() -> None:
