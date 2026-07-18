@@ -98,6 +98,41 @@ def _reference_preparation_status_fixture(
     )
 
 
+def _saved_reference_status_verification_fixture(*, report: Path, digest: str):
+    from diffeoforge.desktop.reference_preparation_status_verification import (
+        DesktopSavedReferencePreparationStatusVerification,
+    )
+    from diffeoforge.reference_preparation_reconciliation_verification import CHECKS
+
+    return DesktopSavedReferencePreparationStatusVerification(
+        report_path=report.resolve(),
+        report_byte_count=2649,
+        report_sha256=digest,
+        expected_report_sha256=digest,
+        report_schema_version="0.1",
+        report_status="published_prepared_not_executed_verified",
+        action_required=False,
+        mutation_performed=False,
+        state_stable_across_observations=True,
+        matches_deterministic_serialization=True,
+        run_id="saved-desktop-001",
+        approval_sha256="a" * 64,
+        plan_fingerprint="b" * 64,
+        destination_status="verified_prepared_not_executed",
+        manifest_sha256="c" * 64,
+        engine_execution_started=False,
+        private_stage_count=0,
+        verification_schema_version="0.1",
+        verification_status="verified_saved_reference_preparation_reconciliation",
+        verifier_version="0.0.0.dev0",
+        checks=CHECKS,
+        scientific_boundary=(
+            "Saved artifact only; reads no current project, config, approval, run, "
+            "container, or engine state."
+        ),
+    )
+
+
 def test_desktop_parser_is_available_without_importing_qt() -> None:
     args = build_parser().parse_args([])
 
@@ -324,6 +359,182 @@ def test_desktop_window_keeps_reference_compute_route_explicitly_unavailable(
     assert window.refresh_reference_preparation_status_button.isEnabled() is False
     assert window.export_reference_preparation_status_button.isEnabled() is False
     assert "noch nicht geprüft" in window.reference_readiness_status_label.text()
+    window.close()
+    application.processEvents()
+
+
+def test_desktop_verifies_saved_reference_status_without_a_project(
+    monkeypatch, tmp_path
+) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QFileDialog
+
+    from diffeoforge.desktop.widgets import (
+        DiffeoForgeWindow,
+        _SavedReferencePreparationStatusVerificationWorker,
+    )
+
+    application = QApplication.instance() or QApplication(
+        ["diffeoforge-saved-reference-status-test"]
+    )
+    report = (tmp_path / "saved-status-Käfer.json").resolve()
+    report.write_text("{}\n", encoding="utf-8")
+    digest = "d" * 64
+    result = _saved_reference_status_verification_fixture(
+        report=report,
+        digest=digest,
+    )
+    monkeypatch.setattr(
+        "diffeoforge.desktop.widgets.review_saved_reference_preparation_status",
+        lambda path, expected: (
+            result
+            if Path(path).resolve() == report and expected == digest
+            else pytest.fail("wrong saved status verification inputs")
+        ),
+    )
+    monkeypatch.setattr(
+        QFileDialog,
+        "getOpenFileName",
+        lambda *_args, **_kwargs: (str(report), "JSON-Dateien (*.json)"),
+    )
+    queued = []
+
+    class FakePool:
+        def start(self, worker) -> None:
+            queued.append(worker)
+
+    window = DiffeoForgeWindow()
+    window._thread_pool = FakePool()  # type: ignore[assignment]
+
+    assert window.page_stack.currentIndex() == 0
+    assert window._review is None
+    assert window.verify_saved_reference_status_button.isEnabled() is False
+    window._choose_saved_reference_status_report()
+    window.saved_reference_status_hash_edit.setText(digest)
+    application.processEvents()
+
+    assert window.verify_saved_reference_status_button.isEnabled() is True
+    window.verify_saved_reference_status_button.click()
+    assert len(queued) == 1
+    assert isinstance(queued[0], _SavedReferencePreparationStatusVerificationWorker)
+    assert window.verify_saved_reference_status_button.isEnabled() is False
+    assert "read-only geprüft" in (
+        window.saved_reference_status_verification_label.text()
+    )
+
+    queued[0].run()
+    application.processEvents()
+
+    detail = window.saved_reference_status_verification_detail_label.text().replace(
+        "\u200b", ""
+    )
+    assert window._saved_reference_preparation_status_verification is result
+    assert "stimmt exakt" in window.saved_reference_status_verification_label.text()
+    assert str(report) in detail
+    assert digest in detail
+    assert "saved-desktop-001" in detail
+    assert "c" * 64 in detail
+    assert "Mutation durch diese Prüfung: nein" in detail
+    assert "reads no current project" in detail
+    assert window.verify_saved_reference_status_button.isEnabled() is True
+    assert window._review is None
+    assert window.page_stack.currentIndex() == 0
+
+    window.saved_reference_status_hash_edit.setText("e" * 64)
+    assert window._saved_reference_preparation_status_verification is None
+    assert "Noch kein" in window.saved_reference_status_verification_label.text()
+    window.close()
+    application.processEvents()
+
+
+def test_desktop_discards_saved_status_verification_after_inputs_change(
+    monkeypatch, tmp_path
+) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from diffeoforge.desktop.widgets import DiffeoForgeWindow
+
+    application = QApplication.instance() or QApplication(
+        ["diffeoforge-saved-reference-status-stale-test"]
+    )
+    report = (tmp_path / "saved-status.json").resolve()
+    report.write_text("{}\n", encoding="utf-8")
+    digest = "f" * 64
+    result = _saved_reference_status_verification_fixture(
+        report=report,
+        digest=digest,
+    )
+    monkeypatch.setattr(
+        "diffeoforge.desktop.widgets.review_saved_reference_preparation_status",
+        lambda *_args, **_kwargs: result,
+    )
+    queued = []
+
+    class FakePool:
+        def start(self, worker) -> None:
+            queued.append(worker)
+
+    window = DiffeoForgeWindow()
+    window._thread_pool = FakePool()  # type: ignore[assignment]
+    window.saved_reference_status_report_edit.setText(str(report))
+    window.saved_reference_status_hash_edit.setText(digest)
+    window.verify_saved_reference_status_button.click()
+    window.saved_reference_status_hash_edit.setText("0" * 64)
+    queued[0].run()
+    application.processEvents()
+
+    assert window._saved_reference_preparation_status_verification is None
+    assert "verworfen" in window.saved_reference_status_verification_label.text()
+    assert "nichts verändert" in (
+        window.saved_reference_status_verification_detail_label.text()
+    )
+    assert window.verify_saved_reference_status_button.isEnabled() is True
+    window.close()
+    application.processEvents()
+
+
+def test_desktop_saved_status_verification_failure_is_read_only(
+    monkeypatch, tmp_path
+) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from diffeoforge.desktop.widgets import DiffeoForgeWindow
+
+    application = QApplication.instance() or QApplication(
+        ["diffeoforge-saved-reference-status-failure-test"]
+    )
+    report = (tmp_path / "invalid-saved-status.json").resolve()
+    report.write_text("{}\n", encoding="utf-8")
+    before = report.read_bytes()
+    digest = hashlib.sha256(before).hexdigest()
+    queued = []
+
+    class FakePool:
+        def start(self, worker) -> None:
+            queued.append(worker)
+
+    window = DiffeoForgeWindow()
+    window._thread_pool = FakePool()  # type: ignore[assignment]
+    window.saved_reference_status_report_edit.setText(str(report))
+    window.saved_reference_status_hash_edit.setText(digest)
+    window.verify_saved_reference_status_button.click()
+    queued[0].run()
+    application.processEvents()
+
+    assert report.read_bytes() == before
+    assert window._saved_reference_preparation_status_verification is None
+    assert "nicht sicher verifizierbar" in (
+        window.saved_reference_status_verification_label.text()
+    )
+    assert "Keine Artefaktfreigabe" in (
+        window.saved_reference_status_verification_detail_label.text()
+    )
+    assert window.verify_saved_reference_status_button.isEnabled() is True
     window.close()
     application.processEvents()
 
