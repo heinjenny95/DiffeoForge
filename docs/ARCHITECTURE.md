@@ -286,6 +286,12 @@ verification evidence. It deliberately reads no current config, meshes,
 approval, run path, process, container, or engine state. See
 [saved status verification](REFERENCE_PREPARATION_RECONCILIATION_VERIFICATION.md).
 
+The first desktop screen maps that same verifier into a Qt-independent bounded
+view model and runs it on the shared background-operation gate. It requires no
+active project or review. Path/hash edits invalidate prior evidence, and the
+GUI discards any result that is no longer bound to the exact worker inputs.
+See [desktop saved-status verification](DESKTOP_SAVED_REFERENCE_PREPARATION_STATUS_VERIFICATION.md).
+
 Desktop step 2 consumes that report through a separate Qt-independent bounded
 view model. It first binds the current config bytes to the completed desktop
 review, delegates all reconciliation semantics to the shared core, and checks

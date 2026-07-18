@@ -90,6 +90,7 @@ This roadmap describes evidence gates rather than promised dates.
   - [x] Frozen preparation-worker hard-parent-death Job evidence before request delivery
   - [x] Approval-bound read-only destination/private-stage reconciliation report
   - [x] Review-bound read-only reference preparation status in the desktop GUI
+  - [x] Project-independent saved reference-status verification in the desktop GUI
   - [ ] User-approved private-stage mutation, reference supervision, and native mesh rendering
 - [ ] Parameter explanations and safe presets
 - [x] Pre-compute configured all-pairs and known-payload workload report

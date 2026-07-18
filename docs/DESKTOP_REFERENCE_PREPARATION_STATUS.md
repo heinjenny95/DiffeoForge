@@ -78,3 +78,6 @@ The underlying versioned report is documented in
 Its exact exported bytes can be checked later with the
 [saved status verifier](REFERENCE_PREPARATION_RECONCILIATION_VERIFICATION.md)
 without reopening current project or run state.
+The [standalone desktop verifier](DESKTOP_SAVED_REFERENCE_PREPARATION_STATUS_VERIFICATION.md)
+provides the same artifact-only check directly on the first screen without an
+active project.

@@ -35,6 +35,10 @@ Exit code 0 emits versioned ASCII-safe verification evidence. Invalid hash,
 strict JSON, schema, deterministic representation, or a file race fails closed
 with exit code 2 and does not repair the artifact.
 
+The same bounded check is available on the first application screen; see
+[desktop saved-status verification](DESKTOP_SAVED_REFERENCE_PREPARATION_STATUS_VERIFICATION.md).
+It does not require an active project or terminal.
+
 ## Checks
 
 The verifier:

@@ -47,6 +47,11 @@ from diffeoforge.desktop.reference_preparation_status import (
     export_reference_preparation_status_report,
     review_reference_preparation_status,
 )
+from diffeoforge.desktop.reference_preparation_status_verification import (
+    DesktopSavedReferencePreparationStatusVerification,
+    DesktopSavedReferencePreparationStatusVerificationError,
+    review_saved_reference_preparation_status,
+)
 from diffeoforge.desktop.reference_readiness import (
     DesktopReferenceReadiness,
     DesktopReferenceReadinessError,
@@ -236,6 +241,34 @@ class _ReferencePreparationStatusWorker(QRunnable):
         self.signals.succeeded.emit(status)
 
 
+class _SavedReferencePreparationStatusVerificationWorker(QRunnable):
+    """Verify one saved preparation status artifact outside the GUI thread."""
+
+    def __init__(self, report_path: Path, expected_report_sha256: str) -> None:
+        super().__init__()
+        self.report_path = report_path
+        self.expected_report_sha256 = expected_report_sha256
+        self.signals = _WorkerSignals()
+
+    @Slot()
+    def run(self) -> None:
+        try:
+            result = review_saved_reference_preparation_status(
+                self.report_path,
+                self.expected_report_sha256,
+            )
+        except (
+            DesktopSavedReferencePreparationStatusVerificationError,
+            OSError,
+            RuntimeError,
+            TypeError,
+            ValueError,
+        ) as error:
+            self.signals.failed.emit(str(error))
+            return
+        self.signals.succeeded.emit(result)
+
+
 class _ResultReviewWorker(QRunnable):
     """Fully verify one completed Modern workflow outside the GUI thread."""
 
@@ -356,6 +389,7 @@ class DiffeoForgeWindow(QMainWindow):
             | _TemplatePreviewWorker
             | _ReferenceReadinessWorker
             | _ReferencePreparationStatusWorker
+            | _SavedReferencePreparationStatusVerificationWorker
             | _ResultReviewWorker
             | _ArtifactWorker
             | _AtlasWorker
@@ -366,6 +400,9 @@ class DiffeoForgeWindow(QMainWindow):
         self._template_preview: MeshPreviewModel | None = None
         self._reference_readiness: DesktopReferenceReadiness | None = None
         self._reference_preparation_status: DesktopReferencePreparationStatus | None = None
+        self._saved_reference_preparation_status_verification: (
+            DesktopSavedReferencePreparationStatusVerification | None
+        ) = None
         self._run_readiness: DesktopReviewedRunReadiness | None = None
         self._run_result: DesktopWorkerControllerResult | None = None
         self._result_review: ModernResultReview | None = None
@@ -475,6 +512,7 @@ class DiffeoForgeWindow(QMainWindow):
         self.result_card = self._build_result_card()
         self.result_card.hide()
         layout.addWidget(self.result_card)
+        layout.addWidget(self._build_saved_reference_preparation_status_card())
         layout.addStretch()
         scroll.setWidget(container)
 
@@ -499,6 +537,84 @@ class DiffeoForgeWindow(QMainWindow):
         content_layout.addWidget(scroll, 1)
         content_layout.addWidget(footer)
         return content
+
+    def _build_saved_reference_preparation_status_card(self) -> QWidget:
+        card = QFrame()
+        card.setObjectName("card")
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(24, 22, 24, 24)
+        layout.setSpacing(10)
+
+        title = QLabel("Gespeicherten Referenzstatus verifizieren")
+        title.setObjectName("sectionTitle")
+        self.saved_reference_status_verification_label = QLabel(
+            "Noch kein gespeicherter Statusreport geprüft."
+        )
+        self.saved_reference_status_verification_label.setObjectName("status")
+        self.saved_reference_status_verification_label.setWordWrap(True)
+
+        form = QFormLayout()
+        form.setHorizontalSpacing(22)
+        form.setVerticalSpacing(10)
+        form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
+        self.saved_reference_status_report_edit = QLineEdit()
+        self.saved_reference_status_report_edit.setObjectName(
+            "savedReferenceStatusReportEdit"
+        )
+        self.saved_reference_status_report_edit.setPlaceholderText(
+            "Zuvor exportierter preparation-status JSON-Report"
+        )
+        self.saved_reference_status_report_edit.textChanged.connect(
+            self._saved_reference_status_inputs_changed
+        )
+        choose = QPushButton("Auswählen…")
+        choose.setObjectName("secondary")
+        choose.clicked.connect(self._choose_saved_reference_status_report)
+        form.addRow(
+            "Statusreport",
+            _path_row(self.saved_reference_status_report_edit, choose),
+        )
+        self.saved_reference_status_hash_edit = QLineEdit()
+        self.saved_reference_status_hash_edit.setObjectName(
+            "savedReferenceStatusHashEdit"
+        )
+        self.saved_reference_status_hash_edit.setPlaceholderText(
+            "Unabhängig notierter SHA-256 der kompletten Reportdatei"
+        )
+        self.saved_reference_status_hash_edit.textChanged.connect(
+            self._saved_reference_status_inputs_changed
+        )
+        form.addRow("Report-SHA-256", self.saved_reference_status_hash_edit)
+
+        self.saved_reference_status_verification_detail_label = QLabel(
+            "Diese Prüfung liest nur die gewählte Reportdatei. Sie öffnet weder Projekt, "
+            "YAML, Approval, Run, Container noch Engine und verändert nichts."
+        )
+        self.saved_reference_status_verification_detail_label.setObjectName(
+            "reviewDetail"
+        )
+        self.saved_reference_status_verification_detail_label.setWordWrap(True)
+        self.saved_reference_status_verification_detail_label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+        )
+        self.verify_saved_reference_status_button = QPushButton(
+            "Gespeicherten Report read-only verifizieren"
+        )
+        self.verify_saved_reference_status_button.setObjectName("secondary")
+        self.verify_saved_reference_status_button.clicked.connect(
+            self._verify_saved_reference_status
+        )
+
+        layout.addWidget(title)
+        layout.addWidget(self.saved_reference_status_verification_label)
+        layout.addLayout(form)
+        layout.addWidget(self.saved_reference_status_verification_detail_label)
+        layout.addWidget(
+            self.verify_saved_reference_status_button,
+            0,
+            Qt.AlignmentFlag.AlignLeft,
+        )
+        return card
 
     def _build_review_content(self) -> QWidget:
         scroll = QScrollArea()
@@ -1316,6 +1432,67 @@ class DiffeoForgeWindow(QMainWindow):
             self.reference_preparation_approval_edit.setText(selected)
 
     @Slot()
+    def _choose_saved_reference_status_report(self) -> None:
+        current = self.saved_reference_status_report_edit.text().strip()
+        start = str(Path(current).expanduser().parent) if current else ""
+        selected, _ = QFileDialog.getOpenFileName(
+            self,
+            "Gespeicherten preparation-status Report auswählen",
+            start,
+            "JSON-Dateien (*.json)",
+        )
+        if selected:
+            self.saved_reference_status_report_edit.setText(selected)
+
+    @Slot()
+    def _saved_reference_status_inputs_changed(self) -> None:
+        self._saved_reference_preparation_status_verification = None
+        self.saved_reference_status_verification_label.setObjectName("status")
+        self.saved_reference_status_verification_label.setStyleSheet("")
+        if isinstance(
+            self._worker,
+            _SavedReferencePreparationStatusVerificationWorker,
+        ):
+            message = (
+                "Eingaben wurden während der Prüfung geändert; das laufende Ergebnis "
+                "wird verworfen."
+            )
+        else:
+            message = "Noch kein gespeicherter Statusreport geprüft."
+        self.saved_reference_status_verification_label.setText(message)
+        self.saved_reference_status_verification_detail_label.setText(
+            "Diese Prüfung liest nur die gewählte Reportdatei. Sie öffnet weder Projekt, "
+            "YAML, Approval, Run, Container noch Engine und verändert nichts."
+        )
+        self._sync_saved_reference_status_verification_controls()
+
+    def _saved_reference_status_inputs_valid(self) -> bool:
+        digest = self.saved_reference_status_hash_edit.text().strip().lower()
+        return bool(
+            self.saved_reference_status_report_edit.text().strip()
+            and len(digest) == 64
+            and all(character in "0123456789abcdef" for character in digest)
+        )
+
+    def _saved_reference_status_worker_matches_inputs(
+        self,
+        worker: _SavedReferencePreparationStatusVerificationWorker,
+    ) -> bool:
+        report_text = self.saved_reference_status_report_edit.text().strip()
+        digest = self.saved_reference_status_hash_edit.text().strip().lower()
+        return bool(
+            report_text
+            and Path(report_text).expanduser().resolve()
+            == worker.report_path.expanduser().resolve()
+            and digest == worker.expected_report_sha256.strip().lower()
+        )
+
+    def _sync_saved_reference_status_verification_controls(self) -> None:
+        self.verify_saved_reference_status_button.setEnabled(
+            self._saved_reference_status_inputs_valid() and self._worker is None
+        )
+
+    @Slot()
     def _reference_preparation_inputs_changed(self) -> None:
         self._reference_preparation_status = None
         self.reference_preparation_status_label.setObjectName("status")
@@ -1378,6 +1555,134 @@ class DiffeoForgeWindow(QMainWindow):
         )
 
     @Slot()
+    def _verify_saved_reference_status(self) -> None:
+        if not self._saved_reference_status_inputs_valid() or self._worker is not None:
+            return
+        worker = _SavedReferencePreparationStatusVerificationWorker(
+            Path(self.saved_reference_status_report_edit.text().strip()),
+            self.saved_reference_status_hash_edit.text().strip(),
+        )
+        worker.signals.succeeded.connect(
+            self._saved_reference_status_verification_succeeded
+        )
+        worker.signals.failed.connect(self._saved_reference_status_verification_failed)
+        self._worker = worker
+        self._saved_reference_preparation_status_verification = None
+        self.saved_reference_status_verification_label.setObjectName("status")
+        self.saved_reference_status_verification_label.setStyleSheet("")
+        self.saved_reference_status_verification_label.setText(
+            "Datei-Hash, striktes JSON, Schema und deterministische Bytes werden "
+            "read-only geprüft …"
+        )
+        self.saved_reference_status_verification_detail_label.setText(
+            "Aktuelle Projekt-, Approval-, Run-, Container- und Engine-Zustände werden "
+            "nicht gelesen."
+        )
+        self._sync_ready_state()
+        self._thread_pool.start(worker)
+
+    @Slot(object)
+    def _saved_reference_status_verification_succeeded(
+        self,
+        result: DesktopSavedReferencePreparationStatusVerification,
+    ) -> None:
+        worker = self._worker
+        self._worker = None
+        if (
+            not isinstance(
+                worker,
+                _SavedReferencePreparationStatusVerificationWorker,
+            )
+            or not self._saved_reference_status_worker_matches_inputs(worker)
+            or not isinstance(
+                result,
+                DesktopSavedReferencePreparationStatusVerification,
+            )
+            or result.report_path != worker.report_path.expanduser().resolve()
+            or result.expected_report_sha256
+            != worker.expected_report_sha256.strip().lower()
+        ):
+            self._saved_reference_preparation_status_verification = None
+            self.saved_reference_status_verification_label.setObjectName("statusError")
+            self.saved_reference_status_verification_label.setStyleSheet("")
+            self.saved_reference_status_verification_label.setText(
+                "Prüfergebnis verworfen, weil Reportpfad oder Hash-Eingabe nicht mehr "
+                "exakt übereinstimmen."
+            )
+            self.saved_reference_status_verification_detail_label.setText(
+                "Es wurde nichts verändert. Mit den aktuellen Eingaben erneut prüfen."
+            )
+            self._sync_ready_state()
+            return
+
+        self._saved_reference_preparation_status_verification = result
+        engine_started = (
+            "nein"
+            if result.engine_execution_started is False
+            else "im gespeicherten Status nicht beobachtet"
+        )
+        details = [
+            f"Report: {self._wrappable_path(result.report_path)}",
+            f"Bytes: {result.report_byte_count}",
+            f"Report-SHA-256: {result.report_sha256}",
+            f"Report-Schema: {result.report_schema_version}",
+            f"Aufgezeichneter Status: {result.report_status}",
+            f"Aufgezeichnete Aktion erforderlich: "
+            f"{'ja' if result.action_required else 'nein'}",
+            "Deterministische DiffeoForge-Serialisierung: ja",
+            f"Run-ID: {result.run_id}",
+            f"Approval-SHA-256: {result.approval_sha256}",
+            f"Plan-Fingerprint: {result.plan_fingerprint}",
+            f"Aufgezeichneter Zielstatus: {result.destination_status}",
+            f"Aufgezeichneter Engine-Start: {engine_started}",
+            f"Aufgezeichnete private Stages: {result.private_stage_count}",
+            f"Verification-Schema: {result.verification_schema_version}",
+            f"DiffeoForge-Verifier: {result.verifier_version}",
+            f"Vollständige Prüfungen: {len(result.checks)}",
+            "Report während der Prüfung unverändert: ja",
+            "Mutation durch diese Prüfung: nein",
+            f"Grenze: {result.scientific_boundary}",
+        ]
+        if result.manifest_sha256 is not None:
+            details.insert(12, f"Manifest-SHA-256: {result.manifest_sha256}")
+        self.saved_reference_status_verification_detail_label.setText(
+            "\n".join(details)
+        )
+        self.saved_reference_status_verification_label.setObjectName("statusSuccess")
+        self.saved_reference_status_verification_label.setStyleSheet("")
+        self.saved_reference_status_verification_label.setText(
+            "Gespeicherter Statusreport stimmt exakt mit externem SHA-256, Schema und "
+            "deterministischer Serialisierung überein."
+        )
+        self._sync_ready_state()
+
+    @Slot(str)
+    def _saved_reference_status_verification_failed(self, message: str) -> None:
+        worker = self._worker
+        self._worker = None
+        inputs_match = isinstance(
+            worker,
+            _SavedReferencePreparationStatusVerificationWorker,
+        ) and self._saved_reference_status_worker_matches_inputs(worker)
+        self._saved_reference_preparation_status_verification = None
+        self.saved_reference_status_verification_label.setObjectName("statusError")
+        self.saved_reference_status_verification_label.setStyleSheet("")
+        if inputs_match:
+            self.saved_reference_status_verification_label.setText(
+                f"Gespeicherter Statusreport nicht sicher verifizierbar: {message}"
+            )
+        else:
+            self.saved_reference_status_verification_label.setText(
+                "Fehlerergebnis verworfen, weil Reportpfad oder Hash-Eingabe geändert "
+                "wurden."
+            )
+        self.saved_reference_status_verification_detail_label.setText(
+            "Keine Artefaktfreigabe. Es wurde keine Datei repariert oder verändert und "
+            "kein Projekt-, Run-, Container- oder Engine-Zustand gelesen."
+        )
+        self._sync_ready_state()
+
+    @Slot()
     def _detect_template_from_text(self) -> None:
         mesh_text = self.mesh_edit.text().strip()
         if not mesh_text or self.template_edit.text().strip():
@@ -1413,6 +1718,7 @@ class DiffeoForgeWindow(QMainWindow):
         )
         self.create_button.setEnabled(ready and self._worker is None)
         self._sync_reference_preparation_status_controls()
+        self._sync_saved_reference_status_verification_controls()
 
     def _request(self) -> ProjectSetupRequest:
         template = self.template_edit.text().strip()
@@ -1459,7 +1765,7 @@ class DiffeoForgeWindow(QMainWindow):
         self._worker = _ProjectWorker(self._request())
         self._worker.signals.succeeded.connect(self._project_succeeded)
         self._worker.signals.failed.connect(self._project_failed)
-        self.create_button.setEnabled(False)
+        self._sync_ready_state()
         self._thread_pool.start(self._worker)
 
     @Slot(object)
@@ -1504,6 +1810,7 @@ class DiffeoForgeWindow(QMainWindow):
         self._worker = _ReviewWorker(self._result)
         self._worker.signals.succeeded.connect(self._review_succeeded)
         self._worker.signals.failed.connect(self._review_failed)
+        self._sync_ready_state()
         self._thread_pool.start(self._worker)
 
     @Slot(object)
