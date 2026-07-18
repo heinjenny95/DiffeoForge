@@ -76,6 +76,19 @@ Defender, no-network, installer/uninstaller, clean installed VM, crash
 reconciliation, CPU numerical release-validation, or scientific-validation
 gates.
 
+### First four-file dependency-metadata observation
+
+[Workflow run 29635525566](https://github.com/heinjenny95/DiffeoForge/actions/runs/29635525566)
+repeated the complete frozen-process contract from clean commit
+`ac10b0953f6c4ad11bd98001694726d6ed870d2d` and successfully added the
+freeze-hash-bound dependency-metadata pair. The independently downloaded
+artifact contained exactly four files; both exact sidecars and both schemas
+verified. The bundle recorded 2,657 files and 671,225,043 bytes. The metadata
+pair recorded 27 packages and 152 hashed installed license-related files with
+no unresolved `License-File` declaration. Exact artifact hashes, package-field
+counts, timings, and the unchanged license/SBOM non-claims are documented in
+[Frozen dependency metadata evidence](DESKTOP_DEPENDENCY_METADATA_EVIDENCE.md).
+
 DiffeoForge can be frozen on a 64-bit Windows development machine into one
 directory containing four entry points:
 
