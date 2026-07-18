@@ -100,6 +100,11 @@ This roadmap describes evidence gates rather than promised dates.
 - [x] Fresh-process objective/gradient wall-time and sampled-RSS protocol
 - [ ] Prospective multi-size end-to-end runtime and peak-memory calibration
 - [ ] Cross-platform CPU distribution
+  - [x] Fresh GitHub-hosted Windows one-directory engineering freeze, complete
+    frozen-process smoke contract, and independently inspected evidence artifact
+  - [ ] Reviewed release lock, SBOM, license clearance, signed installer, and
+    clean-VM installation/uninstallation evidence
+  - [ ] Separately gated Linux and macOS CPU distributions
 - [ ] Validated NVIDIA GPU distribution
 - [ ] Apptainer workflow for HPC environments
 
