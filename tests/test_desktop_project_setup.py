@@ -114,6 +114,8 @@ def test_confirmed_overwrite_replaces_only_a_generated_modern_configuration(
 def test_confirmed_overwrite_still_refuses_a_researcher_owned_modern_file(
     tmp_path: Path,
 ) -> None:
+    if importlib.util.find_spec("numpy") is None or importlib.util.find_spec("torch") is None:
+        pytest.skip("modern-engine dependencies are not installed")
     project_directory = tmp_path / "owned modern"
     project_directory.mkdir()
     config_path = project_directory / "modern-atlas.yaml"
