@@ -60,16 +60,17 @@ cross-checks the nested approved-preparation evidence before accepting
 `prepared_not_executed`. See the
 [approval-bound preparation worker](REFERENCE_PREPARATION_WORKER.md).
 
-This new source harness does not modify the frozen nonnumerical request,
-protocol, controller, executable, or evidence bundle. Freeze integration and
-dedicated hard-parent-death evidence for a future frozen mutating child remain
-separate review gates.
+This preparation harness does not modify the frozen nonnumerical request,
+protocol, controller, or executable. It is now packaged as its own fourth
+sibling and inventoried by freeze-evidence v0.3. The build exercises the exact
+five-event preparation-only lifecycle with an external approval; frozen
+preparation hard-parent-death evidence remains a separate review gate.
 
 A separate source-level
 [preparation parent controller](REFERENCE_PREPARATION_CONTROLLER.md) now assigns
 this new child to a Windows kill-on-close Job before request delivery, bounds
 its transport and runtime, reconciles the exact five-event lifecycle and exit
-code, and independently verifies the published prepared run. Freeze, GUI,
+code, and independently verifies the published prepared run. GUI enablement,
 cancel, recovery, and engine supervision remain open.
 
 Its real source-worker Job-assignment seam additionally has

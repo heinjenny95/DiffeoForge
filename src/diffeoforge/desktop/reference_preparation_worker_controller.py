@@ -33,6 +33,9 @@ DEFAULT_PREPARATION_SUPERVISION_TIMEOUT_SECONDS = 600.0
 DEFAULT_PREPARATION_STDOUT_LINE_LIMIT = 262_144
 DEFAULT_PREPARATION_STDERR_LIMIT = 65_536
 MAX_PREPARATION_EVENTS = 5
+FROZEN_REFERENCE_PREPARATION_WORKER_BASENAME = (
+    "DiffeoForgeReferencePreparationWorker"
+)
 
 
 class ReferencePreparationControllerError(RuntimeError):
@@ -80,13 +83,15 @@ class ReferencePreparationExecutionError(ReferencePreparationControllerError):
 
 
 def default_reference_preparation_worker_command() -> tuple[str, ...]:
-    """Resolve only the source worker until a separate frozen artifact exists."""
+    """Resolve the source module or its dedicated sibling frozen executable."""
 
     if getattr(sys, "frozen", False):
-        raise ReferencePreparationControllerError(
-            "The approval-bound reference preparation worker is not included in the "
-            "frozen desktop bundle"
+        desktop_executable = Path(sys.executable).resolve()
+        suffix = ".exe" if os.name == "nt" else ""
+        worker = desktop_executable.with_name(
+            f"{FROZEN_REFERENCE_PREPARATION_WORKER_BASENAME}{suffix}"
         )
+        return (str(worker),)
     return (
         sys.executable,
         "-m",

@@ -41,11 +41,12 @@ code, and independently repeats request and destination verification. See
 [the nonnumerical reference harness controller](REFERENCE_HARNESS_CONTROLLER.md).
 
 The Windows one-directory evidence bundle exposes the same module as the
-sibling `DiffeoForgeReferenceWorker.exe`. Its build cannot publish v0.2 freeze
+sibling `DiffeoForgeReferenceWorker.exe`. Its build cannot publish current freeze
 evidence unless that executable completes the controller round trip with exactly
 three events, outcome `stopped_before_prepare`, exit code 0, empty stderr, and no
 destination. Legacy v0.1 evidence remains verifiable but does not claim this
-third entry point.
+third entry point; genuine v0.2 evidence retains its original three-entry-point
+meaning.
 
 ## Current boundary
 
@@ -56,6 +57,8 @@ transport evidence, not a completed atlas and not scientific evidence.
 
 The separate shared-core
 [approved preparation service](REFERENCE_APPROVED_PREPARATION.md) is now
-consumed by a new source-level
+consumed by a separate
 [approval-bound preparation worker](REFERENCE_PREPARATION_WORKER.md). It is
-deliberately not wired into this v0.1 harness, controller, or frozen evidence.
+deliberately not wired into this v0.1 harness or controller. Freeze-evidence
+v0.3 inventories it as a distinct fourth executable rather than broadening this
+nonnumerical worker.

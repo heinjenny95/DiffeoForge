@@ -1,6 +1,6 @@
 # Approval-bound reference preparation parent controller
 
-Status: **source child contained and independently verified; no engine launch**
+Status: **source/frozen child contained and independently verified; no engine launch**
 
 `ReferencePreparationWorkerController` is the Qt-independent parent for the
 [approval-bound reference preparation worker](REFERENCE_PREPARATION_WORKER.md).
@@ -16,10 +16,12 @@ child. Approval and config bytes, external approval SHA-256, embedded plan,
 fresh current plan, mesh inventory, run ID, destination, and destination
 absence must still agree. A stale request fails without launching a process.
 
-The default command deliberately resolves only the source module. A frozen
-desktop process fails explicitly because no approved preparation-worker sibling
-has been added to the bundle yet; it cannot silently reuse the frozen
-nonnumerical worker.
+The default command resolves the source module from a source process and the
+dedicated sibling `DiffeoForgeReferencePreparationWorker.exe` beside a frozen
+parent. It never reuses the frozen nonnumerical worker. The evidence build must
+exercise that sibling through this controller with an externally created,
+independently SHA-bound preparation-only approval before v0.3 inventory evidence
+can be written.
 
 ## Containment and bounded transport
 
@@ -43,8 +45,9 @@ Timeout or protocol failure stops the child. The worker currently starts no
 descendant process. A dedicated
 [Windows hard-parent-death audit](REFERENCE_PREPARATION_PARENT_DEATH.md) now
 proves Job-driven termination of the real source worker created suspended and
-killed before request delivery. Frozen-bundle and portable process-tree
-containment remain later gates.
+killed before request delivery. Dedicated hard-parent-death evidence for the
+frozen preparation sibling and portable process-tree containment remain later
+gates.
 
 ## Accepted success
 
@@ -82,9 +85,10 @@ user-approved reconciliation workflow must classify it before any mutation.
 
 ## Current boundary
 
-The controller is source-level and has no Qt dependency. It is not wired into
-the GUI, frozen Windows bundle, installer, or release evidence. It has no cancel
-channel and never reaches Docker, Deformetrica, execution, checkpoint, resume,
+The controller has no Qt dependency and now supervises both source and frozen
+preparation workers. It is not wired into the GUI or installer and the bundle
+remains engineering evidence rather than a release. It has no cancel channel
+and never reaches Docker, Deformetrica, execution, checkpoint, resume,
 or result collection. It does not validate scientific parameters, mesh
 homology, convergence, registration quality, numerical equivalence, or
 biological interpretation.

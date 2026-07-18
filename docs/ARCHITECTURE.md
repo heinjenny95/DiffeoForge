@@ -170,12 +170,12 @@ nonnumerical supervision seam but does not prepare a run, start the reference
 engine, or enable GUI computation. See
 [the reference harness controller](REFERENCE_HARNESS_CONTROLLER.md).
 
-The Windows one-directory build now freezes that same harness as a third sibling
-entry point. Freeze-evidence schema v0.2 requires the GUI, Modern worker, and
-reference harness in the exact inventory, and the build must exercise the frozen
+The Windows one-directory build freezes that same harness as a third sibling
+entry point. Freeze-evidence schema v0.2 required the GUI, Modern worker, and
+reference harness in the exact inventory, and the build exercises the frozen
 harness through its controller before evidence is written. Verification retains
-version-dispatched v0.1 compatibility without granting the legacy two-entry-point
-artifact any v0.2 claim.
+version-dispatched v0.1 and v0.2 compatibility without granting either legacy
+artifact a newer evidence claim.
 
 The clean Windows build additionally audits hard parent death at this exact
 frozen boundary. It creates the reference worker suspended, lets the real
@@ -231,26 +231,29 @@ verifier and returns status `prepared_approved_reference_run_not_executed`. It
 does not call the engine or alter the frozen worker harness. See
 [approved reference preparation](REFERENCE_APPROVED_PREPARATION.md).
 
-A distinct source-level preparation worker now carries that exact authorization
+A distinct preparation worker now carries that exact authorization
 across a real child-process pipe. Its immutable request binds the complete
 approval hash, current config hash, approved plan fingerprint, run ID, and
 destination while fixing engine authorization to false. Its separate event
 ledger requires all three preparation phases in order and accepts
 `prepared_not_executed` only when the nested preparation evidence, manifest,
 destination, approval hash, and plan fingerprint agree. The worker performs no
-engine launch. It intentionally leaves the frozen nonmutating worker untouched;
-freezing, frozen-child hard-parent-death evidence, cancel semantics, and GUI
-enablement remain open.
+engine launch. It intentionally leaves the frozen nonmutating worker untouched.
+The evidence-only Windows build now adds it as a fourth sibling and v0.3 exact
+inventory entry; an externally created, independently hash-bound approval must
+complete the real frozen controller smoke before evidence is written. Frozen
+preparation hard-parent-death evidence, cancel semantics, and GUI enablement
+remain open.
 See [the approval-bound preparation worker](REFERENCE_PREPARATION_WORKER.md).
 
 Its distinct Qt-independent parent controller now prevalidates the request,
-assigns the source child to a Windows kill-on-close Job before sending an
+assigns the source or dedicated frozen child to a Windows kill-on-close Job before sending an
 ASCII-safe request line, and bounds time, event count, line size, and stderr. It
 accepts only the exact five-event lifecycle with exit code 0, then independently
 verifies the prepared run and binds the observed manifest, run ID, copied config
 hash, and backend to the request. Failure preserves any published destination
-or private crash stage. The controller is not frozen or GUI-wired and performs
-no deletion, reconciliation, cancellation, or execution. See
+or private crash stage. The controller is not GUI-wired and performs no
+deletion, reconciliation, cancellation, or execution. See
 [the preparation parent controller](REFERENCE_PREPARATION_CONTROLLER.md).
 
 The controller's Windows hard-parent-death seam now has a deterministic
