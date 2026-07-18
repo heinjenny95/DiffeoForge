@@ -438,6 +438,7 @@ and workflow for another mesh directory.
 - [Inno Setup toolchain authenticity evidence](docs/INNO_TOOLCHAIN_EVIDENCE.md)
 - [Inno Setup ISSigTool signature evidence](docs/INNO_SIGNATURE_EVIDENCE.md)
 - [Portable Inno toolchain and compiler-probe evidence](docs/INNO_PORTABLE_TOOLCHAIN_EVIDENCE.md)
+- [Engineering-only Windows installer build evidence](docs/INSTALLER_BUILD_EVIDENCE.md)
 - [Windows one-directory freeze evidence](docs/WINDOWS_FREEZE_EVIDENCE.md)
 - [Frozen dependency metadata evidence](docs/DESKTOP_DEPENDENCY_METADATA_EVIDENCE.md)
 - [Deterministic Windows CycloneDX 1.7 SBOM](docs/DESKTOP_SBOM.md)

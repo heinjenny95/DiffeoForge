@@ -521,6 +521,36 @@ def verify_desktop_installer_build_plan(
 ) -> dict[str, object]:
     """Verify the exact plan pair and reconstruct every available source binding."""
 
+    return _verify_desktop_installer_build_plan(
+        plan_path,
+        expected_plan_sha256=expected_plan_sha256,
+        include_setup_output=False,
+    )
+
+
+def verify_desktop_installer_build_plan_after_build(
+    plan_path: Path | str,
+    *,
+    expected_plan_sha256: str,
+) -> dict[str, object]:
+    """Reconstruct a plan whose exact expected setup output now exists."""
+
+    return _verify_desktop_installer_build_plan(
+        plan_path,
+        expected_plan_sha256=expected_plan_sha256,
+        include_setup_output=True,
+    )
+
+
+def _verify_desktop_installer_build_plan(
+    plan_path: Path | str,
+    *,
+    expected_plan_sha256: str,
+    include_setup_output: bool,
+) -> dict[str, object]:
+    if not isinstance(include_setup_output, bool):
+        raise TypeError("include_setup_output must be a boolean")
+
     expected = _expected_sha256(expected_plan_sha256, label="installer build plan")
     path = _real_file(plan_path, label="Installer build plan", expected_name=PLAN_NAME)
     sidecar = _real_file(
@@ -546,6 +576,10 @@ def verify_desktop_installer_build_plan(
         raise DesktopInstallerPlanError("Installer build plan is not canonical JSON")
     if Path(plan["output"]["directory"]).resolve() != path.parent:
         raise DesktopInstallerPlanError("Installer build plan output directory differs")
+    allowed_output_entries = {PLAN_NAME, SIDECAR_NAME}
+    if include_setup_output:
+        setup_filename = plan["output"]["setup_filename"]
+        allowed_output_entries.update((setup_filename, f"{setup_filename}.sha256"))
     rebuilt = _compose_plan(
         bundle_directory=plan["inputs"]["bundle"]["directory"],
         evidence_directory=plan["inputs"]["evidence"]["directory"],
@@ -557,7 +591,7 @@ def verify_desktop_installer_build_plan(
         ),
         expected_sbom_sha256=plan["inputs"]["evidence"]["sbom_sha256"],
         release_candidate=plan["source"]["release_candidate"],
-        allowed_output_entries=frozenset((PLAN_NAME, SIDECAR_NAME)),
+        allowed_output_entries=frozenset(allowed_output_entries),
     )
     if plan != rebuilt or payload != _json_bytes(rebuilt):
         raise DesktopInstallerPlanError(

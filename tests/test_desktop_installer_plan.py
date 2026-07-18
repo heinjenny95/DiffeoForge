@@ -27,6 +27,7 @@ from diffeoforge.desktop.installer_plan import (
     DesktopInstallerPlanError,
     create_desktop_installer_build_plan,
     verify_desktop_installer_build_plan,
+    verify_desktop_installer_build_plan_after_build,
 )
 from diffeoforge.desktop.sbom import create_desktop_cyclonedx_sbom
 
@@ -308,6 +309,30 @@ def test_plan_is_canonical_reconstructable_deterministic_and_non_executing(
             expected_dependency_evidence_sha256=sources[4],
             expected_sbom_sha256=sources[5],
         )
+
+
+def test_plan_can_be_reconstructed_against_exact_post_build_boundary(
+    tmp_path: Path,
+) -> None:
+    sources = _sources(tmp_path)
+    output = tmp_path / "post-build plan"
+    plan_path = _create(sources, output)
+    digest = _sha256(plan_path.read_bytes())
+    plan = json.loads(plan_path.read_text(encoding="utf-8"))
+    setup = Path(plan["output"]["setup_path"])
+    setup.write_bytes(b"synthetic unsigned setup")
+    setup.with_name(f"{setup.name}.sha256").write_bytes(
+        f"{_sha256(setup.read_bytes())}  {setup.name}\n".encode("ascii")
+    )
+
+    with pytest.raises(DesktopInstallerPlanError, match="expected plan boundary"):
+        verify_desktop_installer_build_plan(
+            plan_path, expected_plan_sha256=digest
+        )
+    rebuilt = verify_desktop_installer_build_plan_after_build(
+        plan_path, expected_plan_sha256=digest
+    )
+    assert rebuilt == plan
 
 
 def test_plan_rejects_development_release_candidate_and_wrong_runtime_version(
