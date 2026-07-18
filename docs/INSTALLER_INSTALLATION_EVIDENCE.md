@@ -1,6 +1,6 @@
 # Isolated Windows installer installation evidence
 
-Status: **first real observation accepted; integrity-verifier refinement pending re-observation**
+Status: **real lifecycle and retained-artifact integrity observations accepted**
 
 This developer-only workflow takes the exact unsigned output of the
 [engineering installer build](INSTALLER_BUILD_EVIDENCE.md) through one complete
@@ -134,8 +134,32 @@ PR state, not yet for a merged release commit.
 
 The downloaded eight-file artifact passed the new retained-integrity verifier
 against the externally recorded canonical digest. The verifier wording and
-contract correction were added after that run, so the refined source must pass
-the same lifecycle again before this pull request is merged.
+contract correction were added after that run.
+
+## Accepted refined observation
+
+GitHub Actions run
+[`29649381912`](https://github.com/heinjenny95/DiffeoForge/actions/runs/29649381912)
+then repeated the complete lifecycle from the refined PR state and invoked both
+the full live-input verifier and retained-artifact verifier before upload. It
+observed GitHub-generated pull-request merge commit
+`a3dcd09c087b9cb5dd57eb4ea02310d2316d5116`.
+
+- Canonical installation-evidence SHA-256:
+  `b2baa429c01f83e4c6636712406ad2e9e5e684798b6336291fc55c890401b952`.
+- Unsigned setup: 255,991,834 bytes; SHA-256
+  `56f9c84db0c7845df44950fa7b66100ff130cfe2c2ebba0c64c4e7330c954c20`.
+- Installed tree before launch: 2,674 files and 680,081,753 bytes.
+- Install, installed smoke, and uninstall exit codes: `0`, `0`, and `0`.
+- Desktop-process endpoints sampled during smoke: `0`.
+- Application root, Start Menu shortcut, and uninstall registration after
+  uninstall: absent.
+- External project sentinel: 29 bytes and unchanged SHA-256
+  `7edd24f8fbb194ab335dfeb47ad69cc9794ef1038ae9a5dabb5dbadbb9bf91c0`.
+- Uploaded artifact `8431172545`: exactly eight evidence/log files and no
+  executable.
+- The downloaded artifact independently passed `verify-retained` against the
+  canonical digest above.
 
 ## Explicit nonclaims
 

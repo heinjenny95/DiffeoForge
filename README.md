@@ -210,8 +210,9 @@ separate frozen workers. The exact Inno Setup pipeline has compiled one private,
 unsigned engineering setup without executing or distributing it. A separate
 ephemeral-runner [installation-evidence workflow](docs/INSTALLER_INSTALLATION_EVIDENCE.md)
 has completed its first real install/smoke/uninstall observation; a small
-retained-integrity-verifier refinement is being re-observed. No usable-installer
-or release claim follows from either compilation or lifecycle evidence.
+retained-integrity-verifier refinement has also completed re-observation. No
+usable-installer or release claim follows from either compilation or lifecycle
+evidence.
 DiffeoForge still does not provide interactive native 3D mesh rendering or
 self-intersection detection, or promise
 CPU/GPU equivalence or 300-specimen production performance. See the [modern-workflow
