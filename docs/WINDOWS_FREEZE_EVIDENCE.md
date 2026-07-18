@@ -91,7 +91,7 @@ no unresolved `License-File` declaration. Exact artifact hashes, package-field
 counts, timings, and the unchanged license/SBOM non-claims are documented in
 [Frozen dependency metadata evidence](DESKTOP_DEPENDENCY_METADATA_EVIDENCE.md).
 
-### Rejected first six-file diagnostic and pending observation
+### Rejected first six-file diagnostic
 
 [Workflow run 29637970611](https://github.com/heinjenny95/DiffeoForge/actions/runs/29637970611)
 successfully produced and independently verified exactly six evidence files
@@ -103,13 +103,79 @@ EXE containers was exactly 89,639 bytes larger than in the preceding four-file
 run. The file manifest cannot disprove embedded Python modules because they
 reside inside the executable's Python archive rather than as separate paths.
 
-The freeze specification now filters the SBOM implementation from collected
-DiffeoForge submodules, excludes it and all builder-only transitive module
-names, and fails the build if an excluded prefix nevertheless appears in any
-of the four `Analysis.pure` tables. This is a build-tool/runtime boundary fix;
-it does not change the generated SBOM content. A new clean-runner build, all
-frozen-process smokes, independent six-file artifact audit, and documentation
-update are still required before a clean-runner SBOM is cited.
+PR [#157](https://github.com/heinjenny95/DiffeoForge/pull/157) corrected the
+boundary. The freeze specification now filters the SBOM implementation from
+collected DiffeoForge submodules, excludes it and all builder-only transitive
+module names, and fails the build if an excluded prefix nevertheless appears
+in any of the four `Analysis.pure` tables. This is a build-tool/runtime
+boundary fix; it does not change the generated SBOM content.
+
+### Accepted first six-file SBOM observation
+
+[Workflow run 29638832620](https://github.com/heinjenny95/DiffeoForge/actions/runs/29638832620)
+successfully repeated the complete frozen-process contract on a fresh
+GitHub-hosted `windows-latest` runner from clean merge commit
+`b0b1ab1cffe59ab6a57c281435218d857e785d6d`. It used Python 3.12.10,
+PyInstaller 6.21.0, CPU-only Torch, and
+`Windows-2025Server-10.0.26100-SP0`. The job completed in 10 minutes 49
+seconds; tool installation took 1 minute 49 seconds, the complete build and
+verification step took 8 minutes 35 seconds, and upload took 1 second.
+
+The frozen executable observations all passed:
+
+- the public synthetic Modern run completed with 21 accepted events and a
+  destination containing spaces and `Käfer`;
+- the nonnumerical reference harness produced the three-event
+  `stopped_before_prepare` outcome and no destination;
+- hard controller death stopped the suspended reference worker after Job
+  assignment, with controller exit code 73 and no destination;
+- hard controller death stopped the suspended preparation worker before
+  request delivery, with no destination, private stage, or engine execution;
+  and
+- the approval-bound preparation request produced the exact five-event
+  `prepared_not_executed` outcome and did not start engine execution.
+
+The independently downloaded artifact contained exactly six regular,
+non-reparse files and no directories:
+
+- `freeze-evidence.json`: 518,358 bytes, SHA-256
+  `6b4109f0967386dfd1dff5164bab9b8725472c7a29495316e6cd3a4a20d766f9`;
+- `freeze-evidence.sha256`: 87 bytes, SHA-256
+  `b0dd40a2b3cfa106a2012ee906fa75d74f61e2cbf8b9040011d58ecf424a36b7`;
+- `freeze-dependency-metadata.json`: 84,988 bytes, SHA-256
+  `5256d6c7119820c7fe7e1b97dd604eed4940bfff60b3f2a3206f0e33b5b80e50`;
+- `freeze-dependency-metadata.sha256`: 98 bytes, SHA-256
+  `2cc9fa56dfe407bc8e23981a8e044fc4cf91102df175219d5cda5c1c6f56c8a4`;
+- `freeze-sbom.cdx.json`: 106,849 bytes, SHA-256
+  `1204711340dffdd77eae471834a80e9505bbbff01d2070ce7c109e12d104d640`;
+  and
+- `freeze-sbom.cdx.sha256`: 87 bytes, SHA-256
+  `4684e2949482fbf13113f5554bb617e34aeeaa0f739ab596809e4d0d3bed5f89`.
+
+All three exact sidecars verified. The independent downloaded-evidence path
+recomputed canonical JSON, the freeze-manifest aggregates, source bindings,
+package set, CycloneDX 1.7 schema, component mapping, ordering, and exact SBOM
+bytes. The freeze manifest records 2,657 files, 671,231,311 bytes, and inventory
+SHA-256 `11f25891dfb2b442a6e5470c7d3a4699289f5eae761ab7a1c4ca94b13859121e`.
+The accepted log contains zero hidden imports under the eight builder-only
+module prefixes, compared with four explicit `diffeoforge.desktop.sbom`
+hidden imports in the rejected run. Each accepted EXE container is 88,072
+bytes smaller than its rejected counterpart.
+
+The dependency evidence records 27 packages, 14 valid license expressions, 11
+legacy license fields, 152 license-file records, no unresolved declared
+license file, and package-set SHA-256
+`9f6b49be59111feb1cf40ce826274fe92f23757864fb0dfa998fea78d66d119a`.
+The SBOM has serial number `urn:uuid:3319623c-2ef5-5778-baf6-683cc961a7f8`, 27
+unique purl-sorted components, 14 emitted license expressions, no false
+component hashes, no unproved dependency graph, and composition `incomplete`.
+
+The GitHub artifact was ID `8428044632`, 711,337 bytes, with archive digest
+`sha256:924123b6e2f8b73ae2abce30778357f163ff776cd7322170dd3342b2e9986c31`
+and expiry 1 August 2026. This remains unsigned
+`engineering_evidence_not_a_release`: license/redistribution review,
+installer/uninstaller, Authenticode, Defender, clean-VM, no-network, crash,
+CPU numerical, and scientific release gates remain open.
 
 DiffeoForge can be frozen on a 64-bit Windows development machine into one
 directory containing four entry points:

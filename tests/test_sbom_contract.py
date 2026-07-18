@@ -57,7 +57,11 @@ def test_sbom_contract_is_deterministic_current_and_nonapproving() -> None:
 def test_sbom_adr_preserves_evidence_and_release_boundaries() -> None:
     text = ADR.read_text(encoding="utf-8")
 
-    assert "Status: Accepted; generator implemented, clean-runner observation pending" in text
+    assert (
+        "Status: Accepted; generator implemented and clean-runner observation complete"
+        in text
+    )
+    assert "29638832620" in text
     assert "cyclonedx-python-lib==11.11.0" in text
     assert "CycloneDX composition will therefore be `incomplete`" in text
     assert "they are not\nCycloneDX component hashes" in text

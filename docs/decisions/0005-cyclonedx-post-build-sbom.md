@@ -1,6 +1,6 @@
 # ADR 0005: Use deterministic CycloneDX 1.7 JSON for the first post-build SBOM
 
-- Status: Accepted; generator implemented, clean-runner observation pending
+- Status: Accepted; generator implemented and clean-runner observation complete
 - Date: 2026-07-18
 - Issue: [#151](https://github.com/heinjenny95/DiffeoForge/issues/151)
 
@@ -56,10 +56,13 @@ graph slice must record and bind the complete marker-evaluation environment and
 prove edge resolution before changing that claim.
 
 The output pair is `freeze-sbom.cdx.json` and
-`freeze-sbom.cdx.sha256`, written outside the bundle. After successful
-implementation, a separate clean-runner observation is still required before
-the evidence-only upload boundary may grow from four to exactly six files. No
-SBOM file is uploaded merely because this ADR exists.
+`freeze-sbom.cdx.sha256`, written outside the bundle. Implementation and upload
+integration were followed by a separate clean-runner observation before the
+six-file evidence boundary was accepted. Run
+[29638832620](https://github.com/heinjenny95/DiffeoForge/actions/runs/29638832620)
+is that first accepted observation; the exact artifact audit is documented in
+the Windows freeze evidence. No SBOM file is uploaded merely because this ADR
+exists.
 
 ## Consequences
 
