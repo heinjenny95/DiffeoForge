@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ctypes
+import hashlib
 import json
 import os
 import shutil
@@ -22,6 +23,14 @@ from diffeoforge.desktop.worker_protocol import (
     DesktopWorkerEvent,
     DesktopWorkerRequest,
     sha256_file,
+)
+from diffeoforge.reference_preparation_approval import (
+    create_reference_preparation_approval,
+    write_reference_preparation_approval,
+)
+from diffeoforge.reference_preparation_plan import (
+    plan_reference_preparation,
+    reference_preparation_plan_fingerprint,
 )
 
 ROOT = Path(__file__).parents[1]
@@ -177,6 +186,77 @@ def test_reference_parent_death_audit_terminates_suspended_worker(
     assert summary["worker_stopped"] is True
     assert summary["destination_exists"] is False
     assert not (root / "runs" / "frozen-reference-parent-death-evidence").exists()
+
+
+def test_preparation_parent_death_audit_terminates_real_suspended_worker(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "Preparation parent death Käfer"
+    shutil.copytree(ROOT / "examples" / "synthetic", root / "synthetic")
+    config = root / "atlas.yaml"
+    shutil.copyfile(ROOT / "examples" / "minimal-atlas-container.yaml", config)
+    run_id = "source-preparation-parent-death"
+    plan = plan_reference_preparation(config, run_id=run_id)
+    approval = create_reference_preparation_approval(
+        config,
+        run_id=run_id,
+        approved_fingerprint=reference_preparation_plan_fingerprint(plan),
+    )
+    approval_path = write_reference_preparation_approval(
+        approval,
+        root / "review" / "approval.json",
+    )
+    approval_hash = hashlib.sha256(approval_path.read_bytes()).hexdigest()
+    before_approval = approval_path.read_bytes()
+    before_config = config.read_bytes()
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "tools/audit_reference_preparation_parent_death.py",
+            str(approval_path),
+            str(config),
+            "--expect-request-sha256",
+            approval_hash,
+        ],
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="strict",
+        timeout=25,
+        creationflags=subprocess.CREATE_NO_WINDOW,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    evidence = json.loads(completed.stdout)
+    assert evidence["schema_version"] == "0.1"
+    assert evidence["status"] == (
+        "source_preparation_worker_terminated_after_hard_parent_death_before_request"
+    )
+    assert evidence["controller_exit_code"] == 73
+    assert evidence["job_assignment_completed"] is True
+    assert evidence["worker_started_suspended"] is True
+    assert evidence["worker_stopped"] is True
+    assert evidence["request_delivered"] is False
+    assert evidence["destination_exists"] is False
+    assert evidence["private_stage_count"] == 0
+    assert evidence["approval_request_sha256"] == approval_hash
+    assert evidence["approved_plan_fingerprint"] == (
+        approval["approval"]["approved_plan_fingerprint"]
+    )
+    assert evidence["worker"]["module"] == (
+        "diffeoforge.desktop.reference_preparation_worker_harness"
+    )
+    assert evidence["engine_execution_started"] is False
+    destination = Path(plan["run"]["destination"])
+    assert not destination.exists()
+    assert not tuple(
+        destination.parent.glob(f".diffeoforge-preparing-{run_id}-*")
+    )
+    assert approval_path.read_bytes() == before_approval
+    assert config.read_bytes() == before_config
 
 
 def test_hard_parent_exit_terminates_controller_worker(tmp_path: Path) -> None:

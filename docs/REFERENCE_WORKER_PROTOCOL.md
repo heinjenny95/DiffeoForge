@@ -62,8 +62,8 @@ cross-checks the nested approved-preparation evidence before accepting
 
 This new source harness does not modify the frozen nonnumerical request,
 protocol, controller, executable, or evidence bundle. Freeze integration and
-dedicated hard-parent-death evidence for the mutating child remain separate
-review gates.
+dedicated hard-parent-death evidence for a future frozen mutating child remain
+separate review gates.
 
 A separate source-level
 [preparation parent controller](REFERENCE_PREPARATION_CONTROLLER.md) now assigns
@@ -71,6 +71,11 @@ this new child to a Windows kill-on-close Job before request delivery, bounds
 its transport and runtime, reconciles the exact five-event lifecycle and exit
 code, and independently verifies the published prepared run. Freeze, GUI,
 cancel, recovery, and engine supervision remain open.
+
+Its real source-worker Job-assignment seam additionally has
+[hard-parent-death evidence](REFERENCE_PREPARATION_PARENT_DEATH.md) using a
+suspended child and immediate controller hard exit before request delivery.
+That audit does not extend the protocol into execution or recovery.
 
 The first executable consumer is deliberately nonnumerical: it verifies the
 request across a real stdio child-process boundary and always emits

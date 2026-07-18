@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://diffeoforge.org/schema/reference-preparation-parent-death-evidence-v0.1.json",
+  "title": "DiffeoForge source preparation-worker hard-parent-death evidence",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "status",
+    "platform",
+    "controller_exit_code",
+    "job_assignment_completed",
+    "worker_started_suspended",
+    "worker_stopped",
+    "request_delivered",
+    "destination",
+    "destination_exists",
+    "private_stage_count",
+    "approval_request_sha256",
+    "approved_plan_fingerprint",
+    "worker",
+    "engine_execution_started",
+    "checks",
+    "scientific_boundary"
+  ],
+  "properties": {
+    "schema_version": { "const": "0.1" },
+    "status": {
+      "const": "source_preparation_worker_terminated_after_hard_parent_death_before_request"
+    },
+    "platform": { "const": "windows" },
+    "controller_exit_code": { "const": 73 },
+    "job_assignment_completed": { "const": true },
+    "worker_started_suspended": { "const": true },
+    "worker_stopped": { "const": true },
+    "request_delivered": { "const": false },
+    "destination": { "type": "string", "minLength": 1 },
+    "destination_exists": { "const": false },
+    "private_stage_count": { "const": 0 },
+    "approval_request_sha256": { "$ref": "#/$defs/sha256" },
+    "approved_plan_fingerprint": { "$ref": "#/$defs/sha256" },
+    "worker": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["python", "module"],
+      "properties": {
+        "python": { "type": "string", "minLength": 1 },
+        "module": {
+          "const": "diffeoforge.desktop.reference_preparation_worker_harness"
+        }
+      }
+    },
+    "engine_execution_started": { "const": false },
+    "checks": {
+      "const": [
+        "approval_bound_request_preverified",
+        "destination_absent_before_audit",
+        "private_stage_absent_before_audit",
+        "real_preparation_worker_created_suspended",
+        "windows_kill_on_close_job_assignment_completed",
+        "controller_hard_exited_after_job_assignment",
+        "worker_stopped_within_timeout",
+        "request_never_delivered",
+        "destination_absent_after_audit",
+        "private_stage_absent_after_audit",
+        "approval_and_config_unchanged",
+        "engine_execution_not_started"
+      ]
+    },
+    "scientific_boundary": { "type": "string", "minLength": 1 }
+  },
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+  }
+}

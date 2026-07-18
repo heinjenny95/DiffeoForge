@@ -149,7 +149,10 @@ Job assignment before request delivery, bounds transport and runtime, and
 independently verifies the published prepared run. The controller explicitly
 refuses default resolution from a frozen desktop process because the required
 sibling is not yet part of the bundle. Freeze inventory, hard-parent-death
-evidence for this child, installer integration, and GUI enablement remain open.
+evidence for a future frozen sibling, installer integration, and GUI enablement
+remain open. The source worker's real Job-assignment boundary now has a separate
+suspended-worker hard-parent-death audit; that evidence does not satisfy the
+frozen bundle gate.
 
 ## Bundle and installer decisions
 

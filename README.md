@@ -176,9 +176,11 @@ hash-bound preparation-only approval and atomically publish a verified
 supervise Deformetrica. A Qt-independent parent now contains this source child,
 bounds its transport and independently verifies the prepared run, but it is not
 frozen or GUI-wired. The Modern path does not provide checkpoint/resume.
-Windows parent death now
-terminates the contained worker tree and command-pipe EOF requests cooperative
-cancellation on every platform. Versioned private markers and OS-released
+The real source preparation worker also has suspended-process Windows
+hard-parent-death evidence before request delivery. For the Modern compute
+worker, Windows parent death terminates the contained worker tree and
+command-pipe EOF requests cooperative cancellation on every platform.
+Versioned private markers and OS-released
 leases now support exact-destination, read-only discovery after hard crashes;
 automatic deletion, resume, and reconciliation remain deliberately open.
 DiffeoForge can also load the selected template outside the GUI thread and
@@ -424,6 +426,7 @@ and workflow for another mesh directory.
 - [Atomically prepare an approved reference plan](docs/REFERENCE_APPROVED_PREPARATION.md)
 - [Approval-bound reference preparation worker](docs/REFERENCE_PREPARATION_WORKER.md)
 - [Approval-bound reference preparation parent controller](docs/REFERENCE_PREPARATION_CONTROLLER.md)
+- [Source preparation-worker parent-death evidence](docs/REFERENCE_PREPARATION_PARENT_DEATH.md)
 - [Versioned reference worker lifecycle protocol](docs/REFERENCE_WORKER_PROTOCOL.md)
 - [Nonnumerical reference worker pipe harness](docs/REFERENCE_WORKER_HARNESS.md)
 - [Nonnumerical reference harness controller](docs/REFERENCE_HARNESS_CONTROLLER.md)
