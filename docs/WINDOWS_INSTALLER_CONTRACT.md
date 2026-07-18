@@ -1,16 +1,20 @@
 # Reproducible Windows installer build contract
 
-Status: **accepted design plus verified non-executing build plan; no installer executable exists yet**
+Status: **accepted design plus one verified private engineering build; no
+installer has been executed, signed, distributed, or released**
 
-The first DiffeoForge installer is deliberately specified before it is built.
+The first DiffeoForge installer was deliberately specified before its first
+private engineering compilation.
 The human-readable decision is
 [ADR 0006](decisions/0006-reproducible-windows-installer-contract.md); the exact
 machine contract is
 `distribution/windows/installer-contract-v0.1.json`.
 
-The first implementation slice adds the exact offline script
+The first implementation slice added the exact offline script
 `distribution/windows/DiffeoForge.iss` and a deterministic plan generator. It
-does not download or run Inno Setup and cannot create an installer.
+does not download or run Inno Setup and cannot create an installer by itself.
+The later, separately bounded engineering workflow has now compiled one exact
+non-release plan without executing the resulting setup.
 
 ## What is fixed
 
@@ -36,7 +40,7 @@ does not download or run Inno Setup and cannot create an installer.
 The selected official asset is `innosetup-7.0.2-x64.exe`, 17,020,192 bytes,
 SHA-256
 `5ad54ca3def786f8f4212552e54cc6d8d61329e2d24a1cfee0571d42c2684ff1`,
-from immutable release tag `is-7_0_2` in `jrsoftware/issrc`. A future build must
+from immutable release tag `is-7_0_2` in `jrsoftware/issrc`. Each build must
 run the official release-specific
 `gh release verify-asset is-7_0_2 <asset> --repo jrsoftware/issrc --format json`
 check with the positional tag fixed rather than resolving `latest`,
@@ -52,10 +56,16 @@ Before this contract permits any DiffeoForge installer build, a separate
 [portable toolchain and compiler-probe observation](INNO_PORTABLE_TOOLCHAIN_EVIDENCE.md)
 must establish that the authenticated installer prepares the exact expected
 compiler inventory and that `ISCC.exe` can compile the fixed payload-free probe.
-That observation alone still does not authorize a DiffeoForge installer build,
-signing, redistribution, or release.
+That observation alone does not authorize a DiffeoForge installer build,
+signing, redistribution, or release. A separately bounded workflow is
+documented in
+[engineering-only installer build evidence](INSTALLER_BUILD_EVIDENCE.md). It
+accepts only a `release_candidate: false` plan, produces an unsigned setup in a
+private local evidence boundary, and never executes or distributes that setup.
+The first accepted observation and its external trust anchors are recorded
+there.
 
-## Required future build inputs
+## Required build inputs
 
 The wrapper must receive rather than infer:
 

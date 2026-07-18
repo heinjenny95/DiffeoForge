@@ -1,0 +1,129 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://diffeoforge.org/schema/desktop-installer-build-evidence-v0.1.json",
+  "title": "DiffeoForge engineering Windows installer build evidence",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "status",
+    "target",
+    "observed_at",
+    "observer_source",
+    "plan",
+    "portable_toolchain_evidence",
+    "compiler_execution",
+    "setup_execution_authorized",
+    "distribution_authorized",
+    "release_authorized",
+    "missing_release_gates",
+    "scientific_boundary"
+  ],
+  "properties": {
+    "schema_version": { "const": "0.1" },
+    "status": {
+      "const": "engineering_installer_built_not_executed_signed_distributable_or_released"
+    },
+    "target": { "const": "windows-x86_64-cpu" },
+    "observed_at": { "type": "string", "format": "date-time" },
+    "observer_source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["commit_sha", "project_version", "project", "contract", "wrapper"],
+      "properties": {
+        "commit_sha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+        "project_version": { "type": "string", "minLength": 1 },
+        "project": { "$ref": "#/$defs/file" },
+        "contract": { "$ref": "#/$defs/file" },
+        "wrapper": { "$ref": "#/$defs/file" }
+      }
+    },
+    "plan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path", "bytes", "sha256", "expected_sha256", "source_commit_sha",
+        "application_version", "release_candidate", "bundle_inventory_sha256",
+        "freeze_evidence_sha256", "dependency_evidence_sha256", "sbom_sha256"
+      ],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "bytes": { "type": "integer", "minimum": 1 },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "expected_sha256": { "$ref": "#/$defs/sha256" },
+        "source_commit_sha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+        "application_version": { "type": "string", "minLength": 1 },
+        "release_candidate": { "const": false },
+        "bundle_inventory_sha256": { "$ref": "#/$defs/sha256" },
+        "freeze_evidence_sha256": { "$ref": "#/$defs/sha256" },
+        "dependency_evidence_sha256": { "$ref": "#/$defs/sha256" },
+        "sbom_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "portable_toolchain_evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path", "bytes", "sha256", "expected_sha256", "installer_sha256",
+        "compiler_probe_exit_code"
+      ],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "bytes": { "type": "integer", "minimum": 1 },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "expected_sha256": { "$ref": "#/$defs/sha256" },
+        "installer_sha256": { "$ref": "#/$defs/sha256" },
+        "compiler_probe_exit_code": { "const": 0 }
+      }
+    },
+    "compiler_execution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "raw", "program", "command", "exit_code", "output_lines", "setup",
+        "setup_sidecar", "setup_authenticode_status", "setup_execution",
+        "distribution_authorized"
+      ],
+      "properties": {
+        "raw": { "$ref": "#/$defs/file" },
+        "program": { "$ref": "#/$defs/file" },
+        "command": {
+          "type": "array",
+          "minItems": 9,
+          "maxItems": 9,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "exit_code": { "const": 0 },
+        "output_lines": { "type": "array", "items": { "type": "string" } },
+        "setup": { "$ref": "#/$defs/file" },
+        "setup_sidecar": { "$ref": "#/$defs/file" },
+        "setup_authenticode_status": { "const": "NotSigned" },
+        "setup_execution": { "const": false },
+        "distribution_authorized": { "const": false }
+      }
+    },
+    "setup_execution_authorized": { "const": false },
+    "distribution_authorized": { "const": false },
+    "release_authorized": { "const": false },
+    "missing_release_gates": {
+      "type": "array",
+      "minItems": 10,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "scientific_boundary": { "type": "string", "minLength": 1 }
+  },
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "file": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "bytes", "sha256"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "bytes": { "type": "integer", "minimum": 1 },
+        "sha256": { "$ref": "#/$defs/sha256" }
+      }
+    }
+  }
+}

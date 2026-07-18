@@ -19,6 +19,7 @@ REQUIRED_MODULES = {
     "diffeoforge/desktop/inno_portable_toolchain_evidence.py",
     "diffeoforge/desktop/inno_signature_evidence.py",
     "diffeoforge/desktop/inno_toolchain_evidence.py",
+    "diffeoforge/desktop/installer_build_evidence.py",
     "diffeoforge/desktop/installer_plan.py",
     "diffeoforge/desktop/sbom.py",
 }

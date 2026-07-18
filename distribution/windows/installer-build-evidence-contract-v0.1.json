@@ -1,0 +1,44 @@
+{
+  "schema_version": "0.1",
+  "status": "accepted_engineering_build_evidence_contract_not_release_authorization",
+  "target": "windows-x86_64-cpu",
+  "required_prerequisites": {
+    "externally_hash_bound_installer_plan": true,
+    "plan_release_candidate": false,
+    "externally_hash_bound_portable_toolchain_evidence": true,
+    "exact_authenticated_iscc_from_portable_inventory": true,
+    "offline_reconstruction_before_compiler_execution": true
+  },
+  "execution": {
+    "compiler": "ISCC.exe",
+    "exact_plan_argument_count": 9,
+    "shell": false,
+    "compiler_exit_code": 0,
+    "expected_setup_authenticode_status": "NotSigned",
+    "setup_execution": false,
+    "distribution_authorized": false
+  },
+  "output": {
+    "plan_directory_files": [
+      "installer-build-plan.json",
+      "installer-build-plan.sha256",
+      "<exact-plan-setup-filename>",
+      "<exact-plan-setup-filename>.sha256"
+    ],
+    "evidence_directory_files": [
+      "installer-compiler-observation.json",
+      "installer-build-evidence.json",
+      "installer-build-evidence.sha256"
+    ],
+    "overwrite": false,
+    "offline_reconstruction": true
+  },
+  "nonclaims": [
+    "usable_or_distributable_installer",
+    "setup_or_uninstaller_execution",
+    "authenticode_for_diffeoforge_outputs",
+    "license_compatibility_or_redistribution_approval",
+    "bit_for_bit_compiler_output_determinism",
+    "clean_vm_defender_no_network_numerical_or_scientific_validation"
+  ]
+}

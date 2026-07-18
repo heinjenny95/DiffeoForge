@@ -123,6 +123,9 @@ def test_installer_adr_and_guide_match_machine_contract_and_nonclaims() -> None:
         assert "byte" in text.lower()
 
     assert "no installer implemented or distributed" in adr
-    assert "no installer executable exists yet" in guide
+    assert "one verified private engineering build" in guide
+    assert "no installer has been executed, signed, distributed, or released" in " ".join(
+        guide.split()
+    )
     assert "redistribution approval" in adr
     assert "No executable will be uploaded or described as usable" in guide
