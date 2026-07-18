@@ -56,6 +56,14 @@ def _validate_evidence(value: Mapping[str, Any]) -> None:
     )
 
 
+def validate_approved_reference_preparation_evidence(
+    value: Mapping[str, Any],
+) -> None:
+    """Validate one public preparation-only evidence document."""
+
+    _validate_evidence(value)
+
+
 def _normalize_sha256(value: str) -> str:
     if not isinstance(value, str):
         raise ConfigurationError("Expected approval request SHA-256 must be a string")

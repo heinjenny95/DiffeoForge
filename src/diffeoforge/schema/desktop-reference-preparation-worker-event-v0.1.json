@@ -1,0 +1,123 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://diffeoforge.org/schema/desktop-reference-preparation-worker-event-v0.1.json",
+  "title": "DiffeoForge approval-bound reference preparation worker event",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "reference_preparation_worker_event_version",
+    "request_id",
+    "sequence",
+    "kind",
+    "payload"
+  ],
+  "properties": {
+    "reference_preparation_worker_event_version": { "const": "0.1" },
+    "request_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+    },
+    "sequence": { "type": "integer", "minimum": 0 },
+    "kind": { "enum": ["accepted", "phase", "terminal"] },
+    "payload": { "type": "object" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "kind": { "const": "accepted" } } },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/accepted" } } }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "phase" } } },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/phase" } } }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "terminal" } } },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/terminal" } } }
+    }
+  ],
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "accepted": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "operation",
+        "approval_request_sha256",
+        "config_sha256",
+        "approved_plan_fingerprint",
+        "run_id",
+        "destination",
+        "engine_execution_authorized"
+      ],
+      "properties": {
+        "operation": { "const": "prepare_approved_only" },
+        "approval_request_sha256": { "$ref": "#/$defs/sha256" },
+        "config_sha256": { "$ref": "#/$defs/sha256" },
+        "approved_plan_fingerprint": { "$ref": "#/$defs/sha256" },
+        "run_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+        },
+        "destination": { "type": "string", "minLength": 1 },
+        "engine_execution_authorized": { "const": false }
+      }
+    },
+    "phase": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["phase", "message"],
+      "properties": {
+        "phase": {
+          "enum": ["verify_request", "prepare_approved", "verify_prepared_run"]
+        },
+        "message": { "type": "string", "minLength": 1 }
+      }
+    },
+    "terminal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "outcome",
+        "destination",
+        "destination_exists",
+        "approval_request_sha256",
+        "approved_plan_fingerprint",
+        "manifest_sha256",
+        "preparation_evidence",
+        "engine_execution_started",
+        "message"
+      ],
+      "properties": {
+        "outcome": { "enum": ["prepared_not_executed", "failed"] },
+        "destination": { "type": "string", "minLength": 1 },
+        "destination_exists": { "type": "boolean" },
+        "approval_request_sha256": { "$ref": "#/$defs/sha256" },
+        "approved_plan_fingerprint": { "$ref": "#/$defs/sha256" },
+        "manifest_sha256": {
+          "type": ["string", "null"],
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "preparation_evidence": { "type": ["object", "null"] },
+        "engine_execution_started": { "const": false },
+        "message": { "type": "string", "minLength": 1 }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "outcome": { "const": "prepared_not_executed" },
+            "destination_exists": { "const": true },
+            "manifest_sha256": { "$ref": "#/$defs/sha256" },
+            "preparation_evidence": { "type": "object" }
+          }
+        },
+        {
+          "properties": {
+            "outcome": { "const": "failed" },
+            "manifest_sha256": { "type": "null" },
+            "preparation_evidence": { "type": "null" }
+          }
+        }
+      ]
+    }
+  }
+}

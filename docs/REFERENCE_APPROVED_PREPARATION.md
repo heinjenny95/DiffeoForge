@@ -92,7 +92,9 @@ mesh homology, registration, convergence, numerical equivalence, or biological
 interpretation. Engine execution remains a separate `diffeoforge execute`
 action.
 
-The frozen desktop reference-worker harness is still intentionally restricted
-to `stopped_before_prepare`. Wiring this approval-aware consumer into a new
-worker request and parent-supervised `prepared_not_executed` lifecycle is a
-separate reviewable slice.
+The frozen desktop reference-worker harness remains intentionally restricted to
+`stopped_before_prepare`. A separate source-level
+[approval-bound preparation worker](REFERENCE_PREPARATION_WORKER.md) now
+consumes this service over a strict pipe and emits a reconciled
+`prepared_not_executed` lifecycle. It is not yet frozen, parent-contained, or
+wired into the GUI, and it still cannot authorize or start engine execution.
