@@ -85,6 +85,7 @@ This roadmap describes evidence gates rather than promised dates.
   - [x] Approval-aware exact private staging and atomic prepared-not-executed publication
   - [x] Approval-bound real-pipe preparation worker with strict prepared-not-executed evidence
   - [x] Bounded approval-bound preparation parent controller with Windows Job containment
+  - [x] Source preparation-worker hard-parent-death Job evidence before request delivery
   - [ ] User-approved private-run reconciliation, reference supervision, and native mesh rendering
 - [ ] Parameter explanations and safe presets
 - [x] Pre-compute configured all-pairs and known-payload workload report

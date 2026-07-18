@@ -40,8 +40,11 @@ The parent enforces:
 - exact terminal-outcome/exit-code agreement.
 
 Timeout or protocol failure stops the child. The worker currently starts no
-descendant process. Dedicated hard-parent-death evidence for this new child and
-portable process-tree containment remain later gates.
+descendant process. A dedicated
+[Windows hard-parent-death audit](REFERENCE_PREPARATION_PARENT_DEATH.md) now
+proves Job-driven termination of the real source worker created suspended and
+killed before request delivery. Frozen-bundle and portable process-tree
+containment remain later gates.
 
 ## Accepted success
 
