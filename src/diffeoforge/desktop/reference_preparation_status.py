@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -16,6 +15,7 @@ from diffeoforge.reference_preparation_reconciliation import (
     reconcile_reference_preparation,
     serialize_reference_preparation_reconciliation,
     validate_reference_preparation_reconciliation,
+    write_reference_preparation_reconciliation,
 )
 
 
@@ -304,38 +304,16 @@ def export_reference_preparation_status_report(
     if not isinstance(status, DesktopReferencePreparationStatus):
         raise TypeError("status must be a DesktopReferencePreparationStatus")
     report = _validated_status_report(status.report_bytes, status.report_sha256)
-    target = Path(destination).expanduser().absolute()
-    if target.exists() or target.is_symlink():
-        raise DesktopReferencePreparationStatusExportError(
-            f"Export destination already exists and will not be overwritten: {target}"
-        )
-    parent = target.parent
-    if not parent.exists() or parent.is_symlink() or not parent.is_dir():
-        raise DesktopReferencePreparationStatusExportError(
-            f"Export parent must be an existing real directory: {parent}"
-        )
-
-    flags = os.O_CREAT | os.O_EXCL | os.O_RDWR | getattr(os, "O_BINARY", 0)
     try:
-        descriptor = os.open(target, flags, 0o600)
-    except FileExistsError as error:
+        target = write_reference_preparation_reconciliation(report, destination)
+        observed = target.read_bytes()
+    except ConfigurationError as error:
         raise DesktopReferencePreparationStatusExportError(
-            f"Export destination already exists and will not be overwritten: {target}"
+            f"Could not export preparation status report: {error}"
         ) from error
     except OSError as error:
         raise DesktopReferencePreparationStatusExportError(
-            f"Could not create preparation status export {target}: {error}"
-        ) from error
-    try:
-        with os.fdopen(descriptor, "w+b") as handle:
-            handle.write(status.report_bytes)
-            handle.flush()
-            os.fsync(handle.fileno())
-            handle.seek(0)
-            observed = handle.read()
-    except OSError as error:
-        raise DesktopReferencePreparationStatusExportError(
-            f"Could not complete preparation status export {target}: {error}"
+            f"Could not reread preparation status export: {error}"
         ) from error
     if observed != status.report_bytes:
         raise DesktopReferencePreparationStatusExportError(

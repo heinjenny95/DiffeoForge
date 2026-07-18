@@ -11,7 +11,7 @@ worker, host, or power failure:
 diffeoforge reference-preparation-status review\pilot-001-approval.json `
   --current-config atlas.yaml `
   --expect-request-sha256 THE_INDEPENDENTLY_RECORDED_REQUEST_SHA256 `
-  --json > review\pilot-001-preparation-status.json
+  --output review\pilot-001-preparation-status.json
 ```
 
 Omit `--json` for a short human-readable summary. Exit code 0 means either
@@ -77,6 +77,14 @@ retains those exact immutable bytes and their SHA-256, then can write them only
 to one explicitly selected new JSON file. That export never overwrites an
 existing path and must be treated as private provenance because the report
 contains absolute paths and file names.
+
+The `--output` path is created exclusively in an existing real parent
+directory and is never replaced. It avoids shell-dependent re-encoding of
+native standard output. `--json` emits the same exact deterministic UTF-8 bytes
+when a caller deliberately manages binary standard output. A saved report can
+later be checked against an independently recorded complete-file SHA-256
+without reading current external state; see
+[saved status verification](REFERENCE_PREPARATION_RECONCILIATION_VERIFICATION.md).
 
 ## Boundary
 

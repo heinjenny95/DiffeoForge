@@ -113,7 +113,8 @@ This repository currently provides:
   validation, modern/reference project creation, effective-parameter review,
   hash-bound reference-environment and future-prelaunch inspection plus
   approval-bound read-only reference preparation status with an exact,
-  non-overwriting JSON provenance export,
+  non-overwriting JSON provenance export and strict external-hash saved-report
+  verification,
   shared-core workload/preflight evidence, and a verified Modern-only
   start/live-event/cancel screen followed by a fully reverified Atlas/PCA/QC
   summary with inventory-bound artifact handoff;
@@ -430,6 +431,7 @@ and workflow for another mesh directory.
 - [Reference preparation-only approval](docs/REFERENCE_PREPARATION_APPROVAL.md)
 - [Atomically prepare an approved reference plan](docs/REFERENCE_APPROVED_PREPARATION.md)
 - [Approval-bound read-only reference preparation status](docs/REFERENCE_PREPARATION_RECONCILIATION.md)
+- [Saved reference preparation status verification](docs/REFERENCE_PREPARATION_RECONCILIATION_VERIFICATION.md)
 - [Desktop reference preparation status](docs/DESKTOP_REFERENCE_PREPARATION_STATUS.md)
 - [Approval-bound reference preparation worker](docs/REFERENCE_PREPARATION_WORKER.md)
 - [Frozen approval-bound reference preparation worker](docs/FROZEN_REFERENCE_PREPARATION_WORKER.md)

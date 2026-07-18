@@ -88,6 +88,54 @@ def serialize_reference_preparation_reconciliation(
     ).encode("utf-8")
 
 
+def write_reference_preparation_reconciliation(
+    value: Mapping[str, Any],
+    output_path: Path | str,
+) -> Path:
+    """Write one deterministic report exclusively to an existing real directory."""
+
+    payload = serialize_reference_preparation_reconciliation(value)
+    destination = Path(output_path).expanduser().absolute()
+    if destination.exists() or destination.is_symlink():
+        raise ConfigurationError(
+            "Reconciliation report already exists and will not be overwritten: "
+            f"{destination}"
+        )
+    parent = destination.parent
+    if not parent.exists() or parent.is_symlink() or not parent.is_dir():
+        raise ConfigurationError(
+            f"Reconciliation report parent must be an existing real directory: {parent}"
+        )
+    flags = os.O_CREAT | os.O_EXCL | os.O_RDWR | getattr(os, "O_BINARY", 0)
+    try:
+        descriptor = os.open(destination, flags, 0o600)
+    except FileExistsError as error:
+        raise ConfigurationError(
+            "Reconciliation report already exists and will not be overwritten: "
+            f"{destination}"
+        ) from error
+    except OSError as error:
+        raise ConfigurationError(
+            f"Could not create reconciliation report {destination}: {error}"
+        ) from error
+    try:
+        with os.fdopen(descriptor, "w+b") as handle:
+            handle.write(payload)
+            handle.flush()
+            os.fsync(handle.fileno())
+            handle.seek(0)
+            observed = handle.read()
+    except OSError as error:
+        raise ConfigurationError(
+            f"Could not complete reconciliation report {destination}: {error}"
+        ) from error
+    if observed != payload:
+        raise ConfigurationError(
+            f"Reconciliation report did not preserve exact bytes: {destination}"
+        )
+    return destination
+
+
 def _normalize_sha256(value: str) -> str:
     if not isinstance(value, str):
         raise ConfigurationError("Expected approval SHA-256 must be a string")
