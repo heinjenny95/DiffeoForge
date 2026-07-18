@@ -53,3 +53,8 @@ This is not the production reference worker. The harness has no cancel reader,
 descendant process, preparation, result verification, recovery, resume, or GUI
 wiring. Its terminal stop and the controller's verified result are engineering
 transport evidence, not a completed atlas and not scientific evidence.
+
+The separate shared-core
+[approved preparation service](REFERENCE_APPROVED_PREPARATION.md) now provides
+the exact mutation that a future request version may consume. It is deliberately
+not wired into this v0.1 harness or its frozen evidence yet.

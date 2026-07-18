@@ -169,10 +169,24 @@ diffeoforge reference-plan-approval-verify pilot-001-approval.json `
 
 This request embeds the full plan, fresh-matches it to the copied fingerprint,
 and permanently fixes engine authorization to false. It is not an identity or
-signature record. The current `prepare` command does not yet consume the
-approval; this deliberately transparent seam precedes the future atomic
-approval-aware preparation worker. See
+signature record. See
 [reference preparation-only approval](REFERENCE_PREPARATION_APPROVAL.md).
+
+For the strict approval-aware mutation, independently record the complete
+request SHA-256 printed by the verifier, then run:
+
+```powershell
+diffeoforge reference-prepare-approved pilot-001-approval.json `
+  --current-config atlas.yaml `
+  --expect-request-sha256 REVIEWED_REQUEST_SHA256 |
+  Out-File -Encoding ascii pilot-001-preparation-evidence.json
+```
+
+This path fresh-replans, exact-matches private staged bytes, atomically publishes
+without replacement, verifies the immutable run and empty output, and returns
+before any engine execution. The generic `prepare` command does not enforce an
+approval. See
+[atomically prepare an approved reference plan](REFERENCE_APPROVED_PREPARATION.md).
 
 For a cohort of hundreds of specimens, start with a small representative pilot
 and inspect the objective curves, lifecycle, evidence checks, and output

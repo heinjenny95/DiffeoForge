@@ -17,6 +17,7 @@ from diffeoforge.initialization import (
     initialize_project,
 )
 from diffeoforge.reference import compare_reference_run
+from diffeoforge.reference_approved_preparation import prepare_approved_reference_run
 from diffeoforge.reference_preparation_approval import (
     create_reference_preparation_approval,
     verify_saved_reference_preparation_approval,
@@ -515,6 +516,24 @@ def build_parser() -> argparse.ArgumentParser:
         "--current-config",
         type=Path,
         help="Also require a fresh current plan to match the embedded approved plan exactly.",
+    )
+    reference_prepare_approved_parser = subparsers.add_parser(
+        "reference-prepare-approved",
+        help="Atomically prepare one externally hash-bound approval without execution.",
+    )
+    reference_prepare_approved_parser.add_argument(
+        "request", type=Path, help="Saved preparation-only approval request JSON."
+    )
+    reference_prepare_approved_parser.add_argument(
+        "--current-config",
+        type=Path,
+        required=True,
+        help="Current reference atlas config that must exactly reproduce the approved plan.",
+    )
+    reference_prepare_approved_parser.add_argument(
+        "--expect-request-sha256",
+        required=True,
+        help="Independently recorded SHA-256 of the complete approval-request file.",
     )
     prepare_parser = subparsers.add_parser(
         "prepare",
@@ -1423,6 +1442,20 @@ def main(argv: Sequence[str] | None = None) -> int:
             evidence = verify_saved_reference_preparation_approval(
                 args.request,
                 current_config_path=args.current_config,
+            )
+            json.dump(evidence, sys.stdout, indent=2, ensure_ascii=True, sort_keys=True)
+            sys.stdout.write("\n")
+        except (ConfigurationError, OSError, TypeError, ValueError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
+
+    if args.command == "reference-prepare-approved":
+        try:
+            evidence = prepare_approved_reference_run(
+                args.request,
+                current_config_path=args.current_config,
+                expected_request_sha256=args.expect_request_sha256,
             )
             json.dump(evidence, sys.stdout, indent=2, ensure_ascii=True, sort_keys=True)
             sys.stdout.write("\n")
