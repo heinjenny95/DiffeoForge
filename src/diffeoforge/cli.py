@@ -21,8 +21,10 @@ from diffeoforge.reference import compare_reference_run
 from diffeoforge.reference_approved_preparation import prepare_approved_reference_run
 from diffeoforge.reference_preparation_approval import (
     create_reference_preparation_approval,
+    serialize_reference_preparation_approval_verification,
     verify_saved_reference_preparation_approval,
     write_reference_preparation_approval,
+    write_reference_preparation_approval_verification,
 )
 from diffeoforge.reference_preparation_plan import (
     plan_reference_preparation,
@@ -39,7 +41,9 @@ from diffeoforge.reference_preparation_reconciliation_verification import (
     write_reference_preparation_reconciliation_verification,
 )
 from diffeoforge.reference_preparation_verification import (
+    serialize_reference_preparation_plan_verification,
     verify_saved_reference_preparation_plan,
+    write_reference_preparation_plan_verification,
 )
 from diffeoforge.report import (
     collect_preflight,
@@ -504,6 +508,14 @@ def build_parser() -> argparse.ArgumentParser:
         "--expect-fingerprint",
         help="Optional externally recorded canonical plan SHA-256.",
     )
+    reference_plan_verify_parser.add_argument(
+        "--output",
+        type=Path,
+        help=(
+            "Write exact verification evidence to a new file; an existing path is "
+            "never replaced."
+        ),
+    )
     reference_plan_approve_parser = subparsers.add_parser(
         "reference-plan-approve",
         help="Bind preparation-only approval to one freshly recomputed exact plan.",
@@ -538,6 +550,14 @@ def build_parser() -> argparse.ArgumentParser:
         "--current-config",
         type=Path,
         help="Also require a fresh current plan to match the embedded approved plan exactly.",
+    )
+    reference_plan_approval_verify_parser.add_argument(
+        "--output",
+        type=Path,
+        help=(
+            "Write exact verification evidence to a new file; an existing path is "
+            "never replaced."
+        ),
     )
     reference_preparation_status_parser = subparsers.add_parser(
         "reference-preparation-status",
@@ -1486,8 +1506,21 @@ def main(argv: Sequence[str] | None = None) -> int:
                 report_path=args.report,
                 expected_fingerprint=args.expect_fingerprint,
             )
-            json.dump(evidence, sys.stdout, indent=2, ensure_ascii=True, sort_keys=True)
-            sys.stdout.write("\n")
+            payload = serialize_reference_preparation_plan_verification(evidence)
+            if args.output is None:
+                _write_stdout_bytes(payload)
+            else:
+                written = write_reference_preparation_plan_verification(
+                    evidence,
+                    args.output,
+                )
+                if written.read_bytes() != payload:
+                    raise ConfigurationError(
+                        f"Saved plan verification evidence changed after writing: {written}"
+                    )
+                encoded_path = json.dumps(str(written), ensure_ascii=True)
+                print(f"Saved plan verification evidence: {encoded_path}")
+                print(f"Evidence SHA-256: {hashlib.sha256(payload).hexdigest()}")
         except (ConfigurationError, OSError, TypeError, ValueError) as error:
             print(f"ERROR: {error}", file=sys.stderr)
             return 2
@@ -1516,8 +1549,22 @@ def main(argv: Sequence[str] | None = None) -> int:
                 args.request,
                 current_config_path=args.current_config,
             )
-            json.dump(evidence, sys.stdout, indent=2, ensure_ascii=True, sort_keys=True)
-            sys.stdout.write("\n")
+            payload = serialize_reference_preparation_approval_verification(evidence)
+            if args.output is None:
+                _write_stdout_bytes(payload)
+            else:
+                written = write_reference_preparation_approval_verification(
+                    evidence,
+                    args.output,
+                )
+                if written.read_bytes() != payload:
+                    raise ConfigurationError(
+                        "Saved approval verification evidence changed after writing: "
+                        f"{written}"
+                    )
+                encoded_path = json.dumps(str(written), ensure_ascii=True)
+                print(f"Saved approval verification evidence: {encoded_path}")
+                print(f"Evidence SHA-256: {hashlib.sha256(payload).hexdigest()}")
         except (ConfigurationError, OSError, TypeError, ValueError) as error:
             print(f"ERROR: {error}", file=sys.stderr)
             return 2

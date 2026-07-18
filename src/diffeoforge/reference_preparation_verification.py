@@ -14,6 +14,7 @@ from jsonschema import Draft202012Validator
 
 from diffeoforge import __version__
 from diffeoforge.config import ConfigurationError
+from diffeoforge.exact_file import write_new_exact_file
 from diffeoforge.reference_preparation_plan import (
     reference_preparation_plan_fingerprint,
     render_reference_preparation_plan_html,
@@ -55,6 +56,30 @@ def _validate_verification(evidence: Mapping[str, Any]) -> None:
 
 def _sha256_bytes(payload: bytes) -> str:
     return hashlib.sha256(payload).hexdigest()
+
+
+def serialize_reference_preparation_plan_verification(
+    evidence: Mapping[str, Any],
+) -> bytes:
+    """Serialize validated plan-verification evidence as deterministic ASCII JSON."""
+
+    _validate_verification(evidence)
+    return (
+        json.dumps(evidence, indent=2, ensure_ascii=True, sort_keys=True) + "\n"
+    ).encode("ascii")
+
+
+def write_reference_preparation_plan_verification(
+    evidence: Mapping[str, Any],
+    output_path: Path | str,
+) -> Path:
+    """Write exact plan-verification evidence without replacing any path."""
+
+    return write_new_exact_file(
+        serialize_reference_preparation_plan_verification(evidence),
+        output_path,
+        artifact_label="Reference preparation plan verification evidence",
+    )
 
 
 def _read_required_file(path: Path, label: str) -> bytes:

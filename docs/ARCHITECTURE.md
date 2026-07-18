@@ -286,6 +286,16 @@ verification evidence. It deliberately reads no current config, meshes,
 approval, run path, process, container, or engine state. See
 [saved status verification](REFERENCE_PREPARATION_RECONCILIATION_VERIFICATION.md).
 
+The older saved-plan and saved-approval verifiers expose the same exact-output
+discipline at the CLI boundary. Their shared serializers schema-revalidate and
+produce deterministic ASCII bytes for either binary stdout or an explicitly
+selected new evidence file. Exclusive creation requires an existing real
+parent, refuses existing paths and links, rereads exact bytes, and reports a
+complete-file SHA-256. This changes no plan, approval, preparation, or engine
+semantics; it only removes shell text encoding from evidence archival. See
+[saved plan verification](REFERENCE_PREPARATION_VERIFICATION.md) and
+[preparation-only approval](REFERENCE_PREPARATION_APPROVAL.md).
+
 The first desktop screen maps that same verifier into a Qt-independent bounded
 view model and runs it on the shared background-operation gate. It requires no
 active project or review. Path/hash edits invalidate prior evidence, and the

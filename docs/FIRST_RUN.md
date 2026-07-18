@@ -147,7 +147,8 @@ Verify a saved pair later with:
 
 ```powershell
 diffeoforge reference-plan-verify pilot-001-preparation.json `
-  --report pilot-001-preparation.html
+  --report pilot-001-preparation.html `
+  --output pilot-001-plan-verification.json
 ```
 
 This checks the saved artifacts only; it does not claim the current meshes are
@@ -164,12 +165,15 @@ diffeoforge reference-plan-approve atlas.yaml --run-id pilot-001 `
   --output pilot-001-approval.json
 
 diffeoforge reference-plan-approval-verify pilot-001-approval.json `
-  --current-config atlas.yaml
+  --current-config atlas.yaml `
+  --output pilot-001-approval-verification.json
 ```
 
 This request embeds the full plan, fresh-matches it to the copied fingerprint,
 and permanently fixes engine authorization to false. It is not an identity or
-signature record. See
+signature record. Both verifier outputs are deterministic, exclusive-create
+evidence files; hash each complete evidence file independently before
+archiving it. See
 [reference preparation-only approval](REFERENCE_PREPARATION_APPROVAL.md).
 
 Before preparation, after a successful stopped-before-execution preparation,

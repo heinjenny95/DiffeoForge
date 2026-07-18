@@ -16,8 +16,10 @@ from diffeoforge.reference_preparation_approval import (
     APPROVAL_STATEMENT,
     create_reference_preparation_approval,
     serialize_reference_preparation_approval,
+    serialize_reference_preparation_approval_verification,
     verify_saved_reference_preparation_approval,
     write_reference_preparation_approval,
+    write_reference_preparation_approval_verification,
 )
 from diffeoforge.reference_preparation_plan import (
     plan_reference_preparation,
@@ -160,6 +162,36 @@ def test_verify_request_internally_and_against_fresh_current_state_is_read_only(
     assert not (root / "runs").exists()
 
 
+def test_approval_verification_evidence_write_is_exact_exclusive_and_requires_parent(
+    tmp_path: Path,
+) -> None:
+    root = _project(tmp_path)
+    request_path, _ = _saved_request(root)
+    evidence = verify_saved_reference_preparation_approval(request_path)
+    payload = serialize_reference_preparation_approval_verification(evidence)
+    output = root / "review" / "approval-verification.json"
+
+    written = write_reference_preparation_approval_verification(evidence, output)
+
+    assert written == output.resolve()
+    assert written.read_bytes() == payload
+    assert all(byte < 128 for byte in payload)
+    invalid = deepcopy(evidence)
+    invalid["status"] = "unverified"
+    with pytest.raises(ConfigurationError, match="schema violation"):
+        serialize_reference_preparation_approval_verification(invalid)
+    preserved = written.read_bytes()
+    with pytest.raises(ConfigurationError, match="will not be overwritten"):
+        write_reference_preparation_approval_verification(evidence, output)
+    assert written.read_bytes() == preserved
+    with pytest.raises(ConfigurationError, match="existing real directory"):
+        write_reference_preparation_approval_verification(
+            evidence,
+            root / "missing" / "approval-verification.json",
+        )
+    assert not (root / "missing").exists()
+
+
 def test_verify_rejects_stale_current_state_without_changing_request(tmp_path: Path) -> None:
     root = _project(tmp_path)
     request_path, _ = _saved_request(root)
@@ -293,6 +325,55 @@ def test_approval_cli_round_trip_is_ascii_safe_and_does_not_prepare(tmp_path: Pa
     assert verified.stderr == b""
     assert all(byte < 128 for byte in verified.stdout)
     evidence = json.loads(verified.stdout.decode("ascii"))
+    assert verified.stdout == serialize_reference_preparation_approval_verification(evidence)
     assert evidence["status"] == "verified_reference_preparation_approval"
     assert evidence["current_state"]["matches_approved_plan"] is True
     assert not (root / "runs").exists()
+
+    evidence_path = root / "Überprüfung" / "Freigabe-Verifikation.json"
+    exported = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "diffeoforge",
+            "reference-plan-approval-verify",
+            str(request_path),
+            "--current-config",
+            str(config),
+            "--output",
+            str(evidence_path),
+        ],
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+        text=False,
+    )
+
+    assert exported.returncode == 0, exported.stderr.decode(errors="replace")
+    assert exported.stderr == b""
+    assert evidence_path.read_bytes() == verified.stdout
+    output_text = exported.stdout.decode("ascii")
+    assert (
+        "Saved approval verification evidence: "
+        f"{json.dumps(str(evidence_path.resolve()), ensure_ascii=True)}" in output_text
+    )
+    assert hashlib.sha256(verified.stdout).hexdigest() in output_text
+    preserved = evidence_path.read_bytes()
+    duplicate = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "diffeoforge",
+            "reference-plan-approval-verify",
+            str(request_path),
+            "--output",
+            str(evidence_path),
+        ],
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+        text=False,
+    )
+    assert duplicate.returncode == 2
+    assert b"will not be overwritten" in duplicate.stderr
+    assert evidence_path.read_bytes() == preserved

@@ -10,12 +10,22 @@ diffeoforge reference-plan atlas.yaml --run-id pilot-001 `
   --report review/pilot-001.html > review/pilot-001.json
 
 diffeoforge reference-plan-verify review/pilot-001.json `
-  --report review/pilot-001.html
+  --report review/pilot-001.html `
+  --output review/pilot-001-plan-verification.json
 ```
 
-The verifier prints one ASCII-safe JSON evidence document to stdout and writes
-nothing. It accepts the report only when its UTF-8 bytes exactly equal a fresh
+Without `--output`, the verifier writes one exact ASCII-safe JSON evidence
+document directly to binary stdout and creates no file. With `--output`, it
+writes those same deterministic bytes exclusively to a new file, rereads them,
+and prints the complete-file SHA-256. The parent directory must already exist;
+an existing file, link, missing parent, or linked parent is rejected without a
+sidecar. It accepts the report only when its UTF-8 bytes exactly equal a fresh
 deterministic rendering from the saved plan.
+
+Independently record the complete verification-evidence hash before archiving
+or sharing the file. That hash binds the exported evidence bytes, whereas
+`--expect-fingerprint` binds the canonical saved plan values to an external
+review record.
 
 ## External fingerprint binding
 
@@ -55,6 +65,11 @@ Evidence schema `reference-preparation-plan-verification-v0.1.json` records the
 saved-file byte hashes, canonical and optional expected fingerprint, report hash
 and regeneration result, the recorded run ID/destination/counts, completed
 checks, DiffeoForge version, and the interpretation boundary.
+
+The evidence serializer validates this schema again before writing sorted,
+indented, ASCII-safe JSON with exactly one final newline. File output and
+stdout therefore use the same shared byte contract and do not rely on shell
+redirection or platform text encoding.
 
 ## Interpretation boundary
 

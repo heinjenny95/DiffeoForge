@@ -68,7 +68,8 @@ For the stronger current-state check, supply the config again:
 
 ```powershell
 diffeoforge reference-plan-approval-verify review/pilot-001-approval.json `
-  --current-config atlas.yaml
+  --current-config atlas.yaml `
+  --output review/pilot-001-approval-verification.json
 ```
 
 The second form freshly reconstructs the plan using the embedded normalized run
@@ -78,8 +79,17 @@ serialization, command preview, or destination absence.
 
 Both forms parse strict UTF-8 JSON, reject duplicate keys, non-finite constants,
 trailing documents, schema violations, embedded-plan/fingerprint disagreement,
-and request changes during verification. The verifier prints versioned
-`reference-preparation-approval-verification-v0.1` evidence and writes nothing.
+and request changes during verification. Without `--output`, the verifier
+writes versioned `reference-preparation-approval-verification-v0.1` evidence
+directly to binary stdout and creates no file. With `--output`, it writes the
+same schema-revalidated, deterministic ASCII bytes exclusively to a new file,
+rereads them, and prints their complete-file SHA-256. The parent must already
+exist and be a real directory; existing targets, links, missing parents, and
+linked parents fail closed without a sidecar.
+
+Independently record the complete verification-evidence hash before archiving
+or sharing it. Evidence export does not strengthen approval scope, prove
+identity, or authorize preparation or execution.
 
 ## Atomic consumer boundary
 

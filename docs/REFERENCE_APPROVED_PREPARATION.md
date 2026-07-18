@@ -16,8 +16,8 @@ Strictly verify the request and save its evidence:
 
 ```powershell
 diffeoforge reference-plan-approval-verify review/pilot-001-approval.json `
-  --current-config atlas.yaml |
-  Out-File -Encoding ascii review/pilot-001-approval-verification.json
+  --current-config atlas.yaml `
+  --output review/pilot-001-approval-verification.json
 ```
 
 Copy `request.sha256` from that verification evidence into the mutating command:
