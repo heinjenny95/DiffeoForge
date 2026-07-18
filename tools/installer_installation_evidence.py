@@ -13,6 +13,7 @@ from diffeoforge.desktop.installer_installation_evidence import (
     create_installer_installation_evidence,
     verify_installer_installation_evidence,
     verify_installer_installation_prerequisites,
+    verify_retained_installer_installation_evidence,
 )
 
 
@@ -46,10 +47,17 @@ def _parser() -> argparse.ArgumentParser:
     create.add_argument("--source-commit", required=True)
 
     verify = subparsers.add_parser(
-        "verify", help="Offline-reconstruct retained lifecycle evidence"
+        "verify", help="Reconstruct complete lifecycle evidence while source inputs exist"
     )
     verify.add_argument("evidence", type=Path)
     verify.add_argument("--expect-evidence-sha256", required=True)
+
+    retained = subparsers.add_parser(
+        "verify-retained",
+        help="Verify portable eight-file artifact integrity without build reconstruction",
+    )
+    retained.add_argument("evidence", type=Path)
+    retained.add_argument("--expect-evidence-sha256", required=True)
     return parser
 
 
@@ -87,9 +95,18 @@ def main(argv: list[str] | None = None) -> int:
             )
             print(f"Created isolated installer lifecycle evidence: {EVIDENCE_NAME}")
             return 0
+        if args.command == "verify-retained":
+            result = verify_retained_installer_installation_evidence(
+                args.evidence,
+                expected_evidence_sha256=args.expect_evidence_sha256,
+            )
+            print(
+                "Verified retained installer lifecycle artifact integrity: "
+                f"{result['status']}"
+            )
+            return 0
         result = verify_installer_installation_evidence(
-            args.evidence,
-            expected_evidence_sha256=args.expect_evidence_sha256,
+            args.evidence, expected_evidence_sha256=args.expect_evidence_sha256
         )
         print(
             "Verified isolated installer lifecycle evidence: "

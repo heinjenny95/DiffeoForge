@@ -8,7 +8,7 @@ import re
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from importlib.resources import files
-from pathlib import Path, PurePosixPath
+from pathlib import Path, PurePosixPath, PureWindowsPath
 
 from jsonschema import Draft202012Validator, FormatChecker
 
@@ -221,6 +221,8 @@ def _validate_contract(path: Path) -> None:
         or not isinstance(output, dict)
         or output.get("exact_files") != sorted(COMPLETE_NAMES)
         or output.get("overwrite") is not False
+        or output.get("offline_reconstruction") is not False
+        or output.get("retained_artifact_integrity_verification") is not True
         or output.get("setup_upload") is not False
     ):
         raise InstallerInstallationEvidenceError(
@@ -602,6 +604,246 @@ def _directory(path: Path | str) -> Path:
             "Installation evidence directory must contain exactly the eight regular files"
         )
     return directory
+
+
+def _retained_content_matches(
+    path: Path, record: object, *, label: str, expected_name: str
+) -> None:
+    if (
+        not isinstance(record, dict)
+        or set(record) != {"path", "bytes", "sha256"}
+        or not isinstance(record.get("path"), str)
+        or PureWindowsPath(record["path"]).name != expected_name
+        or record.get("bytes") != path.stat().st_size
+        or record.get("sha256") != _sha256_file(path)
+    ):
+        raise InstallerInstallationEvidenceError(
+            f"Retained {label} content record differs"
+        )
+
+
+def _same_file_content(left: object, right: object, *, label: str) -> None:
+    def valid(record: object) -> bool:
+        return bool(
+            isinstance(record, dict)
+            and set(record) == {"path", "bytes", "sha256"}
+            and isinstance(record.get("path"), str)
+            and record["path"]
+            and isinstance(record.get("bytes"), int)
+            and record["bytes"] >= 0
+            and isinstance(record.get("sha256"), str)
+            and _SHA256_PATTERN.fullmatch(record["sha256"]) is not None
+        )
+
+    if (
+        not valid(left)
+        or not valid(right)
+        or left.get("bytes") != right.get("bytes")
+        or left.get("sha256") != right.get("sha256")
+    ):
+        raise InstallerInstallationEvidenceError(
+            f"Retained {label} content identity differs"
+        )
+
+
+def verify_retained_installer_installation_evidence(
+    evidence_path: Path | str, *, expected_evidence_sha256: str
+) -> dict:
+    """Verify the portable eight-file artifact without claiming build reconstruction."""
+    expected = _expected_sha256(expected_evidence_sha256, label="installation evidence")
+    path = _real_file(
+        evidence_path, label="Installer installation evidence", expected_name=EVIDENCE_NAME
+    )
+    if _sha256_file(path) != expected:
+        raise InstallerInstallationEvidenceError(
+            "Installer installation evidence differs from the external SHA-256"
+        )
+    directory = _directory(path.parent)
+    document = _json_file(path, label="Installer installation evidence")
+    _validate_schema(document)
+    sidecar = (directory / SIDECAR_NAME).read_text(encoding="utf-8")
+    if sidecar != f"{expected}  {EVIDENCE_NAME}\n":
+        raise InstallerInstallationEvidenceError("Installation evidence sidecar differs")
+
+    install_path = directory / INSTALL_OBSERVATION_NAME
+    smoke_path = directory / SMOKE_OBSERVATION_NAME
+    uninstall_path = directory / UNINSTALL_OBSERVATION_NAME
+    inventory_path = directory / INVENTORY_NAME
+    install_log = directory / INSTALL_LOG_NAME
+    uninstall_log = directory / UNINSTALL_LOG_NAME
+    install = _phase(install_path, phase="install")
+    smoke = _phase(smoke_path, phase="smoke")
+    uninstall = _phase(uninstall_path, phase="uninstall")
+    inventory = _json_file(inventory_path, label="Installed file inventory")
+
+    retained_records = (
+        (
+            install_path,
+            document["install"]["observation"],
+            "install observation",
+            INSTALL_OBSERVATION_NAME,
+        ),
+        (install_log, document["install"]["log"], "install log", INSTALL_LOG_NAME),
+        (
+            inventory_path,
+            document["installed_inventory"]["document"],
+            "installed inventory",
+            INVENTORY_NAME,
+        ),
+        (
+            smoke_path,
+            document["installed_smoke"]["observation"],
+            "smoke observation",
+            SMOKE_OBSERVATION_NAME,
+        ),
+        (
+            uninstall_path,
+            document["uninstall"]["observation"],
+            "uninstall observation",
+            UNINSTALL_OBSERVATION_NAME,
+        ),
+        (
+            uninstall_log,
+            document["uninstall"]["log"],
+            "uninstall log",
+            UNINSTALL_LOG_NAME,
+        ),
+    )
+    for retained_path, record, label, name in retained_records:
+        _retained_content_matches(
+            retained_path, record, label=label, expected_name=name
+        )
+    if install.get("log") != document["install"]["log"]:
+        raise InstallerInstallationEvidenceError("Retained install log binding differs")
+    if uninstall.get("log") != document["uninstall"]["log"]:
+        raise InstallerInstallationEvidenceError("Retained uninstall log binding differs")
+
+    runner = document["runner"]
+    if (
+        install.get("runner") != runner
+        or smoke.get("runner") != runner
+        or uninstall.get("runner") != runner
+        or document.get("observed_at") != uninstall.get("observed_at")
+        or install.get("exit_code") != document["install"]["exit_code"]
+        or smoke.get("exit_code") != document["installed_smoke"]["exit_code"]
+        or uninstall.get("exit_code") != document["uninstall"]["exit_code"]
+        or install.get("install_root") != document["install"]["install_root"]
+        or uninstall.get("install_root") != document["install"]["install_root"]
+        or install.get("shortcut_verified") is not True
+        or install.get("registration_verified") is not True
+        or smoke.get("arguments") != ["--smoke"]
+        or smoke.get("network_scope")
+        != "desktop_process_only_not_host_wide_isolation"
+        or smoke.get("network_connection_count") != 0
+        or smoke.get("network_observations") != []
+        or uninstall.get("install_root_absent") is not True
+        or uninstall.get("shortcut_absent") is not True
+        or uninstall.get("registration_absent") is not True
+    ):
+        raise InstallerInstallationEvidenceError(
+            "Retained installer lifecycle phase binding differs"
+        )
+    _same_file_content(
+        install.get("setup"),
+        document["installer_build_evidence"]["setup"],
+        label="setup",
+    )
+
+    sentinels = [
+        _sentinel(install.get("sentinel_before"), label="Before-install"),
+        _sentinel(install.get("sentinel_after"), label="After-install"),
+        _sentinel(smoke.get("sentinel_after"), label="After-smoke"),
+        _sentinel(uninstall.get("sentinel_after"), label="After-uninstall"),
+    ]
+    if any(item != sentinels[0] for item in sentinels[1:]):
+        raise InstallerInstallationEvidenceError(
+            "Project sentinel changed in retained lifecycle evidence"
+        )
+    sentinel_document = document["project_sentinel"]
+    if (
+        sentinel_document.get("path") != sentinels[0]["path"]
+        or sentinel_document.get("before_install")
+        != {key: sentinels[0][key] for key in ("bytes", "sha256")}
+        or sentinel_document.get("after_install")
+        != {key: sentinels[1][key] for key in ("bytes", "sha256")}
+        or sentinel_document.get("after_smoke")
+        != {key: sentinels[2][key] for key in ("bytes", "sha256")}
+        or sentinel_document.get("after_uninstall")
+        != {key: sentinels[3][key] for key in ("bytes", "sha256")}
+    ):
+        raise InstallerInstallationEvidenceError(
+            "Retained project sentinel summary differs"
+        )
+
+    records = inventory.get("records")
+    records_are_valid = isinstance(records, list) and all(
+        isinstance(record, dict)
+        and set(record) == {"path", "bytes", "sha256"}
+        and isinstance(record.get("path"), str)
+        and bool(record["path"])
+        and not PurePosixPath(record["path"]).is_absolute()
+        and all(part not in ("", ".", "..") for part in PurePosixPath(record["path"]).parts)
+        and isinstance(record.get("bytes"), int)
+        and record["bytes"] >= 0
+        and isinstance(record.get("sha256"), str)
+        and _SHA256_PATTERN.fullmatch(record["sha256"]) is not None
+        for record in records
+    )
+    if (
+        not records_are_valid
+        or not records
+        or inventory.get("file_count") != len(records)
+        or inventory.get("total_bytes")
+        != sum(record["bytes"] for record in records)
+        or inventory.get("inventory_sha256") != _inventory_sha256(records)
+        or inventory.get("source_bundle_copy_verified") is not True
+        or inventory.get("evidence_copies_verified") is not True
+        or inventory.get("license_copy_verified") is not True
+    ):
+        raise InstallerInstallationEvidenceError(
+            "Retained installed-file inventory summary differs"
+        )
+    inventory_summary = document["installed_inventory"]
+    if any(
+        inventory_summary.get(key) != inventory.get(key)
+        for key in (
+            "file_count",
+            "total_bytes",
+            "inventory_sha256",
+            "source_bundle_copy_verified",
+            "evidence_copies_verified",
+            "license_copy_verified",
+        )
+    ):
+        raise InstallerInstallationEvidenceError(
+            "Retained canonical inventory binding differs"
+        )
+    indexed = {
+        record.get("path"): record
+        for record in records
+        if isinstance(record, dict) and isinstance(record.get("path"), str)
+    }
+    if len(indexed) != len(records):
+        raise InstallerInstallationEvidenceError(
+            "Retained installed-file inventory paths differ"
+        )
+    _same_file_content(
+        indexed.get("DiffeoForge.exe"), smoke.get("program"), label="desktop program"
+    )
+    uninstall_program = uninstall.get("program")
+    uninstaller_name = (
+        PureWindowsPath(uninstall_program.get("path", "")).name
+        if isinstance(uninstall_program, dict)
+        else ""
+    )
+    if uninstaller_name not in inventory.get("uninstaller_files", []):
+        raise InstallerInstallationEvidenceError(
+            "Retained uninstaller inventory binding differs"
+        )
+    _same_file_content(
+        indexed.get(uninstaller_name), uninstall_program, label="uninstaller"
+    )
+    return document
 
 
 def create_installer_installation_evidence(

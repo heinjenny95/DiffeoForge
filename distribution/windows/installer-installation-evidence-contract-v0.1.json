@@ -71,7 +71,8 @@
       "uninstall.log"
     ],
     "overwrite": false,
-    "offline_reconstruction": true,
+    "offline_reconstruction": false,
+    "retained_artifact_integrity_verification": true,
     "setup_upload": false
   },
   "forbidden_claims": [

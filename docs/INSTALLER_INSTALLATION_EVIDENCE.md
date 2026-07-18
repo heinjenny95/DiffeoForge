@@ -1,6 +1,6 @@
 # Isolated Windows installer installation evidence
 
-Status: **implemented evidence workflow; real observation pending**
+Status: **first real observation accepted; integrity-verifier refinement pending re-observation**
 
 This developer-only workflow takes the exact unsigned output of the
 [engineering installer build](INSTALLER_BUILD_EVIDENCE.md) through one complete
@@ -99,6 +99,43 @@ successful run uploads exactly eight files:
 The setup executable, frozen application bundle, toolchain, and intermediate
 build files are deliberately not uploaded. The artifact is observation
 evidence, not a private alpha download.
+
+The exact eight-file artifact remains integrity-verifiable after download with
+`installer_installation_evidence.py verify-retained`, an externally recorded
+canonical-evidence SHA-256, and the versioned schema. This checks every retained
+file hash, lifecycle binding, installed inventory summary, runner identity,
+zero-endpoint observation, and unchanged sentinel. It deliberately does not
+claim to reconstruct the deleted setup, frozen bundle, or toolchain. Full
+source/setup reconstruction is performed only on the live runner before its
+temporary inputs are destroyed.
+
+## First accepted real observation
+
+GitHub Actions run
+[`29648460007`](https://github.com/heinjenny95/DiffeoForge/actions/runs/29648460007)
+completed the full lifecycle on July 18, 2026. It observed the GitHub-generated
+pull-request merge commit
+`e0fdd4a776c3f1db68baff656c254d3f8cc3b979`; this is evidence for the reviewed
+PR state, not yet for a merged release commit.
+
+- Canonical installation-evidence SHA-256:
+  `a02071c3e194308ee87639c58202be856fe4299b87109b56e6c5c81009ebb96a`.
+- Unsigned setup: 255,996,272 bytes; SHA-256
+  `b2a32f4c55478f5a9341d66172b1f627872782c6aa65e47232434c31d75f1e39`.
+- Installed tree before launch: 2,674 files and 680,081,753 bytes.
+- Install, installed smoke, and uninstall exit codes: `0`, `0`, and `0`.
+- Desktop-process endpoints sampled during smoke: `0`.
+- Application root, Start Menu shortcut, and uninstall registration after
+  uninstall: absent.
+- External project sentinel: 29 bytes and unchanged SHA-256
+  `7edd24f8fbb194ab335dfeb47ad69cc9794ef1038ae9a5dabb5dbadbb9bf91c0`.
+- Uploaded artifact `8430908387`: exactly eight evidence/log files and no
+  executable.
+
+The downloaded eight-file artifact passed the new retained-integrity verifier
+against the externally recorded canonical digest. The verifier wording and
+contract correction were added after that run, so the refined source must pass
+the same lifecycle again before this pull request is merged.
 
 ## Explicit nonclaims
 

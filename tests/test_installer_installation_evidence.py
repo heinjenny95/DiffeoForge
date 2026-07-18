@@ -83,6 +83,7 @@ def test_contract_schema_wrapper_and_package_boundaries() -> None:
     assert '"--smoke"' in wrapper
     assert "Get-NetTCPConnection" in wrapper
     assert "Get-NetUDPEndpoint" in wrapper
+    assert "verify-retained" in wrapper
     assert "setup upload" not in wrapper.lower()
 
 
@@ -207,13 +208,33 @@ def _raw_lifecycle(
 ) -> tuple[Path, Path, Path, Path]:
     install_log = _write(directory / evidence.INSTALL_LOG_NAME, b"install log")
     uninstall_log = _write(directory / evidence.UNINSTALL_LOG_NAME, b"uninstall log")
+    installed_root = directory.parent / "installed"
+    desktop_source = context["bundle"] / "DiffeoForge.exe"
+    desktop_record = {
+        "path": "DiffeoForge.exe",
+        "bytes": desktop_source.stat().st_size,
+        "sha256": hashlib.sha256(desktop_source.read_bytes()).hexdigest(),
+    }
+    uninstaller_payload = b"uninstaller"
+    uninstaller_record = {
+        "path": "unins000.exe",
+        "bytes": len(uninstaller_payload),
+        "sha256": hashlib.sha256(uninstaller_payload).hexdigest(),
+    }
+    inventory_records = [desktop_record, uninstaller_record]
     inventory = {
-        "file_count": 12,
-        "total_bytes": 345,
-        "inventory_sha256": "b" * 64,
+        "schema_version": "0.1",
+        "status": "installed_tree_observed_before_launch",
+        "install_root": str(installed_root),
+        "source_bundle": {"directory": str(context["bundle"]), "file_count": 1},
+        "records": inventory_records,
+        "file_count": len(inventory_records),
+        "total_bytes": sum(record["bytes"] for record in inventory_records),
+        "inventory_sha256": evidence._inventory_sha256(inventory_records),
         "source_bundle_copy_verified": True,
         "evidence_copies_verified": True,
         "license_copy_verified": True,
+        "uninstaller_files": ["unins000.exe"],
     }
     (directory / evidence.INVENTORY_NAME).write_bytes(evidence._json_bytes(inventory))
     runner = {
@@ -233,10 +254,13 @@ def _raw_lifecycle(
         "phase": "install",
         "observed_at": "2026-07-18T12:00:00Z",
         "runner": runner,
+        "setup": _record(context["setup"]),
         "exit_code": 0,
-        "install_root": str(directory.parent / "installed"),
+        "install_root": str(installed_root),
         "log": _record(install_log),
+        "shortcut_path": str(directory.parent / "DiffeoForge.lnk"),
         "shortcut_verified": True,
+        "registration_path": "HKCU:\\Software\\DiffeoForge",
         "registration_verified": True,
         "sentinel_before": sentinel,
         "sentinel_after": sentinel,
@@ -246,10 +270,16 @@ def _raw_lifecycle(
         "phase": "smoke",
         "observed_at": "2026-07-18T12:01:00Z",
         "runner": runner,
+        "program": {
+            "path": str(installed_root / "DiffeoForge.exe"),
+            "bytes": desktop_record["bytes"],
+            "sha256": desktop_record["sha256"],
+        },
         "exit_code": 0,
         "arguments": ["--smoke"],
         "network_scope": "desktop_process_only_not_host_wide_isolation",
         "network_connection_count": 0,
+        "network_observations": [],
         "sentinel_after": sentinel,
     }
     uninstall = {
@@ -257,10 +287,18 @@ def _raw_lifecycle(
         "phase": "uninstall",
         "observed_at": "2026-07-18T12:02:00Z",
         "runner": runner,
+        "program": {
+            "path": str(installed_root / "unins000.exe"),
+            "bytes": uninstaller_record["bytes"],
+            "sha256": uninstaller_record["sha256"],
+        },
         "exit_code": 0,
         "log": _record(uninstall_log),
+        "install_root": str(installed_root),
         "install_root_absent": True,
+        "shortcut_path": str(directory.parent / "DiffeoForge.lnk"),
         "shortcut_absent": True,
+        "registration_path": "HKCU:\\Software\\DiffeoForge",
         "registration_absent": True,
         "sentinel_after": sentinel,
     }
@@ -308,6 +346,50 @@ def test_create_and_verify_lifecycle_evidence(
     assert verified["runner"]["ephemeral"] is True
     assert verified["installed_smoke"]["process_network_connection_count"] == 0
     assert verified["release_authorized"] is False
+
+    retained = evidence.verify_retained_installer_installation_evidence(
+        evidence_path, expected_evidence_sha256=digest
+    )
+    assert retained == document
+
+
+def test_retained_artifact_verifier_rejects_changed_phase_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    context = _context(tmp_path)
+    directory = tmp_path / "observation"
+    directory.mkdir()
+    _raw_lifecycle(directory, context)
+    source = tmp_path / "source"
+    project = _write(source / "pyproject.toml", b"[project]\nname='diffeoforge'\n")
+    contract = _write(
+        source / "distribution" / "windows" / evidence.CONTRACT_NAME, b"contract"
+    )
+    wrapper = _write(source / "tools" / evidence.WRAPPER_NAME, b"wrapper")
+    monkeypatch.setattr(
+        evidence,
+        "_source_inputs",
+        lambda _path: (project, source, contract, wrapper),
+    )
+    monkeypatch.setattr(evidence, "_build_context", lambda *_args, **_kwargs: context)
+    evidence.create_installer_installation_evidence(
+        directory,
+        context["path"],
+        expected_build_evidence_sha256=context["expected_sha256"],
+        project_file=project,
+        source_commit="a" * 40,
+    )
+    evidence_path = directory / evidence.EVIDENCE_NAME
+    digest = hashlib.sha256(evidence_path.read_bytes()).hexdigest()
+    with (directory / evidence.INSTALL_LOG_NAME).open("ab") as handle:
+        handle.write(b"changed")
+
+    with pytest.raises(
+        evidence.InstallerInstallationEvidenceError, match="install log"
+    ):
+        evidence.verify_retained_installer_installation_evidence(
+            evidence_path, expected_evidence_sha256=digest
+        )
 
 
 def test_lifecycle_evidence_rejects_changed_sentinel(

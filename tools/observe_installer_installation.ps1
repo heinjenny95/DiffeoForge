@@ -345,6 +345,11 @@ try {
     if ($LASTEXITCODE -ne 0) {
         throw "Independent installer lifecycle evidence verification failed."
     }
+    & $Python tools\installer_installation_evidence.py verify-retained $evidencePath `
+        --expect-evidence-sha256 $evidenceSha256
+    if ($LASTEXITCODE -ne 0) {
+        throw "Retained eight-file artifact integrity verification failed."
+    }
     $completed = $true
     Write-Output "Verified isolated installer lifecycle evidence: $evidencePath"
     Write-Output "Installer lifecycle evidence SHA-256: $evidenceSha256"

@@ -116,7 +116,7 @@ This roadmap describes evidence gates rather than promised dates.
     authenticity observation with execution explicitly disabled
   - [x] Fail-closed evidence-only ephemeral-runner current-user install,
     installed-smoke, uninstall, and project-preservation workflow; first real
-    observation pending
+    observation accepted, refined contract re-observation pending
   - [ ] Reviewed release lock, SBOM, license clearance, signed installer, and
     clean-VM installation/uninstallation evidence
   - [ ] Separately gated Linux and macOS CPU distributions
