@@ -27,6 +27,30 @@ def test_windows_evidence_builder_is_explicitly_pinned_and_onedir() -> None:
     assert "onefile" not in spec.lower()
 
 
+def test_windows_freeze_excludes_and_audits_builder_only_sbom_modules() -> None:
+    spec = (WINDOWS / "DiffeoForge.spec").read_text(encoding="utf-8")
+
+    expected_prefixes = (
+        "boolean",
+        "cyclonedx",
+        "defusedxml",
+        "diffeoforge.desktop.sbom",
+        "license_expression",
+        "packageurl",
+        "py_serializable",
+        "sortedcontainers",
+    )
+    for prefix in expected_prefixes:
+        assert f'    "{prefix}",' in spec
+
+    assert "if not is_builder_only_module(module_name)" in spec
+    assert "*builder_only_module_prefixes" in spec
+    assert "for module_name, *_ in analysis.pure" in spec
+    assert "contains builder-only modules" in spec
+    assert spec.count("assert_builder_only_modules_absent(") == 5
+    compile(spec, str(WINDOWS / "DiffeoForge.spec"), "exec")
+
+
 def test_windows_freeze_has_separate_desktop_and_pipe_worker_entry_points() -> None:
     desktop = (WINDOWS / "diffeoforge_desktop.py").read_text(encoding="utf-8")
     worker = (WINDOWS / "diffeoforge_worker.py").read_text(encoding="utf-8")

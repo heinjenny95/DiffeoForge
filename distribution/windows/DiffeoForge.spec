@@ -12,8 +12,56 @@ schema_data = [
     (str(path), "diffeoforge/schema")
     for path in sorted(schema_directory.glob("*.json"))
 ]
-hidden_imports = collect_submodules("diffeoforge")
-excluded_modules = ["IPython", "matplotlib", "pip", "pytest", "tkinter"]
+
+# The post-build SBOM tool runs from source after the frozen bundle has been
+# verified.  Its implementation and third-party builder dependencies must not
+# become part of any runtime executable merely because the clean-runner job
+# installs the ``sbom-builder`` extra before invoking PyInstaller.
+builder_only_module_prefixes = (
+    "boolean",
+    "cyclonedx",
+    "defusedxml",
+    "diffeoforge.desktop.sbom",
+    "license_expression",
+    "packageurl",
+    "py_serializable",
+    "sortedcontainers",
+)
+
+
+def is_builder_only_module(module_name):
+    return any(
+        module_name == prefix or module_name.startswith(f"{prefix}.")
+        for prefix in builder_only_module_prefixes
+    )
+
+
+def assert_builder_only_modules_absent(analysis, executable_name):
+    embedded = sorted(
+        module_name
+        for module_name, *_ in analysis.pure
+        if is_builder_only_module(module_name)
+    )
+    if embedded:
+        raise RuntimeError(
+            f"{executable_name} contains builder-only modules: "
+            + ", ".join(embedded)
+        )
+
+
+hidden_imports = [
+    module_name
+    for module_name in collect_submodules("diffeoforge")
+    if not is_builder_only_module(module_name)
+]
+excluded_modules = [
+    "IPython",
+    "matplotlib",
+    "pip",
+    "pytest",
+    "tkinter",
+    *builder_only_module_prefixes,
+]
 
 desktop_analysis = Analysis(
     [str(entrypoints / "diffeoforge_desktop.py")],
@@ -28,6 +76,7 @@ desktop_analysis = Analysis(
     noarchive=False,
     optimize=0,
 )
+assert_builder_only_modules_absent(desktop_analysis, "DiffeoForge")
 desktop_pyz = PYZ(desktop_analysis.pure)
 desktop_executable = EXE(
     desktop_pyz,
@@ -56,6 +105,7 @@ worker_analysis = Analysis(
     noarchive=False,
     optimize=0,
 )
+assert_builder_only_modules_absent(worker_analysis, "DiffeoForgeWorker")
 worker_pyz = PYZ(worker_analysis.pure)
 worker_executable = EXE(
     worker_pyz,
@@ -84,6 +134,9 @@ reference_worker_analysis = Analysis(
     noarchive=False,
     optimize=0,
 )
+assert_builder_only_modules_absent(
+    reference_worker_analysis, "DiffeoForgeReferenceWorker"
+)
 reference_worker_pyz = PYZ(reference_worker_analysis.pure)
 reference_worker_executable = EXE(
     reference_worker_pyz,
@@ -111,6 +164,10 @@ reference_preparation_worker_analysis = Analysis(
     excludes=excluded_modules,
     noarchive=False,
     optimize=0,
+)
+assert_builder_only_modules_absent(
+    reference_preparation_worker_analysis,
+    "DiffeoForgeReferencePreparationWorker",
 )
 reference_preparation_worker_pyz = PYZ(reference_preparation_worker_analysis.pure)
 reference_preparation_worker_executable = EXE(
