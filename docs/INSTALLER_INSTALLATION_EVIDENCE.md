@@ -82,8 +82,10 @@ The project sentinel must still match exactly.
 
 ## Evidence-only GitHub workflow
 
-Run the manual `Windows installer installation evidence` workflow from an exact
-reviewed commit. A successful run uploads exactly eight files:
+The `Windows installer installation evidence` workflow is a path-scoped pull
+request gate for installer-relevant changes and can also be started manually
+from an exact reviewed commit already available on the default branch. A
+successful run uploads exactly eight files:
 
 - `install.log`;
 - `installed-file-inventory.json`;

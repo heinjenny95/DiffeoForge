@@ -1,6 +1,20 @@
 name: Windows installer installation evidence
 
 on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/windows-installer-installation-evidence.yml"
+      - "distribution/windows/**"
+      - "src/diffeoforge/desktop/**"
+      - "src/diffeoforge/schema/**"
+      - "tools/desktop_*.py"
+      - "tools/installer_*.py"
+      - "tools/observe_inno_*.ps1"
+      - "tools/observe_installer_*.ps1"
+      - "tools/prepare_installer_observation_inputs.ps1"
+      - "pyproject.toml"
+      - "uv.lock"
   workflow_dispatch:
 
 permissions:

@@ -86,7 +86,7 @@ def test_contract_schema_wrapper_and_package_boundaries() -> None:
     assert "setup upload" not in wrapper.lower()
 
 
-def test_manual_workflow_is_pinned_ephemeral_and_evidence_only() -> None:
+def test_pr_gated_manual_workflow_is_pinned_ephemeral_and_evidence_only() -> None:
     path = (
         ROOT
         / ".github"
@@ -96,7 +96,12 @@ def test_manual_workflow_is_pinned_ephemeral_and_evidence_only() -> None:
     text = path.read_text(encoding="utf-8")
     workflow = yaml.load(text, Loader=yaml.BaseLoader)
 
-    assert workflow["on"] == {"workflow_dispatch": ""}
+    assert workflow["on"]["workflow_dispatch"] == ""
+    assert workflow["on"]["pull_request"]["branches"] == ["main"]
+    assert (
+        ".github/workflows/windows-installer-installation-evidence.yml"
+        in workflow["on"]["pull_request"]["paths"]
+    )
     assert workflow["permissions"] == {"contents": "read"}
     job = workflow["jobs"]["isolated-installer-lifecycle"]
     assert job["runs-on"] == "windows-latest"
