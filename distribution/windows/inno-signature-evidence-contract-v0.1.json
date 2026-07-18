@@ -1,0 +1,88 @@
+{
+  "schema_version": "0.1",
+  "status": "accepted_issigtool_observation_contract_not_installer_execution_authorization",
+  "target": "windows-x86_64-cpu",
+  "installer": {
+    "name": "innosetup-7.0.2-x64.exe",
+    "bytes": 17020192,
+    "sha256": "5ad54ca3def786f8f4212552e54cc6d8d61329e2d24a1cfee0571d42c2684ff1",
+    "release_asset_id": 475225237
+  },
+  "signature": {
+    "name": "innosetup-7.0.2-x64.exe.issig",
+    "bytes": 380,
+    "sha256": "b85f4a9c527ee573d308840e859ff3ca99c8a750acb259d51f111301c7ef71bd",
+    "repository": "jrsoftware/issrc",
+    "repository_id": 2527983,
+    "release_tag": "is-7_0_2",
+    "release_database_id": 352994135,
+    "release_tag_object_sha1": "d2509df69f828a7148294e29b2ca252c3250210c",
+    "release_asset_id": 475225360,
+    "release_purl": "pkg:github/jrsoftware/issrc@is-7_0_2"
+  },
+  "signature_tool": {
+    "name": "ISSigTool.exe",
+    "bytes": 919184,
+    "sha256": "aea490d45665a88c0c832d25647d21c1b87962efedb25668caec05678e0fd7c6",
+    "repository": "jrsoftware/issrc",
+    "repository_id": 2527983,
+    "release_tag": "is-6_7_3",
+    "release_database_id": 329538987,
+    "release_tag_object_sha1": "c7af86b4b2fd03371185df2b09a1dca8d472ab70",
+    "release_asset_id": 430321504,
+    "release_purl": "pkg:github/jrsoftware/issrc@is-6_7_3",
+    "required_authenticode_status": "Valid",
+    "required_authenticode_signer_subject": "CN=Pyrsys B.V., O=Pyrsys B.V., S=Noord-Holland, C=NL"
+  },
+  "public_key": {
+    "name": "def02.ispublickey",
+    "bytes": 248,
+    "sha256": "32bea6bceb4ac7c4e6b3becdf3fb38de77378c5e76d494ab907d87cfab9e597b",
+    "git_blob_sha1": "ab717206d876bd9d63a9bbb16bcf0e5f6928af73",
+    "release_tag": "is-7_0_2",
+    "release_tag_object_sha1": "d2509df69f828a7148294e29b2ca252c3250210c",
+    "release_commit_sha1": "c25dc6479cdc3be28e682a025fcf60765bba3de0",
+    "content_api_path": "repos/jrsoftware/issrc/contents/def02.ispublickey?ref=c25dc6479cdc3be28e682a025fcf60765bba3de0"
+  },
+  "github_verification": {
+    "release_attestation_command_prefix": ["release", "verify-asset"],
+    "repository": "jrsoftware/issrc",
+    "format": "json",
+    "predicate_type": "https://in-toto.io/attestation/release/v0.2",
+    "certificate_subject_alternative_name": "https://dotcom.releases.github.com",
+    "timestamp_authority": "timestamp.githubapp.com",
+    "generic_gh_attestation_verify_is_not_equivalent": true
+  },
+  "execution": {
+    "command": [
+      "--key-file=<absolute-public-key-path>",
+      "verify",
+      "<absolute-installer-path>"
+    ],
+    "signature_must_be_adjacent_to_installer": true,
+    "preflight_before_signature_tool_execution": true,
+    "all_four_input_hashes_unchanged_after_execution": true,
+    "signature_tool_execution_scope": "verify_exact_installer_signature_only",
+    "installer_execution": false,
+    "compiler_execution": false,
+    "execution_authorized": false
+  },
+  "observation": {
+    "windows_only": true,
+    "all_inputs_must_be_regular_non_reparse_files": true,
+    "output_must_be_new_empty_real_directory_outside_repository_and_inputs": true,
+    "wrapper_requires_exact_clean_source_commit": true,
+    "raw_file_count": 9,
+    "canonical_evidence_json": true,
+    "overwrite": false,
+    "offline_reverification_of_recorded_bindings": true
+  },
+  "nonclaims": [
+    "cryptographic_reverification_without_the_recorded_verifiers",
+    "installer_execution_or_installation",
+    "iscc_compilation",
+    "license_compatibility_or_redistribution_approval",
+    "setup_binary_or_release",
+    "clean_vm_security_numerical_or_scientific_validation"
+  ]
+}

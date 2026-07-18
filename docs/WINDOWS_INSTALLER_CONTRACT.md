@@ -46,6 +46,8 @@ hash check is necessary but does not replace the authenticity checks.
 The implemented, still non-executing observation and offline reconstruction
 workflow is documented in
 [Inno Setup toolchain authenticity evidence](INNO_TOOLCHAIN_EVIDENCE.md).
+The independent built-in signature check and its verifier trust chain are
+specified in [Inno Setup ISSigTool signature evidence](INNO_SIGNATURE_EVIDENCE.md).
 
 ## Required future build inputs
 

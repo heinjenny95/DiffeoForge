@@ -21,6 +21,7 @@ builder_only_module_prefixes = (
     "boolean",
     "cyclonedx",
     "defusedxml",
+    "diffeoforge.desktop.inno_signature_evidence",
     "diffeoforge.desktop.inno_toolchain_evidence",
     "diffeoforge.desktop.installer_plan",
     "diffeoforge.desktop.sbom",
