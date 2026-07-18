@@ -26,7 +26,7 @@ ROOT = Path(__file__).parents[1]
 
 
 def _project(tmp_path: Path) -> Path:
-    root = tmp_path / "Desktop Status KÃ¤fer"
+    root = tmp_path / "Desktop Status Käfer"
     shutil.copytree(ROOT / "examples" / "synthetic", root / "synthetic")
     shutil.copyfile(ROOT / "examples" / "minimal-atlas-container.yaml", root / "atlas.yaml")
     return root
