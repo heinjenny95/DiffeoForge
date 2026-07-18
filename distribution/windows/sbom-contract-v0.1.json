@@ -1,0 +1,84 @@
+{
+  "schema_version": "0.1",
+  "status": "accepted_design_not_an_sbom_or_release_artifact",
+  "target": "windows-x86_64-cpu",
+  "standard": {
+    "name": "CycloneDX",
+    "spec_version": "1.7",
+    "format": "JSON",
+    "media_type": "application/vnd.cyclonedx+json; version=1.7"
+  },
+  "builder_tool": {
+    "distribution": "cyclonedx-python-lib",
+    "version": "11.11.0",
+    "scope": "builder_only_not_bundled_runtime",
+    "schema_validator": "official_library_schema_v1_7"
+  },
+  "required_inputs": {
+    "dependency_evidence_schema": "desktop-dependency-metadata-evidence-v0.1",
+    "freeze_evidence_schema": "desktop-freeze-evidence-v0.3",
+    "external_dependency_evidence_sha256": true,
+    "external_freeze_evidence_sha256": true
+  },
+  "determinism": {
+    "serial_number": "uuid5_url_namespace_from_dependency_evidence_sha256",
+    "timestamp": "exact_freeze_evidence_created_at",
+    "bom_version": 1,
+    "component_order": "purl_ascending",
+    "json_serialization": "utf8_sorted_keys_indent_2_single_trailing_lf",
+    "output_overwrite": false
+  },
+  "component_mapping": {
+    "root": {
+      "type": "application",
+      "identity": "diffeoforge_name_version_source_commit_and_bundle_inventory"
+    },
+    "runtime_packages": {
+      "type": "library",
+      "scope": "required",
+      "purl_template": "pkg:pypi/{normalized_name}@{percent_encoded_version}",
+      "source": "dependency_evidence_packages"
+    },
+    "component_hashes": {
+      "policy": "omit_until_distribution_archive_or_component_payload_hash_exists",
+      "metadata_sha256_is_not_a_component_hash": true
+    }
+  },
+  "license_mapping": {
+    "license_expression": "emit_only_as_expression_when_present_and_schema_valid",
+    "legacy_license": "unreviewed_property_only",
+    "license_classifiers": "unreviewed_properties_only",
+    "license_file_hashes": "evidence_properties_only",
+    "compatibility_or_redistribution_conclusion": false
+  },
+  "dependency_graph": {
+    "v0_1_policy": "omit_unproven_edges",
+    "composition_aggregate": "incomplete",
+    "reason": "requires_dist_contains_markers_extras_and_nonruntime_requirements_not_resolved_by_current_evidence"
+  },
+  "source_bindings": [
+    "dependency_evidence_sha256",
+    "freeze_evidence_sha256",
+    "source_commit_sha",
+    "bundle_inventory_sha256",
+    "package_set_sha256"
+  ],
+  "output": {
+    "document": "freeze-sbom.cdx.json",
+    "sidecar": "freeze-sbom.cdx.sha256",
+    "directory": "existing_real_directory_outside_bundle",
+    "future_clean_runner_upload_file_count": 6
+  },
+  "missing_release_gates_after_valid_sbom": [
+    "authenticode_signature",
+    "clean_windows_vm",
+    "cpu_numerical_release_validation",
+    "crash_reconciliation",
+    "installer_and_uninstaller",
+    "license_compatibility_review",
+    "license_inventory_human_review",
+    "no_network_observation",
+    "redistribution_approval",
+    "windows_defender_scan"
+  ]
+}

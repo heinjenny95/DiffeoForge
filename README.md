@@ -433,6 +433,7 @@ and workflow for another mesh directory.
 - [Desktop executable and installer architecture](docs/DESKTOP_DISTRIBUTION.md)
 - [Windows one-directory freeze evidence](docs/WINDOWS_FREEZE_EVIDENCE.md)
 - [Frozen dependency metadata evidence](docs/DESKTOP_DEPENDENCY_METADATA_EVIDENCE.md)
+- [ADR 0005: deterministic CycloneDX 1.7 post-build SBOM](docs/decisions/0005-cyclonedx-post-build-sbom.md)
 - [Versioned desktop worker protocol](docs/DESKTOP_WORKER.md)
 - [Desktop project-setup preview](docs/DESKTOP_PREVIEW.md)
 - [Desktop reference prelaunch contract](docs/REFERENCE_PRELAUNCH.md)

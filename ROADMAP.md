@@ -104,6 +104,8 @@ This roadmap describes evidence gates rather than promised dates.
     frozen-process smoke contract, and independently inspected evidence artifact
   - [x] Hash-bound, noninterpreting installed-distribution metadata and
     license-file evidence contract for later human review
+  - [x] Deterministic CycloneDX 1.7 post-build SBOM contract with explicit
+    incomplete-composition and nonapproval boundaries
   - [ ] Reviewed release lock, SBOM, license clearance, signed installer, and
     clean-VM installation/uninstallation evidence
   - [ ] Separately gated Linux and macOS CPU distributions
