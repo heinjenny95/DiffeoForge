@@ -88,7 +88,8 @@ This roadmap describes evidence gates rather than promised dates.
   - [x] Source preparation-worker hard-parent-death Job evidence before request delivery
   - [x] Frozen approval-bound preparation sibling with mandatory v0.3 bundle smoke
   - [x] Frozen preparation-worker hard-parent-death Job evidence before request delivery
-  - [ ] User-approved private-run reconciliation, reference supervision, and native mesh rendering
+  - [x] Approval-bound read-only destination/private-stage reconciliation report
+  - [ ] User-approved private-stage mutation, reference supervision, and native mesh rendering
 - [ ] Parameter explanations and safe presets
 - [x] Pre-compute configured all-pairs and known-payload workload report
 - [x] Versioned workflow-stage and committed optimizer-decision reporting

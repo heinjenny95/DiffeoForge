@@ -27,6 +27,9 @@ from diffeoforge.reference_preparation_plan import (
     plan_reference_preparation,
     write_reference_preparation_plan_report,
 )
+from diffeoforge.reference_preparation_reconciliation import (
+    reconcile_reference_preparation,
+)
 from diffeoforge.reference_preparation_verification import (
     verify_saved_reference_preparation_plan,
 )
@@ -516,6 +519,29 @@ def build_parser() -> argparse.ArgumentParser:
         "--current-config",
         type=Path,
         help="Also require a fresh current plan to match the embedded approved plan exactly.",
+    )
+    reference_preparation_status_parser = subparsers.add_parser(
+        "reference-preparation-status",
+        help="Read-only classify exact state for one hash-bound preparation approval.",
+    )
+    reference_preparation_status_parser.add_argument(
+        "request", type=Path, help="Saved reference preparation approval request JSON."
+    )
+    reference_preparation_status_parser.add_argument(
+        "--current-config",
+        type=Path,
+        required=True,
+        help="Current config that must still exactly reproduce the approved plan.",
+    )
+    reference_preparation_status_parser.add_argument(
+        "--expect-request-sha256",
+        required=True,
+        help="Independently recorded SHA-256 of the complete approval-request file.",
+    )
+    reference_preparation_status_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Print the complete versioned machine-readable reconciliation report.",
     )
     reference_prepare_approved_parser = subparsers.add_parser(
         "reference-prepare-approved",
@@ -1449,6 +1475,34 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"ERROR: {error}", file=sys.stderr)
             return 2
         return 0
+
+    if args.command == "reference-preparation-status":
+        try:
+            report = reconcile_reference_preparation(
+                args.request,
+                current_config_path=args.current_config,
+                expected_request_sha256=args.expect_request_sha256,
+            )
+            if args.json:
+                json.dump(report, sys.stdout, indent=2, ensure_ascii=True, sort_keys=True)
+                sys.stdout.write("\n")
+            else:
+                print(f"Status: {report['status']}")
+                print(f"Approved run: {report['approved_plan']['run_id']}")
+                destination = report["destination"]
+                print(f"Destination [{destination['status']}]: {destination['path']}")
+                stages = report["private_stages"]
+                print(f"Exact private stages: {len(stages)}")
+                for stage in stages:
+                    print(f"- [{stage['status']}] {stage['path']}: {stage['reason']}")
+                print(
+                    "No files were deleted, renamed, published, resumed, prepared, "
+                    "executed, repaired, or rewritten."
+                )
+            return 1 if report["action_required"] else 0
+        except (ConfigurationError, OSError, TypeError, ValueError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
 
     if args.command == "reference-prepare-approved":
         try:

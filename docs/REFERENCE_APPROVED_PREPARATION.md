@@ -60,6 +60,12 @@ empty after a failed private stage. If another process creates the final
 destination during staging, DiffeoForge preserves that directory and its
 contents and fails.
 
+After a suspected hard crash, use the approval-bound
+[read-only preparation status](REFERENCE_PREPARATION_RECONCILIATION.md). It can
+distinguish an absent destination, a verified published prepared run, a
+complete but still unpublished private stage, and incomplete, mismatched, or
+unsafe state. It never performs recovery or cleanup.
+
 Linux uses `renameat2(RENAME_NOREPLACE)` and Windows uses non-replacing
 directory rename semantics for atomic publication. Other platforms retain an
 explicit pre-rename absence check but have not yet received the same

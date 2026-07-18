@@ -172,6 +172,22 @@ and permanently fixes engine authorization to false. It is not an identity or
 signature record. See
 [reference preparation-only approval](REFERENCE_PREPARATION_APPROVAL.md).
 
+Before preparation, after a successful stopped-before-execution preparation,
+or after an uncertain crash, classify only the exact approved paths without
+changing them:
+
+```powershell
+diffeoforge reference-preparation-status pilot-001-approval.json `
+  --current-config atlas.yaml `
+  --expect-request-sha256 REVIEWED_REQUEST_SHA256 `
+  --json > pilot-001-preparation-status.json
+```
+
+The command can identify a verified published prepared run or a complete but
+still unpublished private stage. It never publishes, deletes, resumes, or
+repairs anything. See
+[approval-bound reference preparation status](REFERENCE_PREPARATION_RECONCILIATION.md).
+
 For the strict approval-aware mutation, independently record the complete
 request SHA-256 printed by the verifier, then run:
 

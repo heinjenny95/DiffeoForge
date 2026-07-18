@@ -353,8 +353,14 @@ def plan_reference_preparation(
     config_path: Path | str,
     *,
     run_id: str,
+    allow_existing_destination: bool = False,
 ) -> dict[str, Any]:
-    """Describe exact preparation bytes and paths without creating anything."""
+    """Describe exact preparation bytes and paths without creating anything.
+
+    ``allow_existing_destination`` exists only for read-only reconciliation of
+    an already approved plan. Normal planning remains fail-closed when the
+    prospective immutable destination exists.
+    """
 
     source_config = Path(config_path).expanduser().resolve()
     if not isinstance(run_id, str) or not run_id:
@@ -369,8 +375,13 @@ def plan_reference_preparation(
     if output_root.exists() and not output_root.is_dir():
         raise ConfigurationError(f"Configured output root is not a directory: {output_root}")
     resolved_run_id = normalize_run_id(run_id)
-    destination = (output_root / resolved_run_id).resolve()
-    if destination.exists():
+    prospective_destination = output_root / resolved_run_id
+    destination = (
+        prospective_destination.absolute()
+        if allow_existing_destination
+        else prospective_destination.resolve()
+    )
+    if destination.exists() and not allow_existing_destination:
         raise ConfigurationError(f"Run directory already exists: {destination}")
 
     staged_template_relative = Path("input") / "template" / summary.template.name
@@ -492,7 +503,7 @@ def plan_reference_preparation(
         raise ConfigurationError(
             "Configured output root changed while the preparation plan was built"
         )
-    if destination.exists():
+    if destination.exists() and not allow_existing_destination:
         raise ConfigurationError(
             f"Run directory appeared while the preparation plan was built: {destination}"
         )

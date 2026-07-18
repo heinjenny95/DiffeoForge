@@ -1,0 +1,213 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://diffeoforge.org/schema/reference-preparation-reconciliation-v0.1.json",
+  "title": "DiffeoForge approval-bound reference preparation reconciliation",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "status",
+    "action_required",
+    "mutation_performed",
+    "approval_request",
+    "approved_plan",
+    "current_plan",
+    "destination",
+    "private_stages",
+    "state_stable_across_observations",
+    "checks",
+    "scientific_boundary"
+  ],
+  "properties": {
+    "schema_version": { "const": "0.1" },
+    "status": {
+      "enum": [
+        "clear_to_prepare",
+        "published_prepared_not_executed_verified",
+        "attention_required"
+      ]
+    },
+    "action_required": { "type": "boolean" },
+    "mutation_performed": { "const": false },
+    "approval_request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "bytes", "sha256", "expected_sha256"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "bytes": { "type": "integer", "minimum": 2 },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "expected_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "approved_plan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "canonical_fingerprint",
+        "run_id",
+        "destination",
+        "subjects",
+        "protected_files"
+      ],
+      "properties": {
+        "canonical_fingerprint": { "$ref": "#/$defs/sha256" },
+        "run_id": { "type": "string", "minLength": 1 },
+        "destination": { "type": "string", "minLength": 1 },
+        "subjects": { "type": "integer", "minimum": 2 },
+        "protected_files": { "type": "integer", "minimum": 8 }
+      }
+    },
+    "current_plan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "config_path",
+        "config_sha256",
+        "canonical_fingerprint",
+        "exactly_matches_approved"
+      ],
+      "properties": {
+        "config_path": { "type": "string", "minLength": 1 },
+        "config_sha256": { "$ref": "#/$defs/sha256" },
+        "canonical_fingerprint": { "$ref": "#/$defs/sha256" },
+        "exactly_matches_approved": { "const": true }
+      }
+    },
+    "destination": { "$ref": "#/$defs/destination" },
+    "private_stages": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/privateStage" }
+    },
+    "state_stable_across_observations": { "const": true },
+    "checks": {
+      "const": [
+        "approval_request_strict_and_schema_valid",
+        "approval_request_matches_external_sha256",
+        "embedded_plan_matches_approval_fingerprint",
+        "fresh_current_plan_exactly_matches_approved_plan",
+        "exact_destination_inspected_without_link_following",
+        "exact_private_stage_names_inspected_without_link_following",
+        "prepared_candidates_checked_against_approved_plan",
+        "observation_repeated_without_state_change",
+        "approval_config_and_current_plan_unchanged",
+        "no_mutation_performed"
+      ]
+    },
+    "scientific_boundary": { "type": "string", "minLength": 1 }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "status": { "const": "clear_to_prepare" } } },
+      "then": {
+        "properties": {
+          "action_required": { "const": false },
+          "destination": { "properties": { "status": { "const": "absent" } } },
+          "private_stages": { "maxItems": 0 }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": { "const": "published_prepared_not_executed_verified" }
+        }
+      },
+      "then": {
+        "properties": {
+          "action_required": { "const": false },
+          "destination": {
+            "properties": {
+              "status": { "const": "verified_prepared_not_executed" }
+            }
+          },
+          "private_stages": { "maxItems": 0 }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "status": { "const": "attention_required" } } },
+      "then": { "properties": { "action_required": { "const": true } } }
+    }
+  ],
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "destination": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "status",
+        "reason",
+        "manifest_sha256",
+        "engine_execution_started"
+      ],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "status": {
+          "enum": [
+            "absent",
+            "verified_prepared_not_executed",
+            "unsafe_link",
+            "unsafe_content_link",
+            "not_directory",
+            "incomplete_or_mismatched"
+          ]
+        },
+        "reason": { "type": "string", "minLength": 1 },
+        "manifest_sha256": {
+          "oneOf": [
+            { "$ref": "#/$defs/sha256" },
+            { "type": "null" }
+          ]
+        },
+        "engine_execution_started": {
+          "oneOf": [
+            { "const": false },
+            { "type": "null" }
+          ]
+        }
+      }
+    },
+    "privateStage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "directory_name",
+        "token",
+        "path",
+        "status",
+        "reason",
+        "manifest_sha256",
+        "engine_execution_started"
+      ],
+      "properties": {
+        "directory_name": { "type": "string", "minLength": 1 },
+        "token": { "type": "string", "pattern": "^[0-9a-f]{32}$" },
+        "path": { "type": "string", "minLength": 1 },
+        "status": {
+          "enum": [
+            "verified_complete_unpublished",
+            "unsafe_link",
+            "unsafe_content_link",
+            "not_directory",
+            "incomplete_or_mismatched"
+          ]
+        },
+        "reason": { "type": "string", "minLength": 1 },
+        "manifest_sha256": {
+          "oneOf": [
+            { "$ref": "#/$defs/sha256" },
+            { "type": "null" }
+          ]
+        },
+        "engine_execution_started": {
+          "oneOf": [
+            { "const": false },
+            { "type": "null" }
+          ]
+        }
+      }
+    }
+  }
+}
