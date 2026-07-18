@@ -17,7 +17,9 @@ from diffeoforge.reference_preparation_plan import (
     write_reference_preparation_plan_report,
 )
 from diffeoforge.reference_preparation_verification import (
+    serialize_reference_preparation_plan_verification,
     verify_saved_reference_preparation_plan,
+    write_reference_preparation_plan_verification,
 )
 
 ROOT = Path(__file__).parents[1]
@@ -95,6 +97,39 @@ def test_verify_saved_plan_without_report_records_limited_scope(tmp_path: Path) 
     assert evidence["plan"]["expected_fingerprint"] is None
     assert "report_exact_deterministic_regeneration" not in evidence["checks"]
     assert "plan_fingerprint_matches_expected" not in evidence["checks"]
+
+
+def test_plan_verification_evidence_write_is_exact_exclusive_and_requires_parent(
+    tmp_path: Path,
+) -> None:
+    root = _project(tmp_path)
+    plan = plan_reference_preparation(root / "atlas.yaml", run_id="evidence-file")
+    saved_plan = root / "plan.json"
+    _save_plan(plan, saved_plan)
+    evidence = verify_saved_reference_preparation_plan(saved_plan)
+    payload = serialize_reference_preparation_plan_verification(evidence)
+    output = root / "evidence" / "plan-verification.json"
+    output.parent.mkdir()
+
+    written = write_reference_preparation_plan_verification(evidence, output)
+
+    assert written == output.resolve()
+    assert written.read_bytes() == payload
+    assert all(byte < 128 for byte in payload)
+    invalid = json.loads(json.dumps(evidence))
+    invalid["status"] = "unverified"
+    with pytest.raises(ConfigurationError, match="schema violation"):
+        serialize_reference_preparation_plan_verification(invalid)
+    preserved = written.read_bytes()
+    with pytest.raises(ConfigurationError, match="will not be overwritten"):
+        write_reference_preparation_plan_verification(evidence, output)
+    assert written.read_bytes() == preserved
+    with pytest.raises(ConfigurationError, match="existing real directory"):
+        write_reference_preparation_plan_verification(
+            evidence,
+            root / "missing" / "plan-verification.json",
+        )
+    assert not (root / "missing").exists()
 
 
 def test_verify_rejects_duplicate_keys_trailing_data_and_nonfinite_constants(
@@ -200,6 +235,57 @@ def test_reference_plan_verify_cli_is_ascii_safe_in_unicode_paths(tmp_path: Path
     assert completed.stderr == b""
     assert all(byte < 128 for byte in completed.stdout)
     evidence = json.loads(completed.stdout.decode("ascii"))
+    assert completed.stdout == serialize_reference_preparation_plan_verification(evidence)
     assert evidence["report"]["matches_deterministic_regeneration"] is True
     assert evidence["recorded_plan"]["run_id"] == "cli-verify"
     assert _inventory(root) == before
+
+    output = root / "Überprüfung" / "plan-verification.json"
+    exported = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "diffeoforge",
+            "reference-plan-verify",
+            str(saved_plan),
+            "--report",
+            str(report),
+            "--expect-fingerprint",
+            reference_preparation_plan_fingerprint(plan),
+            "--output",
+            str(output),
+        ],
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+        text=False,
+    )
+
+    assert exported.returncode == 0, exported.stderr.decode(errors="replace")
+    assert exported.stderr == b""
+    assert output.read_bytes() == completed.stdout
+    output_text = exported.stdout.decode("ascii")
+    assert (
+        "Saved plan verification evidence: "
+        f"{json.dumps(str(output.resolve()), ensure_ascii=True)}" in output_text
+    )
+    assert hashlib.sha256(completed.stdout).hexdigest() in output_text
+    preserved = output.read_bytes()
+    duplicate = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "diffeoforge",
+            "reference-plan-verify",
+            str(saved_plan),
+            "--output",
+            str(output),
+        ],
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+        text=False,
+    )
+    assert duplicate.returncode == 2
+    assert b"will not be overwritten" in duplicate.stderr
+    assert output.read_bytes() == preserved

@@ -35,7 +35,8 @@ meshes, or run destination:
 
 ```powershell
 diffeoforge reference-plan-verify review/pilot-001-preparation.json `
-  --report review/pilot-001-preparation.html
+  --report review/pilot-001-preparation.html `
+  --output review/pilot-001-plan-verification.json
 ```
 
 Add `--expect-fingerprint SHA256` to bind the saved plan to an independently

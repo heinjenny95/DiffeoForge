@@ -91,7 +91,8 @@ This roadmap describes evidence gates rather than promised dates.
   - [x] Approval-bound read-only destination/private-stage reconciliation report
   - [x] Review-bound read-only reference preparation status in the desktop GUI
   - [x] Project-independent saved reference-status verification in the desktop GUI
-  - [x] Exact non-overwriting verification-evidence export in CLI and desktop
+  - [x] Exact non-overwriting saved-status verification-evidence export in CLI and desktop
+  - [x] Exact non-overwriting plan/approval verification-evidence export in CLI
   - [ ] User-approved private-stage mutation, reference supervision, and native mesh rendering
 - [ ] Parameter explanations and safe presets
 - [x] Pre-compute configured all-pairs and known-payload workload report

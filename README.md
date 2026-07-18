@@ -38,10 +38,10 @@ diffeoforge reference-plan atlas.yaml --run-id experiment-001
 # Review exact paths, staged inputs, effective YAML, XML bytes/hashes, and command.
 # Optionally create an offline browser review while retaining JSON on stdout:
 diffeoforge reference-plan atlas.yaml --run-id experiment-001 --report experiment-001-preparation.html > experiment-001-preparation.json
-diffeoforge reference-plan-verify experiment-001-preparation.json --report experiment-001-preparation.html
+diffeoforge reference-plan-verify experiment-001-preparation.json --report experiment-001-preparation.html --output experiment-001-plan-verification.json
 # After human review, record preparation-only approval for that exact fingerprint:
 diffeoforge reference-plan-approve atlas.yaml --run-id experiment-001 --approve-fingerprint REVIEWED_SHA256 --output experiment-001-approval.json
-diffeoforge reference-plan-approval-verify experiment-001-approval.json --current-config atlas.yaml
+diffeoforge reference-plan-approval-verify experiment-001-approval.json --current-config atlas.yaml --output experiment-001-approval-verification.json
 diffeoforge reference-preparation-status experiment-001-approval.json --current-config atlas.yaml --expect-request-sha256 REVIEWED_REQUEST_SHA256 --json
 diffeoforge reference-prepare-approved experiment-001-approval.json --current-config atlas.yaml --expect-request-sha256 REVIEWED_REQUEST_SHA256
 # Inspect manifest.json and engine/*.xml before committing compute time.
@@ -96,7 +96,8 @@ This repository currently provides:
   paths, effective YAML, Deformetrica XML contents/hashes, and command preview;
 - a deterministic preparation-only approval request bound to a freshly
   recomputed exact plan, plus strict internal and optional current-state
-  verification without preparation or engine authorization;
+  verification and exact non-overwriting verification-evidence export without
+  preparation or engine authorization;
 - an approval-aware atomic reference preparation path that externally binds the
   request bytes, exact-matches private staging, never replaces an appearing
   destination, and verifies pristine `prepared` state without engine launch;
@@ -116,6 +117,8 @@ This repository currently provides:
   non-overwriting JSON provenance export and strict external-hash saved-report
   verification plus exact evidence export in both CLI and the
   project-independent first desktop screen,
+  exact non-overwriting CLI evidence exports for saved plan and approval
+  verification,
   shared-core workload/preflight evidence, and a verified Modern-only
   start/live-event/cancel screen followed by a fully reverified Atlas/PCA/QC
   summary with inventory-bound artifact handoff;
