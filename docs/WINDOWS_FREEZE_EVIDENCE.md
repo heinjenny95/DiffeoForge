@@ -20,13 +20,15 @@ hard-parent-death audit, preparation-worker hard-parent-death audit, real
 approval-bound prepared-not-executed worker/controller smoke, exact bundle
 inventory creation, and an independent final verification.
 
-The unsigned one-directory bundle is intentionally not uploaded. Until code
-signing, SBOM, dependency-license clearance, antivirus review, and installer
-gates exist, the workflow copies `freeze-evidence.json` and its sidecar, then
-creates a separately hash-bound, explicitly unreviewed installed-distribution
-metadata inventory and sidecar. The exact four-file boundary is retained for
-14 days. Both pairs are independently verified immediately before upload. See
-[Frozen dependency metadata evidence](DESKTOP_DEPENDENCY_METADATA_EVIDENCE.md).
+The unsigned one-directory bundle is intentionally not uploaded. The workflow
+copies `freeze-evidence.json` and its sidecar, creates a separately hash-bound,
+explicitly unreviewed installed-distribution metadata inventory and sidecar,
+then creates the deterministic CycloneDX 1.7 document and sidecar from both
+source-evidence hashes. The configured boundary is exactly those six regular,
+non-reparse files retained for 14 days. All three pairs are independently
+verified immediately before upload. See
+[Frozen dependency metadata evidence](DESKTOP_DEPENDENCY_METADATA_EVIDENCE.md)
+and [Deterministic Windows post-build SBOM](DESKTOP_SBOM.md).
 The workflow does not run on pushes or pull requests and therefore cannot
 silently consume a large Windows runner for ordinary changes.
 
@@ -88,6 +90,16 @@ pair recorded 27 packages and 152 hashed installed license-related files with
 no unresolved `License-File` declaration. Exact artifact hashes, package-field
 counts, timings, and the unchanged license/SBOM non-claims are documented in
 [Frozen dependency metadata evidence](DESKTOP_DEPENDENCY_METADATA_EVIDENCE.md).
+
+### Pending six-file SBOM observation
+
+The workflow source now requires the pinned builder-only SBOM dependency,
+creates the deterministic CycloneDX pair only after both source-evidence pairs
+verify, reconstructs the SBOM through the independent download verifier, and
+fails unless the upload directory contains exactly the six approved regular,
+non-reparse files. This integration is not itself an observation. A new manual
+run, independent artifact download, exact hash audit, and documentation update
+are still required before a clean-runner SBOM is cited.
 
 DiffeoForge can be frozen on a 64-bit Windows development machine into one
 directory containing four entry points:

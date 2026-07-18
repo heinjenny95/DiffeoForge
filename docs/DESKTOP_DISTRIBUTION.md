@@ -74,8 +74,10 @@ events to the reviewed request, enforces lifecycle/exit-code agreement, bounds
   unreviewed; this is an input to, not a substitute for, license review and an
   SBOM. A separate [deterministic SBOM tool](DESKTOP_SBOM.md) can now create and
   independently verify CycloneDX 1.7 from the exact freeze and dependency
-  evidence. The manual clean-runner workflow has not yet produced or uploaded
-  that pair, so its four-file observation boundary is unchanged.
+  evidence. The manual clean-runner workflow is now configured to create and
+  verify all three exact pairs, while the latest independently inspected
+  observation remains the earlier four-file artifact until a new dispatch is
+  completed and downloaded.
 
 The CPU modern engine is the first bundled numerical variant. A future NVIDIA
 build is a separate artifact with separate numerical evidence; the application
