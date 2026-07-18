@@ -64,7 +64,9 @@ CycloneDX pair from both externally bound source documents. The configured
 upload boundary contains these three JSON documents and their three exact
 sidecars, never the unsigned executable directory. The first independently
 inspected observation below predates that six-file integration and remains a
-historical four-file artifact.
+historical four-file artifact. The later accepted six-file observation is
+documented in
+[Windows one-directory freeze evidence](WINDOWS_FREEZE_EVIDENCE.md).
 
 ## First clean-runner observation
 
