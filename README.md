@@ -432,6 +432,7 @@ and workflow for another mesh directory.
 - [Landmark-based Procrustes alignment](docs/PROCRUSTES_ALIGNMENT.md)
 - [PCA of atlas-derived subject features](docs/ATLAS_PCA.md)
 - [Desktop executable and installer architecture](docs/DESKTOP_DISTRIBUTION.md)
+- [Reproducible Windows installer build contract](docs/WINDOWS_INSTALLER_CONTRACT.md)
 - [Windows one-directory freeze evidence](docs/WINDOWS_FREEZE_EVIDENCE.md)
 - [Frozen dependency metadata evidence](docs/DESKTOP_DEPENDENCY_METADATA_EVIDENCE.md)
 - [Deterministic Windows CycloneDX 1.7 SBOM](docs/DESKTOP_SBOM.md)

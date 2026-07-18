@@ -184,16 +184,24 @@ long-running scientific application containing Qt and PyTorch benefits from an
 inspectable installed directory, no repeated temporary extraction, simpler DLL
 inventory, and clearer antivirus/signing diagnostics.
 
-Inno Setup is the proposed Windows installer wrapper. Its official toolchain can
-compile scripts noninteractively, install per-user or administratively, create
-signed installers/uninstallers, log setup, support Unicode paths, and perform
-silent installs for clean-VM CI. The installer contains the already frozen
-one-directory application; it does not resolve Python packages on the user's
-computer.
+Inno Setup is the selected Windows installer wrapper. The first exact design is
+fixed by
+[ADR 0006](decisions/0006-reproducible-windows-installer-contract.md) and the
+[reproducible installer build contract](WINDOWS_INSTALLER_CONTRACT.md). It pins
+the immutable official Inno Setup 7.0.2 x64 asset and its independent
+attestation, SHA-256, and Authenticode checks. The toolchain can compile scripts
+noninteractively, install per-user or administratively, create signed
+installers/uninstallers, log setup, support extended-length and Unicode paths,
+and perform silent installs for clean-VM CI. The future installer contains the
+already frozen one-directory application; it does not resolve Python packages
+on the user's computer. No installer executable has been implemented or
+distributed merely because this design is accepted.
 
-The evidence pin is not the future release lock. Exact Qt, PyTorch, transitive
-dependencies, and Inno Setup versions still belong in a reviewed release lock
-and SBOM. No unpinned `latest` downloads may occur during a release build.
+The freeze evidence pin is not the future release lock. Exact Qt, PyTorch, and
+transitive dependencies still belong in a reviewed release lock and SBOM. The
+installer design now pins Inno Setup 7.0.2, but that tool pin does not approve
+the bundled runtime for redistribution. No unpinned `latest` downloads may
+occur during a release build.
 The first SBOM design is now fixed by
 [ADR 0005](decisions/0005-cyclonedx-post-build-sbom.md) as deterministic
 CycloneDX 1.7 JSON generated only from externally hash-bound freeze and

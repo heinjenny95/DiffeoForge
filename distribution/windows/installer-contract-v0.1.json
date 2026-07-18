@@ -1,0 +1,155 @@
+{
+  "schema_version": "0.1",
+  "status": "accepted_design_not_an_installer_or_release_artifact",
+  "target": "windows-x86_64-cpu",
+  "toolchain": {
+    "name": "Inno Setup",
+    "version": "7.0.2",
+    "edition": "x64",
+    "release_repository": "jrsoftware/issrc",
+    "release_tag": "is-7_0_2",
+    "release_immutable": true,
+    "asset": "innosetup-7.0.2-x64.exe",
+    "asset_bytes": 17020192,
+    "asset_sha256": "5ad54ca3def786f8f4212552e54cc6d8d61329e2d24a1cfee0571d42c2684ff1",
+    "asset_url": "https://github.com/jrsoftware/issrc/releases/download/is-7_0_2/innosetup-7.0.2-x64.exe",
+    "authenticity_checks_before_execution": [
+      "github_release_attestation",
+      "exact_sha256",
+      "valid_authenticode_publisher_pyrsys_b_v"
+    ],
+    "compiler": "ISCC.exe",
+    "compiler_mode": "console_noninteractive",
+    "unpinned_latest_or_package_manager_resolution": false
+  },
+  "required_inputs": {
+    "source_commit_sha": "external_lowercase_40_hex",
+    "application_version": "exact_pyproject_project_version",
+    "installer_script_sha256": "external_lowercase_64_hex",
+    "bundle": {
+      "target": "windows-x86_64-cpu",
+      "freeze_evidence_schema": "desktop-freeze-evidence-v0.3",
+      "full_bundle_verification_required": true
+    },
+    "downloaded_evidence": {
+      "exact_regular_non_reparse_file_count": 6,
+      "external_freeze_evidence_sha256": true,
+      "external_dependency_evidence_sha256": true,
+      "external_sbom_sha256": true,
+      "deterministic_sbom_reconstruction_required": true
+    },
+    "human_release_inputs_required_before_distribution": [
+      "reviewed_third_party_license_inventory",
+      "license_compatibility_decision",
+      "redistribution_approval"
+    ]
+  },
+  "installer_identity": {
+    "app_name": "DiffeoForge",
+    "app_id": "DiffeoForge.WindowsCPU.x86_64",
+    "product_flavor": "Windows CPU x86-64",
+    "version_source": "pyproject.toml:[project].version",
+    "release_candidate_requires_non_development_version": true,
+    "output_basename_template": "DiffeoForge-{version}-Windows-CPU-x86_64-Setup"
+  },
+  "architecture": {
+    "setup_architecture": "x64",
+    "architectures_allowed": "x64compatible",
+    "architectures_install_in_64_bit_mode": "x64compatible",
+    "arm64_behavior": "x64_emulation_only_not_native_arm64_claim"
+  },
+  "operating_system": {
+    "inno_min_version": "10.0.17763",
+    "minimum_name": "Windows 10 version 1809",
+    "basis": "Qt_6_11_supported_windows_platform_floor",
+    "windows_11_in_scope": true,
+    "minimum_install_gate_is_not_a_tested_support_claim": true
+  },
+  "installation_scope": {
+    "default": "current_user_non_admin",
+    "privileges_required": "lowest",
+    "privileges_required_overrides_allowed": [
+      "dialog",
+      "commandline"
+    ],
+    "commandline_modes": [
+      "/CURRENTUSER",
+      "/ALLUSERS"
+    ],
+    "default_directory": "{autopf}\\DiffeoForge",
+    "start_menu_shortcut": true,
+    "desktop_shortcut": "optional_unchecked",
+    "automatic_post_install_launch": false,
+    "file_associations": false,
+    "environment_path_changes": false,
+    "services_or_scheduled_tasks": false,
+    "telemetry_update_or_download_action": false
+  },
+  "installed_content_boundary": {
+    "verified_bundle_tree": "complete_and_unchanged",
+    "evidence_copies": [
+      "freeze-evidence.json",
+      "freeze-evidence.sha256",
+      "freeze-dependency-metadata.json",
+      "freeze-dependency-metadata.sha256",
+      "freeze-sbom.cdx.json",
+      "freeze-sbom.cdx.sha256"
+    ],
+    "project_or_mesh_data_inside_application_directory": false,
+    "network_fetched_payload": false,
+    "external_deformetrica_environment": false
+  },
+  "uninstall_boundary": {
+    "remove_application_files_shortcuts_and_uninstall_registration_only": true,
+    "recursive_user_project_deletion": false,
+    "uninstall_run_commands": false,
+    "project_preservation_requires_clean_vm_observation": true
+  },
+  "build_and_output": {
+    "output_directory": "existing_real_directory_outside_bundle_and_source_evidence",
+    "overwrite_existing_output": false,
+    "compiler_exit_code_zero_required": true,
+    "setup_exe_sha256_sidecar_required": true,
+    "installer_evidence_document_and_sidecar_required": true,
+    "bit_for_bit_rebuild_determinism_claim": false,
+    "reproducibility_claim": "same_reviewed_process_and_exact_inputs_with_each_output_independently_hashed"
+  },
+  "future_installer_evidence_bindings": [
+    "source_commit_sha",
+    "application_version",
+    "installer_script_sha256",
+    "toolchain_asset_sha256",
+    "freeze_evidence_sha256",
+    "dependency_evidence_sha256",
+    "sbom_sha256",
+    "bundle_inventory_sha256",
+    "setup_exe_sha256"
+  ],
+  "required_observations_before_usable_installer_claim": [
+    "current_user_silent_install_launch_public_smoke_exit_uninstall",
+    "administrator_silent_install_launch_public_smoke_exit_uninstall",
+    "install_and_uninstall_logs",
+    "user_project_preserved_after_uninstall",
+    "spaces_non_ascii_and_long_paths",
+    "no_python_or_developer_tools_clean_vm",
+    "no_network_by_default",
+    "windows_defender_scan",
+    "authenticode_for_installer_uninstaller_and_application_executables",
+    "cpu_numerical_validation_on_exact_installed_artifact"
+  ],
+  "missing_release_gates_after_contract_acceptance": [
+    "installer_implementation",
+    "installer_build_observation",
+    "human_license_inventory",
+    "license_compatibility_review",
+    "redistribution_approval",
+    "authenticode_signature",
+    "windows_defender_scan",
+    "clean_windows_vm",
+    "no_network_observation",
+    "project_preservation_observation",
+    "cpu_numerical_release_validation",
+    "crash_and_power_loss_reconciliation",
+    "scientific_validation"
+  ]
+}
