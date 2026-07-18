@@ -37,12 +37,12 @@ def test_reference_review_uses_effective_preflight_parameters(tmp_path: Path) ->
     assert review.subject_count == 5
     assert review.report_path == setup.report_path
     assert review.report_path.is_file()
-    assert values["Koordinateneinheit"] == "millimeter"
-    assert values["Attachment"].startswith("current · Breite ")
-    assert evidence["Attachment / Template-Skala"] == "10.000%"
-    assert evidence["Deformation / Template-Skala"] == "15.000%"
-    assert evidence["Rechenaufwand"] == "nicht modelliert"
-    assert any("explorativ" in warning for warning in review.warnings)
+    assert values["Coordinate unit"] == "millimeter"
+    assert values["Attachment"].startswith("current · width ")
+    assert evidence["Attachment / template scale"] == "10.000%"
+    assert evidence["Deformation / template scale"] == "15.000%"
+    assert evidence["Compute cost"] == "not modeled"
+    assert any("exploratory" in warning for warning in review.warnings)
 
 
 def test_modern_review_publishes_existing_exact_workload_contract(tmp_path: Path) -> None:
@@ -68,14 +68,14 @@ def test_modern_review_publishes_existing_exact_workload_contract(tmp_path: Path
     assert review.report_path.is_file()
     report_json = review.report_path.with_name("workload.json")
     report = json.loads(report_json.read_text(encoding="utf-8"))
-    assert values["Ausführung"].startswith("CPU · float64")
-    assert values["Paarweise Auswertung"].startswith("dense")
-    assert evidence["Datensatz"] == "5 Probanden + 1 Template"
-    assert evidence["Objective/Gradient-Obergrenze"] == str(
+    assert values["Execution"].startswith("CPU · float64")
+    assert values["Pairwise evaluation"].startswith("dense")
+    assert evidence["Dataset"] == "5 subjects + 1 template"
+    assert evidence["Objective/gradient upper bound"] == str(
         report["optimizer_bound"]["objective_gradient_evaluation_upper_bound"]
     )
-    assert evidence["Peak-RAM und Laufzeit"] == "unbekannt · Pilotmessung erforderlich"
-    assert "keine Peak-RAM-Prognose" in review.scientific_boundary
+    assert evidence["Peak RAM and runtime"] == "unknown · pilot measurement required"
+    assert "not a peak-RAM predictor" in review.scientific_boundary
 
     refreshed = review_project(setup.config_path, setup.engine)
     assert refreshed.report_path == review.report_path

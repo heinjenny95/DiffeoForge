@@ -50,7 +50,7 @@ def _number(value: int | float) -> str:
 
 def _bytes(value: int | None) -> str:
     if value is None:
-        return "unbekannt"
+        return "unknown"
     units = ("B", "KiB", "MiB", "GiB", "TiB")
     amount = float(value)
     unit = units[0]
@@ -61,11 +61,11 @@ def _bytes(value: int | None) -> str:
     return f"{amount:.3g} {unit}"
 
 
-def _setting(value: Any, *, none: str = "automatisches Maximum") -> str:
+def _setting(value: Any, *, none: str = "automatic maximum") -> str:
     if value is None:
         return none
     if isinstance(value, bool):
-        return "ja" if value else "nein"
+        return "yes" if value else "no"
     if isinstance(value, (int, float)) and not isinstance(value, bool):
         return _number(value)
     if isinstance(value, (list, tuple)):
@@ -87,106 +87,106 @@ def _reference_review(config_path: Path, config_sha256: str) -> ProjectReviewRes
 
     parameters = (
         ReviewItem(
-            "Koordinateneinheit",
+            "Coordinate unit",
             str(config["input"]["units"]),
-            "Bestimmt die physikalische Interpretation aller Längen und Distanzen.",
+            "Determines the physical interpretation of all lengths and distances.",
         ),
         ReviewItem(
             "Attachment",
             (
-                f"{model['attachment']['type']} · Breite "
+                f"{model['attachment']['type']} · width "
                 f"{_number(model['attachment']['kernel_width'])}"
             ),
-            "Vergleicht Template und Probandenoberflächen; die Breite steuert die räumliche Skala.",
+            "Compares template and subject surfaces; the width controls the spatial scale.",
         ),
         ReviewItem(
-            "Deformationskernel",
+            "Deformation kernel",
             _number(deformation["kernel_width"]),
-            "Steuert die räumliche Glätte der diffeomorphen Deformation.",
+            "Controls the spatial smoothness of the diffeomorphic deformation.",
         ),
         ReviewItem(
-            "Kontrollpunktabstand",
+            "Control-point spacing",
             _number(deformation["initial_control_point_spacing"]),
-            "Steuert die Dichte der initialen Deformationsparameter.",
+            "Controls the density of the initial deformation parameters.",
         ),
         ReviewItem(
-            "Zeitdiskretisierung",
-            f"{deformation['timepoints']} Zeitpunkte · RK2 {_setting(deformation['use_rk2'])}",
-            "Legt die numerische Diskretisierung der Deformationsbahn fest.",
+            "Time discretization",
+            f"{deformation['timepoints']} time points · RK2 {_setting(deformation['use_rk2'])}",
+            "Defines the numerical discretization of the deformation trajectory.",
         ),
         ReviewItem(
-            "Rauschstandardabweichung",
+            "Noise standard deviation",
             _number(model["noise_std"]),
-            "Gewichtet den Datenanpassungsterm im Atlasmodell.",
+            "Weights the data-attachment term in the atlas model.",
         ),
         ReviewItem(
-            "Optimierung",
+            "Optimization",
             (
-                f"max. {optimization['max_iterations']} Iterationen · Schritt "
+                f"max. {optimization['max_iterations']} iterations · step "
                 f"{_number(optimization['initial_step_size'])}"
             ),
-            "Starterwerte für Gradient Ascent; Konvergenz und biologische "
-            "Plausibilität müssen geprüft werden.",
+            "Starter values for gradient ascent; convergence and biological "
+            "plausibility must be reviewed.",
         ),
         ReviewItem(
-            "Reproduzierbarkeit",
+            "Reproducibility",
             (
                 f"Seed {runtime['random_seed']} · {runtime['threads']} Threads · "
                 f"{runtime['precision']}"
             ),
-            "Explizite Laufzeitparameter für die externe Referenzroute.",
+            "Explicit runtime parameters for the external reference route.",
         ),
     )
     subject_points = [subject.points for subject in preflight.subjects]
     subject_faces = [subject.cells for subject in preflight.subjects]
     workload = (
         ReviewItem(
-            "Datensatz",
-            f"{len(preflight.subjects)} Probanden + 1 Template",
-            "Vollständig geparste und validierte VTK-Oberflächen.",
+            "Dataset",
+            f"{len(preflight.subjects)} subjects + 1 template",
+            "Fully parsed and validated VTK surfaces.",
         ),
         ReviewItem(
-            "Template-Skala",
+            "Template scale",
             _number(diagonal),
-            "Diagonale der Template-Bounding-Box; Bezugsgröße der erzeugten Starterwerte.",
+            "Template bounding-box diagonal; reference scale for generated starter values.",
         ),
         ReviewItem(
-            "Attachment / Template-Skala",
+            "Attachment / template scale",
             f"{ratios['Attachment kernel width / template diagonal']:.3%}",
-            "Dimensionsloses Verhältnis aus dem effektiven Preflight.",
+            "Dimensionless ratio from the effective preflight.",
         ),
         ReviewItem(
-            "Deformation / Template-Skala",
+            "Deformation / template scale",
             f"{ratios['Deformation kernel width / template diagonal']:.3%}",
-            "Dimensionsloses Verhältnis aus dem effektiven Preflight.",
+            "Dimensionless ratio from the effective preflight.",
         ),
         ReviewItem(
-            "Mesh-Auflösung",
+            "Mesh resolution",
             (
-                f"{min(subject_points):,}–{max(subject_points):,} Punkte · "
-                f"{min(subject_faces):,}–{max(subject_faces):,} Flächen"
+                f"{min(subject_points):,}–{max(subject_points):,} points · "
+                f"{min(subject_faces):,}–{max(subject_faces):,} faces"
             ).replace(",", " "),
-            "Beobachtete Spanne der Probandenmeshes, keine Qualitätsbewertung "
-            "der Formrepräsentation.",
+            "Observed subject-mesh range, not a quality assessment of the shape "
+            "representation.",
         ),
         ReviewItem(
-            "Quelldaten",
+            "Source data",
             _bytes(preflight.total_input_bytes),
-            "Dateigröße der geprüften Meshes; keine RAM- oder Laufzeitprognose.",
+            "File size of the reviewed meshes; not a RAM or runtime forecast.",
         ),
         ReviewItem(
-            "Rechenaufwand",
-            "nicht modelliert",
-            "Die Ausführung liegt in der externen Deformetrica-4.3-Umgebung; "
-            "Pilotmessung erforderlich.",
+            "Compute cost",
+            "not modeled",
+            "Execution occurs in the external Deformetrica 4.3 environment; "
+            "a pilot measurement is required.",
         ),
     )
     warnings = (
-        "Geometrieskalierte Starterwerte sind explorativ und keine wissenschaftlich "
-        "validierten Presets.",
+        "Geometry-scaled starter values are exploratory and are not scientifically "
+        "validated presets.",
         *preflight.notices,
-        "DiffeoForge hat Deformetrica nicht gestartet und prognostiziert hier weder "
-        "Peak-RAM noch Laufzeit.",
+        "DiffeoForge did not start Deformetrica and does not forecast peak RAM or "
+        "runtime here.",
     )
     return ProjectReviewResult(
         engine=DesktopEngine.DEFORMETRICA_REFERENCE,
@@ -200,9 +200,9 @@ def _reference_review(config_path: Path, config_sha256: str) -> ProjectReviewRes
         workload=workload,
         warnings=warnings,
         scientific_boundary=(
-            "Diese Ansicht bestätigt Schema, Pfade, Meshgeometrie und effektive Parameter. "
-            "Sie bestätigt weder Parameter-Eignung noch biologische Validität und führt die "
-            "externe Deformetrica-Engine nicht aus."
+            "This view confirms the schema, paths, mesh geometry, and effective parameters. "
+            "It confirms neither parameter suitability nor biological validity and does not "
+            "execute the external Deformetrica engine."
         ),
     )
 
@@ -238,78 +238,78 @@ def _modern_review(config_path: Path, config_sha256: str) -> ProjectReviewResult
     runtime = config["runtime"]
     procrustes = config["preprocessing"]["procrustes"]
     pairwise = report["engine"]["pairwise_evaluation"]
-    pairwise_value = "dense · vollständige Paarmatrizen"
+    pairwise_value = "dense · complete pair matrices"
     if pairwise["mode"] == "blockwise":
         pairwise_value = (
-            f"blockwise · Kacheln {pairwise['query_tile_size']} × {pairwise['source_tile_size']}"
+            f"blockwise · tiles {pairwise['query_tile_size']} × {pairwise['source_tile_size']}"
         )
     noise_std = math.sqrt(model["noise_variance"])
     parameters = (
         ReviewItem(
-            "Koordinateneinheit",
+            "Coordinate unit",
             str(config["input"]["units"]),
-            "Bestimmt die physikalische Interpretation aller Längen und Distanzen.",
+            "Determines the physical interpretation of all lengths and distances.",
         ),
         ReviewItem(
             "Attachment",
             (
-                f"{model['attachment']['type']} · Breite "
+                f"{model['attachment']['type']} · width "
                 f"{_number(model['attachment']['kernel_width'])}"
             ),
-            "Vergleicht Template und Probandenoberflächen auf der konfigurierten räumlichen Skala.",
+            "Compares template and subject surfaces at the configured spatial scale.",
         ),
         ReviewItem(
-            "Deformationskernel",
+            "Deformation kernel",
             _number(deformation["kernel_width"]),
-            "Steuert die räumliche Glätte der diffeomorphen Deformation.",
+            "Controls the spatial smoothness of the diffeomorphic deformation.",
         ),
         ReviewItem(
-            "Kontrollpunkte",
+            "Control points",
             f"{config['initialization']['control_points']['count']} · farthest template vertices",
-            "Anzahl und deterministische Initialisierung der Deformationsparameter.",
+            "Count and deterministic initialization of the deformation parameters.",
         ),
         ReviewItem(
-            "Zeitintegration",
+            "Time integration",
             (
-                f"{deformation['timepoints']} Zeitpunkte · "
+                f"{deformation['timepoints']} time points · "
                 f"{deformation['shooting_integrator']} / {deformation['flow_integrator']}"
             ),
-            "Explizite Diskretisierung für Shooting und Template-Flow.",
+            "Explicit discretization for shooting and template flow.",
         ),
         ReviewItem(
-            "Rauschvarianz",
-            f"{_number(model['noise_variance'])} · Standardabw. {_number(noise_std)}",
-            "Gewichtet den Datenanpassungsterm; die Standardabweichung ist exakt aus "
-            "der Varianz abgeleitet.",
+            "Noise variance",
+            f"{_number(model['noise_variance'])} · standard deviation {_number(noise_std)}",
+            "Weights the data-attachment term; the standard deviation is derived exactly "
+            "from the variance.",
         ),
         ReviewItem(
-            "Optimierungsblöcke",
-            f"{_setting(optimization['block_order'])} · max. {optimization['max_cycles']} Zyklen",
-            "Deterministische Reihenfolge der getrennten Parameter-Updates.",
+            "Optimization blocks",
+            f"{_setting(optimization['block_order'])} · max. {optimization['max_cycles']} cycles",
+            "Deterministic order of the separate parameter updates.",
         ),
         ReviewItem(
-            "PCA-Ausgabe",
+            "PCA output",
             (
-                f"Komponenten {_setting(analysis['pca_components'])} · "
-                f"Deformationen {_setting(analysis['deformation_components'])}"
+                f"components {_setting(analysis['pca_components'])} · "
+                f"deformations {_setting(analysis['deformation_components'])}"
             ),
-            "Begrenzt spätere PCA- und Extremform-Artefakte, nicht die Atlasoptimierung selbst.",
+            "Limits later PCA and extreme-shape artifacts, not atlas optimization itself.",
         ),
         ReviewItem(
             "Landmark-Procrustes",
             _setting(procrustes["enabled"]),
-            "Optionale homologe Landmark-Ausrichtung vor der Atlasberechnung.",
+            "Optional homologous-landmark alignment before atlas computation.",
         ),
         ReviewItem(
-            "Ausführung",
+            "Execution",
             f"CPU · float64 · {runtime['threads']} Threads · Seed {runtime['random_seed']}",
-            "Effektiver, reproduzierbarer Laufzeitvertrag der experimentellen Modern-Engine.",
+            "Effective, reproducible runtime contract for the experimental Modern engine.",
         ),
         ReviewItem(
-            "Paarweise Auswertung",
+            "Pairwise evaluation",
             pairwise_value,
-            "Dieselbe Ausführungsstrategie, die der Atlas verwendet und der "
-            "Workload-Report bilanziert.",
+            "The same execution strategy used by the atlas and accounted for by the "
+            "workload report.",
         ),
     )
     operation = report["operation_model"]
@@ -320,80 +320,106 @@ def _modern_review(config_path: Path, config_sha256: str) -> ProjectReviewResult
     optimizer = report["optimizer_bound"]
     output = report["output_bound"]
     host = report["host_observations"]
+    template_faces = int(report["input"]["template"]["triangles"])
+    subject_face_counts = tuple(
+        int(subject["triangles"]) for subject in report["input"]["subjects"]
+    )
+    maximum_faces = max((template_faces, *subject_face_counts))
     workload = (
         ReviewItem(
-            "Datensatz",
-            f"{report['input']['subject_count']} Probanden + 1 Template",
-            "Vollständig inventarisierte Meshes; Hashes und Dimensionen stehen im "
-            "HTML/JSON-Report.",
+            "Dataset",
+            f"{report['input']['subject_count']} subjects + 1 template",
+            "Fully inventoried meshes; hashes and dimensions are in the HTML/JSON report.",
         ),
         ReviewItem(
-            "Ein Objective-Forward",
+            "Mesh faces",
             (
-                f"{_number(forward['gaussian_calls'])} Gaussian-Aufrufe · "
-                f"{_number(forward['gaussian_pair_elements'])} Paarelemente"
+                f"template {_number(template_faces)} · subjects "
+                f"{_number(min(subject_face_counts))}–{_number(max(subject_face_counts))}"
             ),
-            "Exakte Formel für die aktuell konfigurierte Engine und Meshinventur.",
+            "Observed input resolution, recorded before compute; DiffeoForge does not "
+            "silently decimate or remesh these files.",
         ),
         ReviewItem(
-            "Größtes logisches Paar",
+            "One objective forward pass",
+            (
+                f"{_number(forward['gaussian_calls'])} Gaussian calls · "
+                f"{_number(forward['gaussian_pair_elements'])} pair elements"
+            ),
+            "Exact formula for the currently configured engine and mesh inventory.",
+        ),
+        ReviewItem(
+            "Largest logical pair",
             (
                 f"{logical['rows']} × {logical['columns']} · "
                 f"{_bytes(logical['float64_xyz_difference_tensor_bytes'])} "
-                "XYZ-Differenzen"
+                "XYZ differences"
             ),
-            "Logische All-pairs-Dimension; bei blockweiser Auswertung nicht zwingend "
-            "eine einzelne Allokation.",
+            "Logical all-pairs dimensions; blockwise evaluation does not necessarily "
+            "allocate this all at once.",
         ),
         ReviewItem(
-            "Größte Ausführungskachel",
+            "Largest execution tile",
             (
                 f"{tile['tile_rows']} × {tile['tile_columns']} · "
                 f"{_bytes(tile['float64_xyz_difference_tensor_bytes'])}"
             ),
-            "Exakte Obergrenze einer konfigurierten XYZ-Differenzkachel, nicht des "
-            "gesamten Peak-RAM.",
+            "Exact upper bound for one configured XYZ-difference tile, not total peak RAM.",
         ),
         ReviewItem(
-            "Bekannte Payload-Arithmetik",
+            "Known payload arithmetic",
             _bytes(payload["known_payload_arithmetic_subtotal_bytes"]),
-            "Explizit bilanzierte Tensoranteile; Autograd, Allocator, BLAS und "
-            "Betriebssystem fehlen bewusst.",
+            "Explicitly accounted tensor payloads; Autograd, allocator, BLAS, and the "
+            "operating system are intentionally excluded.",
         ),
         ReviewItem(
-            "Objective/Gradient-Obergrenze",
+            "Objective/gradient upper bound",
             _number(optimizer["objective_gradient_evaluation_upper_bound"]),
-            "Konfigurationsbedingte Obergrenze inklusive Line Search, keine beobachtete "
-            "Iterationszahl.",
+            "Configuration-derived upper bound including line search, not an observed "
+            "iteration count.",
         ),
         ReviewItem(
-            "Gaussian-Paarelemente-Obergrenze",
+            "Gaussian pair-element upper bound",
             _number(optimizer["gaussian_pair_elements_upper_bound"]),
-            "Exakte Multiplikation aus Forward-Modell und Optimizer-Obergrenze.",
+            "Exact multiplication of the forward model and optimizer upper bound.",
         ),
         ReviewItem(
-            "Maximale Bundle-Meshes",
+            "Maximum bundle meshes",
             _number(output["maximum_bundle_vtk_meshes"]),
-            "Obergrenze für spätere Atlas-, Rekonstruktions- und PCA-VTK-Artefakte.",
+            "Upper bound for later atlas, reconstruction, and PCA VTK artifacts.",
         ),
         ReviewItem(
-            "Beobachteter Rechner",
+            "Observed computer",
             (
-                f"{host.get('logical_cpus') or 'unbekannt'} logische CPUs · "
-                f"{_bytes(host.get('physical_memory_bytes'))} physischer RAM"
+                f"{host.get('logical_cpus') or 'unknown'} logical CPUs · "
+                f"{_bytes(host.get('physical_memory_bytes'))} physical RAM"
             ),
-            "Host-Beobachtung zum Planzeitpunkt; keine Zusage, dass diese Ressourcen "
-            "frei verfügbar sind.",
+            "Host observation at planning time; not a promise that these resources are free.",
         ),
         ReviewItem(
-            "Peak-RAM und Laufzeit",
-            "unbekannt · Pilotmessung erforderlich",
-            "DiffeoForge erfindet keine Prognose aus unvollständigen Speicher- und Zeitmodellen.",
+            "Peak RAM and runtime",
+            "unknown · pilot measurement required",
+            "DiffeoForge does not invent forecasts from incomplete memory and time models.",
         ),
     )
+    high_detail_warning: tuple[str, ...] = ()
+    if maximum_faces >= 5_000:
+        if pairwise["mode"] == "dense":
+            high_detail_warning = (
+                "High-face-count input is configured with dense pairwise evaluation. "
+                "Review the exact logical-pair evidence and benchmark an explicit blockwise "
+                "plan before a production run.",
+            )
+        else:
+            high_detail_warning = (
+                "High-face-count input uses explicit blockwise tiles. The reported tile "
+                "bound is not a total-RAM or runtime guarantee; a representative benchmark "
+                "is still required before production.",
+            )
     warnings = (
-        "Geometrieskalierte Starterwerte sind explorativ und keine wissenschaftlich "
-        "validierten Presets.",
+        "Geometry-scaled starter values are exploratory and are not scientifically "
+        "validated presets.",
+        *high_detail_warning,
         *(str(warning) for warning in report["warnings"]),
     )
     return ProjectReviewResult(
@@ -408,11 +434,11 @@ def _modern_review(config_path: Path, config_sha256: str) -> ProjectReviewResult
         workload=workload,
         warnings=warnings,
         scientific_boundary=(
-            "Gezeigt werden exakte All-pairs-Operationszahlen und bekannte Tensor-Payloads "
-            "für den konfigurierten CPU/float64-Plan. Dies ist keine Peak-RAM-Prognose, "
-            "Laufzeitvorhersage, Benchmarkmessung oder Garantie für 300 Probanden. "
-            "Autograd, Speicherverwaltung, BLAS-Threads und Betriebssystemlast können den "
-            f"realen Bedarf verändern. Originaler Berichtsvertrag: {SCIENTIFIC_BOUNDARY}"
+            "This view shows exact all-pairs operation counts and known tensor payloads for "
+            "the configured CPU/float64 plan. It is not a peak-RAM forecast, runtime "
+            "prediction, benchmark measurement, or guarantee for 300 subjects. Autograd, "
+            "memory management, BLAS threads, and operating-system load can change real "
+            f"resource use. Original report contract: {SCIENTIFIC_BOUNDARY}"
         ),
     )
 

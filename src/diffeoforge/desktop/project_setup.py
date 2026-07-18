@@ -8,7 +8,11 @@ from pathlib import Path
 
 from diffeoforge.config import ConfigurationError, validate_input_paths
 from diffeoforge.initialization import SUPPORTED_UNITS, initialize_project
-from diffeoforge.report import default_preflight_report_path, write_preflight_report
+from diffeoforge.report import (
+    default_preflight_report_path,
+    ensure_preflight_report_replaceable,
+    write_preflight_report,
+)
 
 
 class DesktopEngine(StrEnum):
@@ -30,6 +34,10 @@ class ProjectSetupRequest:
     project_name: str | None = None
     subject_pattern: str = "*.vtk"
     landmarks_file: Path | None = None
+    pairwise_mode: str = "dense"
+    query_tile_size: int | None = None
+    source_tile_size: int | None = None
+    overwrite_existing_configuration: bool = False
 
 
 @dataclass(frozen=True)
@@ -61,6 +69,8 @@ def _normalize_request(request: ProjectSetupRequest) -> ProjectSetupRequest:
         raise ConfigurationError(f"Unsupported desktop engine: {request.engine!r}") from error
     if request.units not in SUPPORTED_UNITS:
         raise ConfigurationError(f"Unsupported coordinate unit: {request.units!r}")
+    if not isinstance(request.overwrite_existing_configuration, bool):
+        raise ConfigurationError("overwrite_existing_configuration must be a boolean")
     pattern = request.subject_pattern.strip()
     if not pattern:
         raise ConfigurationError("Subject filename pattern must not be empty")
@@ -68,6 +78,30 @@ def _normalize_request(request: ProjectSetupRequest) -> ProjectSetupRequest:
     if request.landmarks_file is not None and engine is DesktopEngine.DEFORMETRICA_REFERENCE:
         raise ConfigurationError(
             "Landmark Procrustes is currently available only for the modern CPU workflow"
+        )
+    pairwise_mode = str(request.pairwise_mode).strip().lower()
+    if pairwise_mode not in {"dense", "blockwise"}:
+        raise ConfigurationError("pairwise_mode must be 'dense' or 'blockwise'")
+    if pairwise_mode == "dense":
+        if request.query_tile_size is not None or request.source_tile_size is not None:
+            raise ConfigurationError("Dense pairwise evaluation requires null tile sizes")
+        query_tile_size = None
+        source_tile_size = None
+    else:
+        normalized_tiles: list[int] = []
+        for label, value in (
+            ("query_tile_size", request.query_tile_size),
+            ("source_tile_size", request.source_tile_size),
+        ):
+            if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+                raise ConfigurationError(
+                    f"Blockwise pairwise evaluation requires a positive integer {label}"
+                )
+            normalized_tiles.append(value)
+        query_tile_size, source_tile_size = normalized_tiles
+    if engine is DesktopEngine.DEFORMETRICA_REFERENCE and pairwise_mode != "dense":
+        raise ConfigurationError(
+            "Pairwise execution plans are available only for the modern CPU workflow"
         )
     return ProjectSetupRequest(
         mesh_directory=Path(request.mesh_directory).expanduser().resolve(),
@@ -84,16 +118,22 @@ def _normalize_request(request: ProjectSetupRequest) -> ProjectSetupRequest:
             if request.landmarks_file is None
             else Path(request.landmarks_file).expanduser().resolve()
         ),
+        pairwise_mode=pairwise_mode,
+        query_tile_size=query_tile_size,
+        source_tile_size=source_tile_size,
+        overwrite_existing_configuration=request.overwrite_existing_configuration,
     )
 
 
 def _create_reference_project(request: ProjectSetupRequest) -> ProjectSetupResult:
     config_path = request.project_directory / "atlas.yaml"
     report_path = default_preflight_report_path(config_path)
-    if report_path.exists():
+    if report_path.exists() and not request.overwrite_existing_configuration:
         raise ConfigurationError(
             f"Preflight report already exists and will not be overwritten: {report_path}"
         )
+    if report_path.exists() and request.overwrite_existing_configuration:
+        ensure_preflight_report_replaceable(report_path)
     initialized = initialize_project(
         request.mesh_directory,
         units=request.units,
@@ -101,8 +141,13 @@ def _create_reference_project(request: ProjectSetupRequest) -> ProjectSetupResul
         template=request.template,
         subject_pattern=request.subject_pattern,
         project_name=request.project_name,
+        overwrite=request.overwrite_existing_configuration,
     )
-    write_preflight_report(initialized.preflight, report_path)
+    write_preflight_report(
+        initialized.preflight,
+        report_path,
+        overwrite=request.overwrite_existing_configuration,
+    )
     notices = list(initialized.preflight.notices)
     if initialized.derived_parameters:
         notices.insert(
@@ -143,6 +188,10 @@ def _create_modern_project(request: ProjectSetupRequest) -> ProjectSetupResult:
         subject_pattern=request.subject_pattern,
         project_name=request.project_name,
         landmarks_file=request.landmarks_file,
+        pairwise_mode=request.pairwise_mode,
+        query_tile_size=request.query_tile_size,
+        source_tile_size=request.source_tile_size,
+        overwrite=request.overwrite_existing_configuration,
     )
     config = load_modern_workflow_config(config_path)
     inputs = validate_input_paths(config, config_path)
@@ -153,6 +202,19 @@ def _create_modern_project(request: ProjectSetupRequest) -> ProjectSetupResult:
     ]
     if request.units == "unitless":
         notices.insert(0, "Units are declared as unitless; confirm this is intentional.")
+    if request.overwrite_existing_configuration:
+        notices.append(
+            "The previous generated configuration was replaced after explicit confirmation. "
+            "Any generated workload report will be refreshed during parameter review; source "
+            "meshes and completed run directories were not modified."
+        )
+    if request.pairwise_mode == "blockwise":
+        notices.append(
+            "Exact blockwise pairwise evaluation is enabled with explicit "
+            f"{request.query_tile_size} × {request.source_tile_size} tiles. This bounds one "
+            "pairwise XYZ allocation, not total RAM or runtime; benchmark representative "
+            "meshes before a production run."
+        )
     if inputs.subject_count > 250:
         notices.append(
             "This is a large cohort; run a representative pilot and measure memory and "
@@ -169,7 +231,7 @@ def _create_modern_project(request: ProjectSetupRequest) -> ProjectSetupResult:
 
 
 def create_project(request: ProjectSetupRequest) -> ProjectSetupResult:
-    """Validate inputs and create one non-overwriting starter project."""
+    """Validate inputs and create or explicitly replace one generated starter project."""
 
     normalized = _normalize_request(request)
     if normalized.project_directory.exists() and not normalized.project_directory.is_dir():

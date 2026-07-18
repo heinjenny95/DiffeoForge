@@ -15,6 +15,9 @@ The approval-bound read-only preparation-status card is tracked by
 [engineering issue #133](https://github.com/heinjenny95/DiffeoForge/issues/133).
 The native template projection preview is tracked by
 [engineering issue #97](https://github.com/heinjenny95/DiffeoForge/issues/97).
+The English alpha-smoke follow-up, confirmed atomic overwrite, explicit
+convergence status, and 10,000-face planning contract are tracked by
+[engineering issue #177](https://github.com/heinjenny95/DiffeoForge/issues/177).
 The distribution architecture and its stricter release gates remain in
 [Desktop executable and installer architecture](DESKTOP_DISTRIBUTION.md).
 
@@ -28,34 +31,37 @@ terminal:
    literally named `template.vtk` to be detected;
 3. select the coordinate unit, project directory, optional project name, and
    subject filename pattern;
-4. optionally select a labelled-landmark CSV for the modern workflow;
-5. validate schemas, paths, mesh geometry, and the engine-specific setup
+4. for the Modern route, explicitly choose the dense small-pilot baseline or
+   the exact `256 × 256` blockwise high-face-count experiment;
+5. optionally select a labelled-landmark CSV for the modern workflow;
+6. validate schemas, paths, mesh geometry, and the engine-specific setup
    contract through the same application services used by the CLI;
-6. create a non-overwriting starter configuration and review a visible result
-   summary;
-7. continue to a second screen that reads the effective values back from the
+7. create a starter configuration, requiring a destructive confirmation before
+   atomically replacing only a recognized DiffeoForge-generated configuration,
+   and review a visible result summary;
+8. continue to a second screen that reads the effective values back from the
    validated configuration and explains their role;
-8. optionally load the exact selected template outside the event loop and view
+9. optionally load the exact selected template outside the event loop and view
    native aspect-preserving XY, XZ, or YZ wireframe projections with source
    hash and displayed/total edge counts;
-9. for the modern route, generate and render the existing exact-count
+10. for the modern route, generate and render the existing exact-count
    `modern-plan` JSON/HTML evidence; or, for the reference route, render the
    existing preflight parameter ratios and external-engine boundary, then
    optionally diagnose the exact configured container engine and image without
    changing or starting either one, then inspect one externally hash-bound
    preparation approval and its exact destination/private-stage state through
    the shared read-only reconciliation core;
-10. for a reviewed Modern project, continue to a third screen that binds the
+11. for a reviewed Modern project, continue to a third screen that binds the
    exact reviewed configuration SHA-256, displays and refreshes the read-only
    destination/private-state evidence, checks it again immediately before
    starting the separate worker, shows real workflow stages and committed
    optimizer decisions, and offers one cooperative cancel action; and
-11. expose the result directory only after the parent controller independently
+12. expose the result directory only after the parent controller independently
     verifies the published workflow, manifest hash, subject count, and bundle;
-12. continue to a fourth screen only after a fresh full verification of the
+13. continue to a fourth screen only after a fresh full verification of the
     workflow, nested bundle, exact inventories, hashes, mesh QC, and static SVG
     safety checks; and
-13. inspect bounded Atlas, optimizer, momenta-PCA, and QC summaries, then open
+14. inspect bounded Atlas, optimizer, momenta-PCA, and QC summaries, then open
     only inventoried VTK/CSV/JSON/SVG artifacts whose manifest bindings, size,
     and SHA-256 pass again immediately before handoff to a local application.
 
@@ -89,7 +95,11 @@ python -m diffeoforge.desktop --smoke
 
 ## Safety and privacy boundary
 
-- Existing configurations and reports are never silently overwritten.
+- Existing configurations are never silently overwritten. The setup screen asks
+  for destructive confirmation and then atomically replaces only a file with
+  the expected DiffeoForge generator marker; cancellation and write failure
+  preserve the prior bytes. Generated review reports retain their own strict
+  ownership checks.
 - Review refreshes only reports that carry the expected DiffeoForge generator
   markers; researcher-owned paths are refused.
 - Template preview loading runs outside the GUI event loop, checks the source
@@ -128,6 +138,10 @@ python -m diffeoforge.desktop --smoke
 - A passed setup proves supported file/schema/geometry checks only. It does not
   establish biological validity, parameter suitability, Deformetrica
   equivalence, or production suitability for more than 300 specimens.
+- The blockwise high-face-count choice preserves exact all-pairs mathematics and
+  bounds one declared pairwise tile allocation. It does not promise total RAM,
+  runtime, convergence, or 300-subject feasibility. See
+  [High-detail surface workflow foundation](HIGH_DETAIL_SURFACES.md).
 
 ## Current limitations
 

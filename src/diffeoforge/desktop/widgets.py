@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import threading
 import uuid
+from dataclasses import replace
 from pathlib import Path
 
 from PySide6.QtCore import QObject, QRunnable, Qt, QThreadPool, QUrl, Signal, Slot
@@ -17,6 +18,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMainWindow,
+    QMessageBox,
     QPlainTextEdit,
     QProgressBar,
     QPushButton,
@@ -109,6 +111,7 @@ QPushButton#primary:disabled { background: #a9bdb9; border-color: #a9bdb9; }
 QPushButton#danger { background: #fff0ed; border: 1px solid #d98a7d; color: #8d3025; }
 QLabel#status { background: #f2f5f6; border-radius: 7px; color: #526b70; padding: 10px; }
 QLabel#statusSuccess { background: #e5f5ed; border-radius: 7px; color: #176345; padding: 10px; }
+QLabel#statusWarning { background: #fff7df; border-radius: 7px; color: #765500; padding: 10px; }
 QLabel#statusError { background: #fff0ed; border-radius: 7px; color: #a13a2d; padding: 10px; }
 QLabel#reviewValue { color: #123b3a; font-weight: 700; }
 QLabel#reviewDetail { color: #526b70; font-size: 12px; }
@@ -120,12 +123,12 @@ QPlainTextEdit { background: #f7f9f9; border: 1px solid #dbe4e6; border-radius: 
 """
 
 _PRIVATE_STATUS_EXPLANATIONS = {
-    "active": "Ein Prozess hält die Lease; dies beweist noch keinen Fortschritt.",
-    "abandoned": "Die gültige Lease ist frei; der private Zustand kann verwaist sein.",
-    "unattributed": "Dem passenden Verzeichnis fehlt ein vertrauenswürdiger Marker.",
-    "invalid_metadata": "Marker oder Lease erfüllen den gebundenen Vertrag nicht.",
-    "indeterminate": "Rechte oder Dateisystemverhalten erlauben keine sichere Entscheidung.",
-    "unsafe_link": "Der passende Pfad ist ein Link und wurde nicht verfolgt.",
+    "active": "A process holds the lease; this does not yet prove progress.",
+    "abandoned": "The valid lease is free; the private state may be abandoned.",
+    "unattributed": "The matching directory lacks a trustworthy marker.",
+    "invalid_metadata": "The marker or lease does not satisfy the bound contract.",
+    "indeterminate": "Permissions or file-system behavior prevent a safe decision.",
+    "unsafe_link": "The matching path is a link and was not followed.",
 }
 
 
@@ -455,10 +458,10 @@ class DiffeoForgeWindow(QMainWindow):
         layout.addSpacing(38)
 
         steps = (
-            "1  Daten & Engine",
-            "2  Parameter prüfen",
-            "3  Atlas berechnen",
-            "4  Ergebnisse & PCA",
+            "1  Data & engine",
+            "2  Review parameters",
+            "3  Compute atlas",
+            "4  Results & PCA",
         )
         self.rail_steps: list[QLabel] = []
         for index, text in enumerate(steps):
@@ -467,7 +470,7 @@ class DiffeoForgeWindow(QMainWindow):
             layout.addWidget(label)
             self.rail_steps.append(label)
         layout.addStretch()
-        boundary = QLabel("PRE-ALPHA\nKeine wissenschaftliche Validierung")
+        boundary = QLabel("PRE-ALPHA\nNo scientific validation")
         boundary.setObjectName("railCaption")
         boundary.setWordWrap(True)
         layout.addWidget(boundary)
@@ -484,12 +487,12 @@ class DiffeoForgeWindow(QMainWindow):
         layout.setContentsMargins(52, 40, 52, 24)
         layout.setSpacing(15)
 
-        eyebrow = QLabel("SCHRITT 1 VON 4")
+        eyebrow = QLabel("STEP 1 OF 4")
         eyebrow.setObjectName("eyebrow")
-        title = QLabel("Neues Atlasprojekt")
+        title = QLabel("New atlas project")
         title.setObjectName("title")
         subtitle = QLabel(
-            "Wähle deine Meshes und erstelle eine transparente, geprüfte Startkonfiguration."
+            "Select your meshes and create a transparent, verified starter configuration."
         )
         subtitle.setObjectName("subtitle")
         subtitle.setWordWrap(True)
@@ -502,8 +505,8 @@ class DiffeoForgeWindow(QMainWindow):
         boundary_layout = QHBoxLayout(boundary)
         boundary_layout.setContentsMargins(13, 9, 13, 9)
         boundary_text = QLabel(
-            "Dieser erste Desktop-Slice prüft Daten und erstellt eine Konfiguration. "
-            "Er startet noch keine Atlasberechnung."
+            "This first desktop step validates data and creates a configuration. "
+            "It does not start atlas computation."
         )
         boundary_text.setObjectName("boundaryText")
         boundary_text.setWordWrap(True)
@@ -523,11 +526,11 @@ class DiffeoForgeWindow(QMainWindow):
         footer_layout = QHBoxLayout(footer)
         footer_layout.setContentsMargins(28, 14, 28, 14)
         footer_layout.setSpacing(18)
-        self.status_label = QLabel("Fülle Mesh-Ordner, Projektordner und Einheiten aus.")
+        self.status_label = QLabel("Enter a mesh folder, project folder, and coordinate unit.")
         self.status_label.setObjectName("status")
         self.status_label.setWordWrap(True)
         footer_layout.addWidget(self.status_label, 1)
-        self.create_button = QPushButton("Daten prüfen & Projekt anlegen")
+        self.create_button = QPushButton("Validate data & create project")
         self.create_button.setObjectName("primary")
         self.create_button.clicked.connect(self._create_project)
         footer_layout.addWidget(self.create_button)
@@ -547,10 +550,10 @@ class DiffeoForgeWindow(QMainWindow):
         layout.setContentsMargins(24, 22, 24, 24)
         layout.setSpacing(10)
 
-        title = QLabel("Gespeicherten Referenzstatus verifizieren")
+        title = QLabel("Verify a saved reference status")
         title.setObjectName("sectionTitle")
         self.saved_reference_status_verification_label = QLabel(
-            "Noch kein gespeicherter Statusreport geprüft."
+            "No saved status report has been verified."
         )
         self.saved_reference_status_verification_label.setObjectName("status")
         self.saved_reference_status_verification_label.setWordWrap(True)
@@ -564,16 +567,16 @@ class DiffeoForgeWindow(QMainWindow):
             "savedReferenceStatusReportEdit"
         )
         self.saved_reference_status_report_edit.setPlaceholderText(
-            "Zuvor exportierter preparation-status JSON-Report"
+            "Previously exported preparation-status JSON report"
         )
         self.saved_reference_status_report_edit.textChanged.connect(
             self._saved_reference_status_inputs_changed
         )
-        choose = QPushButton("Auswählen…")
+        choose = QPushButton("Browse…")
         choose.setObjectName("secondary")
         choose.clicked.connect(self._choose_saved_reference_status_report)
         form.addRow(
-            "Statusreport",
+            "Status report",
             _path_row(self.saved_reference_status_report_edit, choose),
         )
         self.saved_reference_status_hash_edit = QLineEdit()
@@ -581,7 +584,7 @@ class DiffeoForgeWindow(QMainWindow):
             "savedReferenceStatusHashEdit"
         )
         self.saved_reference_status_hash_edit.setPlaceholderText(
-            "Unabhängig notierter SHA-256 der kompletten Reportdatei"
+            "Independently recorded SHA-256 of the complete report file"
         )
         self.saved_reference_status_hash_edit.textChanged.connect(
             self._saved_reference_status_inputs_changed
@@ -589,8 +592,8 @@ class DiffeoForgeWindow(QMainWindow):
         form.addRow("Report-SHA-256", self.saved_reference_status_hash_edit)
 
         self.saved_reference_status_verification_detail_label = QLabel(
-            "Diese Prüfung liest nur die gewählte Reportdatei. Sie öffnet weder Projekt, "
-            "YAML, Approval, Run, Container noch Engine und verändert nichts."
+            "This check reads only the selected report file. It opens no project, YAML, "
+            "approval, run, container, or engine state and changes nothing."
         )
         self.saved_reference_status_verification_detail_label.setObjectName(
             "reviewDetail"
@@ -600,15 +603,15 @@ class DiffeoForgeWindow(QMainWindow):
             Qt.TextInteractionFlag.TextSelectableByMouse
         )
         self.verify_saved_reference_status_button = QPushButton(
-            "Gespeicherten Report read-only verifizieren"
+            "Verify saved report read-only"
         )
         self.verify_saved_reference_status_button.setObjectName("secondary")
         self.verify_saved_reference_status_button.clicked.connect(
             self._verify_saved_reference_status
         )
         self.saved_reference_status_verification_export_label = QLabel(
-            "Evidence-Export erst nach erfolgreicher, weiterhin eingabegebundener "
-            "Prüfung. Die Datei enthält private Provenienz."
+            "Evidence export is available only after a successful check that remains "
+            "bound to the current inputs. The file contains private provenance."
         )
         self.saved_reference_status_verification_export_label.setObjectName("hint")
         self.saved_reference_status_verification_export_label.setWordWrap(True)
@@ -616,7 +619,7 @@ class DiffeoForgeWindow(QMainWindow):
             Qt.TextInteractionFlag.TextSelectableByMouse
         )
         self.export_saved_reference_status_verification_button = QPushButton(
-            "Geprüfte Evidence als neue JSON-Datei exportieren"
+            "Export verified evidence as a new JSON file"
         )
         self.export_saved_reference_status_verification_button.setObjectName(
             "secondary"
@@ -652,13 +655,12 @@ class DiffeoForgeWindow(QMainWindow):
         layout.setContentsMargins(52, 40, 52, 24)
         layout.setSpacing(15)
 
-        eyebrow = QLabel("SCHRITT 2 VON 4")
+        eyebrow = QLabel("STEP 2 OF 4")
         eyebrow.setObjectName("eyebrow")
-        title = QLabel("Parameter und Aufwand prüfen")
+        title = QLabel("Review parameters and workload")
         title.setObjectName("title")
         subtitle = QLabel(
-            "Sieh die tatsächlich gespeicherten Werte und nachprüfbare Rechenoperationen, "
-            "bevor irgendeine Engine gestartet wird."
+            "Inspect the stored values and auditable compute operations before any engine starts."
         )
         subtitle.setObjectName("subtitle")
         subtitle.setWordWrap(True)
@@ -680,7 +682,7 @@ class DiffeoForgeWindow(QMainWindow):
         summary.setObjectName("card")
         summary_layout = QVBoxLayout(summary)
         summary_layout.setContentsMargins(24, 22, 24, 24)
-        summary_title = QLabel("Geprüftes Projekt")
+        summary_title = QLabel("Verified project")
         summary_title.setObjectName("sectionTitle")
         self.review_summary_label = QLabel()
         self.review_summary_label.setObjectName("reviewSummary")
@@ -697,26 +699,26 @@ class DiffeoForgeWindow(QMainWindow):
         template_preview_layout = QVBoxLayout(template_preview)
         template_preview_layout.setContentsMargins(24, 22, 24, 24)
         template_preview_layout.setSpacing(10)
-        template_preview_title = QLabel("Native Template-Vorschau")
+        template_preview_title = QLabel("Native template preview")
         template_preview_title.setObjectName("sectionTitle")
         self.template_preview_status_label = QLabel(
-            "Die read-only-Wireframe-Vorschau wurde noch nicht geladen."
+            "The read-only wireframe preview has not been loaded."
         )
         self.template_preview_status_label.setObjectName("status")
         self.template_preview_status_label.setWordWrap(True)
         self.template_preview_canvas = MeshPreviewCanvas()
         self.template_preview_plane_combo = QComboBox()
         self.template_preview_plane_combo.setObjectName("templatePreviewPlane")
-        self.template_preview_plane_combo.addItem("XY · Ansicht entlang Z", "xy")
-        self.template_preview_plane_combo.addItem("XZ · Ansicht entlang Y", "xz")
-        self.template_preview_plane_combo.addItem("YZ · Ansicht entlang X", "yz")
+        self.template_preview_plane_combo.addItem("XY · view along Z", "xy")
+        self.template_preview_plane_combo.addItem("XZ · view along Y", "xz")
+        self.template_preview_plane_combo.addItem("YZ · view along X", "yz")
         self.template_preview_plane_combo.setEnabled(False)
         self.template_preview_plane_combo.currentIndexChanged.connect(
             self._update_template_preview_plane
         )
         self.template_preview_detail_label = QLabel(
-            "Diese Projektion verändert das Mesh nicht und ersetzt weder 3D-Inspektion "
-            "noch Mesh-QC oder Landmark-Picking."
+            "This projection does not modify the mesh and does not replace 3D inspection, "
+            "mesh QC, or landmark picking."
         )
         self.template_preview_detail_label.setObjectName("reviewDetail")
         self.template_preview_detail_label.setWordWrap(True)
@@ -724,14 +726,14 @@ class DiffeoForgeWindow(QMainWindow):
             Qt.TextInteractionFlag.TextSelectableByMouse
         )
         self.refresh_template_preview_button = QPushButton(
-            "Template read-only laden"
+            "Load template read-only"
         )
         self.refresh_template_preview_button.setObjectName("secondary")
         self.refresh_template_preview_button.clicked.connect(
             self._load_template_preview
         )
         preview_controls = QHBoxLayout()
-        preview_controls.addWidget(QLabel("Projektion"))
+        preview_controls.addWidget(QLabel("Projection"))
         preview_controls.addWidget(self.template_preview_plane_combo)
         preview_controls.addStretch()
         preview_controls.addWidget(self.refresh_template_preview_button)
@@ -744,8 +746,8 @@ class DiffeoForgeWindow(QMainWindow):
         self.template_preview_card.hide()
         layout.addWidget(self.template_preview_card)
 
-        layout.addWidget(self._build_review_card("Effektive Parameter", "parameterReview"))
-        self.workload_card = self._build_review_card("Workload-Evidenz", "workloadReview")
+        layout.addWidget(self._build_review_card("Effective parameters", "parameterReview"))
+        self.workload_card = self._build_review_card("Workload evidence", "workloadReview")
         layout.addWidget(self.workload_card)
 
         reference_readiness = QFrame()
@@ -753,16 +755,16 @@ class DiffeoForgeWindow(QMainWindow):
         reference_readiness_layout = QVBoxLayout(reference_readiness)
         reference_readiness_layout.setContentsMargins(24, 22, 24, 24)
         reference_readiness_layout.setSpacing(10)
-        reference_readiness_title = QLabel("Externe Deformetrica-Referenzumgebung")
+        reference_readiness_title = QLabel("External Deformetrica reference environment")
         reference_readiness_title.setObjectName("sectionTitle")
         self.reference_readiness_status_label = QLabel(
-            "Die konfigurierte Container-Umgebung wurde noch nicht geprüft."
+            "The configured container environment has not been checked."
         )
         self.reference_readiness_status_label.setObjectName("status")
         self.reference_readiness_status_label.setWordWrap(True)
         self.reference_readiness_detail_label = QLabel(
-            "Diese Diagnose ist rein lesend. Sie installiert, baut, startet, bereitet oder "
-            "repariert nichts."
+            "This diagnostic is read-only. It installs, builds, starts, prepares, and "
+            "repairs nothing."
         )
         self.reference_readiness_detail_label.setObjectName("reviewDetail")
         self.reference_readiness_detail_label.setWordWrap(True)
@@ -770,7 +772,7 @@ class DiffeoForgeWindow(QMainWindow):
             Qt.TextInteractionFlag.TextSelectableByMouse
         )
         self.refresh_reference_readiness_button = QPushButton(
-            "Referenzumgebung read-only prüfen"
+            "Check reference environment read-only"
         )
         self.refresh_reference_readiness_button.setObjectName("secondary")
         self.refresh_reference_readiness_button.clicked.connect(
@@ -796,11 +798,11 @@ class DiffeoForgeWindow(QMainWindow):
         reference_preparation_status_layout.setContentsMargins(24, 22, 24, 24)
         reference_preparation_status_layout.setSpacing(10)
         reference_preparation_status_title = QLabel(
-            "Approval-bound Vorbereitungsstatus"
+            "Approval-bound preparation status"
         )
         reference_preparation_status_title.setObjectName("sectionTitle")
         self.reference_preparation_status_label = QLabel(
-            "Noch keine Approval-Datei read-only geprüft."
+            "No approval file has been checked read-only."
         )
         self.reference_preparation_status_label.setObjectName("status")
         self.reference_preparation_status_label.setWordWrap(True)
@@ -813,18 +815,18 @@ class DiffeoForgeWindow(QMainWindow):
             "referencePreparationApprovalEdit"
         )
         self.reference_preparation_approval_edit.setPlaceholderText(
-            "Zuvor geprüfte preparation-only Approval-Datei"
+            "Previously verified preparation-only approval file"
         )
         self.reference_preparation_approval_edit.textChanged.connect(
             self._reference_preparation_inputs_changed
         )
-        reference_preparation_approval_button = QPushButton("Auswählen…")
+        reference_preparation_approval_button = QPushButton("Browse…")
         reference_preparation_approval_button.setObjectName("secondary")
         reference_preparation_approval_button.clicked.connect(
             self._choose_reference_preparation_approval
         )
         preparation_form.addRow(
-            "Approval-Datei",
+            "Approval file",
             _path_row(
                 self.reference_preparation_approval_edit,
                 reference_preparation_approval_button,
@@ -835,7 +837,7 @@ class DiffeoForgeWindow(QMainWindow):
             "referencePreparationHashEdit"
         )
         self.reference_preparation_hash_edit.setPlaceholderText(
-            "Unabhängig notierter SHA-256 der kompletten Approval-Datei"
+            "Independently recorded SHA-256 of the complete approval file"
         )
         self.reference_preparation_hash_edit.textChanged.connect(
             self._reference_preparation_inputs_changed
@@ -845,8 +847,8 @@ class DiffeoForgeWindow(QMainWindow):
             self.reference_preparation_hash_edit,
         )
         self.reference_preparation_detail_label = QLabel(
-            "Diese Ansicht prüft nur den exakt genehmigten Zielpfad und exakt benannte "
-            "private Stages. Sie folgt keinen Links und verändert nichts."
+            "This view checks only the exact approved destination and explicitly named "
+            "private stages. It follows no links and changes nothing."
         )
         self.reference_preparation_detail_label.setObjectName("reviewDetail")
         self.reference_preparation_detail_label.setWordWrap(True)
@@ -854,15 +856,15 @@ class DiffeoForgeWindow(QMainWindow):
             Qt.TextInteractionFlag.TextSelectableByMouse
         )
         self.refresh_reference_preparation_status_button = QPushButton(
-            "Vorbereitungsstatus read-only prüfen"
+            "Check preparation status read-only"
         )
         self.refresh_reference_preparation_status_button.setObjectName("secondary")
         self.refresh_reference_preparation_status_button.clicked.connect(
             self._check_reference_preparation_status
         )
         self.reference_preparation_export_label = QLabel(
-            "Export erst nach erfolgreicher Prüfung. Der vollständige Report enthält "
-            "absolute Pfade und Dateinamen und ist als private Provenienz zu behandeln."
+            "Export is available only after a successful check. The complete report contains "
+            "absolute paths and file names and must be treated as private provenance."
         )
         self.reference_preparation_export_label.setObjectName("hint")
         self.reference_preparation_export_label.setWordWrap(True)
@@ -870,7 +872,7 @@ class DiffeoForgeWindow(QMainWindow):
             Qt.TextInteractionFlag.TextSelectableByMouse
         )
         self.export_reference_preparation_status_button = QPushButton(
-            "Geprüften Status als neue JSON-Datei exportieren"
+            "Export verified status as a new JSON file"
         )
         self.export_reference_preparation_status_button.setObjectName("secondary")
         self.export_reference_preparation_status_button.clicked.connect(
@@ -907,7 +909,7 @@ class DiffeoForgeWindow(QMainWindow):
         warnings.setObjectName("card")
         warnings_layout = QVBoxLayout(warnings)
         warnings_layout.setContentsMargins(24, 22, 24, 24)
-        warnings_title = QLabel("Grenzen und Hinweise")
+        warnings_title = QLabel("Boundaries and notices")
         warnings_title.setObjectName("sectionTitle")
         self.review_warnings_label = QLabel()
         self.review_warnings_label.setObjectName("reviewWarnings")
@@ -926,16 +928,16 @@ class DiffeoForgeWindow(QMainWindow):
         footer_layout = QHBoxLayout(footer)
         footer_layout.setContentsMargins(28, 14, 28, 14)
         footer_layout.setSpacing(12)
-        back = QPushButton("Zurück zu Daten & Engine")
+        back = QPushButton("Back to data & engine")
         back.setObjectName("secondary")
         back.clicked.connect(self._show_setup_page)
         footer_layout.addWidget(back)
-        self.open_review_report_button = QPushButton("Prüfbericht öffnen")
+        self.open_review_report_button = QPushButton("Open review report")
         self.open_review_report_button.setObjectName("secondary")
         self.open_review_report_button.clicked.connect(self._open_review_report)
         footer_layout.addWidget(self.open_review_report_button)
         footer_layout.addStretch()
-        self.show_run_button = QPushButton("Atlasstart folgt in Schritt 3")
+        self.show_run_button = QPushButton("Atlas execution continues in Step 3")
         self.show_run_button.setObjectName("primary")
         self.show_run_button.clicked.connect(self._show_run_page)
         self.show_run_button.setEnabled(False)
@@ -959,13 +961,13 @@ class DiffeoForgeWindow(QMainWindow):
         layout.setContentsMargins(52, 40, 52, 24)
         layout.setSpacing(15)
 
-        eyebrow = QLabel("SCHRITT 3 VON 4")
+        eyebrow = QLabel("STEP 3 OF 4")
         eyebrow.setObjectName("eyebrow")
-        title = QLabel("Modern-Atlas berechnen")
+        title = QLabel("Compute Modern atlas")
         title.setObjectName("title")
         subtitle = QLabel(
-            "Starte genau die geprüfte Konfiguration in einem getrennten Prozess und "
-            "beobachte echte Workflow-Ereignisse."
+            "Run the exact reviewed configuration in a separate process and observe real "
+            "workflow events."
         )
         subtitle.setObjectName("subtitle")
         subtitle.setWordWrap(True)
@@ -978,9 +980,9 @@ class DiffeoForgeWindow(QMainWindow):
         boundary_layout = QHBoxLayout(boundary)
         boundary_layout.setContentsMargins(13, 9, 13, 9)
         boundary_text = QLabel(
-            "Experimentelle Modern-CPU-Route. Es werden weder Laufzeit noch Peak-RAM oder "
-            "Prozentfortschritt geschätzt. Abbruch wirkt nur an ausgewiesenen sicheren Punkten "
-            "und ist derzeit nicht wiederaufnehmbar."
+            "Experimental Modern CPU route. Runtime, peak RAM, and percentage progress are "
+            "not estimated. Cancellation acts only at designated safe points and runs are "
+            "not currently resumable."
         )
         boundary_text.setObjectName("boundaryText")
         boundary_text.setWordWrap(True)
@@ -991,7 +993,7 @@ class DiffeoForgeWindow(QMainWindow):
         summary.setObjectName("card")
         summary_layout = QVBoxLayout(summary)
         summary_layout.setContentsMargins(24, 22, 24, 24)
-        summary_title = QLabel("Gebundener Start")
+        summary_title = QLabel("Bound execution")
         summary_title.setObjectName("sectionTitle")
         self.run_summary_label = QLabel()
         self.run_summary_label.setWordWrap(True)
@@ -1005,20 +1007,20 @@ class DiffeoForgeWindow(QMainWindow):
         readiness_layout = QVBoxLayout(readiness)
         readiness_layout.setContentsMargins(24, 22, 24, 24)
         readiness_layout.setSpacing(10)
-        readiness_title = QLabel("Privater Zielstatus vor Workerstart")
+        readiness_title = QLabel("Private destination status before worker start")
         readiness_title.setObjectName("sectionTitle")
-        self.run_readiness_status_label = QLabel("Zielstatus wurde noch nicht geprüft.")
+        self.run_readiness_status_label = QLabel("Destination status has not been checked.")
         self.run_readiness_status_label.setObjectName("status")
         self.run_readiness_status_label.setWordWrap(True)
         self.run_readiness_detail_label = QLabel(
-            "Die Prüfung ist rein lesend und löscht, benennt, publiziert oder startet nichts."
+            "This check is read-only and deletes, renames, publishes, and starts nothing."
         )
         self.run_readiness_detail_label.setObjectName("reviewDetail")
         self.run_readiness_detail_label.setWordWrap(True)
         self.run_readiness_detail_label.setTextInteractionFlags(
             Qt.TextInteractionFlag.TextSelectableByMouse
         )
-        self.refresh_run_readiness_button = QPushButton("Zielstatus erneut prüfen")
+        self.refresh_run_readiness_button = QPushButton("Check destination status again")
         self.refresh_run_readiness_button.setObjectName("secondary")
         self.refresh_run_readiness_button.clicked.connect(self._refresh_run_readiness)
         readiness_layout.addWidget(readiness_title)
@@ -1032,19 +1034,19 @@ class DiffeoForgeWindow(QMainWindow):
         progress_layout = QVBoxLayout(progress)
         progress_layout.setContentsMargins(24, 22, 24, 24)
         progress_layout.setSpacing(10)
-        progress_title = QLabel("Verifizierte Live-Ereignisse")
+        progress_title = QLabel("Verified live events")
         progress_title.setObjectName("sectionTitle")
-        self.run_state_label = QLabel("Bereit; noch kein Worker gestartet.")
+        self.run_state_label = QLabel("Ready; no worker has started.")
         self.run_state_label.setObjectName("status")
         self.run_state_label.setWordWrap(True)
-        self.run_stage_label = QLabel("Workflow-Stufe: noch nicht gestartet")
+        self.run_stage_label = QLabel("Workflow stage: not started")
         self.run_stage_label.setObjectName("reviewValue")
         self.run_stage_label.setWordWrap(True)
         self.run_progress_bar = QProgressBar()
         self.run_progress_bar.setRange(0, 7)
         self.run_progress_bar.setValue(0)
-        self.run_progress_bar.setFormat("Abgeschlossene Stufen: %v von %m")
-        self.run_optimizer_label = QLabel("Noch keine Optimierungsentscheidung.")
+        self.run_progress_bar.setFormat("Completed stages: %v of %m")
+        self.run_optimizer_label = QLabel("No optimization decision yet.")
         self.run_optimizer_label.setObjectName("reviewDetail")
         self.run_optimizer_label.setWordWrap(True)
         self.run_event_log = QPlainTextEdit()
@@ -1064,15 +1066,15 @@ class DiffeoForgeWindow(QMainWindow):
         self.run_result_card.setObjectName("card")
         result_layout = QVBoxLayout(self.run_result_card)
         result_layout.setContentsMargins(24, 22, 24, 24)
-        result_title = QLabel("Unabhängig verifiziertes Ergebnis")
+        result_title = QLabel("Independently verified result")
         result_title.setObjectName("sectionTitle")
         self.run_result_label = QLabel()
         self.run_result_label.setWordWrap(True)
         self.run_result_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        self.open_run_result_button = QPushButton("Ergebnisordner öffnen")
+        self.open_run_result_button = QPushButton("Open result folder")
         self.open_run_result_button.setObjectName("secondary")
         self.open_run_result_button.clicked.connect(self._open_run_result)
-        self.review_run_result_button = QPushButton("Ergebnisse & PCA prüfen")
+        self.review_run_result_button = QPushButton("Review results & PCA")
         self.review_run_result_button.setObjectName("primary")
         self.review_run_result_button.clicked.connect(self._review_run_result)
         self.review_run_result_button.setEnabled(False)
@@ -1093,14 +1095,14 @@ class DiffeoForgeWindow(QMainWindow):
         footer_layout = QHBoxLayout(footer)
         footer_layout.setContentsMargins(28, 14, 28, 14)
         footer_layout.setSpacing(12)
-        self.run_back_button = QPushButton("Zurück zur Parameterprüfung")
+        self.run_back_button = QPushButton("Back to parameter review")
         self.run_back_button.setObjectName("secondary")
         self.run_back_button.clicked.connect(self._show_review_page)
-        self.cancel_atlas_button = QPushButton("Sicher abbrechen")
+        self.cancel_atlas_button = QPushButton("Cancel safely")
         self.cancel_atlas_button.setObjectName("danger")
         self.cancel_atlas_button.clicked.connect(self._cancel_atlas)
         self.cancel_atlas_button.setEnabled(False)
-        self.start_atlas_button = QPushButton("Geprüften Modern-Atlas starten")
+        self.start_atlas_button = QPushButton("Start reviewed Modern atlas")
         self.start_atlas_button.setObjectName("primary")
         self.start_atlas_button.clicked.connect(self._start_atlas)
         self.start_atlas_button.setEnabled(False)
@@ -1127,13 +1129,13 @@ class DiffeoForgeWindow(QMainWindow):
         layout.setContentsMargins(52, 40, 52, 24)
         layout.setSpacing(15)
 
-        eyebrow = QLabel("SCHRITT 4 VON 4")
+        eyebrow = QLabel("STEP 4 OF 4")
         eyebrow.setObjectName("eyebrow")
-        title = QLabel("Verifizierte Ergebnisse & PCA")
+        title = QLabel("Verified results & PCA")
         title.setObjectName("title")
         subtitle = QLabel(
-            "Lies eine gebundene Zusammenfassung und öffne nur Artefakte, deren Größe und "
-            "SHA-256 unmittelbar vorher erneut geprüft wurden."
+            "Read a bound summary and open only artifacts whose size and SHA-256 were "
+            "rechecked immediately beforehand."
         )
         subtitle.setObjectName("subtitle")
         subtitle.setWordWrap(True)
@@ -1146,7 +1148,7 @@ class DiffeoForgeWindow(QMainWindow):
         boundary_layout = QHBoxLayout(boundary)
         boundary_layout.setContentsMargins(13, 9, 13, 9)
         self.result_boundary_label = QLabel(
-            "Technische Verifikation ist keine wissenschaftliche Validierung."
+            "Technical verification is not scientific validation."
         )
         self.result_boundary_label.setObjectName("boundaryText")
         self.result_boundary_label.setWordWrap(True)
@@ -1160,7 +1162,7 @@ class DiffeoForgeWindow(QMainWindow):
         summary.setObjectName("card")
         summary_layout = QVBoxLayout(summary)
         summary_layout.setContentsMargins(24, 22, 24, 24)
-        summary_title = QLabel("Gebundener Ergebnis-Snapshot")
+        summary_title = QLabel("Bound result snapshot")
         summary_title.setObjectName("sectionTitle")
         self.result_summary_label = QLabel()
         self.result_summary_label.setWordWrap(True)
@@ -1168,18 +1170,22 @@ class DiffeoForgeWindow(QMainWindow):
             Qt.TextInteractionFlag.TextSelectableByMouse
         )
         summary_layout.addWidget(summary_title)
+        self.result_completion_label = QLabel("Awaiting a verified result snapshot.")
+        self.result_completion_label.setObjectName("status")
+        self.result_completion_label.setWordWrap(True)
+        summary_layout.addWidget(self.result_completion_label)
         summary_layout.addWidget(self.result_summary_label)
         layout.addWidget(summary)
 
         overview_card, self.result_overview_layout = self._build_result_items_card(
-            "Atlas und Datensatz", "resultOverview"
+            "Atlas and dataset", "resultOverview"
         )
         optimization_card, self.result_optimization_layout = self._build_result_items_card(
-            "Optimierung", "resultOptimization"
+            "Optimization", "resultOptimization"
         )
         pca_card, self.result_pca_layout = self._build_result_items_card("PCA", "resultPca")
         quality_card, self.result_quality_layout = self._build_result_items_card(
-            "Verifikations- und Qualitätsnachweise", "resultQuality"
+            "Verification and quality evidence", "resultQuality"
         )
         layout.addWidget(overview_card)
         layout.addWidget(optimization_card)
@@ -1190,11 +1196,11 @@ class DiffeoForgeWindow(QMainWindow):
         artifacts.setObjectName("card")
         artifacts_layout = QVBoxLayout(artifacts)
         artifacts_layout.setContentsMargins(24, 22, 24, 24)
-        artifacts_title = QLabel("Geprüfte offene Artefakte")
+        artifacts_title = QLabel("Verified open artifacts")
         artifacts_title.setObjectName("sectionTitle")
         artifacts_hint = QLabel(
-            "DiffeoForge rendert VTK derzeit nicht intern. VTK, CSV, JSON und statische SVGs "
-            "werden an die lokal zugeordnete Anwendung übergeben."
+            "DiffeoForge does not yet render VTK internally. VTK, CSV, JSON, and static SVG "
+            "files are handed to the locally associated application."
         )
         artifacts_hint.setObjectName("hint")
         artifacts_hint.setWordWrap(True)
@@ -1216,10 +1222,10 @@ class DiffeoForgeWindow(QMainWindow):
         footer_layout = QHBoxLayout(footer)
         footer_layout.setContentsMargins(28, 14, 28, 14)
         footer_layout.setSpacing(12)
-        self.result_back_button = QPushButton("Zurück zum Atlaslauf")
+        self.result_back_button = QPushButton("Back to atlas run")
         self.result_back_button.setObjectName("secondary")
         self.result_back_button.clicked.connect(self._show_run_page_from_results)
-        self.result_status_label = QLabel("Noch kein Ergebnis-Snapshot geladen.")
+        self.result_status_label = QLabel("No result snapshot has been loaded.")
         self.result_status_label.setObjectName("status")
         self.result_status_label.setWordWrap(True)
         footer_layout.addWidget(self.result_back_button)
@@ -1276,7 +1282,7 @@ class DiffeoForgeWindow(QMainWindow):
         card_layout = QVBoxLayout(card)
         card_layout.setContentsMargins(24, 22, 24, 24)
         card_layout.setSpacing(15)
-        section = QLabel("Projekt und Eingaben")
+        section = QLabel("Project and inputs")
         section.setObjectName("sectionTitle")
         card_layout.addWidget(section)
 
@@ -1288,10 +1294,10 @@ class DiffeoForgeWindow(QMainWindow):
         self.engine_combo = QComboBox()
         self.engine_combo.setObjectName("engineCombo")
         self.engine_combo.addItem(
-            "DiffeoForge Modern CPU (experimentell)", DesktopEngine.MODERN_CPU
+            "DiffeoForge Modern CPU (experimental)", DesktopEngine.MODERN_CPU
         )
         self.engine_combo.addItem(
-            "Deformetrica 4.3 Referenz (extern)", DesktopEngine.DEFORMETRICA_REFERENCE
+            "Deformetrica 4.3 reference (external)", DesktopEngine.DEFORMETRICA_REFERENCE
         )
         self.engine_combo.currentIndexChanged.connect(self._update_engine_explanation)
         engine_box = QWidget()
@@ -1305,20 +1311,44 @@ class DiffeoForgeWindow(QMainWindow):
         engine_layout.addWidget(self.engine_hint)
         form.addRow("Engine", engine_box)
 
+        self.pairwise_combo = QComboBox()
+        self.pairwise_combo.setObjectName("pairwiseEvaluationCombo")
+        self.pairwise_combo.addItem(
+            "Dense — small pilot / correctness baseline",
+            "dense",
+        )
+        self.pairwise_combo.addItem(
+            "Blockwise 256 × 256 — high-face-count experiment",
+            "blockwise_256",
+        )
+        self.pairwise_combo.currentIndexChanged.connect(
+            self._update_pairwise_explanation
+        )
+        pairwise_box = QWidget()
+        pairwise_layout = QVBoxLayout(pairwise_box)
+        pairwise_layout.setContentsMargins(0, 0, 0, 0)
+        pairwise_layout.setSpacing(4)
+        pairwise_layout.addWidget(self.pairwise_combo)
+        self.pairwise_hint = QLabel()
+        self.pairwise_hint.setObjectName("hint")
+        self.pairwise_hint.setWordWrap(True)
+        pairwise_layout.addWidget(self.pairwise_hint)
+        form.addRow("Pairwise evaluation", pairwise_box)
+
         self.mesh_edit = QLineEdit()
         self.mesh_edit.setObjectName("meshDirectoryEdit")
-        self.mesh_edit.setPlaceholderText(r"z. B. C:\Daten\Käfer\meshes")
+        self.mesh_edit.setPlaceholderText(r"e.g. C:\Data\Beetles\meshes")
         self.mesh_edit.textChanged.connect(self._sync_ready_state)
         self.mesh_edit.editingFinished.connect(self._detect_template_from_text)
-        mesh_button = QPushButton("Auswählen…")
+        mesh_button = QPushButton("Browse…")
         mesh_button.setObjectName("secondary")
         mesh_button.clicked.connect(self._choose_mesh_directory)
-        form.addRow("Mesh-Ordner", _path_row(self.mesh_edit, mesh_button))
+        form.addRow("Mesh folder", _path_row(self.mesh_edit, mesh_button))
 
         self.template_edit = QLineEdit()
         self.template_edit.setObjectName("templateEdit")
-        self.template_edit.setPlaceholderText("automatisch: template.vtk")
-        template_button = QPushButton("Auswählen…")
+        self.template_edit.setPlaceholderText("automatic: template.vtk")
+        template_button = QPushButton("Browse…")
         template_button.setObjectName("secondary")
         template_button.clicked.connect(self._choose_template)
         form.addRow("Template", _path_row(self.template_edit, template_button))
@@ -1326,43 +1356,43 @@ class DiffeoForgeWindow(QMainWindow):
         self.pattern_edit = QLineEdit("*.vtk")
         self.pattern_edit.setObjectName("subjectPatternEdit")
         self.pattern_edit.setToolTip(
-            "Das Template wird automatisch aus der Probandenliste entfernt."
+            "The template is automatically removed from the subject list."
         )
-        form.addRow("Dateimuster", self.pattern_edit)
+        form.addRow("File pattern", self.pattern_edit)
 
         self.project_edit = QLineEdit()
         self.project_edit.setObjectName("projectDirectoryEdit")
-        self.project_edit.setPlaceholderText("Ordner für Konfiguration und spätere Ergebnisse")
+        self.project_edit.setPlaceholderText("Folder for configuration and later results")
         self.project_edit.textChanged.connect(self._sync_ready_state)
-        project_button = QPushButton("Auswählen…")
+        project_button = QPushButton("Browse…")
         project_button.setObjectName("secondary")
         project_button.clicked.connect(self._choose_project_directory)
-        form.addRow("Projektordner", _path_row(self.project_edit, project_button))
+        form.addRow("Project folder", _path_row(self.project_edit, project_button))
 
         self.name_edit = QLineEdit()
         self.name_edit.setObjectName("projectNameEdit")
-        self.name_edit.setPlaceholderText("optional; sonst aus dem Ordnernamen")
-        form.addRow("Projektname", self.name_edit)
+        self.name_edit.setPlaceholderText("optional; otherwise derived from the folder name")
+        form.addRow("Project name", self.name_edit)
 
         self.units_combo = QComboBox()
         self.units_combo.setObjectName("unitsCombo")
-        self.units_combo.addItem("Bitte auswählen…", None)
+        self.units_combo.addItem("Select a unit…", None)
         labels = {
-            "unitless": "Einheitenlos",
-            "micrometer": "Mikrometer (µm)",
+            "unitless": "Unitless",
+            "micrometer": "Micrometer (µm)",
             "millimeter": "Millimeter (mm)",
-            "centimeter": "Zentimeter (cm)",
+            "centimeter": "Centimeter (cm)",
             "meter": "Meter (m)",
         }
         for unit in SUPPORTED_UNITS:
             self.units_combo.addItem(labels[unit], unit)
         self.units_combo.currentIndexChanged.connect(self._sync_ready_state)
-        form.addRow("Koordinateneinheit", self.units_combo)
+        form.addRow("Coordinate unit", self.units_combo)
 
         self.landmarks_edit = QLineEdit()
         self.landmarks_edit.setObjectName("landmarksEdit")
-        self.landmarks_edit.setPlaceholderText("optional: homologe Landmarks als CSV")
-        landmarks_button = QPushButton("Auswählen…")
+        self.landmarks_edit.setPlaceholderText("optional: homologous landmarks as CSV")
+        landmarks_button = QPushButton("Browse…")
         landmarks_button.setObjectName("secondary")
         landmarks_button.clicked.connect(self._choose_landmarks)
         self.landmarks_button = landmarks_button
@@ -1376,7 +1406,7 @@ class DiffeoForgeWindow(QMainWindow):
         card.setObjectName("card")
         layout = QVBoxLayout(card)
         layout.setContentsMargins(24, 22, 24, 24)
-        heading = QLabel("Projekt erfolgreich angelegt")
+        heading = QLabel("Project created successfully")
         heading.setObjectName("sectionTitle")
         layout.addWidget(heading)
         self.result_label = QLabel()
@@ -1385,13 +1415,13 @@ class DiffeoForgeWindow(QMainWindow):
         self.result_label.setWordWrap(True)
         layout.addWidget(self.result_label)
         button_row = QHBoxLayout()
-        open_config = QPushButton("Konfiguration öffnen")
+        open_config = QPushButton("Open configuration")
         open_config.setObjectName("secondary")
         open_config.clicked.connect(self._open_config)
-        open_folder = QPushButton("Projektordner öffnen")
+        open_folder = QPushButton("Open project folder")
         open_folder.setObjectName("secondary")
         open_folder.clicked.connect(self._open_project_directory)
-        self.review_button = QPushButton("Parameter & Aufwand prüfen")
+        self.review_button = QPushButton("Review parameters & workload")
         self.review_button.setObjectName("primary")
         self.review_button.clicked.connect(self._review_project)
         self.review_button.setEnabled(False)
@@ -1404,7 +1434,7 @@ class DiffeoForgeWindow(QMainWindow):
 
     @Slot()
     def _choose_mesh_directory(self) -> None:
-        selected = QFileDialog.getExistingDirectory(self, "Mesh-Ordner auswählen")
+        selected = QFileDialog.getExistingDirectory(self, "Select mesh folder")
         if not selected:
             return
         self.mesh_edit.setText(selected)
@@ -1415,7 +1445,7 @@ class DiffeoForgeWindow(QMainWindow):
 
     @Slot()
     def _choose_project_directory(self) -> None:
-        selected = QFileDialog.getExistingDirectory(self, "Projektordner auswählen")
+        selected = QFileDialog.getExistingDirectory(self, "Select project folder")
         if selected:
             self.project_edit.setText(selected)
 
@@ -1423,7 +1453,7 @@ class DiffeoForgeWindow(QMainWindow):
     def _choose_template(self) -> None:
         selected, _ = QFileDialog.getOpenFileName(
             self,
-            "Template auswählen",
+            "Select template",
             self.mesh_edit.text().strip(),
             "VTK PolyData (*.vtk)",
         )
@@ -1434,9 +1464,9 @@ class DiffeoForgeWindow(QMainWindow):
     def _choose_landmarks(self) -> None:
         selected, _ = QFileDialog.getOpenFileName(
             self,
-            "Landmark-Datei auswählen",
+            "Select landmark file",
             self.mesh_edit.text().strip(),
-            "CSV-Dateien (*.csv)",
+            "CSV files (*.csv)",
         )
         if selected:
             self.landmarks_edit.setText(selected)
@@ -1450,9 +1480,9 @@ class DiffeoForgeWindow(QMainWindow):
         )
         selected, _ = QFileDialog.getOpenFileName(
             self,
-            "Preparation-only Approval auswählen",
+            "Select preparation-only approval",
             start,
-            "JSON-Dateien (*.json)",
+            "JSON files (*.json)",
         )
         if selected:
             self.reference_preparation_approval_edit.setText(selected)
@@ -1463,9 +1493,9 @@ class DiffeoForgeWindow(QMainWindow):
         start = str(Path(current).expanduser().parent) if current else ""
         selected, _ = QFileDialog.getOpenFileName(
             self,
-            "Gespeicherten preparation-status Report auswählen",
+            "Select saved preparation-status report",
             start,
-            "JSON-Dateien (*.json)",
+            "JSON files (*.json)",
         )
         if selected:
             self.saved_reference_status_report_edit.setText(selected)
@@ -1480,21 +1510,20 @@ class DiffeoForgeWindow(QMainWindow):
             _SavedReferencePreparationStatusVerificationWorker,
         ):
             message = (
-                "Eingaben wurden während der Prüfung geändert; das laufende Ergebnis "
-                "wird verworfen."
+                "Inputs changed during verification; the in-progress result will be discarded."
             )
         else:
-            message = "Noch kein gespeicherter Statusreport geprüft."
+            message = "No saved status report has been verified."
         self.saved_reference_status_verification_label.setText(message)
         self.saved_reference_status_verification_detail_label.setText(
-            "Diese Prüfung liest nur die gewählte Reportdatei. Sie öffnet weder Projekt, "
-            "YAML, Approval, Run, Container noch Engine und verändert nichts."
+            "This check reads only the selected report file. It opens no project, YAML, "
+            "approval, run, container, or engine state and changes nothing."
         )
         self.saved_reference_status_verification_export_label.setObjectName("hint")
         self.saved_reference_status_verification_export_label.setStyleSheet("")
         self.saved_reference_status_verification_export_label.setText(
-            "Evidence-Export erst nach erfolgreicher, weiterhin eingabegebundener "
-            "Prüfung. Die Datei enthält private Provenienz."
+            "Evidence export is available only after a successful check that remains "
+            "bound to the current inputs. The file contains private provenance."
         )
         self._sync_saved_reference_status_verification_controls()
 
@@ -1546,21 +1575,20 @@ class DiffeoForgeWindow(QMainWindow):
         self.reference_preparation_status_label.setStyleSheet("")
         if isinstance(self._worker, _ReferencePreparationStatusWorker):
             message = (
-                "Eingaben wurden während der Prüfung geändert; das laufende Ergebnis "
-                "wird verworfen."
+                "Inputs changed during verification; the in-progress result will be discarded."
             )
         else:
-            message = "Noch keine Approval-Datei read-only geprüft."
+            message = "No approval file has been checked read-only."
         self.reference_preparation_status_label.setText(message)
         self.reference_preparation_detail_label.setText(
-            "Diese Ansicht prüft nur den exakt genehmigten Zielpfad und exakt benannte "
-            "private Stages. Sie folgt keinen Links und verändert nichts."
+            "This view checks only the exact approved destination and explicitly named "
+            "private stages. It follows no links and changes nothing."
         )
         self.reference_preparation_export_label.setObjectName("hint")
         self.reference_preparation_export_label.setStyleSheet("")
         self.reference_preparation_export_label.setText(
-            "Export erst nach erfolgreicher Prüfung. Der vollständige Report enthält "
-            "absolute Pfade und Dateinamen und ist als private Provenienz zu behandeln."
+            "Export is available only after a successful check. The complete report contains "
+            "absolute paths and file names and must be treated as private provenance."
         )
         self._sync_reference_preparation_status_controls()
 
@@ -1618,18 +1646,17 @@ class DiffeoForgeWindow(QMainWindow):
         self.saved_reference_status_verification_label.setObjectName("status")
         self.saved_reference_status_verification_label.setStyleSheet("")
         self.saved_reference_status_verification_label.setText(
-            "Datei-Hash, striktes JSON, Schema und deterministische Bytes werden "
-            "read-only geprüft …"
+            "File hash, strict JSON, schema, and deterministic bytes are being checked "
+            "read-only…"
         )
         self.saved_reference_status_verification_detail_label.setText(
-            "Aktuelle Projekt-, Approval-, Run-, Container- und Engine-Zustände werden "
-            "nicht gelesen."
+            "Current project, approval, run, container, and engine state is not read."
         )
         self.saved_reference_status_verification_export_label.setObjectName("hint")
         self.saved_reference_status_verification_export_label.setStyleSheet("")
         self.saved_reference_status_verification_export_label.setText(
-            "Evidence-Export gesperrt, bis die Prüfung erfolgreich und weiterhin an "
-            "exakt dieselben Eingaben gebunden ist."
+            "Evidence export is locked until verification succeeds and remains bound to "
+            "the exact same inputs."
         )
         self._sync_ready_state()
         self._thread_pool.start(worker)
@@ -1659,52 +1686,50 @@ class DiffeoForgeWindow(QMainWindow):
             self.saved_reference_status_verification_label.setObjectName("statusError")
             self.saved_reference_status_verification_label.setStyleSheet("")
             self.saved_reference_status_verification_label.setText(
-                "Prüfergebnis verworfen, weil Reportpfad oder Hash-Eingabe nicht mehr "
-                "exakt übereinstimmen."
+                "Verification result discarded because the report path or hash input no "
+                "longer matches exactly."
             )
             self.saved_reference_status_verification_detail_label.setText(
-                "Es wurde nichts verändert. Mit den aktuellen Eingaben erneut prüfen."
+                "Nothing was changed. Verify again with the current inputs."
             )
             self.saved_reference_status_verification_export_label.setObjectName(
                 "statusError"
             )
             self.saved_reference_status_verification_export_label.setStyleSheet("")
             self.saved_reference_status_verification_export_label.setText(
-                "Kein Evidence-Export: Das verworfene Ergebnis ist nicht mehr an die "
-                "aktuellen Eingaben gebunden."
+                "No evidence export: the discarded result is no longer bound to the current inputs."
             )
             self._sync_ready_state()
             return
 
         self._saved_reference_preparation_status_verification = result
         engine_started = (
-            "nein"
+            "no"
             if result.engine_execution_started is False
-            else "im gespeicherten Status nicht beobachtet"
+            else "not observed in the saved status"
         )
         details = [
             f"Report: {self._wrappable_path(result.report_path)}",
             f"Bytes: {result.report_byte_count}",
             f"Report-SHA-256: {result.report_sha256}",
             f"Report-Schema: {result.report_schema_version}",
-            f"Aufgezeichneter Status: {result.report_status}",
-            f"Aufgezeichnete Aktion erforderlich: "
-            f"{'ja' if result.action_required else 'nein'}",
-            "Deterministische DiffeoForge-Serialisierung: ja",
+            f"Recorded status: {result.report_status}",
+            f"Recorded action required: {'yes' if result.action_required else 'no'}",
+            "Deterministic DiffeoForge serialization: yes",
             f"Run-ID: {result.run_id}",
             f"Approval-SHA-256: {result.approval_sha256}",
             f"Plan-Fingerprint: {result.plan_fingerprint}",
-            f"Aufgezeichneter Zielstatus: {result.destination_status}",
-            f"Aufgezeichneter Engine-Start: {engine_started}",
-            f"Aufgezeichnete private Stages: {result.private_stage_count}",
+            f"Recorded destination status: {result.destination_status}",
+            f"Recorded engine execution: {engine_started}",
+            f"Recorded private stages: {result.private_stage_count}",
             f"Verification-Schema: {result.verification_schema_version}",
             f"DiffeoForge-Verifier: {result.verifier_version}",
             f"Evidence-Bytes: {result.evidence_byte_count}",
             f"Evidence-SHA-256: {result.evidence_sha256}",
-            f"Vollständige Prüfungen: {len(result.checks)}",
-            "Report während der Prüfung unverändert: ja",
-            "Mutation durch diese Prüfung: nein",
-            f"Grenze: {result.scientific_boundary}",
+            f"Complete checks: {len(result.checks)}",
+            "Report unchanged during verification: yes",
+            "Mutation by this verification: no",
+            f"Boundary: {result.scientific_boundary}",
         ]
         if result.manifest_sha256 is not None:
             details.insert(12, f"Manifest-SHA-256: {result.manifest_sha256}")
@@ -1714,14 +1739,14 @@ class DiffeoForgeWindow(QMainWindow):
         self.saved_reference_status_verification_label.setObjectName("statusSuccess")
         self.saved_reference_status_verification_label.setStyleSheet("")
         self.saved_reference_status_verification_label.setText(
-            "Gespeicherter Statusreport stimmt exakt mit externem SHA-256, Schema und "
-            "deterministischer Serialisierung überein."
+            "Saved status report exactly matches the external SHA-256, schema, and "
+            "deterministic serialization."
         )
         self.saved_reference_status_verification_export_label.setObjectName("hint")
         self.saved_reference_status_verification_export_label.setStyleSheet("")
         self.saved_reference_status_verification_export_label.setText(
-            "Evidence-Export bereit: exakt die oben gehashten ASCII-JSON-Bytes werden "
-            "in eine neue Datei geschrieben. Vor Weitergabe private Provenienz prüfen."
+            "Evidence export ready: exactly the ASCII JSON bytes hashed above will be "
+            "written to a new file. Review private provenance before sharing."
         )
         self._sync_ready_state()
 
@@ -1738,24 +1763,22 @@ class DiffeoForgeWindow(QMainWindow):
         self.saved_reference_status_verification_label.setStyleSheet("")
         if inputs_match:
             self.saved_reference_status_verification_label.setText(
-                f"Gespeicherter Statusreport nicht sicher verifizierbar: {message}"
+                f"Saved status report cannot be verified safely: {message}"
             )
         else:
             self.saved_reference_status_verification_label.setText(
-                "Fehlerergebnis verworfen, weil Reportpfad oder Hash-Eingabe geändert "
-                "wurden."
+                "Failure result discarded because the report path or hash input changed."
             )
         self.saved_reference_status_verification_detail_label.setText(
-            "Keine Artefaktfreigabe. Es wurde keine Datei repariert oder verändert und "
-            "kein Projekt-, Run-, Container- oder Engine-Zustand gelesen."
+            "No artifact release. No file was repaired or modified, and no project, run, "
+            "container, or engine state was read."
         )
         self.saved_reference_status_verification_export_label.setObjectName(
             "statusError"
         )
         self.saved_reference_status_verification_export_label.setStyleSheet("")
         self.saved_reference_status_verification_export_label.setText(
-            "Kein Evidence-Export ohne aktuell gebundene, vollständig validierte "
-            "Verifikation."
+            "No evidence export without a currently bound, fully validated verification."
         )
         self._sync_ready_state()
 
@@ -1774,9 +1797,9 @@ class DiffeoForgeWindow(QMainWindow):
         )
         selected, _ = QFileDialog.getSaveFileName(
             self,
-            "Neue Verification-Evidence-Datei auswählen (kein Überschreiben)",
+            "Select a new verification-evidence file (no overwrite)",
             str(default),
-            "JSON-Dateien (*.json)",
+            "JSON files (*.json)",
         )
         if not selected:
             return
@@ -1786,8 +1809,8 @@ class DiffeoForgeWindow(QMainWindow):
             )
             self.saved_reference_status_verification_export_label.setStyleSheet("")
             self.saved_reference_status_verification_export_label.setText(
-                "Evidence-Export verworfen, weil Reportpfad oder Hash-Eingabe nicht "
-                "mehr exakt zur geprüften Evidence passen."
+                "Evidence export discarded because the report path or hash input no longer "
+                "matches the verified evidence exactly."
             )
             self._sync_saved_reference_status_verification_controls()
             return
@@ -1807,7 +1830,7 @@ class DiffeoForgeWindow(QMainWindow):
             )
             self.saved_reference_status_verification_export_label.setStyleSheet("")
             self.saved_reference_status_verification_export_label.setText(
-                f"Verification-Evidence nicht exportiert: {error}"
+                f"Verification evidence was not exported: {error}"
             )
             self._sync_saved_reference_status_verification_controls()
             return
@@ -1816,11 +1839,11 @@ class DiffeoForgeWindow(QMainWindow):
         )
         self.saved_reference_status_verification_export_label.setStyleSheet("")
         self.saved_reference_status_verification_export_label.setText(
-            f"Verification-Evidence neu geschrieben: "
+            f"New verification evidence written: "
             f"{self._wrappable_path(exported.path)}\n"
             f"Schema: {exported.schema_version} · Bytes: {exported.byte_count} · "
             f"SHA-256: {exported.sha256}\n"
-            "Private Provenienz; keine Projekt-, Run- oder Engine-Datei wurde verändert."
+            "Private provenance; no project, run, or engine file was modified."
         )
         self._sync_saved_reference_status_verification_controls()
 
@@ -1841,15 +1864,36 @@ class DiffeoForgeWindow(QMainWindow):
         modern = self.engine_combo.currentData() == DesktopEngine.MODERN_CPU
         self.landmarks_edit.setEnabled(modern)
         self.landmarks_button.setEnabled(modern)
+        self.pairwise_combo.setEnabled(modern)
         if modern:
             self.engine_hint.setText(
-                "Aktuelle CPU/float64-Engine; PCA ist Teil des späteren Ergebnis-Bundles."
+                "Current CPU/float64 engine; PCA is part of the later result bundle."
             )
         else:
             self.engine_hint.setText(
-                "Unabhängige Deformetrica-4.3-Referenz; Docker bleibt extern und wird "
-                "nicht gebündelt."
+                "Independent Deformetrica 4.3 reference; Docker remains external and is "
+                "not bundled."
             )
+        self._update_pairwise_explanation()
+
+    @Slot()
+    def _update_pairwise_explanation(self) -> None:
+        if self.engine_combo.currentData() != DesktopEngine.MODERN_CPU:
+            self.pairwise_hint.setText(
+                "Pairwise execution is configured inside the external Deformetrica route."
+            )
+            return
+        if self.pairwise_combo.currentData() == "blockwise_256":
+            self.pairwise_hint.setText(
+                "Exact same all-pairs mathematics in explicit tiles. This bounds one "
+                "pairwise allocation, not total RAM or runtime; benchmark representative "
+                "meshes before production."
+            )
+            return
+        self.pairwise_hint.setText(
+            "Full pair matrices provide the correctness baseline and are intended for "
+            "small pilot meshes."
+        )
 
     @Slot()
     def _sync_ready_state(self) -> None:
@@ -1865,6 +1909,10 @@ class DiffeoForgeWindow(QMainWindow):
     def _request(self) -> ProjectSetupRequest:
         template = self.template_edit.text().strip()
         landmarks = self.landmarks_edit.text().strip()
+        blockwise = bool(
+            self.engine_combo.currentData() == DesktopEngine.MODERN_CPU
+            and self.pairwise_combo.currentData() == "blockwise_256"
+        )
         return ProjectSetupRequest(
             mesh_directory=Path(self.mesh_edit.text().strip()),
             project_directory=Path(self.project_edit.text().strip()),
@@ -1878,10 +1926,57 @@ class DiffeoForgeWindow(QMainWindow):
                 if landmarks and self.engine_combo.currentData() == DesktopEngine.MODERN_CPU
                 else None
             ),
+            pairwise_mode="blockwise" if blockwise else "dense",
+            query_tile_size=256 if blockwise else None,
+            source_tile_size=256 if blockwise else None,
         )
+
+    @staticmethod
+    def _configuration_path(request: ProjectSetupRequest) -> Path:
+        filename = (
+            "modern-atlas.yaml"
+            if request.engine == DesktopEngine.MODERN_CPU
+            else "atlas.yaml"
+        )
+        return (request.project_directory / filename).expanduser().resolve()
+
+    def _confirm_configuration_overwrite(self, config_path: Path) -> bool:
+        dialog = QMessageBox(self)
+        dialog.setWindowTitle("Overwrite existing project configuration?")
+        dialog.setIcon(QMessageBox.Icon.Warning)
+        dialog.setText(
+            "A project configuration already exists at:\n"
+            f"{config_path}\n\nAre you sure you want to overwrite it?"
+        )
+        dialog.setInformativeText(
+            "Only a recognized DiffeoForge-generated configuration can be replaced. "
+            "Generated workload evidence will be refreshed during Step 2. Source meshes, "
+            "landmarks, and completed run directories will not be overwritten or removed."
+        )
+        cancel_button = dialog.addButton("Cancel", QMessageBox.ButtonRole.RejectRole)
+        overwrite_button = dialog.addButton(
+            "Overwrite",
+            QMessageBox.ButtonRole.DestructiveRole,
+        )
+        dialog.setDefaultButton(cancel_button)
+        dialog.setEscapeButton(cancel_button)
+        dialog.exec()
+        return dialog.clickedButton() is overwrite_button
 
     @Slot()
     def _create_project(self) -> None:
+        request = self._request()
+        config_path = self._configuration_path(request)
+        if config_path.exists():
+            if not self._confirm_configuration_overwrite(config_path):
+                self.status_label.setObjectName("status")
+                self.status_label.setStyleSheet("")
+                self.status_label.setText(
+                    "Project creation cancelled; the existing configuration and all data "
+                    "remain unchanged."
+                )
+                return
+            request = replace(request, overwrite_existing_configuration=True)
         self.result_card.hide()
         self._result = None
         self._review = None
@@ -1903,8 +1998,8 @@ class DiffeoForgeWindow(QMainWindow):
         self.run_result_card.hide()
         self.status_label.setObjectName("status")
         self.status_label.setStyleSheet("")
-        self.status_label.setText("Meshes und Konfiguration werden geprüft …")
-        self._worker = _ProjectWorker(self._request())
+        self.status_label.setText("Meshes and configuration are being validated…")
+        self._worker = _ProjectWorker(request)
         self._worker.signals.succeeded.connect(self._project_succeeded)
         self._worker.signals.failed.connect(self._project_failed)
         self._sync_ready_state()
@@ -1917,15 +2012,15 @@ class DiffeoForgeWindow(QMainWindow):
         self.status_label.setObjectName("statusSuccess")
         self.status_label.setStyleSheet("")
         self.status_label.setText(
-            f"Prüfung bestanden: {result.subject_count} Probandenmeshes wurden akzeptiert."
+            f"Validation passed: {result.subject_count} subject meshes were accepted."
         )
-        report = f"\nPreflight-Report: {result.report_path}" if result.report_path else ""
+        report = f"\nPreflight report: {result.report_path}" if result.report_path else ""
         notices = "\n".join(f"• {notice}" for notice in result.notices)
         self.result_label.setText(
             f"Engine: {result.engine_label}\n"
             f"Template: {result.template_path}\n"
-            f"Konfiguration: {result.config_path}{report}\n\n"
-            f"Wichtige Hinweise:\n{notices}"
+            f"Configuration: {result.config_path}{report}\n\n"
+            f"Important notices:\n{notices}"
         )
         self.result_card.show()
         self.review_button.setEnabled(True)
@@ -1936,7 +2031,7 @@ class DiffeoForgeWindow(QMainWindow):
         self._worker = None
         self.status_label.setObjectName("statusError")
         self.status_label.setStyleSheet("")
-        self.status_label.setText(f"Projekt konnte nicht angelegt werden: {message}")
+        self.status_label.setText(f"Project could not be created: {message}")
         self._sync_ready_state()
 
     @Slot()
@@ -1947,7 +2042,7 @@ class DiffeoForgeWindow(QMainWindow):
         self.status_label.setObjectName("status")
         self.status_label.setStyleSheet("")
         self.status_label.setText(
-            "Effektive Parameter und vorhandene Workload-Evidenz werden gesammelt …"
+            "Effective parameters and available workload evidence are being collected…"
         )
         self._worker = _ReviewWorker(self._result)
         self._worker.signals.succeeded.connect(self._review_succeeded)
@@ -1969,22 +2064,22 @@ class DiffeoForgeWindow(QMainWindow):
         self._populate_review_rows(self.workload_review_layout, review.workload)
         self.review_boundary_label.setText(review.scientific_boundary)
         engine_label = (
-            "DiffeoForge Modern CPU (experimentell)"
+            "DiffeoForge Modern CPU (experimental)"
             if review.engine is DesktopEngine.MODERN_CPU
-            else "Deformetrica 4.3 Referenz (extern)"
+            else "Deformetrica 4.3 reference (external)"
         )
         config_display = self._wrappable_path(review.config_path)
         report_display = self._wrappable_path(review.report_path)
         self.review_summary_label.setText(
-            f"Projekt: {review.project_name}\n"
+            f"Project: {review.project_name}\n"
             f"Engine: {engine_label}\n"
-            f"Probanden: {review.subject_count}\n"
-            f"Konfiguration: {config_display}\n"
-            f"Geprüfter SHA-256: {review.config_sha256}\n"
+            f"Subjects: {review.subject_count}\n"
+            f"Configuration: {config_display}\n"
+            f"Verified SHA-256: {review.config_sha256}\n"
             f"{review.report_label}: {report_display}"
         )
         self.review_warnings_label.setText("\n".join(f"• {warning}" for warning in review.warnings))
-        self.open_review_report_button.setText(f"{review.report_label} öffnen")
+        self.open_review_report_button.setText(f"Open {review.report_label}")
         if (
             self._result is not None
             and self._result.config_path.resolve() == review.config_path.resolve()
@@ -1996,19 +2091,19 @@ class DiffeoForgeWindow(QMainWindow):
             self.template_preview_status_label.setObjectName("status")
             self.template_preview_status_label.setStyleSheet("")
             self.template_preview_status_label.setText(
-                "Die read-only-Wireframe-Vorschau wurde noch nicht geladen."
+                "The read-only wireframe preview has not been loaded."
             )
             self.template_preview_detail_label.setText(
                 f"Template: {self._wrappable_path(self._result.template_path)}\n"
-                "Diese Projektion verändert das Mesh nicht und ersetzt weder "
-                "3D-Inspektion noch Mesh-QC oder Landmark-Picking."
+                "This projection does not modify the mesh and does not replace "
+                "3D inspection, mesh QC, or landmark picking."
             )
         else:
             self.template_preview_card.hide()
         if review.engine is DesktopEngine.MODERN_CPU:
             self.reference_readiness_card.hide()
             self.reference_preparation_status_card.hide()
-            self.show_run_button.setText("Weiter zu Atlasstart")
+            self.show_run_button.setText("Continue to atlas execution")
             self.show_run_button.setEnabled(True)
         else:
             self.reference_readiness_card.show()
@@ -2016,24 +2111,23 @@ class DiffeoForgeWindow(QMainWindow):
             self.reference_readiness_status_label.setObjectName("status")
             self.reference_readiness_status_label.setStyleSheet("")
             self.reference_readiness_status_label.setText(
-                "Die konfigurierte Container-Umgebung wurde noch nicht geprüft."
+                "The configured container environment has not been checked."
             )
             self.reference_readiness_detail_label.setText(
-                "Die Prüfung wird an den angezeigten Konfigurations-SHA-256 gebunden und "
-                "ist rein lesend. Sie installiert, baut, startet, bereitet oder repariert "
-                "nichts."
+                "The check is bound to the displayed configuration SHA-256 and is read-only. "
+                "It installs, builds, starts, prepares, and repairs nothing."
             )
             self.refresh_reference_readiness_button.setEnabled(True)
             self.reference_preparation_status_label.setObjectName("status")
             self.reference_preparation_status_label.setStyleSheet("")
             self.reference_preparation_status_label.setText(
-                "Noch keine Approval-Datei read-only geprüft."
+                "No approval file has been checked read-only."
             )
             self.reference_preparation_detail_label.setText(
-                "Approval-Datei und unabhängig notierter SHA-256 sind erforderlich. "
-                "Die Prüfung verändert, publiziert, löscht oder startet nichts."
+                "An approval file and independently recorded SHA-256 are required. "
+                "The check changes, publishes, deletes, and starts nothing."
             )
-            self.show_run_button.setText("Referenzstart noch nicht verbunden")
+            self.show_run_button.setText("Reference execution is not connected yet")
             self.show_run_button.setEnabled(False)
         self._set_active_step(1)
         self.page_stack.setCurrentIndex(1)
@@ -2060,12 +2154,12 @@ class DiffeoForgeWindow(QMainWindow):
         self.template_preview_status_label.setObjectName("status")
         self.template_preview_status_label.setStyleSheet("")
         self.template_preview_status_label.setText(
-            "Template-Geometrie und eindeutige Kanten werden außerhalb des Event-Loops "
-            "read-only geladen …"
+            "Template geometry and unique edges are being loaded read-only outside the "
+            "event loop…"
         )
         self.template_preview_detail_label.setText(
-            "Die Quelldatei wird vor und nach dem Laden gehasht. Es werden keine Punkte, "
-            "Flächen oder Dateien verändert."
+            "The source file is hashed before and after loading. No points, faces, or files "
+            "are modified."
         )
         self._sync_ready_state()
         self._thread_pool.start(worker)
@@ -2078,7 +2172,7 @@ class DiffeoForgeWindow(QMainWindow):
             or model.path.resolve() != self._result.template_path.resolve()
         ):
             self._template_preview_failed(
-                "Geladenes Vorschaumodell gehört nicht zum aktuellen Template"
+                "The loaded preview model does not belong to the current template"
             )
             return
         self._template_preview = model
@@ -2101,33 +2195,33 @@ class DiffeoForgeWindow(QMainWindow):
             self.template_preview_status_label.setObjectName("statusError")
             self.template_preview_status_label.setStyleSheet("")
             self.template_preview_status_label.setText(
-                f"{str(plane).upper()}-Projektion nicht darstellbar: {error}"
+                f"{str(plane).upper()} projection cannot be displayed: {error}"
             )
             return
 
         self.template_preview_canvas.set_plane(plane)
         self.template_preview_canvas.set_model(model)
         sampling = (
-            "deterministisch ausgedünnte Anzeige"
+            "deterministically subsampled display"
             if projection.sampled
-            else "alle eindeutigen Kanten angezeigt"
+            else "all unique edges displayed"
         )
         bounds = ", ".join(f"{value:.6g}" for value in model.bounds)
         self.template_preview_detail_label.setText(
             f"Template: {self._wrappable_path(model.path)}\n"
             f"SHA-256: {model.sha256}\n"
-            f"Geometrie: {model.point_count} Punkte · {model.triangle_count} Dreiecke · "
-            f"{model.edge_count} eindeutige Kanten\n"
+            f"Geometry: {model.point_count} points · {model.triangle_count} triangles · "
+            f"{model.edge_count} unique edges\n"
             f"Bounds (xmin, xmax, ymin, ymax, zmin, zmax): {bounds}\n"
-            f"Anzeige: {projection.displayed_edge_count} von "
-            f"{projection.total_edge_count} Kanten · {sampling}.\n"
-            "Nur orthografische Inspektionsvorschau; keine 3D-, QC-, Registrierungs-, "
-            "Landmark- oder biologische Bewertung."
+            f"Display: {projection.displayed_edge_count} of "
+            f"{projection.total_edge_count} edges · {sampling}.\n"
+            "Orthographic inspection preview only; not a 3D, QC, registration, landmark, "
+            "or biological assessment."
         )
         self.template_preview_status_label.setObjectName("statusSuccess")
         self.template_preview_status_label.setStyleSheet("")
         self.template_preview_status_label.setText(
-            f"{str(plane).upper()}-Wireframe aus unverändertem Template gerendert."
+            f"{str(plane).upper()} wireframe rendered from the unchanged template."
         )
 
     @Slot(str)
@@ -2142,10 +2236,10 @@ class DiffeoForgeWindow(QMainWindow):
         self.template_preview_status_label.setObjectName("statusError")
         self.template_preview_status_label.setStyleSheet("")
         self.template_preview_status_label.setText(
-            f"Template-Vorschau nicht geladen: {message}"
+            f"Template preview was not loaded: {message}"
         )
         self.template_preview_detail_label.setText(
-            "Keine Vorschau freigegeben; die Template-Datei wurde nicht verändert."
+            "No preview released; the template file was not modified."
         )
         self.review_button.setEnabled(self._result is not None)
         self._sync_ready_state()
@@ -2167,12 +2261,12 @@ class DiffeoForgeWindow(QMainWindow):
         self.reference_readiness_status_label.setObjectName("status")
         self.reference_readiness_status_label.setStyleSheet("")
         self.reference_readiness_status_label.setText(
-            "Host, Projektordner, Containerdienst und exakt konfiguriertes Image werden "
-            "read-only geprüft …"
+            "Host, project folder, container service, and exact configured image are being "
+            "checked read-only…"
         )
         self.reference_readiness_detail_label.setText(
-            "Kein Referenz-Run wird vorbereitet oder gestartet. Die Konfiguration wird "
-            "vor und nach den externen Beobachtungen an ihren Review-Hash gebunden."
+            "No reference run is prepared or started. The configuration is bound to its "
+            "review hash before and after external observations."
         )
         self._sync_ready_state()
         self._thread_pool.start(worker)
@@ -2184,39 +2278,39 @@ class DiffeoForgeWindow(QMainWindow):
         self._worker = None
         self._reference_readiness = readiness
         details = [
-            f"Konfiguration: {self._wrappable_path(readiness.config_path)}",
-            f"Gebundener SHA-256: {readiness.config_sha256}",
-            f"Projektordner: {self._wrappable_path(readiness.workspace)}",
-            f"Container-Engine: {readiness.engine}",
-            f"Referenz-Image: {readiness.image}",
-            "Beobachtete Checks:",
+            f"Configuration: {self._wrappable_path(readiness.config_path)}",
+            f"Bound SHA-256: {readiness.config_sha256}",
+            f"Project folder: {self._wrappable_path(readiness.workspace)}",
+            f"Container engine: {readiness.engine}",
+            f"Reference image: {readiness.image}",
+            "Observed checks:",
         ]
         for check in readiness.report.checks:
             details.append(f"[{check.status.upper()}] {check.label}: {check.summary}")
             if check.guidance:
-                details.append(f"  Hinweis: {check.guidance}")
+                details.append(f"  Guidance: {check.guidance}")
         details.append(
-            "Aktion: nur beobachtet; nichts installiert, gebaut, gestartet, vorbereitet, "
-            "fortgesetzt oder repariert."
+            "Action: observation only; nothing installed, built, started, prepared, resumed, "
+            "or repaired."
         )
         self.reference_readiness_detail_label.setText("\n".join(details))
         if readiness.report.status == "ready":
             self.reference_readiness_status_label.setObjectName("statusSuccess")
             message = (
-                "Externe Referenzumgebung ist für die beobachteten Checks bereit. "
-                "Der Referenzstart bleibt bis zur separaten Prozessaufsicht gesperrt."
+                "The external reference environment is ready for the observed checks. "
+                "Reference execution remains locked pending separate process supervision."
             )
         elif readiness.report.status == "warning":
             self.reference_readiness_status_label.setObjectName("status")
             message = (
-                "Externe Referenzumgebung ist ohne blockierenden Fehler, aber mit Warnungen. "
-                "Der Referenzstart bleibt gesperrt."
+                "The external reference environment has no blocking error but has warnings. "
+                "Reference execution remains locked."
             )
         else:
             self.reference_readiness_status_label.setObjectName("statusError")
             message = (
-                "Externe Referenzumgebung ist blockiert. Hinweise stehen unten; es wurde "
-                "nichts verändert oder gestartet."
+                "The external reference environment is blocked. Guidance appears below; "
+                "nothing was changed or started."
             )
         self.reference_readiness_status_label.setStyleSheet("")
         self.reference_readiness_status_label.setText(message)
@@ -2231,11 +2325,11 @@ class DiffeoForgeWindow(QMainWindow):
         self.reference_readiness_status_label.setObjectName("statusError")
         self.reference_readiness_status_label.setStyleSheet("")
         self.reference_readiness_status_label.setText(
-            f"Referenzumgebung nicht sicher prüfbar: {message}"
+            f"Reference environment cannot be checked safely: {message}"
         )
         self.reference_readiness_detail_label.setText(
-            "Diagnose verworfen. Kein Referenz-Run wurde vorbereitet oder gestartet; "
-            "keine Umgebungseinstellung wurde verändert."
+            "Diagnostic discarded. No reference run was prepared or started, and no "
+            "environment setting was changed."
         )
         self.refresh_reference_readiness_button.setEnabled(
             self._review is not None
@@ -2281,18 +2375,17 @@ class DiffeoForgeWindow(QMainWindow):
         self.reference_preparation_status_label.setObjectName("status")
         self.reference_preparation_status_label.setStyleSheet("")
         self.reference_preparation_status_label.setText(
-            "Approval, aktueller Plan, Zielpfad und private Stages werden zweimal "
-            "read-only geprüft …"
+            "Approval, current plan, destination, and private stages are being checked "
+            "twice read-only…"
         )
         self.reference_preparation_detail_label.setText(
-            "Kein Pfad wird gelöscht, verschoben, publiziert, repariert, fortgesetzt, "
-            "vorbereitet oder ausgeführt."
+            "No path is deleted, moved, published, repaired, resumed, prepared, or executed."
         )
         self.reference_preparation_export_label.setObjectName("hint")
         self.reference_preparation_export_label.setStyleSheet("")
         self.reference_preparation_export_label.setText(
-            "Export gesperrt, bis diese read-only Prüfung erfolgreich und weiterhin "
-            "an exakt dieselben Eingaben gebunden ist."
+            "Export is locked until this read-only check succeeds and remains bound to "
+            "the exact same inputs."
         )
         self._sync_ready_state()
         self._thread_pool.start(worker)
@@ -2318,28 +2411,27 @@ class DiffeoForgeWindow(QMainWindow):
             self.reference_preparation_status_label.setObjectName("statusError")
             self.reference_preparation_status_label.setStyleSheet("")
             self.reference_preparation_status_label.setText(
-                "Prüfergebnis verworfen, weil Review oder Approval-Eingaben nicht mehr "
-                "exakt übereinstimmen."
+                "Verification result discarded because the review or approval inputs no "
+                "longer match exactly."
             )
             self.reference_preparation_detail_label.setText(
-                "Es wurde nichts verändert. Mit den aktuellen Eingaben erneut prüfen."
+                "Nothing was changed. Check again with the current inputs."
             )
             self.reference_preparation_export_label.setObjectName("statusError")
             self.reference_preparation_export_label.setStyleSheet("")
             self.reference_preparation_export_label.setText(
-                "Kein Export: Das verworfene Ergebnis ist nicht mehr an die aktuellen "
-                "Eingaben gebunden."
+                "No export: the discarded result is no longer bound to the current inputs."
             )
             self._sync_ready_state()
             return
 
         self._reference_preparation_status = status
         engine_started = (
-            "ja"
+            "yes"
             if status.engine_execution_started is True
-            else "nein"
+            else "no"
             if status.engine_execution_started is False
-            else "nicht sicher klassifizierbar"
+            else "cannot be classified safely"
         )
         details = [
             f"Approval: {self._wrappable_path(status.approval_path)}",
@@ -2349,11 +2441,11 @@ class DiffeoForgeWindow(QMainWindow):
             f"Report-Schema: {status.report_schema_version}",
             f"Report-Bytes: {status.report_byte_count}",
             f"Report-SHA-256: {status.report_sha256}",
-            f"Ziel [{status.destination_status}]: "
+            f"Destination [{status.destination_status}]: "
             f"{self._wrappable_path(status.destination_path)}",
-            f"Begründung: {status.destination_reason}",
-            f"Engine-Ausführung gestartet: {engine_started}",
-            f"Exakt passende private Stages: {len(status.private_stages)}",
+            f"Reason: {status.destination_reason}",
+            f"Engine execution started: {engine_started}",
+            f"Exactly matching private stages: {len(status.private_stages)}",
         ]
         if status.manifest_sha256 is not None:
             details.append(f"Manifest-SHA-256: {status.manifest_sha256}")
@@ -2363,38 +2455,36 @@ class DiffeoForgeWindow(QMainWindow):
             )
         details.extend(
             (
-                "Stabile Doppelbeobachtung: ja",
-                "Mutation durch diese Prüfung: nein",
-                f"Grenze: {status.scientific_boundary}",
+                "Stable double observation: yes",
+                "Mutation by this check: no",
+                f"Boundary: {status.scientific_boundary}",
             )
         )
         self.reference_preparation_detail_label.setText("\n".join(details))
         if status.status == "clear_to_prepare":
             self.reference_preparation_status_label.setObjectName("statusSuccess")
             message = (
-                "Genehmigter Zielpfad ist frei. Read-only-Prüfung bestanden; es wurde "
-                "nichts vorbereitet oder gestartet."
+                "The approved destination is free. The read-only check passed; nothing "
+                "was prepared or started."
             )
         elif status.status == "published_prepared_not_executed_verified":
             self.reference_preparation_status_label.setObjectName("statusSuccess")
             message = (
-                "Vorbereiteter Referenz-Run ist vollständig verifiziert und wurde nicht "
-                "ausgeführt."
+                "The prepared reference run is fully verified and was not executed."
             )
         else:
             self.reference_preparation_status_label.setObjectName("statusError")
             message = (
-                "Der beobachtete Zustand benötigt eine explizite menschliche "
-                "Entscheidung. Es wurde nichts verändert."
+                "The observed state requires an explicit human decision. Nothing was changed."
             )
         self.reference_preparation_status_label.setStyleSheet("")
         self.reference_preparation_status_label.setText(message)
         self.reference_preparation_export_label.setObjectName("hint")
         self.reference_preparation_export_label.setStyleSheet("")
         self.reference_preparation_export_label.setText(
-            "Export bereit: Es werden exakt die oben gehashten Report-Bytes in eine neue "
-            "JSON-Datei geschrieben. Der Report enthält absolute Pfade und Dateinamen; "
-            "vor Weitergabe auf vertrauliche Provenienz prüfen."
+            "Export ready: exactly the report bytes hashed above will be written to a new "
+            "JSON file. The report contains absolute paths and file names; review private "
+            "provenance before sharing."
         )
         self.review_button.setEnabled(self._result is not None)
         self._sync_ready_state()
@@ -2411,20 +2501,20 @@ class DiffeoForgeWindow(QMainWindow):
         self.reference_preparation_status_label.setStyleSheet("")
         if inputs_match:
             self.reference_preparation_status_label.setText(
-                f"Vorbereitungsstatus nicht sicher prüfbar: {message}"
+                f"Preparation status cannot be checked safely: {message}"
             )
         else:
             self.reference_preparation_status_label.setText(
-                "Fehlerergebnis verworfen, weil die Approval-Eingaben geändert wurden."
+                "Failure result discarded because the approval inputs changed."
             )
         self.reference_preparation_detail_label.setText(
-            "Keine Statusfreigabe. Es wurde nichts gelöscht, verschoben, publiziert, "
-            "repariert, fortgesetzt, vorbereitet oder ausgeführt."
+            "No status release. Nothing was deleted, moved, published, repaired, resumed, "
+            "prepared, or executed."
         )
         self.reference_preparation_export_label.setObjectName("statusError")
         self.reference_preparation_export_label.setStyleSheet("")
         self.reference_preparation_export_label.setText(
-            "Kein Export ohne aktuell gebundenen, vollständig validierten Statusreport."
+            "No export without a currently bound, fully validated status report."
         )
         self.review_button.setEnabled(self._result is not None)
         self._sync_ready_state()
@@ -2444,9 +2534,9 @@ class DiffeoForgeWindow(QMainWindow):
         )
         selected, _ = QFileDialog.getSaveFileName(
             self,
-            "Neue Statusreport-Datei auswählen (kein Überschreiben)",
+            "Select a new status-report file (no overwrite)",
             str(default),
-            "JSON-Dateien (*.json)",
+            "JSON files (*.json)",
         )
         if not selected:
             return
@@ -2454,8 +2544,8 @@ class DiffeoForgeWindow(QMainWindow):
             self.reference_preparation_export_label.setObjectName("statusError")
             self.reference_preparation_export_label.setStyleSheet("")
             self.reference_preparation_export_label.setText(
-                "Export verworfen, weil Review oder Approval-Eingaben nicht mehr exakt "
-                "zum geprüften Report passen."
+                "Export discarded because the review or approval inputs no longer match "
+                "the verified report exactly."
             )
             self._sync_reference_preparation_status_controls()
             return
@@ -2470,18 +2560,17 @@ class DiffeoForgeWindow(QMainWindow):
             self.reference_preparation_export_label.setObjectName("statusError")
             self.reference_preparation_export_label.setStyleSheet("")
             self.reference_preparation_export_label.setText(
-                f"Statusreport nicht exportiert: {error}"
+                f"Status report was not exported: {error}"
             )
             self._sync_reference_preparation_status_controls()
             return
         self.reference_preparation_export_label.setObjectName("statusSuccess")
         self.reference_preparation_export_label.setStyleSheet("")
         self.reference_preparation_export_label.setText(
-            f"Statusreport neu geschrieben: {self._wrappable_path(exported.path)}\n"
+            f"New status report written: {self._wrappable_path(exported.path)}\n"
             f"Schema: {exported.schema_version} · Bytes: {exported.byte_count} · "
             f"SHA-256: {exported.sha256}\n"
-            "Private Provenienz mit absoluten Pfaden; keine Run- oder Engine-Datei wurde "
-            "verändert."
+            "Private provenance with absolute paths; no run or engine file was modified."
         )
         self._sync_reference_preparation_status_controls()
 
@@ -2510,23 +2599,24 @@ class DiffeoForgeWindow(QMainWindow):
         except (DesktopReviewedRunError, OSError, RuntimeError, TypeError, ValueError) as error:
             self._run_readiness = None
             self.run_summary_label.setText(
-                f"Projekt: {review.project_name}\n"
-                f"Konfiguration: {self._wrappable_path(review.config_path)}\n"
-                f"Geprüfter SHA-256: {review.config_sha256}\n"
-                "Ziel: konnte nicht sicher aus der geprüften Konfiguration gebunden werden"
+                f"Project: {review.project_name}\n"
+                f"Configuration: {self._wrappable_path(review.config_path)}\n"
+                f"Verified SHA-256: {review.config_sha256}\n"
+                "Destination: could not be bound safely from the reviewed configuration"
             )
             self.run_readiness_status_label.setObjectName("statusError")
             self.run_readiness_status_label.setStyleSheet("")
-            self.run_readiness_status_label.setText(f"Zielstatus nicht prüfbar: {error}")
+            self.run_readiness_status_label.setText(
+                f"Destination status cannot be checked: {error}"
+            )
             self.run_readiness_detail_label.setText(
-                "Kein Worker wurde gestartet. Es wurden keine privaten oder publizierten "
-                "Dateien verändert."
+                "No worker was started. No private or published files were modified."
             )
             self.run_state_label.setObjectName("statusError")
             self.run_state_label.setStyleSheet("")
             self.run_state_label.setText(
-                "Kein Worker gestartet. Ziel und Konfigurationsbindung konnten nicht sicher "
-                "geprüft werden."
+                "No worker started. Destination and configuration binding could not be "
+                "checked safely."
             )
             self.start_atlas_button.setEnabled(False)
             return None
@@ -2538,29 +2628,28 @@ class DiffeoForgeWindow(QMainWindow):
         request = readiness.request
         discovery = readiness.discovery
         self.run_summary_label.setText(
-            f"Projekt: {self._review.project_name if self._review else 'unbekannt'}\n"
-            f"Konfiguration: {self._wrappable_path(request.config_path)}\n"
-            f"Gebundener SHA-256: {request.expected_config_sha256}\n"
-            f"Nicht überschreibbares Ziel: {self._wrappable_path(request.destination)}"
+            f"Project: {self._review.project_name if self._review else 'unknown'}\n"
+            f"Configuration: {self._wrappable_path(request.config_path)}\n"
+            f"Bound SHA-256: {request.expected_config_sha256}\n"
+            f"Non-overwritable destination: {self._wrappable_path(request.destination)}"
         )
         details = [
-            f"Exaktes Ziel: {self._wrappable_path(discovery.destination)}",
+            f"Exact destination: {self._wrappable_path(discovery.destination)}",
             f"Discovery-Status: {discovery.status}",
-            f"Ziel existiert: {'ja' if discovery.destination_exists else 'nein'}",
+            f"Destination exists: {'yes' if discovery.destination_exists else 'no'}",
         ]
         if discovery.candidates:
-            details.append("Private unveröffentlichte Kandidaten:")
+            details.append("Private unpublished candidates:")
             for candidate in discovery.candidates:
                 details.append(
                     f"[{candidate.status}] {self._wrappable_path(candidate.path)}\n"
-                    f"  Bedeutung: {_PRIVATE_STATUS_EXPLANATIONS[candidate.status]}\n"
-                    f"  Technischer Grund: {candidate.reason}"
+                    f"  Meaning: {_PRIVATE_STATUS_EXPLANATIONS[candidate.status]}\n"
+                    f"  Technical reason: {candidate.reason}"
                 )
         else:
-            details.append("Private unveröffentlichte Kandidaten: keine")
+            details.append("Private unpublished candidates: none")
         details.append(
-            "Aktion dieser Prüfung: nur gelesen; nichts gelöscht, umbenannt, fortgesetzt "
-            "oder publiziert."
+            "Action by this check: read only; nothing deleted, renamed, resumed, or published."
         )
         self.run_readiness_detail_label.setText("\n".join(details))
         can_start = (
@@ -2573,27 +2662,27 @@ class DiffeoForgeWindow(QMainWindow):
             self.run_readiness_status_label.setObjectName("statusSuccess")
             self.run_readiness_status_label.setStyleSheet("")
             self.run_readiness_status_label.setText(
-                "Ziel ist frei: kein publiziertes Ergebnis und kein exakter privater "
-                "Kandidat gefunden."
+                "Destination is free: no published result or exact private candidate was found."
             )
             if self._worker is None:
                 self.run_state_label.setObjectName("status")
                 self.run_state_label.setStyleSheet("")
                 self.run_state_label.setText(
-                    "Bereit; Zielstatus ist rein lesend geprüft. Vor dem Start wird erneut geprüft."
+                    "Ready; destination status was checked read-only. It will be checked "
+                    "again before execution."
                 )
         else:
             self.run_readiness_status_label.setObjectName("statusError")
             self.run_readiness_status_label.setStyleSheet("")
             self.run_readiness_status_label.setText(
-                "Atlasstart blockiert: dieses exakte Ziel ist nicht frei."
+                "Atlas execution blocked: this exact destination is not free."
             )
             if self._worker is None:
                 self.run_state_label.setObjectName("statusError")
                 self.run_state_label.setStyleSheet("")
                 self.run_state_label.setText(
-                    "Kein Worker gestartet. Privater oder publizierter Zielzustand verlangt "
-                    "explizite Prüfung."
+                    "No worker started. The private or published destination state requires "
+                    "explicit review."
                 )
 
     @Slot()
@@ -2628,19 +2717,20 @@ class DiffeoForgeWindow(QMainWindow):
         self.review_run_result_button.setEnabled(False)
         self.run_event_log.clear()
         self.run_progress_bar.setValue(0)
-        self.run_stage_label.setText("Workflow-Stufe: Worker wird gestartet")
-        self.run_optimizer_label.setText("Noch keine Optimierungsentscheidung.")
+        self.run_stage_label.setText("Workflow stage: worker is starting")
+        self.run_optimizer_label.setText("No optimization decision yet.")
         self.run_state_label.setObjectName("status")
         self.run_state_label.setStyleSheet("")
         self.run_state_label.setText(
-            "Kindprozess wird gestartet; Konfigurationsbindung und Zielpfad werden erneut geprüft."
+            "Child process is starting; configuration binding and destination are being "
+            "checked again."
         )
         self.run_summary_label.setText(
-            f"Projekt: {self._review.project_name}\n"
+            f"Project: {self._review.project_name}\n"
             f"Request-ID: {request.request_id}\n"
-            f"Konfiguration: {self._wrappable_path(request.config_path)}\n"
-            f"Gebundener SHA-256: {request.expected_config_sha256}\n"
-            f"Nicht überschreibbares Ziel: {self._wrappable_path(request.destination)}"
+            f"Configuration: {self._wrappable_path(request.config_path)}\n"
+            f"Bound SHA-256: {request.expected_config_sha256}\n"
+            f"Non-overwritable destination: {self._wrappable_path(request.destination)}"
         )
         self.start_atlas_button.setEnabled(False)
         self.refresh_run_readiness_button.setEnabled(False)
@@ -2657,26 +2747,26 @@ class DiffeoForgeWindow(QMainWindow):
         self.run_state_label.setObjectName("status")
         self.run_state_label.setStyleSheet("")
         self.run_state_label.setText(
-            "Abbruch angefordert. Der aktuelle Tensor-Operator darf enden; DiffeoForge "
-            "bricht am nächsten sicheren Punkt ab und publiziert keinen halbfertigen Run."
+            "Cancellation requested. The current tensor operation may finish; DiffeoForge "
+            "will stop at the next safe point and will not publish a partial run."
         )
-        self.run_event_log.appendPlainText("GUI: kooperativer Abbruch angefordert")
+        self.run_event_log.appendPlainText("GUI: cooperative cancellation requested")
 
     @Slot(str)
     def _atlas_cancel_failed(self, message: str) -> None:
         self.run_state_label.setObjectName("statusError")
         self.run_state_label.setStyleSheet("")
         self.run_state_label.setText(
-            f"Abbruchkommando konnte nicht bestätigt werden: {message}. "
-            "Der Parent überwacht den Kindprozess weiter."
+            f"Cancellation command could not be confirmed: {message}. "
+            "The parent continues to monitor the child process."
         )
-        self.run_event_log.appendPlainText(f"GUI: Abbruchübertragung fehlgeschlagen: {message}")
+        self.run_event_log.appendPlainText(f"GUI: cancellation transfer failed: {message}")
 
     @Slot(object)
     def _atlas_event(self, event: DesktopWorkerEvent) -> None:
         message: str
         if event.kind == "started":
-            message = "Worker gestartet; überprüfte Konfiguration ist gebunden."
+            message = "Worker started; the reviewed configuration is bound."
             self.run_state_label.setText(message)
         elif event.kind == "progress":
             progress = event.payload["modern_progress"]
@@ -2686,33 +2776,33 @@ class DiffeoForgeWindow(QMainWindow):
             self.run_progress_bar.setRange(0, total)
             self.run_progress_bar.setValue(completed)
             self.run_stage_label.setText(
-                f"Workflow-Stufe: {progress['phase']} · {progress['status']} · {message}"
+                f"Workflow stage: {progress['phase']} · {progress['status']} · {message}"
             )
             optimizer = progress["optimizer"]
             if optimizer is not None:
                 block = optimizer["block"] or "initial"
                 gradient = optimizer["gradient_norm"]
-                gradient_text = "nicht berechnet" if gradient is None else f"{gradient:.6g}"
+                gradient_text = "not computed" if gradient is None else f"{gradient:.6g}"
                 self.run_optimizer_label.setText(
-                    "Optimierung: "
-                    f"Entscheidung {optimizer['completed_decisions']} von "
-                    f"{optimizer['maximum_decisions']} · Zyklus {optimizer['cycle']} von "
-                    f"{optimizer['max_cycles']} · Block {block} · Status "
+                    "Optimization: "
+                    f"decision {optimizer['completed_decisions']} of "
+                    f"{optimizer['maximum_decisions']} · cycle {optimizer['cycle']} of "
+                    f"{optimizer['max_cycles']} · block {block} · status "
                     f"{optimizer['status']} · Objective {optimizer['objective']:.6g} · "
-                    f"Gradientennorm {gradient_text}"
+                    f"gradient norm {gradient_text}"
                 )
         elif event.kind == "completed":
-            message = "Worker meldet Fertigstellung; Parent-Verifikation läuft."
+            message = "Worker reports completion; parent verification is running."
             self.run_state_label.setText(message)
         elif event.kind == "cancelled":
             message = str(event.payload["message"])
             self.run_state_label.setText(
-                "Worker meldet sicheren Abbruch; Parent prüft den Ausgang."
+                "Worker reports safe cancellation; the parent is checking the outcome."
             )
         else:
             message = str(event.payload["message"])
             self.run_state_label.setText(
-                "Worker meldet einen Fehler; Parent gleicht Prozessende ab."
+                "Worker reports an error; the parent is reconciling process termination."
             )
         self.run_event_log.appendPlainText(f"#{event.sequence} {event.kind}: {message}")
 
@@ -2728,14 +2818,15 @@ class DiffeoForgeWindow(QMainWindow):
             self.run_state_label.setObjectName("statusSuccess")
             self.run_state_label.setStyleSheet("")
             self.run_state_label.setText(
-                "Atlas und PCA wurden publiziert und vom Parent unabhängig verifiziert."
+                "Atlas and PCA were published and independently verified by the parent. "
+                "Optimizer convergence has not yet been reviewed."
             )
             self.run_result_label.setText(
-                f"Ziel: {self._wrappable_path(Path(terminal.payload['destination']))}\n"
-                f"Probanden: {terminal.payload['subject_count']}\n"
+                f"Destination: {self._wrappable_path(Path(terminal.payload['destination']))}\n"
+                f"Subjects: {terminal.payload['subject_count']}\n"
                 f"Manifest SHA-256: {terminal.payload['manifest_sha256']}\n"
-                f"Resultat-Bundle: {terminal.payload['bundle_path']}\n"
-                f"Prozess-Exitcode: {result.exit_code}"
+                f"Result bundle: {terminal.payload['bundle_path']}\n"
+                f"Process exit code: {result.exit_code}"
             )
             self.run_result_card.show()
             self.review_run_result_button.setEnabled(True)
@@ -2744,8 +2835,8 @@ class DiffeoForgeWindow(QMainWindow):
             self.run_state_label.setObjectName("status")
             self.run_state_label.setStyleSheet("")
             self.run_state_label.setText(
-                "Sicher abgebrochen: kein Ziel wurde publiziert. Dieser Modern-Run besitzt "
-                "keinen Checkpoint und muss bei Bedarf neu gestartet werden."
+                "Cancelled safely: no destination was published. This Modern run has no "
+                "checkpoint and must be restarted if needed."
             )
             self.start_atlas_button.setEnabled(True)
             self.review_run_result_button.setEnabled(False)
@@ -2761,8 +2852,8 @@ class DiffeoForgeWindow(QMainWindow):
         self.run_back_button.setEnabled(True)
         self.run_state_label.setObjectName("statusError")
         self.run_state_label.setStyleSheet("")
-        self.run_state_label.setText(f"Atlaslauf fehlgeschlagen oder abgewiesen: {message}")
-        self.run_event_log.appendPlainText(f"Parent: Fehler: {message}")
+        self.run_state_label.setText(f"Atlas run failed or was rejected: {message}")
+        self.run_event_log.appendPlainText(f"Parent: error: {message}")
         self.start_atlas_button.setEnabled(True)
         self.review_run_result_button.setEnabled(False)
         if self._close_after_worker:
@@ -2783,8 +2874,8 @@ class DiffeoForgeWindow(QMainWindow):
         self.run_state_label.setObjectName("status")
         self.run_state_label.setStyleSheet("")
         self.run_state_label.setText(
-            "Workflow, Bundle, Inventar, Mesh-QC und statische SVGs werden vollständig "
-            "neu verifiziert; erst danach wird die Ergebnisansicht freigegeben."
+            "Workflow, bundle, inventory, mesh QC, and static SVGs are being fully "
+            "reverified before the results view is enabled."
         )
         self._thread_pool.start(worker)
 
@@ -2800,18 +2891,36 @@ class DiffeoForgeWindow(QMainWindow):
             "\n".join(f"• {boundary}" for boundary in review.scientific_boundaries)
         )
         self.result_summary_label.setText(
-            f"Projekt: {review.project_name}\n"
-            f"Erstellt: {review.created_at}\n"
+            f"Project: {review.project_name}\n"
+            f"Created: {review.created_at}\n"
             f"Workflow: {self._wrappable_path(review.run_directory)}\n"
             f"Workflow-Manifest SHA-256: {review.workflow_manifest_sha256}\n"
             f"Bundle-Manifest SHA-256: {review.bundle_manifest_sha256}"
         )
+        if review.optimizer_converged:
+            self.result_completion_label.setObjectName("statusSuccess")
+            self.result_completion_label.setStyleSheet("")
+            self.result_completion_label.setText(
+                "Workflow complete and independently verified. The optimizer converged "
+                f"({review.optimizer_termination_reason}; "
+                f"{review.optimizer_cycles_completed} cycles). This still does not establish "
+                "scientific validity."
+            )
+        else:
+            self.result_completion_label.setObjectName("statusWarning")
+            self.result_completion_label.setStyleSheet("")
+            self.result_completion_label.setText(
+                "Workflow complete and independently verified, but the optimizer did not "
+                f"converge (termination: {review.optimizer_termination_reason}; "
+                f"{review.optimizer_cycles_completed} of {review.optimizer_max_cycles} cycles). "
+                "Treat this as a technical pilot result, not a converged scientific atlas."
+            )
         self._populate_result_artifacts(review)
         self.result_status_label.setObjectName("statusSuccess")
         self.result_status_label.setStyleSheet("")
         self.result_status_label.setText(
-            "Snapshot vollständig verifiziert. Vor jedem Öffnen wird das gewählte Artefakt "
-            "erneut an beide Manifest-Hashes, Dateigröße und SHA-256 gebunden."
+            "Snapshot fully verified. Before each open action, the selected artifact is "
+            "rebound to both manifest hashes, its file size, and SHA-256."
         )
         self.run_back_button.setEnabled(True)
         self.review_run_result_button.setEnabled(True)
@@ -2830,7 +2939,7 @@ class DiffeoForgeWindow(QMainWindow):
         self.run_state_label.setObjectName("statusError")
         self.run_state_label.setStyleSheet("")
         self.run_state_label.setText(
-            f"Ergebnisansicht gesperrt: der vollständige Snapshot verifiziert nicht: {message}"
+            f"Results view locked: the complete snapshot did not verify: {message}"
         )
         if self._close_after_worker:
             self._close_after_worker = False
@@ -2855,7 +2964,7 @@ class DiffeoForgeWindow(QMainWindow):
             description.setObjectName("reviewDetail")
             description.setWordWrap(True)
             description.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-            button = QPushButton("Erneut prüfen & öffnen")
+            button = QPushButton("Recheck & open")
             button.setObjectName("secondary")
             button.clicked.connect(
                 lambda checked=False, key=artifact.key: self._open_result_artifact(key)
@@ -2874,7 +2983,7 @@ class DiffeoForgeWindow(QMainWindow):
         except KeyError:
             self.result_status_label.setObjectName("statusError")
             self.result_status_label.setStyleSheet("")
-            self.result_status_label.setText("Unbekanntes Artefakt; nichts wurde geöffnet.")
+            self.result_status_label.setText("Unknown artifact; nothing was opened.")
             return
         worker = _ArtifactWorker(self._result_review, key)
         worker.signals.succeeded.connect(self._artifact_succeeded)
@@ -2884,7 +2993,7 @@ class DiffeoForgeWindow(QMainWindow):
         self.result_status_label.setObjectName("status")
         self.result_status_label.setStyleSheet("")
         self.result_status_label.setText(
-            f"{artifact.label} wird unmittelbar vor der Übergabe erneut geprüft …"
+            f"{artifact.label} is being rechecked immediately before handoff…"
         )
         self._thread_pool.start(worker)
 
@@ -2899,7 +3008,7 @@ class DiffeoForgeWindow(QMainWindow):
         self.result_status_label.setObjectName("statusSuccess")
         self.result_status_label.setStyleSheet("")
         self.result_status_label.setText(
-            f"Hash- und Größenprüfung bestanden: {path.name}. Lokale Anwendung wird geöffnet."
+            f"Hash and size checks passed: {path.name}. Opening the local application."
         )
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
 
@@ -2909,7 +3018,7 @@ class DiffeoForgeWindow(QMainWindow):
         self._set_result_controls_enabled(True)
         self.result_status_label.setObjectName("statusError")
         self.result_status_label.setStyleSheet("")
-        self.result_status_label.setText(f"Artefakt nicht geöffnet: {message}")
+        self.result_status_label.setText(f"Artifact was not opened: {message}")
         if self._close_after_worker:
             self._close_after_worker = False
             self.close()
@@ -2936,7 +3045,7 @@ class DiffeoForgeWindow(QMainWindow):
         self.review_button.setEnabled(self._result is not None)
         self.status_label.setObjectName("statusError")
         self.status_label.setStyleSheet("")
-        self.status_label.setText(f"Parameterprüfung fehlgeschlagen: {message}")
+        self.status_label.setText(f"Parameter review failed: {message}")
         self._sync_ready_state()
 
     def _populate_review_rows(self, layout: QVBoxLayout, items: tuple) -> None:
@@ -3001,8 +3110,8 @@ class DiffeoForgeWindow(QMainWindow):
             self._close_after_worker = True
             self._cancel_atlas()
             self.run_state_label.setText(
-                "Fenster bleibt bis zum bestätigten sicheren Worker-Ende geöffnet. "
-                "Der Abbruch wurde angefordert."
+                "The window will remain open until safe worker termination is confirmed. "
+                "Cancellation was requested."
             )
             event.ignore()
             return
@@ -3010,11 +3119,11 @@ class DiffeoForgeWindow(QMainWindow):
             self._close_after_worker = True
             if isinstance(self._worker, _ResultReviewWorker):
                 self.run_state_label.setText(
-                    "Fenster bleibt bis zum Ende der laufenden Ergebnisverifikation geöffnet."
+                    "The window will remain open until result verification finishes."
                 )
             else:
                 self.result_status_label.setText(
-                    "Fenster bleibt bis zum Ende der laufenden Artefaktprüfung geöffnet."
+                    "The window will remain open until the artifact check finishes."
                 )
             event.ignore()
             return
