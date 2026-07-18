@@ -42,6 +42,7 @@ diffeoforge reference-plan-verify experiment-001-preparation.json --report exper
 # After human review, record preparation-only approval for that exact fingerprint:
 diffeoforge reference-plan-approve atlas.yaml --run-id experiment-001 --approve-fingerprint REVIEWED_SHA256 --output experiment-001-approval.json
 diffeoforge reference-plan-approval-verify experiment-001-approval.json --current-config atlas.yaml
+diffeoforge reference-preparation-status experiment-001-approval.json --current-config atlas.yaml --expect-request-sha256 REVIEWED_REQUEST_SHA256 --json
 diffeoforge reference-prepare-approved experiment-001-approval.json --current-config atlas.yaml --expect-request-sha256 REVIEWED_REQUEST_SHA256
 # Inspect manifest.json and engine/*.xml before committing compute time.
 diffeoforge execute runs/experiment-001
@@ -426,6 +427,7 @@ and workflow for another mesh directory.
 - [Saved reference preparation verification](docs/REFERENCE_PREPARATION_VERIFICATION.md)
 - [Reference preparation-only approval](docs/REFERENCE_PREPARATION_APPROVAL.md)
 - [Atomically prepare an approved reference plan](docs/REFERENCE_APPROVED_PREPARATION.md)
+- [Approval-bound read-only reference preparation status](docs/REFERENCE_PREPARATION_RECONCILIATION.md)
 - [Approval-bound reference preparation worker](docs/REFERENCE_PREPARATION_WORKER.md)
 - [Frozen approval-bound reference preparation worker](docs/FROZEN_REFERENCE_PREPARATION_WORKER.md)
 - [Approval-bound reference preparation parent controller](docs/REFERENCE_PREPARATION_CONTROLLER.md)

@@ -602,14 +602,16 @@ def _verify_protected_artifacts(
             raise ConfigurationError(f"Protected artifact checksum mismatch: {candidate}")
 
 
-def verify_prepared_run(run_directory: Path | str) -> Mapping[str, Any]:
-    """Verify manifest, protected artifacts, lifecycle, and pristine output."""
-
-    run_path = Path(run_directory).expanduser().resolve()
+def _verify_prepared_run_contents(
+    run_path: Path,
+    *,
+    expected_run_id: str,
+) -> Mapping[str, Any]:
     manifest = _read_manifest(run_path)
-    if manifest.get("run_id") != run_path.name:
+    if manifest.get("run_id") != expected_run_id:
         raise ConfigurationError(
-            f"Run directory name does not match manifest run_id: {run_path}"
+            "Run manifest does not match the expected run_id: "
+            f"expected {expected_run_id!r}, observed {manifest.get('run_id')!r}"
         )
     _verify_protected_artifacts(run_path, manifest)
 
@@ -632,6 +634,35 @@ def verify_prepared_run(run_directory: Path | str) -> Mapping[str, Any]:
     ):
         if forbidden.exists():
             raise ConfigurationError(f"Execution artifact already exists: {forbidden}")
+    return manifest
+
+
+def verify_prepared_run(run_directory: Path | str) -> Mapping[str, Any]:
+    """Verify manifest, protected artifacts, lifecycle, and pristine output."""
+
+    run_path = Path(run_directory).expanduser().resolve()
+    return _verify_prepared_run_contents(run_path, expected_run_id=run_path.name)
+
+
+def verify_prepared_run_against_plan(
+    run_directory: Path | str,
+    plan: Mapping[str, Any],
+) -> Mapping[str, Any]:
+    """Read-only verify prepared bytes at any path against one exact plan."""
+
+    if not isinstance(plan, Mapping):
+        raise TypeError("plan must be a mapping")
+    run_path = Path(run_directory).expanduser().resolve()
+    run_id = str(plan["run"]["run_id"])
+    manifest = _verify_prepared_run_contents(run_path, expected_run_id=run_id)
+    _assert_staged_run_matches_plan(
+        plan,
+        source_config=Path(str(plan["source_config"]["path"])).resolve(),
+        output_root=Path(str(plan["run"]["output_root"])).resolve(),
+        final_directory=Path(str(plan["run"]["destination"])).resolve(),
+        manifest=manifest,
+        temp_directory=run_path,
+    )
     return manifest
 
 

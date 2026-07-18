@@ -268,6 +268,17 @@ evidence. This proves Job-driven termination at that exact pre-request boundary,
 not frozen-bundle containment or crash recovery after staging begins. See
 [the preparation parent-death evidence](REFERENCE_PREPARATION_PARENT_DEATH.md).
 
+One approval-bound read-only reconciliation service now covers the state after
+an uncertain preparation outcome. It external-hash-binds the complete approval,
+freshly exact-matches the current plan even when the approved destination
+exists, and twice observes only that destination plus exact private-stage
+names. Real directories must have the exact approved surface and pass manifest,
+protected-byte, prepared-lifecycle, and pristine-output verification; links are
+never followed. The versioned report can identify a verified complete but
+unpublished private stage, but it never deletes, publishes, resumes, repairs,
+or executes one. See
+[approval-bound preparation status](REFERENCE_PREPARATION_RECONCILIATION.md).
+
 Both setup routes can also pass their already selected template path to a
 Qt-independent immutable preview model. The model reuses the strict VTK parser,
 binds the source SHA-256 before and after loading, freezes vertices, triangles,
