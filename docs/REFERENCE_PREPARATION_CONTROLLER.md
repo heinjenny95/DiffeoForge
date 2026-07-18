@@ -45,9 +45,11 @@ Timeout or protocol failure stops the child. The worker currently starts no
 descendant process. A dedicated
 [Windows hard-parent-death audit](REFERENCE_PREPARATION_PARENT_DEATH.md) now
 proves Job-driven termination of the real source worker created suspended and
-killed before request delivery. Dedicated hard-parent-death evidence for the
-frozen preparation sibling and portable process-tree containment remain later
-gates.
+killed before request delivery. The dedicated
+[frozen preparation hard-parent-death audit](FROZEN_REFERENCE_PREPARATION_PARENT_DEATH.md)
+applies the same seam to the real bundled sibling. Portable process-tree
+containment outside Windows and containment after preparation begins remain
+later gates.
 
 ## Accepted success
 

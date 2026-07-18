@@ -49,10 +49,14 @@ def test_windows_freeze_has_separate_desktop_and_pipe_worker_entry_points() -> N
     assert "DiffeoForgeReferencePreparationWorker.exe" in build
     assert "smoke_frozen_reference_worker.py" in build
     assert "audit_frozen_reference_parent_death.py" in build
+    assert "audit_frozen_reference_preparation_parent_death.py" in build
     assert "smoke_frozen_reference_preparation_worker.py" in build
     assert "PreparationApprovalSha256" in build
     assert "reference-plan-approval-verify" in build
     assert "Preparation approval does not match" in build
     assert "hard-parent-death audit failed" in build
+    assert build.index("audit_frozen_reference_preparation_parent_death.py") < (
+        build.index("smoke_frozen_reference_preparation_worker.py")
+    )
     assert "desktop_bundle_evidence.py create" in build
     assert "desktop_bundle_evidence.py verify" in build

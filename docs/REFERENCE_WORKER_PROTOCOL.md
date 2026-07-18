@@ -64,7 +64,8 @@ This preparation harness does not modify the frozen nonnumerical request,
 protocol, controller, or executable. It is now packaged as its own fourth
 sibling and inventoried by freeze-evidence v0.3. The build exercises the exact
 five-event preparation-only lifecycle with an external approval; frozen
-preparation hard-parent-death evidence remains a separate review gate.
+preparation hard-parent-death behavior is checked by a separate mandatory
+[pre-request evidence gate](FROZEN_REFERENCE_PREPARATION_PARENT_DEATH.md).
 
 A separate source-level
 [preparation parent controller](REFERENCE_PREPARATION_CONTROLLER.md) now assigns

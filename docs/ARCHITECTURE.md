@@ -241,9 +241,12 @@ destination, approval hash, and plan fingerprint agree. The worker performs no
 engine launch. It intentionally leaves the frozen nonmutating worker untouched.
 The evidence-only Windows build now adds it as a fourth sibling and v0.3 exact
 inventory entry; an externally created, independently hash-bound approval must
-complete the real frozen controller smoke before evidence is written. Frozen
-preparation hard-parent-death evidence, cancel semantics, and GUI enablement
-remain open.
+complete the real frozen controller smoke before evidence is written. Before
+that mutating smoke, the builder now hard-exits the real controller after Job
+assignment and proves the suspended frozen preparation sibling terminates with
+zero request delivery or filesystem mutation. Cancel semantics and GUI
+enablement remain open. See
+[the frozen preparation parent-death evidence](FROZEN_REFERENCE_PREPARATION_PARENT_DEATH.md).
 See [the approval-bound preparation worker](REFERENCE_PREPARATION_WORKER.md).
 
 Its distinct Qt-independent parent controller now prevalidates the request,

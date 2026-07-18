@@ -150,10 +150,12 @@ The child has a Qt-independent parent controller that performs that
 Job assignment before request delivery, bounds transport and runtime, and
 independently verifies the published prepared run. A source parent resolves the
 Python module; a frozen parent resolves only the dedicated sibling beside its
-own executable. Frozen preparation hard-parent-death evidence, installer
-integration, and GUI enablement remain open. The source worker's real Job-assignment boundary now has a separate
-suspended-worker hard-parent-death audit; that evidence does not satisfy the
-frozen bundle gate.
+own executable. Source and frozen siblings now each have a dedicated
+suspended-worker hard-parent-death
+audit at the real Job-assignment boundary. These pre-request gates do not prove
+recovery or containment after preparation begins; installer integration and
+GUI enablement remain open. See
+[frozen preparation-worker parent-death evidence](FROZEN_REFERENCE_PREPARATION_PARENT_DEATH.md).
 
 ## Bundle and installer decisions
 

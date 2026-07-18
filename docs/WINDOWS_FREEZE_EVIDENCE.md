@@ -80,14 +80,18 @@ and clean-source boundaries. It then:
 5. hard-exits a real controller immediately after it assigns a suspended frozen
    reference worker to the Windows kill-on-close Job, then requires that worker
    to terminate within the bounded audit deadline;
-6. runs the frozen approval-bound preparation worker through its real parent
+6. hard-exits the real preparation controller immediately after assigning the
+   suspended frozen preparation sibling to the Job, then requires bounded
+   worker termination, zero request delivery, zero destination/private-stage
+   mutation, and unchanged authorization inputs;
+7. runs the frozen approval-bound preparation worker through its real parent
    controller, requires the exact five-event `prepared_not_executed` lifecycle,
    independently reverifies the published run, and confirms no engine started;
-7. records the exact source commit, builder/runtime package versions, every
+8. records the exact source commit, builder/runtime package versions, every
    bundled relative path, byte count, file SHA-256, aggregate byte count, and
    inventory SHA-256;
-8. writes `freeze-evidence.json` and its `freeze-evidence.sha256` sidecar;
-9. immediately re-verifies the sidecar and exact file inventory.
+9. writes `freeze-evidence.json` and its `freeze-evidence.sha256` sidecar;
+10. immediately re-verifies the sidecar and exact file inventory.
 
 `tools/desktop_bundle_evidence.py verify <bundle>` can repeat the final
 verification. It fails closed on a changed manifest, unsafe path, missing,
@@ -122,6 +126,8 @@ present, the GUI smoke exited successfully, the nonnumerical reference harness
 stopped before preparation through its real frozen worker/controller boundary,
 the suspended reference worker terminated after hard controller death through
 the real Windows Job boundary,
+the suspended frozen preparation worker terminated after hard controller death
+before request delivery without creating a destination or private stage,
 one externally approved reference run reached the independently verified
 `prepared_not_executed` state through the real frozen preparation
 worker/controller boundary without starting an engine,
@@ -153,6 +159,8 @@ normal-exit false positives are documented in
 The external-approval requirement and exact five-event frozen preparation gate
 are documented in
 [Frozen approval-bound reference preparation worker](FROZEN_REFERENCE_PREPARATION_WORKER.md).
+The frozen preparation pre-request crash gate is documented in
+[Frozen preparation-worker parent-death evidence](FROZEN_REFERENCE_PREPARATION_PARENT_DEATH.md).
 
 ## Primary packaging references
 
