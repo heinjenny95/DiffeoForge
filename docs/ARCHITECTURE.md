@@ -290,6 +290,9 @@ The first desktop screen maps that same verifier into a Qt-independent bounded
 view model and runs it on the shared background-operation gate. It requires no
 active project or review. Path/hash edits invalidate prior evidence, and the
 GUI discards any result that is no longer bound to the exact worker inputs.
+Validated evidence is retained as deterministic immutable ASCII bytes with its
+own hash and can be written only through a user-selected exclusive-create path;
+the CLI exposes the same serializer and writer through `--output`.
 See [desktop saved-status verification](DESKTOP_SAVED_REFERENCE_PREPARATION_STATUS_VERIFICATION.md).
 
 Desktop step 2 consumes that report through a separate Qt-independent bounded

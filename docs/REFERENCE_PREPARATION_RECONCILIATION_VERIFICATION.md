@@ -28,12 +28,22 @@ Then verify only the saved artifact:
 ```powershell
 diffeoforge reference-preparation-status-verify `
   review\pilot-001-preparation-status.json `
-  --expect-report-sha256 THE_INDEPENDENTLY_RECORDED_REPORT_SHA256
+  --expect-report-sha256 THE_INDEPENDENTLY_RECORDED_REPORT_SHA256 `
+  --output review\pilot-001-preparation-status-verification.json
 ```
 
-Exit code 0 emits versioned ASCII-safe verification evidence. Invalid hash,
+`--output` writes the versioned ASCII-safe verification evidence as exact
+deterministic bytes in an existing real parent directory. It never replaces an
+existing file or link and avoids native-shell text re-encoding. Without
+`--output`, the same exact bytes are emitted to standard output. Invalid hash,
 strict JSON, schema, deterministic representation, or a file race fails closed
 with exit code 2 and does not repair the artifact.
+
+Independently record the complete evidence hash as a separate provenance step:
+
+```powershell
+(Get-FileHash review\pilot-001-preparation-status-verification.json -Algorithm SHA256).Hash
+```
 
 The same bounded check is available on the first application screen; see
 [desktop saved-status verification](DESKTOP_SAVED_REFERENCE_PREPARATION_STATUS_VERIFICATION.md).

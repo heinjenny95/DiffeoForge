@@ -37,6 +37,20 @@ The display distinguishes successful artifact verification from the recorded
 operational status. For example, an authentic `attention_required` report is a
 successfully verified artifact but is not an authorization or recommendation.
 
+## Explicit deterministic evidence export
+
+After a successful result that still matches the selected report path and
+hash, the user can select one new JSON destination. The desktop revalidates the
+immutable evidence bytes and their SHA-256, creates the file exclusively in an
+existing real parent directory, flushes, synchronizes, and rereads it, and then
+shows path, schema, byte count, and complete evidence SHA-256. It never
+overwrites an existing file or link and creates no sidecar.
+
+Changing either input while the save dialog is open cancels the export. The
+evidence contains provenance paths and identifiers and must be reviewed before
+sharing. Export proves only the bytes of the verification result; it is not a
+signature or identity assertion.
+
 ## Stale-input and concurrency boundary
 
 Only one desktop background operation is active at a time. Editing the report
@@ -47,7 +61,8 @@ expected hash to match the exact worker inputs before displaying evidence.
 
 ## Explicit non-capabilities
 
-This screen reads only the selected report. It does not inspect whether any
+Except for one explicitly selected new evidence file, this screen reads only
+the selected report. It does not inspect whether any
 recorded path still exists and does not read current YAML, meshes, approvals,
 destinations, private stages, processes, containers, or engines. It creates no
 file and cannot repair, prepare, publish, recover, resume, cancel, or execute a

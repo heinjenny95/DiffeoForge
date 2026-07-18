@@ -24,7 +24,9 @@ from diffeoforge.reference_preparation_reconciliation import (
     serialize_reference_preparation_reconciliation,
 )
 from diffeoforge.reference_preparation_reconciliation_verification import (
+    serialize_reference_preparation_reconciliation_verification,
     verify_saved_reference_preparation_reconciliation,
+    write_reference_preparation_reconciliation_verification,
 )
 
 ROOT = Path(__file__).parents[1]
@@ -207,6 +209,39 @@ def test_verify_saved_status_detects_file_change_during_verification(
         )
 
 
+def test_verification_evidence_serializes_and_writes_exactly_once(
+    tmp_path: Path,
+) -> None:
+    root, _approval_path, report_path, _report, report_bytes, _approval_sha256 = (
+        _saved_report(tmp_path)
+    )
+    evidence = verify_saved_reference_preparation_reconciliation(
+        report_path,
+        expected_report_sha256=_sha256(report_bytes),
+    )
+    payload = serialize_reference_preparation_reconciliation_verification(evidence)
+    destination = root / "review" / "verification-Käfer.json"
+
+    written = write_reference_preparation_reconciliation_verification(
+        evidence,
+        destination,
+    )
+
+    assert written == destination.absolute()
+    assert written.read_bytes() == payload
+    assert all(byte < 128 for byte in payload)
+    assert json.loads(payload)["report"]["sha256"] == _sha256(report_bytes)
+    assert list(destination.parent.glob("verification-Käfer.json*")) == [destination]
+
+    preserved = destination.read_bytes()
+    with pytest.raises(ConfigurationError, match="will not be overwritten"):
+        write_reference_preparation_reconciliation_verification(
+            evidence,
+            destination,
+        )
+    assert destination.read_bytes() == preserved
+
+
 def test_status_cli_emits_exact_verifiable_utf8_bytes_in_unicode_path(
     tmp_path: Path,
 ) -> None:
@@ -297,9 +332,60 @@ def test_status_cli_emits_exact_verifiable_utf8_bytes_in_unicode_path(
     assert verify.stderr == b""
     assert all(byte < 128 for byte in verify.stdout)
     evidence = json.loads(verify.stdout.decode("ascii"))
+    evidence_bytes = serialize_reference_preparation_reconciliation_verification(
+        evidence
+    )
+    assert verify.stdout == evidence_bytes
     assert evidence["report"]["matches_deterministic_serialization"] is True
     assert evidence["recorded_observation"]["run_id"] == "saved-status-001"
     assert _inventory(root) == before
+
+    evidence_path = root / "review" / "cli-verification-Käfer.json"
+    file_verify = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "diffeoforge",
+            "reference-preparation-status-verify",
+            str(saved),
+            "--expect-report-sha256",
+            _sha256(status.stdout),
+            "--output",
+            str(evidence_path),
+        ],
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+        text=False,
+    )
+    assert file_verify.returncode == 0, file_verify.stderr.decode(errors="replace")
+    assert file_verify.stderr == b""
+    assert evidence_path.read_bytes() == evidence_bytes
+    assert _sha256(evidence_bytes).encode() in file_verify.stdout
+
+    preserved_evidence = evidence_path.read_bytes()
+    after_export = _inventory(root)
+    duplicate_evidence = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "diffeoforge",
+            "reference-preparation-status-verify",
+            str(saved),
+            "--expect-report-sha256",
+            _sha256(status.stdout),
+            "--output",
+            str(evidence_path),
+        ],
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+        text=False,
+    )
+    assert duplicate_evidence.returncode == 2
+    assert b"will not be overwritten" in duplicate_evidence.stderr
+    assert evidence_path.read_bytes() == preserved_evidence
+    assert _inventory(root) == after_export
 
 
 def test_saved_status_verifier_imports_without_optional_compute_or_qt() -> None:
