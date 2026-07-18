@@ -25,6 +25,7 @@ builder_only_module_prefixes = (
     "diffeoforge.desktop.inno_signature_evidence",
     "diffeoforge.desktop.inno_toolchain_evidence",
     "diffeoforge.desktop.installer_build_evidence",
+    "diffeoforge.desktop.installer_installation_evidence",
     "diffeoforge.desktop.installer_plan",
     "diffeoforge.desktop.sbom",
     "license_expression",

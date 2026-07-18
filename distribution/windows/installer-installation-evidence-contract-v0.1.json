@@ -1,0 +1,89 @@
+{
+  "schema_version": "0.1",
+  "status": "accepted_engineering_observation_contract_not_a_release_authorization",
+  "target": "windows-x86_64-cpu",
+  "runner_boundary": {
+    "github_actions": true,
+    "ephemeral_host_required": true,
+    "normal_developer_account_execution": false,
+    "windows_64_bit_required": true,
+    "current_user_install_only": true
+  },
+  "required_prerequisites": {
+    "exact_external_installer_build_evidence_sha256": true,
+    "build_release_candidate": false,
+    "build_distribution_authorized": false,
+    "setup_authenticode_status": "NotSigned",
+    "clean_exact_source_commit": true,
+    "new_install_root_under_runner_temp": true,
+    "new_evidence_directory_under_runner_temp": true,
+    "project_sentinel_outside_install_root": true
+  },
+  "execution": {
+    "install_arguments": [
+      "/SP-",
+      "/VERYSILENT",
+      "/SUPPRESSMSGBOXES",
+      "/NORESTART",
+      "/CURRENTUSER",
+      "/DIR=<exact-install-root>",
+      "/GROUP=DiffeoForge",
+      "/LOG=<exact-install-log>"
+    ],
+    "application_arguments": [
+      "--smoke"
+    ],
+    "uninstall_arguments": [
+      "/VERYSILENT",
+      "/SUPPRESSMSGBOXES",
+      "/NORESTART",
+      "/LOG=<exact-uninstall-log>"
+    ],
+    "automatic_post_install_launch": false,
+    "desktop_shortcut": false,
+    "process_specific_network_observation": true,
+    "host_wide_network_isolation_claim": false,
+    "expected_exit_code": 0
+  },
+  "installed_state": {
+    "complete_source_bundle_copy_required": true,
+    "six_evidence_copies_required": true,
+    "license_copy_required": true,
+    "start_menu_shortcut_required": true,
+    "uninstall_registration_required": true,
+    "installed_inventory_required_before_launch": true
+  },
+  "uninstalled_state": {
+    "install_root_absent": true,
+    "start_menu_shortcut_absent": true,
+    "uninstall_registration_absent": true,
+    "project_sentinel_unchanged": true
+  },
+  "output": {
+    "exact_files": [
+      "install.log",
+      "installed-file-inventory.json",
+      "installed-smoke-observation.json",
+      "installer-install-observation.json",
+      "installer-installation-evidence.json",
+      "installer-installation-evidence.sha256",
+      "installer-uninstall-observation.json",
+      "uninstall.log"
+    ],
+    "overwrite": false,
+    "offline_reconstruction": false,
+    "retained_artifact_integrity_verification": true,
+    "setup_upload": false
+  },
+  "forbidden_claims": [
+    "signed_installer",
+    "usable_public_installer",
+    "license_or_redistribution_approval",
+    "administrator_install_behavior",
+    "host_wide_network_isolation",
+    "windows_defender_clearance",
+    "scientific_validity",
+    "production_suitability",
+    "release_authorization"
+  ]
+}

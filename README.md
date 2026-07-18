@@ -206,9 +206,13 @@ interactive 3D rendering, mesh QC, registration evidence, or landmark picking.
 DiffeoForge also does **not** yet ship a desktop installer or redistributable
 binary. A clean-commit, exact-inventory Windows one-directory
 [engineering build](docs/WINDOWS_FREEZE_EVIDENCE.md) now exercises the GUI and
-separate frozen workers. An exact offline Inno Setup script and independently
-verifiable, non-executing installer build plan now exist, but neither produces
-an installer nor satisfies the installer/release gates.
+separate frozen workers. The exact Inno Setup pipeline has compiled one private,
+unsigned engineering setup without executing or distributing it. A separate
+ephemeral-runner [installation-evidence workflow](docs/INSTALLER_INSTALLATION_EVIDENCE.md)
+has completed its first real install/smoke/uninstall observation; a small
+retained-integrity-verifier refinement has also completed re-observation. No
+usable-installer or release claim follows from either compilation or lifecycle
+evidence.
 DiffeoForge still does not provide interactive native 3D mesh rendering or
 self-intersection detection, or promise
 CPU/GPU equivalence or 300-specimen production performance. See the [modern-workflow
@@ -439,6 +443,7 @@ and workflow for another mesh directory.
 - [Inno Setup ISSigTool signature evidence](docs/INNO_SIGNATURE_EVIDENCE.md)
 - [Portable Inno toolchain and compiler-probe evidence](docs/INNO_PORTABLE_TOOLCHAIN_EVIDENCE.md)
 - [Engineering-only Windows installer build evidence](docs/INSTALLER_BUILD_EVIDENCE.md)
+- [Isolated Windows installer installation evidence](docs/INSTALLER_INSTALLATION_EVIDENCE.md)
 - [Windows one-directory freeze evidence](docs/WINDOWS_FREEZE_EVIDENCE.md)
 - [Frozen dependency metadata evidence](docs/DESKTOP_DEPENDENCY_METADATA_EVIDENCE.md)
 - [Deterministic Windows CycloneDX 1.7 SBOM](docs/DESKTOP_SBOM.md)

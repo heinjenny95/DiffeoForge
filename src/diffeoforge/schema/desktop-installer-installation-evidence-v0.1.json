@@ -1,0 +1,160 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/heinjenny95/DiffeoForge/raw/main/src/diffeoforge/schema/desktop-installer-installation-evidence-v0.1.json",
+  "title": "DiffeoForge isolated Windows installer installation evidence",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "status",
+    "target",
+    "observed_at",
+    "observer_source",
+    "installer_build_evidence",
+    "runner",
+    "install",
+    "installed_inventory",
+    "installed_smoke",
+    "uninstall",
+    "project_sentinel",
+    "setup_distribution_authorized",
+    "release_authorized",
+    "scientific_boundary",
+    "missing_release_gates"
+  ],
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "file": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "bytes", "sha256"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "bytes": {"type": "integer", "minimum": 0},
+        "sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "sentinel_phase": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bytes", "sha256"],
+      "properties": {
+        "bytes": {"type": "integer", "minimum": 1},
+        "sha256": {"$ref": "#/$defs/sha256"}
+      }
+    }
+  },
+  "properties": {
+    "schema_version": {"const": "0.1"},
+    "status": {"const": "isolated_current_user_install_launch_uninstall_observed_not_signed_distributable_or_released"},
+    "target": {"const": "windows-x86_64-cpu"},
+    "observed_at": {"type": "string", "format": "date-time"},
+    "observer_source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["commit_sha", "project", "contract", "wrapper"],
+      "properties": {
+        "commit_sha": {"$ref": "#/$defs/commit"},
+        "project": {"$ref": "#/$defs/file"},
+        "contract": {"$ref": "#/$defs/file"},
+        "wrapper": {"$ref": "#/$defs/file"}
+      }
+    },
+    "installer_build_evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["document", "expected_sha256", "setup"],
+      "properties": {
+        "document": {"$ref": "#/$defs/file"},
+        "expected_sha256": {"$ref": "#/$defs/sha256"},
+        "setup": {"$ref": "#/$defs/file"}
+      }
+    },
+    "runner": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["github_actions", "ephemeral", "os", "architecture", "runner_name"],
+      "properties": {
+        "github_actions": {"const": true},
+        "ephemeral": {"const": true},
+        "os": {"const": "Windows"},
+        "architecture": {"const": "X64"},
+        "runner_name": {"type": "string", "minLength": 1}
+      }
+    },
+    "install": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["observation", "log", "exit_code", "install_root", "shortcut_verified", "registration_verified"],
+      "properties": {
+        "observation": {"$ref": "#/$defs/file"},
+        "log": {"$ref": "#/$defs/file"},
+        "exit_code": {"const": 0},
+        "install_root": {"type": "string", "minLength": 1},
+        "shortcut_verified": {"const": true},
+        "registration_verified": {"const": true}
+      }
+    },
+    "installed_inventory": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["document", "file_count", "total_bytes", "inventory_sha256", "source_bundle_copy_verified", "evidence_copies_verified", "license_copy_verified"],
+      "properties": {
+        "document": {"$ref": "#/$defs/file"},
+        "file_count": {"type": "integer", "minimum": 1},
+        "total_bytes": {"type": "integer", "minimum": 1},
+        "inventory_sha256": {"$ref": "#/$defs/sha256"},
+        "source_bundle_copy_verified": {"const": true},
+        "evidence_copies_verified": {"const": true},
+        "license_copy_verified": {"const": true}
+      }
+    },
+    "installed_smoke": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["observation", "exit_code", "arguments", "process_network_connection_count", "scope"],
+      "properties": {
+        "observation": {"$ref": "#/$defs/file"},
+        "exit_code": {"const": 0},
+        "arguments": {"const": ["--smoke"]},
+        "process_network_connection_count": {"const": 0},
+        "scope": {"const": "desktop_process_only_not_host_wide_isolation"}
+      }
+    },
+    "uninstall": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["observation", "log", "exit_code", "install_root_absent", "shortcut_absent", "registration_absent"],
+      "properties": {
+        "observation": {"$ref": "#/$defs/file"},
+        "log": {"$ref": "#/$defs/file"},
+        "exit_code": {"const": 0},
+        "install_root_absent": {"const": true},
+        "shortcut_absent": {"const": true},
+        "registration_absent": {"const": true}
+      }
+    },
+    "project_sentinel": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "before_install", "after_install", "after_smoke", "after_uninstall"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "before_install": {"$ref": "#/$defs/sentinel_phase"},
+        "after_install": {"$ref": "#/$defs/sentinel_phase"},
+        "after_smoke": {"$ref": "#/$defs/sentinel_phase"},
+        "after_uninstall": {"$ref": "#/$defs/sentinel_phase"}
+      }
+    },
+    "setup_distribution_authorized": {"const": false},
+    "release_authorized": {"const": false},
+    "scientific_boundary": {"type": "string", "minLength": 1},
+    "missing_release_gates": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1}
+    }
+  }
+}

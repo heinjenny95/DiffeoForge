@@ -1,0 +1,212 @@
+name: Windows installer installation evidence
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/windows-installer-installation-evidence.yml"
+      - "distribution/windows/**"
+      - "src/diffeoforge/desktop/**"
+      - "src/diffeoforge/schema/**"
+      - "tools/desktop_*.py"
+      - "tools/installer_*.py"
+      - "tools/observe_inno_*.ps1"
+      - "tools/observe_installer_*.ps1"
+      - "tools/prepare_installer_observation_inputs.ps1"
+      - "pyproject.toml"
+      - "uv.lock"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-installer-installation-evidence-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  isolated-installer-lifecycle:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PYTHONUTF8: "1"
+      QT_QPA_PLATFORM: offscreen
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install exact Windows CPU builder
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev,desktop,modern-engine,sbom-builder]"
+          python -m pip install -r distribution/windows/freeze-requirements.txt
+          python -c "import platform, PyInstaller, torch; assert platform.python_version_tuple()[:2] == ('3', '12'); assert PyInstaller.__version__ == '6.21.0'; assert torch.version.cuda is None"
+
+      - name: Build exact frozen bundle and six-file evidence
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $root = Join-Path $env:RUNNER_TEMP "installer-observation-inputs"
+          $summary = Join-Path $env:RUNNER_TEMP "installer-observation-inputs.json"
+          & tools/prepare_installer_observation_inputs.ps1 `
+            -OutputRoot $root -SummaryFile $summary -Python (Get-Command python).Source
+          if ($LASTEXITCODE -ne 0) { throw "Installer input preparation failed." }
+          "INSTALLER_INPUT_SUMMARY=$summary" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Download exact official Inno Setup trust inputs
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $installerAssets = Join-Path $env:RUNNER_TEMP "inno-installer-assets"
+          $signatureTool = Join-Path $env:RUNNER_TEMP "inno-signature-tool"
+          $publicKey = Join-Path $env:RUNNER_TEMP "inno-public-key"
+          New-Item -ItemType Directory -Path $installerAssets | Out-Null
+          New-Item -ItemType Directory -Path $signatureTool | Out-Null
+          New-Item -ItemType Directory -Path $publicKey | Out-Null
+          gh release download is-7_0_2 --repo jrsoftware/issrc `
+            --pattern "innosetup-7.0.2-x64.exe" `
+            --pattern "innosetup-7.0.2-x64.exe.issig" --dir $installerAssets
+          if ($LASTEXITCODE -ne 0) { throw "Could not download pinned Inno Setup inputs." }
+          gh release download is-6_7_3 --repo jrsoftware/issrc `
+            --pattern "ISSigTool.exe" --dir $signatureTool
+          if ($LASTEXITCODE -ne 0) { throw "Could not download pinned ISSigTool." }
+          $encoded = ((gh api `
+            "repos/jrsoftware/issrc/contents/def02.ispublickey?ref=c25dc6479cdc3be28e682a025fcf60765bba3de0" `
+            --jq .content) -join "").Replace("`r", "").Replace("`n", "")
+          if ($LASTEXITCODE -ne 0 -or -not $encoded) { throw "Could not fetch pinned public key." }
+          [IO.File]::WriteAllBytes(
+            (Join-Path $publicKey "def02.ispublickey"),
+            [Convert]::FromBase64String($encoded)
+          )
+          "INNO_INSTALLER_ASSETS=$installerAssets" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "INNO_SIGNATURE_TOOL=$signatureTool" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "INNO_PUBLIC_KEY=$publicKey" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Authenticate and prepare exact portable Inno toolchain
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $inputs = Get-Content -LiteralPath $env:INSTALLER_INPUT_SUMMARY -Raw | ConvertFrom-Json
+          $installer = Join-Path $env:INNO_INSTALLER_ASSETS "innosetup-7.0.2-x64.exe"
+          $signature = Join-Path $env:INNO_INSTALLER_ASSETS "innosetup-7.0.2-x64.exe.issig"
+          $tool = Join-Path $env:INNO_SIGNATURE_TOOL "ISSigTool.exe"
+          $key = Join-Path $env:INNO_PUBLIC_KEY "def02.ispublickey"
+          $toolchainEvidence = Join-Path $env:RUNNER_TEMP "inno-toolchain-evidence"
+          $signatureEvidence = Join-Path $env:RUNNER_TEMP "inno-signature-evidence"
+          New-Item -ItemType Directory -Path $toolchainEvidence | Out-Null
+          New-Item -ItemType Directory -Path $signatureEvidence | Out-Null
+          & tools/observe_inno_toolchain.ps1 -Asset $installer `
+            -ProjectFile $inputs.project_file -OutputDirectory $toolchainEvidence `
+            -SourceCommit $inputs.source_commit -Python (Get-Command python).Source `
+            -GitHub (Get-Command gh).Source
+          if ($LASTEXITCODE -ne 0) { throw "Inno toolchain authenticity observation failed." }
+          & tools/observe_inno_signature.ps1 -Installer $installer -Signature $signature `
+            -PublicKey $key -SignatureTool $tool -ProjectFile $inputs.project_file `
+            -OutputDirectory $signatureEvidence -SourceCommit $inputs.source_commit `
+            -Python (Get-Command python).Source -GitHub (Get-Command gh).Source
+          if ($LASTEXITCODE -ne 0) { throw "Inno signature observation failed." }
+          $toolchainDocument = Join-Path $toolchainEvidence "inno-toolchain-evidence.json"
+          $signatureDocument = Join-Path $signatureEvidence "inno-signature-evidence.json"
+          $toolchainSha = (Get-FileHash $toolchainDocument -Algorithm SHA256).Hash.ToLowerInvariant()
+          $signatureSha = (Get-FileHash $signatureDocument -Algorithm SHA256).Hash.ToLowerInvariant()
+          $portableDirectory = Join-Path $env:RUNNER_TEMP "inno-portable-toolchain"
+          $probeOutput = Join-Path $env:RUNNER_TEMP "inno-probe-output"
+          $portableEvidence = Join-Path $env:RUNNER_TEMP "inno-portable-evidence"
+          New-Item -ItemType Directory -Path $portableDirectory | Out-Null
+          New-Item -ItemType Directory -Path $probeOutput | Out-Null
+          New-Item -ItemType Directory -Path $portableEvidence | Out-Null
+          & tools/observe_inno_portable_toolchain.ps1 -Installer $installer `
+            -ToolchainEvidence $toolchainDocument `
+            -ExpectedToolchainEvidenceSha256 $toolchainSha `
+            -SignatureEvidence $signatureDocument `
+            -ExpectedSignatureEvidenceSha256 $signatureSha `
+            -ProjectFile $inputs.project_file -ToolchainDirectory $portableDirectory `
+            -ProbeOutputDirectory $probeOutput -EvidenceOutputDirectory $portableEvidence `
+            -SourceCommit $inputs.source_commit -Python (Get-Command python).Source
+          if ($LASTEXITCODE -ne 0) { throw "Portable Inno toolchain observation failed." }
+          $portableDocument = Join-Path $portableEvidence "inno-portable-toolchain-evidence.json"
+          $portableSha = (Get-FileHash $portableDocument -Algorithm SHA256).Hash.ToLowerInvariant()
+          "INNO_PORTABLE_EVIDENCE=$portableDocument" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "INNO_PORTABLE_EVIDENCE_SHA256=$portableSha" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Build exact unsigned non-release installer
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $inputs = Get-Content -LiteralPath $env:INSTALLER_INPUT_SUMMARY -Raw | ConvertFrom-Json
+          $planDirectory = Join-Path $env:RUNNER_TEMP "installer-plan-output"
+          New-Item -ItemType Directory -Path $planDirectory | Out-Null
+          python tools/desktop_installer_plan.py create `
+            $inputs.bundle_directory $inputs.evidence_directory `
+            --project-file $inputs.project_file --output-directory $planDirectory `
+            --expect-freeze-evidence-sha256 $inputs.freeze_evidence_sha256 `
+            --expect-dependency-evidence-sha256 $inputs.dependency_evidence_sha256 `
+            --expect-sbom-sha256 $inputs.sbom_sha256
+          if ($LASTEXITCODE -ne 0) { throw "Installer plan creation failed." }
+          $plan = Join-Path $planDirectory "installer-build-plan.json"
+          $planSha = (Get-FileHash $plan -Algorithm SHA256).Hash.ToLowerInvariant()
+          $buildEvidence = Join-Path $env:RUNNER_TEMP "installer-build-evidence"
+          New-Item -ItemType Directory -Path $buildEvidence | Out-Null
+          & tools/observe_installer_build.ps1 -Plan $plan -ExpectedPlanSha256 $planSha `
+            -PortableEvidence $env:INNO_PORTABLE_EVIDENCE `
+            -ExpectedPortableEvidenceSha256 $env:INNO_PORTABLE_EVIDENCE_SHA256 `
+            -ProjectFile $inputs.project_file -EvidenceOutputDirectory $buildEvidence `
+            -ObserverSourceCommit $inputs.source_commit -Python (Get-Command python).Source
+          if ($LASTEXITCODE -ne 0) { throw "Engineering installer build failed." }
+          $buildDocument = Join-Path $buildEvidence "installer-build-evidence.json"
+          $buildSha = (Get-FileHash $buildDocument -Algorithm SHA256).Hash.ToLowerInvariant()
+          "INSTALLER_BUILD_EVIDENCE=$buildDocument" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "INSTALLER_BUILD_EVIDENCE_SHA256=$buildSha" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Observe isolated current-user install smoke and uninstall
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $inputs = Get-Content -LiteralPath $env:INSTALLER_INPUT_SUMMARY -Raw | ConvertFrom-Json
+          $projectRoot = Join-Path $env:RUNNER_TEMP "User Project Käfer"
+          New-Item -ItemType Directory -Path $projectRoot | Out-Null
+          $sentinel = Join-Path $projectRoot "preserve-me.bin"
+          [IO.File]::WriteAllBytes($sentinel, [Text.Encoding]::UTF8.GetBytes("DiffeoForge project sentinel`n"))
+          $installRoot = Join-Path $env:RUNNER_TEMP "Installed DiffeoForge Käfer"
+          $evidence = Join-Path $env:RUNNER_TEMP "installer-installation-evidence"
+          & tools/observe_installer_installation.ps1 `
+            -BuildEvidence $env:INSTALLER_BUILD_EVIDENCE `
+            -ExpectedBuildEvidenceSha256 $env:INSTALLER_BUILD_EVIDENCE_SHA256 `
+            -ProjectFile $inputs.project_file -InstallRoot $installRoot `
+            -ProjectSentinel $sentinel -EvidenceOutputDirectory $evidence `
+            -SourceCommit $inputs.source_commit -Python (Get-Command python).Source
+          if ($LASTEXITCODE -ne 0) { throw "Isolated installer lifecycle observation failed." }
+          $document = Join-Path $evidence "installer-installation-evidence.json"
+          $digest = (Get-FileHash $document -Algorithm SHA256).Hash.ToLowerInvariant()
+          @(
+            "## Isolated Windows installer lifecycle evidence"
+            ""
+            "- Source commit: $($inputs.source_commit)"
+            "- Installer build evidence SHA-256: $env:INSTALLER_BUILD_EVIDENCE_SHA256"
+            "- Installation evidence SHA-256: $digest"
+            "- Current-user install, installed desktop smoke, and uninstall: observed"
+            "- Project sentinel after uninstall: preserved"
+            "- Setup Authenticode: NotSigned"
+            "- Process network scope: desktop process only; no host-wide isolation claim"
+            "- Uploaded boundary: eight evidence/log files only; no setup executable"
+            "- Distribution, release, and scientific authorization: false"
+          ) | Out-File $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          "INSTALLATION_EVIDENCE_UPLOAD=$evidence" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Upload exact lifecycle evidence only
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: windows-installer-installation-evidence-${{ github.sha }}
+          path: ${{ env.INSTALLATION_EVIDENCE_UPLOAD }}
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
