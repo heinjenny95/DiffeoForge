@@ -1,0 +1,128 @@
+name: Windows freeze evidence
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-freeze-evidence-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  freeze-evidence:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    env:
+      PYTHONUTF8: "1"
+      QT_QPA_PLATFORM: offscreen
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install frozen CPU desktop builder
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev,desktop,modern-engine]"
+          python -m pip install -r distribution/windows/freeze-requirements.txt
+          python -c "import platform, PyInstaller, torch; assert platform.python_version_tuple()[:2] == ('3', '12'); assert PyInstaller.__version__ == '6.21.0'; assert torch.version.cuda is None"
+
+      - name: Build and verify clean-runner bundle evidence
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $smokeRoot = Join-Path $env:RUNNER_TEMP "DiffeoForge Freeze Käfer"
+          $synthetic = Join-Path $smokeRoot "synthetic"
+          New-Item -ItemType Directory -Path $smokeRoot | Out-Null
+          Copy-Item -LiteralPath "examples/synthetic" -Destination $synthetic -Recurse
+
+          $referenceConfig = Join-Path $smokeRoot "reference-atlas.yaml"
+          $modernConfig = Join-Path $smokeRoot "modern-atlas.yaml"
+          Copy-Item -LiteralPath "examples/minimal-atlas-container.yaml" -Destination $referenceConfig
+          Copy-Item -LiteralPath "examples/minimal-modern-atlas.yaml" -Destination $modernConfig
+
+          $approval = Join-Path $smokeRoot "preparation-approval.json"
+          $fingerprint = (& python -c "import sys; from diffeoforge.reference_preparation_plan import plan_reference_preparation, reference_preparation_plan_fingerprint; print(reference_preparation_plan_fingerprint(plan_reference_preparation(sys.argv[1], run_id='clean-runner-preparation')))" $referenceConfig).Trim()
+          if ($LASTEXITCODE -ne 0 -or $fingerprint -notmatch "^[0-9a-f]{64}$") {
+            throw "Could not create the synthetic reviewed plan fingerprint."
+          }
+          $approvalArguments = @(
+            "-m", "diffeoforge", "reference-plan-approve", $referenceConfig,
+            "--run-id", "clean-runner-preparation",
+            "--approve-fingerprint", $fingerprint,
+            "--output", $approval
+          )
+          & python @approvalArguments | Out-Null
+          if ($LASTEXITCODE -ne 0) {
+            throw "Could not create the synthetic preparation-only approval."
+          }
+          $approvalSha256 = (Get-FileHash -LiteralPath $approval -Algorithm SHA256).Hash.ToLowerInvariant()
+
+          $dist = Join-Path $env:RUNNER_TEMP "windows-freeze-dist"
+          $work = Join-Path $env:RUNNER_TEMP "windows-freeze-work"
+          $modernDestination = Join-Path $smokeRoot "Käfer Modern Result"
+          $buildArguments = @{
+            Python = (Get-Command python).Source
+            DistPath = $dist
+            WorkPath = $work
+            SmokeConfig = $modernConfig
+            SmokeDestination = $modernDestination
+            PreparationApproval = $approval
+            PreparationConfig = $referenceConfig
+            PreparationApprovalSha256 = $approvalSha256
+          }
+          & distribution/windows/build-evidence.ps1 @buildArguments
+          if ($LASTEXITCODE -ne 0) {
+            throw "The frozen bundle evidence build failed."
+          }
+
+          $bundle = Join-Path $dist "DiffeoForge"
+          & python tools/desktop_bundle_evidence.py verify $bundle
+          if ($LASTEXITCODE -ne 0) {
+            throw "Independent final bundle-evidence verification failed."
+          }
+
+          $evidenceDirectory = Join-Path $env:RUNNER_TEMP "freeze-evidence-upload"
+          New-Item -ItemType Directory -Path $evidenceDirectory | Out-Null
+          Copy-Item -LiteralPath (Join-Path $bundle "freeze-evidence.json") -Destination $evidenceDirectory
+          Copy-Item -LiteralPath (Join-Path $bundle "freeze-evidence.sha256") -Destination $evidenceDirectory
+          $uploadedFiles = @(Get-ChildItem -LiteralPath $evidenceDirectory -File)
+          if ($uploadedFiles.Count -ne 2) {
+            throw "Evidence upload boundary must contain exactly two files."
+          }
+          $expected = ((Get-Content -LiteralPath (Join-Path $evidenceDirectory "freeze-evidence.sha256") -Raw).Trim() -split "\s+")[0]
+          $observed = (Get-FileHash -LiteralPath (Join-Path $evidenceDirectory "freeze-evidence.json") -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($expected -ne $observed) {
+            throw "Copied freeze evidence does not match its SHA-256 sidecar."
+          }
+
+          $manifest = Get-Content -LiteralPath (Join-Path $evidenceDirectory "freeze-evidence.json") -Raw | ConvertFrom-Json
+          @(
+            "## Windows clean-runner freeze evidence"
+            ""
+            "- Source commit: $($manifest.source.commit_sha)"
+            "- Bundle files: $($manifest.bundle.file_count)"
+            "- Bundle bytes: $($manifest.bundle.total_bytes)"
+            "- Inventory SHA-256: $($manifest.bundle.inventory_sha256)"
+            "- Evidence SHA-256: $observed"
+            "- Uploaded boundary: manifest and sidecar only; no executable bundle"
+          ) | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          "FREEZE_EVIDENCE_UPLOAD=$evidenceDirectory" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Upload exact evidence only
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: windows-freeze-evidence-${{ github.sha }}
+          path: ${{ env.FREEZE_EVIDENCE_UPLOAD }}
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0

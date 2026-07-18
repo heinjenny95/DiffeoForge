@@ -2,8 +2,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import yaml
+
 ROOT = Path(__file__).parents[1]
 WINDOWS = ROOT / "distribution" / "windows"
+WORKFLOW = ROOT / ".github" / "workflows" / "windows-freeze-evidence.yml"
 
 
 def test_windows_evidence_builder_is_explicitly_pinned_and_onedir() -> None:
@@ -60,3 +63,51 @@ def test_windows_freeze_has_separate_desktop_and_pipe_worker_entry_points() -> N
     )
     assert "desktop_bundle_evidence.py create" in build
     assert "desktop_bundle_evidence.py verify" in build
+
+
+def test_windows_freeze_workflow_is_manual_pinned_and_evidence_only() -> None:
+    text = WORKFLOW.read_text(encoding="utf-8")
+    workflow = yaml.load(text, Loader=yaml.BaseLoader)
+
+    assert workflow["on"] == {"workflow_dispatch": ""}
+    assert workflow["permissions"] == {"contents": "read"}
+    job = workflow["jobs"]["freeze-evidence"]
+    assert job["runs-on"] == "windows-latest"
+    assert job["timeout-minutes"] == "60"
+    assert job["env"] == {"PYTHONUTF8": "1", "QT_QPA_PLATFORM": "offscreen"}
+
+    steps = job["steps"]
+    assert [step.get("uses") for step in steps if "uses" in step] == [
+        "actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0",
+        "actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1",
+        "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+    ]
+    install = next(step["run"] for step in steps if step["name"].startswith("Install"))
+    assert 'python -m pip install -e ".[dev,desktop,modern-engine]"' in install
+    assert "distribution/windows/freeze-requirements.txt" in install
+    assert "PyInstaller.__version__ == '6.21.0'" in install
+    assert "torch.version.cuda is None" in install
+
+    build = next(step["run"] for step in steps if step["name"].startswith("Build"))
+    assert '$env:RUNNER_TEMP "DiffeoForge Freeze K\u00e4fer"' in build
+    assert "clean-runner-preparation" in build
+    assert "PreparationApprovalSha256 = $approvalSha256" in build
+    assert "SmokeConfig = $modernConfig" in build
+    assert "SmokeDestination = $modernDestination" in build
+    assert "distribution/windows/build-evidence.ps1" in build
+    assert "tools/desktop_bundle_evidence.py verify" in build
+    assert build.count("Copy-Item -LiteralPath (Join-Path $bundle") == 2
+    assert '"freeze-evidence.json"' in build
+    assert '"freeze-evidence.sha256"' in build
+    assert "uploadedFiles.Count -ne 2" in build
+    assert "Copied freeze evidence does not match its SHA-256 sidecar" in build
+
+    upload = next(step for step in steps if step["name"] == "Upload exact evidence only")
+    assert upload["with"] == {
+        "name": "windows-freeze-evidence-${{ github.sha }}",
+        "path": "${{ env.FREEZE_EVIDENCE_UPLOAD }}",
+        "if-no-files-found": "error",
+        "retention-days": "14",
+        "compression-level": "0",
+    }
+    assert "windows-freeze-dist" not in upload["with"]["path"]

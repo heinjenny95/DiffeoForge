@@ -60,6 +60,10 @@ events to the reviewed request, enforces lifecycle/exit-code agreement, bounds
   it creates separate windowed-parent and pipe-worker executables, exercises
   their production protocol on a public synthetic configuration, and binds an
   exact-file inventory to a clean source commit. It is not release evidence.
+  A separate manually triggered GitHub-hosted Windows workflow can repeat that
+  complete freeze and smoke contract on a fresh runner. It uploads only the
+  exact manifest and hash sidecar, never the unsigned executable directory;
+  each run remains engineering evidence and must be independently inspected.
 
 The CPU modern engine is the first bundled numerical variant. A future NVIDIA
 build is a separate artifact with separate numerical evidence; the application
