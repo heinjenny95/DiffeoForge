@@ -444,6 +444,7 @@ and workflow for another mesh directory.
 - [Portable Inno toolchain and compiler-probe evidence](docs/INNO_PORTABLE_TOOLCHAIN_EVIDENCE.md)
 - [Engineering-only Windows installer build evidence](docs/INSTALLER_BUILD_EVIDENCE.md)
 - [Isolated Windows installer installation evidence](docs/INSTALLER_INSTALLATION_EVIDENCE.md)
+- [Same-owner local Windows private-alpha handoff](docs/PRIVATE_ALPHA_HANDOFF.md)
 - [Windows one-directory freeze evidence](docs/WINDOWS_FREEZE_EVIDENCE.md)
 - [Frozen dependency metadata evidence](docs/DESKTOP_DEPENDENCY_METADATA_EVIDENCE.md)
 - [Deterministic Windows CycloneDX 1.7 SBOM](docs/DESKTOP_SBOM.md)

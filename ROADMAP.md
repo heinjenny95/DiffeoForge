@@ -117,6 +117,8 @@ This roadmap describes evidence gates rather than promised dates.
   - [x] Fail-closed evidence-only ephemeral-runner current-user install,
     installed-smoke, uninstall, and project-preservation workflow; first real
     observation and refined retained-integrity re-observation accepted
+  - [x] Define fail-closed same-owner local private-alpha packaging and retained
+    integrity verification; first exact handoff accepted
   - [ ] Reviewed release lock, SBOM, license clearance, signed installer, and
     clean-VM installation/uninstallation evidence
   - [ ] Separately gated Linux and macOS CPU distributions

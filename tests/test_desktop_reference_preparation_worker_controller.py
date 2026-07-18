@@ -607,12 +607,15 @@ def test_timeout_preserves_private_crash_stage_without_reconciliation(
     private_stage = request.destination.parent / (
         f".diffeoforge-preparing-{request.run_id}-syntheticcrash"
     )
+    # The controller does not own private preparation stages and must preserve an
+    # exact candidate that already exists when supervision starts.  Create the
+    # observed crash residue in the parent process so this assertion does not
+    # depend on hosted-runner child-process startup latency.
+    private_stage.mkdir(parents=True)
     command = _fake_command(
         [],
         exit_code=0,
         prefix_statements=(
-            "from pathlib import Path",
-            f"Path({str(private_stage)!r}).mkdir(parents=True)",
             "import time",
             "time.sleep(300)",
         ),

@@ -1,0 +1,53 @@
+{
+  "schema_version": "0.1",
+  "status": "accepted_same_owner_local_private_alpha_handoff_not_public_distribution_or_release",
+  "target": "windows-x86_64-cpu",
+  "scope": {
+    "same_owner": true,
+    "same_machine": true,
+    "output_under_current_user_profile": true,
+    "output_outside_source_repository": true,
+    "setup_execution": false,
+    "public_upload": false
+  },
+  "required_prerequisites": {
+    "clean_exact_source_commit": true,
+    "externally_hash_bound_installer_build_evidence": true,
+    "installer_build_release_candidate": false,
+    "installer_build_distribution_authorized": false,
+    "installer_build_release_authorized": false,
+    "setup_authenticode_status": "NotSigned",
+    "new_output_directory": true,
+    "new_staging_directory": true
+  },
+  "security_observation": {
+    "authenticode_required": true,
+    "microsoft_defender_targeted_scan_when_enabled": true,
+    "explicit_unavailable_or_disabled_reason": true,
+    "security_center_product_inventory": true,
+    "malware_clearance_claim": false
+  },
+  "output": {
+    "exact_files": [
+      "DiffeoForge-0.0.0.dev0-Windows-CPU-x86_64-Setup.exe",
+      "LICENSE.txt",
+      "PRIVATE-ALPHA-README.txt",
+      "private-alpha-manifest.json",
+      "private-alpha-manifest.sha256",
+      "windows-security-observation.json"
+    ],
+    "atomic_publish": true,
+    "overwrite": false,
+    "external_manifest_sha256_required": true,
+    "retained_integrity_verification": true
+  },
+  "required_warnings": [
+    "unsigned_setup_and_windows_smartscreen",
+    "same_owner_private_test_only",
+    "no_public_distribution_or_release",
+    "no_license_or_redistribution_approval",
+    "no_scientific_validation_or_production_suitability",
+    "no_300_specimen_performance_claim",
+    "preserve_independent_source_data_backup"
+  ]
+}
