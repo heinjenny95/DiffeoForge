@@ -189,6 +189,12 @@ computer.
 The evidence pin is not the future release lock. Exact Qt, PyTorch, transitive
 dependencies, and Inno Setup versions still belong in a reviewed release lock
 and SBOM. No unpinned `latest` downloads may occur during a release build.
+The first SBOM design is now fixed by
+[ADR 0005](decisions/0005-cyclonedx-post-build-sbom.md) as deterministic
+CycloneDX 1.7 JSON generated only from externally hash-bound freeze and
+dependency evidence. The machine contract is
+`distribution/windows/sbom-contract-v0.1.json`. This accepted design does not
+yet create an SBOM and does not satisfy license or redistribution review.
 
 Primary packaging references:
 
