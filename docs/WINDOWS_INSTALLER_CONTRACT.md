@@ -64,6 +64,12 @@ accepts only a `release_candidate: false` plan, produces an unsigned setup in a
 private local evidence boundary, and never executes or distributes that setup.
 The first accepted observation and its external trust anchors are recorded
 there.
+The next evidence-only gate is the
+[isolated installer installation workflow](INSTALLER_INSTALLATION_EVIDENCE.md).
+It is restricted to an ephemeral GitHub-hosted Windows runner and verifies one
+current-user install, installed desktop smoke, uninstall, and external project
+sentinel without uploading the setup. Its first real observation is still
+pending.
 
 ## Required build inputs
 

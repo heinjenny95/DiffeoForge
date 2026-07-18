@@ -114,6 +114,9 @@ This roadmap describes evidence gates rather than promised dates.
     non-executing compiler build plan
   - [x] Release-attestation- and Authenticode-bound Inno Setup toolchain
     authenticity observation with execution explicitly disabled
+  - [x] Fail-closed evidence-only ephemeral-runner current-user install,
+    installed-smoke, uninstall, and project-preservation workflow; first real
+    observation pending
   - [ ] Reviewed release lock, SBOM, license clearance, signed installer, and
     clean-VM installation/uninstallation evidence
   - [ ] Separately gated Linux and macOS CPU distributions
