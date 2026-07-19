@@ -109,6 +109,22 @@ def test_declared_pc2_pc3_plot_has_exact_axes_subject_order_and_variance_labels(
     ]
 
 
+def test_score_plot_tick_labels_are_compact_for_embedded_desktop_rendering(
+    tmp_path: Path,
+) -> None:
+    path = write_pca_scores_svg(tmp_path / "scores.svg", _pca(components=2))
+    root = ET.parse(path).getroot()
+    tick_labels = [
+        element.text or ""
+        for element in root.findall(f".//{SVG}text")
+        if element.attrib.get("class") == "small"
+    ]
+
+    assert len(tick_labels) == 12
+    assert all(len(label) <= 9 for label in tick_labels)
+    assert all(label.count(".") <= 1 for label in tick_labels)
+
+
 def test_score_pair_rejects_missing_or_repeated_components(tmp_path: Path) -> None:
     pca = _pca(components=2)
 
