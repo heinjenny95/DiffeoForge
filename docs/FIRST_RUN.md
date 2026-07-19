@@ -230,6 +230,12 @@ and inspect the objective curves, lifecycle, evidence checks, and output
 inventory before committing the full dataset. The result report deliberately
 distinguishes a successful backend exit from demonstrated convergence and from
 scientific validity. See [result-report interpretation](RESULT_REPORT.md).
+The desktop Modern route makes that choice explicit: `Technical pilot` writes
+a three-cycle cap for a fast end-to-end check, while `Convergence attempt`
+writes a 50-cycle cap and still stops earlier at the unchanged gradient
+tolerance. Neither label guarantees scientific suitability. New result bundles
+include a verified objective/gradient SVG; a `max_cycles` termination remains
+nonconverged regardless of how cleanly the workflow completed.
 For long runs, review the checkpoint save interval and the explicit
 [interruption and resume workflow](RESUME_AND_RECOVERY.md) before starting.
 Resource estimation and progress reporting remain separate roadmap items.

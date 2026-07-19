@@ -32,6 +32,7 @@ bundle/
     momenta.csv
   optimization/
     history.csv
+    convergence.svg
   reconstructions/
     subject-0000-<safe-label>.vtk
     ...
@@ -85,6 +86,24 @@ are covered by `bundle-manifest.sha256`. Verification requires:
 - readable triangular VTK geometry with manifest-declared point/face counts;
 - recomputed topology and triangle-shape evidence for every generated VTK; and
 - recomputed local face-area ratios relative to the estimated template.
+
+When present, `optimization/convergence.svg` is also parsed as script-free,
+reference-free SVG. Verification cross-checks its termination state, completed
+cycle count, accepted-decision identity, exact objective components, gradient
+norms, and gradient tolerance against the manifest and `history.csv`;
+refreshing hashes cannot hide changed plot semantics. New bundles always include
+this artifact. Its manifest field remains optional so earlier immutable bundles
+stay readable without being rewritten.
+
+## Optimizer convergence handoff
+
+The convergence SVG has two panels. The upper panel shows objective,
+attachment, and regularity values for every committed optimizer state. The
+lower panel shows per-block gradient norms on a logarithmic scale and the
+configured gradient-tolerance line. The title records the termination reason,
+convergence flag, and completed/capped cycle counts. Reaching `max_cycles`
+remains explicitly nonconverged even when bundle creation and verification
+succeed.
 
 SHA-256 detects changes but is not an authenticity signature. Anyone able to
 replace both data and hashes can forge a new internally consistent bundle.

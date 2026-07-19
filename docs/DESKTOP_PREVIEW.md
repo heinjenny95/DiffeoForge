@@ -1,7 +1,7 @@
 # Desktop setup, review, and Modern compute preview
 
 Status: **four graphical steps with verified Modern CPU execution and result review;
-no installer**
+same-owner private-alpha installer available**
 
 Tracked by [engineering issue #75](https://github.com/heinjenny95/DiffeoForge/issues/75)
 and [engineering issue #77](https://github.com/heinjenny95/DiffeoForge/issues/77),
@@ -33,36 +33,40 @@ terminal:
    subject filename pattern;
 4. for the Modern route, explicitly choose the dense small-pilot baseline or
    the exact `256 × 256` blockwise high-face-count experiment;
-5. optionally select a labelled-landmark CSV for the modern workflow;
-6. validate schemas, paths, mesh geometry, and the engine-specific setup
+5. explicitly choose either a three-cycle technical pilot or a convergence
+   attempt capped at 50 cycles, with early stopping only when every parameter
+   block reaches the declared gradient tolerance in one completed cycle;
+6. optionally select a labelled-landmark CSV for the modern workflow;
+7. validate schemas, paths, mesh geometry, and the engine-specific setup
    contract through the same application services used by the CLI;
-7. create a starter configuration, requiring a destructive confirmation before
+8. create a starter configuration, requiring a destructive confirmation before
    atomically replacing only a recognized DiffeoForge-generated configuration,
    and review a visible result summary;
-8. continue to a second screen that reads the effective values back from the
+9. continue to a second screen that reads the effective values back from the
    validated configuration and explains their role;
-9. optionally load the exact selected template outside the event loop and view
+10. optionally load the exact selected template outside the event loop and view
    native aspect-preserving XY, XZ, or YZ wireframe projections with source
    hash and displayed/total edge counts;
-10. for the modern route, generate and render the existing exact-count
+11. for the modern route, generate and render the existing exact-count
    `modern-plan` JSON/HTML evidence; or, for the reference route, render the
    existing preflight parameter ratios and external-engine boundary, then
    optionally diagnose the exact configured container engine and image without
    changing or starting either one, then inspect one externally hash-bound
    preparation approval and its exact destination/private-stage state through
    the shared read-only reconciliation core;
-11. for a reviewed Modern project, continue to a third screen that binds the
+12. for a reviewed Modern project, continue to a third screen that binds the
    exact reviewed configuration SHA-256, displays and refreshes the read-only
    destination/private-state evidence, checks it again immediately before
    starting the separate worker, shows real workflow stages and committed
    optimizer decisions, and offers one cooperative cancel action; and
-12. expose the result directory only after the parent controller independently
+13. expose the result directory only after the parent controller independently
     verifies the published workflow, manifest hash, subject count, and bundle;
-13. automatically continue to a fourth screen only after a fresh full
+14. automatically continue to a fourth screen only after a fresh full
     verification of the workflow, nested bundle, exact inventories, hashes,
     mesh QC, and static SVG safety checks; and
-14. inspect bounded Atlas, optimizer, momenta-PCA, and QC summaries together
-    with embedded verified PC1/PC2 and PC2/PC3 score plots, then open only
+15. inspect bounded Atlas, optimizer, momenta-PCA, and QC summaries together
+    with an embedded verified objective/gradient convergence plot plus verified
+    PC1/PC2 and PC2/PC3 score plots, then open only
     inventoried VTK/CSV/JSON/SVG artifacts whose manifest bindings, size, and
     SHA-256 pass again immediately before handoff to a local application.
 

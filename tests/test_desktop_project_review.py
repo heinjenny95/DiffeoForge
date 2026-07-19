@@ -70,6 +70,8 @@ def test_modern_review_publishes_existing_exact_workload_contract(tmp_path: Path
     report = json.loads(report_json.read_text(encoding="utf-8"))
     assert values["Execution"].startswith("CPU · float64")
     assert values["Pairwise evaluation"].startswith("dense")
+    assert values["Optimization blocks"].endswith("max. 3 cycles")
+    assert values["Convergence rule"] == "every block gradient ≤ 1e-08"
     assert evidence["Dataset"] == "5 subjects + 1 template"
     assert evidence["Objective/gradient upper bound"] == str(
         report["optimizer_bound"]["objective_gradient_evaluation_upper_bound"]

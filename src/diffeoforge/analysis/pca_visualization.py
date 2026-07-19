@@ -61,9 +61,12 @@ def _svg_document(title: str, body: list[str]) -> str:
             "  <style>",
             "    .axis { stroke: #263238; stroke-width: 1.5; }",
             "    .grid { stroke: #dce4e7; stroke-width: 1; }",
-            "    .label { fill: #263238; font: 14px sans-serif; }",
-            "    .small { fill: #455a64; font: 12px sans-serif; }",
-            "    .title { fill: #102a43; font: bold 22px sans-serif; }",
+            "    .label { fill: #263238; font-family: Arial; font-size: 14px; }",
+            "    .small { fill: #455a64; font-family: Arial; font-size: 12px; }",
+            (
+                "    .title { fill: #102a43; font-family: Arial; font-size: 22px; "
+                "font-weight: bold; }"
+            ),
             "    .bar { fill: #1976d2; }",
             "    .point { fill: #d84315; stroke: #ffffff; stroke-width: 1; }",
             "  </style>",

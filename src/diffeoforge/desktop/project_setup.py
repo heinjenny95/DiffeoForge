@@ -37,6 +37,7 @@ class ProjectSetupRequest:
     pairwise_mode: str = "dense"
     query_tile_size: int | None = None
     source_tile_size: int | None = None
+    max_cycles: int = 3
     overwrite_existing_configuration: bool = False
 
 
@@ -103,6 +104,12 @@ def _normalize_request(request: ProjectSetupRequest) -> ProjectSetupRequest:
         raise ConfigurationError(
             "Pairwise execution plans are available only for the modern CPU workflow"
         )
+    if (
+        isinstance(request.max_cycles, bool)
+        or not isinstance(request.max_cycles, int)
+        or request.max_cycles < 1
+    ):
+        raise ConfigurationError("Desktop max_cycles must be a positive integer")
     return ProjectSetupRequest(
         mesh_directory=Path(request.mesh_directory).expanduser().resolve(),
         project_directory=Path(request.project_directory).expanduser().resolve(),
@@ -121,6 +128,7 @@ def _normalize_request(request: ProjectSetupRequest) -> ProjectSetupRequest:
         pairwise_mode=pairwise_mode,
         query_tile_size=query_tile_size,
         source_tile_size=source_tile_size,
+        max_cycles=request.max_cycles,
         overwrite_existing_configuration=request.overwrite_existing_configuration,
     )
 
@@ -191,6 +199,7 @@ def _create_modern_project(request: ProjectSetupRequest) -> ProjectSetupResult:
         pairwise_mode=request.pairwise_mode,
         query_tile_size=request.query_tile_size,
         source_tile_size=request.source_tile_size,
+        max_cycles=request.max_cycles,
         overwrite=request.overwrite_existing_configuration,
     )
     config = load_modern_workflow_config(config_path)
@@ -200,6 +209,18 @@ def _create_modern_project(request: ProjectSetupRequest) -> ProjectSetupResult:
         "Project creation validated the supported meshes and quality gates but did not "
         "run an atlas.",
     ]
+    if request.max_cycles <= 3:
+        notices.insert(
+            0,
+            "The selected three-cycle optimizer cap is a technical pilot, not a "
+            "convergence attempt.",
+        )
+    else:
+        notices.insert(
+            0,
+            f"The selected {request.max_cycles}-cycle convergence attempt stops earlier if the "
+            "gradient tolerance is reached; the longer cap does not guarantee convergence.",
+        )
     if request.units == "unitless":
         notices.insert(0, "Units are declared as unitless; confirm this is intentional.")
     if request.overwrite_existing_configuration:

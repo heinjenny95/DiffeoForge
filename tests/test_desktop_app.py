@@ -292,11 +292,18 @@ def test_desktop_window_exposes_required_project_controls(monkeypatch) -> None:
     assert window.findChild(QComboBox, "engineCombo") is not None
     assert window.findChild(QComboBox, "unitsCombo") is not None
     assert window.findChild(QComboBox, "pairwiseEvaluationCombo") is not None
+    assert window.findChild(QComboBox, "optimizationEffortCombo") is not None
     assert window.create_button.isEnabled() is False
     assert "CPU/float64" in window.engine_hint.text()
     assert window.landmarks_edit.isEnabled() is True
     assert window.pairwise_combo.isEnabled() is True
+    assert window.optimization_effort_combo.isEnabled() is True
     assert "small pilot" in window.pairwise_combo.currentText()
+    assert window.optimization_effort_combo.currentData() == 3
+    assert "three-cycle cap" in window.optimization_effort_hint.text()
+    window.optimization_effort_combo.setCurrentIndex(1)
+    assert window._request().max_cycles == 50
+    assert "does not guarantee convergence" in window.optimization_effort_hint.text()
     window.pairwise_combo.setCurrentIndex(1)
     assert "bounds one pairwise allocation" in window.pairwise_hint.text()
     blockwise_request = window._request()
@@ -308,6 +315,7 @@ def test_desktop_window_exposes_required_project_controls(monkeypatch) -> None:
     assert "Deformetrica 4.3" in window.engine_hint.text()
     assert window.landmarks_edit.isEnabled() is False
     assert window.pairwise_combo.isEnabled() is False
+    assert window.optimization_effort_combo.isEnabled() is False
     assert window._request().pairwise_mode == "dense"
     window.close()
     application.processEvents()
@@ -1453,12 +1461,14 @@ def test_desktop_window_verifies_and_renders_step_four_before_artifact_handoff(
     workflow_manifest = run / "workflow-manifest.json"
     bundle_manifest = bundle / "bundle-manifest.json"
     artifact_path = bundle / "pca-scree.svg"
+    optimizer_plot_path = bundle / "optimizer-convergence.svg"
     primary_plot_path = bundle / "pca-scores.svg"
     secondary_plot_path = bundle / "pca-scores-pc2-pc3.svg"
     workflow_manifest.write_text("workflow\n", encoding="utf-8")
     bundle_manifest.write_text("bundle\n", encoding="utf-8")
     svg = '<svg xmlns="http://www.w3.org/2000/svg" width="900" height="600"></svg>\n'
     artifact_path.write_text(svg, encoding="utf-8")
+    optimizer_plot_path.write_text(svg, encoding="utf-8")
     primary_plot_path.write_text(svg, encoding="utf-8")
     secondary_plot_path.write_text(svg, encoding="utf-8")
     item = ResultReviewItem("Projekt", "Käfer-Atlas", "Manifestierter Wert.")
@@ -1470,6 +1480,15 @@ def test_desktop_window_verifies_and_renders_step_four_before_artifact_handoff(
         bytes=artifact_path.stat().st_size,
         sha256=sha256_file(artifact_path),
         description="Statisches SVG.",
+    )
+    optimizer_plot = ModernResultArtifact(
+        key="optimizer-convergence-plot",
+        label="Optimizer convergence (SVG)",
+        path=optimizer_plot_path,
+        kind="svg",
+        bytes=optimizer_plot_path.stat().st_size,
+        sha256=sha256_file(optimizer_plot_path),
+        description="Verified convergence plot.",
     )
     primary_plot = ModernResultArtifact(
         key="pca-score-plot",
@@ -1512,7 +1531,7 @@ def test_desktop_window_verifies_and_renders_step_four_before_artifact_handoff(
         ),
         pca=(ResultReviewItem("PC1", "75%", "Vorzeichen ist konventionell."),),
         quality=(ResultReviewItem("Output-QC", "9 Meshes", "Recomputet."),),
-        artifacts=(artifact, primary_plot, secondary_plot),
+        artifacts=(artifact, optimizer_plot, primary_plot, secondary_plot),
         scientific_boundaries=("No biological validity claim is made.",),
     )
     terminal = DesktopWorkerEvent(
@@ -1561,7 +1580,9 @@ def test_desktop_window_verifies_and_renders_step_four_before_artifact_handoff(
     result_pca = window.findChild(QWidget, "resultPca")
     assert result_pca is not None
     assert "PC1" in result_pca.findChildren(QLabel)[0].text()
-    assert len(window.result_artifact_buttons) == 3
+    assert len(window.result_artifact_buttons) == 4
+    assert window.result_optimizer_convergence_plot.isHidden() is False
+    assert "Verified objective components" in window.result_optimizer_convergence_plot_status.text()
     assert window.result_pc1_pc2_plot.isHidden() is False
     assert window.result_pc2_pc3_plot.isHidden() is False
     assert "Verified PC1-versus-PC2" in window.result_pc1_pc2_plot_status.text()
@@ -1579,7 +1600,7 @@ def test_desktop_window_verifies_and_renders_step_four_before_artifact_handoff(
     window._result_review_succeeded(
         replace(
             review,
-            artifacts=(artifact, primary_plot),
+            artifacts=(artifact, optimizer_plot, primary_plot),
             pca_pc2_pc3_unavailable_reason=(
                 "PC3 is not mathematically available because only two components exist."
             ),
@@ -1588,6 +1609,19 @@ def test_desktop_window_verifies_and_renders_step_four_before_artifact_handoff(
     assert window.result_pc2_pc3_plot.isHidden() is True
     assert window.result_pc2_pc3_plot_status.objectName() == "statusWarning"
     assert "not mathematically available" in window.result_pc2_pc3_plot_status.text()
+
+    window._result_review_succeeded(
+        replace(
+            review,
+            artifacts=(artifact, primary_plot, secondary_plot),
+            optimizer_convergence_plot_unavailable_reason=(
+                "This result predates the verified optimizer-convergence plot artifact."
+            ),
+        )
+    )
+    assert window.result_optimizer_convergence_plot.isHidden() is True
+    assert window.result_optimizer_convergence_plot_status.objectName() == "statusWarning"
+    assert "predates" in window.result_optimizer_convergence_plot_status.text()
 
     window._result_review_succeeded(
         replace(

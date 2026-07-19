@@ -97,7 +97,7 @@ QLabel#subtitle { color: #526b70; font-size: 15px; }
 QFrame#boundary { background: #e8f4f0; border: 1px solid #b7dcd2; border-radius: 10px; }
 QLabel#boundaryText { color: #245b52; padding: 3px; }
 QFrame#card { background: #ffffff; border: 1px solid #dbe4e6; border-radius: 12px; }
-QFrame#pcaPlotPanel { background: #f7f9f9; border: 1px solid #dbe4e6; border-radius: 8px; }
+QFrame#resultPlotPanel { background: #f7f9f9; border: 1px solid #dbe4e6; border-radius: 8px; }
 QFrame#footer { background: #ffffff; border-top: 1px solid #dbe4e6; }
 QLabel#sectionTitle { color: #123b3a; font-size: 17px; font-weight: 700; }
 QLabel#hint { color: #64777c; font-size: 12px; }
@@ -1191,6 +1191,34 @@ class DiffeoForgeWindow(QMainWindow):
         )
         layout.addWidget(overview_card)
         layout.addWidget(optimization_card)
+
+        convergence_plot_card = QFrame()
+        convergence_plot_card.setObjectName("card")
+        convergence_plot_layout = QVBoxLayout(convergence_plot_card)
+        convergence_plot_layout.setContentsMargins(24, 22, 24, 24)
+        convergence_plot_layout.setSpacing(14)
+        convergence_plot_title = QLabel("Optimizer convergence")
+        convergence_plot_title.setObjectName("sectionTitle")
+        convergence_plot_hint = QLabel(
+            "The upper panel shows committed objective components; the lower panel shows "
+            "block-gradient norms against the configured tolerance. A completed curve is "
+            "not automatically a converged curve."
+        )
+        convergence_plot_hint.setObjectName("hint")
+        convergence_plot_hint.setWordWrap(True)
+        (
+            convergence_panel,
+            self.result_optimizer_convergence_plot,
+            self.result_optimizer_convergence_plot_status,
+        ) = self._build_result_plot_panel(
+            "Objective and block gradients",
+            "resultOptimizerConvergencePlot",
+            "Awaiting a verified optimizer-convergence plot.",
+        )
+        convergence_plot_layout.addWidget(convergence_plot_title)
+        convergence_plot_layout.addWidget(convergence_plot_hint)
+        convergence_plot_layout.addWidget(convergence_panel)
+        layout.addWidget(convergence_plot_card)
         layout.addWidget(pca_card)
 
         pca_plots = QFrame()
@@ -1210,12 +1238,16 @@ class DiffeoForgeWindow(QMainWindow):
             pc1_pc2_panel,
             self.result_pc1_pc2_plot,
             self.result_pc1_pc2_plot_status,
-        ) = self._build_pca_plot_panel("PC1 vs PC2", "resultPc1Pc2Plot")
+        ) = self._build_result_plot_panel(
+            "PC1 vs PC2", "resultPc1Pc2Plot", "Awaiting a verified PCA plot."
+        )
         (
             pc2_pc3_panel,
             self.result_pc2_pc3_plot,
             self.result_pc2_pc3_plot_status,
-        ) = self._build_pca_plot_panel("PC2 vs PC3", "resultPc2Pc3Plot")
+        ) = self._build_result_plot_panel(
+            "PC2 vs PC3", "resultPc2Pc3Plot", "Awaiting a verified PCA plot."
+        )
         pca_plots_layout.addWidget(pca_plots_title)
         pca_plots_layout.addWidget(pca_plots_hint)
         pca_plots_layout.addWidget(pc1_pc2_panel)
@@ -1288,18 +1320,19 @@ class DiffeoForgeWindow(QMainWindow):
         return card, rows_layout
 
     @staticmethod
-    def _build_pca_plot_panel(
+    def _build_result_plot_panel(
         title: str,
         object_name: str,
+        pending_text: str,
     ) -> tuple[QWidget, QSvgWidget, QLabel]:
         panel = QFrame()
-        panel.setObjectName("pcaPlotPanel")
+        panel.setObjectName("resultPlotPanel")
         layout = QVBoxLayout(panel)
         layout.setContentsMargins(14, 12, 14, 14)
         layout.setSpacing(8)
         heading = QLabel(title)
         heading.setObjectName("reviewValue")
-        status = QLabel("Awaiting a verified PCA plot.")
+        status = QLabel(pending_text)
         status.setObjectName("status")
         status.setWordWrap(True)
         plot = QSvgWidget()
@@ -1389,6 +1422,30 @@ class DiffeoForgeWindow(QMainWindow):
         self.pairwise_hint.setWordWrap(True)
         pairwise_layout.addWidget(self.pairwise_hint)
         form.addRow("Pairwise evaluation", pairwise_box)
+
+        self.optimization_effort_combo = QComboBox()
+        self.optimization_effort_combo.setObjectName("optimizationEffortCombo")
+        self.optimization_effort_combo.addItem(
+            "Technical pilot — 3 cycles",
+            3,
+        )
+        self.optimization_effort_combo.addItem(
+            "Convergence attempt — up to 50 cycles",
+            50,
+        )
+        self.optimization_effort_combo.currentIndexChanged.connect(
+            self._update_optimization_explanation
+        )
+        optimization_effort_box = QWidget()
+        optimization_effort_layout = QVBoxLayout(optimization_effort_box)
+        optimization_effort_layout.setContentsMargins(0, 0, 0, 0)
+        optimization_effort_layout.setSpacing(4)
+        optimization_effort_layout.addWidget(self.optimization_effort_combo)
+        self.optimization_effort_hint = QLabel()
+        self.optimization_effort_hint.setObjectName("hint")
+        self.optimization_effort_hint.setWordWrap(True)
+        optimization_effort_layout.addWidget(self.optimization_effort_hint)
+        form.addRow("Optimization effort", optimization_effort_box)
 
         self.mesh_edit = QLineEdit()
         self.mesh_edit.setObjectName("meshDirectoryEdit")
@@ -1920,6 +1977,7 @@ class DiffeoForgeWindow(QMainWindow):
         self.landmarks_edit.setEnabled(modern)
         self.landmarks_button.setEnabled(modern)
         self.pairwise_combo.setEnabled(modern)
+        self.optimization_effort_combo.setEnabled(modern)
         if modern:
             self.engine_hint.setText(
                 "Current CPU/float64 engine; PCA is part of the later result bundle."
@@ -1930,6 +1988,7 @@ class DiffeoForgeWindow(QMainWindow):
                 "not bundled."
             )
         self._update_pairwise_explanation()
+        self._update_optimization_explanation()
 
     @Slot()
     def _update_pairwise_explanation(self) -> None:
@@ -1948,6 +2007,24 @@ class DiffeoForgeWindow(QMainWindow):
         self.pairwise_hint.setText(
             "Full pair matrices provide the correctness baseline and are intended for "
             "small pilot meshes."
+        )
+
+    @Slot()
+    def _update_optimization_explanation(self) -> None:
+        if self.engine_combo.currentData() != DesktopEngine.MODERN_CPU:
+            self.optimization_effort_hint.setText(
+                "Optimization settings are defined by the external Deformetrica configuration."
+            )
+            return
+        if self.optimization_effort_combo.currentData() == 50:
+            self.optimization_effort_hint.setText(
+                "Runs up to 50 complete block cycles but stops earlier at the gradient "
+                "tolerance. This may take much longer and still does not guarantee convergence."
+            )
+            return
+        self.optimization_effort_hint.setText(
+            "Fast end-to-end software check. Reaching the three-cycle cap is expected and "
+            "must not be interpreted as optimizer convergence."
         )
 
     @Slot()
@@ -1984,6 +2061,7 @@ class DiffeoForgeWindow(QMainWindow):
             pairwise_mode="blockwise" if blockwise else "dense",
             query_tile_size=256 if blockwise else None,
             source_tile_size=256 if blockwise else None,
+            max_cycles=int(self.optimization_effort_combo.currentData()),
         )
 
     @staticmethod
@@ -2945,9 +3023,10 @@ class DiffeoForgeWindow(QMainWindow):
         self._populate_review_rows(self.result_pca_layout, review.pca)
         self._populate_review_rows(self.result_quality_layout, review.quality)
         try:
+            self._load_verified_optimizer_plot(review)
             self._load_verified_pca_plots(review)
         except ModernResultReviewError as error:
-            self._result_review_failed(f"PCA plots could not be displayed: {error}")
+            self._result_review_failed(f"Verified result plots could not be displayed: {error}")
             return
         self.result_boundary_label.setText(
             "\n".join(f"• {boundary}" for boundary in review.scientific_boundaries)
@@ -2975,6 +3054,7 @@ class DiffeoForgeWindow(QMainWindow):
                 "Workflow complete and independently verified, but the optimizer did not "
                 f"converge (termination: {review.optimizer_termination_reason}; "
                 f"{review.optimizer_cycles_completed} of {review.optimizer_max_cycles} cycles). "
+                "Inspect the convergence plot before selecting a longer convergence attempt. "
                 "Treat this as a technical pilot result, not a converged scientific atlas."
             )
         self._populate_result_artifacts(review)
@@ -2991,6 +3071,33 @@ class DiffeoForgeWindow(QMainWindow):
         if self._close_after_worker:
             self._close_after_worker = False
             self.close()
+
+    def _load_verified_optimizer_plot(self, review: ModernResultReview) -> None:
+        try:
+            review.artifact("optimizer-convergence-plot")
+        except KeyError:
+            self.result_optimizer_convergence_plot.hide()
+            self.result_optimizer_convergence_plot_status.setObjectName("statusWarning")
+            self.result_optimizer_convergence_plot_status.setStyleSheet("")
+            reason = review.optimizer_convergence_plot_unavailable_reason or (
+                "This result does not contain a verified optimizer-convergence plot."
+            )
+            self.result_optimizer_convergence_plot_status.setText(
+                f"Optimizer convergence plot unavailable: {reason}"
+            )
+            return
+
+        path = verify_result_artifact(review, "optimizer-convergence-plot")
+        self.result_optimizer_convergence_plot.load(str(path))
+        if not self.result_optimizer_convergence_plot.renderer().isValid():
+            raise ModernResultReviewError("The verified optimizer-convergence SVG is invalid")
+        self.result_optimizer_convergence_plot.show()
+        self.result_optimizer_convergence_plot_status.setObjectName("statusSuccess")
+        self.result_optimizer_convergence_plot_status.setStyleSheet("")
+        self.result_optimizer_convergence_plot_status.setText(
+            "Verified objective components and block-gradient norms from the bound "
+            "optimizer history."
+        )
 
     def _load_verified_pca_plots(self, review: ModernResultReview) -> None:
         primary = verify_result_artifact(review, "pca-score-plot")
