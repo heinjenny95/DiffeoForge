@@ -24,6 +24,7 @@ import torch
 from diffeoforge import __version__
 from diffeoforge.analysis.pca import PCAResult, momenta_pca
 from diffeoforge.analysis.pca_visualization import (
+    write_pca_score_pair_svg,
     write_pca_scores_svg,
     write_pca_scree_svg,
 )
@@ -246,6 +247,7 @@ def _pca_files(root: Path, pca: PCAResult) -> dict[str, object]:
     mean_path = analysis / "pca-mean.csv"
     scree_path = analysis / "pca-scree.svg"
     scores_plot_path = analysis / "pca-scores.svg"
+    pc2_pc3_plot_path = analysis / "pca-scores-pc2-pc3.svg"
     component_labels = [f"PC{index + 1}" for index in range(pca.number_of_components)]
     _write_json_exclusive(
         summary_path,
@@ -290,6 +292,24 @@ def _pca_files(root: Path, pca: PCAResult) -> dict[str, object]:
     )
     write_pca_scree_svg(scree_path, pca)
     write_pca_scores_svg(scores_plot_path, pca)
+    if pca.number_of_components >= 3:
+        write_pca_score_pair_svg(
+            pc2_pc3_plot_path,
+            pca,
+            x_component=2,
+            y_component=3,
+        )
+        pc2_pc3_path: str | None = pc2_pc3_plot_path.relative_to(root).as_posix()
+        pc2_pc3_axes: list[str] | None = ["PC2", "PC3"]
+        pc2_pc3_unavailable_reason: str | None = None
+    else:
+        pc2_pc3_path = None
+        pc2_pc3_axes = None
+        pc2_pc3_unavailable_reason = (
+            "PC3 is not mathematically available because the retained PCA has "
+            f"{pca.number_of_components} component"
+            f"{'s' if pca.number_of_components != 1 else ''}."
+        )
     return {
         "summary_path": summary_path.relative_to(root).as_posix(),
         "scores_path": scores_path.relative_to(root).as_posix(),
@@ -299,6 +319,9 @@ def _pca_files(root: Path, pca: PCAResult) -> dict[str, object]:
             "scree_path": scree_path.relative_to(root).as_posix(),
             "scores_path": scores_plot_path.relative_to(root).as_posix(),
             "score_axes": ["PC1"] if pca.number_of_components == 1 else ["PC1", "PC2"],
+            "scores_pc2_pc3_path": pc2_pc3_path,
+            "scores_pc2_pc3_axes": pc2_pc3_axes,
+            "scores_pc2_pc3_unavailable_reason": pc2_pc3_unavailable_reason,
         },
     }
 
@@ -741,7 +764,7 @@ def _resolve_artifact(root: Path, value: object) -> Path:
     return resolved
 
 
-def _verify_static_svg(path: Path) -> None:
+def _verify_static_svg(path: Path) -> ET.Element:
     try:
         document = ET.parse(path)
     except (OSError, ET.ParseError) as error:
@@ -754,6 +777,39 @@ def _verify_static_svg(path: Path) -> None:
             raise ModernBundleError(f"SVG artifact contains a script: {path.name}")
         if any(attribute.rsplit("}", 1)[-1].lower() == "href" for attribute in element.attrib):
             raise ModernBundleError(f"SVG artifact contains an external reference: {path.name}")
+    return root
+
+
+def _verify_score_svg(
+    path: Path,
+    *,
+    axes: list[str],
+    subject_labels: list[str],
+) -> None:
+    root = _verify_static_svg(path)
+    expected_title = (
+        "PCA subject scores: PC1 strip"
+        if axes == ["PC1"]
+        else f"PCA subject scores: {axes[0]} vs {axes[1]}"
+    )
+    title = root.find("{http://www.w3.org/2000/svg}title")
+    if title is None or title.text != expected_title:
+        raise ModernBundleError(f"PCA score SVG axes differ from the manifest: {path.name}")
+    circles = [
+        element for element in root.iter() if element.tag == "{http://www.w3.org/2000/svg}circle"
+    ]
+    observed_labels = [element.attrib.get("data-subject-label") for element in circles]
+    if observed_labels != subject_labels:
+        raise ModernBundleError(
+            f"PCA score SVG subject order differs from the manifest: {path.name}"
+        )
+    text_values = [
+        "".join(element.itertext())
+        for element in root.iter()
+        if element.tag == "{http://www.w3.org/2000/svg}text"
+    ]
+    if not all(any(value.startswith(f"{axis} (") for value in text_values) for axis in axes):
+        raise ModernBundleError(f"PCA score SVG variance-labelled axes are incomplete: {path.name}")
 
 
 def verify_modern_atlas_bundle(directory: Path | str) -> dict:
@@ -909,6 +965,27 @@ def verify_modern_atlas_bundle(directory: Path | str) -> dict:
         raise ModernBundleError(f"Invalid mesh-quality CSV: {error}") from error
     if quality_rows != mesh_quality_csv_rows(expected_quality):
         raise ModernBundleError("Mesh-quality CSV differs from recomputed geometry evidence")
-    _verify_static_svg(_resolve_artifact(root, manifest["pca"]["plots"]["scree_path"]))
-    _verify_static_svg(_resolve_artifact(root, manifest["pca"]["plots"]["scores_path"]))
+    plots = manifest["pca"]["plots"]
+    subject_labels = [record["label"] for record in manifest["subjects"]]
+    _verify_static_svg(_resolve_artifact(root, plots["scree_path"]))
+    _verify_score_svg(
+        _resolve_artifact(root, plots["scores_path"]),
+        axes=plots["score_axes"],
+        subject_labels=subject_labels,
+    )
+    if "scores_pc2_pc3_path" in plots:
+        secondary_path = plots["scores_pc2_pc3_path"]
+        secondary_axes = plots.get("scores_pc2_pc3_axes")
+        unavailable_reason = plots.get("scores_pc2_pc3_unavailable_reason")
+        if secondary_path is None:
+            if secondary_axes is not None or not isinstance(unavailable_reason, str):
+                raise ModernBundleError("Unavailable PC2-versus-PC3 plot metadata is inconsistent")
+        else:
+            if secondary_axes != ["PC2", "PC3"] or unavailable_reason is not None:
+                raise ModernBundleError("PC2-versus-PC3 plot metadata is inconsistent")
+            _verify_score_svg(
+                _resolve_artifact(root, secondary_path),
+                axes=secondary_axes,
+                subject_labels=subject_labels,
+            )
     return manifest

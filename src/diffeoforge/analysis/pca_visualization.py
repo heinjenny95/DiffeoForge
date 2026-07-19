@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import html
 import math
+from numbers import Integral
 from pathlib import Path
 
 import numpy as np
@@ -151,28 +152,44 @@ def write_pca_scree_svg(path: Path | str, pca: PCAResult) -> Path:
     return _write_exclusive(path, _svg_document("PCA scree plot", body))
 
 
-def write_pca_scores_svg(path: Path | str, pca: PCAResult) -> Path:
-    """Write PC1/PC2 scores, or an explicit PC1 strip when only one axis exists."""
+def _component_axis_label(pca: PCAResult, index: int) -> str:
+    component = f"PC{index + 1}"
+    ratio = _percent(float(pca.explained_variance_ratio[index]))
+    if index in pca.zero_variance_components:
+        return f"{component} ({ratio}; numerical zero-variance component)"
+    return f"{component} ({ratio})"
 
-    if not isinstance(pca, PCAResult):
-        raise TypeError("pca must be a PCAResult")
-    one_component = pca.number_of_components == 1
-    zero_variance_pc2 = not one_component and 1 in pca.zero_variance_components
-    x_values = pca.scores[:, 0]
-    y_values = np.zeros_like(x_values) if one_component or zero_variance_pc2 else pca.scores[:, 1]
+
+def _write_pca_score_view(
+    path: Path | str,
+    pca: PCAResult,
+    *,
+    x_index: int,
+    y_index: int | None,
+) -> Path:
+    x_zero_variance = x_index in pca.zero_variance_components
+    y_zero_variance = y_index is not None and y_index in pca.zero_variance_components
+    x_values = (
+        np.zeros(pca.scores.shape[0], dtype=np.float64)
+        if x_zero_variance
+        else pca.scores[:, x_index]
+    )
+    y_values = (
+        np.zeros_like(x_values) if y_index is None or y_zero_variance else pca.scores[:, y_index]
+    )
     x_low, x_high = _extent(x_values)
-    y_low, y_high = (-1.0, 1.0) if one_component or zero_variance_pc2 else _extent(y_values)
-    x_axis = f"PC1 ({_percent(float(pca.explained_variance_ratio[0]))})"
+    y_low, y_high = (-1.0, 1.0) if y_index is None else _extent(y_values)
+    x_axis = _component_axis_label(pca, x_index)
     y_axis = (
         "Single-component strip (no PC2 retained)"
-        if one_component
-        else (
-            "PC2 (0.00%; numerical zero-variance component)"
-            if zero_variance_pc2
-            else f"PC2 ({_percent(float(pca.explained_variance_ratio[1]))})"
-        )
+        if y_index is None
+        else _component_axis_label(pca, y_index)
     )
-    title = "PCA subject scores: PC1 strip" if one_component else "PCA subject scores: PC1 vs PC2"
+    title = (
+        "PCA subject scores: PC1 strip"
+        if y_index is None
+        else f"PCA subject scores: PC{x_index + 1} vs PC{y_index + 1}"
+    )
     body = [
         f'  <text x="450" y="38" text-anchor="middle" class="title">{html.escape(title)}</text>',
     ]
@@ -187,7 +204,7 @@ def write_pca_scores_svg(path: Path | str, pca: PCAResult) -> Path:
                 f'text-anchor="middle" class="small">{html.escape(_number(x_value))}</text>',
             ]
         )
-        if not one_component and not zero_variance_pc2:
+        if y_index is not None:
             y_value = y_low + (y_high - y_low) * tick / 5.0
             y = _TOP + _PLOT_HEIGHT - _PLOT_HEIGHT * tick / 5.0
             body.extend(
@@ -231,3 +248,46 @@ def write_pca_scores_svg(path: Path | str, pca: PCAResult) -> Path:
         ]
     )
     return _write_exclusive(path, _svg_document(title, body))
+
+
+def write_pca_score_pair_svg(
+    path: Path | str,
+    pca: PCAResult,
+    *,
+    x_component: int,
+    y_component: int,
+) -> Path:
+    """Write one declared two-component score plot using one-based PC numbers."""
+
+    if not isinstance(pca, PCAResult):
+        raise TypeError("pca must be a PCAResult")
+    for name, component in (("x_component", x_component), ("y_component", y_component)):
+        if isinstance(component, bool) or not isinstance(component, Integral):
+            raise TypeError(f"{name} must be an integer")
+        if int(component) < 1 or int(component) > pca.number_of_components:
+            raise ValueError(
+                f"{name} must be between 1 and {pca.number_of_components} for this PCA"
+            )
+    if int(x_component) == int(y_component):
+        raise ValueError("x_component and y_component must differ")
+    return _write_pca_score_view(
+        path,
+        pca,
+        x_index=int(x_component) - 1,
+        y_index=int(y_component) - 1,
+    )
+
+
+def write_pca_scores_svg(path: Path | str, pca: PCAResult) -> Path:
+    """Write PC1/PC2 scores, or an explicit PC1 strip when only one axis exists."""
+
+    if not isinstance(pca, PCAResult):
+        raise TypeError("pca must be a PCAResult")
+    if pca.number_of_components == 1:
+        return _write_pca_score_view(path, pca, x_index=0, y_index=None)
+    return write_pca_score_pair_svg(
+        path,
+        pca,
+        x_component=1,
+        y_component=2,
+    )

@@ -42,6 +42,7 @@ bundle/
     pca-mean.csv
     pca-scree.svg
     pca-scores.svg
+    pca-scores-pc2-pc3.svg  # when PC3 is mathematically available
     pca-deformations.json
     pca-deformations/
       mean-momenta.vtk
@@ -100,7 +101,9 @@ control-point-by-XYZ momenta tensor. It stores:
 - subject scores;
 - component loadings;
 - the PCA mean vector;
-- a static SVG scree plot and PC1/PC2 score plot (or explicit PC1 strip); and
+- a static SVG scree plot plus standard PC1/PC2 and PC2/PC3 score plots, with
+  an explicit manifest reason instead of a misleading second plot when PC3 is
+  mathematically unavailable; and
 - a mean-momenta mesh plus selected nonzero ±PC deformation meshes.
 
 The CSV mean and loading files plus the declared sign convention are sufficient
@@ -114,9 +117,10 @@ requested component count are inputs to bundle creation and are recorded in
 both the manifest and `pca-deformations.json`. Numerical zero-variance axes are
 listed and skipped instead of producing duplicate, misleading meshes. Every
 SVG, JSON, and VTK is covered by the exact artifact inventory. Verification
-also parses the static SVGs, rejects scripts/external references, cross-checks
-the deformation definition against the manifest, and validates every
-deformation mesh's geometry counts.
+also parses the static SVGs, rejects scripts/external references, checks the
+manifested score-plot axes and exact subject order, cross-checks the
+deformation definition against the manifest, and validates every deformation
+mesh's geometry counts.
 
 ## Mesh-quality evidence
 

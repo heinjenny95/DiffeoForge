@@ -9,6 +9,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QObject, QRunnable, Qt, QThreadPool, QUrl, Signal, Slot
 from PySide6.QtGui import QCloseEvent, QDesktopServices
+from PySide6.QtSvgWidgets import QSvgWidget
 from PySide6.QtWidgets import (
     QComboBox,
     QFileDialog,
@@ -96,6 +97,7 @@ QLabel#subtitle { color: #526b70; font-size: 15px; }
 QFrame#boundary { background: #e8f4f0; border: 1px solid #b7dcd2; border-radius: 10px; }
 QLabel#boundaryText { color: #245b52; padding: 3px; }
 QFrame#card { background: #ffffff; border: 1px solid #dbe4e6; border-radius: 12px; }
+QFrame#pcaPlotPanel { background: #f7f9f9; border: 1px solid #dbe4e6; border-radius: 8px; }
 QFrame#footer { background: #ffffff; border-top: 1px solid #dbe4e6; }
 QLabel#sectionTitle { color: #123b3a; font-size: 17px; font-weight: 700; }
 QLabel#hint { color: #64777c; font-size: 12px; }
@@ -1190,6 +1192,35 @@ class DiffeoForgeWindow(QMainWindow):
         layout.addWidget(overview_card)
         layout.addWidget(optimization_card)
         layout.addWidget(pca_card)
+
+        pca_plots = QFrame()
+        pca_plots.setObjectName("card")
+        pca_plots_layout = QVBoxLayout(pca_plots)
+        pca_plots_layout.setContentsMargins(24, 22, 24, 24)
+        pca_plots_layout.setSpacing(14)
+        pca_plots_title = QLabel("PCA score plots")
+        pca_plots_title.setObjectName("sectionTitle")
+        pca_plots_hint = QLabel(
+            "Both views are loaded directly from independently verified, script-free SVG "
+            "artifacts. Axis labels report explained variance; PCA signs remain conventional."
+        )
+        pca_plots_hint.setObjectName("hint")
+        pca_plots_hint.setWordWrap(True)
+        (
+            pc1_pc2_panel,
+            self.result_pc1_pc2_plot,
+            self.result_pc1_pc2_plot_status,
+        ) = self._build_pca_plot_panel("PC1 vs PC2", "resultPc1Pc2Plot")
+        (
+            pc2_pc3_panel,
+            self.result_pc2_pc3_plot,
+            self.result_pc2_pc3_plot_status,
+        ) = self._build_pca_plot_panel("PC2 vs PC3", "resultPc2Pc3Plot")
+        pca_plots_layout.addWidget(pca_plots_title)
+        pca_plots_layout.addWidget(pca_plots_hint)
+        pca_plots_layout.addWidget(pc1_pc2_panel)
+        pca_plots_layout.addWidget(pc2_pc3_panel)
+        layout.addWidget(pca_plots)
         layout.addWidget(quality_card)
 
         artifacts = QFrame()
@@ -1255,6 +1286,30 @@ class DiffeoForgeWindow(QMainWindow):
         layout.addWidget(heading)
         layout.addWidget(rows)
         return card, rows_layout
+
+    @staticmethod
+    def _build_pca_plot_panel(
+        title: str,
+        object_name: str,
+    ) -> tuple[QWidget, QSvgWidget, QLabel]:
+        panel = QFrame()
+        panel.setObjectName("pcaPlotPanel")
+        layout = QVBoxLayout(panel)
+        layout.setContentsMargins(14, 12, 14, 14)
+        layout.setSpacing(8)
+        heading = QLabel(title)
+        heading.setObjectName("reviewValue")
+        status = QLabel("Awaiting a verified PCA plot.")
+        status.setObjectName("status")
+        status.setWordWrap(True)
+        plot = QSvgWidget()
+        plot.setObjectName(object_name)
+        plot.setMinimumHeight(360)
+        plot.hide()
+        layout.addWidget(heading)
+        layout.addWidget(status)
+        layout.addWidget(plot)
+        return panel, plot, status
 
     def _build_review_card(self, title: str, object_name: str) -> QWidget:
         card = QFrame()
@@ -2843,6 +2898,8 @@ class DiffeoForgeWindow(QMainWindow):
         if self._close_after_worker:
             self._close_after_worker = False
             self.close()
+        elif result.completed:
+            self._review_run_result()
 
     @Slot(str)
     def _atlas_failed(self, message: str) -> None:
@@ -2887,6 +2944,11 @@ class DiffeoForgeWindow(QMainWindow):
         self._populate_review_rows(self.result_optimization_layout, review.optimization)
         self._populate_review_rows(self.result_pca_layout, review.pca)
         self._populate_review_rows(self.result_quality_layout, review.quality)
+        try:
+            self._load_verified_pca_plots(review)
+        except ModernResultReviewError as error:
+            self._result_review_failed(f"PCA plots could not be displayed: {error}")
+            return
         self.result_boundary_label.setText(
             "\n".join(f"• {boundary}" for boundary in review.scientific_boundaries)
         )
@@ -2929,6 +2991,43 @@ class DiffeoForgeWindow(QMainWindow):
         if self._close_after_worker:
             self._close_after_worker = False
             self.close()
+
+    def _load_verified_pca_plots(self, review: ModernResultReview) -> None:
+        primary = verify_result_artifact(review, "pca-score-plot")
+        self.result_pc1_pc2_plot.load(str(primary))
+        if not self.result_pc1_pc2_plot.renderer().isValid():
+            raise ModernResultReviewError("The verified PC1-versus-PC2 SVG is invalid")
+        self.result_pc1_pc2_plot.show()
+        self.result_pc1_pc2_plot_status.setObjectName("statusSuccess")
+        self.result_pc1_pc2_plot_status.setStyleSheet("")
+        self.result_pc1_pc2_plot_status.setText(
+            "Verified PC1-versus-PC2 scores from the bound result bundle."
+        )
+
+        try:
+            review.artifact("pca-score-plot-pc2-pc3")
+        except KeyError:
+            self.result_pc2_pc3_plot.hide()
+            self.result_pc2_pc3_plot_status.setObjectName("statusWarning")
+            self.result_pc2_pc3_plot_status.setStyleSheet("")
+            reason = review.pca_pc2_pc3_unavailable_reason or (
+                "This result does not contain the mandatory PC2-versus-PC3 artifact."
+            )
+            self.result_pc2_pc3_plot_status.setText(
+                f"PC2 versus PC3 unavailable: {reason}"
+            )
+            return
+
+        secondary = verify_result_artifact(review, "pca-score-plot-pc2-pc3")
+        self.result_pc2_pc3_plot.load(str(secondary))
+        if not self.result_pc2_pc3_plot.renderer().isValid():
+            raise ModernResultReviewError("The verified PC2-versus-PC3 SVG is invalid")
+        self.result_pc2_pc3_plot.show()
+        self.result_pc2_pc3_plot_status.setObjectName("statusSuccess")
+        self.result_pc2_pc3_plot_status.setStyleSheet("")
+        self.result_pc2_pc3_plot_status.setText(
+            "Verified PC2-versus-PC3 scores from the same score matrix and subject order."
+        )
 
     @Slot(str)
     def _result_review_failed(self, message: str) -> None:

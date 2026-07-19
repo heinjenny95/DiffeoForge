@@ -187,6 +187,24 @@
                 {"const": ["PC1"]},
                 {"const": ["PC1", "PC2"]}
               ]
+            },
+            "scores_pc2_pc3_path": {
+              "oneOf": [
+                {"type": "string", "minLength": 1},
+                {"type": "null"}
+              ]
+            },
+            "scores_pc2_pc3_axes": {
+              "oneOf": [
+                {"const": ["PC2", "PC3"]},
+                {"type": "null"}
+              ]
+            },
+            "scores_pc2_pc3_unavailable_reason": {
+              "oneOf": [
+                {"type": "string", "minLength": 1},
+                {"type": "null"}
+              ]
             }
           }
         },

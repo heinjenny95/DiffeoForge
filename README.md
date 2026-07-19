@@ -126,8 +126,9 @@ This repository currently provides:
   license-file inventory and a deterministic CycloneDX 1.7 generator/verifier
   that preserves incomplete-composition and nonapproval boundaries,
   shared-core workload/preflight evidence, and a verified Modern-only
-  start/live-event/cancel screen followed by a fully reverified Atlas/PCA/QC
-  summary with inventory-bound artifact handoff;
+  start/live-event/cancel screen followed automatically by a fully reverified
+  Atlas/PCA/QC summary with embedded PC1/PC2 and PC2/PC3 plots and
+  inventory-bound artifact handoff;
 - a self-contained HTML input-validation and parameter-scale report;
 - a self-contained HTML convergence, lifecycle, and result report;
 - terminal interruption capture, explicit unclean-stop recovery, and

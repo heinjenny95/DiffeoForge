@@ -943,6 +943,15 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"Atlas/PCA bundle: {bundle}")
             print(f"PCA scree plot: {bundle / bundle_manifest['pca']['plots']['scree_path']}")
             print(f"PCA scores plot: {bundle / bundle_manifest['pca']['plots']['scores_path']}")
+            secondary_plot = bundle_manifest["pca"]["plots"].get("scores_pc2_pc3_path")
+            if secondary_plot is None:
+                reason = bundle_manifest["pca"]["plots"].get(
+                    "scores_pc2_pc3_unavailable_reason",
+                    "PC3 is not available",
+                )
+                print(f"PCA PC2 vs PC3 plot: unavailable ({reason})")
+            else:
+                print(f"PCA PC2 vs PC3 plot: {bundle / secondary_plot}")
             print(
                 "PCA deformation meshes: "
                 f"{bundle / Path(bundle_manifest['pca']['deformations']['mean_path']).parent}"
@@ -1424,6 +1433,15 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"Modern workflow verified: {run_directory}")
             print(f"Subject meshes: {len(manifest['input']['subjects'])}")
             print(f"PCA scree plot: {bundle / bundle_manifest['pca']['plots']['scree_path']}")
+            secondary_plot = bundle_manifest["pca"]["plots"].get("scores_pc2_pc3_path")
+            if secondary_plot is None:
+                reason = bundle_manifest["pca"]["plots"].get(
+                    "scores_pc2_pc3_unavailable_reason",
+                    "PC3 is not available",
+                )
+                print(f"PCA PC2 vs PC3 plot: unavailable ({reason})")
+            else:
+                print(f"PCA PC2 vs PC3 plot: {bundle / secondary_plot}")
         except ImportError as error:
             print(
                 "ERROR: Modern engine dependencies are missing; install "

@@ -130,9 +130,7 @@ def test_bundle_contains_verified_open_outputs_and_exact_subject_identity(
     assert manifest["pca"]["deformations"]["standard_deviations"] == 2.0
     assert len(manifest["artifacts"]) == 21
     assert manifest["quality"]["assessed_meshes"] == 9
-    quality = json.loads(
-        (bundle / manifest["quality"]["report_path"]).read_text(encoding="utf-8")
-    )
+    quality = json.loads((bundle / manifest["quality"]["report_path"]).read_text(encoding="utf-8"))
     assert quality["reference_path"] == manifest["template"]["path"]
     assert quality["meshes"][0]["comparison_to_reference"] is None
     assert all(
@@ -215,6 +213,52 @@ def test_pca_csv_files_reproduce_in_memory_pca(
     np.testing.assert_array_equal(observed_scores, expected.scores)
     np.testing.assert_array_equal(observed_components, expected.components)
     np.testing.assert_array_equal(observed_mean, expected.mean)
+
+
+def test_bundle_adds_mandatory_pc2_pc3_plot_when_pc3_is_available(
+    tmp_path: Path,
+    optimized: tuple,
+) -> None:
+    result, triangles, model = optimized
+    expanded = replace(
+        result,
+        momenta=torch.cat((result.momenta, result.momenta[:1] * 0.5), dim=0),
+        history=tuple(
+            replace(record, residuals=(*record.residuals, record.residuals[0]))
+            for record in result.history
+        ),
+    )
+    labels = (*LABELS, "fourth specimen")
+
+    bundle = write_modern_atlas_bundle(
+        tmp_path / "four-subject-bundle",
+        expanded,
+        triangles,
+        labels,
+        model,
+        created_at=FIXED_TIME,
+    )
+    manifest = verify_modern_atlas_bundle(bundle)
+    plots = manifest["pca"]["plots"]
+
+    assert plots["score_axes"] == ["PC1", "PC2"]
+    assert plots["scores_pc2_pc3_axes"] == ["PC2", "PC3"]
+    assert plots["scores_pc2_pc3_unavailable_reason"] is None
+    secondary = bundle / plots["scores_pc2_pc3_path"]
+    assert secondary.is_file()
+    assert "PC2 vs PC3" in secondary.read_text(encoding="utf-8")
+
+
+def test_bundle_explains_when_pc3_is_not_mathematically_available(
+    tmp_path: Path,
+    optimized: tuple,
+) -> None:
+    bundle = _write_bundle(tmp_path / "bundle", optimized)
+    plots = verify_modern_atlas_bundle(bundle)["pca"]["plots"]
+
+    assert plots["scores_pc2_pc3_path"] is None
+    assert plots["scores_pc2_pc3_axes"] is None
+    assert "PC3 is not mathematically available" in plots["scores_pc2_pc3_unavailable_reason"]
 
 
 def test_pca_deformation_meshes_equal_declared_engine_endpoints(

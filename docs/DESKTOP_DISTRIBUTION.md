@@ -1,9 +1,9 @@
 # Desktop executable and installer architecture
 
 Status: **project setup, parameter/workload review, verified Modern
-start/live-event/cancel/result review, a developer-only Windows one-directory
-evidence build, and a non-executing installer plan exist; no distributable
-binary or installer yet**
+start/live-event/cancel/result review, a Windows one-directory evidence build,
+and an unsigned same-owner private-alpha installer exist; no public or
+redistribution-approved installer exists yet**
 
 Tracked by [engineering issue #22](https://github.com/heinjenny95/DiffeoForge/issues/22)
 and [ADR 0003](decisions/0003-windows-desktop-distribution.md). The
@@ -50,9 +50,10 @@ events to the reviewed request, enforces lifecycle/exit-code agreement, bounds
   binds the reviewed configuration hash, runs that controller outside the Qt
   event loop, displays exact events, and requests cooperative cancellation.
   Source GUI step 4 reruns the full shared-core Modern verifier outside the GUI
-  thread, presents bounded Atlas/optimizer/PCA/QC evidence, and rechecks the two
-  manifest hashes plus selected artifact size/SHA-256 immediately before OS
-  handoff. It does not implement an internal VTK renderer. Parent-death recovery
+  thread, presents bounded Atlas/optimizer/PCA/QC evidence with embedded
+  verified PC1/PC2 and PC2/PC3 SVG views, and rechecks the two manifest hashes
+  plus selected artifact size/SHA-256 immediately before OS handoff. It does
+  not implement an internal VTK renderer. Parent-death recovery
   and abandoned-private-directory reconciliation remain separate unfinished
   slices. The Windows controller now contains each worker in a dedicated
   kill-on-close Job Object and treats command-pipe EOF as cross-platform
