@@ -74,6 +74,7 @@ def test_verified_modern_result_exposes_bounded_summary_and_inventory(
     assert {artifact.key for artifact in review.artifacts} >= {
         "estimated-template",
         "optimizer-history",
+        "optimizer-convergence-plot",
         "pca-summary",
         "pca-scores",
         "pca-scree",
@@ -87,6 +88,9 @@ def test_verified_modern_result_exposes_bounded_summary_and_inventory(
     assert all(artifact.path.is_file() for artifact in review.artifacts)
     assert any("biological" in boundary.lower() for boundary in review.scientific_boundaries)
     assert verify_result_artifact(review, "pca-scree") == review.artifact("pca-scree").path
+    assert verify_result_artifact(review, "optimizer-convergence-plot") == review.artifact(
+        "optimizer-convergence-plot"
+    ).path
 
 
 def test_artifact_handoff_refuses_tampering_manifest_changes_and_path_escape(

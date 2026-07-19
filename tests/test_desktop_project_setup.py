@@ -241,6 +241,39 @@ def test_modern_project_setup_uses_existing_workflow_service(tmp_path: Path) -> 
     assert result.config_path.is_file()
     assert result.report_path is None
     assert any("did not run an atlas" in notice for notice in result.notices)
+    assert any("technical pilot" in notice for notice in result.notices)
+
+
+def test_modern_project_setup_records_explicit_convergence_attempt(tmp_path: Path) -> None:
+    if importlib.util.find_spec("numpy") is None or importlib.util.find_spec("torch") is None:
+        pytest.skip("modern-engine dependencies are not installed")
+
+    result = create_project(
+        ProjectSetupRequest(
+            mesh_directory=MESH_DIRECTORY,
+            project_directory=tmp_path / "convergence attempt",
+            units="unitless",
+            engine=DesktopEngine.MODERN_CPU,
+            max_cycles=50,
+        )
+    )
+    config = yaml.safe_load(result.config_path.read_text(encoding="utf-8"))
+
+    assert config["optimization"]["max_cycles"] == 50
+    assert any("does not guarantee convergence" in notice for notice in result.notices)
+
+
+def test_desktop_project_setup_rejects_invalid_cycle_cap(tmp_path: Path) -> None:
+    with pytest.raises(ConfigurationError, match="max_cycles must be a positive integer"):
+        create_project(
+            ProjectSetupRequest(
+                mesh_directory=MESH_DIRECTORY,
+                project_directory=tmp_path / "invalid cycles",
+                units="unitless",
+                engine=DesktopEngine.MODERN_CPU,
+                max_cycles=0,
+            )
+        )
 
 
 def test_modern_project_setup_records_an_explicit_blockwise_high_face_plan(

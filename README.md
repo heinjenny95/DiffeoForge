@@ -127,7 +127,8 @@ This repository currently provides:
   that preserves incomplete-composition and nonapproval boundaries,
   shared-core workload/preflight evidence, and a verified Modern-only
   start/live-event/cancel screen followed automatically by a fully reverified
-  Atlas/PCA/QC summary with embedded PC1/PC2 and PC2/PC3 plots and
+  Atlas/PCA/QC summary with embedded optimizer-convergence, PC1/PC2, and
+  PC2/PC3 plots and
   inventory-bound artifact handoff;
 - a self-contained HTML input-validation and parameter-scale report;
 - a self-contained HTML convergence, lifecycle, and result report;
@@ -139,8 +140,9 @@ This repository currently provides:
   plus deterministic momenta-only and full-parameter block-optimization
   prototypes with versioned CC0 evidence and cross-platform CI.
 - an immutable experimental modern-atlas result bundle containing estimated
-  template/reconstruction meshes, parameters, optimizer history, artifact
-  hashes, a complete open CSV/JSON momenta-PCA handoff, static SVG plots, and
+  template/reconstruction meshes, parameters, optimizer history, a semantically
+  verified objective/gradient convergence SVG, artifact hashes, a complete
+  open CSV/JSON momenta-PCA handoff, static PCA SVG plots, and
   reproducible mean/±PC deformation meshes;
 - an experimental end-to-end modern workflow that inventories a mesh folder,
   optionally applies labelled-landmark Procrustes transforms, initializes and

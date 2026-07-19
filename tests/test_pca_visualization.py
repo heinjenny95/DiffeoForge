@@ -43,6 +43,8 @@ def test_svg_plots_are_valid_static_escaped_and_byte_repeatable(tmp_path: Path) 
 
     assert first_scree.read_bytes() == second_scree.read_bytes()
     assert first_scores.read_bytes() == second_scores.read_bytes()
+    assert b"font-family: Arial" in first_scree.read_bytes()
+    assert b"font-family: Arial" in first_scores.read_bytes()
     for path in (first_scree, first_scores):
         root = ET.parse(path).getroot()
         assert root.tag == f"{SVG}svg"

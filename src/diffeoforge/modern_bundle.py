@@ -22,6 +22,7 @@ import numpy as np
 import torch
 
 from diffeoforge import __version__
+from diffeoforge.analysis.optimizer_visualization import write_optimizer_convergence_svg
 from diffeoforge.analysis.pca import PCAResult, momenta_pca
 from diffeoforge.analysis.pca_visualization import (
     write_pca_score_pair_svg,
@@ -574,6 +575,10 @@ def write_modern_atlas_bundle(
                 ]
             )
         _write_csv_exclusive(history_path, history_rows)
+        convergence_plot_path = write_optimizer_convergence_svg(
+            temporary / "optimization" / "convergence.svg",
+            result,
+        )
 
         subjects = []
         for index, (label, momenta) in enumerate(zip(labels, result.momenta, strict=True)):
@@ -690,6 +695,7 @@ def write_modern_atlas_bundle(
                 "cycles_completed": result.cycles_completed,
                 "total_line_search_evaluations": result.total_line_search_evaluations,
                 "history_path": history_path.relative_to(temporary).as_posix(),
+                "convergence_plot_path": convergence_plot_path.relative_to(temporary).as_posix(),
                 "final_objective": final.objective,
                 "final_attachment": final.attachment,
                 "final_regularity": final.regularity,
@@ -812,6 +818,100 @@ def _verify_score_svg(
         raise ModernBundleError(f"PCA score SVG variance-labelled axes are incomplete: {path.name}")
 
 
+def _verify_optimizer_svg(path: Path, history_path: Path, optimizer: dict) -> None:
+    root = _verify_static_svg(path)
+    title = root.find("{http://www.w3.org/2000/svg}title")
+    if title is None or title.text != "Atlas optimizer convergence":
+        raise ModernBundleError("Optimizer convergence SVG title differs")
+    status_nodes = [
+        element for element in root.iter() if "data-termination-reason" in element.attrib
+    ]
+    if len(status_nodes) != 1:
+        raise ModernBundleError("Optimizer convergence SVG status metadata differs")
+    status = status_nodes[0]
+    expected_status = {
+        "data-termination-reason": str(optimizer["termination_reason"]),
+        "data-converged": str(bool(optimizer["converged"])).lower(),
+        "data-cycles-completed": str(int(optimizer["cycles_completed"])),
+        "data-max-cycles": str(int(optimizer["settings"]["max_cycles"])),
+    }
+    if any(status.attrib.get(key) != value for key, value in expected_status.items()):
+        raise ModernBundleError("Optimizer convergence SVG status differs from the manifest")
+    try:
+        with history_path.open(encoding="utf-8", newline="") as handle:
+            rows = list(csv.DictReader(handle))
+    except (OSError, UnicodeError, csv.Error) as error:
+        raise ModernBundleError(f"Optimizer history is not readable: {error}") from error
+    points = [
+        element for element in root.iter() if element.attrib.get("class") == "objective-point"
+    ]
+    if len(points) != len(rows):
+        raise ModernBundleError("Optimizer convergence SVG history length differs")
+    for index, (point, row) in enumerate(zip(points, rows, strict=True)):
+        expected_block = row["block"] or "initial"
+        if (
+            point.attrib.get("data-history-index") != str(index)
+            or point.attrib.get("data-cycle") != row["cycle"]
+            or point.attrib.get("data-block") != expected_block
+            or point.attrib.get("data-status") != row["status"]
+        ):
+            raise ModernBundleError("Optimizer convergence SVG decision identity differs")
+        try:
+            plotted_components = tuple(
+                float(point.attrib[f"data-{name}"])
+                for name in ("objective", "attachment", "regularity")
+            )
+            recorded_components = tuple(
+                float(row[name]) for name in ("objective", "attachment", "regularity")
+            )
+        except (KeyError, TypeError, ValueError) as error:
+            raise ModernBundleError(
+                "Optimizer convergence SVG objective-component metadata is invalid"
+            ) from error
+        if plotted_components != recorded_components:
+            raise ModernBundleError(
+                "Optimizer convergence SVG objective components differ from history"
+            )
+    gradient_rows = [
+        (index, row) for index, row in enumerate(rows) if row["gradient_norm"]
+    ]
+    gradient_points = [
+        element for element in root.iter() if element.attrib.get("class") == "gradient-point"
+    ]
+    if len(gradient_points) != len(gradient_rows):
+        raise ModernBundleError("Optimizer convergence SVG gradient history length differs")
+    for point, (index, row) in zip(gradient_points, gradient_rows, strict=True):
+        try:
+            plotted_norm = float(point.attrib["data-gradient-norm"])
+            recorded_norm = float(row["gradient_norm"])
+        except (KeyError, TypeError, ValueError) as error:
+            raise ModernBundleError(
+                "Optimizer convergence SVG gradient metadata is invalid"
+            ) from error
+        if point.attrib.get("data-history-index") != str(index) or plotted_norm != recorded_norm:
+            raise ModernBundleError("Optimizer convergence SVG gradient differs from history")
+    tolerance_nodes = [
+        element for element in root.iter() if "data-gradient-tolerance" in element.attrib
+    ]
+    expected_tolerance = float(optimizer["settings"]["gradient_tolerance"])
+    if expected_tolerance <= 0:
+        if tolerance_nodes:
+            raise ModernBundleError("Optimizer convergence SVG disabled tolerance differs")
+        return
+    try:
+        plotted_tolerance = (
+            float(tolerance_nodes[0].attrib["data-gradient-tolerance"])
+            if len(tolerance_nodes) == 1
+            else None
+        )
+    except (KeyError, TypeError, ValueError) as error:
+        raise ModernBundleError(
+            "Optimizer convergence SVG gradient tolerance is invalid"
+        ) from error
+    if plotted_tolerance != expected_tolerance:
+        raise ModernBundleError("Optimizer convergence SVG gradient tolerance differs")
+
+
 def verify_modern_atlas_bundle(directory: Path | str) -> dict:
     """Verify schema, sidecar, exact file inventory, hashes, sizes, and VTK geometry."""
 
@@ -860,6 +960,15 @@ def verify_modern_atlas_bundle(directory: Path | str) -> dict:
         extra = sorted(actual_files - expected_files)
         raise ModernBundleError(
             f"Modern atlas bundle file inventory differs: missing={missing}, extra={extra}"
+        )
+
+    optimizer_record = manifest["optimizer"]
+    convergence_plot_value = optimizer_record.get("convergence_plot_path")
+    if convergence_plot_value is not None:
+        _verify_optimizer_svg(
+            _resolve_artifact(root, convergence_plot_value),
+            _resolve_artifact(root, optimizer_record["history_path"]),
+            optimizer_record,
         )
 
     deformation_record = manifest["pca"]["deformations"]

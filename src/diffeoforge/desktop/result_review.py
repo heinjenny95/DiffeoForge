@@ -75,6 +75,7 @@ class ModernResultReview:
     artifacts: tuple[ModernResultArtifact, ...]
     scientific_boundaries: tuple[str, ...]
     pca_pc2_pc3_unavailable_reason: str | None = None
+    optimizer_convergence_plot_unavailable_reason: str | None = None
 
     def artifact(self, key: str) -> ModernResultArtifact:
         for artifact in self.artifacts:
@@ -286,6 +287,12 @@ def review_modern_result(directory: Path | str) -> ModernResultReview:
         )
 
     optimizer = bundle["optimizer"]
+    convergence_plot_path = optimizer.get("convergence_plot_path")
+    convergence_plot_unavailable_reason = None
+    if convergence_plot_path is None:
+        convergence_plot_unavailable_reason = (
+            "This result predates the verified optimizer-convergence plot artifact."
+        )
     history_path = _safe_bundle_path(
         bundle_directory,
         optimizer["history_path"],
@@ -368,6 +375,14 @@ def review_modern_result(directory: Path | str) -> ModernResultReview:
         "csv",
         "Committed block decisions and objective components.",
     )
+    if convergence_plot_path is not None:
+        add_artifact(
+            "optimizer-convergence-plot",
+            "Optimizer convergence (SVG)",
+            convergence_plot_path,
+            "svg",
+            "Static, script-free objective and block-gradient trajectories.",
+        )
     add_artifact(
         "pca-summary",
         "PCA summary (JSON)",
@@ -513,6 +528,15 @@ def review_modern_result(directory: Path | str) -> ModernResultReview:
             "Rejected candidates are not reported as accepted progress.",
         ),
         ResultReviewItem(
+            "Convergence plot",
+            "verified" if convergence_plot_path is not None else "unavailable",
+            (
+                "Objective components and block-gradient norms are bound to the same history."
+                if convergence_plot_path is not None
+                else str(convergence_plot_unavailable_reason)
+            ),
+        ),
+        ResultReviewItem(
             "Objective",
             objective_value,
             "Numerical optimization objective; smaller or stable values are not "
@@ -582,6 +606,7 @@ def review_modern_result(directory: Path | str) -> ModernResultReview:
         pca_pc2_pc3_unavailable_reason=(
             None if secondary_plot_path is not None else str(secondary_unavailable_reason)
         ),
+        optimizer_convergence_plot_unavailable_reason=convergence_plot_unavailable_reason,
     )
 
 

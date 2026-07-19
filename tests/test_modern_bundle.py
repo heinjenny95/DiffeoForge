@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import hashlib
 import json
+import re
 from dataclasses import replace
 from pathlib import Path
 
@@ -120,6 +121,8 @@ def test_bundle_contains_verified_open_outputs_and_exact_subject_identity(
         "template",
         "control_points",
     ]
+    assert manifest["optimizer"]["convergence_plot_path"] == "optimization/convergence.svg"
+    assert (bundle / manifest["optimizer"]["convergence_plot_path"]).is_file()
     assert [subject["label"] for subject in manifest["subjects"]] == list(LABELS)
     paths = [subject["reconstruction_path"] for subject in manifest["subjects"]]
     assert len(paths) == len(set(paths))
@@ -128,7 +131,7 @@ def test_bundle_contains_verified_open_outputs_and_exact_subject_identity(
     assert manifest["pca"]["components"] == 2
     assert manifest["pca"]["plots"]["score_axes"] == ["PC1", "PC2"]
     assert manifest["pca"]["deformations"]["standard_deviations"] == 2.0
-    assert len(manifest["artifacts"]) == 21
+    assert len(manifest["artifacts"]) == 22
     assert manifest["quality"]["assessed_meshes"] == 9
     quality = json.loads((bundle / manifest["quality"]["report_path"]).read_text(encoding="utf-8"))
     assert quality["reference_path"] == manifest["template"]["path"]
@@ -441,6 +444,66 @@ def test_verifier_rejects_any_file_inventory_change(
 
     with pytest.raises(ModernBundleError):
         verify_modern_atlas_bundle(bundle)
+
+
+def test_verifier_rejects_rehashed_optimizer_plot_semantic_tampering(
+    tmp_path: Path,
+    optimized: tuple,
+) -> None:
+    bundle = _write_bundle(tmp_path / "optimizer-plot-tamper", optimized)
+    manifest_path = bundle / MANIFEST_NAME
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    relative = manifest["optimizer"]["convergence_plot_path"]
+    plot = bundle / relative
+    plot.write_text(
+        re.sub(
+            r'data-objective="[^"]+"',
+            'data-objective="0"',
+            plot.read_text(encoding="utf-8"),
+            count=1,
+        ),
+        encoding="utf-8",
+    )
+    record = next(item for item in manifest["artifacts"] if item["path"] == relative)
+    record["bytes"] = plot.stat().st_size
+    record["sha256"] = sha256_file(plot)
+    manifest_path.write_text(
+        json.dumps(manifest, indent=2, ensure_ascii=False, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    (bundle / MANIFEST_SIDECAR_NAME).write_text(
+        f"{sha256_file(manifest_path)}  {MANIFEST_NAME}\n",
+        encoding="ascii",
+    )
+
+    with pytest.raises(ModernBundleError, match="objective components differ from history"):
+        verify_modern_atlas_bundle(bundle)
+
+
+def test_verifier_keeps_earlier_bundles_without_convergence_plot_readable(
+    tmp_path: Path,
+    optimized: tuple,
+) -> None:
+    bundle = _write_bundle(tmp_path / "earlier-bundle", optimized)
+    manifest_path = bundle / MANIFEST_NAME
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    relative = manifest["optimizer"].pop("convergence_plot_path")
+    manifest["artifacts"] = [
+        record for record in manifest["artifacts"] if record["path"] != relative
+    ]
+    (bundle / relative).unlink()
+    manifest_path.write_text(
+        json.dumps(manifest, indent=2, ensure_ascii=False, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    (bundle / MANIFEST_SIDECAR_NAME).write_text(
+        f"{sha256_file(manifest_path)}  {MANIFEST_NAME}\n",
+        encoding="ascii",
+    )
+
+    verified = verify_modern_atlas_bundle(bundle)
+
+    assert "convergence_plot_path" not in verified["optimizer"]
 
 
 def test_verifier_rejects_manifest_path_traversal(

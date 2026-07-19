@@ -285,7 +285,13 @@ def _modern_review(config_path: Path, config_sha256: str) -> ProjectReviewResult
         ReviewItem(
             "Optimization blocks",
             f"{_setting(optimization['block_order'])} · max. {optimization['max_cycles']} cycles",
-            "Deterministic order of the separate parameter updates.",
+            "Deterministic update order and a hard cycle cap; reaching the cap is not convergence.",
+        ),
+        ReviewItem(
+            "Convergence rule",
+            f"every block gradient ≤ {_number(optimization['gradient_tolerance'])}",
+            "Converged is recorded only when all parameter blocks satisfy the declared "
+            "gradient tolerance in the same completed cycle.",
         ),
         ReviewItem(
             "PCA output",
