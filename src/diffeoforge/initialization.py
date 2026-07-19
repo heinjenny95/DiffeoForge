@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import io
 import os
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -10,6 +11,7 @@ from typing import Any
 
 import yaml
 
+from diffeoforge.atomic_io import write_text_safely
 from diffeoforge.config import (
     ConfigurationError,
     validate_input_paths,
@@ -151,12 +153,23 @@ def initialize_project(
     if not directory.is_dir():
         raise ConfigurationError(f"Mesh directory does not exist: {directory}")
 
-    destination = Path(config_path).expanduser().resolve()
+    destination_candidate = Path(config_path).expanduser()
+    if destination_candidate.is_symlink():
+        raise ConfigurationError(
+            "Refusing to initialize through a symbolic-link configuration path: "
+            f"{destination_candidate.absolute()}"
+        )
+    destination = destination_candidate.resolve()
     if destination.exists() and not overwrite:
         raise ConfigurationError(
             f"Configuration already exists and will not be overwritten: {destination}"
         )
     if destination.exists() and overwrite:
+        if not destination.is_file():
+            raise ConfigurationError(
+                "Refusing --force because the existing configuration path is not a regular "
+                f"file: {destination}"
+            )
         try:
             with destination.open(encoding="utf-8") as handle:
                 first_line = handle.readline().rstrip("\r\n")
@@ -259,18 +272,17 @@ def initialize_project(
     validate_schema(provisional)
 
     derived_parameters = tuple(derived)
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    mode = "w" if overwrite else "x"
+    rendered = io.StringIO(newline="\n")
+    rendered.write(_header(provisional, derived_parameters))
+    yaml.safe_dump(
+        provisional,
+        rendered,
+        sort_keys=False,
+        allow_unicode=True,
+        default_flow_style=False,
+    )
     try:
-        with destination.open(mode, encoding="utf-8", newline="\n") as handle:
-            handle.write(_header(provisional, derived_parameters))
-            yaml.safe_dump(
-                provisional,
-                handle,
-                sort_keys=False,
-                allow_unicode=True,
-                default_flow_style=False,
-            )
+        write_text_safely(destination, rendered.getvalue(), overwrite=overwrite)
     except FileExistsError as error:
         raise ConfigurationError(
             f"Configuration already exists and will not be overwritten: {destination}"

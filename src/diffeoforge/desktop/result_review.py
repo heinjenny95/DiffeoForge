@@ -64,6 +64,10 @@ class ModernResultReview:
     workflow_manifest_sha256: str
     bundle_manifest_path: Path
     bundle_manifest_sha256: str
+    optimizer_converged: bool
+    optimizer_termination_reason: str
+    optimizer_cycles_completed: int
+    optimizer_max_cycles: int
     overview: tuple[ResultReviewItem, ...]
     optimization: tuple[ResultReviewItem, ...]
     pca: tuple[ResultReviewItem, ...]
@@ -297,14 +301,14 @@ def review_modern_result(directory: Path | str) -> ModernResultReview:
     cumulative = 0.0
     pca_items: list[ResultReviewItem] = [
         ResultReviewItem(
-            "PCA-Raum",
-            f"{pca['components']} Komponenten · Rang {pca['numerical_rank']}",
-            "PCA der initialen subject-spezifischen Momenta; keine taxonomische Achse.",
+            "PCA space",
+            f"{pca['components']} components · rank {pca['numerical_rank']}",
+            "PCA of subject-specific initial momenta; not a taxonomic axis.",
         ),
         ResultReviewItem(
-            "Gesamtvarianz",
+            "Total variance",
             _format_number(pca["total_variance"]),
-            "Varianz im dokumentierten Momenta-Feature-Raum.",
+            "Variance in the documented momenta feature space.",
         ),
     ]
     for index, ratio in enumerate(ratios[:_PCA_DISPLAY_LIMIT], start=1):
@@ -312,75 +316,75 @@ def review_modern_result(directory: Path | str) -> ModernResultReview:
         pca_items.append(
             ResultReviewItem(
                 f"PC{index}",
-                f"{ratio * 100:.3f}% · kumulativ {cumulative * 100:.3f}%",
-                "Erklärter Varianzanteil; das Vorzeichen der Achse ist konventionell.",
+                f"{ratio * 100:.3f}% · cumulative {cumulative * 100:.3f}%",
+                "Explained-variance ratio; the axis sign is conventional.",
             )
         )
     if len(ratios) > _PCA_DISPLAY_LIMIT:
         pca_items.append(
             ResultReviewItem(
-                "Weitere Komponenten",
+                "Additional components",
                 str(len(ratios) - _PCA_DISPLAY_LIMIT),
-                "Die vollständigen Werte bleiben in pca-summary.json und pca-scores.csv.",
+                "Complete values remain available in pca-summary.json and pca-scores.csv.",
             )
         )
 
     add_artifact(
         "estimated-template",
-        "Geschätztes Template (VTK)",
+        "Estimated template (VTK)",
         bundle["template"]["path"],
         "vtk",
-        "Vom Modern-Atlas geschätzte Template-Oberfläche.",
+        "Template surface estimated by the Modern atlas.",
     )
     add_artifact(
         "optimizer-history",
-        "Optimierungsverlauf (CSV)",
+        "Optimization history (CSV)",
         optimizer["history_path"],
         "csv",
-        "Committed Blockentscheidungen und Objective-Komponenten.",
+        "Committed block decisions and objective components.",
     )
     add_artifact(
         "pca-summary",
-        "PCA-Zusammenfassung (JSON)",
+        "PCA summary (JSON)",
         pca["summary_path"],
         "json",
-        "Vollständige Varianz-, Rang- und Vorzeichenkonvention.",
+        "Complete variance, rank, and sign convention.",
     )
     add_artifact(
         "pca-scores",
         "PCA-Scores (CSV)",
         pca["scores_path"],
         "csv",
-        "Offene Tabelle aller Subject-Scores.",
+        "Open table of all subject scores.",
     )
     add_artifact(
         "pca-scree",
-        "PCA-Screeplot (SVG)",
+        "PCA scree plot (SVG)",
         pca["plots"]["scree_path"],
         "svg",
-        "Statisches, scriptfreies SVG der erklärten Varianz.",
+        "Static, script-free SVG of explained variance.",
     )
     add_artifact(
         "pca-score-plot",
-        "PCA-Scoreplot (SVG)",
+        "PCA score plot (SVG)",
         pca["plots"]["scores_path"],
         "svg",
-        "Statisches, scriptfreies SVG der ersten ein oder zwei PCs.",
+        "Static, script-free SVG of the first one or two PCs.",
     )
     deformations = pca["deformations"]
     add_artifact(
         "pca-deformation-definition",
-        "PCA-Deformationsvertrag (JSON)",
+        "PCA deformation contract (JSON)",
         deformations["definition_path"],
         "json",
-        "Gleichung, Standardabweichungen, Vorzeichen- und Interpretationsgrenze.",
+        "Equation, standard deviations, sign convention, and interpretation boundary.",
     )
     add_artifact(
         "pca-mean-shape",
-        "PCA-Momenta-Mittelform (VTK)",
+        "PCA mean-momenta shape (VTK)",
         deformations["mean_path"],
         "vtk",
-        "Template-Endpunkt für die mittleren Subject-Momenta.",
+        "Template endpoint for the mean subject momenta.",
     )
     for component in deformations["components"]:
         key = component["label"].lower()
@@ -389,14 +393,14 @@ def review_modern_result(directory: Path | str) -> ModernResultReview:
             f"{component['label']} −{deformations['standard_deviations']:g} SD (VTK)",
             component["minus_path"],
             "vtk",
-            "Endpunkt entlang der negativen, vorzeichenkonventionellen PCA-Richtung.",
+            "Endpoint along the negative, sign-conventional PCA direction.",
         )
         add_artifact(
             f"{key}-plus",
             f"{component['label']} +{deformations['standard_deviations']:g} SD (VTK)",
             component["plus_path"],
             "vtk",
-            "Endpunkt entlang der positiven, vorzeichenkonventionellen PCA-Richtung.",
+            "Endpoint along the positive, sign-conventional PCA direction.",
         )
     quality = bundle["quality"]
     add_artifact(
@@ -404,14 +408,14 @@ def review_modern_result(directory: Path | str) -> ModernResultReview:
         "Output-Mesh-QC (JSON)",
         quality["report_path"],
         "json",
-        "Recomputete Geometrie- und Topologieevidenz aller Output-Meshes.",
+        "Recomputed geometry and topology evidence for all output meshes.",
     )
     add_artifact(
         "mesh-quality-csv",
         "Output-Mesh-QC (CSV)",
         quality["csv_path"],
         "csv",
-        "Tabellarische Output-Mesh-QC für weitere Auswertung.",
+        "Tabular output-mesh QC for further analysis.",
     )
 
     residuals = tuple(
@@ -420,8 +424,8 @@ def review_modern_result(directory: Path | str) -> ModernResultReview:
     preprocessing = workflow["preprocessing"]
     pairwise = workflow["engine"].get("pairwise_evaluation", {"mode": "dense"})
     history_value = (
-        f"{history_rows} Zeilen · "
-        f"{optimizer['total_line_search_evaluations']} Line-Search-Auswertungen"
+        f"{history_rows} rows · "
+        f"{optimizer['total_line_search_evaluations']} line-search evaluations"
     )
     objective_value = (
         f"initial {_format_number(initial_objective)} · final {_format_number(final_objective)}"
@@ -432,80 +436,81 @@ def review_modern_result(directory: Path | str) -> ModernResultReview:
     )
     artifact_bytes = sum(int(record["bytes"]) for record in bundle["artifacts"])
     overview = (
-        ResultReviewItem("Projekt", str(workflow["project"]["name"]), "Manifestierter Name."),
+        ResultReviewItem("Project", str(workflow["project"]["name"]), "Manifested name."),
         ResultReviewItem(
             "Engine",
             f"{workflow['engine']['id']} · {pairwise['mode']} · CPU/float64",
-            "Tatsächlich im Workflow manifestierte numerische Route.",
+            "Numerical route actually manifested by the workflow.",
         ),
         ResultReviewItem(
-            "Datensatz",
-            f"{len(bundle['subjects'])} Probanden · {workflow['input']['units']}",
-            "Anzahl und deklarierte Koordinateneinheit des verifizierten Runs.",
+            "Dataset",
+            f"{len(bundle['subjects'])} subjects · {workflow['input']['units']}",
+            "Subject count and declared coordinate unit of the verified run.",
         ),
         ResultReviewItem(
             "Template",
-            f"{bundle['template']['points']} Punkte · {bundle['template']['triangles']} Dreiecke",
-            "Geometrie des geschätzten Output-Templates.",
+            f"{bundle['template']['points']} points · {bundle['template']['triangles']} triangles",
+            "Geometry of the estimated output template.",
         ),
         ResultReviewItem(
-            "Kontrollpunkte",
+            "Control points",
             str(bundle["parameters"]["control_points"]),
-            "Manifestierte Dimension des Momenta-Parameterraums.",
+            "Manifested dimension of the momenta parameter space.",
         ),
         ResultReviewItem(
             "Procrustes",
-            "ja" if preprocessing["id"] == "generalized_procrustes" else "nein",
-            "Generalized-Procrustes-Vorverarbeitung des veröffentlichten Workflows.",
+            "yes" if preprocessing["id"] == "generalized_procrustes" else "no",
+            "Generalized Procrustes preprocessing of the published workflow.",
         ),
     )
     optimization = (
         ResultReviewItem(
-            "Terminierung",
+            "Termination",
             f"{optimizer['termination_reason']} · converged={str(optimizer['converged']).lower()}",
-            "Technischer Optimizerzustand; keine Aussage über biologische Validität.",
+            "Technical optimizer state; not a statement of biological validity.",
         ),
         ResultReviewItem(
-            "Zyklen",
-            f"{optimizer['cycles_completed']} von {optimizer['settings']['max_cycles']}",
-            "Vollständig abgeschlossene Blockzyklen.",
+            "Cycles",
+            f"{optimizer['cycles_completed']} of {optimizer['settings']['max_cycles']}",
+            "Fully completed block cycles.",
         ),
         ResultReviewItem(
-            "Committed Historie",
+            "Committed history",
             history_value,
-            "Verworfene Kandidaten werden nicht als akzeptierter Fortschritt ausgegeben.",
+            "Rejected candidates are not reported as accepted progress.",
         ),
         ResultReviewItem(
             "Objective",
             objective_value,
-            "Numerisches Optimierungsziel; kleinere oder stabile Werte sind kein Biologiebeweis.",
+            "Numerical optimization objective; smaller or stable values are not "
+            "biological evidence.",
         ),
         ResultReviewItem(
-            "Finale Komponenten",
+            "Final components",
             component_value,
-            "Manifestierte Zerlegung des finalen Objective.",
+            "Manifested decomposition of the final objective.",
         ),
         ResultReviewItem(
-            "Subject-Residuals",
+            "Subject residuals",
             f"min {_format_number(min(residuals))} · max {_format_number(max(residuals))}",
-            "Deskriptive Endresiduals; keine automatische Ausreißerklassifikation.",
+            "Descriptive final residuals; no automatic outlier classification.",
         ),
     )
     quality_items = (
         ResultReviewItem(
             "Input-QC",
-            f"{workflow['quality']['assessed_meshes']} Mesh-Stufen",
-            "Roh- und effektive Eingaben wurden vom Workflow-Verifier recomputet.",
+            f"{workflow['quality']['assessed_meshes']} mesh stages",
+            "Raw and effective inputs were recomputed by the workflow verifier.",
         ),
         ResultReviewItem(
             "Output-QC",
             f"{quality['assessed_meshes']} Meshes",
-            "Template, Rekonstruktionen und PCA-Endpunkte wurden recomputet geprüft.",
+            "Template, reconstructions, and PCA endpoints were recomputed and checked.",
         ),
         ResultReviewItem(
-            "Bundle-Inventar",
-            f"{len(bundle['artifacts'])} Dateien · {_format_bytes(artifact_bytes)}",
-            "Exakte Dateiliste mit Größe und SHA-256; zusätzliche Dateien sind unzulässig.",
+            "Bundle inventory",
+            f"{len(bundle['artifacts'])} files · {_format_bytes(artifact_bytes)}",
+            "Exact file list with size and SHA-256; additional files are not allowed.",
         ),
     )
     boundaries = tuple(
@@ -531,6 +536,10 @@ def review_modern_result(directory: Path | str) -> ModernResultReview:
         workflow_manifest_sha256=workflow_manifest_sha256,
         bundle_manifest_path=bundle_manifest_path,
         bundle_manifest_sha256=bundle_manifest_sha256,
+        optimizer_converged=bool(optimizer["converged"]),
+        optimizer_termination_reason=str(optimizer["termination_reason"]),
+        optimizer_cycles_completed=int(optimizer["cycles_completed"]),
+        optimizer_max_cycles=int(optimizer["settings"]["max_cycles"]),
         overview=overview,
         optimization=optimization,
         pca=tuple(pca_items),

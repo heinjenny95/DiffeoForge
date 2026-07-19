@@ -3,8 +3,10 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import os
+import re
 import subprocess
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -12,6 +14,27 @@ import pytest
 from diffeoforge.desktop.app import build_parser
 
 ROOT = Path(__file__).parents[1]
+
+
+def test_desktop_ui_source_has_no_german_copy() -> None:
+    ui_sources = tuple((ROOT / "src" / "diffeoforge" / "desktop").glob("*.py"))
+    forbidden = re.compile(
+        r"\b(?:schritt|neues|wähle|daten|prüfen|projekt|auswählen|"
+        r"koordinateneinheit|noch|ergebnisse|berechnen|abbrechen|öffnen|"
+        r"verworfen|unbekannt|probanden|kanten|punkte|dreiecke|vollständig|"
+        r"nichts|keine|nicht|bereit)\b",
+        re.IGNORECASE,
+    )
+
+    violations: list[str] = []
+    for source in ui_sources:
+        text = source.read_text(encoding="utf-8")
+        if match := forbidden.search(text):
+            violations.append(f"{source.name}: {match.group(0)!r}")
+        if match := re.search(r"[äöüÄÖÜß]", text):
+            violations.append(f"{source.name}: {match.group(0)!r}")
+
+    assert violations == []
 
 
 def _reference_preparation_status_fixture(
@@ -268,13 +291,74 @@ def test_desktop_window_exposes_required_project_controls(monkeypatch) -> None:
     assert window.findChild(QLineEdit, "projectDirectoryEdit") is not None
     assert window.findChild(QComboBox, "engineCombo") is not None
     assert window.findChild(QComboBox, "unitsCombo") is not None
+    assert window.findChild(QComboBox, "pairwiseEvaluationCombo") is not None
     assert window.create_button.isEnabled() is False
     assert "CPU/float64" in window.engine_hint.text()
     assert window.landmarks_edit.isEnabled() is True
+    assert window.pairwise_combo.isEnabled() is True
+    assert "small pilot" in window.pairwise_combo.currentText()
+    window.pairwise_combo.setCurrentIndex(1)
+    assert "bounds one pairwise allocation" in window.pairwise_hint.text()
+    blockwise_request = window._request()
+    assert blockwise_request.pairwise_mode == "blockwise"
+    assert blockwise_request.query_tile_size == 256
+    assert blockwise_request.source_tile_size == 256
     window.engine_combo.setCurrentIndex(1)
     application.processEvents()
-    assert "Deformetrica-4.3" in window.engine_hint.text()
+    assert "Deformetrica 4.3" in window.engine_hint.text()
     assert window.landmarks_edit.isEnabled() is False
+    assert window.pairwise_combo.isEnabled() is False
+    assert window._request().pairwise_mode == "dense"
+    window.close()
+    application.processEvents()
+
+
+def test_desktop_project_overwrite_requires_explicit_confirmation(
+    monkeypatch, tmp_path
+) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from diffeoforge.desktop.widgets import DiffeoForgeWindow, _ProjectWorker
+
+    application = QApplication.instance() or QApplication(
+        ["diffeoforge-overwrite-confirmation-test"]
+    )
+    project_directory = tmp_path / "existing project"
+    project_directory.mkdir()
+    config = project_directory / "modern-atlas.yaml"
+    original = b"existing generated configuration\n"
+    config.write_bytes(original)
+    queued = []
+
+    class FakePool:
+        def start(self, worker) -> None:
+            queued.append(worker)
+
+    window = DiffeoForgeWindow()
+    window._thread_pool = FakePool()  # type: ignore[assignment]
+    window.mesh_edit.setText(str(ROOT / "examples" / "synthetic" / "meshes"))
+    window.project_edit.setText(str(project_directory))
+    window.units_combo.setCurrentIndex(window.units_combo.findData("unitless"))
+    application.processEvents()
+
+    monkeypatch.setattr(window, "_confirm_configuration_overwrite", lambda _path: False)
+    window._create_project()
+
+    assert queued == []
+    assert window._worker is None
+    assert config.read_bytes() == original
+    assert "cancelled" in window.status_label.text()
+    assert "unchanged" in window.status_label.text()
+
+    monkeypatch.setattr(window, "_confirm_configuration_overwrite", lambda _path: True)
+    window._create_project()
+
+    assert len(queued) == 1
+    assert isinstance(queued[0], _ProjectWorker)
+    assert queued[0].request.overwrite_existing_configuration is True
+    assert config.read_bytes() == original
     window.close()
     application.processEvents()
 
@@ -389,13 +473,13 @@ def test_desktop_window_keeps_reference_compute_route_explicitly_unavailable(
 
     assert window.page_stack.currentIndex() == 1
     assert window.show_run_button.isEnabled() is False
-    assert "noch nicht verbunden" in window.show_run_button.text()
+    assert "not connected yet" in window.show_run_button.text()
     assert window.reference_readiness_card.isHidden() is False
     assert window.reference_preparation_status_card.isHidden() is False
     assert window.refresh_reference_readiness_button.isEnabled() is True
     assert window.refresh_reference_preparation_status_button.isEnabled() is False
     assert window.export_reference_preparation_status_button.isEnabled() is False
-    assert "noch nicht geprüft" in window.reference_readiness_status_label.text()
+    assert "has not been checked" in window.reference_readiness_status_label.text()
     window.close()
     application.processEvents()
 
@@ -459,7 +543,7 @@ def test_desktop_verifies_saved_reference_status_without_a_project(
     assert len(queued) == 1
     assert isinstance(queued[0], _SavedReferencePreparationStatusVerificationWorker)
     assert window.verify_saved_reference_status_button.isEnabled() is False
-    assert "read-only geprüft" in (
+    assert "checked read-only" in (
         window.saved_reference_status_verification_label.text()
     )
 
@@ -470,12 +554,12 @@ def test_desktop_verifies_saved_reference_status_without_a_project(
         "\u200b", ""
     )
     assert window._saved_reference_preparation_status_verification is result
-    assert "stimmt exakt" in window.saved_reference_status_verification_label.text()
+    assert "exactly matches" in window.saved_reference_status_verification_label.text()
     assert str(report) in detail
     assert digest in detail
     assert "saved-desktop-001" in detail
     assert "c" * 64 in detail
-    assert "Mutation durch diese Prüfung: nein" in detail
+    assert "Mutation by this verification: no" in detail
     assert "reads no current project" in detail
     assert window.verify_saved_reference_status_button.isEnabled() is True
     assert (
@@ -503,7 +587,7 @@ def test_desktop_verifies_saved_reference_status_without_a_project(
     preserved = evidence_path.read_bytes()
     window.export_saved_reference_status_verification_button.click()
     assert evidence_path.read_bytes() == preserved
-    assert "nicht exportiert" in (
+    assert "not exported" in (
         window.saved_reference_status_verification_export_label.text()
     )
 
@@ -521,7 +605,7 @@ def test_desktop_verifies_saved_reference_status_without_a_project(
     window.export_saved_reference_status_verification_button.click()
     assert not drift_path.exists()
     assert window._saved_reference_preparation_status_verification is None
-    assert "Noch kein" in window.saved_reference_status_verification_label.text()
+    assert "No saved" in window.saved_reference_status_verification_label.text()
     assert (
         window.export_saved_reference_status_verification_button.isEnabled() is False
     )
@@ -568,8 +652,8 @@ def test_desktop_discards_saved_status_verification_after_inputs_change(
     application.processEvents()
 
     assert window._saved_reference_preparation_status_verification is None
-    assert "verworfen" in window.saved_reference_status_verification_label.text()
-    assert "nichts verändert" in (
+    assert "discarded" in window.saved_reference_status_verification_label.text()
+    assert "Nothing was changed" in (
         window.saved_reference_status_verification_detail_label.text()
     )
     assert window.verify_saved_reference_status_button.isEnabled() is True
@@ -612,10 +696,10 @@ def test_desktop_saved_status_verification_failure_is_read_only(
 
     assert report.read_bytes() == before
     assert window._saved_reference_preparation_status_verification is None
-    assert "nicht sicher verifizierbar" in (
+    assert "cannot be verified safely" in (
         window.saved_reference_status_verification_label.text()
     )
-    assert "Keine Artefaktfreigabe" in (
+    assert "No artifact release" in (
         window.saved_reference_status_verification_detail_label.text()
     )
     assert window.verify_saved_reference_status_button.isEnabled() is True
@@ -699,7 +783,7 @@ def test_desktop_reference_environment_check_is_read_only_and_keeps_start_locked
     assert len(queued) == 1
     assert isinstance(queued[0], _ReferenceReadinessWorker)
     assert window.refresh_reference_readiness_button.isEnabled() is False
-    assert "Kein Referenz-Run" in window.reference_readiness_detail_label.text()
+    assert "No reference run" in window.reference_readiness_detail_label.text()
     queued[0].run()
     application.processEvents()
 
@@ -707,11 +791,11 @@ def test_desktop_reference_environment_check_is_read_only_and_keeps_start_locked
     assert "local-reference:test" in detail
     assert "[PASS] Container command: docker.exe" in detail
     assert "sha256:abc" in detail
-    assert "nichts installiert" in detail
-    assert "bereit" in window.reference_readiness_status_label.text()
+    assert "nothing installed" in detail
+    assert "is ready" in window.reference_readiness_status_label.text()
     assert window.refresh_reference_readiness_button.isEnabled() is True
     assert window.show_run_button.isEnabled() is False
-    assert "noch nicht verbunden" in window.show_run_button.text()
+    assert "not connected yet" in window.show_run_button.text()
     assert window.page_stack.currentIndex() == 1
     window.close()
     application.processEvents()
@@ -798,9 +882,9 @@ def test_desktop_reference_preparation_status_is_read_only_and_keeps_start_locke
     application.processEvents()
 
     detail = window.reference_preparation_detail_label.text().replace("\u200b", "")
-    assert "vollständig verifiziert" in window.reference_preparation_status_label.text()
-    assert "Mutation durch diese Prüfung: nein" in detail
-    assert "Engine-Ausführung gestartet: nein" in detail
+    assert "fully verified" in window.reference_preparation_status_label.text()
+    assert "Mutation by this check: no" in detail
+    assert "Engine execution started: no" in detail
     assert "f" * 64 in detail
     assert status.report_sha256 in detail
     assert window._reference_preparation_status is status
@@ -817,12 +901,12 @@ def test_desktop_reference_preparation_status_is_read_only_and_keeps_start_locke
     assert export_path.read_bytes() == status.report_bytes
     assert list(tmp_path.glob("reviewed-status-Käfer.json*")) == [export_path]
     assert status.report_sha256 in window.reference_preparation_export_label.text()
-    assert "Private Provenienz" in window.reference_preparation_export_label.text()
+    assert "Private provenance" in window.reference_preparation_export_label.text()
 
     preserved = export_path.read_bytes()
     window.export_reference_preparation_status_button.click()
     assert export_path.read_bytes() == preserved
-    assert "nicht exportiert" in window.reference_preparation_export_label.text()
+    assert "not exported" in window.reference_preparation_export_label.text()
     assert window.export_reference_preparation_status_button.isEnabled() is True
 
     drift_path = tmp_path / "must-not-exist.json"
@@ -836,7 +920,7 @@ def test_desktop_reference_preparation_status_is_read_only_and_keeps_start_locke
     assert not drift_path.exists()
     assert window._reference_preparation_status is None
     assert window.export_reference_preparation_status_button.isEnabled() is False
-    assert "verworfen" in window.reference_preparation_export_label.text()
+    assert "discarded" in window.reference_preparation_export_label.text()
     assert window.show_run_button.isEnabled() is False
     assert window.page_stack.currentIndex() == 1
     window.close()
@@ -908,8 +992,8 @@ def test_desktop_discards_preparation_status_after_inputs_change(
     application.processEvents()
 
     assert window._reference_preparation_status is None
-    assert "verworfen" in window.reference_preparation_status_label.text()
-    assert "nichts verändert" in window.reference_preparation_detail_label.text()
+    assert "discarded" in window.reference_preparation_status_label.text()
+    assert "Nothing was changed" in window.reference_preparation_detail_label.text()
     assert window.refresh_reference_preparation_status_button.isEnabled() is True
     assert window.export_reference_preparation_status_button.isEnabled() is False
     window.close()
@@ -996,15 +1080,15 @@ def test_desktop_loads_native_template_preview_without_modifying_source(
 
     assert template.read_bytes() == before
     assert window.template_preview_plane_combo.isEnabled() is True
-    assert "XY-Wireframe" in window.template_preview_status_label.text()
-    assert "4 Punkte · 4 Dreiecke · 6 eindeutige Kanten" in (
+    assert "XY wireframe" in window.template_preview_status_label.text()
+    assert "4 points · 4 triangles · 6 unique edges" in (
         window.template_preview_detail_label.text()
     )
-    assert "6 von 6 Kanten" in window.template_preview_detail_label.text()
-    assert "keine 3D-" in window.template_preview_detail_label.text()
+    assert "6 of 6 edges" in window.template_preview_detail_label.text()
+    assert "not a 3D" in window.template_preview_detail_label.text()
     window.template_preview_plane_combo.setCurrentIndex(1)
     application.processEvents()
-    assert "XZ-Wireframe" in window.template_preview_status_label.text()
+    assert "XZ wireframe" in window.template_preview_status_label.text()
     assert window.show_run_button.isEnabled() is True
     window.close()
     application.processEvents()
@@ -1054,7 +1138,7 @@ def test_desktop_window_renders_exact_modern_progress_event(monkeypatch) -> None
     assert window.run_progress_bar.value() == 4
     assert window.run_progress_bar.maximum() == 7
     assert "Momenta block accepted" in window.run_stage_label.text()
-    assert "Entscheidung 1 von 6" in window.run_optimizer_label.text()
+    assert "decision 1 of 6" in window.run_optimizer_label.text()
     assert "Objective 12.5" in window.run_optimizer_label.text()
     assert "#2 progress" in window.run_event_log.toPlainText()
     window.close()
@@ -1173,14 +1257,14 @@ def test_desktop_window_starts_bound_worker_and_shows_only_reconciled_result(
     assert window.cancel_atlas_button.isEnabled() is True
     assert window.refresh_run_readiness_button.isEnabled() is False
     assert "desktop-bound" in window.run_summary_label.text()
-    assert "Ziel ist frei" in window.run_readiness_status_label.text()
-    assert "nur gelesen" in window.run_readiness_detail_label.text()
+    assert "Destination is free" in window.run_readiness_status_label.text()
+    assert "read only" in window.run_readiness_detail_label.text()
     window._cancel_atlas()
     assert window.cancel_atlas_button.isEnabled() is False
-    assert "nächsten sicheren Punkt" in window.run_state_label.text()
+    assert "next safe point" in window.run_state_label.text()
     assert window.close() is False
     assert window._close_after_worker is True
-    assert "Fenster bleibt" in window.run_state_label.text()
+    assert "window will remain" in window.run_state_label.text()
 
     terminal = DesktopWorkerEvent(
         request_id="desktop-bound",
@@ -1204,8 +1288,8 @@ def test_desktop_window_starts_bound_worker_and_shows_only_reconciled_result(
     )
 
     assert window.run_result_card.isHidden() is False
-    assert "unabhängig verifiziert" in window.run_state_label.text()
-    assert "Probanden: 5" in window.run_result_label.text()
+    assert "independently verified" in window.run_state_label.text()
+    assert "Subjects: 5" in window.run_result_label.text()
     assert window.start_atlas_button.isEnabled() is False
     assert window.refresh_run_readiness_button.isEnabled() is True
     application.processEvents()
@@ -1272,11 +1356,11 @@ def test_desktop_window_blocks_private_candidate_before_worker_launch(
     assert window._worker is None
     assert window.start_atlas_button.isEnabled() is False
     assert window.refresh_run_readiness_button.isEnabled() is True
-    assert "blockiert" in window.run_readiness_status_label.text()
+    assert "blocked" in window.run_readiness_status_label.text()
     assert "[abandoned]" in window.run_readiness_detail_label.text()
     assert str(private) in window.run_readiness_detail_label.text().replace("\u200b", "")
-    assert "nichts gelöscht" in window.run_readiness_detail_label.text()
-    assert "Kein Worker gestartet" in window.run_state_label.text()
+    assert "nothing deleted" in window.run_readiness_detail_label.text()
+    assert "No worker started" in window.run_state_label.text()
 
     current_readiness[0] = DesktopReviewedRunReadiness(
         request=request,
@@ -1285,7 +1369,7 @@ def test_desktop_window_blocks_private_candidate_before_worker_launch(
     window.refresh_run_readiness_button.click()
     assert window._worker is None
     assert window.start_atlas_button.isEnabled() is True
-    assert "Ziel ist frei" in window.run_readiness_status_label.text()
+    assert "Destination is free" in window.run_readiness_status_label.text()
     application.processEvents()
 
 
@@ -1338,6 +1422,10 @@ def test_desktop_window_verifies_and_renders_step_four_before_artifact_handoff(
         workflow_manifest_sha256=sha256_file(workflow_manifest),
         bundle_manifest_path=bundle_manifest,
         bundle_manifest_sha256=sha256_file(bundle_manifest),
+        optimizer_converged=False,
+        optimizer_termination_reason="max_cycles",
+        optimizer_cycles_completed=3,
+        optimizer_max_cycles=3,
         overview=(item,),
         optimization=(
             ResultReviewItem(
@@ -1383,7 +1471,7 @@ def test_desktop_window_verifies_and_renders_step_four_before_artifact_handoff(
 
     assert isinstance(window._worker, _ResultReviewWorker)
     assert isinstance(queued[-1], _ResultReviewWorker)
-    assert "vollständig" in window.run_state_label.text()
+    assert "fully reverified" in window.run_state_label.text()
 
     window._result_review_succeeded(review)
     application.processEvents()
@@ -1391,6 +1479,8 @@ def test_desktop_window_verifies_and_renders_step_four_before_artifact_handoff(
     assert window.page_stack.currentIndex() == 3
     assert window.rail_steps[3].objectName() == "stepActive"
     assert "Käfer-Atlas" in window.result_summary_label.text()
+    assert "did not converge" in window.result_completion_label.text()
+    assert window.result_completion_label.objectName() == "statusWarning"
     assert "biological validity" in window.result_boundary_label.text()
     result_pca = window.findChild(QWidget, "resultPca")
     assert result_pca is not None
@@ -1403,8 +1493,19 @@ def test_desktop_window_verifies_and_renders_step_four_before_artifact_handoff(
     assert isinstance(queued[-1], _ArtifactWorker)
     assert window.result_artifact_buttons[0].isEnabled() is False
     window._artifact_failed("tamper detected")
-    assert "nicht geöffnet" in window.result_status_label.text()
+    assert "not opened" in window.result_status_label.text()
     assert window.result_artifact_buttons[0].isEnabled() is True
+
+    window._result_review_succeeded(
+        replace(
+            review,
+            optimizer_converged=True,
+            optimizer_termination_reason="gradient_tolerance",
+            optimizer_cycles_completed=2,
+        )
+    )
+    assert window.result_completion_label.objectName() == "statusSuccess"
+    assert "optimizer converged" in window.result_completion_label.text()
     window._show_run_page_from_results()
     assert window.page_stack.currentIndex() == 2
     window.close()

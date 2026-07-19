@@ -54,18 +54,22 @@ def test_verified_modern_result_exposes_bounded_summary_and_inventory(
     assert review.created_at == FIXED_TIME
     assert review.workflow_manifest_sha256 == sha256_file(review.workflow_manifest_path)
     assert review.bundle_manifest_sha256 == sha256_file(review.bundle_manifest_path)
+    assert review.optimizer_converged is False
+    assert review.optimizer_termination_reason == "max_cycles"
+    assert review.optimizer_cycles_completed == 1
+    assert review.optimizer_max_cycles == 1
     assert {item.label for item in review.overview} >= {
-        "Projekt",
+        "Project",
         "Engine",
-        "Datensatz",
+        "Dataset",
         "Template",
     }
     assert {item.label for item in review.optimization} >= {
-        "Terminierung",
+        "Termination",
         "Objective",
-        "Subject-Residuals",
+        "Subject residuals",
     }
-    assert review.pca[0].label == "PCA-Raum"
+    assert review.pca[0].label == "PCA space"
     assert any(item.label == "PC1" for item in review.pca)
     assert {artifact.key for artifact in review.artifacts} >= {
         "estimated-template",

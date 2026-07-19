@@ -266,6 +266,14 @@ as abandoned. Unattributed, invalid, indeterminate, and symbolic-link candidates
 fail closed and require explicit review. It never deletes, renames, resumes, or
 publishes. See the [private-run discovery contract](docs/PRIVATE_RUN_DISCOVERY.md).
 
+For high-face-count Modern experiments, the desktop can write an explicit exact
+`256 × 256` blockwise plan and Step 2 reports the supplied face counts, complete
+logical all-pairs dimensions, and largest execution tile. A synthetic
+10,000-face pre-compute contract is covered by automated tests. This is not a
+full-atlas performance claim, automatic safe preset, or proof that 300 subjects
+are feasible. See the [high-detail surface workflow
+foundation](docs/HIGH_DETAIL_SURFACES.md).
+
 For a configured blockwise plan, the microbenchmark can explicitly measure the
 experimental recompute graph in separate fresh processes with
 `--tile-autograd-strategy recompute`. This is a benchmark-only override, not a

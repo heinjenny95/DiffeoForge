@@ -11,6 +11,7 @@ from typing import Any
 
 import yaml
 
+from diffeoforge.atomic_io import write_text_safely
 from diffeoforge.config import (
     ConfigurationError,
     InputSummary,
@@ -20,6 +21,37 @@ from diffeoforge.config import (
 from diffeoforge.mesh import MeshMetadata, inspect_inputs
 
 _REPORT_MARKER = '<meta name="generator" content="DiffeoForge preflight">'
+
+
+def ensure_preflight_report_replaceable(path: Path | str) -> Path:
+    """Refuse replacement unless an existing path is an owned regular report file."""
+
+    candidate = Path(path).expanduser()
+    if candidate.is_symlink():
+        raise ConfigurationError(
+            "Refusing replacement because the existing preflight-report path is a "
+            f"symbolic link: {candidate.absolute()}"
+        )
+    destination = candidate.resolve()
+    if not destination.exists():
+        return destination
+    if not destination.is_file():
+        raise ConfigurationError(
+            "Refusing replacement because the existing preflight-report path is not a "
+            f"regular file: {destination}"
+        )
+    try:
+        prefix = destination.read_text(encoding="utf-8")[:2048]
+    except (OSError, UnicodeError) as error:
+        raise ConfigurationError(
+            f"Could not verify existing preflight report {destination}: {error}"
+        ) from error
+    if _REPORT_MARKER not in prefix:
+        raise ConfigurationError(
+            "Refusing replacement because the existing HTML file is not recognized as "
+            f"a DiffeoForge preflight report: {destination}"
+        )
+    return destination
 
 
 @dataclass(frozen=True)
@@ -286,21 +318,13 @@ def write_preflight_report(
     )
     destination.parent.mkdir(parents=True, exist_ok=True)
     if destination.exists() and overwrite:
-        try:
-            prefix = destination.read_text(encoding="utf-8")[:2048]
-        except OSError as error:
-            raise ConfigurationError(
-                f"Could not verify existing preflight report {destination}: {error}"
-            ) from error
-        if _REPORT_MARKER not in prefix:
-            raise ConfigurationError(
-                "Refusing replacement because the existing HTML file is not recognized as "
-                f"a DiffeoForge preflight report: {destination}"
-            )
-    mode = "w" if overwrite else "x"
+        ensure_preflight_report_replaceable(destination)
     try:
-        with destination.open(mode, encoding="utf-8", newline="\n") as handle:
-            handle.write(render_preflight_html(result))
+        write_text_safely(
+            destination,
+            render_preflight_html(result),
+            overwrite=overwrite,
+        )
     except FileExistsError as error:
         raise ConfigurationError(
             f"Preflight report already exists and will not be overwritten: {destination}"

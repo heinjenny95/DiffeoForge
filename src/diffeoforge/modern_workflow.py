@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import io
 import json
 import math
 import os
@@ -23,6 +24,7 @@ import yaml
 
 from diffeoforge import __version__
 from diffeoforge.analysis.procrustes import generalized_procrustes
+from diffeoforge.atomic_io import write_text_safely
 from diffeoforge.config import ConfigurationError, InputSummary, validate_input_paths
 from diffeoforge.engine import PairwiseEvaluationPlan
 from diffeoforge.engine.atlas_optimizer import (
@@ -272,11 +274,22 @@ def initialize_modern_workflow(
         )
     except (TypeError, ValueError) as error:
         raise ConfigurationError(f"Invalid pairwise evaluation plan: {error}") from error
-    destination = Path(config_path).expanduser().resolve()
+    destination_candidate = Path(config_path).expanduser()
+    if destination_candidate.is_symlink():
+        raise ConfigurationError(
+            "Refusing to initialize through a symbolic-link modern workflow configuration "
+            f"path: {destination_candidate.absolute()}"
+        )
+    destination = destination_candidate.resolve()
     if destination.exists():
         if not overwrite:
             raise ConfigurationError(
                 f"Configuration already exists and will not be overwritten: {destination}"
+            )
+        if not destination.is_file():
+            raise ConfigurationError(
+                "Refusing overwrite because the existing modern workflow configuration "
+                f"path is not a regular file: {destination}"
             )
         try:
             first_line = destination.read_text(encoding="utf-8").splitlines()[0]
@@ -432,18 +445,17 @@ def initialize_modern_workflow(
             raise ConfigurationError(
                 "Landmark Procrustes did not converge with the generated settings"
             )
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    mode = "w" if overwrite else "x"
+    rendered = io.StringIO(newline="\n")
+    rendered.write(CONFIG_MARKER + "\n")
+    rendered.write(
+        "# Geometry-scaled starter values are exploratory, not validated presets.\n"
+    )
+    rendered.write(
+        "# PCA deformation settings control visual endpoints; null components means all.\n"
+    )
+    yaml.safe_dump(config, rendered, sort_keys=False, allow_unicode=True)
     try:
-        with destination.open(mode, encoding="utf-8", newline="\n") as handle:
-            handle.write(CONFIG_MARKER + "\n")
-            handle.write(
-                "# Geometry-scaled starter values are exploratory, not validated presets.\n"
-            )
-            handle.write(
-                "# PCA deformation settings control visual endpoints; null components means all.\n"
-            )
-            yaml.safe_dump(config, handle, sort_keys=False, allow_unicode=True)
+        write_text_safely(destination, rendered.getvalue(), overwrite=overwrite)
     except OSError as error:
         raise ConfigurationError(
             f"Could not write modern workflow configuration: {error}"

@@ -43,7 +43,7 @@ class MeshPreviewCanvas(QWidget):
             painter.drawText(
                 self.rect().adjusted(18, 18, -18, -18),
                 Qt.AlignmentFlag.AlignCenter | Qt.TextFlag.TextWordWrap,
-                "Template-Vorschau noch nicht geladen.",
+                "Template preview has not been loaded.",
             )
             painter.end()
             return
