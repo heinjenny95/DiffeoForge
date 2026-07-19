@@ -133,6 +133,9 @@ This repository currently provides:
   Atlas/PCA/QC summary with embedded optimizer-convergence, PC1/PC2, and
   PC2/PC3 plots and
   inventory-bound artifact handoff;
+- supervised source-level Deformetrica execution followed by strict momenta and
+  control-point import, a source-bound deterministic linear-PCA bundle, and the
+  shared verified Results & PCA screen;
 - a self-contained HTML input-validation and parameter-scale report;
 - a self-contained HTML convergence, lifecycle, and result report;
 - terminal interruption capture, explicit unclean-stop recovery, and
@@ -196,8 +199,9 @@ iterations, and an explicitly bounded ETA-to-iteration-cap in a contained child
 process. A Qt-independent parent independently reconciles terminal filesystem,
 result-report, and hash evidence before the GUI accepts the outcome. This real
 execution child is not yet included in the frozen Windows bundle; interrupted
-run recovery and Deformetrica-output import into the shared PCA screen remain
-open. The older preparation-only child remains a fourth sibling in the
+run recovery and reference PC deformation rendering remain open. The verified
+source-level momenta PCA handoff is connected. The older preparation-only child
+remains a fourth sibling in the
 evidence-only freeze and cannot authorize engine execution. The Modern path does not
 provide checkpoint/resume. The real source preparation worker also has suspended-process Windows
 hard-parent-death evidence before request delivery. For the Modern compute
@@ -241,6 +245,10 @@ diffeoforge init "C:\path\to\meshes" --units millimeter
 # Review atlas.yaml and atlas.preflight.html before computation.
 diffeoforge run atlas.yaml --run-id pilot-001
 diffeoforge report runs/pilot-001
+# After a completed Deformetrica atlas, create and independently recheck PCA:
+diffeoforge reference-pca runs/pilot-001
+diffeoforge reference-pca-verify `
+  runs/pilot-001/analysis/reference-momenta-pca --source-run runs/pilot-001
 ```
 
 `init` never guesses coordinate units or silently overwrites files. A file
@@ -452,6 +460,7 @@ and workflow for another mesh directory.
 - [Bounded-memory blockwise Gaussian primitives](docs/BLOCKWISE_GAUSSIAN.md)
 - [Landmark-based Procrustes alignment](docs/PROCRUSTES_ALIGNMENT.md)
 - [PCA of atlas-derived subject features](docs/ATLAS_PCA.md)
+- [Verified PCA of Deformetrica momenta](docs/REFERENCE_PCA.md)
 - [Desktop executable and installer architecture](docs/DESKTOP_DISTRIBUTION.md)
 - [Reproducible Windows installer build contract](docs/WINDOWS_INSTALLER_CONTRACT.md)
 - [Inno Setup toolchain authenticity evidence](docs/INNO_TOOLCHAIN_EVIDENCE.md)

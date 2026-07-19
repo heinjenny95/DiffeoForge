@@ -453,6 +453,37 @@ def build_parser() -> argparse.ArgumentParser:
     )
     modern_verify_parser.add_argument("run_directory", type=Path)
 
+    reference_pca_parser = subparsers.add_parser(
+        "reference-pca",
+        help="Create a verified linear PCA snapshot from completed Deformetrica momenta.",
+    )
+    reference_pca_parser.add_argument(
+        "run_directory",
+        type=Path,
+        help="Completed immutable Deformetrica run directory.",
+    )
+    reference_pca_parser.add_argument(
+        "--output",
+        type=Path,
+        help="New PCA bundle directory (default: RUN/analysis/reference-momenta-pca).",
+    )
+    reference_pca_parser.add_argument(
+        "--components",
+        type=int,
+        help="Retain an explicit number of components (default: all available).",
+    )
+
+    reference_pca_verify_parser = subparsers.add_parser(
+        "reference-pca-verify",
+        help="Verify and recompute one Deformetrica momenta PCA snapshot.",
+    )
+    reference_pca_verify_parser.add_argument("bundle_directory", type=Path)
+    reference_pca_verify_parser.add_argument(
+        "--source-run",
+        type=Path,
+        help="Also require an exact hash binding to this current Deformetrica run.",
+    )
+
     validate_parser = subparsers.add_parser(
         "validate",
         help="Validate an atlas configuration before any computation starts.",
@@ -965,6 +996,51 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"       {error}", file=sys.stderr)
             return 2
         except (ConfigurationError, RuntimeError, ValueError, TypeError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
+
+    if args.command == "reference-pca":
+        try:
+            from diffeoforge.reference_pca import (
+                verify_reference_pca_bundle,
+                write_reference_pca_bundle,
+            )
+
+            bundle = write_reference_pca_bundle(
+                args.run_directory,
+                args.output,
+                pca_components=args.components,
+            )
+            verified = verify_reference_pca_bundle(bundle, source_run=args.run_directory)
+            print(f"Verified Deformetrica momenta PCA created: {bundle}")
+            print(f"Subjects: {verified.manifest['inputs']['subjects']}")
+            print(f"Control points: {verified.manifest['inputs']['control_point_count']}")
+            print(f"Components: {verified.pca.number_of_components}")
+            print(
+                "PCA method: centered linear PCA by deterministic float64 SVD "
+                "(not RBF KernelPCA)"
+            )
+            print(f"PCA scores: {bundle / verified.manifest['pca']['scores_path']}")
+            print(f"PCA scree plot: {bundle / verified.manifest['pca']['plots']['scree_path']}")
+        except (OSError, RuntimeError, TypeError, ValueError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
+
+    if args.command == "reference-pca-verify":
+        try:
+            from diffeoforge.reference_pca import verify_reference_pca_bundle
+
+            verified = verify_reference_pca_bundle(
+                args.bundle_directory,
+                source_run=args.source_run,
+            )
+            print(f"Deformetrica momenta PCA verified: {verified.bundle_directory}")
+            print(f"Subjects: {verified.manifest['inputs']['subjects']}")
+            print(f"Components: {verified.pca.number_of_components}")
+            print("Raw parameter hashes and recomputed PCA tables match.")
+        except (OSError, RuntimeError, TypeError, ValueError) as error:
             print(f"ERROR: {error}", file=sys.stderr)
             return 2
         return 0

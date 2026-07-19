@@ -32,6 +32,12 @@ hash, and filesystem contradictions fail closed.
 Raw Deformetrica output remains in `logs/deformetrica.log`; the worker sends only
 schema-valid lifecycle and progress events on its protocol stdout.
 
+After the parent accepts a completed run, a separate GUI task strictly imports
+the estimated momenta and control points, publishes a source-bound linear PCA
+snapshot, verifies it by recomputation, and only then unlocks Results & PCA.
+This postprocessing is documented in
+[verified PCA of Deformetrica momenta](REFERENCE_PCA.md).
+
 ## Progress and ETA meaning
 
 Progress is derived from Deformetrica's own iteration and objective log lines.
@@ -71,8 +77,8 @@ keeps the window open until the parent reconciles a terminal outcome.
   sibling executable in the Windows evidence bundle or installer.
 - Interrupted-run discovery and resume exist in the shared CLI services but are
   not yet exposed as guided desktop actions.
-- Verified Deformetrica atlas outputs are not yet imported into the shared PCA
-  and result screen. The GUI opens the verified run folder and states this
-  boundary explicitly.
+- Verified Deformetrica momenta and control points are imported into the shared
+  PCA/result screen. Reference mean/positive/negative PC deformation meshes and
+  registration renderings are not yet generated.
 - The containerized Deformetrica runtime still has to be present and pass the
   exact environment check; DiffeoForge does not silently install or replace it.

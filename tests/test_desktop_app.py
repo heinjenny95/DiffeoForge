@@ -1342,8 +1342,8 @@ def test_desktop_accepts_only_parent_verified_deformetrica_terminal_result(
     assert window.run_result_card.isHidden() is False
     assert "independently verified" in window.run_state_label.text()
     assert "Outcome: completed" in window.run_result_label.text()
-    assert window.start_atlas_button.text() == "Open verified Deformetrica result"
-    assert window.rail_steps[2].isEnabled() is True
+    assert window.start_atlas_button.text().startswith("Verifying Results & PCA")
+    assert window.rail_steps[2].isEnabled() is False
     assert window.rail_steps[3].isEnabled() is False
     window.close()
     application.processEvents()

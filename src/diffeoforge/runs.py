@@ -230,7 +230,7 @@ def _safe_cleanup_temporary_run(temp_directory: Path, output_root: Path) -> None
         shutil.rmtree(resolved_temp)
 
 
-def _publish_directory_exclusive(source: Path, destination: Path) -> None:
+def publish_directory_exclusive(source: Path, destination: Path) -> None:
     """Atomically publish one directory without replacing an appearing destination."""
 
     if os.name == "nt":
@@ -499,7 +499,7 @@ def _prepare_run(
 
         if before_publish is not None:
             before_publish(temp_directory, manifest)
-        _publish_directory_exclusive(temp_directory, final_directory)
+        publish_directory_exclusive(temp_directory, final_directory)
     except Exception:
         _safe_cleanup_temporary_run(temp_directory, output_root)
         raise

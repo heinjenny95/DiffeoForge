@@ -68,7 +68,8 @@ This roadmap describes evidence gates rather than promised dates.
 - [x] Connect supervised Deformetrica preparation, execution, and cancellation
 - [ ] Connect interrupted-run discovery and resume to the guided desktop workflow
 - [x] Display observed progress and explicitly labelled ETA-to-iteration-cap
-- [ ] Import verified Deformetrica outputs into the shared PCA/result pipeline
+- [x] Import verified Deformetrica momenta into the shared PCA/result pipeline
+- [ ] Add verified reference PC deformation meshes and registration-quality rendering
 - [x] Define desktop executable/installer architecture and release gates
 - [ ] Local graphical interface backed by the shared core
   - [x] First non-overwriting mesh-folder and project-setup slice

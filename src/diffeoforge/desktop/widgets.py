@@ -72,6 +72,7 @@ from diffeoforge.desktop.reference_readiness import (
     DesktopReferenceReadinessError,
     check_reference_environment,
 )
+from diffeoforge.desktop.reference_result_review import review_reference_result
 from diffeoforge.desktop.reference_worker_protocol import DesktopReferenceWorkerEvent
 from diffeoforge.desktop.result_review import (
     ModernResultReview,
@@ -296,17 +297,22 @@ class _SavedReferencePreparationStatusVerificationWorker(QRunnable):
 
 
 class _ResultReviewWorker(QRunnable):
-    """Fully verify one completed Modern workflow outside the GUI thread."""
+    """Fully verify one completed atlas/PCA workflow outside the GUI thread."""
 
-    def __init__(self, directory: Path) -> None:
+    def __init__(self, directory: Path, *, reference: bool = False) -> None:
         super().__init__()
         self.directory = directory
+        self.reference = reference
         self.signals = _WorkerSignals()
 
     @Slot()
     def run(self) -> None:
         try:
-            review = review_modern_result(self.directory)
+            review = (
+                review_reference_result(self.directory)
+                if self.reference
+                else review_modern_result(self.directory)
+            )
         except (ModernResultReviewError, OSError, RuntimeError, TypeError, ValueError) as error:
             self.signals.failed.emit(str(error))
             return
@@ -2181,13 +2187,7 @@ class DiffeoForgeWindow(QMainWindow):
             self.start_atlas_button.setText("Open Results & PCA")
             self.start_atlas_button.setEnabled(self._worker is None)
         elif self._run_result is not None:
-            if (
-                self._review is not None
-                and self._review.engine is DesktopEngine.DEFORMETRICA_REFERENCE
-            ):
-                self.start_atlas_button.setText("Open verified Deformetrica result")
-                self.start_atlas_button.setEnabled(self._worker is None)
-            elif self._run_result.completed:
+            if self._run_result.completed:
                 self.start_atlas_button.setText("Continue to Results & PCA")
                 self.start_atlas_button.setEnabled(self._worker is None)
         else:
@@ -2243,12 +2243,7 @@ class DiffeoForgeWindow(QMainWindow):
         if self._result_review is not None:
             self._navigate_to_step(3)
         elif self._run_result is not None:
-            if (
-                self._review is not None
-                and self._review.engine is DesktopEngine.DEFORMETRICA_REFERENCE
-            ):
-                self._open_run_result()
-            elif self._run_result.completed:
+            if self._run_result.completed:
                 self._review_run_result()
         else:
             self._start_atlas()
@@ -3409,8 +3404,7 @@ class DiffeoForgeWindow(QMainWindow):
             self.run_state_label.setObjectName("statusSuccess")
             self.run_state_label.setText(
                 "Deformetrica completed and the result was independently verified. "
-                "Importing its atlas into the unified PCA results view is the next "
-                "implementation slice."
+                "Its momenta will now be imported into a source-bound linear PCA snapshot."
             )
             self.run_progress_bar.setValue(self.run_progress_bar.maximum())
         elif result.interrupted:
@@ -3436,6 +3430,8 @@ class DiffeoForgeWindow(QMainWindow):
         if self._close_after_worker:
             self._close_after_worker = False
             self.close()
+        elif result.completed:
+            self._review_run_result()
 
     @Slot(str)
     def _atlas_failed(self, message: str) -> None:
@@ -3456,13 +3452,17 @@ class DiffeoForgeWindow(QMainWindow):
     @Slot()
     def _review_run_result(self) -> None:
         if (
-            not isinstance(self._run_result, DesktopWorkerControllerResult)
+            not isinstance(
+                self._run_result,
+                (DesktopWorkerControllerResult, ReferenceExecutionControllerResult),
+            )
             or not self._run_result.completed
             or self._worker is not None
         ):
             return
         destination = Path(self._run_result.terminal_event.payload["destination"])
-        worker = _ResultReviewWorker(destination)
+        reference = isinstance(self._run_result, ReferenceExecutionControllerResult)
+        worker = _ResultReviewWorker(destination, reference=reference)
         worker.signals.succeeded.connect(self._result_review_succeeded)
         worker.signals.failed.connect(self._result_review_failed)
         self._worker = worker
@@ -3470,8 +3470,11 @@ class DiffeoForgeWindow(QMainWindow):
         self.run_state_label.setObjectName("status")
         self.run_state_label.setStyleSheet("")
         self.run_state_label.setText(
-            "Workflow, bundle, inventory, mesh QC, and static SVGs are being fully "
-            "reverified before the results view is enabled."
+            "Deformetrica completion was independently verified; its output parameters "
+            "are now being imported and bound to a recomputed linear PCA snapshot."
+            if reference
+            else "Workflow, bundle, inventory, mesh QC, and static SVGs are being "
+            "fully reverified before the results view is enabled."
         )
         self._sync_ready_state()
         self._thread_pool.start(worker)
@@ -3493,14 +3496,19 @@ class DiffeoForgeWindow(QMainWindow):
         self.result_boundary_label.setText(
             "\n".join(f"• {boundary}" for boundary in review.scientific_boundaries)
         )
+        run_label = (
+            "Deformetrica run"
+            if review.engine_route == "deformetrica_reference"
+            else "Workflow"
+        )
         self.result_summary_label.setText(
             f"Project: {review.project_name}\n"
             f"Created: {review.created_at}\n"
-            f"Workflow: {self._wrappable_path(review.run_directory)}\n"
-            f"Workflow-Manifest SHA-256: {review.workflow_manifest_sha256}\n"
+            f"{run_label}: {self._wrappable_path(review.run_directory)}\n"
+            f"Run/Workflow manifest SHA-256: {review.workflow_manifest_sha256}\n"
             f"Bundle-Manifest SHA-256: {review.bundle_manifest_sha256}"
         )
-        if review.optimizer_converged:
+        if review.optimizer_converged is True:
             self.result_completion_label.setObjectName("statusSuccess")
             self.result_completion_label.setStyleSheet("")
             self.result_completion_label.setText(
@@ -3509,7 +3517,7 @@ class DiffeoForgeWindow(QMainWindow):
                 f"{review.optimizer_cycles_completed} cycles). This still does not establish "
                 "scientific validity."
             )
-        else:
+        elif review.optimizer_converged is False:
             self.result_completion_label.setObjectName("statusWarning")
             self.result_completion_label.setStyleSheet("")
             self.result_completion_label.setText(
@@ -3518,6 +3526,14 @@ class DiffeoForgeWindow(QMainWindow):
                 f"{review.optimizer_cycles_completed} of {review.optimizer_max_cycles} cycles). "
                 "Inspect the convergence plot before selecting a longer convergence attempt. "
                 "Treat this as a technical pilot result, not a converged scientific atlas."
+            )
+        else:
+            self.result_completion_label.setObjectName("statusWarning")
+            self.result_completion_label.setStyleSheet("")
+            self.result_completion_label.setText(
+                "Deformetrica run and momenta PCA are complete and independently verified. "
+                "Optimizer convergence is not claimed from process completion alone; inspect "
+                "the recorded objective history and registration quality before scientific use."
             )
         self._populate_result_artifacts(review)
         self.result_status_label.setObjectName("statusSuccess")

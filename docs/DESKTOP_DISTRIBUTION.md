@@ -150,8 +150,9 @@ parent controller provides Windows Job containment, strict protocol/exit
 reconciliation, iteration-cap binding, and a second result verification. The Qt
 bridge exposes phase-dependent cancellation and labels its rolling observed-rate
 estimate as ETA to the configured iteration cap, not convergence. This worker is
-not yet frozen into the evidence bundle or installer; recovery/resume and shared
-PCA import remain open. See
+not yet frozen into the evidence bundle or installer; recovery/resume and
+reference PC deformation rendering remain open. Source-level shared PCA import
+is connected. See
 [supervised desktop Deformetrica execution](DESKTOP_REFERENCE_EXECUTION.md).
 
 A source-level nonnumerical harness consumes it over real stdin/stdout, rechecks

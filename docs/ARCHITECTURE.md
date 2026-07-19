@@ -184,8 +184,10 @@ the reviewed maximum iteration against every progress event, reconciles terminal
 outcome with process exit, and independently verifies the resulting filesystem
 and `result.json` hash. Desktop step 3 exposes this controller through a Qt task,
 supports phase-dependent cancellation, and defers window close until the outcome
-is reconciled. The source execution path is not yet a frozen sibling and does not
-yet expose recovery/resume or shared PCA import. See
+is reconciled. A completed reference run then enters a separately verified,
+source-bound momenta-PCA bundle and the shared Results & PCA view. The source
+execution path is not yet a frozen sibling and does not yet expose recovery/resume
+or reference PC deformation meshes. See
 [supervised desktop Deformetrica execution](DESKTOP_REFERENCE_EXECUTION.md).
 
 The Windows one-directory build freezes that same harness as a third sibling
