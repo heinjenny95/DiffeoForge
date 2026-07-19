@@ -23,6 +23,19 @@ class DesktopReferenceProgress:
     eta_to_iteration_cap_seconds: float | None
     estimate_status: str
 
+    def as_dict(self) -> dict[str, int | float | str | None]:
+        return {
+            "iteration": self.iteration,
+            "maximum_iterations": self.maximum_iterations,
+            "log_likelihood": self.log_likelihood,
+            "attachment": self.attachment,
+            "regularity": self.regularity,
+            "elapsed_seconds": self.elapsed_seconds,
+            "seconds_per_iteration": self.seconds_per_iteration,
+            "eta_to_iteration_cap_seconds": self.eta_to_iteration_cap_seconds,
+            "estimate_status": self.estimate_status,
+        }
+
     @property
     def fraction_of_iteration_cap(self) -> float:
         return min(1.0, self.iteration / self.maximum_iterations)

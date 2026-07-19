@@ -65,8 +65,9 @@ This roadmap describes evidence gates rather than promised dates.
 - [x] Implement conservative observed-rate ETA arithmetic for Deformetrica iteration logs
 - [ ] Add interactive 3D homologous-landmark placement and review
 - [ ] Connect Procrustes preview/approval to the guided desktop workflow
-- [ ] Connect supervised Deformetrica preparation, execution, cancellation, and recovery
-- [ ] Display observed progress and explicitly labelled ETA-to-iteration-cap
+- [x] Connect supervised Deformetrica preparation, execution, and cancellation
+- [ ] Connect interrupted-run discovery and resume to the guided desktop workflow
+- [x] Display observed progress and explicitly labelled ETA-to-iteration-cap
 - [ ] Import verified Deformetrica outputs into the shared PCA/result pipeline
 - [x] Define desktop executable/installer architecture and release gates
 - [ ] Local graphical interface backed by the shared core
@@ -103,7 +104,8 @@ This roadmap describes evidence gates rather than promised dates.
   - [x] Project-independent saved reference-status verification in the desktop GUI
   - [x] Exact non-overwriting saved-status verification-evidence export in CLI and desktop
   - [x] Exact non-overwriting plan/approval verification-evidence export in CLI
-  - [ ] User-approved private-stage mutation, reference supervision, and native mesh rendering
+  - [x] Hash-bound source-level reference execution supervision and cancellation
+  - [ ] Frozen reference execution worker, guided recovery, and native mesh rendering
 - [ ] Parameter explanations and safe presets
 - [x] Pre-compute configured all-pairs and known-payload workload report
 - [x] Versioned workflow-stage and committed optimizer-decision reporting

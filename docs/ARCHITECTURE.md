@@ -134,8 +134,8 @@ desktop step 2. It parses the exact bytes captured by the completed review,
 extracts the configured container engine and image, and runs the existing
 read-only doctor service outside the GUI thread. A second hash check discards
 the report if the configuration changes during observation. Passing this check
-does not prepare or launch Deformetrica and does not weaken the separate open
-gate for reference-process supervision. See
+does not itself prepare or launch Deformetrica; it unlocks a separately reviewed
+and independently revalidated execution action. See
 [the desktop reference-readiness contract](REFERENCE_DESKTOP_READINESS.md).
 
 A separate Qt-independent reference prelaunch seam now binds that matching
@@ -143,8 +143,8 @@ review/readiness pair to a versioned request containing the exact config hash,
 container engine/image, normalized run ID, and resolved absolute destination.
 The request is round-trip schema validated and repeatably rechecks bytes,
 launcher settings, output resolution, and destination nonexistence. It performs
-no preparation or execution and remains only an input contract for a future
-contained supervisor. See
+no preparation or execution itself and is the immutable input contract for the
+contained execution supervisor. See
 [the desktop reference-prelaunch contract](REFERENCE_PRELAUNCH.md).
 
 Reference worker transport now has a separate versioned event vocabulary and
@@ -152,7 +152,8 @@ parent-side ledger because its phase-dependent stop states cannot reuse the
 Modern worker's nonpublishing cancellation claim. The ledger distinguishes no
 destination, an immutable prepared destination, and a terminal interrupted run,
 while rejecting sequence, phase, terminal, and evidence contradictions. This is
-still a non-executing protocol seam; see
+also carries strictly increasing Deformetrica iteration observations only during
+the execute phase; see
 [the reference worker protocol](REFERENCE_WORKER_PROTOCOL.md).
 
 A deliberately nonnumerical reference worker harness now exercises that request
@@ -161,14 +162,31 @@ the exact request in the child and terminates with `stopped_before_prepare`;
 tests prove the project tree remains byte-identical. It is not the production
 worker and creates no descendant process, run directory, or engine artifact.
 
-A dedicated Qt-independent parent controller now launches only that harness. It
+A dedicated historical Qt-independent parent controller launches only that harness. It
 assigns the child to a Windows kill-on-close Job before sending the request,
 enforces a finite timeout and bounded stdout/stderr, requires the exact
 three-event harness lifecycle and matching exit code, and repeats the complete
 request/destination verification after child success. This closes the
-nonnumerical supervision seam but does not prepare a run, start the reference
-engine, or enable GUI computation. See
+nonnumerical supervision seam and remains separate from engine execution. See
 [the reference harness controller](REFERENCE_HARNESS_CONTROLLER.md).
+
+A separate production source worker now uses the same strict request and event
+vocabulary to run the complete shared preflight, immutable preparation,
+Deformetrica adapter, finalization, and result-verification sequence. Raw engine
+stdout is redirected to the durable run log and worker stderr so protocol stdout
+contains JSON events only. Parsed objective rows add observed iteration,
+objective components, elapsed time, and a rolling-median ETA explicitly bounded
+to the configured iteration cap rather than convergence.
+
+Its parent controller assigns the execution worker to a Windows kill-on-close
+Job before request delivery, bounds protocol lines and diagnostics, validates
+the reviewed maximum iteration against every progress event, reconciles terminal
+outcome with process exit, and independently verifies the resulting filesystem
+and `result.json` hash. Desktop step 3 exposes this controller through a Qt task,
+supports phase-dependent cancellation, and defers window close until the outcome
+is reconciled. The source execution path is not yet a frozen sibling and does not
+yet expose recovery/resume or shared PCA import. See
+[supervised desktop Deformetrica execution](DESKTOP_REFERENCE_EXECUTION.md).
 
 The Windows one-directory build freezes that same harness as a third sibling
 entry point. Freeze-evidence schema v0.2 required the GUI, Modern worker, and

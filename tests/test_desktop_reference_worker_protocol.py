@@ -76,6 +76,25 @@ def _terminal(
     )
 
 
+def _progress(sequence: int, iteration: int):
+    return DesktopReferenceWorkerEvent(
+        request_id=REQUEST_ID,
+        sequence=sequence,
+        kind="progress",
+        payload={
+            "iteration": iteration,
+            "maximum_iterations": 100,
+            "log_likelihood": -10.0 + iteration,
+            "attachment": -8.0,
+            "regularity": -2.0,
+            "elapsed_seconds": 10.0 + iteration,
+            "seconds_per_iteration": None,
+            "eta_to_iteration_cap_seconds": None,
+            "estimate_status": "warming_up",
+        },
+    )
+
+
 def _ledger_with_phases(*phases: str) -> ReferenceWorkerEventLedger:
     ledger = ReferenceWorkerEventLedger(REQUEST)
     ledger.accept(_accepted())
@@ -115,6 +134,25 @@ def test_reference_worker_completed_lifecycle() -> None:
 
     assert ledger.reconcile() == terminal
     assert len(ledger.events) == 8
+
+
+def test_reference_worker_accepts_strictly_increasing_progress_only_during_execute() -> None:
+    ledger = _ledger_with_phases("verify_request", "preflight", "prepare", "execute")
+    ledger.accept(_progress(5, 0))
+    ledger.accept(_progress(6, 1))
+    with pytest.raises(DesktopReferenceWorkerProtocolError, match="increase strictly"):
+        ledger.accept(_progress(7, 1))
+
+    before_execute = _ledger_with_phases("verify_request", "preflight", "prepare")
+    with pytest.raises(DesktopReferenceWorkerProtocolError, match="execute phase"):
+        before_execute.accept(_progress(4, 0))
+
+
+def test_reference_worker_progress_rejects_nonfinite_json_numbers() -> None:
+    payload = _progress(0, 1).as_dict()
+    payload["payload"]["log_likelihood"] = float("nan")
+    with pytest.raises(DesktopReferenceWorkerProtocolError, match="strict JSON"):
+        DesktopReferenceWorkerEvent.from_dict(payload)
 
 
 @pytest.mark.parametrize(

@@ -122,24 +122,27 @@ python -m diffeoforge.desktop --smoke
 - The reference-environment check parses the exact reviewed configuration
   bytes, uses their configured container engine/image, and checks the file hash
   again afterward. It shows raw doctor evidence but performs no install, image
-  build/pull, run preparation, backend start, resume, recovery, or repair.
+  build/pull, run preparation, backend start, resume, recovery, or repair. A
+  passing result unlocks the separate supervised execution page.
 - The reference preparation-status check requires the previously reviewed
   approval file plus its independently recorded complete-file SHA-256. It runs
   outside the event loop, remains bound to the completed config review, and
   discards results after any approval/config input drift. It exposes no prepare,
   publish, delete, rename, repair, resume, recovery, or execute action.
-- Mesh inspection runs in a background GUI thread. Modern numerical work runs
-  in a separate child process supervised by the fail-closed parent controller;
-  Qt receives only validated events through queued signals.
+- Mesh inspection runs in a background GUI thread. Modern numerical work and
+  Deformetrica execution use distinct child processes supervised by fail-closed
+  parent controllers; Qt receives only validated events through queued signals.
 - The launch must match the SHA-256 captured by the completed review. An edited
   configuration is refused until it is reviewed again.
 - Before launch, the compute page shows the exact destination, whether it
   exists, and every exact-name private candidate's raw status, path, and reason.
   Refresh and the mandatory immediate pre-launch recheck are read-only; the GUI
   exposes no delete, rename, resume, or publish action for private state.
-- The compute page shows exact completed stages and optimizer decisions. It
-  does not turn them into an ETA, runtime estimate, peak-memory claim, or
-  invented percentage.
+- The Modern compute page shows exact completed stages and optimizer decisions
+  without an ETA, runtime estimate, peak-memory claim, or invented percentage.
+  The Deformetrica page shows observed iterations and objective components. Its
+  rolling estimate is labelled ETA to the configured iteration cap and explicitly
+  not convergence.
 - Normal window close while compute is active requests cooperative cancellation
   and keeps the window alive until the worker has a reconciled terminal state.
 - Result review and per-artifact verification also run outside the GUI event
@@ -159,11 +162,11 @@ python -m diffeoforge.desktop --smoke
 ## Current limitations
 
 The GUI does not yet edit scientific parameters, render meshes interactively in
-3D, place landmarks, resume a Modern atlas, reconcile an already dead parent application, or supervise the
-external Deformetrica engine. Its reference cards are read-only environment and
-preparation-state diagnosis only;
-the start button remains disabled even when every check passes. The projection
-preview is not mesh QC or registration evidence. Step 4 is a detailed read-only evidence and
+3D, place landmarks, resume an atlas, reconcile an already dead parent
+application, or import verified Deformetrica outputs into the shared PCA screen.
+Source-level Deformetrica supervision is connected, but its dedicated execution
+worker is not yet part of the frozen Windows bundle. The projection preview is
+not mesh QC or registration evidence. Step 4 is a detailed read-only evidence and
 artifact-handoff view, not an interactive 3D renderer or a scientific
 interpretation system. A developer-machine PyInstaller one-directory evidence
 freeze exists, but it is not a redistributable release and is not wrapped in an

@@ -23,7 +23,7 @@ REFERENCE_WORKER_PHASES = (
     "finalize",
     "verify_result",
 )
-ReferenceWorkerEventKind = Literal["accepted", "phase", "terminal"]
+ReferenceWorkerEventKind = Literal["accepted", "phase", "progress", "terminal"]
 ReferenceWorkerOutcome = Literal[
     "completed",
     "stopped_before_prepare",
@@ -128,6 +128,7 @@ class DesktopReferenceWorkerEvent:
     def to_json_line(self) -> str:
         return json.dumps(
             self.as_dict(),
+            allow_nan=False,
             ensure_ascii=False,
             sort_keys=True,
             separators=(",", ":"),
@@ -147,6 +148,12 @@ class DesktopReferenceWorkerEvent:
 def validate_reference_worker_event(value: Mapping[str, Any]) -> None:
     """Validate one event envelope and its kind-specific payload."""
 
+    try:
+        json.dumps(dict(value), allow_nan=False)
+    except (TypeError, ValueError) as error:
+        raise DesktopReferenceWorkerProtocolError(
+            f"Reference worker event is not strict JSON: {error}"
+        ) from error
     _validate(
         value,
         "desktop-reference-worker-event-v0.1.json",
@@ -165,6 +172,7 @@ class ReferenceWorkerEventLedger:
         self._events: list[DesktopReferenceWorkerEvent] = []
         self._accepted = False
         self._last_phase_index: int | None = None
+        self._last_progress_iteration: int | None = None
         self._terminal: DesktopReferenceWorkerEvent | None = None
 
     @property
@@ -216,6 +224,21 @@ class ReferenceWorkerEventLedger:
                     "Reference worker phases must advance without repetition or regression"
                 )
             self._last_phase_index = phase_index
+        elif event.kind == "progress":
+            execute_index = REFERENCE_WORKER_PHASES.index("execute")
+            if self._last_phase_index != execute_index:
+                raise DesktopReferenceWorkerProtocolError(
+                    "Reference worker progress is allowed only during the execute phase"
+                )
+            iteration = int(event.payload["iteration"])
+            if (
+                self._last_progress_iteration is not None
+                and iteration <= self._last_progress_iteration
+            ):
+                raise DesktopReferenceWorkerProtocolError(
+                    "Reference worker progress iterations must increase strictly"
+                )
+            self._last_progress_iteration = iteration
         else:
             outcome = str(event.payload["outcome"])
             if event.payload["destination"] != str(self._request.destination):

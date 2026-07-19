@@ -461,7 +461,7 @@ def test_desktop_window_renders_parameter_review_as_second_step(monkeypatch, tmp
     application.processEvents()
 
 
-def test_desktop_window_keeps_reference_compute_route_explicitly_unavailable(
+def test_desktop_window_keeps_reference_compute_locked_until_environment_check(
     monkeypatch, tmp_path
 ) -> None:
     pytest.importorskip("PySide6")
@@ -493,7 +493,7 @@ def test_desktop_window_keeps_reference_compute_route_explicitly_unavailable(
 
     assert window.page_stack.currentIndex() == 1
     assert window.show_run_button.isEnabled() is False
-    assert "not connected yet" in window.show_run_button.text()
+    assert "Check the reference environment" in window.show_run_button.text()
     assert window.reference_readiness_card.isHidden() is False
     assert window.reference_preparation_status_card.isHidden() is False
     assert window.refresh_reference_readiness_button.isEnabled() is True
@@ -730,7 +730,7 @@ def test_desktop_saved_status_verification_failure_is_read_only(
     application.processEvents()
 
 
-def test_desktop_reference_environment_check_is_read_only_and_keeps_start_locked(
+def test_desktop_reference_environment_check_is_read_only_and_unlocks_execution(
     monkeypatch, tmp_path
 ) -> None:
     pytest.importorskip("PySide6")
@@ -814,8 +814,9 @@ def test_desktop_reference_environment_check_is_read_only_and_keeps_start_locked
     assert "nothing installed" in detail
     assert "is ready" in window.reference_readiness_status_label.text()
     assert window.refresh_reference_readiness_button.isEnabled() is True
-    assert window.show_run_button.isEnabled() is False
-    assert "not connected yet" in window.show_run_button.text()
+    assert window.show_run_button.isEnabled() is True
+    assert "supervised Deformetrica execution" in window.show_run_button.text()
+    assert window.rail_steps[2].isEnabled() is True
     assert window.page_stack.currentIndex() == 1
     window.close()
     application.processEvents()
@@ -1163,6 +1164,187 @@ def test_desktop_window_renders_exact_modern_progress_event(monkeypatch) -> None
     assert "decision 1 of 6" in window.run_optimizer_label.text()
     assert "Objective 12.5" in window.run_optimizer_label.text()
     assert "#2 progress" in window.run_event_log.toPlainText()
+    window.close()
+    application.processEvents()
+
+
+def test_desktop_window_renders_deformetrica_iteration_and_bounded_eta(
+    monkeypatch,
+) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from diffeoforge.desktop.reference_worker_protocol import DesktopReferenceWorkerEvent
+    from diffeoforge.desktop.widgets import DiffeoForgeWindow
+
+    application = QApplication.instance() or QApplication(
+        ["diffeoforge-reference-progress-test"]
+    )
+    window = DiffeoForgeWindow()
+    event = DesktopReferenceWorkerEvent(
+        request_id="reference-test",
+        sequence=3,
+        kind="progress",
+        payload={
+            "iteration": 12,
+            "maximum_iterations": 100,
+            "log_likelihood": -123.5,
+            "attachment": -100.0,
+            "regularity": -23.5,
+            "elapsed_seconds": 3661.0,
+            "seconds_per_iteration": 305.0,
+            "eta_to_iteration_cap_seconds": 26840.0,
+            "estimate_status": "observed_rate_to_iteration_cap",
+        },
+    )
+
+    window._atlas_event(event)
+
+    assert window.run_progress_bar.value() == 12
+    assert window.run_progress_bar.maximum() == 100
+    assert "configured cap" in window.run_progress_bar.format()
+    assert "Iteration 12 of 100" in window.run_optimizer_label.text()
+    assert "Elapsed: 1 h 01 min 01 s" in window.run_optimizer_label.text()
+    assert "ETA to iteration cap: 7 h 27 min 20 s" in (
+        window.run_optimizer_label.text()
+    )
+    assert "not convergence" in window.run_optimizer_label.text()
+    assert "#3 progress" in window.run_event_log.toPlainText()
+    window.close()
+    application.processEvents()
+
+
+def test_desktop_reference_prelaunch_refresh_retains_visible_run_identity(
+    monkeypatch, tmp_path
+) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from types import SimpleNamespace
+
+    from PySide6.QtWidgets import QApplication
+
+    from diffeoforge.desktop.project_review import ProjectReviewResult
+    from diffeoforge.desktop.project_setup import DesktopEngine
+    from diffeoforge.desktop.reference_prelaunch import DesktopReferenceLaunchRequest
+    from diffeoforge.desktop.widgets import DiffeoForgeWindow
+
+    application = QApplication.instance() or QApplication(
+        ["diffeoforge-reference-identity-test"]
+    )
+    config = (tmp_path / "atlas.yaml").resolve()
+    review = ProjectReviewResult(
+        engine=DesktopEngine.DEFORMETRICA_REFERENCE,
+        project_name="Reference",
+        config_path=config,
+        config_sha256="a" * 64,
+        report_path=tmp_path / "preflight.html",
+        report_label="Preflight report",
+        subject_count=5,
+        parameters=(),
+        workload=(),
+        warnings=(),
+        scientific_boundary="boundary",
+    )
+    observed_identities = []
+
+    def build(_review, _readiness, *, request_id, run_id):
+        observed_identities.append((request_id, run_id))
+        return DesktopReferenceLaunchRequest(
+            request_id=request_id,
+            config_path=config,
+            destination=(tmp_path / "runs" / run_id).resolve(),
+            run_id=run_id,
+            expected_config_sha256="a" * 64,
+            launcher_engine="docker",
+            launcher_image="reference:test",
+        )
+
+    monkeypatch.setattr(
+        "diffeoforge.desktop.widgets.build_reference_launch_request", build
+    )
+    window = DiffeoForgeWindow()
+    window._review = review
+    window._reference_readiness = SimpleNamespace(ready=True)  # type: ignore[assignment]
+
+    first = window._refresh_reference_run_readiness(review)
+    second = window._refresh_reference_run_readiness(review)
+
+    assert first is not None
+    assert second is not None
+    assert observed_identities[0] == observed_identities[1]
+    assert first.destination == second.destination
+    assert str(second.destination).replace("\u200b", "") in (
+        window.run_summary_label.text().replace("\u200b", "")
+    )
+    window.close()
+    application.processEvents()
+
+
+def test_desktop_accepts_only_parent_verified_deformetrica_terminal_result(
+    monkeypatch, tmp_path
+) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from diffeoforge.desktop.project_review import ProjectReviewResult
+    from diffeoforge.desktop.project_setup import DesktopEngine
+    from diffeoforge.desktop.reference_execution_controller import (
+        ReferenceExecutionControllerResult,
+    )
+    from diffeoforge.desktop.reference_worker_protocol import DesktopReferenceWorkerEvent
+    from diffeoforge.desktop.widgets import DiffeoForgeWindow
+
+    application = QApplication.instance() or QApplication(
+        ["diffeoforge-reference-result-test"]
+    )
+    destination = (tmp_path / "runs" / "reference-001").resolve()
+    destination.mkdir(parents=True)
+    review = ProjectReviewResult(
+        engine=DesktopEngine.DEFORMETRICA_REFERENCE,
+        project_name="Reference",
+        config_path=(tmp_path / "atlas.yaml").resolve(),
+        config_sha256="a" * 64,
+        report_path=tmp_path / "preflight.html",
+        report_label="Preflight report",
+        subject_count=5,
+        parameters=(),
+        workload=(),
+        warnings=(),
+        scientific_boundary="boundary",
+    )
+    terminal = DesktopReferenceWorkerEvent(
+        request_id="reference-result",
+        sequence=7,
+        kind="terminal",
+        payload={
+            "outcome": "completed",
+            "destination": str(destination),
+            "destination_exists": True,
+            "result_sha256": "b" * 64,
+            "message": "verified",
+        },
+    )
+    result = ReferenceExecutionControllerResult(
+        request_id="reference-result",
+        exit_code=0,
+        terminal_event=terminal,
+        events=(terminal,),
+        stderr="",
+    )
+    window = DiffeoForgeWindow()
+    window._review = review
+
+    window._atlas_succeeded(result)
+
+    assert window._run_result is result
+    assert window.run_result_card.isHidden() is False
+    assert "independently verified" in window.run_state_label.text()
+    assert "Outcome: completed" in window.run_result_label.text()
+    assert window.start_atlas_button.text() == "Open verified Deformetrica result"
+    assert window.rail_steps[2].isEnabled() is True
+    assert window.rail_steps[3].isEnabled() is False
     window.close()
     application.processEvents()
 

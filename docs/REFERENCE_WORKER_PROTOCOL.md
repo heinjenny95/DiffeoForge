@@ -1,6 +1,6 @@
 # Versioned desktop reference worker protocol
 
-Status: **versioned phase-dependent transport contracts; no engine launch**
+Status: **versioned phase-dependent transport used by a source execution worker**
 
 The external Deformetrica lifecycle cannot reuse the Modern worker's
 nonpublishing cancellation semantics. A Modern cancellation removes private
@@ -16,12 +16,15 @@ run can instead be stopped in three materially different states:
 
 `desktop-reference-worker-command-v0.1.json` defines one request-bound cancel
 command. `desktop-reference-worker-event-v0.1.json` defines UTF-8 JSON-compatible
-event envelopes with a contiguous zero-based sequence and one of three kinds:
+event envelopes with a contiguous zero-based sequence and one of four kinds:
 
 - `accepted`: exact engine, config hash, destination, and the explicit
   `phase_dependent` cancellation contract;
 - `phase`: a strictly advancing lifecycle phase from request verification
-  through result verification; or
+  through result verification;
+- `progress`: a strictly increasing Deformetrica iteration observation emitted
+  only during `execute`, including objective terms, elapsed time, and a clearly
+  bounded ETA-to-iteration-cap; or
 - `terminal`: one of `completed`, `stopped_before_prepare`,
   `prepared_not_executed`, `interrupted`, or `failed` with destination and
   result-hash evidence appropriate to that outcome.
@@ -31,8 +34,9 @@ event envelopes with a contiguous zero-based sequence and one of three kinds:
 The Qt-independent ledger is constructed from the immutable prelaunch request
 and binds acceptance to its request ID, configuration hash, and exact
 destination. It rejects a different request ID, hash, destination, sequence gaps,
-repeated acceptance, phase repetition or regression, non-failure terminal data
-without acceptance, a completed outcome before `verify_result`, stop outcomes
+repeated acceptance, phase repetition or regression, progress outside execute,
+non-increasing iterations, non-failure terminal data without acceptance, a
+completed outcome before `verify_result`, stop outcomes
 that contradict the observed phase, post-terminal data, and a stream ending
 without a terminal event.
 
@@ -43,13 +47,17 @@ requires the destination but no result hash.
 
 ## Current boundary
 
-The executable consumer remains deliberately restricted to the nonnumerical
-harness. Its parent controller provides a bounded pipe reader, timeout, Windows
-Job containment and exact `stopped_before_prepare` reconciliation, but supplies
-no signal delivery, run preparation, Deformetrica start, result publication,
-recovery, resume, or GUI enablement. Later code must preserve this request and
-protocol boundary and prove terminal result verification before the reference
-button can be enabled.
+A dedicated source execution worker now consumes this protocol. Its parent
+controller provides a bounded pipe reader, Windows Job containment, strict
+event/exit reconciliation, configuration and iteration-cap binding, and
+independent terminal verification. Desktop step 3 transports only validated
+events into Qt and enables launch only after the read-only environment check.
+See [supervised desktop Deformetrica execution](DESKTOP_REFERENCE_EXECUTION.md).
+
+This source path does not yet claim a frozen execution sibling, guided recovery,
+resume, or PCA import. The original deliberately nonnumerical harness and its
+controller remain as narrow historical/evidence boundaries and are not reused
+for engine execution.
 
 A separate, narrower v0.1 preparation request and event vocabulary now binds an
 approval path, the independently recorded complete approval SHA-256, current
@@ -71,15 +79,16 @@ A separate source-level
 [preparation parent controller](REFERENCE_PREPARATION_CONTROLLER.md) now assigns
 this new child to a Windows kill-on-close Job before request delivery, bounds
 its transport and runtime, reconciles the exact five-event lifecycle and exit
-code, and independently verifies the published prepared run. GUI enablement,
-cancel, recovery, and engine supervision remain open.
+code, and independently verifies the published prepared run. It remains a
+preparation-only boundary; the newer execution controller does not reuse its
+approval as engine authorization.
 
 Its real source-worker Job-assignment seam additionally has
 [hard-parent-death evidence](REFERENCE_PREPARATION_PARENT_DEATH.md) using a
 suspended child and immediate controller hard exit before request delivery.
 That audit does not extend the protocol into execution or recovery.
 
-The first executable consumer is deliberately nonnumerical: it verifies the
+The original frozen executable consumer remains deliberately nonnumerical: it verifies the
 request across a real stdio child-process boundary and always emits
 `stopped_before_prepare`. See
 [the reference worker pipe harness](REFERENCE_WORKER_HARNESS.md).

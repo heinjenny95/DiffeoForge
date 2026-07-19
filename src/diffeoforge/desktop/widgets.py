@@ -43,6 +43,16 @@ from diffeoforge.desktop.project_setup import (
     ProjectSetupResult,
     create_project,
 )
+from diffeoforge.desktop.reference_execution_controller import (
+    ReferenceExecutionController,
+    ReferenceExecutionControllerError,
+    ReferenceExecutionControllerResult,
+)
+from diffeoforge.desktop.reference_prelaunch import (
+    DesktopReferenceLaunchRequest,
+    DesktopReferencePrelaunchError,
+    build_reference_launch_request,
+)
 from diffeoforge.desktop.reference_preparation_status import (
     DesktopReferencePreparationStatus,
     DesktopReferencePreparationStatusError,
@@ -62,6 +72,7 @@ from diffeoforge.desktop.reference_readiness import (
     DesktopReferenceReadinessError,
     check_reference_environment,
 )
+from diffeoforge.desktop.reference_worker_protocol import DesktopReferenceWorkerEvent
 from diffeoforge.desktop.result_review import (
     ModernResultReview,
     ModernResultReviewError,
@@ -377,6 +388,55 @@ class _AtlasWorker(QRunnable):
                 self._finished = True
 
 
+class _ReferenceAtlasWorker(QRunnable):
+    """Bridge the contained Deformetrica controller into the Qt event loop."""
+
+    def __init__(self, controller: ReferenceExecutionController) -> None:
+        super().__init__()
+        self.controller = controller
+        self.signals = _AtlasWorkerSignals()
+        self._lock = threading.Lock()
+        self._cancel_requested = False
+        self._finished = False
+
+    def request_cancel(self) -> bool:
+        with self._lock:
+            if self._finished or self._cancel_requested:
+                return False
+            self._cancel_requested = True
+            idle = self.controller.state == "idle"
+        if idle:
+            return True
+        try:
+            self.controller.request_cancel()
+        except ReferenceExecutionControllerError as error:
+            self.signals.cancel_failed.emit(str(error))
+        return True
+
+    def _forward_event(self, event: DesktopReferenceWorkerEvent) -> None:
+        with self._lock:
+            cancel_requested = self._cancel_requested
+        if cancel_requested:
+            self.controller.request_cancel()
+        self.signals.event.emit(event)
+
+    @Slot()
+    def run(self) -> None:
+        try:
+            result = self.controller.run(event_callback=self._forward_event)
+        except ReferenceExecutionControllerError as error:
+            message = str(error)
+            stderr = getattr(error, "stderr", "").strip()
+            if stderr:
+                message = f"{message}\n\nWorker stderr:\n{stderr}"
+            self.signals.failed.emit(message)
+        else:
+            self.signals.succeeded.emit(result)
+        finally:
+            with self._lock:
+                self._finished = True
+
+
 def _path_row(edit: QLineEdit, button: QPushButton) -> QWidget:
     row = QWidget()
     layout = QHBoxLayout(row)
@@ -408,6 +468,7 @@ class DiffeoForgeWindow(QMainWindow):
             | _ResultReviewWorker
             | _ArtifactWorker
             | _AtlasWorker
+            | _ReferenceAtlasWorker
             | None
         ) = None
         self._result: ProjectSetupResult | None = None
@@ -419,7 +480,10 @@ class DiffeoForgeWindow(QMainWindow):
             DesktopSavedReferencePreparationStatusVerification | None
         ) = None
         self._run_readiness: DesktopReviewedRunReadiness | None = None
-        self._run_result: DesktopWorkerControllerResult | None = None
+        self._reference_run_request: DesktopReferenceLaunchRequest | None = None
+        self._run_result: (
+            DesktopWorkerControllerResult | ReferenceExecutionControllerResult | None
+        ) = None
         self._result_review: ModernResultReview | None = None
         self._close_after_worker = False
         self._active_step = 0
@@ -981,30 +1045,30 @@ class DiffeoForgeWindow(QMainWindow):
 
         eyebrow = QLabel("STEP 3 OF 4")
         eyebrow.setObjectName("eyebrow")
-        title = QLabel("Compute Modern atlas")
-        title.setObjectName("title")
-        subtitle = QLabel(
+        self.run_title_label = QLabel("Compute atlas")
+        self.run_title_label.setObjectName("title")
+        self.run_subtitle_label = QLabel(
             "Run the exact reviewed configuration in a separate process and observe real "
             "workflow events."
         )
-        subtitle.setObjectName("subtitle")
-        subtitle.setWordWrap(True)
+        self.run_subtitle_label.setObjectName("subtitle")
+        self.run_subtitle_label.setWordWrap(True)
         layout.addWidget(eyebrow)
-        layout.addWidget(title)
-        layout.addWidget(subtitle)
+        layout.addWidget(self.run_title_label)
+        layout.addWidget(self.run_subtitle_label)
 
         boundary = QFrame()
         boundary.setObjectName("boundary")
         boundary_layout = QHBoxLayout(boundary)
         boundary_layout.setContentsMargins(13, 9, 13, 9)
-        boundary_text = QLabel(
+        self.run_boundary_label = QLabel(
             "Experimental Modern CPU route. Runtime, peak RAM, and percentage progress are "
             "not estimated. Cancellation acts only at designated safe points and runs are "
             "not currently resumable."
         )
-        boundary_text.setObjectName("boundaryText")
-        boundary_text.setWordWrap(True)
-        boundary_layout.addWidget(boundary_text)
+        self.run_boundary_label.setObjectName("boundaryText")
+        self.run_boundary_label.setWordWrap(True)
+        boundary_layout.addWidget(self.run_boundary_label)
         layout.addWidget(boundary)
 
         summary = QFrame()
@@ -2043,12 +2107,15 @@ class DiffeoForgeWindow(QMainWindow):
         if step == 1:
             return self._review is not None
         if step == 2:
+            if self._run_result is not None or self._result_review is not None:
+                return True
+            if self._review is None:
+                return False
+            if self._review.engine is DesktopEngine.MODERN_CPU:
+                return True
             return bool(
-                (
-                    self._review is not None
-                    and self._review.engine is DesktopEngine.MODERN_CPU
-                )
-                or (self._run_result is not None and self._run_result.completed)
+                self._reference_readiness is not None
+                and self._reference_readiness.ready
             )
         if step == 3:
             return self._result_review is not None
@@ -2104,7 +2171,7 @@ class DiffeoForgeWindow(QMainWindow):
             self.create_button.setEnabled(form_ready and self._worker is None)
 
     def _sync_run_primary_action(self) -> None:
-        if isinstance(self._worker, _AtlasWorker):
+        if isinstance(self._worker, (_AtlasWorker, _ReferenceAtlasWorker)):
             self.start_atlas_button.setText("Atlas computation running…")
             self.start_atlas_button.setEnabled(False)
         elif isinstance(self._worker, _ResultReviewWorker):
@@ -2113,16 +2180,35 @@ class DiffeoForgeWindow(QMainWindow):
         elif self._result_review is not None:
             self.start_atlas_button.setText("Open Results & PCA")
             self.start_atlas_button.setEnabled(self._worker is None)
-        elif self._run_result is not None and self._run_result.completed:
-            self.start_atlas_button.setText("Continue to Results & PCA")
-            self.start_atlas_button.setEnabled(self._worker is None)
+        elif self._run_result is not None:
+            if (
+                self._review is not None
+                and self._review.engine is DesktopEngine.DEFORMETRICA_REFERENCE
+            ):
+                self.start_atlas_button.setText("Open verified Deformetrica result")
+                self.start_atlas_button.setEnabled(self._worker is None)
+            elif self._run_result.completed:
+                self.start_atlas_button.setText("Continue to Results & PCA")
+                self.start_atlas_button.setEnabled(self._worker is None)
         else:
-            self.start_atlas_button.setText("Start reviewed Modern atlas")
+            reference = bool(
+                self._review is not None
+                and self._review.engine is DesktopEngine.DEFORMETRICA_REFERENCE
+            )
+            self.start_atlas_button.setText(
+                "Start reviewed Deformetrica atlas"
+                if reference
+                else "Start reviewed Modern atlas"
+            )
             self.start_atlas_button.setEnabled(
                 bool(
                     self._worker is None
-                    and self._run_readiness is not None
-                    and self._run_readiness.ready_for_worker
+                    and (
+                        self._reference_run_request is not None
+                        if reference
+                        else self._run_readiness is not None
+                        and self._run_readiness.ready_for_worker
+                    )
                 )
             )
 
@@ -2156,8 +2242,14 @@ class DiffeoForgeWindow(QMainWindow):
             return
         if self._result_review is not None:
             self._navigate_to_step(3)
-        elif self._run_result is not None and self._run_result.completed:
-            self._review_run_result()
+        elif self._run_result is not None:
+            if (
+                self._review is not None
+                and self._review.engine is DesktopEngine.DEFORMETRICA_REFERENCE
+            ):
+                self._open_run_result()
+            elif self._run_result.completed:
+                self._review_run_result()
         else:
             self._start_atlas()
 
@@ -2238,6 +2330,7 @@ class DiffeoForgeWindow(QMainWindow):
         self._reference_readiness = None
         self._reference_preparation_status = None
         self._run_readiness = None
+        self._reference_run_request = None
         self._run_result = None
         self._result_review = None
         self.template_preview_card.hide()
@@ -2313,6 +2406,7 @@ class DiffeoForgeWindow(QMainWindow):
         self._reference_readiness = None
         self._reference_preparation_status = None
         self._run_readiness = None
+        self._reference_run_request = None
         self.reference_preparation_approval_edit.clear()
         self.reference_preparation_hash_edit.clear()
         self._populate_review_rows(self.parameter_review_layout, review.parameters)
@@ -2382,7 +2476,7 @@ class DiffeoForgeWindow(QMainWindow):
                 "An approval file and independently recorded SHA-256 are required. "
                 "The check changes, publishes, deletes, and starts nothing."
             )
-            self.show_run_button.setText("Reference execution is not connected yet")
+            self.show_run_button.setText("Check the reference environment to continue")
             self.show_run_button.setEnabled(False)
         self._set_active_step(1)
         self.page_stack.setCurrentIndex(1)
@@ -2550,7 +2644,7 @@ class DiffeoForgeWindow(QMainWindow):
             self.reference_readiness_status_label.setObjectName("statusSuccess")
             message = (
                 "The external reference environment is ready for the observed checks. "
-                "Reference execution remains locked pending separate process supervision."
+                "The supervised Deformetrica execution step is now available."
             )
         elif readiness.report.status == "warning":
             self.reference_readiness_status_label.setObjectName("status")
@@ -2567,12 +2661,16 @@ class DiffeoForgeWindow(QMainWindow):
         self.reference_readiness_status_label.setStyleSheet("")
         self.reference_readiness_status_label.setText(message)
         self.refresh_reference_readiness_button.setEnabled(True)
+        if readiness.ready:
+            self.show_run_button.setText("Continue to supervised Deformetrica execution")
+            self.show_run_button.setEnabled(True)
         self._sync_ready_state()
 
     @Slot(str)
     def _reference_readiness_failed(self, message: str) -> None:
         self._worker = None
         self._reference_readiness = None
+        self._reference_run_request = None
         self.reference_readiness_status_label.setObjectName("statusError")
         self.reference_readiness_status_label.setStyleSheet("")
         self.reference_readiness_status_label.setText(
@@ -2827,10 +2925,14 @@ class DiffeoForgeWindow(QMainWindow):
         self._navigate_to_step(2)
 
     @Slot()
-    def _refresh_run_readiness(self) -> DesktopReviewedRunReadiness | None:
+    def _refresh_run_readiness(
+        self,
+    ) -> DesktopReviewedRunReadiness | DesktopReferenceLaunchRequest | None:
         review = self._review
-        if review is None or review.engine is not DesktopEngine.MODERN_CPU:
+        if review is None:
             return None
+        if review.engine is DesktopEngine.DEFORMETRICA_REFERENCE:
+            return self._refresh_reference_run_readiness(review)
         try:
             readiness = check_reviewed_run_readiness(
                 review,
@@ -2863,7 +2965,104 @@ class DiffeoForgeWindow(QMainWindow):
         self._apply_run_readiness(readiness)
         return readiness
 
+    def _refresh_reference_run_readiness(
+        self,
+        review: ProjectReviewResult,
+    ) -> DesktopReferenceLaunchRequest | None:
+        readiness = self._reference_readiness
+        previous_request = self._reference_run_request
+        self._run_readiness = None
+        self._reference_run_request = None
+        self.run_title_label.setText("Compute Deformetrica atlas")
+        self.run_subtitle_label.setText(
+            "Run the exact reviewed configuration in a contained child process and observe "
+            "Deformetrica iterations, objective values, elapsed time, and bounded ETA."
+        )
+        self.run_boundary_label.setText(
+            "ETA is estimated only after several observed iterations and means time to the "
+            "configured iteration cap if the recent rate continues. It is not a prediction "
+            "of convergence. Cancellation preserves terminal evidence and a checkpoint when "
+            "Deformetrica produced one."
+        )
+        if readiness is None or not readiness.ready:
+            self.run_readiness_status_label.setObjectName("statusError")
+            self.run_readiness_status_label.setStyleSheet("")
+            self.run_readiness_status_label.setText(
+                "Deformetrica execution is blocked until the reviewed environment check passes."
+            )
+            self.start_atlas_button.setEnabled(False)
+            return None
+        try:
+            request = build_reference_launch_request(
+                review,
+                readiness,
+                request_id=(
+                    previous_request.request_id
+                    if previous_request is not None
+                    else f"reference-{uuid.uuid4().hex}"
+                ),
+                run_id=(
+                    previous_request.run_id
+                    if previous_request is not None
+                    else f"desktop-ref-{uuid.uuid4().hex[:12]}"
+                ),
+            )
+        except (
+            DesktopReferencePrelaunchError,
+            OSError,
+            RuntimeError,
+            TypeError,
+            ValueError,
+        ) as error:
+            self.run_readiness_status_label.setObjectName("statusError")
+            self.run_readiness_status_label.setStyleSheet("")
+            self.run_readiness_status_label.setText(
+                f"Reference destination cannot be bound safely: {error}"
+            )
+            self.run_readiness_detail_label.setText(
+                "No worker was started and no run directory was created."
+            )
+            self.start_atlas_button.setEnabled(False)
+            return None
+        self._reference_run_request = request
+        self.run_summary_label.setText(
+            f"Project: {review.project_name}\n"
+            f"Configuration: {self._wrappable_path(request.config_path)}\n"
+            f"Bound SHA-256: {request.expected_config_sha256}\n"
+            f"Non-overwritable destination: {self._wrappable_path(request.destination)}"
+        )
+        self.run_readiness_status_label.setObjectName("statusSuccess")
+        self.run_readiness_status_label.setStyleSheet("")
+        self.run_readiness_status_label.setText(
+            "Reviewed configuration, ready environment, and absent destination are bound."
+        )
+        self.run_readiness_detail_label.setText(
+            f"Container engine: {request.launcher_engine}\n"
+            f"Image: {request.launcher_image}\n"
+            "This check was read-only. The destination and all reviewed inputs are checked "
+            "again inside the worker immediately before preparation."
+        )
+        self.run_progress_bar.setRange(0, 0)
+        self.run_progress_bar.setFormat("Waiting for Deformetrica start")
+        self.run_optimizer_label.setText("No Deformetrica iteration observed yet.")
+        self.run_state_label.setObjectName("status")
+        self.run_state_label.setStyleSheet("")
+        self.run_state_label.setText("Ready; no Deformetrica process has started.")
+        self._sync_ready_state()
+        return request
+
     def _apply_run_readiness(self, readiness: DesktopReviewedRunReadiness) -> None:
+        self._reference_run_request = None
+        self.run_title_label.setText("Compute Modern atlas")
+        self.run_subtitle_label.setText(
+            "Run the exact reviewed configuration in a separate process and observe real "
+            "workflow events."
+        )
+        self.run_boundary_label.setText(
+            "Experimental Modern CPU route. Runtime, peak RAM, and percentage progress are "
+            "not estimated. Cancellation acts only at designated safe points and runs are "
+            "not currently resumable."
+        )
         self._run_readiness = readiness
         request = readiness.request
         discovery = readiness.discovery
@@ -2933,17 +3132,27 @@ class DiffeoForgeWindow(QMainWindow):
     def _start_atlas(self) -> None:
         if (
             self._review is None
-            or self._review.engine is not DesktopEngine.MODERN_CPU
             or self._worker is not None
             or self._run_result is not None
         ):
             return
         readiness = self._refresh_run_readiness()
-        if readiness is None or not readiness.ready_for_worker:
-            return
-        request = readiness.request
-
-        worker = _AtlasWorker(DesktopWorkerController(request))
+        reference = self._review.engine is DesktopEngine.DEFORMETRICA_REFERENCE
+        if reference:
+            if not isinstance(readiness, DesktopReferenceLaunchRequest):
+                return
+            request = readiness
+            worker: _AtlasWorker | _ReferenceAtlasWorker = _ReferenceAtlasWorker(
+                ReferenceExecutionController(request)
+            )
+        else:
+            if (
+                not isinstance(readiness, DesktopReviewedRunReadiness)
+                or not readiness.ready_for_worker
+            ):
+                return
+            request = readiness.request
+            worker = _AtlasWorker(DesktopWorkerController(request))
         worker.signals.event.connect(self._atlas_event)
         worker.signals.succeeded.connect(self._atlas_succeeded)
         worker.signals.failed.connect(self._atlas_failed)
@@ -2952,9 +3161,19 @@ class DiffeoForgeWindow(QMainWindow):
         self._result_review = None
         self.run_result_card.hide()
         self.run_event_log.clear()
-        self.run_progress_bar.setValue(0)
+        if reference:
+            self.run_progress_bar.setRange(0, 0)
+            self.run_progress_bar.setFormat("Starting Deformetrica")
+        else:
+            self.run_progress_bar.setRange(0, 7)
+            self.run_progress_bar.setValue(0)
+            self.run_progress_bar.setFormat("Completed stages: %v of %m")
         self.run_stage_label.setText("Workflow stage: worker is starting")
-        self.run_optimizer_label.setText("No optimization decision yet.")
+        self.run_optimizer_label.setText(
+            "No Deformetrica iteration observed yet."
+            if reference
+            else "No optimization decision yet."
+        )
         self.run_state_label.setObjectName("status")
         self.run_state_label.setStyleSheet("")
         self.run_state_label.setText(
@@ -2978,15 +3197,24 @@ class DiffeoForgeWindow(QMainWindow):
     @Slot()
     def _cancel_atlas(self) -> None:
         worker = self._worker
-        if not isinstance(worker, _AtlasWorker) or not worker.request_cancel():
+        if not isinstance(
+            worker, (_AtlasWorker, _ReferenceAtlasWorker)
+        ) or not worker.request_cancel():
             return
         self.cancel_atlas_button.setEnabled(False)
         self.run_state_label.setObjectName("status")
         self.run_state_label.setStyleSheet("")
-        self.run_state_label.setText(
-            "Cancellation requested. The current tensor operation may finish; DiffeoForge "
-            "will stop at the next safe point and will not publish a partial run."
-        )
+        if isinstance(worker, _ReferenceAtlasWorker):
+            self.run_state_label.setText(
+                "Cancellation requested. Deformetrica will be interrupted after the current "
+                "log/optimizer operation; terminal evidence and any checkpoint are preserved."
+            )
+        else:
+            self.run_state_label.setText(
+                "Cancellation requested. The current tensor operation may finish; "
+                "DiffeoForge will stop at the next safe point and will not publish a "
+                "partial run."
+            )
         self.run_event_log.appendPlainText("GUI: cooperative cancellation requested")
 
     @Slot(str)
@@ -3000,7 +3228,13 @@ class DiffeoForgeWindow(QMainWindow):
         self.run_event_log.appendPlainText(f"GUI: cancellation transfer failed: {message}")
 
     @Slot(object)
-    def _atlas_event(self, event: DesktopWorkerEvent) -> None:
+    def _atlas_event(
+        self,
+        event: DesktopWorkerEvent | DesktopReferenceWorkerEvent,
+    ) -> None:
+        if isinstance(event, DesktopReferenceWorkerEvent):
+            self._reference_atlas_event(event)
+            return
         message: str
         if event.kind == "started":
             message = "Worker started; the reviewed configuration is bound."
@@ -3043,12 +3277,78 @@ class DiffeoForgeWindow(QMainWindow):
             )
         self.run_event_log.appendPlainText(f"#{event.sequence} {event.kind}: {message}")
 
+    def _reference_atlas_event(self, event: DesktopReferenceWorkerEvent) -> None:
+        message: str
+        if event.kind == "accepted":
+            message = "Reference worker accepted the exact reviewed configuration."
+            self.run_state_label.setText(message)
+        elif event.kind == "phase":
+            phase = str(event.payload["phase"])
+            message = str(event.payload["message"])
+            self.run_stage_label.setText(
+                f"Deformetrica stage: {phase.replace('_', ' ')} · {message}"
+            )
+            if phase != "execute":
+                self.run_progress_bar.setRange(0, 0)
+                self.run_progress_bar.setFormat(f"Stage: {phase.replace('_', ' ')}")
+            self.run_state_label.setText(message)
+        elif event.kind == "progress":
+            iteration = int(event.payload["iteration"])
+            maximum = int(event.payload["maximum_iterations"])
+            elapsed = float(event.payload["elapsed_seconds"])
+            eta_value = event.payload["eta_to_iteration_cap_seconds"]
+            eta_text = (
+                "estimating from observed iterations…"
+                if eta_value is None
+                else self._format_duration(float(eta_value))
+            )
+            rate_value = event.payload["seconds_per_iteration"]
+            rate_text = (
+                "warming up"
+                if rate_value is None
+                else f"{float(rate_value):.2f} s/iteration"
+            )
+            message = (
+                f"Iteration {iteration} of {maximum}; objective "
+                f"{float(event.payload['log_likelihood']):.6g}"
+            )
+            self.run_progress_bar.setRange(0, maximum)
+            self.run_progress_bar.setValue(min(iteration, maximum))
+            self.run_progress_bar.setFormat(
+                "Observed iteration %v of %m (configured cap)"
+            )
+            self.run_stage_label.setText(
+                "Deformetrica stage: execute · optimizer output is being observed"
+            )
+            self.run_optimizer_label.setText(
+                f"Iteration {iteration} of {maximum} · objective "
+                f"{float(event.payload['log_likelihood']):.6g} · attachment "
+                f"{float(event.payload['attachment']):.6g} · regularity "
+                f"{float(event.payload['regularity']):.6g}\n"
+                f"Elapsed: {self._format_duration(elapsed)} · observed rate: {rate_text} · "
+                f"ETA to iteration cap: {eta_text} (not convergence)"
+            )
+            self.run_state_label.setText(message)
+        else:
+            message = str(event.payload["message"])
+            self.run_state_label.setText(
+                "Reference worker reported its terminal outcome; independent parent "
+                "verification is running."
+            )
+        self.run_event_log.appendPlainText(f"#{event.sequence} {event.kind}: {message}")
+
     @Slot(object)
-    def _atlas_succeeded(self, result: DesktopWorkerControllerResult) -> None:
+    def _atlas_succeeded(
+        self,
+        result: DesktopWorkerControllerResult | ReferenceExecutionControllerResult,
+    ) -> None:
         self._worker = None
         self.cancel_atlas_button.setEnabled(False)
         self.refresh_run_readiness_button.setEnabled(True)
         self.run_back_button.setEnabled(True)
+        if isinstance(result, ReferenceExecutionControllerResult):
+            self._reference_atlas_succeeded(result)
+            return
         terminal = result.terminal_event
         if result.completed:
             self._run_result = result
@@ -3082,6 +3382,61 @@ class DiffeoForgeWindow(QMainWindow):
         elif result.completed:
             self._review_run_result()
 
+    def _reference_atlas_succeeded(
+        self,
+        result: ReferenceExecutionControllerResult,
+    ) -> None:
+        terminal = result.terminal_event
+        outcome = result.outcome
+        destination_exists = bool(terminal.payload["destination_exists"])
+        if destination_exists:
+            self._run_result = result
+            result_hash = terminal.payload["result_sha256"] or "not created"
+            self.run_result_label.setText(
+                f"Destination: "
+                f"{self._wrappable_path(Path(terminal.payload['destination']))}\n"
+                f"Outcome: {outcome}\n"
+                f"Result SHA-256: {result_hash}\n"
+                f"Process exit code: {result.exit_code}\n"
+                f"Worker message: {terminal.payload['message']}"
+            )
+            self.run_result_card.show()
+        else:
+            self._run_result = None
+            self.run_result_card.hide()
+
+        if result.completed:
+            self.run_state_label.setObjectName("statusSuccess")
+            self.run_state_label.setText(
+                "Deformetrica completed and the result was independently verified. "
+                "Importing its atlas into the unified PCA results view is the next "
+                "implementation slice."
+            )
+            self.run_progress_bar.setValue(self.run_progress_bar.maximum())
+        elif result.interrupted:
+            self.run_state_label.setObjectName("status")
+            self.run_state_label.setText(
+                "Deformetrica was interrupted safely. Terminal evidence and any checkpoint "
+                "reported by the run were preserved and independently verified."
+            )
+        elif outcome == "prepared_not_executed":
+            self.run_state_label.setObjectName("status")
+            self.run_state_label.setText(
+                "Cancelled after immutable preparation. Deformetrica was not started; the "
+                "prepared run directory was verified and preserved."
+            )
+        else:
+            self.run_state_label.setObjectName("status")
+            self.run_state_label.setText(
+                "Cancelled before preparation. No run directory was created or modified."
+            )
+        self.run_state_label.setStyleSheet("")
+        self._reference_run_request = None
+        self._sync_ready_state()
+        if self._close_after_worker:
+            self._close_after_worker = False
+            self.close()
+
     @Slot(str)
     def _atlas_failed(self, message: str) -> None:
         self._worker = None
@@ -3100,7 +3455,11 @@ class DiffeoForgeWindow(QMainWindow):
 
     @Slot()
     def _review_run_result(self) -> None:
-        if self._run_result is None or not self._run_result.completed or self._worker is not None:
+        if (
+            not isinstance(self._run_result, DesktopWorkerControllerResult)
+            or not self._run_result.completed
+            or self._worker is not None
+        ):
             return
         destination = Path(self._run_result.terminal_event.payload["destination"])
         worker = _ResultReviewWorker(destination)
@@ -3345,6 +3704,17 @@ class DiffeoForgeWindow(QMainWindow):
     def _wrappable_path(path: Path) -> str:
         return str(path).replace("\\", "\\\u200b").replace("/", "/\u200b")
 
+    @staticmethod
+    def _format_duration(seconds: float) -> str:
+        whole_seconds = max(0, round(seconds))
+        hours, remainder = divmod(whole_seconds, 3600)
+        minutes, remaining_seconds = divmod(remainder, 60)
+        if hours:
+            return f"{hours} h {minutes:02d} min {remaining_seconds:02d} s"
+        if minutes:
+            return f"{minutes} min {remaining_seconds:02d} s"
+        return f"{remaining_seconds} s"
+
     @Slot(str)
     def _review_failed(self, message: str) -> None:
         self._worker = None
@@ -3411,13 +3781,16 @@ class DiffeoForgeWindow(QMainWindow):
 
     @Slot()
     def _open_run_result(self) -> None:
-        if self._run_result is None or not self._run_result.completed:
+        if self._run_result is None:
             return
-        destination = Path(self._run_result.terminal_event.payload["destination"])
+        payload = self._run_result.terminal_event.payload
+        if not bool(payload.get("destination_exists", True)):
+            return
+        destination = Path(payload["destination"])
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(destination)))
 
     def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802 - Qt API name
-        if isinstance(self._worker, _AtlasWorker):
+        if isinstance(self._worker, (_AtlasWorker, _ReferenceAtlasWorker)):
             self._close_after_worker = True
             self._cancel_atlas()
             self.run_state_label.setText(

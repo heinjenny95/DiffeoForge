@@ -188,16 +188,17 @@ destination, existing-result state, and any private candidate status/path/reason
 it checks again immediately before launch and never mutates recovery state.
 Each selected result artifact is rechecked by size
 and SHA-256 immediately before it is opened by a local application. The
-external Deformetrica route can now run an explicit read-only, configuration-
-hash-bound diagnostic of its exact container engine and image from review
-step 2. A separate source-level child can also consume an independently
-hash-bound preparation-only approval and atomically publish a verified
-`prepared_not_executed` run through a strict pipe. It still cannot start or
-supervise Deformetrica. A Qt-independent parent contains this child, bounds its
-transport and independently verifies the prepared run. The same child is now a
-fourth sibling in the evidence-only Windows freeze and has a mandatory real
-frozen controller smoke based on an externally created, independently
-hash-bound approval; it remains disabled in the GUI. The Modern path does not
+external Deformetrica route can run a read-only, configuration-hash-bound
+diagnostic of its exact container engine and image from review step 2. When it
+passes, the source desktop binds one immutable launch request and supervises
+preflight, preparation, execution, phase-dependent cancellation, observed
+iterations, and an explicitly bounded ETA-to-iteration-cap in a contained child
+process. A Qt-independent parent independently reconciles terminal filesystem,
+result-report, and hash evidence before the GUI accepts the outcome. This real
+execution child is not yet included in the frozen Windows bundle; interrupted
+run recovery and Deformetrica-output import into the shared PCA screen remain
+open. The older preparation-only child remains a fourth sibling in the
+evidence-only freeze and cannot authorize engine execution. The Modern path does not
 provide checkpoint/resume. The real source preparation worker also has suspended-process Windows
 hard-parent-death evidence before request delivery. For the Modern compute
 worker, Windows parent death terminates the contained worker tree and
@@ -480,6 +481,7 @@ and workflow for another mesh directory.
 - [Source preparation-worker parent-death evidence](docs/REFERENCE_PREPARATION_PARENT_DEATH.md)
 - [Frozen preparation-worker parent-death evidence](docs/FROZEN_REFERENCE_PREPARATION_PARENT_DEATH.md)
 - [Versioned reference worker lifecycle protocol](docs/REFERENCE_WORKER_PROTOCOL.md)
+- [Supervised desktop Deformetrica execution](docs/DESKTOP_REFERENCE_EXECUTION.md)
 - [Nonnumerical reference worker pipe harness](docs/REFERENCE_WORKER_HARNESS.md)
 - [Nonnumerical reference harness controller](docs/REFERENCE_HARNESS_CONTROLLER.md)
 - [Frozen reference-worker parent-death evidence](docs/FROZEN_REFERENCE_PARENT_DEATH.md)
