@@ -89,8 +89,16 @@ QLabel#brandMark { background: #54c6a1; color: #0b302f; border-radius: 18px;
                    font-size: 17px; font-weight: 800; }
 QLabel#brand { color: #ffffff; font-size: 20px; font-weight: 700; }
 QLabel#railCaption { color: #b9d1cd; font-size: 12px; }
-QLabel#stepActive { color: #ffffff; font-weight: 700; padding: 10px 0; }
-QLabel#stepFuture { color: #9db8b4; padding: 10px 0; }
+QPushButton#stepActive, QPushButton#stepAvailable, QPushButton#stepFuture {
+    background: transparent; border: 0; border-radius: 6px; min-height: 20px;
+    padding: 10px 6px; text-align: left;
+}
+QPushButton#stepActive { color: #ffffff; font-weight: 700; }
+QPushButton#stepActive:disabled { color: #ffffff; }
+QPushButton#stepAvailable { color: #c9dedb; font-weight: 500; }
+QPushButton#stepAvailable:hover { background: #1b4b49; color: #ffffff; }
+QPushButton#stepFuture { color: #789b97; font-weight: 400; }
+QPushButton#stepFuture:disabled { color: #789b97; }
 QLabel#eyebrow { color: #167c6b; font-size: 12px; font-weight: 700; }
 QLabel#title { color: #123b3a; font-size: 30px; font-weight: 750; }
 QLabel#subtitle { color: #526b70; font-size: 15px; }
@@ -414,6 +422,7 @@ class DiffeoForgeWindow(QMainWindow):
         self._run_result: DesktopWorkerControllerResult | None = None
         self._result_review: ModernResultReview | None = None
         self._close_after_worker = False
+        self._active_step = 0
         self._build_ui()
         self._update_engine_explanation()
         self._sync_ready_state()
@@ -465,12 +474,19 @@ class DiffeoForgeWindow(QMainWindow):
             "3  Compute atlas",
             "4  Results & PCA",
         )
-        self.rail_steps: list[QLabel] = []
+        self.rail_steps: list[QPushButton] = []
         for index, text in enumerate(steps):
-            label = QLabel(text)
-            label.setObjectName("stepActive" if index == 0 else "stepFuture")
-            layout.addWidget(label)
-            self.rail_steps.append(label)
+            step_label = text.split("  ", 1)[1]
+            button = QPushButton(text.replace("&", "&&"))
+            button.setObjectName("stepActive" if index == 0 else "stepFuture")
+            button.setProperty("stepLabel", step_label)
+            button.setAccessibleName(f"Go to step {index + 1}: {step_label}")
+            button.setCursor(Qt.CursorShape.PointingHandCursor)
+            button.clicked.connect(
+                lambda _checked=False, step=index: self._navigate_to_step(step)
+            )
+            layout.addWidget(button)
+            self.rail_steps.append(button)
         layout.addStretch()
         boundary = QLabel("PRE-ALPHA\nNo scientific validation")
         boundary.setObjectName("railCaption")
@@ -534,7 +550,7 @@ class DiffeoForgeWindow(QMainWindow):
         footer_layout.addWidget(self.status_label, 1)
         self.create_button = QPushButton("Validate data & create project")
         self.create_button.setObjectName("primary")
-        self.create_button.clicked.connect(self._create_project)
+        self.create_button.clicked.connect(self._setup_primary_action)
         footer_layout.addWidget(self.create_button)
 
         content = QWidget()
@@ -1076,13 +1092,8 @@ class DiffeoForgeWindow(QMainWindow):
         self.open_run_result_button = QPushButton("Open result folder")
         self.open_run_result_button.setObjectName("secondary")
         self.open_run_result_button.clicked.connect(self._open_run_result)
-        self.review_run_result_button = QPushButton("Review results & PCA")
-        self.review_run_result_button.setObjectName("primary")
-        self.review_run_result_button.clicked.connect(self._review_run_result)
-        self.review_run_result_button.setEnabled(False)
         result_button_row = QHBoxLayout()
         result_button_row.addWidget(self.open_run_result_button)
-        result_button_row.addWidget(self.review_run_result_button)
         result_button_row.addStretch()
         result_layout.addWidget(result_title)
         result_layout.addWidget(self.run_result_label)
@@ -1106,7 +1117,7 @@ class DiffeoForgeWindow(QMainWindow):
         self.cancel_atlas_button.setEnabled(False)
         self.start_atlas_button = QPushButton("Start reviewed Modern atlas")
         self.start_atlas_button.setObjectName("primary")
-        self.start_atlas_button.clicked.connect(self._start_atlas)
+        self.start_atlas_button.clicked.connect(self._run_primary_action)
         self.start_atlas_button.setEnabled(False)
         footer_layout.addWidget(self.run_back_button)
         footer_layout.addStretch()
@@ -1533,14 +1544,9 @@ class DiffeoForgeWindow(QMainWindow):
         open_folder = QPushButton("Open project folder")
         open_folder.setObjectName("secondary")
         open_folder.clicked.connect(self._open_project_directory)
-        self.review_button = QPushButton("Review parameters & workload")
-        self.review_button.setObjectName("primary")
-        self.review_button.clicked.connect(self._review_project)
-        self.review_button.setEnabled(False)
         button_row.addWidget(open_config)
         button_row.addWidget(open_folder)
         button_row.addStretch()
-        button_row.addWidget(self.review_button)
         layout.addLayout(button_row)
         return card
 
@@ -2027,6 +2033,97 @@ class DiffeoForgeWindow(QMainWindow):
             "must not be interpreted as optimizer convergence."
         )
 
+    def _step_is_unlocked(self, step: int) -> bool:
+        if self._worker is not None:
+            return False
+        if step == 0:
+            return True
+        if step == 1:
+            return self._review is not None
+        if step == 2:
+            return bool(
+                (
+                    self._review is not None
+                    and self._review.engine is DesktopEngine.MODERN_CPU
+                )
+                or (self._run_result is not None and self._run_result.completed)
+            )
+        if step == 3:
+            return self._result_review is not None
+        return False
+
+    def _sync_navigation_state(self) -> None:
+        locked_reasons = (
+            "Complete Step 1 before opening parameter review.",
+            "Complete parameter review before opening atlas computation.",
+            "Complete and verify an atlas run before opening Results & PCA.",
+        )
+        for index, button in enumerate(self.rail_steps):
+            unlocked = self._step_is_unlocked(index)
+            button.setEnabled(unlocked)
+            button.setCursor(
+                Qt.CursorShape.PointingHandCursor
+                if unlocked
+                else Qt.CursorShape.ArrowCursor
+            )
+            if index == self._active_step:
+                button.setObjectName("stepActive")
+            elif unlocked:
+                button.setObjectName("stepAvailable")
+            else:
+                button.setObjectName("stepFuture")
+            if self._worker is not None:
+                button.setToolTip(
+                    "Navigation is locked while DiffeoForge completes the current operation."
+                )
+            elif unlocked:
+                button.setToolTip(f"Open {button.property('stepLabel')}.")
+            elif index > 0:
+                button.setToolTip(locked_reasons[index - 1])
+            else:
+                button.setToolTip("")
+            button.setStyleSheet("")
+
+    def _sync_setup_primary_action(self, *, form_ready: bool) -> None:
+        if isinstance(self._worker, _ProjectWorker):
+            self.create_button.setText("Validating data…")
+            self.create_button.setEnabled(False)
+        elif isinstance(self._worker, _ReviewWorker):
+            self.create_button.setText("Reviewing parameters…")
+            self.create_button.setEnabled(False)
+        elif self._review is not None:
+            self.create_button.setText("Continue to parameter review")
+            self.create_button.setEnabled(self._worker is None)
+        elif self._result is not None:
+            self.create_button.setText("Review parameters & workload")
+            self.create_button.setEnabled(self._worker is None)
+        else:
+            self.create_button.setText("Validate data & create project")
+            self.create_button.setEnabled(form_ready and self._worker is None)
+
+    def _sync_run_primary_action(self) -> None:
+        if isinstance(self._worker, _AtlasWorker):
+            self.start_atlas_button.setText("Atlas computation running…")
+            self.start_atlas_button.setEnabled(False)
+        elif isinstance(self._worker, _ResultReviewWorker):
+            self.start_atlas_button.setText("Verifying Results & PCA…")
+            self.start_atlas_button.setEnabled(False)
+        elif self._result_review is not None:
+            self.start_atlas_button.setText("Open Results & PCA")
+            self.start_atlas_button.setEnabled(self._worker is None)
+        elif self._run_result is not None and self._run_result.completed:
+            self.start_atlas_button.setText("Continue to Results & PCA")
+            self.start_atlas_button.setEnabled(self._worker is None)
+        else:
+            self.start_atlas_button.setText("Start reviewed Modern atlas")
+            self.start_atlas_button.setEnabled(
+                bool(
+                    self._worker is None
+                    and self._run_readiness is not None
+                    and self._run_readiness.ready_for_worker
+                )
+            )
+
     @Slot()
     def _sync_ready_state(self) -> None:
         ready = bool(
@@ -2034,9 +2131,33 @@ class DiffeoForgeWindow(QMainWindow):
             and self.project_edit.text().strip()
             and self.units_combo.currentData() is not None
         )
-        self.create_button.setEnabled(ready and self._worker is None)
+        self._sync_setup_primary_action(form_ready=ready)
+        self._sync_run_primary_action()
+        self._sync_navigation_state()
         self._sync_reference_preparation_status_controls()
         self._sync_saved_reference_status_verification_controls()
+
+    @Slot()
+    def _setup_primary_action(self) -> None:
+        if self._worker is not None:
+            return
+        if self._review is not None:
+            self._navigate_to_step(1)
+        elif self._result is not None:
+            self._review_project()
+        else:
+            self._create_project()
+
+    @Slot()
+    def _run_primary_action(self) -> None:
+        if self._worker is not None:
+            return
+        if self._result_review is not None:
+            self._navigate_to_step(3)
+        elif self._run_result is not None and self._run_result.completed:
+            self._review_run_result()
+        else:
+            self._start_atlas()
 
     def _request(self) -> ProjectSetupRequest:
         template = self.template_edit.text().strip()
@@ -2124,10 +2245,8 @@ class DiffeoForgeWindow(QMainWindow):
         self.reference_preparation_approval_edit.clear()
         self.reference_preparation_hash_edit.clear()
         self.template_preview_canvas.set_model(None)
-        self.review_button.setEnabled(False)
         self.show_run_button.setEnabled(False)
         self.start_atlas_button.setEnabled(False)
-        self.review_run_result_button.setEnabled(False)
         self.run_result_card.hide()
         self.status_label.setObjectName("status")
         self.status_label.setStyleSheet("")
@@ -2156,7 +2275,6 @@ class DiffeoForgeWindow(QMainWindow):
             f"Important notices:\n{notices}"
         )
         self.result_card.show()
-        self.review_button.setEnabled(True)
         self._sync_ready_state()
 
     @Slot(str)
@@ -2171,7 +2289,6 @@ class DiffeoForgeWindow(QMainWindow):
     def _review_project(self) -> None:
         if self._result is None or self._worker is not None:
             return
-        self.review_button.setEnabled(False)
         self.status_label.setObjectName("status")
         self.status_label.setStyleSheet("")
         self.status_label.setText(
@@ -2264,7 +2381,6 @@ class DiffeoForgeWindow(QMainWindow):
             self.show_run_button.setEnabled(False)
         self._set_active_step(1)
         self.page_stack.setCurrentIndex(1)
-        self.review_button.setEnabled(True)
         self._sync_ready_state()
 
     @Slot()
@@ -2311,7 +2427,6 @@ class DiffeoForgeWindow(QMainWindow):
         self._template_preview = model
         self.template_preview_plane_combo.setEnabled(True)
         self.refresh_template_preview_button.setEnabled(True)
-        self.review_button.setEnabled(self._result is not None)
         self._update_template_preview_plane(self.template_preview_plane_combo.currentIndex())
         self._sync_ready_state()
 
@@ -2374,7 +2489,6 @@ class DiffeoForgeWindow(QMainWindow):
         self.template_preview_detail_label.setText(
             "No preview released; the template file was not modified."
         )
-        self.review_button.setEnabled(self._result is not None)
         self._sync_ready_state()
 
     @Slot()
@@ -2448,7 +2562,6 @@ class DiffeoForgeWindow(QMainWindow):
         self.reference_readiness_status_label.setStyleSheet("")
         self.reference_readiness_status_label.setText(message)
         self.refresh_reference_readiness_button.setEnabled(True)
-        self.review_button.setEnabled(self._result is not None)
         self._sync_ready_state()
 
     @Slot(str)
@@ -2468,7 +2581,6 @@ class DiffeoForgeWindow(QMainWindow):
             self._review is not None
             and self._review.engine is DesktopEngine.DEFORMETRICA_REFERENCE
         )
-        self.review_button.setEnabled(self._result is not None)
         self._sync_ready_state()
 
     def _reference_preparation_worker_matches_inputs(
@@ -2619,7 +2731,6 @@ class DiffeoForgeWindow(QMainWindow):
             "JSON file. The report contains absolute paths and file names; review private "
             "provenance before sharing."
         )
-        self.review_button.setEnabled(self._result is not None)
         self._sync_ready_state()
 
     @Slot(str)
@@ -2649,7 +2760,6 @@ class DiffeoForgeWindow(QMainWindow):
         self.reference_preparation_export_label.setText(
             "No export without a currently bound, fully validated status report."
         )
-        self.review_button.setEnabled(self._result is not None)
         self._sync_ready_state()
 
     @Slot()
@@ -2709,15 +2819,7 @@ class DiffeoForgeWindow(QMainWindow):
 
     @Slot()
     def _show_run_page(self) -> None:
-        if (
-            self._review is None
-            or self._review.engine is not DesktopEngine.MODERN_CPU
-            or self._worker is not None
-        ):
-            return
-        self._refresh_run_readiness()
-        self._set_active_step(2)
-        self.page_stack.setCurrentIndex(2)
+        self._navigate_to_step(2)
 
     @Slot()
     def _refresh_run_readiness(self) -> DesktopReviewedRunReadiness | None:
@@ -2820,10 +2922,7 @@ class DiffeoForgeWindow(QMainWindow):
 
     @Slot()
     def _show_review_page(self) -> None:
-        if isinstance(self._worker, _AtlasWorker):
-            return
-        self._set_active_step(1)
-        self.page_stack.setCurrentIndex(1)
+        self._navigate_to_step(1)
 
     @Slot()
     def _start_atlas(self) -> None:
@@ -2847,7 +2946,6 @@ class DiffeoForgeWindow(QMainWindow):
         self._worker = worker
         self._result_review = None
         self.run_result_card.hide()
-        self.review_run_result_button.setEnabled(False)
         self.run_event_log.clear()
         self.run_progress_bar.setValue(0)
         self.run_stage_label.setText("Workflow stage: worker is starting")
@@ -2869,6 +2967,7 @@ class DiffeoForgeWindow(QMainWindow):
         self.refresh_run_readiness_button.setEnabled(False)
         self.cancel_atlas_button.setEnabled(True)
         self.run_back_button.setEnabled(False)
+        self._sync_ready_state()
         self._thread_pool.start(worker)
 
     @Slot()
@@ -2962,7 +3061,6 @@ class DiffeoForgeWindow(QMainWindow):
                 f"Process exit code: {result.exit_code}"
             )
             self.run_result_card.show()
-            self.review_run_result_button.setEnabled(True)
             self.start_atlas_button.setEnabled(False)
         else:
             self.run_state_label.setObjectName("status")
@@ -2972,7 +3070,7 @@ class DiffeoForgeWindow(QMainWindow):
                 "checkpoint and must be restarted if needed."
             )
             self.start_atlas_button.setEnabled(True)
-            self.review_run_result_button.setEnabled(False)
+        self._sync_ready_state()
         if self._close_after_worker:
             self._close_after_worker = False
             self.close()
@@ -2990,7 +3088,7 @@ class DiffeoForgeWindow(QMainWindow):
         self.run_state_label.setText(f"Atlas run failed or was rejected: {message}")
         self.run_event_log.appendPlainText(f"Parent: error: {message}")
         self.start_atlas_button.setEnabled(True)
-        self.review_run_result_button.setEnabled(False)
+        self._sync_ready_state()
         if self._close_after_worker:
             self._close_after_worker = False
             self.close()
@@ -3004,7 +3102,6 @@ class DiffeoForgeWindow(QMainWindow):
         worker.signals.succeeded.connect(self._result_review_succeeded)
         worker.signals.failed.connect(self._result_review_failed)
         self._worker = worker
-        self.review_run_result_button.setEnabled(False)
         self.run_back_button.setEnabled(False)
         self.run_state_label.setObjectName("status")
         self.run_state_label.setStyleSheet("")
@@ -3012,6 +3109,7 @@ class DiffeoForgeWindow(QMainWindow):
             "Workflow, bundle, inventory, mesh QC, and static SVGs are being fully "
             "reverified before the results view is enabled."
         )
+        self._sync_ready_state()
         self._thread_pool.start(worker)
 
     @Slot(object)
@@ -3065,7 +3163,7 @@ class DiffeoForgeWindow(QMainWindow):
             "rebound to both manifest hashes, its file size, and SHA-256."
         )
         self.run_back_button.setEnabled(True)
-        self.review_run_result_button.setEnabled(True)
+        self._sync_ready_state()
         self._set_active_step(3)
         self.page_stack.setCurrentIndex(3)
         if self._close_after_worker:
@@ -3141,12 +3239,12 @@ class DiffeoForgeWindow(QMainWindow):
         self._worker = None
         self._result_review = None
         self.run_back_button.setEnabled(True)
-        self.review_run_result_button.setEnabled(self._run_result is not None)
         self.run_state_label.setObjectName("statusError")
         self.run_state_label.setStyleSheet("")
         self.run_state_label.setText(
             f"Results view locked: the complete snapshot did not verify: {message}"
         )
+        self._sync_ready_state()
         if self._close_after_worker:
             self._close_after_worker = False
             self.close()
@@ -3236,10 +3334,7 @@ class DiffeoForgeWindow(QMainWindow):
 
     @Slot()
     def _show_run_page_from_results(self) -> None:
-        if self._worker is not None:
-            return
-        self._set_active_step(2)
-        self.page_stack.setCurrentIndex(2)
+        self._navigate_to_step(2)
 
     @staticmethod
     def _wrappable_path(path: Path) -> str:
@@ -3248,7 +3343,6 @@ class DiffeoForgeWindow(QMainWindow):
     @Slot(str)
     def _review_failed(self, message: str) -> None:
         self._worker = None
-        self.review_button.setEnabled(self._result is not None)
         self.status_label.setObjectName("statusError")
         self.status_label.setStyleSheet("")
         self.status_label.setText(f"Parameter review failed: {message}")
@@ -3278,16 +3372,22 @@ class DiffeoForgeWindow(QMainWindow):
             layout.addWidget(row)
 
     def _set_active_step(self, active: int) -> None:
-        for index, label in enumerate(self.rail_steps):
-            label.setObjectName("stepActive" if index == active else "stepFuture")
-            label.setStyleSheet("")
+        self._active_step = active
+        self._sync_navigation_state()
+
+    @Slot(int)
+    def _navigate_to_step(self, step: int) -> None:
+        if not self._step_is_unlocked(step):
+            self._sync_navigation_state()
+            return
+        if step == 2 and self._run_result is None:
+            self._refresh_run_readiness()
+        self._set_active_step(step)
+        self.page_stack.setCurrentIndex(step)
 
     @Slot()
     def _show_setup_page(self) -> None:
-        if isinstance(self._worker, _AtlasWorker):
-            return
-        self._set_active_step(0)
-        self.page_stack.setCurrentIndex(0)
+        self._navigate_to_step(0)
 
     @Slot()
     def _open_review_report(self) -> None:
