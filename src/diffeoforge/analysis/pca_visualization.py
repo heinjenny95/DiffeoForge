@@ -28,6 +28,15 @@ def _number(value: float) -> str:
     return format(0.0 if normalized == 0.0 else normalized, ".12g")
 
 
+def _tick_number(value: float) -> str:
+    """Format a display tick compactly while exact values remain in the CSV bundle."""
+
+    normalized = float(value)
+    if not math.isfinite(normalized):
+        raise ValueError("SVG tick values must be finite")
+    return format(0.0 if normalized == 0.0 else normalized, ".4g")
+
+
 def _percent(value: float) -> str:
     return f"{float(value) * 100.0:.2f}%"
 
@@ -204,7 +213,7 @@ def _write_pca_score_view(
                 f'  <line x1="{_number(x)}" y1="{_number(_TOP)}" x2="{_number(x)}" '
                 f'y2="{_number(_TOP + _PLOT_HEIGHT)}" class="grid"/>',
                 f'  <text x="{_number(x)}" y="{_number(_TOP + _PLOT_HEIGHT + 22)}" '
-                f'text-anchor="middle" class="small">{html.escape(_number(x_value))}</text>',
+                f'text-anchor="middle" class="small">{html.escape(_tick_number(x_value))}</text>',
             ]
         )
         if y_index is not None:
@@ -215,7 +224,7 @@ def _write_pca_score_view(
                     f'  <line x1="{_number(_LEFT)}" y1="{_number(y)}" '
                     f'x2="{_number(_LEFT + _PLOT_WIDTH)}" y2="{_number(y)}" class="grid"/>',
                     f'  <text x="{_number(_LEFT - 10)}" y="{_number(y + 4)}" '
-                    f'text-anchor="end" class="small">{html.escape(_number(y_value))}</text>',
+                    f'text-anchor="end" class="small">{html.escape(_tick_number(y_value))}</text>',
                 ]
             )
     zero_x = _map(0.0, x_low, x_high, _LEFT, _PLOT_WIDTH)
