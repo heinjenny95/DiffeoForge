@@ -279,7 +279,7 @@ def test_native_mesh_preview_canvas_renders_non_background_pixels(
 def test_desktop_window_exposes_required_project_controls(monkeypatch) -> None:
     pytest.importorskip("PySide6")
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
-    from PySide6.QtWidgets import QApplication, QComboBox, QLineEdit
+    from PySide6.QtWidgets import QApplication, QComboBox, QLineEdit, QPushButton
 
     from diffeoforge.desktop.widgets import DiffeoForgeWindow
 
@@ -294,6 +294,10 @@ def test_desktop_window_exposes_required_project_controls(monkeypatch) -> None:
     assert window.findChild(QComboBox, "pairwiseEvaluationCombo") is not None
     assert window.findChild(QComboBox, "optimizationEffortCombo") is not None
     assert window.create_button.isEnabled() is False
+    assert all(isinstance(step, QPushButton) for step in window.rail_steps)
+    assert window.rail_steps[0].isEnabled() is True
+    assert all(step.isEnabled() is False for step in window.rail_steps[1:])
+    assert window.rail_steps[3].accessibleName() == "Go to step 4: Results & PCA"
     assert "CPU/float64" in window.engine_hint.text()
     assert window.landmarks_edit.isEnabled() is True
     assert window.pairwise_combo.isEnabled() is True
@@ -436,7 +440,13 @@ def test_desktop_window_renders_parameter_review_as_second_step(monkeypatch, tmp
     assert "unbekannt" in workload_rows.findChildren(QLabel)[0].text()
     assert "Produktionsskalierung" in window.review_warnings_label.text()
     assert window.show_run_button.isEnabled() is True
-    window._show_run_page()
+    assert window.create_button.text() == "Continue to parameter review"
+    assert [step.isEnabled() for step in window.rail_steps] == [True, True, True, False]
+    window.rail_steps[0].click()
+    assert window.page_stack.currentIndex() == 0
+    window.rail_steps[1].click()
+    assert window.page_stack.currentIndex() == 1
+    window.rail_steps[2].click()
     assert window.page_stack.currentIndex() == 2
     assert window.rail_steps[2].objectName() == "stepActive"
     assert "a" * 64 in window.run_summary_label.text()
@@ -1074,8 +1084,10 @@ def test_desktop_loads_native_template_preview_without_modifying_source(
 
     window = DiffeoForgeWindow()
     window._thread_pool = FakePool()  # type: ignore[assignment]
-    window._result = result
+    window._project_succeeded(result)
+    assert window.create_button.text() == "Review parameters & workload"
     window._review_succeeded(review)
+    assert window.create_button.text() == "Continue to parameter review"
 
     assert window.template_preview_card.isHidden() is False
     assert window.template_preview_plane_combo.isEnabled() is False
@@ -1262,6 +1274,7 @@ def test_desktop_window_starts_bound_worker_and_shows_only_reconciled_result(
     assert len(queued) == 1
     assert isinstance(window._worker, _AtlasWorker)
     assert window.start_atlas_button.isEnabled() is False
+    assert window.start_atlas_button.text() == "Atlas computation running…"
     assert window.cancel_atlas_button.isEnabled() is True
     assert window.refresh_run_readiness_button.isEnabled() is False
     assert "desktop-bound" in window.run_summary_label.text()
@@ -1298,7 +1311,8 @@ def test_desktop_window_starts_bound_worker_and_shows_only_reconciled_result(
     assert window.run_result_card.isHidden() is False
     assert "independently verified" in window.run_state_label.text()
     assert "Subjects: 5" in window.run_result_label.text()
-    assert window.start_atlas_button.isEnabled() is False
+    assert window.start_atlas_button.isEnabled() is True
+    assert window.start_atlas_button.text() == "Continue to Results & PCA"
     assert window.refresh_run_readiness_button.isEnabled() is True
     application.processEvents()
 
@@ -1350,7 +1364,8 @@ def test_successful_atlas_automatically_starts_verified_results_review(
     assert isinstance(window._worker, _ResultReviewWorker)
     assert isinstance(queued[-1], _ResultReviewWorker)
     assert "fully reverified" in window.run_state_label.text()
-    assert window.review_run_result_button.isEnabled() is False
+    assert window.start_atlas_button.isEnabled() is False
+    assert window.start_atlas_button.text() == "Verifying Results & PCA…"
     window._worker = None
     window.close()
     application.processEvents()
@@ -1561,8 +1576,11 @@ def test_desktop_window_verifies_and_renders_step_four_before_artifact_handoff(
     window = DiffeoForgeWindow()
     window._thread_pool = FakePool()  # type: ignore[assignment]
     window._run_result = result
+    window._sync_ready_state()
 
-    window._review_run_result()
+    assert window.start_atlas_button.text() == "Continue to Results & PCA"
+    assert window.start_atlas_button.isEnabled() is True
+    window.start_atlas_button.click()
 
     assert isinstance(window._worker, _ResultReviewWorker)
     assert isinstance(queued[-1], _ResultReviewWorker)
@@ -1573,6 +1591,9 @@ def test_desktop_window_verifies_and_renders_step_four_before_artifact_handoff(
 
     assert window.page_stack.currentIndex() == 3
     assert window.rail_steps[3].objectName() == "stepActive"
+    assert [step.isEnabled() for step in window.rail_steps] == [True, False, True, True]
+    assert window.rail_steps[3].toolTip() == "Open Results & PCA."
+    assert window.start_atlas_button.text() == "Open Results & PCA"
     assert "Käfer-Atlas" in window.result_summary_label.text()
     assert "did not converge" in window.result_completion_label.text()
     assert window.result_completion_label.objectName() == "statusWarning"
@@ -1635,5 +1656,7 @@ def test_desktop_window_verifies_and_renders_step_four_before_artifact_handoff(
     assert "optimizer converged" in window.result_completion_label.text()
     window._show_run_page_from_results()
     assert window.page_stack.currentIndex() == 2
+    window.start_atlas_button.click()
+    assert window.page_stack.currentIndex() == 3
     window.close()
     application.processEvents()

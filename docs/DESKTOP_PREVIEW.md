@@ -70,6 +70,14 @@ terminal:
     inventoried VTK/CSV/JSON/SVG artifacts whose manifest bindings, size, and
     SHA-256 pass again immediately before handoff to a local application.
 
+The left workflow rail is state-aware navigation rather than a passive progress
+legend. A completed or otherwise available step can be opened directly; future
+steps and all navigation during an active worker remain disabled. The fixed
+bottom-right primary action also advances with the workflow: project creation
+becomes parameter review, atlas launch becomes verified Results & PCA review,
+and a completed review can be reopened without exposing duplicate primary
+actions inside result cards.
+
 The reference path creates `atlas.yaml` and `atlas.preflight.html`. The modern
 path creates `modern-atlas.yaml` after its stronger mesh-quality,
 initialization, optional Procrustes, and PCA-dimension checks pass. Its second
