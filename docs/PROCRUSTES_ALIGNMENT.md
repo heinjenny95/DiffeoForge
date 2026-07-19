@@ -1,6 +1,7 @@
 # Landmark-based Procrustes alignment
 
-Status: **tested numerical prototype integrated into the experimental modern workflow**
+Status: **tested engine-independent preprocessing integrated into Modern and
+Deformetrica project setup; interactive placement remains future work**
 
 Tracked by [scientific-change issue #18](https://github.com/heinjenny95/DiffeoForge/issues/18).
 
@@ -56,11 +57,13 @@ reason.
 
 ## Workflow integration and scientific limitations
 
-The [experimental modern workflow](MODERN_WORKFLOW.md) defines a strict
-long-form CSV with `mesh_file,landmark,x,y,z`, requires identical ordered
-labels for the template and every subject, writes transformed full-mesh copies,
-and inventories the complete transformations and convergence evidence. Raw and
-aligned meshes remain side by side in the immutable run.
+The shared preprocessing layer defines a strict long-form CSV with
+`mesh_file,landmark,x,y,z`, requires identical ordered labels for the template
+and every subject, writes transformed full-mesh copies, and inventories the
+complete transformations and convergence evidence. Raw meshes are never
+edited. Content-addressed aligned cohorts can feed either Deformetrica project
+setup or the [experimental modern workflow](MODERN_WORKFLOW.md); identical
+verified requests reuse the same immutable aligned cohort.
 
 The code still does not provide interactive landmark placement, uncertainty
 estimates, missing-landmark handling, semilandmark sliding, symmetry models,

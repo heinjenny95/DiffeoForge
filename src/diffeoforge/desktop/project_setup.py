@@ -7,7 +7,11 @@ from enum import StrEnum
 from pathlib import Path
 
 from diffeoforge.config import ConfigurationError, validate_input_paths
-from diffeoforge.initialization import SUPPORTED_UNITS, initialize_project
+from diffeoforge.initialization import (
+    SUPPORTED_UNITS,
+    ensure_generated_configuration_replaceable,
+    initialize_project,
+)
 from diffeoforge.report import (
     default_preflight_report_path,
     ensure_preflight_report_replaceable,
@@ -51,6 +55,7 @@ class ProjectSetupResult:
     subject_count: int
     report_path: Path | None
     notices: tuple[str, ...]
+    preprocessing_report_path: Path | None = None
 
     @property
     def engine_label(self) -> str:
@@ -58,7 +63,7 @@ class ProjectSetupResult:
 
         if self.engine is DesktopEngine.MODERN_CPU:
             return "DiffeoForge Modern CPU (experimental)"
-        return "Deformetrica 4.3 reference (external)"
+        return "Deformetrica 4.3 (recommended backend)"
 
 
 def _normalize_request(request: ProjectSetupRequest) -> ProjectSetupRequest:
@@ -76,10 +81,6 @@ def _normalize_request(request: ProjectSetupRequest) -> ProjectSetupRequest:
     if not pattern:
         raise ConfigurationError("Subject filename pattern must not be empty")
     name = request.project_name.strip() if request.project_name else None
-    if request.landmarks_file is not None and engine is DesktopEngine.DEFORMETRICA_REFERENCE:
-        raise ConfigurationError(
-            "Landmark Procrustes is currently available only for the modern CPU workflow"
-        )
     pairwise_mode = str(request.pairwise_mode).strip().lower()
     if pairwise_mode not in {"dense", "blockwise"}:
         raise ConfigurationError("pairwise_mode must be 'dense' or 'blockwise'")
@@ -136,19 +137,53 @@ def _normalize_request(request: ProjectSetupRequest) -> ProjectSetupRequest:
 def _create_reference_project(request: ProjectSetupRequest) -> ProjectSetupResult:
     config_path = request.project_directory / "atlas.yaml"
     report_path = default_preflight_report_path(config_path)
+    ensure_generated_configuration_replaceable(
+        config_path,
+        overwrite=request.overwrite_existing_configuration,
+    )
     if report_path.exists() and not request.overwrite_existing_configuration:
         raise ConfigurationError(
             f"Preflight report already exists and will not be overwritten: {report_path}"
         )
     if report_path.exists() and request.overwrite_existing_configuration:
         ensure_preflight_report_replaceable(report_path)
+
+    input_directory = request.mesh_directory
+    input_template = request.template
+    preprocessing_report_path: Path | None = None
+    effective_project_name = request.project_name
+    if request.landmarks_file is not None:
+        try:
+            from diffeoforge.preprocessing import prepare_landmark_aligned_inputs
+        except ImportError as error:
+            raise ConfigurationError(
+                "Landmark Procrustes dependencies are missing; install diffeoforge[analysis]."
+            ) from error
+        aligned = prepare_landmark_aligned_inputs(
+            request.mesh_directory,
+            project_directory=request.project_directory,
+            landmarks_file=request.landmarks_file,
+            template=request.template,
+            subject_pattern=request.subject_pattern,
+        )
+        input_directory = aligned.directory
+        input_template = aligned.template
+        preprocessing_report_path = aligned.evidence
+        if effective_project_name is None:
+            source = request.mesh_directory
+            name_source = (
+                source.parent.name
+                if source.name.casefold() in {"mesh", "meshes", "data"}
+                else source.name
+            )
+            effective_project_name = f"{name_source}-atlas"
     initialized = initialize_project(
-        request.mesh_directory,
+        input_directory,
         units=request.units,
         config_path=config_path,
-        template=request.template,
+        template=input_template,
         subject_pattern=request.subject_pattern,
-        project_name=request.project_name,
+        project_name=effective_project_name,
         overwrite=request.overwrite_existing_configuration,
     )
     write_preflight_report(
@@ -162,6 +197,12 @@ def _create_reference_project(request: ProjectSetupRequest) -> ProjectSetupResul
             0,
             "Geometry-scaled starter values are exploratory and require scientific review.",
         )
+    if preprocessing_report_path is not None:
+        notices.insert(
+            0,
+            "Homologous landmarks were validated and generalized Procrustes was applied "
+            "to immutable aligned mesh copies. Raw meshes were not modified.",
+        )
     notices.append(
         "Project creation did not execute Deformetrica; prepare and run are separate "
         "reviewed steps."
@@ -172,6 +213,7 @@ def _create_reference_project(request: ProjectSetupRequest) -> ProjectSetupResul
         template_path=initialized.preflight.inputs.template,
         subject_count=len(initialized.preflight.subjects),
         report_path=report_path,
+        preprocessing_report_path=preprocessing_report_path,
         notices=tuple(notices),
     )
 
@@ -247,6 +289,7 @@ def _create_modern_project(request: ProjectSetupRequest) -> ProjectSetupResult:
         template_path=inputs.template,
         subject_count=inputs.subject_count,
         report_path=None,
+        preprocessing_report_path=None,
         notices=tuple(notices),
     )
 

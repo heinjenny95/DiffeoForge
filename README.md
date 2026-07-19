@@ -8,9 +8,11 @@
 
 DiffeoForge is the working title for an open-source, reproducible workflow for
 diffeomorphic atlas construction from 3D surface meshes. The project aims to
-make landmark-free atlas estimation usable by researchers without requiring
-Python, notebook, XML, or CUDA expertise while preserving full access to every
-scientific parameter and generated file.
+make Deformetrica usable by researchers without requiring Python, notebook,
+XML, or CUDA expertise while preserving full access to every scientific
+parameter and generated file. Optional homologous landmarks and an explicit
+generalized-Procrustes step belong to DiffeoForge's engine-independent
+preprocessing, not to one numerical backend.
 
 The project is being developed in public from its first engineering decisions.
 The name may change before the first release.
@@ -22,11 +24,12 @@ same operations from a command line:
 
 ```text
 Select mesh directory
-  -> validate meshes and configuration
-  -> review warnings and estimated resource use
-  -> generate explicit engine configuration
-  -> estimate atlas
-  -> inspect convergence and quality report
+  -> validate and inspect meshes
+  -> optionally place/import homologous landmarks
+  -> review Procrustes alignment and immutable aligned copies
+  -> review warnings, parameters, and estimated resource use
+  -> run the recommended Deformetrica backend with progress and bounded ETA
+  -> inspect atlas convergence, quality, PCA, and shape plots
   -> export a reproducible run bundle
 ```
 
@@ -73,8 +76,8 @@ the source run.
 
 - **No hidden defaults:** effective values are written to every run manifest.
 - **Engine independence:** workflow logic is separated from numerical engines.
-- **Reference before replacement:** a frozen Deformetrica backend will establish
-  reference behavior before a modern engine is accepted.
+- **Deformetrica-first product:** the established backend is recommended while
+  a replacement engine remains experimental until it passes evidence gates.
 - **Fail before compute:** invalid paths, meshes, units, and parameter ranges
   should be detected before an expensive run starts.
 - **Immutable runs:** inputs, configuration, software versions, hashes, logs,

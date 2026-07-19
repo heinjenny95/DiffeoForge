@@ -1396,7 +1396,8 @@ class DiffeoForgeWindow(QMainWindow):
             "DiffeoForge Modern CPU (experimental)", DesktopEngine.MODERN_CPU
         )
         self.engine_combo.addItem(
-            "Deformetrica 4.3 reference (external)", DesktopEngine.DEFORMETRICA_REFERENCE
+            "Deformetrica 4.3 (recommended backend)",
+            DesktopEngine.DEFORMETRICA_REFERENCE,
         )
         self.engine_combo.currentIndexChanged.connect(self._update_engine_explanation)
         engine_box = QWidget()
@@ -1980,8 +1981,8 @@ class DiffeoForgeWindow(QMainWindow):
     @Slot()
     def _update_engine_explanation(self) -> None:
         modern = self.engine_combo.currentData() == DesktopEngine.MODERN_CPU
-        self.landmarks_edit.setEnabled(modern)
-        self.landmarks_button.setEnabled(modern)
+        self.landmarks_edit.setEnabled(True)
+        self.landmarks_button.setEnabled(True)
         self.pairwise_combo.setEnabled(modern)
         self.optimization_effort_combo.setEnabled(modern)
         if modern:
@@ -1990,8 +1991,9 @@ class DiffeoForgeWindow(QMainWindow):
             )
         else:
             self.engine_hint.setText(
-                "Independent Deformetrica 4.3 reference; Docker remains external and is "
-                "not bundled."
+                "Deformetrica 4.3 is the recommended numerical backend. Optional landmark "
+                "Procrustes is performed by DiffeoForge first; Docker remains external "
+                "for now."
             )
         self._update_pairwise_explanation()
         self._update_optimization_explanation()
@@ -2175,9 +2177,7 @@ class DiffeoForgeWindow(QMainWindow):
             project_name=self.name_edit.text().strip() or None,
             subject_pattern=self.pattern_edit.text(),
             landmarks_file=(
-                Path(landmarks)
-                if landmarks and self.engine_combo.currentData() == DesktopEngine.MODERN_CPU
-                else None
+                Path(landmarks) if landmarks else None
             ),
             pairwise_mode="blockwise" if blockwise else "dense",
             query_tile_size=256 if blockwise else None,
@@ -2267,11 +2267,16 @@ class DiffeoForgeWindow(QMainWindow):
             f"Validation passed: {result.subject_count} subject meshes were accepted."
         )
         report = f"\nPreflight report: {result.report_path}" if result.report_path else ""
+        preprocessing = (
+            f"\nProcrustes evidence: {result.preprocessing_report_path}"
+            if result.preprocessing_report_path
+            else ""
+        )
         notices = "\n".join(f"• {notice}" for notice in result.notices)
         self.result_label.setText(
             f"Engine: {result.engine_label}\n"
             f"Template: {result.template_path}\n"
-            f"Configuration: {result.config_path}{report}\n\n"
+            f"Configuration: {result.config_path}{report}{preprocessing}\n\n"
             f"Important notices:\n{notices}"
         )
         self.result_card.show()

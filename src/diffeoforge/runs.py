@@ -914,8 +914,15 @@ def _log_reports_keyboard_interrupt(log_path: Path) -> bool:
     return any(line.strip() == "KeyboardInterrupt" for line in tail.splitlines())
 
 
-def execute_run(run_directory: Path | str) -> int:
+def execute_run(
+    run_directory: Path | str,
+    *,
+    line_callback: Callable[[str], None] | None = None,
+) -> int:
     """Execute a prepared run exactly once and record append-only lifecycle evidence."""
+
+    if line_callback is not None and not callable(line_callback):
+        raise TypeError("line_callback must be callable or None")
 
     run_path = Path(run_directory).expanduser().resolve()
     manifest = verify_prepared_run(run_path)
@@ -975,6 +982,8 @@ def execute_run(run_directory: Path | str) -> int:
             for line in process.stdout:
                 print(line, end="", flush=True)
                 log_handle.write(line)
+                if line_callback is not None:
+                    line_callback(line)
             return_code = process.wait()
     except KeyboardInterrupt:
         interrupted = True

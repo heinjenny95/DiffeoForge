@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import csv
 import importlib.util
 import shutil
 from pathlib import Path
@@ -7,15 +8,29 @@ from pathlib import Path
 import pytest
 import yaml
 
+from diffeoforge.analysis.landmarks import LANDMARK_COLUMNS
 from diffeoforge.config import ConfigurationError
 from diffeoforge.desktop.project_setup import (
     DesktopEngine,
     ProjectSetupRequest,
     create_project,
 )
+from diffeoforge.mesh import read_vtk_polydata, sha256_file
 
 ROOT = Path(__file__).parents[1]
 MESH_DIRECTORY = ROOT / "examples" / "synthetic" / "meshes"
+
+
+def _write_landmarks(path: Path) -> Path:
+    meshes = [MESH_DIRECTORY / "template.vtk", *sorted(MESH_DIRECTORY.glob("subject-*.vtk"))]
+    with path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.writer(handle, lineterminator="\n")
+        writer.writerow(LANDMARK_COLUMNS)
+        for mesh in meshes:
+            points = read_vtk_polydata(mesh).vertices
+            for label, index in zip(("a", "b", "c"), (0, 40, 80), strict=True):
+                writer.writerow((mesh.name, label, *points[index]))
+    return path
 
 
 def test_reference_project_setup_uses_shared_core_and_writes_preflight(tmp_path: Path) -> None:
@@ -206,20 +221,29 @@ def test_reference_overwrite_prechecks_report_ownership_before_config_mutation(
     assert initial.report_path.read_text(encoding="utf-8") == "researcher-owned HTML\n"
 
 
-def test_reference_project_rejects_modern_only_landmarks_before_writing(tmp_path: Path) -> None:
+def test_reference_project_applies_landmarks_before_deformetrica_without_editing_raw_meshes(
+    tmp_path: Path,
+) -> None:
     project_directory = tmp_path / "reference"
-    with pytest.raises(ConfigurationError, match="only for the modern CPU"):
-        create_project(
-            ProjectSetupRequest(
-                mesh_directory=MESH_DIRECTORY,
-                project_directory=project_directory,
-                units="unitless",
-                engine=DesktopEngine.DEFORMETRICA_REFERENCE,
-                landmarks_file=tmp_path / "landmarks.csv",
-            )
+    sources = (MESH_DIRECTORY / "template.vtk", *sorted(MESH_DIRECTORY.glob("subject-*.vtk")))
+    hashes_before = {path: sha256_file(path) for path in sources}
+    result = create_project(
+        ProjectSetupRequest(
+            mesh_directory=MESH_DIRECTORY,
+            project_directory=project_directory,
+            units="unitless",
+            engine=DesktopEngine.DEFORMETRICA_REFERENCE,
+            landmarks_file=_write_landmarks(tmp_path / "landmarks.csv"),
         )
+    )
 
-    assert not project_directory.exists()
+    assert result.preprocessing_report_path is not None
+    assert result.preprocessing_report_path.is_file()
+    assert result.template_path.parent.name.startswith("aligned-")
+    assert {path: sha256_file(path) for path in sources} == hashes_before
+    config = yaml.safe_load(result.config_path.read_text(encoding="utf-8"))
+    assert "preprocessing/aligned-" in config["input"]["directory"]
+    assert any("Raw meshes were not modified" in notice for notice in result.notices)
 
 
 def test_modern_project_setup_uses_existing_workflow_service(tmp_path: Path) -> None:

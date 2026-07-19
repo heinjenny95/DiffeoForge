@@ -58,6 +58,16 @@ This roadmap describes evidence gates rather than promised dates.
 
 ## Milestone 3: Accessible application
 
+- [x] Adopt the Deformetrica-first product decision with an evidence-gated Modern engine
+- [x] Extract strict landmark CSV handling from the Modern engine
+- [x] Apply generalized Procrustes to content-addressed immutable mesh copies usable by
+  Deformetrica or any future backend
+- [x] Implement conservative observed-rate ETA arithmetic for Deformetrica iteration logs
+- [ ] Add interactive 3D homologous-landmark placement and review
+- [ ] Connect Procrustes preview/approval to the guided desktop workflow
+- [ ] Connect supervised Deformetrica preparation, execution, cancellation, and recovery
+- [ ] Display observed progress and explicitly labelled ETA-to-iteration-cap
+- [ ] Import verified Deformetrica outputs into the shared PCA/result pipeline
 - [x] Define desktop executable/installer architecture and release gates
 - [ ] Local graphical interface backed by the shared core
   - [x] First non-overwriting mesh-folder and project-setup slice

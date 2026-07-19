@@ -317,7 +317,9 @@ def test_desktop_window_exposes_required_project_controls(monkeypatch) -> None:
     window.engine_combo.setCurrentIndex(1)
     application.processEvents()
     assert "Deformetrica 4.3" in window.engine_hint.text()
-    assert window.landmarks_edit.isEnabled() is False
+    assert window.landmarks_edit.isEnabled() is True
+    window.landmarks_edit.setText("landmarks.csv")
+    assert window._request().landmarks_file == Path("landmarks.csv")
     assert window.pairwise_combo.isEnabled() is False
     assert window.optimization_effort_combo.isEnabled() is False
     assert window._request().pairwise_mode == "dense"
