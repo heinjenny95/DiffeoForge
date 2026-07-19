@@ -191,6 +191,11 @@ class ReferenceExecutionController:
 
     def request_cancel(self) -> bool:
         with self._lock:
+            if self._state == "idle":
+                if self._cancel_pending:
+                    return False
+                self._cancel_pending = True
+                return True
             if self._state not in {"running", "cancelling"}:
                 return False
             if self._cancel_pending or self._cancel_sent:

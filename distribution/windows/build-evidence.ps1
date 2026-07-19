@@ -90,6 +90,18 @@ try {
     if ($LASTEXITCODE -ne 0) {
         throw "Frozen reference worker hard-parent-death audit failed."
     }
+    & $Python tools\audit_frozen_reference_parent_death.py `
+        (Join-Path $bundle "DiffeoForgeReferenceExecutionWorker.exe") `
+        examples\minimal-atlas-container.yaml --execution
+    if ($LASTEXITCODE -ne 0) {
+        throw "Frozen reference execution worker hard-parent-death audit failed."
+    }
+    & $Python tools\smoke_frozen_reference_execution_worker.py `
+        (Join-Path $bundle "DiffeoForgeReferenceExecutionWorker.exe") `
+        examples\minimal-atlas-container.yaml
+    if ($LASTEXITCODE -ne 0) {
+        throw "Frozen reference execution worker cancel-before-prepare smoke failed."
+    }
     & $Python tools\audit_frozen_reference_preparation_parent_death.py `
         (Join-Path $bundle "DiffeoForgeReferencePreparationWorker.exe") `
         $resolvedPreparationApproval $resolvedPreparationConfig `

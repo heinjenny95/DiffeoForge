@@ -106,7 +106,10 @@ This roadmap describes evidence gates rather than promised dates.
   - [x] Exact non-overwriting saved-status verification-evidence export in CLI and desktop
   - [x] Exact non-overwriting plan/approval verification-evidence export in CLI
   - [x] Hash-bound source-level reference execution supervision and cancellation
-  - [ ] Frozen reference execution worker, guided recovery, and native mesh rendering
+  - [x] Add the reference execution sibling to the v0.4 freeze contract with
+    queued-cancel and hard-parent-death gates
+  - [ ] Record fresh clean-runner v0.4 freeze evidence and rebuild the installer
+  - [ ] Guided reference recovery/resume and native registration rendering
 - [ ] Parameter explanations and safe presets
 - [x] Pre-compute configured all-pairs and known-payload workload report
 - [x] Versioned workflow-stage and committed optimizer-decision reporting

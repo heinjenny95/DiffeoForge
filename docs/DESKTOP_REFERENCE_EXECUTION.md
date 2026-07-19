@@ -1,7 +1,7 @@
 # Supervised desktop Deformetrica execution
 
-Status: **source-level alpha; execution and cancellation are connected, frozen
-installer integration is not yet claimed**
+Status: **alpha; execution and cancellation are connected and the execution
+worker is included in the prospective Windows evidence bundle**
 
 DiffeoForge desktop can launch the exact Deformetrica configuration completed
 in parameter review after its configured container environment passes the
@@ -73,8 +73,11 @@ keeps the window open until the parent reconciles a terminal outcome.
 
 ## Current limitations
 
-- The dedicated execution worker is exercised from source and is not yet a
-  sibling executable in the Windows evidence bundle or installer.
+- The PyInstaller specification now includes the dedicated execution worker as
+  a fifth sibling executable. The prospective v0.4 evidence build requires both
+  hard-parent-death containment and a real queued-cancellation smoke before it
+  can write evidence. A fresh clean-runner v0.4 observation and rebuilt
+  installer are still pending; the currently installed preview is unchanged.
 - Interrupted-run discovery and resume exist in the shared CLI services but are
   not yet exposed as guided desktop actions.
 - Verified Deformetrica momenta and control points are imported into the shared

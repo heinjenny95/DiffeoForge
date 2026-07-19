@@ -165,8 +165,9 @@ The GUI does not yet edit scientific parameters, render meshes interactively in
 3D, place landmarks, resume an atlas, or reconcile an already dead parent
 application. Verified Deformetrica momenta now enter the shared PCA screen;
 reference PC deformation meshes and registration renderings remain open.
-Source-level Deformetrica supervision is connected, but its dedicated execution
-worker is not yet part of the frozen Windows bundle. The projection preview is
+Source-level Deformetrica supervision is connected and its dedicated execution
+worker is now in the prospective v0.4 Windows freeze contract. A clean-runner
+v0.4 observation and rebuilt installer remain pending. The projection preview is
 not mesh QC or registration evidence. Step 4 is a detailed read-only evidence and
 artifact-handoff view, not an interactive 3D renderer or a scientific
 interpretation system. A developer-machine PyInstaller one-directory evidence

@@ -177,8 +177,8 @@ and expiry 1 August 2026. This remains unsigned
 installer/uninstaller, Authenticode, Defender, clean-VM, no-network, crash,
 CPU numerical, and scientific release gates remain open.
 
-DiffeoForge can be frozen on a 64-bit Windows development machine into one
-directory containing four entry points:
+DiffeoForge's prospective v0.4 contract can be frozen on a 64-bit Windows
+development machine into one directory containing five entry points:
 
 - `DiffeoForge.exe` is the windowed Qt application and does not allocate a
   console;
@@ -188,6 +188,8 @@ directory containing four entry points:
   nonnumerical reference harness supervised by its dedicated parent controller.
 - `DiffeoForgeReferencePreparationWorker.exe` is the separate approval-bound,
   preparation-only worker; it cannot authorize or start engine execution.
+- `DiffeoForgeReferenceExecutionWorker.exe` is the contained execution worker
+  used by the GUI to supervise the external Deformetrica adapter.
 
 The workers remain separate so their parents can enforce the corresponding
 versioned request/event protocols, containment, immutable destinations, and
@@ -197,7 +199,7 @@ executable. A source checkout continues to use Python module entry points.
 This slice uses PyInstaller 6.21.0 in its documented one-directory mode. The
 builder-only pin is in `distribution/windows/freeze-requirements.txt`; it is
 not a complete release lock or SBOM. The build spec collects the DiffeoForge
-schemas and creates the four executables in one shared bundle. It does not
+schemas and creates the five executables in one shared bundle. It does not
 include the external Deformetrica 4.3 environment.
 
 ## Reproduce the evidence build
@@ -254,27 +256,32 @@ and clean-source boundaries. It then:
 5. hard-exits a real controller immediately after it assigns a suspended frozen
    reference worker to the Windows kill-on-close Job, then requires that worker
    to terminate within the bounded audit deadline;
-6. hard-exits the real preparation controller immediately after assigning the
+6. repeats the suspended Job/hard-parent-death audit for the real reference
+   execution sibling, then queues cancellation before its request can prepare a
+   destination or start the external engine;
+7. hard-exits the real preparation controller immediately after assigning the
    suspended frozen preparation sibling to the Job, then requires bounded
    worker termination, zero request delivery, zero destination/private-stage
    mutation, and unchanged authorization inputs;
-7. runs the frozen approval-bound preparation worker through its real parent
+8. runs the frozen approval-bound preparation worker through its real parent
    controller, requires the exact five-event `prepared_not_executed` lifecycle,
    independently reverifies the published run, and confirms no engine started;
-8. records the exact source commit, builder/runtime package versions, every
+9. records the exact source commit, builder/runtime package versions, every
    bundled relative path, byte count, file SHA-256, aggregate byte count, and
    inventory SHA-256;
-9. writes `freeze-evidence.json` and its `freeze-evidence.sha256` sidecar;
-10. immediately re-verifies the sidecar and exact file inventory.
+10. writes `freeze-evidence.json` and its `freeze-evidence.sha256` sidecar;
+11. immediately re-verifies the sidecar and exact file inventory.
 
 `tools/desktop_bundle_evidence.py verify <bundle>` can repeat the final
 verification. It fails closed on a changed manifest, unsafe path, missing,
 extra, reordered, resized, or rehashed file, unexpected entry point, or a
 status outside the versioned engineering-evidence schema. Evidence creation is
-non-overwriting. New evidence uses schema v0.3 and requires all four entry
+non-overwriting. New evidence uses schema v0.4 and requires all five entry
 points. The verifier retains explicit read-only support for genuine v0.1
-two-entry-point and v0.2 three-entry-point manifests; it never silently
-reinterprets either as v0.3.
+two-entry-point, v0.2 three-entry-point, and v0.3 four-entry-point manifests;
+it never silently reinterprets an older artifact as v0.4. A fresh v0.4
+clean-runner observation has not yet been recorded; the observations below are
+historical v0.1-v0.3 evidence.
 
 ## First developer-host observation
 
@@ -294,9 +301,9 @@ is authoritative for its directory.
 
 ## What this proves
 
-One successful evidence build proves only that the recorded clean source commit
-was frozen on the recorded Windows developer host, its four entry points were
-present, the GUI smoke exited successfully, the nonnumerical reference harness
+One successful v0.4 evidence build proves only that the recorded clean source
+commit was frozen on the recorded Windows developer host, its five entry points
+were present, the GUI smoke exited successfully, the nonnumerical reference harness
 stopped before preparation through its real frozen worker/controller boundary,
 the suspended reference worker terminated after hard controller death through
 the real Windows Job boundary,
@@ -304,7 +311,10 @@ the suspended frozen preparation worker terminated after hard controller death
 before request delivery without creating a destination or private stage,
 one externally approved reference run reached the independently verified
 `prepared_not_executed` state through the real frozen preparation
-worker/controller boundary without starting an engine,
+worker/controller boundary without starting an engine, the suspended frozen
+execution worker terminated after hard controller death, and the real frozen
+execution worker accepted a queued cancellation and stopped before preparation
+without creating a destination or starting an engine,
 the optional recorded synthetic Modern workflow completed through its real
 frozen worker/controller boundary, and the resulting directory matched its
 exact-file inventory at verification time.

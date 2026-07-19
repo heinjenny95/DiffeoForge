@@ -1,6 +1,7 @@
 # Versioned desktop reference worker protocol
 
-Status: **versioned phase-dependent transport used by a source execution worker**
+Status: **versioned phase-dependent transport used by the source and frozen
+execution-worker boundaries**
 
 The external Deformetrica lifecycle cannot reuse the Modern worker's
 nonpublishing cancellation semantics. A Modern cancellation removes private
@@ -47,17 +48,21 @@ requires the destination but no result hash.
 
 ## Current boundary
 
-A dedicated source execution worker now consumes this protocol. Its parent
-controller provides a bounded pipe reader, Windows Job containment, strict
+A dedicated execution worker now consumes this protocol in source and frozen
+layouts. Its parent controller provides a bounded pipe reader, Windows Job containment, strict
 event/exit reconciliation, configuration and iteration-cap binding, and
 independent terminal verification. Desktop step 3 transports only validated
 events into Qt and enables launch only after the read-only environment check.
 See [supervised desktop Deformetrica execution](DESKTOP_REFERENCE_EXECUTION.md).
 
-This source path does not yet claim a frozen execution sibling, guided recovery,
-resume, or PCA import. The original deliberately nonnumerical harness and its
-controller remain as narrow historical/evidence boundaries and are not reused
-for engine execution.
+The prospective v0.4 Windows bundle gives the execution path its own sibling
+executable. Evidence creation requires hard-parent-death containment plus a
+queued-cancellation smoke that must stop before preparation without creating a
+destination or starting Deformetrica. A fresh clean-runner observation and a
+rebuilt installer are still pending. Guided recovery and resume remain open;
+strict momenta/control-point PCA import is connected after a completed run.
+The original deliberately nonnumerical harness and its controller remain as
+narrow historical/evidence boundaries and are not reused for engine execution.
 
 A separate, narrower v0.1 preparation request and event vocabulary now binds an
 approval path, the independently recorded complete approval SHA-256, current

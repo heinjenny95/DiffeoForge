@@ -198,10 +198,12 @@ preflight, preparation, execution, phase-dependent cancellation, observed
 iterations, and an explicitly bounded ETA-to-iteration-cap in a contained child
 process. A Qt-independent parent independently reconciles terminal filesystem,
 result-report, and hash evidence before the GUI accepts the outcome. This real
-execution child is not yet included in the frozen Windows bundle; interrupted
+execution child now has a dedicated PyInstaller sibling, cancel-before-prepare
+smoke, and hard-parent-death gate in the next freeze contract; a fresh clean-runner
+v0.4 observation and rebuilt installer have not yet been produced. Interrupted
 run recovery and reference PC deformation rendering remain open. The verified
 source-level momenta PCA handoff is connected. The older preparation-only child
-remains a fourth sibling in the
+remains a separate narrow sibling in the
 evidence-only freeze and cannot authorize engine execution. The Modern path does not
 provide checkpoint/resume. The real source preparation worker also has suspended-process Windows
 hard-parent-death evidence before request delivery. For the Modern compute

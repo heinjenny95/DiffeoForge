@@ -273,6 +273,20 @@ def test_reference_execution_cancel_queued_during_process_launch(
     assert not request.destination.exists()
 
 
+def test_reference_execution_cancel_can_be_queued_before_run(tmp_path: Path) -> None:
+    request = _request(tmp_path)
+    controller = ReferenceExecutionController(request, cwd=ROOT)
+
+    assert controller.request_cancel() is True
+    assert controller.request_cancel() is False
+    result = controller.run()
+
+    assert result.outcome == "stopped_before_prepare"
+    assert result.exit_code == 130
+    assert controller.state == "stopped_before_prepare"
+    assert not request.destination.exists()
+
+
 def test_reference_execution_controller_is_single_use(tmp_path: Path) -> None:
     request = _request(tmp_path)
     controller = ReferenceExecutionController(
