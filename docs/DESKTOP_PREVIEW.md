@@ -58,12 +58,13 @@ terminal:
    optimizer decisions, and offers one cooperative cancel action; and
 12. expose the result directory only after the parent controller independently
     verifies the published workflow, manifest hash, subject count, and bundle;
-13. continue to a fourth screen only after a fresh full verification of the
-    workflow, nested bundle, exact inventories, hashes, mesh QC, and static SVG
-    safety checks; and
-14. inspect bounded Atlas, optimizer, momenta-PCA, and QC summaries, then open
-    only inventoried VTK/CSV/JSON/SVG artifacts whose manifest bindings, size,
-    and SHA-256 pass again immediately before handoff to a local application.
+13. automatically continue to a fourth screen only after a fresh full
+    verification of the workflow, nested bundle, exact inventories, hashes,
+    mesh QC, and static SVG safety checks; and
+14. inspect bounded Atlas, optimizer, momenta-PCA, and QC summaries together
+    with embedded verified PC1/PC2 and PC2/PC3 score plots, then open only
+    inventoried VTK/CSV/JSON/SVG artifacts whose manifest bindings, size, and
+    SHA-256 pass again immediately before handoff to a local application.
 
 The reference path creates `atlas.yaml` and `atlas.preflight.html`. The modern
 path creates `modern-atlas.yaml` after its stronger mesh-quality,

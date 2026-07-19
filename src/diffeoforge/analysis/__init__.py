@@ -2,6 +2,7 @@
 
 from diffeoforge.analysis.pca import PCAResult, momenta_pca, principal_component_analysis
 from diffeoforge.analysis.pca_visualization import (
+    write_pca_score_pair_svg,
     write_pca_scores_svg,
     write_pca_scree_svg,
 )
@@ -20,6 +21,7 @@ __all__ = [
     "generalized_procrustes",
     "momenta_pca",
     "principal_component_analysis",
+    "write_pca_score_pair_svg",
     "write_pca_scores_svg",
     "write_pca_scree_svg",
 ]

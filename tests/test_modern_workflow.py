@@ -685,6 +685,7 @@ def test_modern_init_and_cli_run_form_a_public_folder_to_bundle_path(
     assert "Subject meshes: 5" in captured.out
     assert "PCA scree plot:" in captured.out
     assert "PCA scores plot:" in captured.out
+    assert "PCA PC2 vs PC3 plot:" in captured.out
     assert "PCA deformation meshes:" in captured.out
     assert "Progress [7/7 stages] verification completed" in captured.out
     assert workflow.verify_modern_workflow(tmp_path / "cli-run")["project"]["name"]
@@ -694,6 +695,7 @@ def test_modern_init_and_cli_run_form_a_public_folder_to_bundle_path(
     assert verify_code == 0
     assert "Modern workflow verified" in verify_output.out
     assert "PCA scree plot:" in verify_output.out
+    assert "PCA PC2 vs PC3 plot:" in verify_output.out
 
 
 def test_modern_init_cli_generates_only_coherent_blockwise_plans(

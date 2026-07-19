@@ -4,7 +4,7 @@ Status: **tested experimental analysis product in the modern workflow; not scien
 
 Core PCA is tracked by
 [scientific-change issue #19](https://github.com/heinjenny95/DiffeoForge/issues/19);
-plots and deformation products are tracked prospectively by
+plot and deformation-product work is tracked by
 [issue #30](https://github.com/heinjenny95/DiffeoForge/issues/30).
 
 ## Feature space is part of the result
@@ -59,11 +59,16 @@ passes the detached subject momenta directly into `momenta_pca`. The
 feature order as a JSON summary plus CSV scores, loadings, and mean vector and
 tests those files against the in-memory PCA arrays.
 
-The bundle also writes two dependency-light static SVGs: a scree plot of the
-retained explained-total-variance ratios and a PC1/PC2 subject-score plot. If
-only PC1 is retained, the latter is explicitly a one-dimensional PC1 strip; a
-second axis is never invented. Subject identifiers are stored as escaped SVG
-text/tooltips, and the files contain no scripts or external resources.
+The bundle writes dependency-light static SVGs for the scree plot and the two
+standard subject-score views: PC1 versus PC2 and PC2 versus PC3. Every score
+axis includes its explained-variance percentage, and both score views preserve
+the exact same score matrix and subject ordering. If fewer than three
+components are mathematically available, the valid PC1/PC2 view remains and
+the manifest records why PC2/PC3 is unavailable; an axis is never invented.
+If only PC1 is retained, the first view becomes an explicit one-dimensional
+PC1 strip. Subject identifiers are stored as escaped SVG text/tooltips, and the
+files contain no scripts or external resources. Bundle verification checks the
+declared axes and subject order in addition to static-SVG safety.
 
 For geometric inspection, the workflow reconstructs the endpoint of the mean
 momenta and both directions of selected nonzero components. For component

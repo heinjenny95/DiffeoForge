@@ -74,6 +74,7 @@ class ModernResultReview:
     quality: tuple[ResultReviewItem, ...]
     artifacts: tuple[ModernResultArtifact, ...]
     scientific_boundaries: tuple[str, ...]
+    pca_pc2_pc3_unavailable_reason: str | None = None
 
     def artifact(self, key: str) -> ModernResultArtifact:
         for artifact in self.artifacts:
@@ -329,6 +330,30 @@ def review_modern_result(directory: Path | str) -> ModernResultReview:
             )
         )
 
+    plots = pca["plots"]
+    secondary_plot_path = plots.get("scores_pc2_pc3_path")
+    secondary_unavailable_reason = plots.get("scores_pc2_pc3_unavailable_reason")
+    if secondary_plot_path is None:
+        if secondary_unavailable_reason is None:
+            secondary_unavailable_reason = (
+                "This result predates the mandatory PC2-versus-PC3 plot artifact."
+            )
+        pca_items.append(
+            ResultReviewItem(
+                "PC2 vs PC3 plot",
+                "unavailable",
+                str(secondary_unavailable_reason),
+            )
+        )
+    else:
+        pca_items.append(
+            ResultReviewItem(
+                "Standard score plots",
+                "PC1 vs PC2 and PC2 vs PC3",
+                "Both plots use the same verified score matrix and subject ordering.",
+            )
+        )
+
     add_artifact(
         "estimated-template",
         "Estimated template (VTK)",
@@ -366,11 +391,19 @@ def review_modern_result(directory: Path | str) -> ModernResultReview:
     )
     add_artifact(
         "pca-score-plot",
-        "PCA score plot (SVG)",
+        "PCA scores: PC1 vs PC2 (SVG)",
         pca["plots"]["scores_path"],
         "svg",
-        "Static, script-free SVG of the first one or two PCs.",
+        "Static, script-free SVG with explained variance on both axes.",
     )
+    if secondary_plot_path is not None:
+        add_artifact(
+            "pca-score-plot-pc2-pc3",
+            "PCA scores: PC2 vs PC3 (SVG)",
+            secondary_plot_path,
+            "svg",
+            "Static, script-free SVG using the same score matrix and subject ordering.",
+        )
     deformations = pca["deformations"]
     add_artifact(
         "pca-deformation-definition",
@@ -546,6 +579,9 @@ def review_modern_result(directory: Path | str) -> ModernResultReview:
         quality=quality_items,
         artifacts=tuple(artifacts),
         scientific_boundaries=boundaries,
+        pca_pc2_pc3_unavailable_reason=(
+            None if secondary_plot_path is not None else str(secondary_unavailable_reason)
+        ),
     )
 
 

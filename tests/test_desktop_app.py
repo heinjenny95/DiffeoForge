@@ -1295,6 +1295,59 @@ def test_desktop_window_starts_bound_worker_and_shows_only_reconciled_result(
     application.processEvents()
 
 
+def test_successful_atlas_automatically_starts_verified_results_review(
+    monkeypatch, tmp_path
+) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from diffeoforge.desktop.widgets import DiffeoForgeWindow, _ResultReviewWorker
+    from diffeoforge.desktop.worker_controller import DesktopWorkerControllerResult
+    from diffeoforge.desktop.worker_protocol import DesktopWorkerEvent
+
+    application = QApplication.instance() or QApplication(["diffeoforge-auto-results-test"])
+    destination = (tmp_path / "completed-run").resolve()
+    destination.mkdir()
+    terminal = DesktopWorkerEvent(
+        request_id="auto-results",
+        sequence=1,
+        kind="completed",
+        payload={
+            "destination": str(destination),
+            "manifest_sha256": "e" * 64,
+            "subject_count": 5,
+            "bundle_path": "result/atlas-bundle/bundle-manifest.json",
+        },
+    )
+    queued = []
+
+    class FakePool:
+        def start(self, worker) -> None:
+            queued.append(worker)
+
+    window = DiffeoForgeWindow()
+    window._thread_pool = FakePool()  # type: ignore[assignment]
+
+    window._atlas_succeeded(
+        DesktopWorkerControllerResult(
+            request_id="auto-results",
+            exit_code=0,
+            terminal_event=terminal,
+            events=(terminal,),
+            stderr="",
+        )
+    )
+
+    assert isinstance(window._worker, _ResultReviewWorker)
+    assert isinstance(queued[-1], _ResultReviewWorker)
+    assert "fully reverified" in window.run_state_label.text()
+    assert window.review_run_result_button.isEnabled() is False
+    window._worker = None
+    window.close()
+    application.processEvents()
+
+
 def test_desktop_window_blocks_private_candidate_before_worker_launch(
     monkeypatch, tmp_path
 ) -> None:
@@ -1400,9 +1453,14 @@ def test_desktop_window_verifies_and_renders_step_four_before_artifact_handoff(
     workflow_manifest = run / "workflow-manifest.json"
     bundle_manifest = bundle / "bundle-manifest.json"
     artifact_path = bundle / "pca-scree.svg"
+    primary_plot_path = bundle / "pca-scores.svg"
+    secondary_plot_path = bundle / "pca-scores-pc2-pc3.svg"
     workflow_manifest.write_text("workflow\n", encoding="utf-8")
     bundle_manifest.write_text("bundle\n", encoding="utf-8")
-    artifact_path.write_text("<svg/>\n", encoding="utf-8")
+    svg = '<svg xmlns="http://www.w3.org/2000/svg" width="900" height="600"></svg>\n'
+    artifact_path.write_text(svg, encoding="utf-8")
+    primary_plot_path.write_text(svg, encoding="utf-8")
+    secondary_plot_path.write_text(svg, encoding="utf-8")
     item = ResultReviewItem("Projekt", "Käfer-Atlas", "Manifestierter Wert.")
     artifact = ModernResultArtifact(
         key="pca-scree",
@@ -1412,6 +1470,24 @@ def test_desktop_window_verifies_and_renders_step_four_before_artifact_handoff(
         bytes=artifact_path.stat().st_size,
         sha256=sha256_file(artifact_path),
         description="Statisches SVG.",
+    )
+    primary_plot = ModernResultArtifact(
+        key="pca-score-plot",
+        label="PCA scores: PC1 vs PC2 (SVG)",
+        path=primary_plot_path,
+        kind="svg",
+        bytes=primary_plot_path.stat().st_size,
+        sha256=sha256_file(primary_plot_path),
+        description="Verified first score plot.",
+    )
+    secondary_plot = ModernResultArtifact(
+        key="pca-score-plot-pc2-pc3",
+        label="PCA scores: PC2 vs PC3 (SVG)",
+        path=secondary_plot_path,
+        kind="svg",
+        bytes=secondary_plot_path.stat().st_size,
+        sha256=sha256_file(secondary_plot_path),
+        description="Verified second score plot.",
     )
     review = ModernResultReview(
         run_directory=run,
@@ -1436,7 +1512,7 @@ def test_desktop_window_verifies_and_renders_step_four_before_artifact_handoff(
         ),
         pca=(ResultReviewItem("PC1", "75%", "Vorzeichen ist konventionell."),),
         quality=(ResultReviewItem("Output-QC", "9 Meshes", "Recomputet."),),
-        artifacts=(artifact,),
+        artifacts=(artifact, primary_plot, secondary_plot),
         scientific_boundaries=("No biological validity claim is made.",),
     )
     terminal = DesktopWorkerEvent(
@@ -1485,16 +1561,33 @@ def test_desktop_window_verifies_and_renders_step_four_before_artifact_handoff(
     result_pca = window.findChild(QWidget, "resultPca")
     assert result_pca is not None
     assert "PC1" in result_pca.findChildren(QLabel)[0].text()
-    assert len(window.result_artifact_buttons) == 1
+    assert len(window.result_artifact_buttons) == 3
+    assert window.result_pc1_pc2_plot.isHidden() is False
+    assert window.result_pc2_pc3_plot.isHidden() is False
+    assert "Verified PC1-versus-PC2" in window.result_pc1_pc2_plot_status.text()
+    assert "same score matrix" in window.result_pc2_pc3_plot_status.text()
 
     window._open_result_artifact("pca-scree")
 
     assert isinstance(window._worker, _ArtifactWorker)
     assert isinstance(queued[-1], _ArtifactWorker)
-    assert window.result_artifact_buttons[0].isEnabled() is False
+    assert all(button.isEnabled() is False for button in window.result_artifact_buttons)
     window._artifact_failed("tamper detected")
     assert "not opened" in window.result_status_label.text()
-    assert window.result_artifact_buttons[0].isEnabled() is True
+    assert all(button.isEnabled() is True for button in window.result_artifact_buttons)
+
+    window._result_review_succeeded(
+        replace(
+            review,
+            artifacts=(artifact, primary_plot),
+            pca_pc2_pc3_unavailable_reason=(
+                "PC3 is not mathematically available because only two components exist."
+            ),
+        )
+    )
+    assert window.result_pc2_pc3_plot.isHidden() is True
+    assert window.result_pc2_pc3_plot_status.objectName() == "statusWarning"
+    assert "not mathematically available" in window.result_pc2_pc3_plot_status.text()
 
     window._result_review_succeeded(
         replace(

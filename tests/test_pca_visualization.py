@@ -10,6 +10,7 @@ analysis = pytest.importorskip("diffeoforge.analysis")
 
 principal_component_analysis = analysis.principal_component_analysis
 write_pca_scores_svg = analysis.write_pca_scores_svg
+write_pca_score_pair_svg = analysis.write_pca_score_pair_svg
 write_pca_scree_svg = analysis.write_pca_scree_svg
 
 SVG = "{http://www.w3.org/2000/svg}"
@@ -64,6 +65,65 @@ def test_one_component_pca_is_an_explicit_pc1_strip(tmp_path: Path) -> None:
     assert "PC1 strip" in text
     assert "no PC2 retained" in text
     assert "PC1 vs PC2" not in text
+
+
+def test_declared_pc2_pc3_plot_has_exact_axes_subject_order_and_variance_labels(
+    tmp_path: Path,
+) -> None:
+    pca = principal_component_analysis(
+        np.array(
+            [
+                [-2.0, -1.0, 0.0],
+                [-1.0, 2.0, 1.0],
+                [0.5, -0.5, 3.0],
+                [1.0, 1.5, -2.0],
+                [2.5, -2.0, -1.0],
+            ],
+            dtype=np.float64,
+        ),
+        n_components=3,
+        feature_space="three_component_test",
+        sample_labels=("one", "two", "three", "four", "five"),
+    )
+
+    path = write_pca_score_pair_svg(
+        tmp_path / "pc2-pc3.svg",
+        pca,
+        x_component=2,
+        y_component=3,
+    )
+    text = path.read_text(encoding="utf-8")
+    root = ET.parse(path).getroot()
+
+    assert "PCA subject scores: PC2 vs PC3" in text
+    assert f"PC2 ({pca.explained_variance_ratio[1] * 100:.2f}%)" in text
+    assert f"PC3 ({pca.explained_variance_ratio[2] * 100:.2f}%)" in text
+    assert [circle.attrib["data-subject-label"] for circle in root.findall(f".//{SVG}circle")] == [
+        "one",
+        "two",
+        "three",
+        "four",
+        "five",
+    ]
+
+
+def test_score_pair_rejects_missing_or_repeated_components(tmp_path: Path) -> None:
+    pca = _pca(components=2)
+
+    with pytest.raises(ValueError, match="between 1 and 2"):
+        write_pca_score_pair_svg(
+            tmp_path / "missing.svg",
+            pca,
+            x_component=2,
+            y_component=3,
+        )
+    with pytest.raises(ValueError, match="must differ"):
+        write_pca_score_pair_svg(
+            tmp_path / "repeated.svg",
+            pca,
+            x_component=1,
+            y_component=1,
+        )
 
 
 def test_plot_writer_never_overwrites_an_existing_file(tmp_path: Path) -> None:
