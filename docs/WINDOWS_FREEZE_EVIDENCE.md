@@ -16,7 +16,8 @@ the checkout remains clean.
 The workflow invokes the same `build-evidence.ps1` contract. Therefore a
 successful run must pass the frozen GUI smoke, full public Modern
 worker/controller smoke, nonnumerical reference harness, reference
-hard-parent-death audit, preparation-worker hard-parent-death audit, real
+hard-parent-death audit, execution-worker hard-parent-death audit and
+cancel-before-prepare smoke, preparation-worker hard-parent-death audit, real
 approval-bound prepared-not-executed worker/controller smoke, exact bundle
 inventory creation, and an independent final verification.
 
@@ -280,8 +281,9 @@ non-overwriting. New evidence uses schema v0.4 and requires all five entry
 points. The verifier retains explicit read-only support for genuine v0.1
 two-entry-point, v0.2 three-entry-point, and v0.3 four-entry-point manifests;
 it never silently reinterprets an older artifact as v0.4. A fresh v0.4
-clean-runner observation has not yet been recorded; the observations below are
-historical v0.1-v0.3 evidence.
+clean-runner observation has not yet been recorded. The prior clean-runner
+observations above are historical v0.1-v0.3 evidence; the local v0.4 observation
+below is not a substitute for repeating it on a clean hosted runner.
 
 ## First developer-host observation
 
@@ -298,6 +300,27 @@ These numbers describe that one diagnostic, not a size promise or final
 artifact. Every clean-commit build records its own complete resolved package
 map, byte total, file count, and hashes in `freeze-evidence.json`; that manifest
 is authoritative for its directory.
+
+## First v0.4 developer-host observation
+
+A clean-worktree local build on 19 July 2026 froze commit
+`cfa9ebd0d108a4f0aad55477bf9c7e1dac4c9a4b` with Python 3.12.13,
+PyInstaller 6.21.0, PySide6-Essentials/Shiboken6 6.11.1, CPU-only PyTorch
+2.13.0, and NumPy 2.5.1. All five executables were present and the GUI smoke
+passed. Both suspended-worker hard-parent-death audits terminated their target,
+the real frozen execution worker accepted a queued cancellation with four
+events and exit code 130 without creating a destination or starting the engine,
+and the approval-bound preparation worker emitted five events and reached the
+independently verified `prepared_not_executed` outcome.
+
+The v0.4 manifest records 2,634 files, 723,035,952 bytes (689.54 MiB), inventory
+SHA-256 `afec3f974596ff4565576cd0c47907f31ce91aff6a8b287da6cbfe18f96534e6`,
+and manifest SHA-256
+`c08721541f1ed73fd32678b81bc627df3211262dbc03fb91a43254be0141707e`.
+The optional Modern numerical smoke was not requested for this local build.
+The executable directory remains an unsigned local engineering artifact, not
+an installer or distributable release; a fresh hosted clean-runner v0.4
+observation remains required.
 
 ## What this proves
 
