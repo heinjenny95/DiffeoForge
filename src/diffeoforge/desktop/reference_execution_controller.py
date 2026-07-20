@@ -23,6 +23,7 @@ from diffeoforge.desktop.reference_worker_protocol import (
 from diffeoforge.desktop.worker_protocol import parse_json_object, sha256_file
 from diffeoforge.result_report import collect_run_report
 from diffeoforge.runs import verify_prepared_run
+from diffeoforge.subprocess_policy import hidden_windows_process_kwargs
 
 ReferenceExecutionControllerState = Literal[
     "idle",
@@ -235,7 +236,6 @@ class ReferenceExecutionController:
 
         process: subprocess.Popen[str] | None = None
         worker_job = None
-        creationflags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
         try:
             worker_job = _create_windows_worker_job()
             process = subprocess.Popen(
@@ -248,7 +248,7 @@ class ReferenceExecutionController:
                 encoding="utf-8",
                 errors="replace",
                 bufsize=1,
-                creationflags=creationflags,
+                **hidden_windows_process_kwargs(),
             )
             if worker_job is not None:
                 worker_job.assign(process)

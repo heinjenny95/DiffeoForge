@@ -20,6 +20,7 @@ from diffeoforge.desktop.worker_protocol import (
     parse_json_object,
     sha256_file,
 )
+from diffeoforge.subprocess_policy import hidden_windows_process_kwargs
 
 DesktopWorkerControllerState = Literal[
     "idle",
@@ -282,11 +283,8 @@ class DesktopWorkerController:
                 f"Worker launch request is no longer valid: {error}"
             ) from error
 
-        creationflags = 0
         worker_job = None
         process: subprocess.Popen[str] | None = None
-        if os.name == "nt":
-            creationflags = subprocess.CREATE_NO_WINDOW
         try:
             worker_job = _create_windows_worker_job()
             process = subprocess.Popen(
@@ -299,7 +297,7 @@ class DesktopWorkerController:
                 encoding="utf-8",
                 errors="replace",
                 bufsize=1,
-                creationflags=creationflags,
+                **hidden_windows_process_kwargs(),
             )
             if worker_job is not None:
                 worker_job.assign(process)

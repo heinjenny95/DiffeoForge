@@ -195,9 +195,22 @@ def _saved_reference_status_verification_fixture(*, report: Path, digest: str):
 
 def test_desktop_parser_is_available_without_importing_qt() -> None:
     args = build_parser().parse_args([])
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import sys; from diffeoforge.desktop.app import build_parser; "
+            "assert build_parser().parse_args([]).smoke is False; "
+            "assert 'PySide6' not in sys.modules",
+        ],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
 
     assert args.smoke is False
-    assert "PySide6" not in sys.modules
+    assert completed.returncode == 0, completed.stderr
 
 
 def test_desktop_module_reports_a_clear_optional_dependency_error() -> None:

@@ -43,6 +43,7 @@ from diffeoforge.config import (
     validate_input_paths,
 )
 from diffeoforge.mesh import MeshMetadata, inspect_inputs, sha256_file
+from diffeoforge.subprocess_policy import hidden_windows_process_kwargs
 
 RUN_MANIFEST_VERSION = "0.1"
 RESUME_PROVENANCE_VERSION = "0.1"
@@ -704,6 +705,7 @@ def _probe_backend_environment(config: Mapping[str, Any]) -> Mapping[str, Any]:
             errors="replace",
             timeout=30,
             check=False,
+            **hidden_windows_process_kwargs(),
         )
         if inspected.returncode != 0:
             raise ConfigurationError(
@@ -755,6 +757,7 @@ def _probe_backend_environment(config: Mapping[str, Any]) -> Mapping[str, Any]:
         errors="replace",
         timeout=60,
         check=False,
+        **hidden_windows_process_kwargs(),
     )
     if completed.returncode != 0:
         raise ConfigurationError(
@@ -959,10 +962,10 @@ def execute_run(
         environment = os.environ.copy()
         environment.update(command.environment)
         process_group_options: dict[str, Any]
+        process_group_creationflags = 0
         if os.name == "nt":
-            process_group_options = {
-                "creationflags": subprocess.CREATE_NEW_PROCESS_GROUP,
-            }
+            process_group_options = {}
+            process_group_creationflags = subprocess.CREATE_NEW_PROCESS_GROUP
         else:
             process_group_options = {"start_new_session": True}
         with log_path.open("x", encoding="utf-8", newline="\n") as log_handle:
@@ -977,6 +980,9 @@ def execute_run(
                 errors="replace",
                 bufsize=1,
                 **process_group_options,
+                **hidden_windows_process_kwargs(
+                    creationflags=process_group_creationflags
+                ),
             )
             assert process.stdout is not None
             for line in process.stdout:

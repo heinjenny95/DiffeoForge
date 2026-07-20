@@ -15,6 +15,8 @@ import subprocess
 from collections.abc import Mapping
 from dataclasses import dataclass
 
+from diffeoforge.subprocess_policy import hidden_windows_process_kwargs
+
 EXPECTED_DEFORMETRICA_VERSION = "4.3.0"
 MANAGED_WSL_DISTRIBUTION = "DiffeoForge-Reference-4.3"
 MANAGED_WSL_EXECUTABLE = "/opt/diffeoforge/reference/bin/deformetrica"
@@ -58,6 +60,7 @@ def _run_wsl(arguments: list[str], *, timeout: int = 30) -> subprocess.Completed
         capture_output=True,
         timeout=timeout,
         check=False,
+        **hidden_windows_process_kwargs(),
     )
 
 

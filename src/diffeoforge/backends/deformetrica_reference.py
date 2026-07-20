@@ -15,6 +15,7 @@ from typing import Any
 
 from diffeoforge.config import ConfigurationError
 from diffeoforge.reference_runtime import probe_wsl_launcher
+from diffeoforge.subprocess_policy import hidden_windows_process_kwargs
 
 BACKEND_ID = "deformetrica_reference"
 BACKEND_CONTRACT_VERSION = "0.1"
@@ -406,6 +407,7 @@ def ensure_launcher_available(config: Mapping[str, Any]) -> None:
                 errors="replace",
                 timeout=30,
                 check=False,
+                **hidden_windows_process_kwargs(),
             )
         except subprocess.TimeoutExpired as error:
             raise ConfigurationError(

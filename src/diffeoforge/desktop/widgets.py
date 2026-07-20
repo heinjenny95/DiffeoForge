@@ -9,7 +9,6 @@ from pathlib import Path
 
 from PySide6.QtCore import QObject, QRunnable, Qt, QThreadPool, QUrl, Signal, Slot
 from PySide6.QtGui import QCloseEvent, QDesktopServices
-from PySide6.QtSvgWidgets import QSvgWidget
 from PySide6.QtWidgets import (
     QComboBox,
     QFileDialog,
@@ -29,6 +28,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from diffeoforge.desktop.aspect_svg_widget import AspectRatioSvgWidget
 from diffeoforge.desktop.mesh_preview import (
     DEFAULT_EDGE_BUDGET,
     MeshPreviewError,
@@ -1414,7 +1414,7 @@ class DiffeoForgeWindow(QMainWindow):
         title: str,
         object_name: str,
         pending_text: str,
-    ) -> tuple[QWidget, QSvgWidget, QLabel]:
+    ) -> tuple[QWidget, AspectRatioSvgWidget, QLabel]:
         panel = QFrame()
         panel.setObjectName("resultPlotPanel")
         layout = QVBoxLayout(panel)
@@ -1425,15 +1425,15 @@ class DiffeoForgeWindow(QMainWindow):
         status = QLabel(pending_text)
         status.setObjectName("status")
         status.setWordWrap(True)
-        plot = QSvgWidget()
+        plot = AspectRatioSvgWidget()
         plot.setObjectName(object_name)
-        plot.renderer().setAspectRatioMode(Qt.AspectRatioMode.KeepAspectRatio)
         plot.setMinimumHeight(440)
-        plot.setMaximumHeight(720)
+        plot.setMaximumHeight(900)
+        plot.setMaximumWidth(1320)
         plot.hide()
         layout.addWidget(heading)
         layout.addWidget(status)
-        layout.addWidget(plot)
+        layout.addWidget(plot, 0, Qt.AlignmentFlag.AlignHCenter)
         return panel, plot, status
 
     def _build_review_card(self, title: str, object_name: str) -> QWidget:

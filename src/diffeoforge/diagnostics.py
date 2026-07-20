@@ -19,6 +19,7 @@ from diffeoforge.reference_runtime import (
     launcher_identity,
     probe_wsl_launcher,
 )
+from diffeoforge.subprocess_policy import hidden_windows_process_kwargs
 
 DEFAULT_CONTAINER_IMAGE = "diffeoforge-deformetrica:4.3.0-cpu"
 MINIMUM_MEMORY_BYTES = 8 * 1024**3
@@ -113,6 +114,7 @@ def _run_command(argv: list[str]) -> subprocess.CompletedProcess[str]:
         errors="replace",
         timeout=30,
         check=False,
+        **hidden_windows_process_kwargs(),
     )
 
 
