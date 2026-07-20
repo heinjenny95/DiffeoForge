@@ -844,16 +844,16 @@ class DiffeoForgeWindow(QMainWindow):
         reference_readiness_layout = QVBoxLayout(reference_readiness)
         reference_readiness_layout.setContentsMargins(24, 22, 24, 24)
         reference_readiness_layout.setSpacing(10)
-        reference_readiness_title = QLabel("DiffeoForge Deformetrica runtime")
+        reference_readiness_title = QLabel("Deformetrica installation & system check")
         reference_readiness_title.setObjectName("sectionTitle")
         self.reference_readiness_status_label = QLabel(
-            "The installed Deformetrica runtime has not been checked."
+            "The automatic Deformetrica setup check has not started."
         )
         self.reference_readiness_status_label.setObjectName("status")
         self.reference_readiness_status_label.setWordWrap(True)
         self.reference_readiness_detail_label = QLabel(
-            "DiffeoForge checks its runtime, available memory, and project folder before "
-            "enabling computation."
+            "DiffeoForge verifies the installed engine, available memory, and project folder "
+            "automatically. This is a safety check, not an estimated computation time."
         )
         self.reference_readiness_detail_label.setObjectName("reviewDetail")
         self.reference_readiness_detail_label.setWordWrap(True)
@@ -861,7 +861,7 @@ class DiffeoForgeWindow(QMainWindow):
             Qt.TextInteractionFlag.TextSelectableByMouse
         )
         self.refresh_reference_readiness_button = QPushButton(
-            "Check Deformetrica runtime"
+            "Check setup again"
         )
         self.refresh_reference_readiness_button.setObjectName("secondary")
         self.refresh_reference_readiness_button.clicked.connect(
@@ -2076,7 +2076,8 @@ class DiffeoForgeWindow(QMainWindow):
         else:
             self.engine_hint.setText(
                 "Deformetrica 4.3 is the recommended numerical backend. Optional landmark "
-                "Procrustes is performed by DiffeoForge first; its verified runtime is "
+                "Procrustes is performed by DiffeoForge first; its verified execution "
+                "environment is "
                 "managed automatically."
             )
         self._update_pairwise_explanation()
@@ -2092,8 +2093,8 @@ class DiffeoForgeWindow(QMainWindow):
         if self.pairwise_combo.currentData() == "blockwise_256":
             self.pairwise_hint.setText(
                 "Exact same all-pairs mathematics in explicit tiles. This bounds one "
-                "pairwise allocation, not total RAM or runtime; benchmark representative "
-                "meshes before production."
+                "pairwise allocation, not total RAM or computation time; benchmark "
+                "representative meshes before production."
             )
             return
         self.pairwise_hint.setText(
@@ -2402,10 +2403,18 @@ class DiffeoForgeWindow(QMainWindow):
             "Effective parameters and available workload evidence are being collected…"
         )
         self._worker = _ReviewWorker(self._result)
-        self._worker.signals.succeeded.connect(self._review_succeeded)
+        self._worker.signals.succeeded.connect(self._review_worker_succeeded)
         self._worker.signals.failed.connect(self._review_failed)
         self._sync_ready_state()
         self._thread_pool.start(self._worker)
+
+    @Slot(object)
+    def _review_worker_succeeded(self, review: ProjectReviewResult) -> None:
+        """Publish a review and start the reference safety check automatically."""
+
+        self._review_succeeded(review)
+        if review.engine is DesktopEngine.DEFORMETRICA_REFERENCE:
+            self._check_reference_readiness()
 
     @Slot(object)
     def _review_succeeded(self, review: ProjectReviewResult) -> None:
@@ -2424,7 +2433,7 @@ class DiffeoForgeWindow(QMainWindow):
         engine_label = (
             "DiffeoForge Modern CPU (experimental)"
             if review.engine is DesktopEngine.MODERN_CPU
-            else "Deformetrica 4.3 (managed reference runtime)"
+            else "Deformetrica 4.3 (managed installation)"
         )
         config_display = self._wrappable_path(review.config_path)
         report_display = self._wrappable_path(review.report_path)
@@ -2471,11 +2480,11 @@ class DiffeoForgeWindow(QMainWindow):
             self.reference_readiness_status_label.setObjectName("status")
             self.reference_readiness_status_label.setStyleSheet("")
             self.reference_readiness_status_label.setText(
-                "The installed Deformetrica runtime has not been checked."
+                "The automatic Deformetrica setup check is pending."
             )
             self.reference_readiness_detail_label.setText(
-                "DiffeoForge will verify the exact installed runtime and bind the result to "
-                "the reviewed configuration."
+                "DiffeoForge will verify the installed engine and current system resources "
+                "in the background. This is not an estimate of atlas computation time."
             )
             self.refresh_reference_readiness_button.setEnabled(True)
             self.reference_preparation_status_label.setObjectName("status")
@@ -2487,7 +2496,7 @@ class DiffeoForgeWindow(QMainWindow):
                 "An approval file and independently recorded SHA-256 are required. "
                 "The check changes, publishes, deletes, and starts nothing."
             )
-            self.show_run_button.setText("Check the reference environment to continue")
+            self.show_run_button.setText("Checking Deformetrica setup automatically…")
             self.show_run_button.setEnabled(False)
         self._set_active_step(1)
         self.page_stack.setCurrentIndex(1)
@@ -2618,13 +2627,15 @@ class DiffeoForgeWindow(QMainWindow):
         self.reference_readiness_status_label.setObjectName("status")
         self.reference_readiness_status_label.setStyleSheet("")
         self.reference_readiness_status_label.setText(
-            "Application runtime, project folder, memory, and Deformetrica 4.3 are being "
-            "checked…"
+            "Deformetrica 4.3, available memory, and the project folder are being checked "
+            "automatically…"
         )
         self.reference_readiness_detail_label.setText(
-            "No reference run is prepared or started. The configuration is bound to its "
-            "review hash before and after runtime observations."
+            "This safety check does not start an atlas. Estimated computation time is shown "
+            "separately in Step 3 after several optimizer iterations have been observed."
         )
+        self.show_run_button.setText("Checking Deformetrica setup automatically…")
+        self.show_run_button.setEnabled(False)
         self._sync_ready_state()
         self._thread_pool.start(worker)
 
@@ -2638,7 +2649,7 @@ class DiffeoForgeWindow(QMainWindow):
             f"Configuration: {self._wrappable_path(readiness.config_path)}",
             f"Bound SHA-256: {readiness.config_sha256}",
             f"Project folder: {self._wrappable_path(readiness.workspace)}",
-            f"Runtime: {launcher_label(readiness.launcher)}",
+            f"Deformetrica installation: {launcher_label(readiness.launcher)}",
             "Observed checks:",
         ]
         for check in readiness.report.checks:
@@ -2652,21 +2663,26 @@ class DiffeoForgeWindow(QMainWindow):
         if readiness.report.status == "ready":
             self.reference_readiness_status_label.setObjectName("statusSuccess")
             message = (
-                "The DiffeoForge Deformetrica runtime is ready. "
+                "The DiffeoForge Deformetrica installation is ready. "
                 "The supervised Deformetrica execution step is now available."
             )
         elif readiness.report.status == "warning":
             self.reference_readiness_status_label.setObjectName("status")
             message = (
-                "The Deformetrica runtime has no blocking error but has warnings. "
+                "The Deformetrica setup check has no blocking error but has warnings. "
                 "Reference execution remains locked."
             )
+            self.show_run_button.setText("Setup check needs attention")
+            self.show_run_button.setEnabled(False)
         else:
             self.reference_readiness_status_label.setObjectName("statusError")
             message = (
-                "The DiffeoForge Deformetrica runtime needs repair. Guidance appears below; "
+                "The DiffeoForge Deformetrica installation needs repair. Guidance appears "
+                "below; "
                 "nothing was changed or started."
             )
+            self.show_run_button.setText("Setup check failed – see guidance")
+            self.show_run_button.setEnabled(False)
         self.reference_readiness_status_label.setStyleSheet("")
         self.reference_readiness_status_label.setText(message)
         self.refresh_reference_readiness_button.setEnabled(True)
@@ -2683,7 +2699,7 @@ class DiffeoForgeWindow(QMainWindow):
         self.reference_readiness_status_label.setObjectName("statusError")
         self.reference_readiness_status_label.setStyleSheet("")
         self.reference_readiness_status_label.setText(
-            f"Reference environment cannot be checked safely: {message}"
+            f"Automatic Deformetrica setup check failed: {message}"
         )
         self.reference_readiness_detail_label.setText(
             "Diagnostic discarded. No reference run was prepared or started, and no "
@@ -2693,6 +2709,8 @@ class DiffeoForgeWindow(QMainWindow):
             self._review is not None
             and self._review.engine is DesktopEngine.DEFORMETRICA_REFERENCE
         )
+        self.show_run_button.setText("Setup check failed – check again")
+        self.show_run_button.setEnabled(False)
         self._sync_ready_state()
 
     def _reference_preparation_worker_matches_inputs(
@@ -2985,13 +3003,14 @@ class DiffeoForgeWindow(QMainWindow):
         self.run_title_label.setText("Compute Deformetrica atlas")
         self.run_subtitle_label.setText(
             "Run the exact reviewed configuration in a contained child process and observe "
-            "Deformetrica iterations, objective values, elapsed time, and bounded ETA."
+            "Deformetrica iterations, objective values, elapsed time, and a live computation-"
+            "time estimate."
         )
         self.run_boundary_label.setText(
-            "ETA is estimated only after several observed iterations and means time to the "
-            "configured iteration cap if the recent rate continues. It is not a prediction "
-            "of convergence. Cancellation preserves terminal evidence and a checkpoint when "
-            "Deformetrica produced one."
+            "Estimated computation time appears only after several observed iterations. It "
+            "means time to the configured iteration maximum if the recent rate continues, "
+            "not time to convergence. Cancellation preserves terminal evidence and a "
+            "checkpoint when Deformetrica produced one."
         )
         if readiness is None or not readiness.ready:
             self.run_readiness_status_label.setObjectName("statusError")
@@ -3046,14 +3065,17 @@ class DiffeoForgeWindow(QMainWindow):
             "Reviewed configuration, ready environment, and absent destination are bound."
         )
         self.run_readiness_detail_label.setText(
-            f"Runtime: {launcher_label(request.launcher)}\n"
+            f"Deformetrica installation: {launcher_label(request.launcher)}\n"
             "This check was read-only. The destination and all reviewed inputs are checked "
             "again inside the worker immediately before preparation."
         )
         self.run_progress_bar.setRange(0, 1)
         self.run_progress_bar.setValue(0)
         self.run_progress_bar.setFormat("Not started")
-        self.run_optimizer_label.setText("No Deformetrica iteration observed yet.")
+        self.run_optimizer_label.setText(
+            "Estimated computation time: waiting for several observed Deformetrica "
+            "iterations."
+        )
         self.run_state_label.setObjectName("status")
         self.run_state_label.setStyleSheet("")
         self.run_state_label.setText("Ready; no Deformetrica process has started.")
@@ -3335,7 +3357,8 @@ class DiffeoForgeWindow(QMainWindow):
                 f"{float(event.payload['attachment']):.6g} · regularity "
                 f"{float(event.payload['regularity']):.6g}\n"
                 f"Elapsed: {self._format_duration(elapsed)} · observed rate: {rate_text} · "
-                f"ETA to maximum: {eta_text} (upper bound, not convergence)"
+                f"Estimated computation time to maximum: {eta_text} "
+                "(live upper bound, not convergence)"
             )
             self.run_state_label.setText(message)
         else:

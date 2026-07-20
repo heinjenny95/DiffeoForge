@@ -199,7 +199,7 @@ def _create_reference_project(request: ProjectSetupRequest) -> ProjectSetupResul
         overwrite=request.overwrite_existing_configuration,
     )
     notices = list(initialized.preflight.notices)
-    notices.insert(0, f"Reference runtime: {launcher_label(launcher)}.")
+    notices.insert(0, f"Deformetrica installation: {launcher_label(launcher)}.")
     if (
         launcher.get("type") == "wsl"
         and launcher.get("distribution") != MANAGED_WSL_DISTRIBUTION
@@ -207,8 +207,8 @@ def _create_reference_project(request: ProjectSetupRequest) -> ProjectSetupResul
         notices.insert(
             1,
             "This same-owner alpha project reuses an existing verified Deformetrica 4.3 "
-            "runtime read-only; released installers will use a separate DiffeoForge-managed "
-            "runtime.",
+            "execution environment read-only; released installers will use a separate "
+            "DiffeoForge-managed environment.",
         )
     if initialized.derived_parameters:
         notices.insert(
@@ -293,13 +293,13 @@ def _create_modern_project(request: ProjectSetupRequest) -> ProjectSetupResult:
         notices.append(
             "Exact blockwise pairwise evaluation is enabled with explicit "
             f"{request.query_tile_size} × {request.source_tile_size} tiles. This bounds one "
-            "pairwise XYZ allocation, not total RAM or runtime; benchmark representative "
-            "meshes before a production run."
+            "pairwise XYZ allocation, not total RAM or computation time; benchmark "
+            "representative meshes before a production run."
         )
     if inputs.subject_count > 250:
         notices.append(
             "This is a large cohort; run a representative pilot and measure memory and "
-            "runtime first."
+            "computation time first."
         )
     return ProjectSetupResult(
         engine=DesktopEngine.MODERN_CPU,

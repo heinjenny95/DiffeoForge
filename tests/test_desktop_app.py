@@ -474,7 +474,7 @@ def test_desktop_window_renders_parameter_review_as_second_step(monkeypatch, tmp
     application.processEvents()
 
 
-def test_desktop_window_keeps_reference_compute_locked_until_environment_check(
+def test_desktop_window_keeps_reference_compute_locked_until_automatic_setup_check(
     monkeypatch, tmp_path
 ) -> None:
     pytest.importorskip("PySide6")
@@ -506,13 +506,18 @@ def test_desktop_window_keeps_reference_compute_locked_until_environment_check(
 
     assert window.page_stack.currentIndex() == 1
     assert window.show_run_button.isEnabled() is False
-    assert "Check the reference environment" in window.show_run_button.text()
+    assert "Checking Deformetrica setup automatically" in window.show_run_button.text()
     assert window.reference_readiness_card.isHidden() is False
     assert window.reference_preparation_status_card.isHidden() is True
     assert window.refresh_reference_readiness_button.isEnabled() is True
     assert window.refresh_reference_preparation_status_button.isEnabled() is False
     assert window.export_reference_preparation_status_button.isEnabled() is False
-    assert "has not been checked" in window.reference_readiness_status_label.text()
+    assert "automatic Deformetrica setup check" in (
+        window.reference_readiness_status_label.text()
+    )
+    assert "not an estimate of atlas computation time" in (
+        window.reference_readiness_detail_label.text()
+    )
     window.close()
     application.processEvents()
 
@@ -743,7 +748,7 @@ def test_desktop_saved_status_verification_failure_is_read_only(
     application.processEvents()
 
 
-def test_desktop_reference_environment_check_is_read_only_and_unlocks_execution(
+def test_desktop_reference_setup_check_starts_automatically_and_unlocks_execution(
     monkeypatch, tmp_path
 ) -> None:
     pytest.importorskip("PySide6")
@@ -809,14 +814,13 @@ def test_desktop_reference_environment_check_is_read_only_and_unlocks_execution(
 
     window = DiffeoForgeWindow()
     window._thread_pool = FakePool()  # type: ignore[assignment]
-    window._review_succeeded(review)
-
-    window.refresh_reference_readiness_button.click()
+    window._review_worker_succeeded(review)
 
     assert len(queued) == 1
     assert isinstance(queued[0], _ReferenceReadinessWorker)
     assert window.refresh_reference_readiness_button.isEnabled() is False
-    assert "No reference run" in window.reference_readiness_detail_label.text()
+    assert "does not start an atlas" in window.reference_readiness_detail_label.text()
+    assert "Estimated computation time" in window.reference_readiness_detail_label.text()
     queued[0].run()
     application.processEvents()
 
@@ -1219,7 +1223,7 @@ def test_desktop_window_renders_deformetrica_iteration_and_bounded_eta(
     assert "maximum" in window.run_progress_bar.format()
     assert "Iteration 12 of maximum 100" in window.run_optimizer_label.text()
     assert "Elapsed: 1 h 01 min 01 s" in window.run_optimizer_label.text()
-    assert "ETA to maximum: 7 h 27 min 20 s" in (
+    assert "Estimated computation time to maximum: 7 h 27 min 20 s" in (
         window.run_optimizer_label.text()
     )
     assert "not convergence" in window.run_optimizer_label.text()

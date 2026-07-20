@@ -76,7 +76,9 @@ def test_modern_review_publishes_existing_exact_workload_contract(tmp_path: Path
     assert evidence["Objective/gradient upper bound"] == str(
         report["optimizer_bound"]["objective_gradient_evaluation_upper_bound"]
     )
-    assert evidence["Peak RAM and runtime"] == "unknown · pilot measurement required"
+    assert evidence["Peak RAM and computation time"] == (
+        "unknown · pilot measurement required"
+    )
     assert "not a peak-RAM predictor" in review.scientific_boundary
 
     refreshed = review_project(setup.config_path, setup.engine)

@@ -325,4 +325,4 @@ def test_modern_project_setup_records_an_explicit_blockwise_high_face_plan(
         "query_tile_size": 256,
         "source_tile_size": 256,
     }
-    assert any("not total RAM or runtime" in notice for notice in result.notices)
+    assert any("not total RAM or computation time" in notice for notice in result.notices)

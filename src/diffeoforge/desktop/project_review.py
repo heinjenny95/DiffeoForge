@@ -134,7 +134,7 @@ def _reference_review(config_path: Path, config_sha256: str) -> ProjectReviewRes
                 f"Seed {runtime['random_seed']} · {runtime['threads']} Threads · "
                 f"{runtime['precision']}"
             ),
-            "Explicit runtime parameters for the external reference route.",
+            "Explicit engine-execution settings for the external reference route.",
         ),
     )
     subject_points = [subject.points for subject in preflight.subjects]
@@ -172,7 +172,7 @@ def _reference_review(config_path: Path, config_sha256: str) -> ProjectReviewRes
         ReviewItem(
             "Source data",
             _bytes(preflight.total_input_bytes),
-            "File size of the reviewed meshes; not a RAM or runtime forecast.",
+            "File size of the reviewed meshes; not a RAM or computation-time forecast.",
         ),
         ReviewItem(
             "Compute cost",
@@ -186,7 +186,7 @@ def _reference_review(config_path: Path, config_sha256: str) -> ProjectReviewRes
         "validated presets.",
         *preflight.notices,
         "DiffeoForge did not start Deformetrica and does not forecast peak RAM or "
-        "runtime here.",
+        "computation time here.",
     )
     return ProjectReviewResult(
         engine=DesktopEngine.DEFORMETRICA_REFERENCE,
@@ -309,7 +309,7 @@ def _modern_review(config_path: Path, config_sha256: str) -> ProjectReviewResult
         ReviewItem(
             "Execution",
             f"CPU · float64 · {runtime['threads']} Threads · Seed {runtime['random_seed']}",
-            "Effective, reproducible runtime contract for the experimental Modern engine.",
+            "Effective, reproducible execution contract for the experimental Modern engine.",
         ),
         ReviewItem(
             "Pairwise evaluation",
@@ -403,7 +403,7 @@ def _modern_review(config_path: Path, config_sha256: str) -> ProjectReviewResult
             "Host observation at planning time; not a promise that these resources are free.",
         ),
         ReviewItem(
-            "Peak RAM and runtime",
+            "Peak RAM and computation time",
             "unknown · pilot measurement required",
             "DiffeoForge does not invent forecasts from incomplete memory and time models.",
         ),
@@ -419,8 +419,8 @@ def _modern_review(config_path: Path, config_sha256: str) -> ProjectReviewResult
         else:
             high_detail_warning = (
                 "High-face-count input uses explicit blockwise tiles. The reported tile "
-                "bound is not a total-RAM or runtime guarantee; a representative benchmark "
-                "is still required before production.",
+                "bound is not a total-RAM or computation-time guarantee; a representative "
+                "benchmark is still required before production.",
             )
     warnings = (
         "Geometry-scaled starter values are exploratory and are not scientifically "
@@ -441,8 +441,8 @@ def _modern_review(config_path: Path, config_sha256: str) -> ProjectReviewResult
         warnings=warnings,
         scientific_boundary=(
             "This view shows exact all-pairs operation counts and known tensor payloads for "
-            "the configured CPU/float64 plan. It is not a peak-RAM forecast, runtime "
-            "prediction, benchmark measurement, or guarantee for 300 subjects. Autograd, "
+            "the configured CPU/float64 plan. It is not a peak-RAM forecast, computation-"
+            "time prediction, benchmark measurement, or guarantee for 300 subjects. Autograd, "
             "memory management, BLAS threads, and operating-system load can change real "
             f"resource use. Original report contract: {SCIENTIFIC_BOUNDARY}"
         ),
