@@ -27,16 +27,23 @@ from diffeoforge.analysis.pca_artifacts import (
     pca_summary_document,
     write_pca_artifacts,
 )
+from diffeoforge.analysis.reference_convergence_visualization import (
+    ReferenceStopEvidence,
+    detect_reference_stop_evidence,
+    reference_convergence_svg,
+    write_reference_convergence_svg,
+)
 from diffeoforge.config import ConfigurationError
 from diffeoforge.mesh import sha256_file
-from diffeoforge.result_report import RunReport, collect_run_report
+from diffeoforge.result_report import ConvergenceRow, RunReport, collect_run_report
 from diffeoforge.runs import publish_directory_exclusive
 from diffeoforge.strict_json import load_strict_json_object
 
-REFERENCE_PCA_BUNDLE_VERSION = "0.1"
+REFERENCE_PCA_BUNDLE_VERSION = "0.2"
 REFERENCE_PCA_MANIFEST = "reference-pca-manifest.json"
 REFERENCE_PCA_SIDECAR = "reference-pca-manifest.sha256"
-DEFAULT_REFERENCE_PCA_DIRECTORY = Path("analysis") / "reference-momenta-pca"
+DEFAULT_REFERENCE_PCA_DIRECTORY = Path("analysis") / "reference-result-analysis-v0.2"
+LEGACY_REFERENCE_PCA_DIRECTORY = Path("analysis") / "reference-momenta-pca"
 MOMENTA_SUFFIX = "__EstimatedParameters__Momenta.txt"
 CONTROL_POINTS_SUFFIX = "__EstimatedParameters__ControlPoints.txt"
 MAX_MOMENTA_VALUES = 100_000_000
@@ -81,15 +88,24 @@ class ReferenceMomentaInput:
         return self.momenta.shape[1]
 
 
-def _schema() -> dict[str, Any]:
-    resource = files("diffeoforge.schema").joinpath("reference-pca-bundle-v0.1.json")
+def _schema(version: str) -> dict[str, Any]:
+    if version not in {"0.1", "0.2"}:
+        raise ReferencePCAError(f"Unsupported reference PCA bundle version: {version}")
+    resource = files("diffeoforge.schema").joinpath(
+        f"reference-pca-bundle-v{version}.json"
+    )
     return json.loads(resource.read_text(encoding="utf-8"))
 
 
 def _validate_manifest(value: Mapping[str, Any]) -> None:
     try:
         json.dumps(dict(value), allow_nan=False)
-        jsonschema.Draft202012Validator(_schema()).validate(dict(value))
+        version = value.get("bundle_version")
+        if not isinstance(version, str):
+            raise ReferencePCAError("Reference PCA manifest has no bundle version")
+        jsonschema.Draft202012Validator(_schema(version)).validate(dict(value))
+    except ReferencePCAError:
+        raise
     except (TypeError, ValueError, jsonschema.ValidationError) as error:
         if isinstance(error, jsonschema.ValidationError):
             location = ".".join(str(part) for part in error.absolute_path) or "document"
@@ -376,6 +392,77 @@ def _source_run_document(inputs: ReferenceMomentaInput) -> dict[str, object]:
     }
 
 
+@dataclass(frozen=True)
+class _ReferenceOptimizationInput:
+    convergence_path: Path
+    log_path: Path
+    maximum_iterations: int
+    convergence_tolerance: float
+    duration_seconds: float
+    stop_evidence: ReferenceStopEvidence
+
+
+def _reference_optimization_input(
+    inputs: ReferenceMomentaInput,
+) -> _ReferenceOptimizationInput:
+    report = inputs.run_report
+    if not report.convergence:
+        raise ReferencePCAError(
+            "Reference result analysis requires at least one logged objective observation"
+        )
+    convergence_path = inputs.run_directory / "logs" / "convergence.csv"
+    log_path = inputs.run_directory / "logs" / "deformetrica.log"
+    for path, label in (
+        (convergence_path, "Deformetrica convergence CSV"),
+        (log_path, "Deformetrica terminal log"),
+    ):
+        if path.is_symlink() or not path.is_file():
+            raise ReferencePCAError(f"{label} is missing or symbolic: {path}")
+    try:
+        log_text = log_path.read_text(encoding="utf-8", errors="replace")
+        maximum = int(report.manifest["effective_config"]["optimization"]["max_iterations"])
+        tolerance = float(
+            report.manifest["effective_config"]["optimization"]["convergence_tolerance"]
+        )
+        duration = float(report.result["duration_seconds"])
+    except (KeyError, TypeError, ValueError, OSError) as error:
+        raise ReferencePCAError(
+            "Reference optimization evidence is missing or invalid"
+        ) from error
+    if not math.isfinite(tolerance) or tolerance <= 0:
+        raise ReferencePCAError("Configured convergence tolerance must be positive and finite")
+    if not math.isfinite(duration) or duration < 0:
+        raise ReferencePCAError("Recorded execution duration must be finite and nonnegative")
+    stop = detect_reference_stop_evidence(
+        log_text,
+        final_iteration=report.final_iteration,
+        maximum_iterations=maximum,
+    )
+    return _ReferenceOptimizationInput(
+        convergence_path=convergence_path,
+        log_path=log_path,
+        maximum_iterations=maximum,
+        convergence_tolerance=tolerance,
+        duration_seconds=duration,
+        stop_evidence=stop,
+    )
+
+
+def _source_file_artifact(
+    source_path: Path,
+    *,
+    source_relative: str,
+    copied_path: Path,
+    root: Path,
+) -> dict[str, object]:
+    return {
+        "source_path": source_relative,
+        "copied_path": copied_path.relative_to(root).as_posix(),
+        "bytes": source_path.stat().st_size,
+        "sha256": sha256_file(source_path),
+    }
+
+
 def write_reference_pca_bundle(
     run_directory: Path | str,
     destination: Path | str | None = None,
@@ -386,6 +473,7 @@ def write_reference_pca_bundle(
     """Atomically publish a self-contained, source-bound Deformetrica PCA bundle."""
 
     inputs = load_reference_momenta(run_directory)
+    optimization = _reference_optimization_input(inputs)
     try:
         pca = momenta_pca(
             np.array(inputs.momenta, dtype=np.float64, copy=True),
@@ -407,17 +495,36 @@ def write_reference_pca_bundle(
     try:
         raw_momenta = temporary / "source" / "deformetrica-momenta.txt"
         raw_controls = temporary / "source" / "deformetrica-control-points.txt"
+        raw_convergence = temporary / "source" / "deformetrica-convergence.csv"
+        raw_log = temporary / "source" / "deformetrica.log"
         raw_momenta.parent.mkdir(parents=True)
         shutil.copyfile(inputs.momenta_path, raw_momenta)
         shutil.copyfile(inputs.control_points_path, raw_controls)
+        shutil.copyfile(optimization.convergence_path, raw_convergence)
+        shutil.copyfile(optimization.log_path, raw_log)
         if sha256_file(raw_momenta) != str(inputs.momenta_record["sha256"]):
             raise ReferencePCAError("Copied momenta changed while the PCA bundle was created")
         if sha256_file(raw_controls) != str(inputs.control_points_record["sha256"]):
             raise ReferencePCAError(
                 "Copied control points changed while the PCA bundle was created"
             )
+        if sha256_file(raw_convergence) != sha256_file(optimization.convergence_path):
+            raise ReferencePCAError(
+                "Copied convergence history changed while the result bundle was created"
+            )
+        if sha256_file(raw_log) != sha256_file(optimization.log_path):
+            raise ReferencePCAError(
+                "Copied terminal log changed while the result bundle was created"
+            )
         _parameter_tables(temporary, inputs)
         pca_paths = write_pca_artifacts(temporary, pca)
+        convergence_plot = write_reference_convergence_svg(
+            temporary / "analysis" / "deformetrica-convergence.svg",
+            inputs.run_report.convergence,
+            maximum_iterations=optimization.maximum_iterations,
+            duration_seconds=optimization.duration_seconds,
+            stop_evidence=optimization.stop_evidence,
+        )
         generated = sorted(path for path in temporary.rglob("*") if path.is_file())
         artifacts = [_artifact(temporary, path) for path in generated]
         timestamp = created_at or datetime.now(UTC).isoformat(timespec="seconds")
@@ -449,14 +556,42 @@ def write_reference_pca_bundle(
                 "total_variance": pca.total_variance,
                 **pca_paths,
             },
+            "optimization": {
+                "convergence": _source_file_artifact(
+                    optimization.convergence_path,
+                    source_relative="logs/convergence.csv",
+                    copied_path=raw_convergence,
+                    root=temporary,
+                ),
+                "terminal_log": _source_file_artifact(
+                    optimization.log_path,
+                    source_relative="logs/deformetrica.log",
+                    copied_path=raw_log,
+                    root=temporary,
+                ),
+                "observations": len(inputs.run_report.convergence),
+                "first_iteration": inputs.run_report.convergence[0].iteration,
+                "last_observed_iteration": inputs.run_report.convergence[-1].iteration,
+                "configured_maximum_iterations": optimization.maximum_iterations,
+                "configured_convergence_tolerance": optimization.convergence_tolerance,
+                "duration_seconds": optimization.duration_seconds,
+                "reported_stop_signal": optimization.stop_evidence.signal,
+                "stop_interpretation": optimization.stop_evidence.summary,
+                "final_state_visibility": optimization.stop_evidence.final_state_visibility,
+                "plot_path": convergence_plot.relative_to(temporary).as_posix(),
+            },
             "artifacts": artifacts,
             "scientific_boundary": SCIENTIFIC_BOUNDARY,
             "immutability_contract": {
                 "publication": "atomic no-replace directory publication",
                 "verification": (
-                    "schema, complete artifact inventory, hashes, and recomputed PCA tables"
+                    "schema, complete artifact inventory, hashes, recomputed PCA tables, "
+                    "and regenerated convergence plot"
                 ),
-                "source_binding": "copied raw Deformetrica parameters plus source run hashes",
+                "source_binding": (
+                    "copied raw Deformetrica parameters, objective history, terminal log, "
+                    "plus source run hashes"
+                ),
             },
         }
         _validate_manifest(manifest)
@@ -573,6 +708,117 @@ def _verify_source_binding(manifest: Mapping[str, Any], source_run: Path) -> Non
         raise ReferencePCAError("PCA bundle source-run hashes differ from the current run")
     if tuple(manifest["inputs"]["subject_labels"]) != inputs.subject_labels:
         raise ReferencePCAError("PCA bundle subject order differs from the source run")
+    if manifest["bundle_version"] == "0.2":
+        optimization = manifest["optimization"]
+        for key, path in (
+            ("convergence", source_run / "logs" / "convergence.csv"),
+            ("terminal_log", source_run / "logs" / "deformetrica.log"),
+        ):
+            record = optimization[key]
+            if (
+                path.is_symlink()
+                or not path.is_file()
+                or path.stat().st_size != int(record["bytes"])
+                or sha256_file(path) != str(record["sha256"])
+            ):
+                raise ReferencePCAError(
+                    f"Reference result {key.replace('_', ' ')} differs from the source run"
+                )
+
+
+def _read_convergence_rows(path: Path) -> tuple[ConvergenceRow, ...]:
+    rows = _read_csv(path, "copied Deformetrica convergence history")
+    if not rows or rows[0] != [
+        "iteration",
+        "log_likelihood",
+        "attachment",
+        "regularity",
+    ]:
+        raise ReferencePCAError("Copied Deformetrica convergence header is invalid")
+    parsed: list[ConvergenceRow] = []
+    for line_number, row in enumerate(rows[1:], start=2):
+        if len(row) != 4:
+            raise ReferencePCAError(
+                f"Copied Deformetrica convergence line {line_number} is invalid"
+            )
+        try:
+            item = ConvergenceRow(int(row[0]), float(row[1]), float(row[2]), float(row[3]))
+        except ValueError as error:
+            raise ReferencePCAError(
+                f"Copied Deformetrica convergence line {line_number} is invalid"
+            ) from error
+        if item.iteration < 0 or not all(
+            math.isfinite(value)
+            for value in (item.log_likelihood, item.attachment, item.regularity)
+        ):
+            raise ReferencePCAError(
+                f"Copied Deformetrica convergence line {line_number} is invalid"
+            )
+        parsed.append(item)
+    if not parsed or any(
+        right.iteration <= left.iteration
+        for left, right in zip(parsed, parsed[1:], strict=False)
+    ):
+        raise ReferencePCAError(
+            "Copied Deformetrica convergence iterations are empty or not strictly increasing"
+        )
+    return tuple(parsed)
+
+
+def _verify_optimization(root: Path, manifest: Mapping[str, Any]) -> None:
+    document = manifest["optimization"]
+    convergence_record = document["convergence"]
+    log_record = document["terminal_log"]
+    convergence_path = _safe_bundle_path(
+        root,
+        convergence_record["copied_path"],
+        "Copied convergence history",
+    )
+    log_path = _safe_bundle_path(root, log_record["copied_path"], "Copied terminal log")
+    for path, record, label in (
+        (convergence_path, convergence_record, "convergence history"),
+        (log_path, log_record, "terminal log"),
+    ):
+        if (
+            not path.is_file()
+            or path.stat().st_size != int(record["bytes"])
+            or sha256_file(path) != str(record["sha256"])
+        ):
+            raise ReferencePCAError(f"Copied Deformetrica {label} differs from source hash")
+    convergence = _read_convergence_rows(convergence_path)
+    maximum = int(document["configured_maximum_iterations"])
+    stop = detect_reference_stop_evidence(
+        log_path.read_text(encoding="utf-8", errors="replace"),
+        final_iteration=convergence[-1].iteration,
+        maximum_iterations=maximum,
+    )
+    expected_identity = {
+        "observations": len(convergence),
+        "first_iteration": convergence[0].iteration,
+        "last_observed_iteration": convergence[-1].iteration,
+        "reported_stop_signal": stop.signal,
+        "stop_interpretation": stop.summary,
+        "final_state_visibility": stop.final_state_visibility,
+    }
+    if any(document[key] != value for key, value in expected_identity.items()):
+        raise ReferencePCAError(
+            "Optimization summary differs from the copied objective history or terminal log"
+        )
+    plot_path = _safe_bundle_path(root, document["plot_path"], "Convergence plot")
+    expected_svg = reference_convergence_svg(
+        convergence,
+        maximum_iterations=maximum,
+        duration_seconds=float(document["duration_seconds"]),
+        stop_evidence=stop,
+    )
+    try:
+        observed_svg = plot_path.read_text(encoding="utf-8", errors="strict")
+    except (OSError, UnicodeError) as error:
+        raise ReferencePCAError("Could not read the convergence SVG") from error
+    if observed_svg != expected_svg:
+        raise ReferencePCAError(
+            "Deformetrica convergence plot differs from deterministic regeneration"
+        )
 
 
 def verify_reference_pca_bundle(
@@ -689,6 +935,8 @@ def verify_reference_pca_bundle(
         pca_mean_rows(pca),
         label="PCA mean",
     )
+    if manifest["bundle_version"] == "0.2":
+        _verify_optimization(root, manifest)
     if source_run is not None:
         _verify_source_binding(manifest, Path(source_run).expanduser().resolve())
     return ReferencePCABundle(root, manifest, pca)

@@ -1281,13 +1281,13 @@ class DiffeoForgeWindow(QMainWindow):
         convergence_plot_layout.setSpacing(14)
         convergence_plot_title = QLabel("Optimizer convergence")
         convergence_plot_title.setObjectName("sectionTitle")
-        convergence_plot_hint = QLabel(
+        self.result_optimizer_convergence_hint = QLabel(
             "The upper panel shows committed objective components; the lower panel shows "
             "block-gradient norms against the configured tolerance. A completed curve is "
             "not automatically a converged curve."
         )
-        convergence_plot_hint.setObjectName("hint")
-        convergence_plot_hint.setWordWrap(True)
+        self.result_optimizer_convergence_hint.setObjectName("hint")
+        self.result_optimizer_convergence_hint.setWordWrap(True)
         (
             convergence_panel,
             self.result_optimizer_convergence_plot,
@@ -1298,7 +1298,7 @@ class DiffeoForgeWindow(QMainWindow):
             "Awaiting a verified optimizer-convergence plot.",
         )
         convergence_plot_layout.addWidget(convergence_plot_title)
-        convergence_plot_layout.addWidget(convergence_plot_hint)
+        convergence_plot_layout.addWidget(self.result_optimizer_convergence_hint)
         convergence_plot_layout.addWidget(convergence_panel)
         layout.addWidget(convergence_plot_card)
         layout.addWidget(pca_card)
@@ -1308,14 +1308,21 @@ class DiffeoForgeWindow(QMainWindow):
         pca_plots_layout = QVBoxLayout(pca_plots)
         pca_plots_layout.setContentsMargins(24, 22, 24, 24)
         pca_plots_layout.setSpacing(14)
-        pca_plots_title = QLabel("PCA score plots")
+        pca_plots_title = QLabel("PCA plots")
         pca_plots_title.setObjectName("sectionTitle")
         pca_plots_hint = QLabel(
-            "Both views are loaded directly from independently verified, script-free SVG "
+            "All views are loaded directly from independently verified, script-free SVG "
             "artifacts. Axis labels report explained variance; PCA signs remain conventional."
         )
         pca_plots_hint.setObjectName("hint")
         pca_plots_hint.setWordWrap(True)
+        (
+            scree_panel,
+            self.result_pca_scree_plot,
+            self.result_pca_scree_plot_status,
+        ) = self._build_result_plot_panel(
+            "Explained variance", "resultPcaScreePlot", "Awaiting a verified scree plot."
+        )
         (
             pc1_pc2_panel,
             self.result_pc1_pc2_plot,
@@ -1332,6 +1339,7 @@ class DiffeoForgeWindow(QMainWindow):
         )
         pca_plots_layout.addWidget(pca_plots_title)
         pca_plots_layout.addWidget(pca_plots_hint)
+        pca_plots_layout.addWidget(scree_panel)
         pca_plots_layout.addWidget(pc1_pc2_panel)
         pca_plots_layout.addWidget(pc2_pc3_panel)
         layout.addWidget(pca_plots)
@@ -1419,7 +1427,9 @@ class DiffeoForgeWindow(QMainWindow):
         status.setWordWrap(True)
         plot = QSvgWidget()
         plot.setObjectName(object_name)
-        plot.setMinimumHeight(360)
+        plot.renderer().setAspectRatioMode(Qt.AspectRatioMode.KeepAspectRatio)
+        plot.setMinimumHeight(440)
+        plot.setMaximumHeight(720)
         plot.hide()
         layout.addWidget(heading)
         layout.addWidget(status)
@@ -3040,8 +3050,9 @@ class DiffeoForgeWindow(QMainWindow):
             "This check was read-only. The destination and all reviewed inputs are checked "
             "again inside the worker immediately before preparation."
         )
-        self.run_progress_bar.setRange(0, 0)
-        self.run_progress_bar.setFormat("Waiting for Deformetrica start")
+        self.run_progress_bar.setRange(0, 1)
+        self.run_progress_bar.setValue(0)
+        self.run_progress_bar.setFormat("Not started")
         self.run_optimizer_label.setText("No Deformetrica iteration observed yet.")
         self.run_state_label.setObjectName("status")
         self.run_state_label.setStyleSheet("")
@@ -3313,18 +3324,18 @@ class DiffeoForgeWindow(QMainWindow):
             self.run_progress_bar.setRange(0, maximum)
             self.run_progress_bar.setValue(min(iteration, maximum))
             self.run_progress_bar.setFormat(
-                "Observed iteration %v of %m (configured cap)"
+                "Iteration %v of maximum %m"
             )
             self.run_stage_label.setText(
                 "Deformetrica stage: execute · optimizer output is being observed"
             )
             self.run_optimizer_label.setText(
-                f"Iteration {iteration} of {maximum} · objective "
+                f"Iteration {iteration} of maximum {maximum} · objective "
                 f"{float(event.payload['log_likelihood']):.6g} · attachment "
                 f"{float(event.payload['attachment']):.6g} · regularity "
                 f"{float(event.payload['regularity']):.6g}\n"
                 f"Elapsed: {self._format_duration(elapsed)} · observed rate: {rate_text} · "
-                f"ETA to iteration cap: {eta_text} (not convergence)"
+                f"ETA to maximum: {eta_text} (upper bound, not convergence)"
             )
             self.run_state_label.setText(message)
         else:
@@ -3490,6 +3501,18 @@ class DiffeoForgeWindow(QMainWindow):
         self._populate_review_rows(self.result_optimization_layout, review.optimization)
         self._populate_review_rows(self.result_pca_layout, review.pca)
         self._populate_review_rows(self.result_quality_layout, review.quality)
+        if review.engine_route == "deformetrica_reference":
+            self.result_optimizer_convergence_hint.setText(
+                "The upper panel shows Deformetrica's logged objective and attachment; the "
+                "lower panel shows its regularity term. The final accepted step that triggers "
+                "Deformetrica 4.3's tolerance test is not printed in the terminal history."
+            )
+        else:
+            self.result_optimizer_convergence_hint.setText(
+                "The upper panel shows committed objective components; the lower panel shows "
+                "block-gradient norms against the configured tolerance. A completed curve is "
+                "not automatically a converged curve."
+            )
         try:
             self._load_verified_optimizer_plot(review)
             self._load_verified_pca_plots(review)
@@ -3533,10 +3556,17 @@ class DiffeoForgeWindow(QMainWindow):
         else:
             self.result_completion_label.setObjectName("statusWarning")
             self.result_completion_label.setStyleSheet("")
+            duration = (
+                self._format_result_duration(review.execution_duration_seconds)
+                if review.execution_duration_seconds is not None
+                else "an unreported duration"
+            )
+            stop = review.optimizer_termination_reason.replace("_", " ")
             self.result_completion_label.setText(
-                "Deformetrica run and momenta PCA are complete and independently verified. "
-                "Optimizer convergence is not claimed from process completion alone; inspect "
-                "the recorded objective history and registration quality before scientific use."
+                f"Deformetrica completed in {duration}; {review.optimizer_cycles_completed} "
+                f"was the last logged iteration of maximum {review.optimizer_max_cycles}. "
+                f"Reported stop signal: {stop}. This is independently verified execution "
+                "evidence, not proof of adequate registration or scientific convergence."
             )
         self._populate_result_artifacts(review)
         self.result_status_label.setObjectName("statusSuccess")
@@ -3576,11 +3606,25 @@ class DiffeoForgeWindow(QMainWindow):
         self.result_optimizer_convergence_plot_status.setObjectName("statusSuccess")
         self.result_optimizer_convergence_plot_status.setStyleSheet("")
         self.result_optimizer_convergence_plot_status.setText(
-            "Verified objective components and block-gradient norms from the bound "
+            "Verified Deformetrica objective, attachment, and regularity history from "
+            "the versioned result-analysis bundle."
+            if review.engine_route == "deformetrica_reference"
+            else "Verified objective components and block-gradient norms from the bound "
             "optimizer history."
         )
 
     def _load_verified_pca_plots(self, review: ModernResultReview) -> None:
+        scree = verify_result_artifact(review, "pca-scree")
+        self.result_pca_scree_plot.load(str(scree))
+        if not self.result_pca_scree_plot.renderer().isValid():
+            raise ModernResultReviewError("The verified PCA scree SVG is invalid")
+        self.result_pca_scree_plot.show()
+        self.result_pca_scree_plot_status.setObjectName("statusSuccess")
+        self.result_pca_scree_plot_status.setStyleSheet("")
+        self.result_pca_scree_plot_status.setText(
+            "Verified explained variance for all retained principal components."
+        )
+
         primary = verify_result_artifact(review, "pca-score-plot")
         self.result_pc1_pc2_plot.load(str(primary))
         if not self.result_pc1_pc2_plot.renderer().isValid():
@@ -3733,6 +3777,17 @@ class DiffeoForgeWindow(QMainWindow):
         if minutes:
             return f"{minutes} min {remaining_seconds:02d} s"
         return f"{remaining_seconds} s"
+
+    @staticmethod
+    def _format_result_duration(seconds: float) -> str:
+        normalized = max(0.0, float(seconds))
+        hours, remainder = divmod(normalized, 3600.0)
+        minutes, remaining_seconds = divmod(remainder, 60.0)
+        if hours >= 1:
+            return f"{int(hours)} h {int(minutes):02d} min {remaining_seconds:04.1f} s"
+        if minutes >= 1:
+            return f"{int(minutes)} min {remaining_seconds:.1f} s"
+        return f"{remaining_seconds:.1f} s"
 
     @Slot(str)
     def _review_failed(self, message: str) -> None:

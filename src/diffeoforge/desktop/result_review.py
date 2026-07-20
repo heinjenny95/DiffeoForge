@@ -77,6 +77,8 @@ class ModernResultReview:
     pca_pc2_pc3_unavailable_reason: str | None = None
     optimizer_convergence_plot_unavailable_reason: str | None = None
     engine_route: Literal["modern", "deformetrica_reference"] = "modern"
+    execution_duration_seconds: float | None = None
+    optimizer_stop_interpretation: str | None = None
 
     def artifact(self, key: str) -> ModernResultArtifact:
         for artifact in self.artifacts:

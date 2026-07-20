@@ -1203,10 +1203,10 @@ def test_desktop_window_renders_deformetrica_iteration_and_bounded_eta(
 
     assert window.run_progress_bar.value() == 12
     assert window.run_progress_bar.maximum() == 100
-    assert "configured cap" in window.run_progress_bar.format()
-    assert "Iteration 12 of 100" in window.run_optimizer_label.text()
+    assert "maximum" in window.run_progress_bar.format()
+    assert "Iteration 12 of maximum 100" in window.run_optimizer_label.text()
     assert "Elapsed: 1 h 01 min 01 s" in window.run_optimizer_label.text()
-    assert "ETA to iteration cap: 7 h 27 min 20 s" in (
+    assert "ETA to maximum: 7 h 27 min 20 s" in (
         window.run_optimizer_label.text()
     )
     assert "not convergence" in window.run_optimizer_label.text()
@@ -1788,6 +1788,8 @@ def test_desktop_window_verifies_and_renders_step_four_before_artifact_handoff(
     assert len(window.result_artifact_buttons) == 4
     assert window.result_optimizer_convergence_plot.isHidden() is False
     assert "Verified objective components" in window.result_optimizer_convergence_plot_status.text()
+    assert window.result_pca_scree_plot.isHidden() is False
+    assert "Verified explained variance" in window.result_pca_scree_plot_status.text()
     assert window.result_pc1_pc2_plot.isHidden() is False
     assert window.result_pc2_pc3_plot.isHidden() is False
     assert "Verified PC1-versus-PC2" in window.result_pc1_pc2_plot_status.text()

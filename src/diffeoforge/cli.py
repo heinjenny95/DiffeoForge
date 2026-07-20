@@ -465,7 +465,10 @@ def build_parser() -> argparse.ArgumentParser:
     reference_pca_parser.add_argument(
         "--output",
         type=Path,
-        help="New PCA bundle directory (default: RUN/analysis/reference-momenta-pca).",
+        help=(
+            "New result-analysis bundle directory "
+            "(default: RUN/analysis/reference-result-analysis-v0.2)."
+        ),
     )
     reference_pca_parser.add_argument(
         "--components",

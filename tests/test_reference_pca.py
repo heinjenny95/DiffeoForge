@@ -76,6 +76,14 @@ def _completed_reference_run(tmp_path: Path) -> Path:
         "1,-8,-7.4,-0.6\n",
         encoding="utf-8",
     )
+    (run / "logs" / "deformetrica.log").write_text(
+        "Iteration 0\n"
+        "Log-likelihood = -10 [attachment = -9.5 ; regularity = -0.5]\n"
+        "Iteration 1\n"
+        "Log-likelihood = -8 [attachment = -7.4 ; regularity = -0.6]\n"
+        "Tolerance threshold met. Stopping the optimization process.\n",
+        encoding="utf-8",
+    )
     result = {
         "result_version": "0.1",
         "run_id": "reference-pca-test",
@@ -180,7 +188,10 @@ def test_reference_pca_bundle_is_source_bound_recomputed_and_nonreplacing(
     assert bundle.manifest["inputs"]["feature_order"].endswith("Cartesian x, y, z inner")
     assert (bundle_path / "analysis" / "pca-scree.svg").is_file()
     assert (bundle_path / "analysis" / "pca-scores.svg").is_file()
+    assert (bundle_path / "analysis" / "deformetrica-convergence.svg").is_file()
     assert (bundle_path / "parameters" / "momenta.csv").is_file()
+    assert bundle.manifest["bundle_version"] == "0.2"
+    assert bundle.manifest["optimization"]["reported_stop_signal"] == "tolerance_threshold"
 
     with pytest.raises(FileExistsError, match="already exists"):
         write_reference_pca_bundle(run)
@@ -234,6 +245,35 @@ def test_reference_pca_recomputes_internally_consistent_tables(tmp_path: Path) -
         verify_reference_pca_bundle(bundle)
 
 
+def test_reference_pca_regenerates_convergence_plot_during_verification(
+    tmp_path: Path,
+) -> None:
+    run = _completed_reference_run(tmp_path)
+    bundle = write_reference_pca_bundle(run)
+    plot_path = bundle / "analysis" / "deformetrica-convergence.svg"
+    plot_path.write_text("<svg xmlns='http://www.w3.org/2000/svg'/>\n", encoding="utf-8")
+    manifest_path = bundle / REFERENCE_PCA_MANIFEST
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    record = next(
+        item
+        for item in manifest["artifacts"]
+        if item["path"] == "analysis/deformetrica-convergence.svg"
+    )
+    record["bytes"] = plot_path.stat().st_size
+    record["sha256"] = sha256_file(plot_path)
+    manifest_path.write_text(
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    (bundle / REFERENCE_PCA_SIDECAR).write_text(
+        sha256_file(manifest_path) + "\n",
+        encoding="ascii",
+    )
+
+    with pytest.raises(ReferencePCAError, match="differs from deterministic regeneration"):
+        verify_reference_pca_bundle(bundle)
+
+
 def test_desktop_reference_review_creates_and_exposes_verified_pca(tmp_path: Path) -> None:
     run = _completed_reference_run(tmp_path)
 
@@ -249,8 +289,12 @@ def test_desktop_reference_review_creates_and_exposes_verified_pca(tmp_path: Pat
         "pca-scores",
         "pca-scree",
         "pca-score-plot",
+        "optimizer-convergence-plot",
+        "reference-convergence",
     }
     assert verify_result_artifact(review, "pca-score-plot").is_file()
+    assert review.execution_duration_seconds == 60.0
+    assert review.optimizer_termination_reason == "tolerance_threshold"
 
 
 def test_desktop_reference_review_rechecks_artifact_before_open(tmp_path: Path) -> None:
@@ -271,7 +315,7 @@ def test_reference_pca_cli_creates_and_strictly_verifies_bundle(
     assert main(["reference-pca", str(run), "--components", "1"]) == 0
     created = capsys.readouterr()
     assert "centered linear PCA" in created.out
-    bundle = run / "analysis" / "reference-momenta-pca"
+    bundle = run / "analysis" / "reference-result-analysis-v0.2"
 
     assert main(["reference-pca-verify", str(bundle), "--source-run", str(run)]) == 0
     verified = capsys.readouterr()

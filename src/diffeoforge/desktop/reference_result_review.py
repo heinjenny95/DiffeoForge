@@ -35,6 +35,16 @@ def _format_bytes(value: int) -> str:
     return f"{amount:.3g} {unit}"
 
 
+def _format_duration(value: float) -> str:
+    minutes, seconds = divmod(float(value), 60.0)
+    hours, minutes = divmod(int(minutes), 60)
+    if hours:
+        return f"{hours} h {minutes} min {seconds:.1f} s"
+    if minutes:
+        return f"{minutes} min {seconds:.1f} s"
+    return f"{seconds:.1f} s"
+
+
 def _pca_items(bundle_manifest: dict, ratios: tuple[float, ...]) -> tuple[ResultReviewItem, ...]:
     pca = bundle_manifest["pca"]
     items = [
@@ -142,6 +152,7 @@ def review_reference_result(
 
     inputs = manifest["inputs"]
     pca = manifest["pca"]
+    optimization_evidence = manifest["optimization"]
     add_artifact(
         "reference-momenta",
         "Deformetrica momenta (raw TXT)",
@@ -170,6 +181,27 @@ def review_reference_result(
             "parameters/control-points.csv",
             "csv",
             "Open indexed Cartesian control-point table.",
+        ),
+        (
+            "reference-convergence",
+            "Deformetrica objective history (CSV)",
+            optimization_evidence["convergence"]["copied_path"],
+            "csv",
+            "Exact captured iteration, log-likelihood, attachment, and regularity table.",
+        ),
+        (
+            "reference-terminal-log",
+            "Deformetrica terminal log (TXT)",
+            optimization_evidence["terminal_log"]["copied_path"],
+            "txt",
+            "Captured terminal log used to classify the reported optimizer stop signal.",
+        ),
+        (
+            "optimizer-convergence-plot",
+            "Deformetrica objective history (SVG)",
+            optimization_evidence["plot_path"],
+            "svg",
+            "Deterministically regenerated view of the captured objective history.",
         ),
         (
             "pca-summary",
@@ -221,8 +253,10 @@ def review_reference_result(
     ratios = tuple(float(value) for value in verified.pca.explained_variance_ratio)
     backend = report.manifest["backend"]
     result = report.result
-    configured_max = int(report.manifest["effective_config"]["optimization"]["max_iterations"])
-    final_iteration = report.final_iteration or 0
+    configured_max = int(optimization_evidence["configured_maximum_iterations"])
+    final_iteration = int(optimization_evidence["last_observed_iteration"])
+    observations = int(optimization_evidence["observations"])
+    duration_seconds = float(optimization_evidence["duration_seconds"])
     total_output_bytes = sum(int(record["bytes"]) for record in report.inventory)
     passed_checks = sum(check.status == "pass" for check in report.checks)
     project_name = str(report.manifest["project"]["name"])
@@ -258,18 +292,24 @@ def review_reference_result(
         ),
         ResultReviewItem(
             "Observed iterations",
-            f"final {final_iteration} · configured cap {configured_max}",
-            "The cap is not a convergence target and completion does not prove convergence.",
+            f"{observations} logged states · last iteration {final_iteration} "
+            f"of maximum {configured_max}",
+            "The maximum is an upper limit, not a convergence target.",
         ),
         ResultReviewItem(
             "Duration",
-            f"{float(result['duration_seconds']):.1f} seconds",
+            _format_duration(duration_seconds),
             "Measured wall-clock duration stored in terminal run evidence.",
         ),
         ResultReviewItem(
-            "Stop interpretation",
-            report.stop_interpretation,
-            "Bounded interpretation derived from observed history and configured cap.",
+            "Reported stop signal",
+            str(optimization_evidence["reported_stop_signal"]).replace("_", " "),
+            str(optimization_evidence["stop_interpretation"]),
+        ),
+        ResultReviewItem(
+            "Final plotted state",
+            f"last logged iteration {final_iteration}",
+            str(optimization_evidence["final_state_visibility"]),
         ),
     )
     quality = (
@@ -301,7 +341,7 @@ def review_reference_result(
         bundle_manifest_path=bundle_manifest,
         bundle_manifest_sha256=sha256_file(bundle_manifest),
         optimizer_converged=None,
-        optimizer_termination_reason="completion_observed_convergence_not_established",
+        optimizer_termination_reason=str(optimization_evidence["reported_stop_signal"]),
         optimizer_cycles_completed=final_iteration,
         optimizer_max_cycles=configured_max,
         overview=overview,
@@ -321,9 +361,7 @@ def review_reference_result(
             if secondary is not None
             else str(pca["plots"]["scores_pc2_pc3_unavailable_reason"])
         ),
-        optimizer_convergence_plot_unavailable_reason=(
-            "A verified Deformetrica convergence SVG has not yet been derived from the "
-            "terminal convergence table. The table remains in the source run."
-        ),
         engine_route="deformetrica_reference",
+        execution_duration_seconds=duration_seconds,
+        optimizer_stop_interpretation=str(optimization_evidence["stop_interpretation"]),
     )

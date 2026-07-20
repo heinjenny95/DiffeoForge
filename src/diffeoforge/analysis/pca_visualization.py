@@ -64,20 +64,20 @@ def _svg_document(title: str, body: list[str]) -> str:
             (
                 f'<svg xmlns="http://www.w3.org/2000/svg" width="{_WIDTH}" '
                 f'height="{_HEIGHT}" viewBox="0 0 {_WIDTH} {_HEIGHT}" '
-                'role="img">'
+                'role="img" shape-rendering="geometricPrecision">'
             ),
             f"  <title>{escaped_title}</title>",
             "  <style>",
-            "    .axis { stroke: #263238; stroke-width: 1.5; }",
-            "    .grid { stroke: #dce4e7; stroke-width: 1; }",
-            "    .label { fill: #263238; font-family: Arial; font-size: 14px; }",
-            "    .small { fill: #455a64; font-family: Arial; font-size: 12px; }",
+            "    .axis { stroke: #31535a; stroke-width: 1.25; }",
+            "    .grid { stroke: #e3ebec; stroke-width: 1; }",
+            "    .label { fill: #17343a; font-family: Arial; font-size: 14px; }",
+            "    .small { fill: #52666b; font-family: Arial; font-size: 11px; }",
             (
-                "    .title { fill: #102a43; font-family: Arial; font-size: 22px; "
-                "font-weight: bold; }"
+                "    .title { fill: #17343a; font-family: Arial; font-size: 19px; "
+                "font-weight: 700; }"
             ),
-            "    .bar { fill: #1976d2; }",
-            "    .point { fill: #d84315; stroke: #ffffff; stroke-width: 1; }",
+            "    .bar { fill: #178a78; }",
+            "    .point { fill: #087f6b; stroke: #ffffff; stroke-width: 1.25; }",
             "  </style>",
             f'  <rect width="{_WIDTH}" height="{_HEIGHT}" fill="#ffffff"/>',
             *body,
@@ -245,7 +245,7 @@ def _write_pca_score_view(
         escaped_label = html.escape(label, quote=True)
         body.extend(
             [
-                f'  <circle cx="{_number(x)}" cy="{_number(y)}" r="5" '
+                f'  <circle cx="{_number(x)}" cy="{_number(y)}" r="4.5" '
                 f'class="point" data-subject-label="{escaped_label}">',
                 f"    <title>{html.escape(label)}</title>",
                 "  </circle>",

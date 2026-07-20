@@ -1,4 +1,4 @@
-# Verified PCA of Deformetrica momenta
+# Verified Deformetrica result analysis and momenta PCA
 
 Status: **connected source-level analysis path; not yet scientifically validated**
 
@@ -10,14 +10,15 @@ available without the GUI:
 ```powershell
 diffeoforge reference-pca RUN_DIRECTORY
 diffeoforge reference-pca-verify `
-  RUN_DIRECTORY/analysis/reference-momenta-pca `
+  RUN_DIRECTORY/analysis/reference-result-analysis-v0.2 `
   --source-run RUN_DIRECTORY
 ```
 
 Neither command edits the completed run outputs. The default destination is a
 new, non-replacing directory at
-`RUN_DIRECTORY/analysis/reference-momenta-pca`. An existing destination is
-refused.
+`RUN_DIRECTORY/analysis/reference-result-analysis-v0.2`. An existing
+destination is refused. Legacy `reference-momenta-pca` snapshots remain
+readable and are never upgraded in place.
 
 ## Accepted source contract
 
@@ -65,7 +66,10 @@ separately named, parameterized, validated option.
 The atomic bundle contains:
 
 - byte-for-byte copies of raw Deformetrica momenta and control points;
+- byte-for-byte copies of the objective-history CSV and terminal log;
 - normalized open CSV tables with subject and control-point identity;
+- a deterministic convergence SVG with the last logged iteration, configured
+  maximum, runtime, and bounded terminal stop evidence;
 - PCA summary, scores, loadings, and mean as JSON/CSV;
 - static script-free scree, PC1/PC2, and, when available, PC2/PC3 SVGs;
 - a complete artifact inventory with byte counts and SHA-256 hashes;
@@ -73,9 +77,17 @@ The atomic bundle contains:
 - a versioned manifest plus its own SHA-256 sidecar.
 
 Verification checks the exact inventory, raw parameter hashes and dimensions,
-recomputes the PCA from the copied raw values, and compares the resulting
-statistics and tables. Supplying `--source-run` additionally requires the
-current source run to match the recorded hashes and subject order.
+recomputes the PCA from the copied raw values, regenerates the convergence SVG,
+and compares the resulting statistics and tables. Supplying `--source-run`
+additionally requires the current source run to match the recorded hashes,
+objective history, terminal log, and subject order.
+
+Deformetrica 4.3 applies an accepted step before testing its internal
+objective-change tolerance, but does not print that final accepted step when
+the test triggers. Consequently, a tolerance-stopped curve ends at the
+preceding logged state. DiffeoForge records this explicitly and does not turn
+the internal stop signal into a claim of adequate registration or scientific
+convergence.
 
 ## Scientific boundary
 
