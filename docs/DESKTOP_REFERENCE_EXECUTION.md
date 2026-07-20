@@ -4,11 +4,11 @@ Status: **alpha; execution and cancellation are connected and the execution
 worker is included in the prospective Windows evidence bundle**
 
 DiffeoForge desktop can launch the exact Deformetrica configuration completed
-in parameter review after its configured container environment passes the
-read-only doctor check. The reviewed configuration hash, launcher engine,
-container image, run ID, and absent immutable destination are bound into one
-versioned launch request. Refreshing or starting that request retains the same
-run ID, so the destination shown to the user cannot silently change at launch.
+in parameter review after its configured reference runtime passes the read-only
+doctor check. The reviewed configuration hash, complete launcher identity, run
+ID, and absent immutable destination are bound into one versioned launch
+request. Refreshing or starting that request retains the same run ID, so the
+destination shown to the user cannot silently change at launch.
 
 ## Process and evidence boundary
 
@@ -83,5 +83,6 @@ keeps the window open until the parent reconciles a terminal outcome.
 - Verified Deformetrica momenta and control points are imported into the shared
   PCA/result screen. Reference mean/positive/negative PC deformation meshes and
   registration renderings are not yet generated.
-- The containerized Deformetrica runtime still has to be present and pass the
-  exact environment check; DiffeoForge does not silently install or replace it.
+- Private-alpha builds can reuse an already verified same-owner WSL runtime.
+  Public builds require the installer-managed runtime payload and its clean-host
+  install/repair validation before release.

@@ -320,8 +320,8 @@ def test_desktop_window_exposes_required_project_controls(monkeypatch) -> None:
     assert window.landmarks_edit.isEnabled() is True
     window.landmarks_edit.setText("landmarks.csv")
     assert window._request().landmarks_file == Path("landmarks.csv")
-    assert window.pairwise_combo.isEnabled() is False
-    assert window.optimization_effort_combo.isEnabled() is False
+    assert window.pairwise_box.isHidden() is True
+    assert window.optimization_effort_box.isHidden() is True
     assert window._request().pairwise_mode == "dense"
     window.close()
     application.processEvents()
@@ -495,7 +495,7 @@ def test_desktop_window_keeps_reference_compute_locked_until_environment_check(
     assert window.show_run_button.isEnabled() is False
     assert "Check the reference environment" in window.show_run_button.text()
     assert window.reference_readiness_card.isHidden() is False
-    assert window.reference_preparation_status_card.isHidden() is False
+    assert window.reference_preparation_status_card.isHidden() is True
     assert window.refresh_reference_readiness_button.isEnabled() is True
     assert window.refresh_reference_preparation_status_button.isEnabled() is False
     assert window.export_reference_preparation_status_button.isEnabled() is False

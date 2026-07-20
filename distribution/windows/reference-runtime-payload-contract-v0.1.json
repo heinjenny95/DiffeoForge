@@ -1,0 +1,37 @@
+{
+  "schema_version": "0.1",
+  "status": "accepted_payload_contract_no_public_payload_or_redistribution_approval",
+  "platform": "windows-x86_64-wsl2-cpu",
+  "launcher": {
+    "type": "wsl",
+    "distribution": "DiffeoForge-Reference-4.3",
+    "executable": "/opt/diffeoforge/reference/bin/deformetrica"
+  },
+  "engine": {
+    "name": "Deformetrica",
+    "version": "4.3.0",
+    "license": "INRIA Non-Commercial License Agreement",
+    "commercial_use_permitted": false,
+    "publication_credit_required": true,
+    "redistribution_same_terms_required": true
+  },
+  "archive": {
+    "format": "wsl_importable_tar_gzip",
+    "exact_sha256_required_before_import": true,
+    "network_download_during_install": false,
+    "unique_distribution_must_be_absent_or_exactly_verified": true,
+    "overwrite_existing_distribution": false
+  },
+  "required_evidence": [
+    "pinned_rootfs_source_and_sha256",
+    "locked_dependency_artifacts_and_sha256",
+    "complete_third_party_license_inventory",
+    "deformetrica_license_presented_and_installed",
+    "runtime_archive_sha256",
+    "clean_host_import_repair_upgrade_uninstall_observations",
+    "exact_deformetrica_version_probe",
+    "synthetic_atlas_numerical_validation"
+  ],
+  "public_distribution_authorized": false,
+  "release_authorized": false
+}

@@ -31,14 +31,37 @@
     },
     "destination": {"type": "string", "minLength": 1},
     "launcher": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["type", "engine", "image"],
-      "properties": {
-        "type": {"const": "container"},
-        "engine": {"type": "string", "minLength": 1},
-        "image": {"type": "string", "minLength": 1}
-      }
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "engine", "image"],
+          "properties": {
+            "type": {"const": "container"},
+            "engine": {"type": "string", "minLength": 1},
+            "image": {"type": "string", "minLength": 1}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "distribution", "executable"],
+          "properties": {
+            "type": {"const": "wsl"},
+            "distribution": {"type": "string", "minLength": 1},
+            "executable": {"type": "string", "pattern": "^/"}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "executable"],
+          "properties": {
+            "type": {"const": "native"},
+            "executable": {"type": "string", "minLength": 1}
+          }
+        }
+      ]
     }
   }
 }

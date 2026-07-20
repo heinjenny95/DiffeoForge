@@ -412,7 +412,7 @@ def test_verification_rejects_input_change_and_requires_external_plan_hash(
         )
 
 
-def test_inno_script_is_offline_and_has_no_execution_or_project_deletion() -> None:
+def test_inno_script_is_offline_and_only_runs_guarded_runtime_setup() -> None:
     script = (ROOT / "distribution" / "windows" / "DiffeoForge.iss").read_text(encoding="utf-8")
 
     for directive in (
@@ -438,11 +438,18 @@ def test_inno_script_is_offline_and_has_no_execution_or_project_deletion() -> No
     ):
         assert f"#ifndef {define}" in script
         assert f"#error {define} compiler define is required" in script
-    assert "[Run]" not in script
+    assert script.count("[Run]") == 1
+    runtime_guard = script.index("#ifdef ReferenceRuntimeArchive", script.index("[Icons]"))
+    assert runtime_guard < script.index("[Run]") < script.rindex("#endif")
+    assert "install-reference-runtime.ps1" in script[script.index("[Run]") :]
+    assert 'Filename: "{app}\\DiffeoForge.exe"' not in script[script.index("[Run]") :]
     assert "[UninstallRun]" not in script
     assert "download" not in script.lower()
     assert "http" not in script[script.index("[Files]") :]
-    assert all(term not in script.lower() for term in ("mesh", "landmark", "atlas", "pca"))
+    assert all(
+        term not in script.lower()
+        for term in ("\\meshes", "\\landmarks", "\\atlas", "\\pca")
+    )
     assert script.count('Source: "{#EvidenceDir}\\') == 6
     assert "Flags: unchecked" in script
 

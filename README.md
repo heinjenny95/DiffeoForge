@@ -2,9 +2,10 @@
 
 > [!WARNING]
 > **Pre-alpha research software.** DiffeoForge is not yet validated for
-> scientific production use. Its experimental reference backend can invoke a
-> hash-locked Deformetrica 4.3.0 CPU container, but scientific equivalence,
-> cross-platform distribution, and production-scale use are not yet validated.
+> scientific production use. Its reference backend can invoke exact
+> Deformetrica 4.3.0 CPU runtimes through native, WSL, or developer-container
+> launchers, but scientific equivalence, public redistribution, and
+> production-scale use are not yet validated.
 
 DiffeoForge is the working title for an open-source, reproducible workflow for
 diffeomorphic atlas construction from 3D surface meshes. The project aims to
@@ -13,6 +14,11 @@ XML, or CUDA expertise while preserving full access to every scientific
 parameter and generated file. Optional homologous landmarks and an explicit
 generalized-Procrustes step belong to DiffeoForge's engine-independent
 preprocessing, not to one numerical backend.
+
+DiffeoForge code is open source. Deformetrica 4.3.0 is a separately licensed,
+non-free reference component restricted to educational, research, and
+evaluation use under the INRIA Non-Commercial License; a future bundled
+installer must retain that separate license and cannot broaden its terms.
 
 The project is being developed in public from its first engineering decisions.
 The name may change before the first release.
@@ -191,9 +197,11 @@ destination, existing-result state, and any private candidate status/path/reason
 it checks again immediately before launch and never mutates recovery state.
 Each selected result artifact is rechecked by size
 and SHA-256 immediately before it is opened by a local application. The
-external Deformetrica route can run a read-only, configuration-hash-bound
-diagnostic of its exact container engine and image from review step 2. When it
-passes, the source desktop binds one immutable launch request and supervises
+Deformetrica route can run a read-only, configuration-hash-bound diagnostic of
+its exact native, WSL, or developer-container launcher from review step 2.
+Normal Windows projects prefer the installer-owned WSL identity and the private
+alpha can reuse an existing exact Deformetrica 4.3.0 WSL environment read-only.
+When the check passes, the source desktop binds one immutable launch request and supervises
 preflight, preparation, execution, phase-dependent cancellation, observed
 iterations, and an explicitly bounded ETA-to-iteration-cap in a contained child
 process. A Qt-independent parent independently reconciles terminal filesystem,
@@ -216,8 +224,9 @@ DiffeoForge can also load the selected template outside the GUI thread and
 render deterministic native XY/XZ/YZ wireframe projections with an explicit
 display-edge budget and exact source hash. This is an inspection preview, not
 interactive 3D rendering, mesh QC, registration evidence, or landmark picking.
-DiffeoForge also does **not** yet ship a desktop installer or redistributable
-binary. A clean-commit, exact-inventory Windows one-directory
+DiffeoForge does **not** yet ship a public redistributable binary. Same-owner
+private Windows installers are used for local testing. A clean-commit,
+exact-inventory Windows one-directory
 [engineering build](docs/WINDOWS_FREEZE_EVIDENCE.md) now exercises the GUI and
 separate frozen workers. The exact Inno Setup pipeline has compiled one private,
 unsigned engineering setup without executing or distributing it. A separate
@@ -427,11 +436,13 @@ subject to the validation and scaling gates in the modern-engine documentation.
 
 The bundled example uses one template and five deterministic synthetic meshes.
 It exercises geometry preflight and immutable run preparation without private
-research data. Execution requires either a compatible external Deformetrica
-installation or the frozen reference container below.
+research data. Reference execution currently requires a compatible verified
+Deformetrica runtime. The public Windows installer target will import its own
+offline, hash-verified WSL runtime; Docker remains a developer and CI option
+below.
 
-For an isolated, hash-locked Deformetrica 4.3.0 CPU environment, build the
-reference container and use the container example:
+For developer/CI validation of an isolated, hash-locked Deformetrica 4.3.0 CPU
+environment, build the reference container and use the container example:
 
 ```bash
 docker build --platform linux/amd64 -f container/Dockerfile \
@@ -450,6 +461,7 @@ and workflow for another mesh directory.
 - [Project specification](docs/PROJECT_SPECIFICATION.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Deformetrica reference backend](docs/REFERENCE_BACKEND.md)
+- [Managed Windows reference runtime](docs/MANAGED_REFERENCE_RUNTIME.md)
 - [Modern-engine feasibility baseline](docs/MODERN_ENGINE_FEASIBILITY.md)
 - [Experimental momenta-only optimizer](docs/MOMENTA_OPTIMIZER.md)
 - [Experimental full atlas optimizer](docs/FULL_ATLAS_OPTIMIZER.md)

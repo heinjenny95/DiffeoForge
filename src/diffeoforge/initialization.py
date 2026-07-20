@@ -5,6 +5,7 @@ from __future__ import annotations
 import io
 import os
 from collections.abc import Mapping
+from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -184,6 +185,7 @@ def initialize_project(
     threads: int | None = None,
     random_seed: int = 20260715,
     image: str = DEFAULT_CONTAINER_IMAGE,
+    launcher: Mapping[str, str] | None = None,
     overwrite: bool = False,
 ) -> InitializationResult:
     """Validate meshes and write one explicit, runnable starter configuration."""
@@ -213,6 +215,11 @@ def initialize_project(
         directory.parent.name
         if directory.name.casefold() in {"mesh", "meshes", "data"}
         else directory.name
+    )
+    resolved_launcher: dict[str, str] = (
+        {"type": "container", "engine": "docker", "image": image}
+        if launcher is None
+        else deepcopy(dict(launcher))
     )
     provisional: dict[str, Any] = {
         "schema_version": "0.1",
@@ -260,7 +267,7 @@ def initialize_project(
             "random_seed": random_seed,
             "kernel_backend": "keops",
             "verbosity": "INFO",
-            "launcher": {"type": "container", "engine": "docker", "image": image},
+            "launcher": resolved_launcher,
         },
         "output": {"directory": run_path_value, "retain_flow_meshes": True},
     }

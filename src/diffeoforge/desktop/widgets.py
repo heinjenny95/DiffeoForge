@@ -92,6 +92,7 @@ from diffeoforge.desktop.worker_controller import (
 )
 from diffeoforge.desktop.worker_protocol import DesktopWorkerEvent
 from diffeoforge.initialization import SUPPORTED_UNITS, detect_template
+from diffeoforge.reference_runtime import launcher_label
 
 _STYLE = """
 QMainWindow { background: #f4f7f8; }
@@ -843,16 +844,16 @@ class DiffeoForgeWindow(QMainWindow):
         reference_readiness_layout = QVBoxLayout(reference_readiness)
         reference_readiness_layout.setContentsMargins(24, 22, 24, 24)
         reference_readiness_layout.setSpacing(10)
-        reference_readiness_title = QLabel("External Deformetrica reference environment")
+        reference_readiness_title = QLabel("DiffeoForge Deformetrica runtime")
         reference_readiness_title.setObjectName("sectionTitle")
         self.reference_readiness_status_label = QLabel(
-            "The configured container environment has not been checked."
+            "The installed Deformetrica runtime has not been checked."
         )
         self.reference_readiness_status_label.setObjectName("status")
         self.reference_readiness_status_label.setWordWrap(True)
         self.reference_readiness_detail_label = QLabel(
-            "This diagnostic is read-only. It installs, builds, starts, prepares, and "
-            "repairs nothing."
+            "DiffeoForge checks its runtime, available memory, and project folder before "
+            "enabling computation."
         )
         self.reference_readiness_detail_label.setObjectName("reviewDetail")
         self.reference_readiness_detail_label.setWordWrap(True)
@@ -860,7 +861,7 @@ class DiffeoForgeWindow(QMainWindow):
             Qt.TextInteractionFlag.TextSelectableByMouse
         )
         self.refresh_reference_readiness_button = QPushButton(
-            "Check reference environment read-only"
+            "Check Deformetrica runtime"
         )
         self.refresh_reference_readiness_button.setObjectName("secondary")
         self.refresh_reference_readiness_button.clicked.connect(
@@ -1495,6 +1496,7 @@ class DiffeoForgeWindow(QMainWindow):
             self._update_pairwise_explanation
         )
         pairwise_box = QWidget()
+        self.pairwise_box = pairwise_box
         pairwise_layout = QVBoxLayout(pairwise_box)
         pairwise_layout.setContentsMargins(0, 0, 0, 0)
         pairwise_layout.setSpacing(4)
@@ -1519,6 +1521,7 @@ class DiffeoForgeWindow(QMainWindow):
             self._update_optimization_explanation
         )
         optimization_effort_box = QWidget()
+        self.optimization_effort_box = optimization_effort_box
         optimization_effort_layout = QVBoxLayout(optimization_effort_box)
         optimization_effort_layout.setContentsMargins(0, 0, 0, 0)
         optimization_effort_layout.setSpacing(4)
@@ -1528,6 +1531,7 @@ class DiffeoForgeWindow(QMainWindow):
         self.optimization_effort_hint.setWordWrap(True)
         optimization_effort_layout.addWidget(self.optimization_effort_hint)
         form.addRow("Optimization effort", optimization_effort_box)
+        self.project_input_form = form
 
         self.mesh_edit = QLineEdit()
         self.mesh_edit.setObjectName("meshDirectoryEdit")
@@ -2053,8 +2057,8 @@ class DiffeoForgeWindow(QMainWindow):
         modern = self.engine_combo.currentData() == DesktopEngine.MODERN_CPU
         self.landmarks_edit.setEnabled(True)
         self.landmarks_button.setEnabled(True)
-        self.pairwise_combo.setEnabled(modern)
-        self.optimization_effort_combo.setEnabled(modern)
+        self.project_input_form.setRowVisible(self.pairwise_box, modern)
+        self.project_input_form.setRowVisible(self.optimization_effort_box, modern)
         if modern:
             self.engine_hint.setText(
                 "Current CPU/float64 engine; PCA is part of the later result bundle."
@@ -2062,8 +2066,8 @@ class DiffeoForgeWindow(QMainWindow):
         else:
             self.engine_hint.setText(
                 "Deformetrica 4.3 is the recommended numerical backend. Optional landmark "
-                "Procrustes is performed by DiffeoForge first; Docker remains external "
-                "for now."
+                "Procrustes is performed by DiffeoForge first; its verified runtime is "
+                "managed automatically."
             )
         self._update_pairwise_explanation()
         self._update_optimization_explanation()
@@ -2410,7 +2414,7 @@ class DiffeoForgeWindow(QMainWindow):
         engine_label = (
             "DiffeoForge Modern CPU (experimental)"
             if review.engine is DesktopEngine.MODERN_CPU
-            else "Deformetrica 4.3 reference (external)"
+            else "Deformetrica 4.3 (managed reference runtime)"
         )
         config_display = self._wrappable_path(review.config_path)
         report_display = self._wrappable_path(review.report_path)
@@ -2451,15 +2455,17 @@ class DiffeoForgeWindow(QMainWindow):
             self.show_run_button.setEnabled(True)
         else:
             self.reference_readiness_card.show()
-            self.reference_preparation_status_card.show()
+            # Advanced approval/status evidence remains implemented for developer and
+            # provenance audits, but it is not an end-user prerequisite.
+            self.reference_preparation_status_card.hide()
             self.reference_readiness_status_label.setObjectName("status")
             self.reference_readiness_status_label.setStyleSheet("")
             self.reference_readiness_status_label.setText(
-                "The configured container environment has not been checked."
+                "The installed Deformetrica runtime has not been checked."
             )
             self.reference_readiness_detail_label.setText(
-                "The check is bound to the displayed configuration SHA-256 and is read-only. "
-                "It installs, builds, starts, prepares, and repairs nothing."
+                "DiffeoForge will verify the exact installed runtime and bind the result to "
+                "the reviewed configuration."
             )
             self.refresh_reference_readiness_button.setEnabled(True)
             self.reference_preparation_status_label.setObjectName("status")
@@ -2602,12 +2608,12 @@ class DiffeoForgeWindow(QMainWindow):
         self.reference_readiness_status_label.setObjectName("status")
         self.reference_readiness_status_label.setStyleSheet("")
         self.reference_readiness_status_label.setText(
-            "Host, project folder, container service, and exact configured image are being "
-            "checked read-only…"
+            "Application runtime, project folder, memory, and Deformetrica 4.3 are being "
+            "checked…"
         )
         self.reference_readiness_detail_label.setText(
             "No reference run is prepared or started. The configuration is bound to its "
-            "review hash before and after external observations."
+            "review hash before and after runtime observations."
         )
         self._sync_ready_state()
         self._thread_pool.start(worker)
@@ -2622,8 +2628,7 @@ class DiffeoForgeWindow(QMainWindow):
             f"Configuration: {self._wrappable_path(readiness.config_path)}",
             f"Bound SHA-256: {readiness.config_sha256}",
             f"Project folder: {self._wrappable_path(readiness.workspace)}",
-            f"Container engine: {readiness.engine}",
-            f"Reference image: {readiness.image}",
+            f"Runtime: {launcher_label(readiness.launcher)}",
             "Observed checks:",
         ]
         for check in readiness.report.checks:
@@ -2631,26 +2636,25 @@ class DiffeoForgeWindow(QMainWindow):
             if check.guidance:
                 details.append(f"  Guidance: {check.guidance}")
         details.append(
-            "Action: observation only; nothing installed, built, started, prepared, resumed, "
-            "or repaired."
+            "No atlas process was started; nothing installed or changed by this check."
         )
         self.reference_readiness_detail_label.setText("\n".join(details))
         if readiness.report.status == "ready":
             self.reference_readiness_status_label.setObjectName("statusSuccess")
             message = (
-                "The external reference environment is ready for the observed checks. "
+                "The DiffeoForge Deformetrica runtime is ready. "
                 "The supervised Deformetrica execution step is now available."
             )
         elif readiness.report.status == "warning":
             self.reference_readiness_status_label.setObjectName("status")
             message = (
-                "The external reference environment has no blocking error but has warnings. "
+                "The Deformetrica runtime has no blocking error but has warnings. "
                 "Reference execution remains locked."
             )
         else:
             self.reference_readiness_status_label.setObjectName("statusError")
             message = (
-                "The external reference environment is blocked. Guidance appears below; "
+                "The DiffeoForge Deformetrica runtime needs repair. Guidance appears below; "
                 "nothing was changed or started."
             )
         self.reference_readiness_status_label.setStyleSheet("")
@@ -3032,8 +3036,7 @@ class DiffeoForgeWindow(QMainWindow):
             "Reviewed configuration, ready environment, and absent destination are bound."
         )
         self.run_readiness_detail_label.setText(
-            f"Container engine: {request.launcher_engine}\n"
-            f"Image: {request.launcher_image}\n"
+            f"Runtime: {launcher_label(request.launcher)}\n"
             "This check was read-only. The destination and all reviewed inputs are checked "
             "again inside the worker immediately before preparation."
         )

@@ -9,9 +9,16 @@ import platform
 import shutil
 import subprocess
 import sys
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
+
+from diffeoforge.reference_runtime import (
+    EXPECTED_DEFORMETRICA_VERSION,
+    launcher_identity,
+    probe_wsl_launcher,
+)
 
 DEFAULT_CONTAINER_IMAGE = "diffeoforge-deformetrica:4.3.0-cpu"
 MINIMUM_MEMORY_BYTES = 8 * 1024**3
@@ -38,6 +45,7 @@ class DoctorReport:
     engine: str
     image: str
     checks: tuple[DoctorCheck, ...]
+    launcher: Mapping[str, str] | None = None
 
     @property
     def ready(self) -> bool:
@@ -48,13 +56,16 @@ class DoctorReport:
     def as_dict(self) -> dict[str, Any]:
         """Return a stable representation for CLI JSON output."""
 
-        return {
+        result = {
             "status": self.status,
             "workspace": self.workspace,
             "engine": self.engine,
             "image": self.image,
             "checks": [asdict(check) for check in self.checks],
         }
+        if self.launcher is not None:
+            result["launcher"] = dict(self.launcher)
+        return result
 
 
 class _MemoryStatusEx(ctypes.Structure):
@@ -342,4 +353,202 @@ def run_doctor(
         engine=engine,
         image=image,
         checks=tuple(checks),
+        launcher={"type": "container", "engine": engine, "image": image},
+    )
+
+
+def _reference_host_checks(workspace_path: Path) -> list[DoctorCheck]:
+    """Collect launcher-independent checks for the managed desktop route."""
+
+    checks: list[DoctorCheck] = []
+    python_supported = sys.version_info >= (3, 11)
+    checks.append(
+        DoctorCheck(
+            "python",
+            "Application runtime",
+            "pass" if python_supported else "fail",
+            f"Python {platform.python_version()}",
+            None if python_supported else "Repair the DiffeoForge installation.",
+        )
+    )
+    checks.append(DoctorCheck("platform", "Operating system", "pass", platform.platform()))
+    cpu_count = os.cpu_count()
+    cpu_status = "pass" if cpu_count is not None and cpu_count >= 2 else "warning"
+    checks.append(
+        DoctorCheck(
+            "cpu",
+            "Logical CPUs",
+            cpu_status,
+            str(cpu_count) if cpu_count is not None else "unknown",
+            None
+            if cpu_status == "pass"
+            else "Atlas estimation is likely to be slow on this machine.",
+        )
+    )
+    memory = _physical_memory_bytes()
+    if memory is None:
+        checks.append(
+            DoctorCheck(
+                "memory",
+                "Physical memory",
+                "warning",
+                "could not be detected",
+                "Confirm that the machine has enough RAM for the intended meshes.",
+            )
+        )
+    else:
+        memory_status = "pass" if memory >= MINIMUM_MEMORY_BYTES else "warning"
+        checks.append(
+            DoctorCheck(
+                "memory",
+                "Physical memory",
+                memory_status,
+                _gib(memory),
+                None
+                if memory_status == "pass"
+                else "At least 8 GiB is recommended even for small exploratory runs.",
+            )
+        )
+    if not workspace_path.is_dir():
+        checks.extend(
+            (
+                DoctorCheck(
+                    "workspace",
+                    "Project folder",
+                    "fail",
+                    f"directory does not exist: {workspace_path}",
+                    "Choose an existing project folder.",
+                ),
+                DoctorCheck(
+                    "disk",
+                    "Free disk space",
+                    "skip",
+                    "not checked because the project folder is missing",
+                ),
+            )
+        )
+        return checks
+    writable = os.access(workspace_path, os.W_OK)
+    checks.append(
+        DoctorCheck(
+            "workspace",
+            "Project folder",
+            "pass" if writable else "fail",
+            str(workspace_path),
+            None if writable else "Choose a writable project folder.",
+        )
+    )
+    try:
+        free_disk = shutil.disk_usage(workspace_path).free
+    except OSError:
+        free_disk = None
+    if free_disk is None:
+        checks.append(
+            DoctorCheck(
+                "disk",
+                "Free disk space",
+                "warning",
+                "could not be detected",
+                "Confirm free disk space before starting an atlas.",
+            )
+        )
+    else:
+        disk_status = "pass" if free_disk >= MINIMUM_DISK_BYTES else "warning"
+        checks.append(
+            DoctorCheck(
+                "disk",
+                "Free disk space",
+                disk_status,
+                f"{_gib(free_disk)} free",
+                None
+                if disk_status == "pass"
+                else "Keep at least 5 GiB free for inputs, logs, and outputs.",
+            )
+        )
+    return checks
+
+
+def run_reference_doctor(
+    workspace: Path | str,
+    *,
+    launcher: Mapping[str, str],
+) -> DoctorReport:
+    """Inspect the exact configured launcher without installing or repairing it."""
+
+    identity = launcher_identity(launcher)
+    launcher_type = identity["type"]
+    if launcher_type == "container":
+        return run_doctor(
+            workspace,
+            engine=identity["engine"],
+            image=identity["image"],
+        )
+
+    workspace_path = Path(workspace).expanduser().resolve()
+    checks = _reference_host_checks(workspace_path)
+    if launcher_type == "wsl":
+        probe = probe_wsl_launcher(identity)
+        wsl_available = shutil.which("wsl.exe") is not None and os.name == "nt"
+        checks.append(
+            DoctorCheck(
+                "wsl",
+                "Windows reference subsystem",
+                "pass" if wsl_available else "fail",
+                "available" if wsl_available else "not available",
+                None
+                if wsl_available
+                else "Repair the DiffeoForge reference-runtime installation.",
+            )
+        )
+        checks.append(
+            DoctorCheck(
+                "reference_runtime",
+                "Deformetrica reference runtime",
+                "pass" if probe.ready else "fail",
+                probe.summary,
+                probe.guidance,
+            )
+        )
+        descriptor = f"{identity['distribution']}:{identity['executable']}"
+    else:
+        executable = identity["executable"]
+        resolved = (
+            str(Path(executable).resolve())
+            if Path(executable).is_absolute() and Path(executable).is_file()
+            else shutil.which(executable)
+        )
+        version: str | None = None
+        detail = resolved or f"executable not found: {executable}"
+        if resolved is not None:
+            try:
+                completed = _run_command([resolved, "--help"])
+            except (OSError, subprocess.TimeoutExpired) as error:
+                detail = str(error)
+            else:
+                output = f"{completed.stdout}\n{completed.stderr}"
+                if EXPECTED_DEFORMETRICA_VERSION in output and completed.returncode == 0:
+                    version = EXPECTED_DEFORMETRICA_VERSION
+                    detail = f"Deformetrica {version}: {resolved}"
+        checks.append(
+            DoctorCheck(
+                "reference_runtime",
+                "Deformetrica reference runtime",
+                "pass" if version == EXPECTED_DEFORMETRICA_VERSION else "fail",
+                detail,
+                None
+                if version == EXPECTED_DEFORMETRICA_VERSION
+                else f"Install or select Deformetrica {EXPECTED_DEFORMETRICA_VERSION}.",
+            )
+        )
+        descriptor = executable
+
+    statuses = {check.status for check in checks}
+    overall = "blocked" if "fail" in statuses else "warning" if "warning" in statuses else "ready"
+    return DoctorReport(
+        status=overall,
+        workspace=str(workspace_path),
+        engine=launcher_type,
+        image=descriptor,
+        checks=tuple(checks),
+        launcher=identity,
     )

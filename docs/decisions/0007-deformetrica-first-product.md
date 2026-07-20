@@ -61,8 +61,8 @@ scientifically and operationally unjustified.
 
 ### Costs
 
-- the external numerical runtime still needs a reliable installation and update
-  strategy;
+- the numerical runtime needs a reliable installer-managed lifecycle and must
+  retain Deformetrica's separate noncommercial license boundary;
 - Deformetrica logs and artifacts need strict adapters and versioned parsers;
 - interactive landmark placement and downstream PCA must not silently introduce
   scientific choices;

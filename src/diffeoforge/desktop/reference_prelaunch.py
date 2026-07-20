@@ -21,6 +21,7 @@ from diffeoforge.desktop.reference_readiness import (
     parse_reference_config_bytes,
 )
 from diffeoforge.desktop.worker_protocol import sha256_file
+from diffeoforge.reference_runtime import launcher_identity
 
 REFERENCE_LAUNCH_REQUEST_VERSION = "0.1"
 
@@ -87,13 +88,13 @@ def _bound_config(
     return config
 
 
-def _container_launcher(config: Mapping[str, Any]) -> tuple[str, str]:
-    launcher = config["runtime"]["launcher"]
-    if launcher["type"] != "container":
+def _configured_launcher(config: Mapping[str, Any]) -> dict[str, str]:
+    try:
+        return launcher_identity(config["runtime"]["launcher"])
+    except (KeyError, TypeError, ValueError) as error:
         raise DesktopReferencePrelaunchError(
-            "Desktop reference prelaunch currently supports the container launcher only"
-        )
-    return str(launcher["engine"]), str(launcher["image"])
+            f"Configured reference launcher is invalid: {error}"
+        ) from error
 
 
 @dataclass(frozen=True)
@@ -105,14 +106,18 @@ class DesktopReferenceLaunchRequest:
     destination: Path
     run_id: str
     expected_config_sha256: str
-    launcher_engine: str
-    launcher_image: str
+    launcher_engine: str | None
+    launcher_image: str | None
+    launcher_type: str = "container"
+    launcher_distribution: str | None = None
+    launcher_executable: str | None = None
 
     @property
     def engine(self) -> str:
         return "deformetrica_reference"
 
     def as_dict(self) -> dict[str, Any]:
+        launcher = self.launcher
         return {
             "reference_launch_request_version": REFERENCE_LAUNCH_REQUEST_VERSION,
             "request_id": self.request_id,
@@ -121,11 +126,35 @@ class DesktopReferenceLaunchRequest:
             "expected_config_sha256": self.expected_config_sha256,
             "run_id": self.run_id,
             "destination": str(self.destination),
-            "launcher": {
-                "type": "container",
-                "engine": self.launcher_engine,
-                "image": self.launcher_image,
-            },
+            "launcher": launcher,
+        }
+
+    @property
+    def launcher(self) -> dict[str, str]:
+        if self.launcher_type == "wsl":
+            if self.launcher_distribution is None or self.launcher_executable is None:
+                raise DesktopReferencePrelaunchError(
+                    "WSL launch request is missing its distribution or executable"
+                )
+            return {
+                "type": "wsl",
+                "distribution": self.launcher_distribution,
+                "executable": self.launcher_executable,
+            }
+        if self.launcher_type == "native":
+            if self.launcher_executable is None:
+                raise DesktopReferencePrelaunchError(
+                    "Native launch request is missing its executable"
+                )
+            return {"type": "native", "executable": self.launcher_executable}
+        if self.launcher_engine is None or self.launcher_image is None:
+            raise DesktopReferencePrelaunchError(
+                "Container launch request is missing its engine or image"
+            )
+        return {
+            "type": "container",
+            "engine": self.launcher_engine,
+            "image": self.launcher_image,
         }
 
     def __post_init__(self) -> None:
@@ -149,22 +178,35 @@ class DesktopReferenceLaunchRequest:
             raise DesktopReferencePrelaunchError(
                 "Reference launch request paths must be absolute"
             )
+        launcher_type = str(launcher["type"])
         return cls(
             request_id=str(value["request_id"]),
             config_path=config_path.resolve(),
             destination=destination.resolve(),
             run_id=str(value["run_id"]),
             expected_config_sha256=str(value["expected_config_sha256"]),
-            launcher_engine=str(launcher["engine"]),
-            launcher_image=str(launcher["image"]),
+            launcher_engine=(
+                str(launcher["engine"]) if launcher_type == "container" else None
+            ),
+            launcher_image=(
+                str(launcher["image"]) if launcher_type == "container" else None
+            ),
+            launcher_type=launcher_type,
+            launcher_distribution=(
+                str(launcher["distribution"]) if launcher_type == "wsl" else None
+            ),
+            launcher_executable=(
+                str(launcher["executable"])
+                if launcher_type in {"wsl", "native"}
+                else None
+            ),
         )
 
     def verify_launch_inputs(self) -> None:
         """Recheck exact bytes, launcher, destination resolution, and nonexistence."""
 
         config = _bound_config(self.config_path, self.expected_config_sha256)
-        engine, image = _container_launcher(config)
-        if engine != self.launcher_engine or image != self.launcher_image:
+        if _configured_launcher(config) != self.launcher:
             raise DesktopReferencePrelaunchError(
                 "Configured reference launcher changed after the prelaunch request was bound"
             )
@@ -221,10 +263,11 @@ def build_reference_launch_request(
             "Reference readiness targets a different project workspace"
         )
     config = _bound_config(config_path, review.config_sha256)
-    engine, image = _container_launcher(config)
-    if engine != readiness.engine or image != readiness.image:
+    configured_launcher = _configured_launcher(config)
+    if configured_launcher != readiness.launcher:
+        qualifier = "container " if configured_launcher["type"] == "container" else ""
         raise DesktopReferencePrelaunchError(
-            "Reference readiness targets different container launcher settings"
+            f"Reference readiness targets different {qualifier}launcher settings"
         )
     try:
         output_root = resolve_output_directory(config, config_path)
@@ -238,8 +281,11 @@ def build_reference_launch_request(
         destination=(output_root / run_id).resolve(),
         run_id=run_id,
         expected_config_sha256=review.config_sha256,
-        launcher_engine=engine,
-        launcher_image=image,
+        launcher_engine=configured_launcher.get("engine"),
+        launcher_image=configured_launcher.get("image"),
+        launcher_type=configured_launcher["type"],
+        launcher_distribution=configured_launcher.get("distribution"),
+        launcher_executable=configured_launcher.get("executable"),
     )
     request.verify_launch_inputs()
     return request

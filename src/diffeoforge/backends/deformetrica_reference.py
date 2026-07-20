@@ -14,6 +14,7 @@ from pathlib import Path, PureWindowsPath
 from typing import Any
 
 from diffeoforge.config import ConfigurationError
+from diffeoforge.reference_runtime import probe_wsl_launcher
 
 BACKEND_ID = "deformetrica_reference"
 BACKEND_CONTRACT_VERSION = "0.1"
@@ -382,10 +383,12 @@ def ensure_launcher_available(config: Mapping[str, Any]) -> None:
         return
 
     if launcher["type"] == "wsl":
-        if os.name != "nt":
-            raise ConfigurationError("The WSL launcher is only available from Windows.")
-        if shutil.which("wsl.exe") is None:
-            raise ConfigurationError("wsl.exe is not available on PATH.")
+        probe = probe_wsl_launcher(launcher)
+        if not probe.ready:
+            guidance = f" {probe.guidance}" if probe.guidance else ""
+            raise ConfigurationError(
+                f"Deformetrica WSL runtime is unavailable: {probe.summary}.{guidance}"
+            )
         return
 
     if launcher["type"] == "container":

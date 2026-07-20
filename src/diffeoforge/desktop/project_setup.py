@@ -12,6 +12,11 @@ from diffeoforge.initialization import (
     ensure_generated_configuration_replaceable,
     initialize_project,
 )
+from diffeoforge.reference_runtime import (
+    MANAGED_WSL_DISTRIBUTION,
+    launcher_label,
+    select_preferred_reference_launcher,
+)
 from diffeoforge.report import (
     default_preflight_report_path,
     ensure_preflight_report_replaceable,
@@ -177,6 +182,7 @@ def _create_reference_project(request: ProjectSetupRequest) -> ProjectSetupResul
                 else source.name
             )
             effective_project_name = f"{name_source}-atlas"
+    launcher = select_preferred_reference_launcher()
     initialized = initialize_project(
         input_directory,
         units=request.units,
@@ -184,6 +190,7 @@ def _create_reference_project(request: ProjectSetupRequest) -> ProjectSetupResul
         template=input_template,
         subject_pattern=request.subject_pattern,
         project_name=effective_project_name,
+        launcher=launcher,
         overwrite=request.overwrite_existing_configuration,
     )
     write_preflight_report(
@@ -192,6 +199,17 @@ def _create_reference_project(request: ProjectSetupRequest) -> ProjectSetupResul
         overwrite=request.overwrite_existing_configuration,
     )
     notices = list(initialized.preflight.notices)
+    notices.insert(0, f"Reference runtime: {launcher_label(launcher)}.")
+    if (
+        launcher.get("type") == "wsl"
+        and launcher.get("distribution") != MANAGED_WSL_DISTRIBUTION
+    ):
+        notices.insert(
+            1,
+            "This same-owner alpha project reuses an existing verified Deformetrica 4.3 "
+            "runtime read-only; released installers will use a separate DiffeoForge-managed "
+            "runtime.",
+        )
     if initialized.derived_parameters:
         notices.insert(
             0,

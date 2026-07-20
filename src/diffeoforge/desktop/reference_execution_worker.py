@@ -214,7 +214,7 @@ def run_reference_execution_worker(
             "phase",
             {
                 "phase": "execute",
-                "message": "Deformetrica is running in the configured external environment.",
+                "message": "Deformetrica is running in the verified DiffeoForge runtime.",
             },
         )
         tracker = ReferenceProgressTracker(maximum_iterations)

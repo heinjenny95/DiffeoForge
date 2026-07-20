@@ -15,7 +15,8 @@ from diffeoforge.config import ConfigurationError, validate_schema
 from diffeoforge.desktop.project_review import ProjectReviewResult
 from diffeoforge.desktop.project_setup import DesktopEngine
 from diffeoforge.desktop.worker_protocol import sha256_file
-from diffeoforge.diagnostics import DoctorReport, run_doctor
+from diffeoforge.diagnostics import DoctorReport, run_doctor, run_reference_doctor
+from diffeoforge.reference_runtime import launcher_identity
 
 
 class DesktopReferenceReadinessError(RuntimeError):
@@ -24,7 +25,7 @@ class DesktopReferenceReadinessError(RuntimeError):
 
 @dataclass(frozen=True)
 class DesktopReferenceReadiness:
-    """Exact reviewed container settings plus their observational doctor report."""
+    """Exact reviewed launcher settings plus their observational doctor report."""
 
     config_path: Path
     config_sha256: str
@@ -32,12 +33,36 @@ class DesktopReferenceReadiness:
     engine: str
     image: str
     report: DoctorReport
+    launcher_type: str = "container"
+    launcher_distribution: str | None = None
+    launcher_executable: str | None = None
 
     def __post_init__(self) -> None:
         if Path(self.report.workspace).resolve() != self.workspace.resolve():
             raise ValueError("Reference doctor report targets a different workspace")
-        if self.report.engine != self.engine or self.report.image != self.image:
+        if self.report.launcher is not None:
+            if launcher_identity(self.report.launcher) != self.launcher:
+                raise ValueError("Reference doctor report targets different launcher settings")
+        elif self.report.engine != self.engine or self.report.image != self.image:
             raise ValueError("Reference doctor report targets different launcher settings")
+
+    @property
+    def launcher(self) -> dict[str, str]:
+        """Return the exact schema launcher identity."""
+
+        if self.launcher_type == "wsl":
+            if self.launcher_distribution is None or self.launcher_executable is None:
+                raise ValueError("WSL readiness is missing its distribution or executable")
+            return {
+                "type": "wsl",
+                "distribution": self.launcher_distribution,
+                "executable": self.launcher_executable,
+            }
+        if self.launcher_type == "native":
+            if self.launcher_executable is None:
+                raise ValueError("Native readiness is missing its executable")
+            return {"type": "native", "executable": self.launcher_executable}
+        return {"type": "container", "engine": self.engine, "image": self.image}
 
     @property
     def ready(self) -> bool:
@@ -88,7 +113,7 @@ def parse_reference_config_bytes(content: bytes) -> Mapping[str, Any]:
 def check_reference_environment(
     review: ProjectReviewResult,
 ) -> DesktopReferenceReadiness:
-    """Inspect the exact reviewed container environment without modifying it."""
+    """Inspect the exact reviewed reference runtime without modifying it."""
 
     if not isinstance(review, ProjectReviewResult):
         raise TypeError("review must be a ProjectReviewResult")
@@ -100,16 +125,25 @@ def check_reference_environment(
     content = _reviewed_config_bytes(review)
     config = parse_reference_config_bytes(content)
     launcher = config["runtime"]["launcher"]
-    if launcher["type"] != "container":
-        raise DesktopReferenceReadinessError(
-            "Desktop reference diagnostics currently support the configured container "
-            "launcher only"
-        )
-
     workspace = review.config_path.resolve().parent
-    engine = str(launcher["engine"])
-    image = str(launcher["image"])
-    report = run_doctor(workspace, engine=engine, image=image)
+    identity = launcher_identity(launcher)
+    launcher_type = identity["type"]
+    if launcher_type == "container":
+        engine = identity["engine"]
+        image = identity["image"]
+        report = run_doctor(workspace, engine=engine, image=image)
+        distribution = None
+        executable = None
+    else:
+        report = run_reference_doctor(workspace, launcher=identity)
+        engine = launcher_type
+        distribution = identity.get("distribution")
+        executable = identity["executable"]
+        image = (
+            f"{distribution}:{executable}"
+            if distribution is not None
+            else executable
+        )
     try:
         hash_after = sha256_file(review.config_path)
     except OSError as error:
@@ -129,4 +163,7 @@ def check_reference_environment(
         engine=engine,
         image=image,
         report=report,
+        launcher_type=launcher_type,
+        launcher_distribution=distribution,
+        launcher_executable=executable,
     )

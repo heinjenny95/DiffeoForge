@@ -4,6 +4,7 @@ import shutil
 from pathlib import Path
 
 import pytest
+import yaml
 
 from diffeoforge.desktop.project_review import ProjectReviewResult
 from diffeoforge.desktop.project_setup import DesktopEngine
@@ -272,13 +273,58 @@ def test_reference_prelaunch_rejects_nonreference_and_noncontainer_routes(
     native_root = tmp_path / "native"
     native_root.mkdir()
     native = _config(native_root, container=False)
-    with pytest.raises(DesktopReferencePrelaunchError, match="container launcher only"):
+    with pytest.raises(DesktopReferencePrelaunchError, match="different launcher settings"):
         build_reference_launch_request(
             _review(native),
             _readiness(native),
             request_id="reference-test",
             run_id="pilot-001",
         )
+
+
+def test_reference_prelaunch_binds_wsl_launcher_round_trip(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    loaded = yaml.safe_load(config.read_text(encoding="utf-8"))
+    launcher = {
+        "type": "wsl",
+        "distribution": "DiffeoForge-Reference-4.3",
+        "executable": "/opt/diffeoforge/reference/bin/deformetrica",
+    }
+    loaded["runtime"]["launcher"] = launcher
+    config.write_text(yaml.safe_dump(loaded, sort_keys=False), encoding="utf-8")
+    report = DoctorReport(
+        status="ready",
+        workspace=str(tmp_path.resolve()),
+        engine="wsl",
+        image=(
+            "DiffeoForge-Reference-4.3:"
+            "/opt/diffeoforge/reference/bin/deformetrica"
+        ),
+        checks=(DoctorCheck("reference_runtime", "Runtime", "pass", "4.3.0"),),
+        launcher=launcher,
+    )
+    readiness = DesktopReferenceReadiness(
+        config_path=config,
+        config_sha256=sha256_file(config),
+        workspace=tmp_path,
+        engine="wsl",
+        image=report.image,
+        report=report,
+        launcher_type="wsl",
+        launcher_distribution=launcher["distribution"],
+        launcher_executable=launcher["executable"],
+    )
+
+    request = build_reference_launch_request(
+        _review(config),
+        readiness,
+        request_id="reference-wsl",
+        run_id="pilot-wsl",
+    )
+    round_trip = DesktopReferenceLaunchRequest.from_dict(request.as_dict())
+
+    assert round_trip == request
+    assert request.launcher == launcher
 
 
 @pytest.mark.parametrize("field", ["request_id", "run_id"])
