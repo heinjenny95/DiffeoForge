@@ -27,7 +27,6 @@ class _CommandStream:
         self._request_line = request_line
         self._read = False
         self._commands: queue.Queue[str] = queue.Queue()
-        self.command_read = threading.Event()
         for command in commands:
             self._commands.put(command)
 
@@ -40,7 +39,6 @@ class _CommandStream:
     def __iter__(self):
         while True:
             command = self._commands.get()
-            self.command_read.set()
             yield command
 
 
@@ -153,9 +151,22 @@ def test_reference_execution_worker_cancels_before_preparation_without_mutation(
     command = json.dumps(DesktopReferenceWorkerCommand(request.request_id).as_dict()) + "\n"
     stream = _CommandStream(json.dumps(request.as_dict()) + "\n", command)
     original_verify = DesktopReferenceLaunchRequest.verify_launch_inputs
+    original_command_from_dict = DesktopReferenceWorkerCommand.from_dict.__func__
+    command_validated = threading.Event()
+
+    def observe_validated_command(cls, value):
+        parsed = original_command_from_dict(cls, value)
+        command_validated.set()
+        return parsed
+
+    monkeypatch.setattr(
+        DesktopReferenceWorkerCommand,
+        "from_dict",
+        classmethod(observe_validated_command),
+    )
 
     def verify_after_command_thread(self: DesktopReferenceLaunchRequest) -> None:
-        assert stream.command_read.wait(timeout=5)
+        assert command_validated.wait(timeout=5)
         original_verify(self)
 
     monkeypatch.setattr(
