@@ -21,6 +21,8 @@ diffeoforge modern-benchmark-design modern-atlas.yaml `
   --warmups 1 `
   --order-seed 20260716 `
   --output modern-atlas.benchmark-study
+
+diffeoforge modern-benchmark-design-verify modern-atlas.benchmark-study
 ```
 
 The subject values are unique deterministic prefixes of the same validated

@@ -264,3 +264,8 @@ def test_cli_creates_and_immediately_verifies_pre_results_design(
     assert design["protocol"]["repeats_per_condition"] == 4
     assert design["protocol"]["warmup_evaluations_per_repeat"] == 0
     assert design["protocol"]["order_seed"] == 17
+
+    assert main(["modern-benchmark-design-verify", str(output)]) == 0
+    verified_output = capsys.readouterr().out
+    assert "Prospective benchmark design verified" in verified_output
+    assert "No benchmark result" in verified_output

@@ -456,6 +456,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="New immutable design directory (default: CONFIG_NAME.benchmark-study).",
     )
 
+    modern_benchmark_design_verify_parser = subparsers.add_parser(
+        "modern-benchmark-design-verify",
+        help="Strictly verify one immutable paired benchmark design.",
+    )
+    modern_benchmark_design_verify_parser.add_argument("design_directory", type=Path)
+
     modern_benchmark_matrix_design_parser = subparsers.add_parser(
         "modern-benchmark-matrix-design",
         help="Freeze a full-factorial multi-tile design without running it.",
@@ -1536,6 +1542,22 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"       {error}", file=sys.stderr)
             return 2
         except (ConfigurationError, RuntimeError, OSError, ValueError, TypeError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
+
+    if args.command == "modern-benchmark-design-verify":
+        try:
+            from diffeoforge.modern_benchmark_design import (
+                verify_modern_benchmark_design,
+            )
+
+            design_directory = args.design_directory.expanduser().resolve()
+            design = verify_modern_benchmark_design(design_directory)
+            print(f"Prospective benchmark design verified: {design_directory}")
+            print(f"Frozen condition count: {len(design['conditions'])}")
+            print("No benchmark result or performance claim is present.")
+        except (RuntimeError, OSError, ValueError, TypeError) as error:
             print(f"ERROR: {error}", file=sys.stderr)
             return 2
         return 0
