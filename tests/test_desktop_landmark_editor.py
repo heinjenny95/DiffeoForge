@@ -38,6 +38,7 @@ def test_landmark_editor_places_complete_vertex_cohort_and_writes_csv(
 
 
 def test_landmark_editor_module_does_not_change_qt_platform_environment() -> None:
+    pytest.importorskip("PySide6")
     before = os.environ.get("QT_QPA_PLATFORM")
     __import__("diffeoforge.desktop.landmark_editor")
     assert os.environ.get("QT_QPA_PLATFORM") == before
