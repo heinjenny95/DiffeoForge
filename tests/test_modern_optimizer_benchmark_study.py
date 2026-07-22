@@ -21,6 +21,7 @@ from diffeoforge.modern_optimizer_benchmark_study import (  # noqa: E402
     MANIFEST_SIDECAR_NAME,
     STATE_NAME,
     ModernOptimizerBenchmarkStudyError,
+    inspect_modern_optimizer_benchmark_study_run,
     run_modern_optimizer_benchmark_study,
     verify_modern_optimizer_benchmark_study_run,
 )
@@ -95,7 +96,7 @@ def test_study_executes_verifies_and_is_idempotent(
     assert (run / MANIFEST_NAME).is_file()
     assert (run / MANIFEST_SIDECAR_NAME).is_file()
     assert json.loads((run / STATE_NAME).read_text(encoding="utf-8"))["status"] == "complete"
-    assert [event["status"] for event in progress] == [
+    assert [event.status for event in progress] == [
         "study_started",
         "condition_started",
         "condition_completed",
@@ -114,7 +115,7 @@ def test_study_executes_verifies_and_is_idempotent(
         )
         == run
     )
-    assert repeated[0]["status"] == "study_already_complete"
+    assert repeated[0].status == "study_already_complete"
     assert before == {
         path.relative_to(run): path.read_bytes()
         for path in run.rglob("*")
@@ -147,6 +148,11 @@ def test_interrupted_study_resumes_from_verified_report_prefix(
     state = json.loads((run / STATE_NAME).read_text(encoding="utf-8"))
     assert state["status"] == "interrupted"
     assert len(list((run / CONDITIONS_DIRECTORY_NAME).iterdir())) == 1
+    status = inspect_modern_optimizer_benchmark_study_run(run)
+    assert status["status"] == "interrupted"
+    assert status["verified_report_count"] == 1
+    assert status["state_completed_condition_count"] == 1
+    assert status["next_condition"] is not None
 
     monkeypatch.setattr(study_module, "benchmark_modern_optimizer", original)
     assert run_modern_optimizer_benchmark_study(design, EXAMPLE, destination=run) == run
@@ -155,6 +161,49 @@ def test_interrupted_study_resumes_from_verified_report_prefix(
     events = [json.loads(line) for line in (run / EVENTS_NAME).read_text().splitlines()]
     assert any(event["event"] == "condition_failed" for event in events)
     assert events[-1]["event"] == "study_completed"
+
+
+def test_published_report_ahead_of_state_is_reported_and_reconciled(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import diffeoforge.modern_optimizer_benchmark as benchmark_module
+    import diffeoforge.modern_optimizer_benchmark_study as study_module
+
+    monkeypatch.setattr(benchmark_module, "_run_fresh_sample", lambda *_args: _sample())
+    design = _design(tmp_path, subjects=[1])
+    original = study_module.benchmark_modern_optimizer
+
+    def publish_then_interrupt(*args, **kwargs):
+        original(*args, **kwargs)
+        raise RuntimeError("synthetic post-publication interruption")
+
+    monkeypatch.setattr(
+        study_module, "benchmark_modern_optimizer", publish_then_interrupt
+    )
+    run = tmp_path / "run"
+    with pytest.raises(ModernOptimizerBenchmarkStudyError, match="post-publication"):
+        run_modern_optimizer_benchmark_study(design, EXAMPLE, destination=run)
+
+    status = inspect_modern_optimizer_benchmark_study_run(run)
+    assert status["verified_report_count"] == 1
+    assert status["state_completed_condition_count"] == 0
+    assert status["reconciliation_required"] is True
+    assert status["next_condition"] is None
+
+    monkeypatch.setattr(study_module, "benchmark_modern_optimizer", original)
+    progress = []
+    assert (
+        run_modern_optimizer_benchmark_study(
+            design, EXAMPLE, destination=run, progress_callback=progress.append
+        )
+        == run.resolve()
+    )
+    assert [event.status for event in progress] == [
+        "condition_reconciled",
+        "study_resumed",
+        "study_completed",
+    ]
+    assert verify_modern_optimizer_benchmark_study_run(run)["status"] == "complete"
 
 
 def test_verifier_rejects_changed_raw_report_and_cli_verifies(
@@ -182,6 +231,14 @@ def test_verifier_rejects_changed_raw_report_and_cli_verifies(
     assert "No automatic comparison" in capsys.readouterr().out
     assert main(["modern-optimizer-benchmark-study-verify", str(run)]) == 0
     assert "No automatic comparison" in capsys.readouterr().out
+    assert (
+        main(["modern-optimizer-benchmark-study-status", str(run), "--json"])
+        == 0
+    )
+    status = json.loads(capsys.readouterr().out)
+    assert status["status"] == "complete"
+    assert status["verified_report_count"] == 1
+    assert status["completion_manifest_verified"] is True
 
     condition = next((run / CONDITIONS_DIRECTORY_NAME).iterdir())
     report_html = condition / "optimizer-benchmark.html"

@@ -59,6 +59,9 @@ After the design is frozen, execute it against the unchanged source config:
 diffeoforge modern-optimizer-benchmark-study `
   modern-atlas.optimizer-study modern-atlas.yaml
 
+diffeoforge modern-optimizer-benchmark-study-status `
+  modern-atlas.optimizer-study.run
+
 diffeoforge modern-optimizer-benchmark-study-verify `
   modern-atlas.optimizer-study.run
 ```
@@ -78,6 +81,13 @@ atomic state, append-only events, condition directories, and a final
 contiguous prefix of strictly valid raw reports can be reconciled; unknown,
 out-of-order, or changed entries fail closed. Re-running a completed study is a
 read-only re-verification.
+
+The status command is read-only. It verifies the copied design, source hash,
+raw-report prefix, state prefix, event order, completion-manifest state, and
+process-identity lock. It reports exact completed/total condition counts and
+the next frozen subject/cycle condition; it never reports a percentage or ETA.
+The in-process observer uses an immutable versioned event schema and cannot
+change published study evidence.
 
 The completed-run verifier checks every nested raw report against its frozen
 subject prefix, cycle cap, repeats, warm-ups, optimizer settings, source hash,

@@ -9,7 +9,7 @@ import os
 import platform
 import shutil
 import uuid
-from collections.abc import Callable, Iterator
+from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from importlib.resources import files
@@ -33,6 +33,13 @@ from diffeoforge.modern_optimizer_benchmark_design import (
     collect_modern_optimizer_benchmark_design,
     verify_modern_optimizer_benchmark_design,
 )
+from diffeoforge.modern_optimizer_benchmark_progress import (
+    OptimizerStudyProgressCallback,
+    OptimizerStudyProgressCondition,
+    OptimizerStudyProgressEvent,
+    OptimizerStudyProgressObserverError,
+    OptimizerStudyProgressStatus,
+)
 
 STUDY_RUN_VERSION = "0.1"
 STATE_NAME = "optimizer-study-state.json"
@@ -49,9 +56,6 @@ SCIENTIFIC_BOUNDARY = (
     "convergence assessment, scaling extrapolation, Deformetrica comparison, safe-preset "
     "selection, or 300-subject feasibility test."
 )
-
-OptimizerStudyProgressCallback = Callable[[dict[str, Any]], None]
-
 
 class ModernOptimizerBenchmarkStudyError(RuntimeError):
     """Raised when a frozen optimizer study cannot run or verify safely."""
@@ -126,12 +130,19 @@ def _verify_event_prefix(root: Path, completed_ids: list[str], *, complete: bool
         raise ModernOptimizerBenchmarkStudyError(
             "Optimizer study event sequence is not contiguous"
         )
+    if any(
+        not isinstance(record.get("created_at"), str)
+        or not isinstance(record.get("event"), str)
+        for record in records
+    ):
+        raise ModernOptimizerBenchmarkStudyError("Optimizer study event records are malformed")
     observed_completed = [
         record.get("condition_id")
         for record in records
         if record.get("event") == "condition_completed"
     ]
-    if observed_completed != completed_ids:
+    expected_completed = completed_ids if complete else completed_ids[: len(observed_completed)]
+    if observed_completed != expected_completed:
         raise ModernOptimizerBenchmarkStudyError(
             "Completed optimizer events differ from verified reports"
         )
@@ -431,6 +442,32 @@ def _study_lock(root: Path) -> Iterator[None]:
                 path.unlink()
 
 
+def _lock_observation(root: Path) -> dict[str, Any]:
+    path = root / LOCK_NAME
+    if not path.exists():
+        return {"status": "absent", "host": None, "pid": None}
+    try:
+        owner = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise ModernOptimizerBenchmarkStudyError(
+            "Optimizer study execution lock is unreadable"
+        ) from error
+    host = owner.get("host")
+    pid = owner.get("pid")
+    if host != platform.node():
+        status = "foreign-host"
+    else:
+        try:
+            process = psutil.Process(pid)
+            active = math.isclose(
+                process.create_time(), owner["process_create_time"], abs_tol=0.01
+            )
+        except (psutil.Error, KeyError, TypeError, ValueError):
+            active = False
+        status = "active" if active else "stale"
+    return {"status": status, "host": host, "pid": pid}
+
+
 def _build_manifest(root: Path, design: dict[str, Any]) -> dict[str, Any]:
     condition_records = []
     for condition in design["conditions"]:
@@ -564,6 +601,81 @@ def verify_modern_optimizer_benchmark_study_run(directory: Path | str) -> dict[s
     return manifest
 
 
+def inspect_modern_optimizer_benchmark_study_run(
+    directory: Path | str,
+) -> dict[str, Any]:
+    """Strictly inspect partial or complete optimizer evidence without changing it."""
+
+    root = Path(directory).expanduser().resolve()
+    required = {
+        DESIGN_DIRECTORY_NAME,
+        SOURCE_CONFIG_NAME,
+        CONDITIONS_DIRECTORY_NAME,
+        STATE_NAME,
+        EVENTS_NAME,
+    }
+    allowed = required | {MANIFEST_NAME, MANIFEST_SIDECAR_NAME, LOCK_NAME}
+    observed = {path.name for path in root.iterdir()} if root.is_dir() else set()
+    if not required.issubset(observed) or observed - allowed:
+        raise ModernOptimizerBenchmarkStudyError(
+            "Optimizer study scaffold is incomplete or unexpected"
+        )
+    design = verify_modern_optimizer_benchmark_design(root / DESIGN_DIRECTORY_NAME)
+    if sha256_file(root / SOURCE_CONFIG_NAME) != design["source_config"]["sha256"]:
+        raise ModernOptimizerBenchmarkStudyError(
+            "Copied source config differs from frozen optimizer design"
+        )
+    state = _read_state(root, design)
+    existing_ids = _existing_condition_ids(root, design)
+    state_ids = state["completed_condition_ids"]
+    if state_ids != existing_ids[: len(state_ids)]:
+        raise ModernOptimizerBenchmarkStudyError(
+            "Optimizer state claims completed condition evidence that is missing"
+        )
+    _verify_event_prefix(root, existing_ids, complete=False)
+    manifest_files = [
+        name for name in (MANIFEST_NAME, MANIFEST_SIDECAR_NAME) if (root / name).exists()
+    ]
+    if len(manifest_files) == 1:
+        manifest_status = "partial"
+    elif len(manifest_files) == 2:
+        manifest_status = "present"
+    else:
+        manifest_status = "absent"
+    manifest_verified = False
+    if state["status"] == "complete":
+        verify_modern_optimizer_benchmark_study_run(root)
+        manifest_verified = True
+    next_condition = (
+        design["conditions"][len(existing_ids)]
+        if len(existing_ids) < len(design["conditions"])
+        else None
+    )
+    return {
+        "optimizer_study_run_version": STUDY_RUN_VERSION,
+        "status": state["status"],
+        "total_condition_count": len(design["conditions"]),
+        "state_completed_condition_count": len(state_ids),
+        "verified_report_count": len(existing_ids),
+        "reconciliation_required": len(existing_ids) > len(state_ids),
+        "active_condition_id": state["active_condition_id"],
+        "next_condition": (
+            None
+            if next_condition is None
+            else {
+                "sequence": next_condition["sequence"],
+                "condition_id": next_condition["condition_id"],
+                "subject_count": next_condition["subject_count"],
+                "cycle_cap": next_condition["cycle_cap"],
+            }
+        ),
+        "completion_manifest_status": manifest_status,
+        "completion_manifest_verified": manifest_verified,
+        "lock": _lock_observation(root),
+        "scientific_boundary": SCIENTIFIC_BOUNDARY,
+    }
+
+
 def default_modern_optimizer_benchmark_study_path(design_directory: Path | str) -> Path:
     root = Path(design_directory).expanduser().resolve()
     return root.parent / f"{root.name}.run"
@@ -580,17 +692,39 @@ def run_modern_optimizer_benchmark_study(
 
     if progress_callback is not None and not callable(progress_callback):
         raise TypeError("progress_callback must be callable or None")
+    progress_sequence = 0
 
-    def emit(status: str, completed: int, total: int, condition=None) -> None:
-        if progress_callback is not None:
+    def emit(
+        status: OptimizerStudyProgressStatus,
+        message: str,
+        completed: int,
+        total: int,
+        condition: dict[str, Any] | None = None,
+    ) -> None:
+        nonlocal progress_sequence
+        if progress_callback is None:
+            return
+        event = OptimizerStudyProgressEvent(
+            sequence=progress_sequence,
+            status=status,
+            message=message,
+            completed_conditions=completed,
+            total_conditions=total,
+            condition=(
+                None
+                if condition is None
+                else OptimizerStudyProgressCondition.from_design(condition)
+            ),
+        )
+        try:
             progress_callback(
-                {
-                    "status": status,
-                    "completed_conditions": completed,
-                    "total_conditions": total,
-                    "condition": condition,
-                }
+                event
             )
+        except Exception as error:
+            raise OptimizerStudyProgressObserverError(
+                f"Optimizer study progress observer failed: {error}"
+            ) from error
+        progress_sequence += 1
 
     design_root = Path(design_directory).expanduser().resolve()
     source = Path(config_path).expanduser().resolve()
@@ -607,7 +741,12 @@ def run_modern_optimizer_benchmark_study(
         total = len(design["conditions"])
         if state["status"] == "complete":
             verify_modern_optimizer_benchmark_study_run(output)
-            emit("study_already_complete", total, total)
+            emit(
+                "study_already_complete",
+                "The frozen optimizer study is already complete and verified.",
+                total,
+                total,
+            )
             return output
         existing_ids = _existing_condition_ids(output, design)
         state_ids = state["completed_condition_ids"]
@@ -634,13 +773,32 @@ def run_modern_optimizer_benchmark_study(
                 condition_sequence=condition["sequence"],
                 reconciled_after_interruption=True,
             )
+            emit(
+                "condition_reconciled",
+                "A previously published raw report was strictly verified and reconciled.",
+                condition["sequence"],
+                total,
+                condition,
+            )
         if state_ids != existing_ids:
             state["completed_condition_ids"] = existing_ids
             state["active_condition_id"] = None
             _save_state(output, state, design)
         state["status"] = "running"
         _save_state(output, state, design)
-        emit("study_started" if not existing_ids else "study_resumed", len(existing_ids), total)
+        lifecycle_status: OptimizerStudyProgressStatus = (
+            "study_started" if not existing_ids else "study_resumed"
+        )
+        emit(
+            lifecycle_status,
+            (
+                "The frozen optimizer study started."
+                if lifecycle_status == "study_started"
+                else "The frozen optimizer study resumed after strict prefix verification."
+            ),
+            len(existing_ids),
+            total,
+        )
 
         for condition in design["conditions"][len(existing_ids) :]:
             state["active_condition_id"] = condition["condition_id"]
@@ -651,7 +809,13 @@ def run_modern_optimizer_benchmark_study(
                 condition_id=condition["condition_id"],
                 condition_sequence=condition["sequence"],
             )
-            emit("condition_started", condition["sequence"] - 1, total, condition)
+            emit(
+                "condition_started",
+                "A frozen optimizer condition started.",
+                condition["sequence"] - 1,
+                total,
+                condition,
+            )
             try:
                 benchmark_modern_optimizer(
                     source,
@@ -673,7 +837,13 @@ def run_modern_optimizer_benchmark_study(
                     error_type=type(error).__name__,
                     message=str(error),
                 )
-                emit("study_interrupted", condition["sequence"] - 1, total, condition)
+                emit(
+                    "study_interrupted",
+                    "The optimizer study stopped before this condition was published.",
+                    condition["sequence"] - 1,
+                    total,
+                    condition,
+                )
                 raise ModernOptimizerBenchmarkStudyError(
                     f"Optimizer study interrupted in {condition['condition_id']}: {error}"
                 ) from error
@@ -686,7 +856,13 @@ def run_modern_optimizer_benchmark_study(
                 condition_id=condition["condition_id"],
                 condition_sequence=condition["sequence"],
             )
-            emit("condition_completed", condition["sequence"], total, condition)
+            emit(
+                "condition_completed",
+                "A raw optimizer condition report was published and strictly verified.",
+                condition["sequence"],
+                total,
+                condition,
+            )
 
         _publish_manifest(output, design)
         events = _event_records(output)
@@ -696,5 +872,10 @@ def run_modern_optimizer_benchmark_study(
         state["active_condition_id"] = None
         _save_state(output, state, design)
         verify_modern_optimizer_benchmark_study_run(output)
-        emit("study_completed", total, total)
+        emit(
+            "study_completed",
+            "Every frozen optimizer condition and the completion manifest verified.",
+            total,
+            total,
+        )
     return output
