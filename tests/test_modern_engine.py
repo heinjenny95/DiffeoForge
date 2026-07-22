@@ -109,6 +109,36 @@ def test_gaussian_matrix_matches_direct_difference_values_and_gradients() -> Non
         torch.testing.assert_close(actual, direct, rtol=5e-13, atol=5e-13)
 
 
+def test_gaussian_matrix_passes_first_and_second_derivative_checks() -> None:
+    generator = torch.Generator().manual_seed(20260722)
+    x = torch.randn((3, 3), dtype=DTYPE, generator=generator, requires_grad=True)
+    y = torch.randn((4, 3), dtype=DTYPE, generator=generator, requires_grad=True)
+
+    def function(left: torch.Tensor, right: torch.Tensor) -> torch.Tensor:
+        return gaussian_kernel(left, right, 0.9)
+
+    assert torch.autograd.gradcheck(function, (x, y), eps=1e-6, atol=2e-6, rtol=2e-5)
+    assert torch.autograd.gradgradcheck(function, (x, y), eps=1e-6, atol=3e-6, rtol=3e-5)
+
+
+def test_gaussian_backward_does_not_save_rank2_construction_matrices() -> None:
+    generator = torch.Generator().manual_seed(11)
+    x = torch.randn((64, 3), dtype=DTYPE, generator=generator, requires_grad=True)
+    y = torch.randn((48, 3), dtype=DTYPE, generator=generator, requires_grad=True)
+    saved_shapes: list[tuple[int, ...]] = []
+
+    def pack(tensor: torch.Tensor) -> torch.Tensor:
+        saved_shapes.append(tuple(tensor.shape))
+        return tensor
+
+    with torch.autograd.graph.saved_tensors_hooks(pack, lambda tensor: tensor):
+        value = gaussian_kernel(x, y, 1.1).sum()
+        torch.autograd.grad(value, (x, y))
+
+    assert (64, 48) not in saved_shapes
+    assert (64, 48, 3) not in saved_shapes
+
+
 def test_dense_primitives_match_deformetrica_4_3_golden_values() -> None:
     """Values generated with the frozen Deformetrica 4.3 TorchKernel on CPU/float64."""
 

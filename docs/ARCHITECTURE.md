@@ -423,7 +423,10 @@ service retain their exact meaning.
 Below the application layer, the engine now contains an explicit blockwise
 Gaussian primitive family. Ordinary Gaussian evaluation uses a centered matrix
 identity and does not materialize rank-3 XYZ differences; query and source tile
-sizes bound the rank-2 pairwise matrices. Current and Varifold inner products
+sizes bound the rank-2 pairwise matrices. A custom analytical backward saves
+only coordinates and reconstructs the kernel when differentiation needs it,
+rather than retaining every construction matrix across the cohort. Current and
+Varifold inner products
 accumulate tiles without full face-by-face kernel/orientation matrices. This
 path is non-approximate but changes floating reduction order. An explicit public
 workflow setting now carries the plan through the complete optimizer,

@@ -310,7 +310,9 @@ For high-face-count Modern experiments, the desktop can write an explicit exact
 `256 × 256` blockwise plan and Step 2 reports the supplied face counts, complete
 logical all-pairs dimensions, and largest execution tile. Ordinary Gaussian
 evaluation uses centered rank-2 matrix arithmetic rather than rank-3 XYZ
-differences; backward-compatible XYZ payload fields are conservative
+difference tensors. Its analytical backward reconstructs kernels instead of
+retaining their construction matrices for every subject; backward-compatible
+XYZ payload fields are conservative
 dense-equivalent planning values. A synthetic
 10,000-face pre-compute contract is covered by automated tests. This is not a
 full-atlas performance claim, automatic safe preset, or proof that 300 subjects

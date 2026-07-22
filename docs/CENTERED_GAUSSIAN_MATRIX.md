@@ -22,6 +22,25 @@ does not change the exact all-pairs model, Gaussian convention, kernel width,
 or differentiable variables. The direct rank-3 path remains only where the
 analytical Gaussian x-gradient explicitly requires vector differences.
 
+## Recomputed analytical backward
+
+Autograd would ordinarily retain the squared-distance, clamp, exponential, and
+consumer matrices for every subject until a block gradient is requested. The
+Gaussian matrix therefore uses a custom analytical backward that saves only
+the query and source coordinates. During backward it reconstructs the rank-2
+kernel and applies
+
+```text
+dL/dx = -2/w² [x row_sum(A) - A y]
+dL/dy =  2/w² [Aᵀ x - y column_sum(A)]
+A     = upstream_gradient * Gaussian(x, y)
+```
+
+in the same centered coordinate frame. This avoids rank-3 differences in both
+directions and releases forward construction matrices before differentiation.
+It is exact recomputation, not a detached, approximate, or finite-difference
+gradient. The implementation remains differentiable for higher derivatives.
+
 ## Numerical safeguards
 
 The common origin is the midpoint of the detached query and source centroids.
@@ -38,11 +57,14 @@ Automated evidence includes:
 
 - direct rank-3 versus centered rank-2 Gaussian values on random float64 data;
 - gradients with respect to both query and source coordinates;
+- numerical first- and second-derivative checks of the custom backward;
 - stability after a joint translation on the order of `10⁹` coordinate units;
 - frozen Deformetrica primitive and complete-objective fixtures;
 - dense/blockwise, standard/recompute, Current/Varifold, and optimizer tests;
 - instrumentation proving ordinary `gaussian_kernel` does not call the
   rank-3 helper; and
+- saved-tensor instrumentation proving the Gaussian operation itself retains
+  no pair-sized rank-2 or rank-3 construction tensor; and
 - exact logical Gaussian-operation accounting after the implementation change.
 
 ## Exploratory implementation observation
@@ -72,6 +94,22 @@ objective evaluations, 6 gradient evaluations, and 16 line-search evaluations;
 13 rejected candidates avoided backward. This demonstrates deterministic
 one-cycle execution of the complete available pilot cohort, not convergence or
 safe extrapolation to 300 subjects.
+
+After adding the recomputed analytical backward, the five-subject three-repeat
+pilot measured 2.682 s median optimizer time and 469 MiB median sampled peak
+RSS. Compared with the centered-forward-only report, this was 15.7% slower but
+used 52.4% less sampled peak RSS. A direct matched-process oracle comparison
+preserved every block status, accepted step size, and line-search count; final
+parameter differences were at most `7.3e-16` and recorded scalar differences
+at most `9.3e-14`.
+
+On the two-repeat 68-subject pilot, recomputed backward measured 57.385 s median
+optimizer time and 2.975 GiB median sampled peak RSS. Relative to the
+centered-forward-only report, sampled peak RSS decreased by 70.6% and observed
+time decreased by 6.9%. The opposite small-cohort timing direction demonstrates
+why neither ratio is promoted to a universal performance claim. Both 68-subject
+repeats again matched each other exactly in discrete decisions and result
+hashes.
 
 ## Workload-report compatibility
 

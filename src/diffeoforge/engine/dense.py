@@ -247,28 +247,79 @@ def _gaussian_tile(
     return differences, torch.exp(-squared_distances / (width * width))
 
 
+def _centered_squared_distances(
+    x: torch.Tensor,
+    y: torch.Tensor,
+) -> torch.Tensor:
+    """Return pairwise squared distances using only rank-2 intermediates."""
+
+    origin = 0.5 * (x.detach().mean(dim=0) + y.detach().mean(dim=0))
+    centered_x = x - origin
+    centered_y = y - origin
+    return (
+        torch.sum(centered_x.square(), dim=1)[:, None]
+        + torch.sum(centered_y.square(), dim=1)[None, :]
+        - 2.0 * (centered_x @ centered_y.T)
+    )
+
+
+def _gaussian_matrix_raw(
+    x: torch.Tensor,
+    y: torch.Tensor,
+    width: float,
+) -> torch.Tensor:
+    squared_distances = _centered_squared_distances(x, y)
+    return torch.exp(-torch.clamp_min(squared_distances, 0.0) / (width * width))
+
+
+class _RecomputedGaussianMatrix(torch.autograd.Function):
+    """Exact Gaussian matrix whose backward does not retain rank-2 internals."""
+
+    @staticmethod
+    def forward(ctx, x: torch.Tensor, y: torch.Tensor, width: float) -> torch.Tensor:
+        ctx.save_for_backward(x, y)
+        ctx.width = width
+        return _gaussian_matrix_raw(x, y, width)
+
+    @staticmethod
+    def backward(ctx, output_gradient: torch.Tensor):
+        x, y = ctx.saved_tensors
+        width = ctx.width
+        squared_distances = _centered_squared_distances(x, y)
+        kernel = torch.exp(-torch.clamp_min(squared_distances, 0.0) / (width * width))
+        weighted_kernel = output_gradient * kernel * (squared_distances >= 0.0)
+        origin = 0.5 * (x.detach().mean(dim=0) + y.detach().mean(dim=0))
+        centered_x = x - origin
+        centered_y = y - origin
+        scale = 2.0 / (width * width)
+        x_gradient = y_gradient = None
+        if ctx.needs_input_grad[0]:
+            x_gradient = -scale * (
+                centered_x * weighted_kernel.sum(dim=1, keepdim=True)
+                - weighted_kernel @ centered_y
+            )
+        if ctx.needs_input_grad[1]:
+            y_gradient = scale * (
+                weighted_kernel.T @ centered_x
+                - centered_y * weighted_kernel.sum(dim=0)[:, None]
+            )
+        return x_gradient, y_gradient, None
+
+
 def _gaussian_matrix(
     x: torch.Tensor,
     y: torch.Tensor,
     width: float,
 ) -> torch.Tensor:
-    """Return a Gaussian matrix without materializing rank-3 differences.
+    """Return a Gaussian matrix without retaining rank-2 construction tensors.
 
     A detached common origin keeps the matrix identity numerically useful for
-    meshes carrying a large global translation. The resulting centered
-    coordinates preserve the exact mathematical distances and gradients while
-    the matrix product avoids the ``rows x columns x 3`` forward payload.
+    meshes carrying a large global translation. The custom analytical backward
+    reconstructs the kernel and saves only its coordinate inputs rather than
+    retaining distance, clamp, and exponential matrices until differentiation.
     """
 
-    origin = 0.5 * (torch.mean(x.detach(), dim=0) + torch.mean(y.detach(), dim=0))
-    centered_x = x - origin
-    centered_y = y - origin
-    squared_distances = (
-        torch.sum(centered_x.square(), dim=1)[:, None]
-        + torch.sum(centered_y.square(), dim=1)[None, :]
-        - 2.0 * (centered_x @ centered_y.T)
-    )
-    return torch.exp(-torch.clamp_min(squared_distances, 0.0) / (width * width))
+    return _RecomputedGaussianMatrix.apply(x, y, width)
 
 
 def gaussian_kernel(x: torch.Tensor, y: torch.Tensor, kernel_width: float) -> torch.Tensor:

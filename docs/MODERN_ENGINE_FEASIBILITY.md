@@ -153,9 +153,11 @@ not an automatic default or evidence-backed performance preset. See
 Ordinary Gaussian forward evaluation now uses a centered squared-distance
 matrix identity instead of materializing rank-3 XYZ differences. A detached
 common origin preserves translation stability without changing the exact
-mathematical distances or gradients. Direct formula tests, frozen reference
-fixtures, full-objective parity, and optimizer-result checks protect the
-change. See [centered Gaussian matrix evaluation](CENTERED_GAUSSIAN_MATRIX.md).
+mathematical distances or gradients. Its analytical backward reconstructs the
+rank-2 kernel rather than retaining construction matrices for every subject.
+Direct formula tests, first- and second-derivative checks, frozen reference
+fixtures, full-objective parity, and optimizer-result checks protect the change.
+See [centered Gaussian matrix evaluation](CENTERED_GAUSSIAN_MATRIX.md).
 
 An explicit direct-plan `recompute` autograd strategy checkpoints each
 deterministic Gaussian/Current/Varifold tile and reconstructs pairwise
@@ -202,6 +204,13 @@ time with exact cross-process histories and result hashes. Median sampled peak
 RSS was 10.103 GiB. This is useful deterministic integration evidence, but the
 single cycle and sampled memory remain insufficient for convergence, 300-subject
 feasibility, or comparative performance claims.
+
+With analytical backward recomputation enabled, a second two-repeat observation
+of the same 68-subject condition measured 57.385 s median optimizer time and
+2.975 GiB median sampled peak RSS. Internal repeat hashes and decisions matched
+exactly. The 70.6% sampled peak-RSS reduction is strong implementation evidence;
+the five-subject condition was 15.7% slower, so timing remains cohort- and
+machine-specific rather than a general speed claim.
 
 ## Gates before a usable atlas engine
 
