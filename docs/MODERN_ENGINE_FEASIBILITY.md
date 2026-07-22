@@ -64,6 +64,8 @@ The experimental `diffeoforge.engine` module currently implements:
 - the complete per-subject deterministic-atlas contribution, with attachment
   `-distance / noise_variance`, regularity `-p^T K(q,q) p`, and their sum;
 - an unaveraged, order-preserving multi-subject objective sum.
+- exact reusable fixed-target Current/Varifold geometry and self terms, with
+  stale-cache rejection and unchanged source gradients.
 - a deterministic momenta-only gradient-ascent prototype with Armijo
   backtracking and complete accepted-state history.
 - a deterministic full-parameter block optimizer for per-subject momenta,
@@ -159,6 +161,15 @@ construct standard autograd only. Benchmark v0.3 can explicitly measure either
 strategy in separate fresh processes, but its spawn smoke coverage is not a
 prospective performance comparison, process peak-memory, or runtime-scaling
 result.
+
+The production optimizer path now prepares the invariant target geometry and
+attachment self term once per subject instead of repeating that quadratic work
+for every line-search evaluation. The uncached path remains the oracle. Dense,
+blockwise-standard, and blockwise-recompute tests preserve exact values and
+source gradients; a first five-subject 1,500-face local observation measured a
+1.239x objective-plus-momenta-gradient ratio. This is implementation evidence,
+not a full-atlas performance or convergence claim. See
+[prepared fixed-target attachments](PREPARED_ATTACHMENT_TARGETS.md).
 
 ## Gates before a usable atlas engine
 

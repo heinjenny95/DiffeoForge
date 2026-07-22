@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from numbers import Integral, Real
 from typing import Literal
 
@@ -27,6 +27,7 @@ except ModuleNotFoundError as exc:  # pragma: no cover - exercised in packaging 
 from torch.utils.checkpoint import checkpoint
 
 TileAutogradStrategy = Literal["standard", "recompute"]
+SurfaceAttachmentType = Literal["current", "varifold"]
 
 
 @dataclass(frozen=True)
@@ -149,6 +150,91 @@ class GaussianTilePlan:
 
         element_bytes = _validate_tile_size("bytes_per_float", bytes_per_float)
         return self.query_rows * self.source_rows * 3 * element_bytes
+
+
+@dataclass(frozen=True)
+class PreparedSurfaceAttachmentTarget:
+    """Immutable reusable geometry and self term for one fixed target surface.
+
+    Instances retain the exact target tensor objects used during preparation so
+    stale or mismatched caches fail explicitly. Create instances with
+    :func:`prepare_surface_attachment_target` rather than constructing them
+    directly.
+    """
+
+    target_vertices: torch.Tensor = field(repr=False)
+    target_triangles: torch.Tensor = field(repr=False)
+    attachment_type: SurfaceAttachmentType
+    kernel_width: float
+    gaussian_tile_plan: GaussianTilePlan | None
+    centers: torch.Tensor = field(repr=False)
+    normals: torch.Tensor = field(repr=False)
+    self_inner_product: torch.Tensor = field(repr=False)
+    _vertices_version: int = field(init=False, repr=False)
+    _triangles_version: int = field(init=False, repr=False)
+
+    def __post_init__(self) -> None:
+        _validate_float_matrix("target_vertices", self.target_vertices, columns=3)
+        _validate_triangles(self.target_triangles, self.target_vertices)
+        if self.target_vertices.requires_grad:
+            raise ValueError("prepared target vertices must not require gradients")
+        if self.attachment_type not in {"current", "varifold"}:
+            raise ValueError("attachment_type must be 'current' or 'varifold'")
+        object.__setattr__(self, "kernel_width", _validate_width(self.kernel_width))
+        if self.gaussian_tile_plan is not None and not isinstance(
+            self.gaussian_tile_plan, GaussianTilePlan
+        ):
+            raise TypeError("gaussian_tile_plan must be a GaussianTilePlan or None")
+        _validate_float_matrix("centers", self.centers, columns=3)
+        _validate_float_matrix("normals", self.normals, columns=3)
+        _validate_compatible("centers", self.centers, self.target_vertices)
+        _validate_compatible("normals", self.normals, self.target_vertices)
+        if self.centers.shape != self.normals.shape:
+            raise ValueError("prepared target centers and normals must have the same shape")
+        if self.centers.shape[0] != self.target_triangles.shape[0]:
+            raise ValueError("prepared target geometry must contain one row per triangle")
+        if self.centers.requires_grad or self.normals.requires_grad:
+            raise ValueError("prepared target geometry must not require gradients")
+        if not isinstance(self.self_inner_product, torch.Tensor):
+            raise TypeError("self_inner_product must be a torch.Tensor")
+        if self.self_inner_product.ndim != 0:
+            raise ValueError("self_inner_product must be a scalar tensor")
+        if not self.self_inner_product.is_floating_point():
+            raise TypeError("self_inner_product must use a floating-point dtype")
+        _validate_compatible("self_inner_product", self.self_inner_product, self.target_vertices)
+        if self.self_inner_product.requires_grad:
+            raise ValueError("self_inner_product must not require gradients")
+        if not bool(torch.isfinite(self.self_inner_product)):
+            raise ValueError("self_inner_product must be finite")
+        object.__setattr__(self, "centers", self.centers.detach().clone())
+        object.__setattr__(self, "normals", self.normals.detach().clone())
+        object.__setattr__(
+            self,
+            "self_inner_product",
+            self.self_inner_product.detach().clone(),
+        )
+        object.__setattr__(self, "_vertices_version", int(self.target_vertices._version))
+        object.__setattr__(self, "_triangles_version", int(self.target_triangles._version))
+
+    def validate_target(
+        self,
+        target_vertices: torch.Tensor,
+        target_triangles: torch.Tensor,
+    ) -> None:
+        """Reject a cache used with different or mutated target tensors."""
+
+        if (
+            target_vertices is not self.target_vertices
+            or target_triangles is not self.target_triangles
+        ):
+            raise ValueError(
+                "prepared attachment target does not match the supplied target tensors"
+            )
+        if (
+            int(self.target_vertices._version) != self._vertices_version
+            or int(self.target_triangles._version) != self._triangles_version
+        ):
+            raise RuntimeError("prepared attachment target is stale because its tensors changed")
 
 
 def _gaussian_tile(
@@ -840,3 +926,129 @@ def varifold_squared_distance_blockwise(
         centers_a, normals_a, centers_b, normals_b, kernel_width, plan
     )
     return self_a + self_b - 2.0 * cross
+
+
+def prepare_surface_attachment_target(
+    target_vertices: torch.Tensor,
+    target_triangles: torch.Tensor,
+    kernel_width: float,
+    *,
+    attachment_type: SurfaceAttachmentType = "current",
+    gaussian_tile_plan: GaussianTilePlan | None = None,
+) -> PreparedSurfaceAttachmentTarget:
+    """Prepare exact reusable target-only terms for repeated registrations.
+
+    The target must be fixed and must not require gradients. Preparation uses
+    the same dense or blockwise arithmetic as the ordinary distance functions;
+    it changes only when the invariant target work is performed.
+    """
+
+    if attachment_type not in {"current", "varifold"}:
+        raise ValueError("attachment_type must be 'current' or 'varifold'")
+    width = _validate_width(kernel_width)
+    if gaussian_tile_plan is not None and not isinstance(gaussian_tile_plan, GaussianTilePlan):
+        raise TypeError("gaussian_tile_plan must be a GaussianTilePlan or None")
+    if not isinstance(target_vertices, torch.Tensor):
+        raise TypeError("target_vertices must be a torch.Tensor")
+    if target_vertices.requires_grad:
+        raise ValueError("prepared target vertices must not require gradients")
+
+    with torch.no_grad():
+        centers, normals = _surface_geometry(target_vertices, target_triangles)
+        if gaussian_tile_plan is None:
+            inner_product = (
+                _current_inner_product if attachment_type == "current" else _varifold_inner_product
+            )
+            self_inner_product = inner_product(
+                centers,
+                normals,
+                centers,
+                normals,
+                width,
+            )
+        else:
+            blockwise_inner_product = (
+                _current_inner_product_blockwise
+                if attachment_type == "current"
+                else _varifold_inner_product_blockwise
+            )
+            self_inner_product = blockwise_inner_product(
+                centers,
+                normals,
+                centers,
+                normals,
+                width,
+                gaussian_tile_plan,
+            )
+    return PreparedSurfaceAttachmentTarget(
+        target_vertices=target_vertices,
+        target_triangles=target_triangles,
+        attachment_type=attachment_type,
+        kernel_width=width,
+        gaussian_tile_plan=gaussian_tile_plan,
+        centers=centers,
+        normals=normals,
+        self_inner_product=self_inner_product,
+    )
+
+
+def surface_squared_distance_to_prepared_target(
+    source_vertices: torch.Tensor,
+    source_triangles: torch.Tensor,
+    prepared_target: PreparedSurfaceAttachmentTarget,
+) -> torch.Tensor:
+    """Return an exact Current or Varifold distance to a prepared fixed target."""
+
+    if not isinstance(prepared_target, PreparedSurfaceAttachmentTarget):
+        raise TypeError("prepared_target must be a PreparedSurfaceAttachmentTarget")
+    prepared_target.validate_target(
+        prepared_target.target_vertices,
+        prepared_target.target_triangles,
+    )
+    centers, normals = _surface_geometry(source_vertices, source_triangles)
+    _validate_compatible("prepared target centers", prepared_target.centers, source_vertices)
+    _validate_compatible("prepared target normals", prepared_target.normals, source_vertices)
+    plan = prepared_target.gaussian_tile_plan
+    if plan is None:
+        inner_product = (
+            _current_inner_product
+            if prepared_target.attachment_type == "current"
+            else _varifold_inner_product
+        )
+        self_inner_product = inner_product(
+            centers,
+            normals,
+            centers,
+            normals,
+            prepared_target.kernel_width,
+        )
+        cross_inner_product = inner_product(
+            centers,
+            normals,
+            prepared_target.centers,
+            prepared_target.normals,
+            prepared_target.kernel_width,
+        )
+    else:
+        blockwise_inner_product = (
+            _current_inner_product_blockwise
+            if prepared_target.attachment_type == "current"
+            else _varifold_inner_product_blockwise
+        )
+        self_inner_product = blockwise_inner_product(
+            centers,
+            normals,
+            centers,
+            normals,
+            prepared_target.kernel_width,
+            plan,
+        )
+        cross_inner_product = blockwise_inner_product(
+            centers,
+            normals,
+            prepared_target.centers,
+            prepared_target.normals,
+            prepared_target.kernel_width,
+            plan,
+        )
+    return self_inner_product + prepared_target.self_inner_product - 2.0 * cross_inner_product

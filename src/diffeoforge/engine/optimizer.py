@@ -10,6 +10,7 @@ from typing import Literal
 
 import torch
 
+from diffeoforge.engine.dense import prepare_surface_attachment_target
 from diffeoforge.engine.objective import (
     AttachmentType,
     FlowIntegrator,
@@ -144,9 +145,7 @@ def optimize_momenta(
         "max_line_search_iterations", max_line_search_iterations, minimum=1
     )
     first_step = _finite_real("initial_step_size", initial_step_size, minimum=0.0)
-    shrink = _finite_real(
-        "backtracking_factor", backtracking_factor, minimum=0.0, maximum=1.0
-    )
+    shrink = _finite_real("backtracking_factor", backtracking_factor, minimum=0.0, maximum=1.0)
     armijo = _finite_real("armijo_constant", armijo_constant, minimum=0.0, maximum=1.0)
     gradient_threshold = _finite_real(
         "gradient_tolerance",
@@ -161,6 +160,15 @@ def optimize_momenta(
         raise TypeError("initial_momenta must be a torch.Tensor")
 
     target_sequence = tuple(targets)
+    prepared_targets = tuple(
+        prepare_surface_attachment_target(
+            target_vertices,
+            target_triangles,
+            attachment_kernel_width,
+            attachment_type=attachment_type,
+        )
+        for target_vertices, target_triangles in target_sequence
+    )
 
     def evaluate(candidate: torch.Tensor) -> _Evaluation | None:
         variable = candidate.detach().clone().requires_grad_(True)
@@ -178,6 +186,7 @@ def optimize_momenta(
                 attachment_type=attachment_type,
                 shooting_integrator=shooting_integrator,
                 flow_integrator=flow_integrator,
+                prepared_targets=prepared_targets,
             )
             if not bool(torch.isfinite(objective.total)):
                 return None

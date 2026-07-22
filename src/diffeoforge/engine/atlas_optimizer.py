@@ -10,7 +10,7 @@ from typing import Literal
 
 import torch
 
-from diffeoforge.engine.dense import GaussianTilePlan
+from diffeoforge.engine.dense import GaussianTilePlan, prepare_surface_attachment_target
 from diffeoforge.engine.objective import (
     AttachmentType,
     FlowIntegrator,
@@ -267,6 +267,20 @@ def optimize_atlas(
             raise TypeError(f"{name} must be a torch.Tensor")
 
     target_sequence = tuple(targets)
+    prepared_targets = []
+    for target_vertices, target_triangles in target_sequence:
+        check_cancellation()
+        prepared_targets.append(
+            prepare_surface_attachment_target(
+                target_vertices,
+                target_triangles,
+                attachment_kernel_width,
+                attachment_type=attachment_type,
+                gaussian_tile_plan=gaussian_tile_plan,
+            )
+        )
+    prepared_target_sequence = tuple(prepared_targets)
+    check_cancellation()
     objective_keywords = {
         "deformation_kernel_width": deformation_kernel_width,
         "attachment_kernel_width": attachment_kernel_width,
@@ -276,6 +290,7 @@ def optimize_atlas(
         "shooting_integrator": shooting_integrator,
         "flow_integrator": flow_integrator,
         "gaussian_tile_plan": gaussian_tile_plan,
+        "prepared_targets": prepared_target_sequence,
     }
 
     def evaluate(

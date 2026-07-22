@@ -22,6 +22,12 @@ not allowed in this full-parameter entry point. The earlier
 `optimize_momenta` function remains available for a deliberately frozen
 template/control-point experiment.
 
+Because the observed target surfaces are fixed, their triangle geometry and
+quadratic attachment self terms are prepared once per optimizer invocation and
+reused without approximation. Source-dependent and cross terms are still
+recomputed, and exact dense/blockwise value and gradient parity is tested. See
+[prepared fixed-target attachments](PREPARED_ATTACHMENT_TARGETS.md).
+
 ## Transparent block update
 
 For current block value `x`, gradient `g`, and proposed step `s`, the candidate
