@@ -10,7 +10,11 @@ from typing import Literal
 
 import torch
 
-from diffeoforge.engine.dense import GaussianTilePlan, prepare_surface_attachment_target
+from diffeoforge.engine.dense import (
+    GaussianTilePlan,
+    PreparedSurfaceAttachmentTarget,
+    prepare_surface_attachment_target,
+)
 from diffeoforge.engine.objective import (
     AttachmentType,
     FlowIntegrator,
@@ -87,6 +91,9 @@ class AtlasOptimizationResult:
     cycles_completed: int
     total_line_search_evaluations: int
     settings: AtlasOptimizerSettings
+    objective_evaluations: int = 0
+    gradient_evaluations: int = 0
+    candidate_gradient_evaluations: int = 0
 
 
 @dataclass(frozen=True)
@@ -197,6 +204,7 @@ def optimize_atlas(
     shooting_integrator: ShootingIntegrator = "rk2",
     flow_integrator: FlowIntegrator = "deformetrica_heun",
     gaussian_tile_plan: GaussianTilePlan | None = None,
+    prepared_targets: Sequence[PreparedSurfaceAttachmentTarget] | None = None,
     max_cycles: int = 10,
     block_order: Sequence[AtlasParameterBlock] = _ALL_BLOCKS,
     momenta_step_size: float = 0.1,
@@ -276,19 +284,45 @@ def optimize_atlas(
             raise TypeError(f"{name} must be a torch.Tensor")
 
     target_sequence = tuple(targets)
-    prepared_targets = []
-    for target_vertices, target_triangles in target_sequence:
-        check_cancellation()
-        prepared_targets.append(
-            prepare_surface_attachment_target(
-                target_vertices,
-                target_triangles,
-                attachment_kernel_width,
-                attachment_type=attachment_type,
-                gaussian_tile_plan=gaussian_tile_plan,
+    if prepared_targets is None:
+        prepared_target_values = []
+        for target_vertices, target_triangles in target_sequence:
+            check_cancellation()
+            prepared_target_values.append(
+                prepare_surface_attachment_target(
+                    target_vertices,
+                    target_triangles,
+                    attachment_kernel_width,
+                    attachment_type=attachment_type,
+                    gaussian_tile_plan=gaussian_tile_plan,
+                )
             )
-        )
-    prepared_target_sequence = tuple(prepared_targets)
+        prepared_target_sequence = tuple(prepared_target_values)
+    else:
+        prepared_target_sequence = tuple(prepared_targets)
+        if len(prepared_target_sequence) != len(target_sequence):
+            raise ValueError(
+                "prepared_targets and targets must contain the same number of subjects"
+            )
+        for (target_vertices, target_triangles), prepared_target in zip(
+            target_sequence,
+            prepared_target_sequence,
+            strict=True,
+        ):
+            check_cancellation()
+            if not isinstance(prepared_target, PreparedSurfaceAttachmentTarget):
+                raise TypeError(
+                    "prepared_targets must contain PreparedSurfaceAttachmentTarget values"
+                )
+            prepared_target.validate_target(target_vertices, target_triangles)
+            if prepared_target.attachment_type != attachment_type:
+                raise ValueError("prepared target attachment type does not match attachment_type")
+            if prepared_target.kernel_width != float(attachment_kernel_width):
+                raise ValueError(
+                    "prepared target kernel width does not match attachment_kernel_width"
+                )
+            if prepared_target.gaussian_tile_plan != gaussian_tile_plan:
+                raise ValueError("prepared target tile plan does not match gaussian_tile_plan")
     check_cancellation()
     objective_keywords = {
         "deformation_kernel_width": deformation_kernel_width,
@@ -301,6 +335,9 @@ def optimize_atlas(
         "gaussian_tile_plan": gaussian_tile_plan,
         "prepared_targets": prepared_target_sequence,
     }
+    objective_evaluations = 0
+    gradient_evaluations = 0
+    candidate_gradient_evaluations = 0
 
     def evaluate_objective(
         template_vertices: torch.Tensor,
@@ -308,6 +345,7 @@ def optimize_atlas(
         momenta: torch.Tensor,
         block: AtlasParameterBlock,
     ) -> _PendingBlockEvaluation | None:
+        nonlocal objective_evaluations
         check_cancellation()
         parameters = {
             "template": template_vertices.detach().clone(),
@@ -317,6 +355,7 @@ def optimize_atlas(
         variable = parameters[block].requires_grad_(True)
         parameters[block] = variable
         with torch.enable_grad():
+            objective_evaluations += 1
             objective = atlas_objective(
                 parameters["template"],
                 template_triangles,
@@ -346,8 +385,10 @@ def optimize_atlas(
     def evaluate_gradient(
         pending: _PendingBlockEvaluation,
     ) -> _BlockEvaluation | None:
+        nonlocal gradient_evaluations
         check_cancellation()
         with torch.enable_grad():
+            gradient_evaluations += 1
             (gradient,) = torch.autograd.grad(pending.total, pending.variable)
         check_cancellation()
         if not bool(torch.isfinite(gradient).all()):
@@ -414,6 +455,9 @@ def optimize_atlas(
             cycles_completed=cycles_completed,
             total_line_search_evaluations=total_line_search_evaluations,
             settings=optimizer_settings,
+            objective_evaluations=objective_evaluations,
+            gradient_evaluations=gradient_evaluations,
+            candidate_gradient_evaluations=candidate_gradient_evaluations,
         )
 
     for cycle in range(1, cycles + 1):
@@ -477,6 +521,7 @@ def optimize_atlas(
                     required = current.objective + armijo * step_size * directional_derivative
                     if bool(candidate_pending.state.objective >= required):
                         try:
+                            candidate_gradient_evaluations += 1
                             candidate = evaluate_gradient(candidate_pending)
                         except ValueError:
                             candidate = None

@@ -85,6 +85,11 @@ def test_every_accepted_block_monotonically_improves_the_objective() -> None:
     assert result.total_line_search_evaluations == sum(
         record.line_search_evaluations for record in result.history
     )
+    decisions = len(result.history) - 1
+    accepted = sum(record.status == "accepted" for record in result.history)
+    assert result.objective_evaluations == decisions + result.total_line_search_evaluations
+    assert result.gradient_evaluations == decisions + accepted
+    assert result.candidate_gradient_evaluations == accepted
     assert result.settings.max_cycles == 2
     assert result.settings.block_order == ("momenta", "template", "control_points")
     assert result.settings.momenta_step_size == 0.1
@@ -215,6 +220,9 @@ def test_zero_cycles_returns_fully_evaluated_initial_state() -> None:
     assert result.history[0].status == "initial"
     assert math.isfinite(result.history[0].objective)
     assert result.total_line_search_evaluations == 0
+    assert result.objective_evaluations == 1
+    assert result.gradient_evaluations == 1
+    assert result.candidate_gradient_evaluations == 0
 
 
 def test_failed_first_block_preserves_all_initial_parameters() -> None:
@@ -265,6 +273,9 @@ def test_rejected_atlas_candidate_does_not_request_an_unused_gradient(
 
     assert result.termination_reason == "line_search_failed"
     assert result.total_line_search_evaluations == 1
+    assert result.objective_evaluations == 2
+    assert result.gradient_evaluations == 1
+    assert result.candidate_gradient_evaluations == 0
     assert calls == 1
 
 

@@ -180,6 +180,15 @@ rejected candidates in its momenta block; this is rejection-specific
 implementation evidence rather than a full-atlas claim. See
 [deferred Armijo gradients](DEFERRED_ARMIJO_GRADIENTS.md).
 
+The versioned multi-cycle optimizer benchmark now runs the production block
+optimizer in a fresh process per repeat. It separates fixed-target cache
+preparation from optimizer wall time, samples process RSS, records exact
+objective/gradient/line-search counts, and hashes the complete history and final
+parameters. Strict JSON, CSV, and regenerated HTML verification make optimizer
+performance changes auditable without converting a limited pilot into a
+convergence, ETA, or Deformetrica-comparison claim. See
+[modern multi-cycle optimizer benchmark](MODERN_OPTIMIZER_BENCHMARK.md).
+
 ## Gates before a usable atlas engine
 
 1. ~~Add current/varifold fixtures generated through the independent reference
@@ -200,6 +209,8 @@ implementation evidence rather than a full-atlas claim. See
    as an explicit v0.2 configuration and report path with immutable plan
    cross-checks and fresh-process execution coverage.
 8. Benchmark runtime and peak memory over mesh, control-point, and subject count.
+   A versioned fresh-process multi-cycle primitive is complete; the prospective
+   multi-dimensional study and peak-memory characterization remain open.
 9. Define evidence-derived tolerances before accepting a production backend.
 10. Integrate the engine through immutable run manifests without weakening the
     existing reference workflow.

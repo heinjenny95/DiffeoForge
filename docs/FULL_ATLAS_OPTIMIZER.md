@@ -71,8 +71,13 @@ copies. Every optimizer decision records:
 - number of line-search evaluations.
 
 The result additionally records the termination reason, failed block, completed
-cycles, convergence flag, and total line-search evaluations. Caller-owned
-inputs are never mutated.
+cycles, convergence flag, total line-search evaluations, total objective and
+gradient evaluations, and candidate gradients actually requested inside the
+line search. The latter separates Armijo candidates rejected by their forward
+objective from candidates that required a backward pass. Caller-owned inputs
+are never mutated. See the versioned
+[multi-cycle optimizer benchmark](MODERN_OPTIMIZER_BENCHMARK.md) for the strict
+fresh-process measurement contract built on these counters.
 
 ## Versioned CC0 evidence
 

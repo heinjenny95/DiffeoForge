@@ -323,6 +323,46 @@ def build_parser() -> argparse.ArgumentParser:
         help="Replace only a recognized generated benchmark-report directory.",
     )
 
+    modern_optimizer_benchmark_parser = subparsers.add_parser(
+        "modern-optimizer-benchmark",
+        help="Measure declared multi-cycle optimizer runs in fresh CPU processes.",
+    )
+    modern_optimizer_benchmark_parser.add_argument("config", type=Path)
+    modern_optimizer_benchmark_parser.add_argument(
+        "--subjects",
+        type=int,
+        required=True,
+        help="Explicit deterministic subject-prefix size to benchmark.",
+    )
+    modern_optimizer_benchmark_parser.add_argument(
+        "--cycles",
+        type=int,
+        required=True,
+        help="Explicit benchmark cycle cap; the source configuration is not modified.",
+    )
+    modern_optimizer_benchmark_parser.add_argument("--repeats", type=int, default=3)
+    modern_optimizer_benchmark_parser.add_argument(
+        "--warmups",
+        type=int,
+        default=0,
+        help="Full optimizer warm-up runs inside each fresh process (default: 0).",
+    )
+    modern_optimizer_benchmark_parser.add_argument(
+        "--output",
+        type=Path,
+        help="Report directory (default: CONFIG_NAME.optimizer-benchmark).",
+    )
+    modern_optimizer_benchmark_parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Replace only a recognized generated optimizer-benchmark directory.",
+    )
+    modern_optimizer_benchmark_verify_parser = subparsers.add_parser(
+        "modern-optimizer-benchmark-verify",
+        help="Strictly verify a published multi-cycle optimizer benchmark.",
+    )
+    modern_optimizer_benchmark_verify_parser.add_argument("report_directory", type=Path)
+
     modern_benchmark_design_parser = subparsers.add_parser(
         "modern-benchmark-design",
         help="Freeze a paired blockwise standard/recompute design before measuring.",
@@ -387,9 +427,7 @@ def build_parser() -> argparse.ArgumentParser:
         "modern-benchmark-matrix-design-verify",
         help="Strictly verify an immutable multi-tile design without running it.",
     )
-    modern_benchmark_matrix_design_verify_parser.add_argument(
-        "design_directory", type=Path
-    )
+    modern_benchmark_matrix_design_verify_parser.add_argument("design_directory", type=Path)
 
     modern_benchmark_matrix_study_parser = subparsers.add_parser(
         "modern-benchmark-matrix-study",
@@ -407,20 +445,14 @@ def build_parser() -> argparse.ArgumentParser:
         "modern-benchmark-matrix-study-status",
         help="Strictly inspect partial or complete matrix evidence without changing it.",
     )
-    modern_benchmark_matrix_study_status_parser.add_argument(
-        "run_directory", type=Path
-    )
-    modern_benchmark_matrix_study_status_parser.add_argument(
-        "--json", action="store_true"
-    )
+    modern_benchmark_matrix_study_status_parser.add_argument("run_directory", type=Path)
+    modern_benchmark_matrix_study_status_parser.add_argument("--json", action="store_true")
 
     modern_benchmark_matrix_study_verify_parser = subparsers.add_parser(
         "modern-benchmark-matrix-study-verify",
         help="Verify a completed matrix study and every separate raw v0.4 report.",
     )
-    modern_benchmark_matrix_study_verify_parser.add_argument(
-        "run_directory", type=Path
-    )
+    modern_benchmark_matrix_study_verify_parser.add_argument("run_directory", type=Path)
 
     modern_benchmark_study_parser = subparsers.add_parser(
         "modern-benchmark-study",
@@ -546,8 +578,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--output",
         type=Path,
         help=(
-            "Write exact verification evidence to a new file; an existing path is "
-            "never replaced."
+            "Write exact verification evidence to a new file; an existing path is never replaced."
         ),
     )
     reference_plan_approve_parser = subparsers.add_parser(
@@ -589,8 +620,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--output",
         type=Path,
         help=(
-            "Write exact verification evidence to a new file; an existing path is "
-            "never replaced."
+            "Write exact verification evidence to a new file; an existing path is never replaced."
         ),
     )
     reference_preparation_status_parser = subparsers.add_parser(
@@ -640,8 +670,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--output",
         type=Path,
         help=(
-            "Write exact verification evidence to a new file; an existing path is "
-            "never replaced."
+            "Write exact verification evidence to a new file; an existing path is never replaced."
         ),
     )
     reference_prepare_approved_parser = subparsers.add_parser(
@@ -1021,8 +1050,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"Control points: {verified.manifest['inputs']['control_point_count']}")
             print(f"Components: {verified.pca.number_of_components}")
             print(
-                "PCA method: centered linear PCA by deterministic float64 SVD "
-                "(not RBF KernelPCA)"
+                "PCA method: centered linear PCA by deterministic float64 SVD (not RBF KernelPCA)"
             )
             print(f"PCA scores: {bundle / verified.manifest['pca']['scores_path']}")
             print(f"PCA scree plot: {bundle / verified.manifest['pca']['plots']['scree_path']}")
@@ -1146,6 +1174,89 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"       {error}", file=sys.stderr)
             return 2
         except (ConfigurationError, RuntimeError, OSError, ValueError, TypeError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
+
+    if args.command == "modern-optimizer-benchmark":
+        try:
+            from diffeoforge.modern_optimizer_benchmark import (
+                REPORT_HTML_NAME,
+                REPORT_JSON_NAME,
+                benchmark_modern_optimizer,
+            )
+
+            report_directory = benchmark_modern_optimizer(
+                args.config,
+                subject_count=args.subjects,
+                max_cycles=args.cycles,
+                repeats=args.repeats,
+                warmup_runs=args.warmups,
+                destination=args.output,
+                overwrite=args.force,
+            )
+            report = json.loads((report_directory / REPORT_JSON_NAME).read_text(encoding="utf-8"))
+            optimizer_seconds = report["summary"]["optimizer_wall_time_ns"]["median"] / 1e9
+            preparation_seconds = (
+                report["summary"]["target_preparation_wall_time_ns"]["median"] / 1e9
+            )
+            sample = report["samples"][0]
+            print(f"Modern optimizer benchmark created: {report_directory}")
+            print(f"Selected subjects: {report['input']['selected_subject_count']}")
+            print(f"Measured cycle cap: {report['configuration']['measured_max_cycles']}")
+            print(f"Fresh-process repeats: {report['configuration']['repeats']}")
+            print(f"Median target-cache preparation: {preparation_seconds:.3f} s")
+            print(f"Median optimizer wall time: {optimizer_seconds:.3f} s")
+            print(
+                "Objective/gradient evaluations: "
+                f"{sample['objective_evaluations']}/{sample['gradient_evaluations']}"
+            )
+            print(
+                "Line-search candidates without backward pass: "
+                f"{sample['line_search_candidates_without_gradient']}"
+            )
+            print(
+                "Repeat-consistent results: "
+                f"{str(report['repeat_consistency']['consistent']).lower()}"
+            )
+            print(f"Machine-readable report: {report_directory / REPORT_JSON_NAME}")
+            print(f"Review report: {report_directory / REPORT_HTML_NAME}")
+            print("WARNING: This limited-cycle benchmark is not a convergence or ETA result.")
+        except ImportError as error:
+            print(
+                "ERROR: Modern optimizer benchmark dependencies are missing; install "
+                "diffeoforge[modern-engine].",
+                file=sys.stderr,
+            )
+            print(f"       {error}", file=sys.stderr)
+            return 2
+        except (ConfigurationError, RuntimeError, OSError, ValueError, TypeError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
+
+    if args.command == "modern-optimizer-benchmark-verify":
+        try:
+            from diffeoforge.modern_optimizer_benchmark import (
+                verify_modern_optimizer_benchmark_report,
+            )
+
+            report = verify_modern_optimizer_benchmark_report(args.report_directory)
+            print(f"Modern optimizer benchmark verified: {args.report_directory.resolve()}")
+            print(f"Fresh-process repeats: {report['configuration']['repeats']}")
+            print(
+                "Repeat-consistent results: "
+                f"{str(report['repeat_consistency']['consistent']).lower()}"
+            )
+        except ImportError as error:
+            print(
+                "ERROR: Modern optimizer benchmark dependencies are missing; install "
+                "diffeoforge[modern-engine].",
+                file=sys.stderr,
+            )
+            print(f"       {error}", file=sys.stderr)
+            return 2
+        except (RuntimeError, OSError, ValueError, TypeError) as error:
             print(f"ERROR: {error}", file=sys.stderr)
             return 2
         return 0
@@ -1656,8 +1767,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 )
                 if written.read_bytes() != payload:
                     raise ConfigurationError(
-                        "Saved approval verification evidence changed after writing: "
-                        f"{written}"
+                        f"Saved approval verification evidence changed after writing: {written}"
                     )
                 encoded_path = json.dumps(str(written), ensure_ascii=True)
                 print(f"Saved approval verification evidence: {encoded_path}")
@@ -1675,9 +1785,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 expected_request_sha256=args.expect_request_sha256,
             )
             if args.json:
-                _write_stdout_bytes(
-                    serialize_reference_preparation_reconciliation(report)
-                )
+                _write_stdout_bytes(serialize_reference_preparation_reconciliation(report))
             elif args.output is not None:
                 payload = serialize_reference_preparation_reconciliation(report)
                 written = write_reference_preparation_reconciliation(
@@ -1714,9 +1822,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 args.report,
                 expected_report_sha256=args.expect_report_sha256,
             )
-            payload = serialize_reference_preparation_reconciliation_verification(
-                evidence
-            )
+            payload = serialize_reference_preparation_reconciliation_verification(evidence)
             if args.output is None:
                 _write_stdout_bytes(payload)
             else:

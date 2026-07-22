@@ -155,3 +155,63 @@ def test_prepared_target_rejects_in_place_target_mutation() -> None:
             triangles,
             prepared_target,
         )
+
+
+def test_atlas_optimizer_accepts_prepared_targets_without_repreparing(
+    monkeypatch,
+) -> None:
+    template, triangles = _tetrahedron()
+    target, target_triangles = _tetrahedron((0.1, -0.03, 0.02))
+    targets = ((target, target_triangles),)
+    prepared_targets = (
+        engine.prepare_surface_attachment_target(
+            target,
+            target_triangles,
+            0.7,
+        ),
+    )
+    control_points = template[:2].clone()
+    momenta = torch.zeros((1, 2, 3), dtype=DTYPE)
+    keywords = {
+        "deformation_kernel_width": 0.8,
+        "attachment_kernel_width": 0.7,
+        "noise_variance": 0.1,
+        "number_of_time_points": 2,
+        "max_cycles": 1,
+    }
+    expected = engine.optimize_atlas(
+        template,
+        triangles,
+        targets,
+        control_points,
+        momenta,
+        **keywords,
+    )
+
+    import diffeoforge.engine.atlas_optimizer as optimizer_module
+
+    def fail_reprepare(*_args, **_kwargs):
+        raise AssertionError("supplied target caches must not be prepared again")
+
+    monkeypatch.setattr(
+        optimizer_module,
+        "prepare_surface_attachment_target",
+        fail_reprepare,
+    )
+    observed = engine.optimize_atlas(
+        template,
+        triangles,
+        targets,
+        control_points,
+        momenta,
+        prepared_targets=prepared_targets,
+        **keywords,
+    )
+
+    assert observed.history == expected.history
+    assert observed.objective_evaluations == expected.objective_evaluations
+    assert observed.gradient_evaluations == expected.gradient_evaluations
+    assert observed.candidate_gradient_evaluations == expected.candidate_gradient_evaluations
+    assert torch.equal(observed.template_vertices, expected.template_vertices)
+    assert torch.equal(observed.control_points, expected.control_points)
+    assert torch.equal(observed.momenta, expected.momenta)

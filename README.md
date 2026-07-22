@@ -292,6 +292,9 @@ diffeoforge modern-plan modern-atlas.yaml
 # Review modern-atlas.workload/workload.html. It is not a runtime forecast.
 # Optional measured microbenchmark; subject count is always explicit.
 diffeoforge modern-benchmark modern-atlas.yaml --subjects 5
+# Optional full-optimizer pilot; both subjects and cycle cap are explicit.
+diffeoforge modern-optimizer-benchmark modern-atlas.yaml --subjects 5 --cycles 3
+diffeoforge modern-optimizer-benchmark-verify modern-atlas.optimizer-benchmark
 diffeoforge modern-run modern-atlas.yaml
 diffeoforge modern-verify modern-atlas-run
 # If a prior hard crash left private state, inspect it without changing files:
@@ -482,6 +485,7 @@ and workflow for another mesh directory.
 - [Modern configured-engine workload planning](docs/MODERN_WORKLOAD.md)
 - [Versioned modern progress events](docs/MODERN_PROGRESS.md)
 - [Modern objective/gradient benchmark protocol](docs/MODERN_BENCHMARK.md)
+- [Modern multi-cycle optimizer benchmark](docs/MODERN_OPTIMIZER_BENCHMARK.md)
 - [Bounded-memory blockwise Gaussian primitives](docs/BLOCKWISE_GAUSSIAN.md)
 - [Landmark-based Procrustes alignment](docs/PROCRUSTES_ALIGNMENT.md)
 - [PCA of atlas-derived subject features](docs/ATLAS_PCA.md)

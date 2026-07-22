@@ -10,7 +10,10 @@ from typing import Literal
 
 import torch
 
-from diffeoforge.engine.dense import prepare_surface_attachment_target
+from diffeoforge.engine.dense import (
+    PreparedSurfaceAttachmentTarget,
+    prepare_surface_attachment_target,
+)
 from diffeoforge.engine.objective import (
     AttachmentType,
     FlowIntegrator,
@@ -48,6 +51,9 @@ class MomentaOptimizationResult:
     termination_reason: TerminationReason
     converged: bool
     total_line_search_evaluations: int
+    objective_evaluations: int = 0
+    gradient_evaluations: int = 0
+    candidate_gradient_evaluations: int = 0
 
 
 @dataclass(frozen=True)
@@ -136,6 +142,7 @@ def optimize_momenta(
     attachment_type: AttachmentType = "current",
     shooting_integrator: ShootingIntegrator = "rk2",
     flow_integrator: FlowIntegrator = "deformetrica_heun",
+    prepared_targets: Sequence[PreparedSurfaceAttachmentTarget] | None = None,
     max_iterations: int = 25,
     initial_step_size: float = 0.1,
     backtracking_factor: float = 0.5,
@@ -171,19 +178,49 @@ def optimize_momenta(
         raise TypeError("initial_momenta must be a torch.Tensor")
 
     target_sequence = tuple(targets)
-    prepared_targets = tuple(
-        prepare_surface_attachment_target(
-            target_vertices,
-            target_triangles,
-            attachment_kernel_width,
-            attachment_type=attachment_type,
+    if prepared_targets is None:
+        prepared_target_sequence = tuple(
+            prepare_surface_attachment_target(
+                target_vertices,
+                target_triangles,
+                attachment_kernel_width,
+                attachment_type=attachment_type,
+            )
+            for target_vertices, target_triangles in target_sequence
         )
-        for target_vertices, target_triangles in target_sequence
-    )
+    else:
+        prepared_target_sequence = tuple(prepared_targets)
+        if len(prepared_target_sequence) != len(target_sequence):
+            raise ValueError(
+                "prepared_targets and targets must contain the same number of subjects"
+            )
+        for (target_vertices, target_triangles), prepared_target in zip(
+            target_sequence,
+            prepared_target_sequence,
+            strict=True,
+        ):
+            if not isinstance(prepared_target, PreparedSurfaceAttachmentTarget):
+                raise TypeError(
+                    "prepared_targets must contain PreparedSurfaceAttachmentTarget values"
+                )
+            prepared_target.validate_target(target_vertices, target_triangles)
+            if prepared_target.attachment_type != attachment_type:
+                raise ValueError("prepared target attachment type does not match attachment_type")
+            if prepared_target.kernel_width != float(attachment_kernel_width):
+                raise ValueError(
+                    "prepared target kernel width does not match attachment_kernel_width"
+                )
+            if prepared_target.gaussian_tile_plan is not None:
+                raise ValueError("prepared target tile plan must be dense for optimize_momenta")
+    objective_evaluations = 0
+    gradient_evaluations = 0
+    candidate_gradient_evaluations = 0
 
     def evaluate_objective(candidate: torch.Tensor) -> _PendingEvaluation | None:
+        nonlocal objective_evaluations
         variable = candidate.detach().clone().requires_grad_(True)
         with torch.enable_grad():
+            objective_evaluations += 1
             objective = atlas_objective(
                 template_vertices,
                 template_triangles,
@@ -197,7 +234,7 @@ def optimize_momenta(
                 attachment_type=attachment_type,
                 shooting_integrator=shooting_integrator,
                 flow_integrator=flow_integrator,
-                prepared_targets=prepared_targets,
+                prepared_targets=prepared_target_sequence,
             )
             if not bool(torch.isfinite(objective.total)):
                 return None
@@ -210,7 +247,9 @@ def optimize_momenta(
         )
 
     def evaluate_gradient(pending: _PendingEvaluation) -> _Evaluation | None:
+        nonlocal gradient_evaluations
         with torch.enable_grad():
+            gradient_evaluations += 1
             (gradient,) = torch.autograd.grad(pending.total, pending.momenta)
         if not bool(torch.isfinite(gradient).all()):
             return None
@@ -246,6 +285,9 @@ def optimize_momenta(
             termination_reason="gradient_tolerance",
             converged=True,
             total_line_search_evaluations=0,
+            objective_evaluations=objective_evaluations,
+            gradient_evaluations=gradient_evaluations,
+            candidate_gradient_evaluations=candidate_gradient_evaluations,
         )
 
     for iteration in range(1, iterations + 1):
@@ -262,6 +304,7 @@ def optimize_momenta(
             if candidate_pending is not None:
                 required = current.objective + armijo * step_size * directional_derivative
                 if bool(candidate_pending.total.detach() >= required):
+                    candidate_gradient_evaluations += 1
                     candidate = evaluate_gradient(candidate_pending)
                     if candidate is not None:
                         accepted = candidate
@@ -275,6 +318,9 @@ def optimize_momenta(
                 termination_reason="line_search_failed",
                 converged=False,
                 total_line_search_evaluations=total_line_search_evaluations,
+                objective_evaluations=objective_evaluations,
+                gradient_evaluations=gradient_evaluations,
+                candidate_gradient_evaluations=candidate_gradient_evaluations,
             )
 
         current = accepted
@@ -292,6 +338,9 @@ def optimize_momenta(
                 termination_reason="gradient_tolerance",
                 converged=True,
                 total_line_search_evaluations=total_line_search_evaluations,
+                objective_evaluations=objective_evaluations,
+                gradient_evaluations=gradient_evaluations,
+                candidate_gradient_evaluations=candidate_gradient_evaluations,
             )
 
     return MomentaOptimizationResult(
@@ -300,4 +349,7 @@ def optimize_momenta(
         termination_reason="max_iterations",
         converged=False,
         total_line_search_evaluations=total_line_search_evaluations,
+        objective_evaluations=objective_evaluations,
+        gradient_evaluations=gradient_evaluations,
+        candidate_gradient_evaluations=candidate_gradient_evaluations,
     )

@@ -50,6 +50,8 @@ def test_package_module_entrypoint_exposes_the_same_cli(tmp_path: Path) -> None:
     assert help_result.stdout.startswith("usage: diffeoforge ")
     assert "modern-private-status" in help_result.stdout
     assert "modern-benchmark-matrix-design" in help_result.stdout
+    assert "modern-optimizer-benchmark" in help_result.stdout
+    assert "modern-optimizer-benchmark-verify" in help_result.stdout
     assert "modern-benchmark-matrix-design-verify" in help_result.stdout
     assert "modern-benchmark-matrix-study-status" in help_result.stdout
     assert "modern-benchmark-matrix-study-verify" in help_result.stdout

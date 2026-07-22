@@ -75,6 +75,9 @@ def test_optimizer_improves_objective_monotonically_and_records_every_state() ->
     assert result.total_line_search_evaluations == sum(
         record.line_search_evaluations for record in result.history
     )
+    assert result.objective_evaluations == 1 + result.total_line_search_evaluations
+    assert result.gradient_evaluations == len(result.history)
+    assert result.candidate_gradient_evaluations == len(result.history) - 1
 
 
 def test_optimizer_is_bitwise_repeatable_and_does_not_mutate_inputs() -> None:
@@ -122,6 +125,9 @@ def test_zero_iterations_returns_the_fully_evaluated_initial_state() -> None:
     assert len(result.history) == 1
     assert math.isfinite(result.history[0].objective)
     assert result.total_line_search_evaluations == 0
+    assert result.objective_evaluations == 1
+    assert result.gradient_evaluations == 1
+    assert result.candidate_gradient_evaluations == 0
 
 
 def test_backtracking_reduces_aggressive_steps_before_acceptance() -> None:
@@ -183,6 +189,9 @@ def test_rejected_momenta_candidate_does_not_request_an_unused_gradient(
 
     assert result.termination_reason == "line_search_failed"
     assert result.total_line_search_evaluations == 1
+    assert result.objective_evaluations == 2
+    assert result.gradient_evaluations == 1
+    assert result.candidate_gradient_evaluations == 0
     assert calls == 1
 
 
