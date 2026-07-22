@@ -423,6 +423,7 @@ def test_desktop_requires_exact_procrustes_preview_approval_and_rejects_drift(
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
 
+    from diffeoforge.desktop.project_setup import DesktopEngine
     from diffeoforge.desktop.widgets import (
         DiffeoForgeWindow,
         _ProcrustesPreviewWorker,
@@ -443,6 +444,9 @@ def test_desktop_requires_exact_procrustes_preview_approval_and_rejects_drift(
 
     window = DiffeoForgeWindow()
     window._thread_pool = FakePool()  # type: ignore[assignment]
+    window.engine_combo.setCurrentIndex(
+        window.engine_combo.findData(DesktopEngine.DEFORMETRICA_REFERENCE)
+    )
     window.mesh_edit.setText(str(mesh_directory))
     window.project_edit.setText(str(project_directory))
     window.units_combo.setCurrentIndex(window.units_combo.findData("unitless"))
@@ -484,7 +488,7 @@ def test_desktop_requires_exact_procrustes_preview_approval_and_rejects_drift(
     queued[1].run()
     application.processEvents()
 
-    assert not (project_directory / "modern-atlas.yaml").exists()
+    assert not (project_directory / "atlas.yaml").exists()
     assert "approved preview" in window.status_label.text()
     assert window._procrustes_preview is None
     assert window.approve_procrustes_check.isChecked() is False
