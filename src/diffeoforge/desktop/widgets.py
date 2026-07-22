@@ -97,6 +97,10 @@ from diffeoforge.desktop.worker_controller import (
 )
 from diffeoforge.desktop.worker_protocol import DesktopWorkerEvent
 from diffeoforge.initialization import SUPPORTED_UNITS, detect_template
+from diffeoforge.preprocessing import (
+    LandmarkAlignmentPreview,
+    preview_landmark_alignment,
+)
 from diffeoforge.reference_parameters import reference_parameter_profile
 from diffeoforge.reference_runtime import launcher_label
 
@@ -214,6 +218,51 @@ class _TemplatePreviewWorker(QRunnable):
             self.signals.failed.emit(str(error))
             return
         self.signals.succeeded.emit(model)
+
+
+class _ProcrustesPreviewWorker(QRunnable):
+    """Compute one immutable landmark-alignment preview outside the GUI thread."""
+
+    def __init__(
+        self,
+        *,
+        mesh_directory: Path,
+        landmarks_file: Path,
+        template: Path | None,
+        subject_pattern: str,
+        scale_to_unit_centroid_size: bool,
+        allow_reflection: bool,
+        tolerance: float,
+        max_iterations: int,
+    ) -> None:
+        super().__init__()
+        self.mesh_directory = mesh_directory
+        self.landmarks_file = landmarks_file
+        self.template = template
+        self.subject_pattern = subject_pattern
+        self.scale_to_unit_centroid_size = scale_to_unit_centroid_size
+        self.allow_reflection = allow_reflection
+        self.tolerance = tolerance
+        self.max_iterations = max_iterations
+        self.signals = _WorkerSignals()
+
+    @Slot()
+    def run(self) -> None:
+        try:
+            preview = preview_landmark_alignment(
+                self.mesh_directory,
+                landmarks_file=self.landmarks_file,
+                template=self.template,
+                subject_pattern=self.subject_pattern,
+                scale_to_unit_centroid_size=self.scale_to_unit_centroid_size,
+                allow_reflection=self.allow_reflection,
+                tolerance=self.tolerance,
+                max_iterations=self.max_iterations,
+            )
+        except (OSError, RuntimeError, TypeError, ValueError) as error:
+            self.signals.failed.emit(str(error))
+            return
+        self.signals.succeeded.emit(preview)
 
 
 class _ReferenceReadinessWorker(QRunnable):
@@ -475,6 +524,7 @@ class DiffeoForgeWindow(QMainWindow):
             _ProjectWorker
             | _ReviewWorker
             | _TemplatePreviewWorker
+            | _ProcrustesPreviewWorker
             | _ReferenceReadinessWorker
             | _ReferencePreparationStatusWorker
             | _SavedReferencePreparationStatusVerificationWorker
@@ -487,6 +537,7 @@ class DiffeoForgeWindow(QMainWindow):
         self._result: ProjectSetupResult | None = None
         self._review: ProjectReviewResult | None = None
         self._template_preview: MeshPreviewModel | None = None
+        self._procrustes_preview: LandmarkAlignmentPreview | None = None
         self._reference_readiness: DesktopReferenceReadiness | None = None
         self._reference_preparation_status: DesktopReferencePreparationStatus | None = None
         self._saved_reference_preparation_status_verification: (
@@ -1697,6 +1748,7 @@ class DiffeoForgeWindow(QMainWindow):
         self.mesh_edit.setObjectName("meshDirectoryEdit")
         self.mesh_edit.setPlaceholderText(r"e.g. C:\Data\Beetles\meshes")
         self.mesh_edit.textChanged.connect(self._sync_ready_state)
+        self.mesh_edit.textChanged.connect(self._invalidate_procrustes_preview)
         self.mesh_edit.editingFinished.connect(self._detect_template_from_text)
         mesh_button = QPushButton("Browse…")
         mesh_button.setObjectName("secondary")
@@ -1706,6 +1758,7 @@ class DiffeoForgeWindow(QMainWindow):
         self.template_edit = QLineEdit()
         self.template_edit.setObjectName("templateEdit")
         self.template_edit.setPlaceholderText("automatic: template.vtk")
+        self.template_edit.textChanged.connect(self._invalidate_procrustes_preview)
         template_button = QPushButton("Browse…")
         template_button.setObjectName("secondary")
         template_button.clicked.connect(self._choose_template)
@@ -1716,6 +1769,7 @@ class DiffeoForgeWindow(QMainWindow):
         self.pattern_edit.setToolTip(
             "The template is automatically removed from the subject list."
         )
+        self.pattern_edit.textChanged.connect(self._invalidate_procrustes_preview)
         form.addRow("File pattern", self.pattern_edit)
 
         self.project_edit = QLineEdit()
@@ -1775,11 +1829,17 @@ class DiffeoForgeWindow(QMainWindow):
         )
         self.procrustes_apply_check.setChecked(True)
         self.procrustes_apply_check.toggled.connect(
-            self._update_procrustes_controls
+            self._procrustes_inputs_changed
         )
         self.procrustes_scale_check = QCheckBox("Scale to unit centroid size")
         self.procrustes_scale_check.setChecked(True)
+        self.procrustes_scale_check.toggled.connect(
+            self._procrustes_inputs_changed
+        )
         self.procrustes_reflection_check = QCheckBox("Allow reflections")
+        self.procrustes_reflection_check.toggled.connect(
+            self._procrustes_inputs_changed
+        )
         procrustes_settings = QHBoxLayout()
         procrustes_settings.addWidget(self.procrustes_scale_check)
         procrustes_settings.addWidget(self.procrustes_reflection_check)
@@ -1789,9 +1849,15 @@ class DiffeoForgeWindow(QMainWindow):
         self.procrustes_tolerance_spin.setDecimals(12)
         self.procrustes_tolerance_spin.setRange(0.000000000001, 1.0)
         self.procrustes_tolerance_spin.setValue(0.0000000001)
+        self.procrustes_tolerance_spin.valueChanged.connect(
+            self._procrustes_inputs_changed
+        )
         self.procrustes_iterations_spin = QSpinBox()
         self.procrustes_iterations_spin.setRange(1, 100000)
         self.procrustes_iterations_spin.setValue(100)
+        self.procrustes_iterations_spin.valueChanged.connect(
+            self._procrustes_inputs_changed
+        )
         procrustes_advanced.addWidget(QLabel("Tolerance"))
         procrustes_advanced.addWidget(self.procrustes_tolerance_spin)
         procrustes_advanced.addWidget(QLabel("Maximum iterations"))
@@ -1807,6 +1873,24 @@ class DiffeoForgeWindow(QMainWindow):
         procrustes_layout.addLayout(procrustes_settings)
         procrustes_layout.addLayout(procrustes_advanced)
         procrustes_layout.addWidget(procrustes_hint)
+        self.preview_procrustes_button = QPushButton(
+            "Preview alignment read-only"
+        )
+        self.preview_procrustes_button.setObjectName("secondary")
+        self.preview_procrustes_button.clicked.connect(self._preview_procrustes)
+        self.procrustes_preview_status_label = QLabel(
+            "No alignment preview has been reviewed."
+        )
+        self.procrustes_preview_status_label.setObjectName("status")
+        self.procrustes_preview_status_label.setWordWrap(True)
+        self.approve_procrustes_check = QCheckBox(
+            "I reviewed and approve this exact alignment preview"
+        )
+        self.approve_procrustes_check.setEnabled(False)
+        self.approve_procrustes_check.toggled.connect(self._sync_ready_state)
+        procrustes_layout.addWidget(self.preview_procrustes_button)
+        procrustes_layout.addWidget(self.procrustes_preview_status_label)
+        procrustes_layout.addWidget(self.approve_procrustes_check)
         self._procrustes_setting_widgets = (
             self.procrustes_scale_check,
             self.procrustes_reflection_check,
@@ -1919,13 +2003,222 @@ class DiffeoForgeWindow(QMainWindow):
     @Slot()
     def _update_procrustes_visibility(self) -> None:
         self.procrustes_box.setVisible(bool(self.landmarks_edit.text().strip()))
+        self._invalidate_procrustes_preview()
+
+    @Slot()
+    def _procrustes_inputs_changed(self) -> None:
+        self._invalidate_procrustes_preview()
+
+    @Slot()
+    def _invalidate_procrustes_preview(self) -> None:
+        had_preview = self._procrustes_preview is not None
+        preview_running = isinstance(self._worker, _ProcrustesPreviewWorker)
+        self._procrustes_preview = None
+        self.approve_procrustes_check.setChecked(False)
+        self.approve_procrustes_check.setEnabled(False)
+        self.procrustes_preview_status_label.setObjectName("status")
+        self.procrustes_preview_status_label.setStyleSheet("")
+        if preview_running:
+            self.procrustes_preview_status_label.setText(
+                "Inputs changed while the read-only preview was running. Its result will "
+                "be discarded."
+            )
+        elif had_preview:
+            self.procrustes_preview_status_label.setText(
+                "The approved preview was invalidated because an input or alignment "
+                "setting changed. Run the preview again."
+            )
+        else:
+            self.procrustes_preview_status_label.setText(
+                "No alignment preview has been reviewed."
+            )
         self._update_procrustes_controls()
+        self._sync_ready_state()
 
     @Slot()
     def _update_procrustes_controls(self) -> None:
         enabled = self.procrustes_apply_check.isChecked()
         for widget in self._procrustes_setting_widgets:
             widget.setEnabled(enabled)
+        self.preview_procrustes_button.setEnabled(
+            enabled
+            and bool(self.landmarks_edit.text().strip())
+            and self._worker is None
+        )
+        self.approve_procrustes_check.setEnabled(
+            enabled
+            and self._procrustes_preview is not None
+            and self._procrustes_preview.alignment.converged
+            and self._preview_matches_current_procrustes_inputs()
+            and self._worker is None
+        )
+
+    def _current_procrustes_paths(
+        self,
+    ) -> tuple[Path, Path, Path | None, str]:
+        mesh_text = self.mesh_edit.text().strip()
+        landmark_text = self.landmarks_edit.text().strip()
+        pattern = self.pattern_edit.text().strip()
+        if not mesh_text:
+            raise ValueError("Select a mesh folder first.")
+        if not landmark_text:
+            raise ValueError("Select or create a landmark CSV first.")
+        if not pattern:
+            raise ValueError("Enter a subject file pattern first.")
+        mesh_directory = Path(mesh_text).expanduser().resolve()
+        if not mesh_directory.is_dir():
+            raise ValueError(f"Mesh folder does not exist: {mesh_directory}")
+        landmarks_file = Path(landmark_text).expanduser().resolve()
+        if not landmarks_file.is_file():
+            raise ValueError(f"Landmark CSV does not exist: {landmarks_file}")
+        template_text = self.template_edit.text().strip()
+        template = Path(template_text).expanduser().resolve() if template_text else None
+        if template is not None and not template.is_file():
+            raise ValueError(f"Template mesh does not exist: {template}")
+        return mesh_directory, landmarks_file, template, pattern
+
+    def _preview_matches_current_procrustes_inputs(self) -> bool:
+        preview = self._procrustes_preview
+        if preview is None:
+            return False
+        try:
+            mesh_directory, landmarks_file, template, pattern = (
+                self._current_procrustes_paths()
+            )
+            resolved_template = template or detect_template(mesh_directory)
+        except (OSError, TypeError, ValueError):
+            return False
+        return bool(
+            resolved_template is not None
+            and preview.mesh_directory == mesh_directory
+            and preview.landmarks == landmarks_file
+            and preview.template == resolved_template.resolve()
+            and preview.subject_pattern == pattern
+            and preview.scale_to_unit_centroid_size
+            == self.procrustes_scale_check.isChecked()
+            and preview.allow_reflection
+            == self.procrustes_reflection_check.isChecked()
+            and preview.tolerance == self.procrustes_tolerance_spin.value()
+            and preview.max_iterations == self.procrustes_iterations_spin.value()
+        )
+
+    def _approved_procrustes_fingerprint(self) -> str | None:
+        if (
+            self.procrustes_apply_check.isChecked()
+            and self.approve_procrustes_check.isChecked()
+            and self._preview_matches_current_procrustes_inputs()
+            and self._procrustes_preview is not None
+            and self._procrustes_preview.alignment.converged
+        ):
+            return self._procrustes_preview.fingerprint
+        return None
+
+    @Slot()
+    def _preview_procrustes(self) -> None:
+        if self._worker is not None or not self.procrustes_apply_check.isChecked():
+            return
+        try:
+            mesh_directory, landmarks_file, template, pattern = (
+                self._current_procrustes_paths()
+            )
+        except (OSError, TypeError, ValueError) as error:
+            self._procrustes_preview_failed(str(error))
+            return
+        worker = _ProcrustesPreviewWorker(
+            mesh_directory=mesh_directory,
+            landmarks_file=landmarks_file,
+            template=template,
+            subject_pattern=pattern,
+            scale_to_unit_centroid_size=self.procrustes_scale_check.isChecked(),
+            allow_reflection=self.procrustes_reflection_check.isChecked(),
+            tolerance=self.procrustes_tolerance_spin.value(),
+            max_iterations=self.procrustes_iterations_spin.value(),
+        )
+        worker.signals.succeeded.connect(self._procrustes_preview_succeeded)
+        worker.signals.failed.connect(self._procrustes_preview_failed)
+        self._worker = worker
+        self._procrustes_preview = None
+        self.approve_procrustes_check.setChecked(False)
+        self.approve_procrustes_check.setEnabled(False)
+        self.procrustes_preview_status_label.setObjectName("status")
+        self.procrustes_preview_status_label.setStyleSheet("")
+        self.procrustes_preview_status_label.setText(
+            "Landmarks and meshes are being hashed and aligned read-only outside the "
+            "event loop. No file is being created or changed."
+        )
+        self._sync_ready_state()
+        self._thread_pool.start(worker)
+
+    @Slot(object)
+    def _procrustes_preview_succeeded(
+        self,
+        preview: LandmarkAlignmentPreview,
+    ) -> None:
+        self._worker = None
+        self._procrustes_preview = preview
+        if not self._preview_matches_current_procrustes_inputs():
+            self._procrustes_preview = None
+            self.approve_procrustes_check.setChecked(False)
+            self.approve_procrustes_check.setEnabled(False)
+            self.procrustes_preview_status_label.setObjectName("statusWarning")
+            self.procrustes_preview_status_label.setStyleSheet("")
+            self.procrustes_preview_status_label.setText(
+                "Preview discarded because its path, file pattern, or settings no longer "
+                "match the form. No file was changed; run the preview again."
+            )
+            self._update_procrustes_controls()
+            self._sync_ready_state()
+            return
+
+        alignment = preview.alignment
+        residuals = sorted(alignment.residuals)
+        midpoint = len(residuals) // 2
+        median_residual = (
+            residuals[midpoint]
+            if len(residuals) % 2
+            else (residuals[midpoint - 1] + residuals[midpoint]) / 2.0
+        )
+        scales = tuple(transform.scale for transform in alignment.transforms)
+        final_iteration = alignment.history[-1]
+        specimen_count = len(preview.source_paths)
+        status = "converged" if alignment.converged else "did not converge"
+        self.procrustes_preview_status_label.setObjectName(
+            "statusSuccess" if alignment.converged else "statusError"
+        )
+        self.procrustes_preview_status_label.setStyleSheet("")
+        self.procrustes_preview_status_label.setText(
+            f"Read-only preview {status}: {specimen_count} meshes, "
+            f"{len(preview.landmark_labels)} landmarks, "
+            f"{len(alignment.history)} iterations ({alignment.termination_reason}).\n"
+            f"Final mean change: {final_iteration.mean_change:.6g}; total squared "
+            f"residual: {final_iteration.total_squared_residual:.6g}.\n"
+            f"Per-mesh squared residual min / median / max: "
+            f"{residuals[0]:.6g} / {median_residual:.6g} / {residuals[-1]:.6g}.\n"
+            f"Applied scale min / max: {min(scales):.6g} / {max(scales):.6g}.\n"
+            f"Exact preview fingerprint: {preview.fingerprint}\n"
+            "Raw meshes and the landmark CSV remain unchanged. This numerical preview "
+            "does not establish biological landmark quality."
+        )
+        self.approve_procrustes_check.setChecked(False)
+        self.approve_procrustes_check.setEnabled(alignment.converged)
+        self._update_procrustes_controls()
+        self._sync_ready_state()
+
+    @Slot(str)
+    def _procrustes_preview_failed(self, message: str) -> None:
+        if isinstance(self._worker, _ProcrustesPreviewWorker):
+            self._worker = None
+        self._procrustes_preview = None
+        self.approve_procrustes_check.setChecked(False)
+        self.approve_procrustes_check.setEnabled(False)
+        self.procrustes_preview_status_label.setObjectName("statusError")
+        self.procrustes_preview_status_label.setStyleSheet("")
+        self.procrustes_preview_status_label.setText(
+            f"Alignment preview failed: {message}\n"
+            "No aligned meshes or project files were created or changed."
+        )
+        self._update_procrustes_controls()
+        self._sync_ready_state()
 
     @Slot()
     def _choose_reference_preparation_approval(self) -> None:
@@ -2491,7 +2784,16 @@ class DiffeoForgeWindow(QMainWindow):
             self.create_button.setText("Review parameters & workload")
             self.create_button.setEnabled(self._worker is None)
         else:
-            self.create_button.setText("Validate data & create project")
+            approval_required = bool(
+                self.landmarks_edit.text().strip()
+                and self.procrustes_apply_check.isChecked()
+                and self._approved_procrustes_fingerprint() is None
+            )
+            self.create_button.setText(
+                "Preview & approve alignment first"
+                if approval_required
+                else "Validate data & create project"
+            )
             self.create_button.setEnabled(form_ready and self._worker is None)
 
     def _sync_run_primary_action(self) -> None:
@@ -2532,11 +2834,19 @@ class DiffeoForgeWindow(QMainWindow):
 
     @Slot()
     def _sync_ready_state(self) -> None:
+        approved_alignment = self._approved_procrustes_fingerprint()
+        alignment_ready = bool(
+            not self.landmarks_edit.text().strip()
+            or not self.procrustes_apply_check.isChecked()
+            or approved_alignment is not None
+        )
         ready = bool(
             self.mesh_edit.text().strip()
             and self.project_edit.text().strip()
             and self.units_combo.currentData() is not None
+            and alignment_ready
         )
+        self._update_procrustes_controls()
         self._sync_setup_primary_action(form_ready=ready)
         self._sync_run_primary_action()
         self._sync_navigation_state()
@@ -2620,6 +2930,11 @@ class DiffeoForgeWindow(QMainWindow):
             procrustes_allow_reflection=self.procrustes_reflection_check.isChecked(),
             procrustes_tolerance=self.procrustes_tolerance_spin.value(),
             procrustes_max_iterations=self.procrustes_iterations_spin.value(),
+            approved_procrustes_fingerprint=(
+                self._approved_procrustes_fingerprint()
+                if apply_procrustes
+                else None
+            ),
         )
 
     @staticmethod
@@ -2656,6 +2971,19 @@ class DiffeoForgeWindow(QMainWindow):
 
     @Slot()
     def _create_project(self) -> None:
+        if (
+            self.landmarks_edit.text().strip()
+            and self.procrustes_apply_check.isChecked()
+            and self._approved_procrustes_fingerprint() is None
+        ):
+            self.status_label.setObjectName("statusWarning")
+            self.status_label.setStyleSheet("")
+            self.status_label.setText(
+                "Run the read-only Procrustes preview and approve that exact result "
+                "before creating the project."
+            )
+            self._sync_ready_state()
+            return
         request = self._request()
         config_path = self._configuration_path(request)
         if config_path.exists():
@@ -2723,6 +3051,8 @@ class DiffeoForgeWindow(QMainWindow):
     @Slot(str)
     def _project_failed(self, message: str) -> None:
         self._worker = None
+        if self._approved_procrustes_fingerprint() is not None:
+            self._invalidate_procrustes_preview()
         self.status_label.setObjectName("statusError")
         self.status_label.setStyleSheet("")
         self.status_label.setText(f"Project could not be created: {message}")

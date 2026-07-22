@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import shutil
 import tempfile
 from dataclasses import dataclass
@@ -13,7 +12,11 @@ from pathlib import Path
 import numpy as np
 
 from diffeoforge.analysis.landmarks import LANDMARK_COLUMNS, read_landmark_csv
-from diffeoforge.analysis.procrustes import generalized_procrustes
+from diffeoforge.analysis.procrustes import (
+    GeneralizedProcrustesResult,
+    generalized_procrustes,
+)
+from diffeoforge.atomic_io import replace_atomically
 from diffeoforge.config import ConfigurationError
 from diffeoforge.initialization import detect_template
 from diffeoforge.mesh import read_vtk_polydata, sha256_file, write_vtk_polydata
@@ -33,6 +36,30 @@ class AlignedInputCohort:
     landmarks: Path
     evidence: Path
     fingerprint: str
+
+
+@dataclass(frozen=True)
+class LandmarkAlignmentPreview:
+    """Read-only, content-bound generalized-Procrustes observation."""
+
+    mesh_directory: Path
+    template: Path
+    subjects: tuple[Path, ...]
+    subject_pattern: str
+    landmarks: Path
+    landmark_labels: tuple[str, ...]
+    landmark_sha256: str
+    mesh_sha256: tuple[str, ...]
+    scale_to_unit_centroid_size: bool
+    allow_reflection: bool
+    tolerance: float
+    max_iterations: int
+    fingerprint: str
+    alignment: GeneralizedProcrustesResult
+
+    @property
+    def source_paths(self) -> tuple[Path, ...]:
+        return (self.template, *self.subjects)
 
 
 def _resolve_template(directory: Path, template: Path | str | None) -> Path:
@@ -94,6 +121,86 @@ def _canonical_hash(value: object) -> str:
     return hashlib.sha256(rendered).hexdigest()
 
 
+def preview_landmark_alignment(
+    mesh_directory: Path | str,
+    *,
+    landmarks_file: Path | str,
+    template: Path | str | None = None,
+    subject_pattern: str = "*.vtk",
+    scale_to_unit_centroid_size: bool = True,
+    allow_reflection: bool = False,
+    tolerance: float = DEFAULT_PROCRUSTES_TOLERANCE,
+    max_iterations: int = DEFAULT_PROCRUSTES_MAX_ITERATIONS,
+) -> LandmarkAlignmentPreview:
+    """Compute a hash-bound alignment preview without creating or changing files."""
+
+    directory = Path(mesh_directory).expanduser().resolve()
+    if not directory.is_dir():
+        raise ConfigurationError(f"Mesh directory does not exist: {directory}")
+    landmark_source = Path(landmarks_file).expanduser().resolve()
+    if not landmark_source.is_file():
+        raise ConfigurationError(f"Landmark CSV does not exist: {landmark_source}")
+    template_path, subject_paths = _select_inputs(directory, template, subject_pattern)
+    source_paths = (template_path, *subject_paths)
+    source_hashes = tuple(sha256_file(path) for path in source_paths)
+    landmark_hash = sha256_file(landmark_source)
+    labels, landmark_values = read_landmark_csv(
+        landmark_source,
+        tuple(path.name for path in source_paths),
+    )
+    try:
+        alignment = generalized_procrustes(
+            landmark_values,
+            scale_to_unit_centroid_size=scale_to_unit_centroid_size,
+            allow_reflection=allow_reflection,
+            tolerance=tolerance,
+            max_iterations=max_iterations,
+        )
+    except (FloatingPointError, TypeError, ValueError) as error:
+        raise ConfigurationError(f"Landmark Procrustes failed: {error}") from error
+    if sha256_file(landmark_source) != landmark_hash or tuple(
+        sha256_file(path) for path in source_paths
+    ) != source_hashes:
+        raise ConfigurationError(
+            "A mesh or landmark file changed while the Procrustes preview was computed"
+        )
+    source_records = tuple(
+        {"filename": path.name, "source_sha256": digest}
+        for path, digest in zip(source_paths, source_hashes, strict=True)
+    )
+    settings = {
+        "scale_to_unit_centroid_size": scale_to_unit_centroid_size,
+        "allow_reflection": allow_reflection,
+        "tolerance": float(tolerance),
+        "max_iterations": int(max_iterations),
+    }
+    fingerprint = _canonical_hash(
+        {
+            "preprocessing_version": PREPROCESSING_VERSION,
+            "landmark_sha256": landmark_hash,
+            "landmark_labels": labels,
+            "meshes": source_records,
+            "settings": settings,
+        }
+    )
+    return LandmarkAlignmentPreview(
+        mesh_directory=directory,
+        template=template_path,
+        subjects=subject_paths,
+        subject_pattern=subject_pattern,
+        landmarks=landmark_source,
+        landmark_labels=labels,
+        landmark_sha256=landmark_hash,
+        mesh_sha256=source_hashes,
+        scale_to_unit_centroid_size=scale_to_unit_centroid_size,
+        allow_reflection=allow_reflection,
+        tolerance=float(tolerance),
+        max_iterations=int(max_iterations),
+        fingerprint=fingerprint,
+        alignment=alignment,
+    )
+
+
 def _load_existing(
     destination: Path,
     *,
@@ -151,6 +258,7 @@ def prepare_landmark_aligned_inputs(
     allow_reflection: bool = False,
     tolerance: float = DEFAULT_PROCRUSTES_TOLERANCE,
     max_iterations: int = DEFAULT_PROCRUSTES_MAX_ITERATIONS,
+    expected_fingerprint: str | None = None,
 ) -> AlignedInputCohort:
     """Create or verify one content-addressed Procrustes-aligned mesh cohort.
 
@@ -158,40 +266,37 @@ def prepare_landmark_aligned_inputs(
     Deformetrica or another engine without repeating or hiding the transform.
     """
 
-    directory = Path(mesh_directory).expanduser().resolve()
-    if not directory.is_dir():
-        raise ConfigurationError(f"Mesh directory does not exist: {directory}")
     project = Path(project_directory).expanduser().resolve()
-    landmark_source = Path(landmarks_file).expanduser().resolve()
-    if not landmark_source.is_file():
-        raise ConfigurationError(f"Landmark CSV does not exist: {landmark_source}")
-    template_path, subject_paths = _select_inputs(directory, template, subject_pattern)
-    source_paths = (template_path, *subject_paths)
-    labels, landmark_values = read_landmark_csv(
-        landmark_source,
-        tuple(path.name for path in source_paths),
+    preview = preview_landmark_alignment(
+        mesh_directory,
+        landmarks_file=landmarks_file,
+        template=template,
+        subject_pattern=subject_pattern,
+        scale_to_unit_centroid_size=scale_to_unit_centroid_size,
+        allow_reflection=allow_reflection,
+        tolerance=tolerance,
+        max_iterations=max_iterations,
     )
-    try:
-        alignment = generalized_procrustes(
-            landmark_values,
-            scale_to_unit_centroid_size=scale_to_unit_centroid_size,
-            allow_reflection=allow_reflection,
-            tolerance=tolerance,
-            max_iterations=max_iterations,
+    if expected_fingerprint is not None and preview.fingerprint != expected_fingerprint:
+        raise ConfigurationError(
+            "The current Procrustes inputs or settings differ from the approved preview"
         )
-    except (FloatingPointError, TypeError, ValueError) as error:
-        raise ConfigurationError(f"Landmark Procrustes failed: {error}") from error
+    alignment = preview.alignment
     if not alignment.converged:
         raise ConfigurationError(
             "Landmark Procrustes did not converge; no aligned inputs were published"
         )
-
+    landmark_source = preview.landmarks
+    template_path = preview.template
+    subject_paths = preview.subjects
+    source_paths = preview.source_paths
+    labels = preview.landmark_labels
     source_records = tuple(
         {
             "filename": path.name,
-            "source_sha256": sha256_file(path),
+            "source_sha256": digest,
         }
-        for path in source_paths
+        for path, digest in zip(source_paths, preview.mesh_sha256, strict=True)
     )
     settings = {
         "scale_to_unit_centroid_size": scale_to_unit_centroid_size,
@@ -199,15 +304,7 @@ def prepare_landmark_aligned_inputs(
         "tolerance": float(tolerance),
         "max_iterations": int(max_iterations),
     }
-    fingerprint = _canonical_hash(
-        {
-            "preprocessing_version": PREPROCESSING_VERSION,
-            "landmark_sha256": sha256_file(landmark_source),
-            "landmark_labels": labels,
-            "meshes": source_records,
-            "settings": settings,
-        }
-    )
+    fingerprint = preview.fingerprint
     preprocessing_root = project / "preprocessing"
     if preprocessing_root.is_symlink():
         raise ConfigurationError(
@@ -230,8 +327,29 @@ def prepare_landmark_aligned_inputs(
     temporary = Path(tempfile.mkdtemp(prefix=".aligning-", dir=preprocessing_root))
     try:
         landmark_copy = temporary / "landmarks.csv"
+        if sha256_file(landmark_source) != preview.landmark_sha256:
+            raise ConfigurationError(
+                "The landmark file changed after the approved Procrustes preview"
+            )
         shutil.copyfile(landmark_source, landmark_copy)
-        geometries = tuple(read_vtk_polydata(path) for path in source_paths)
+        if sha256_file(landmark_copy) != preview.landmark_sha256:
+            raise ConfigurationError(
+                "The copied landmark file differs from the approved Procrustes preview"
+            )
+        geometries = []
+        for path, expected_sha256 in zip(
+            source_paths, preview.mesh_sha256, strict=True
+        ):
+            if sha256_file(path) != expected_sha256:
+                raise ConfigurationError(
+                    f"Mesh changed after the approved Procrustes preview: {path}"
+                )
+            geometry = read_vtk_polydata(path)
+            if sha256_file(path) != expected_sha256:
+                raise ConfigurationError(
+                    f"Mesh changed while the aligned copy was prepared: {path}"
+                )
+            geometries.append(geometry)
         mesh_evidence: list[dict[str, object]] = []
         for index, (source, geometry, transform, residual) in enumerate(
             zip(
@@ -273,7 +391,7 @@ def prepare_landmark_aligned_inputs(
             "coordinate_convention": "aligned = ((raw - centroid) * scale) @ rotation",
             "landmark_columns": list(LANDMARK_COLUMNS),
             "landmark_labels": list(labels),
-            "landmark_source_sha256": sha256_file(landmark_source),
+            "landmark_source_sha256": preview.landmark_sha256,
             "landmark_copy_sha256": sha256_file(landmark_copy),
             "settings": settings,
             "converged": alignment.converged,
@@ -300,7 +418,13 @@ def prepare_landmark_aligned_inputs(
                 allow_nan=False,
             )
             handle.write("\n")
-        os.replace(temporary, destination)
+        if sha256_file(landmark_source) != preview.landmark_sha256 or tuple(
+            sha256_file(path) for path in source_paths
+        ) != preview.mesh_sha256:
+            raise ConfigurationError(
+                "A mesh or landmark file changed while the aligned copies were prepared"
+            )
+        replace_atomically(temporary, destination)
     except Exception:
         shutil.rmtree(temporary, ignore_errors=True)
         raise

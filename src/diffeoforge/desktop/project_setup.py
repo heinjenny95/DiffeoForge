@@ -71,6 +71,7 @@ class ProjectSetupRequest:
     procrustes_allow_reflection: bool = False
     procrustes_tolerance: float = 1e-10
     procrustes_max_iterations: int = 100
+    approved_procrustes_fingerprint: str | None = None
     overwrite_existing_configuration: bool = False
 
 
@@ -209,6 +210,19 @@ def _normalize_request(request: ProjectSetupRequest) -> ProjectSetupRequest:
         or request.procrustes_tolerance <= 0
     ):
         raise ConfigurationError("procrustes_tolerance must be a positive number")
+    approved_fingerprint = request.approved_procrustes_fingerprint
+    if approved_fingerprint is not None:
+        approved_fingerprint = str(approved_fingerprint).strip().lower()
+        if len(approved_fingerprint) != 64 or any(
+            character not in "0123456789abcdef" for character in approved_fingerprint
+        ):
+            raise ConfigurationError(
+                "approved_procrustes_fingerprint must contain 64 hexadecimal characters"
+            )
+        if request.landmarks_file is None:
+            raise ConfigurationError(
+                "A Procrustes preview fingerprint requires a landmark file"
+            )
     return ProjectSetupRequest(
         mesh_directory=Path(request.mesh_directory).expanduser().resolve(),
         project_directory=Path(request.project_directory).expanduser().resolve(),
@@ -254,6 +268,7 @@ def _normalize_request(request: ProjectSetupRequest) -> ProjectSetupRequest:
         procrustes_allow_reflection=request.procrustes_allow_reflection,
         procrustes_tolerance=float(request.procrustes_tolerance),
         procrustes_max_iterations=request.procrustes_max_iterations,
+        approved_procrustes_fingerprint=approved_fingerprint,
         overwrite_existing_configuration=request.overwrite_existing_configuration,
     )
 
@@ -295,6 +310,7 @@ def _create_reference_project(request: ProjectSetupRequest) -> ProjectSetupResul
             allow_reflection=request.procrustes_allow_reflection,
             tolerance=request.procrustes_tolerance,
             max_iterations=request.procrustes_max_iterations,
+            expected_fingerprint=request.approved_procrustes_fingerprint,
         )
         input_directory = aligned.directory
         input_template = aligned.template
@@ -389,6 +405,33 @@ def _create_modern_project(request: ProjectSetupRequest) -> ProjectSetupResult:
         raise ConfigurationError(
             "Modern engine dependencies are missing; install diffeoforge[modern-engine]."
         ) from error
+
+    if (
+        request.landmarks_file is not None
+        and request.approved_procrustes_fingerprint is not None
+    ):
+        from diffeoforge.preprocessing import preview_landmark_alignment
+
+        preview = preview_landmark_alignment(
+            request.mesh_directory,
+            landmarks_file=request.landmarks_file,
+            template=request.template,
+            subject_pattern=request.subject_pattern,
+            scale_to_unit_centroid_size=(
+                request.procrustes_scale_to_unit_centroid_size
+            ),
+            allow_reflection=request.procrustes_allow_reflection,
+            tolerance=request.procrustes_tolerance,
+            max_iterations=request.procrustes_max_iterations,
+        )
+        if preview.fingerprint != request.approved_procrustes_fingerprint:
+            raise ConfigurationError(
+                "The current Procrustes inputs or settings differ from the approved preview"
+            )
+        if not preview.alignment.converged:
+            raise ConfigurationError(
+                "The approved Procrustes preview is not converged"
+            )
 
     config_path = request.project_directory / "modern-atlas.yaml"
     initialize_modern_workflow(

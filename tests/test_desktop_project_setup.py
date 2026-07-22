@@ -18,6 +18,7 @@ from diffeoforge.desktop.project_setup import (
     create_project,
 )
 from diffeoforge.mesh import read_vtk_polydata, sha256_file
+from diffeoforge.preprocessing import preview_landmark_alignment
 
 ROOT = Path(__file__).parents[1]
 MESH_DIRECTORY = ROOT / "examples" / "synthetic" / "meshes"
@@ -323,6 +324,82 @@ def test_reference_project_applies_landmarks_before_deformetrica_without_editing
     config = yaml.safe_load(result.config_path.read_text(encoding="utf-8"))
     assert "preprocessing/aligned-" in config["input"]["directory"]
     assert any("Raw meshes were not modified" in notice for notice in result.notices)
+
+
+def test_project_creation_is_bound_to_approved_procrustes_preview(
+    tmp_path: Path,
+) -> None:
+    landmarks = _write_landmarks(tmp_path / "landmarks.csv")
+    preview = preview_landmark_alignment(
+        MESH_DIRECTORY,
+        landmarks_file=landmarks,
+        tolerance=1e-8,
+    )
+    approved_project = tmp_path / "approved"
+    result = create_project(
+        ProjectSetupRequest(
+            mesh_directory=MESH_DIRECTORY,
+            project_directory=approved_project,
+            units="unitless",
+            engine=DesktopEngine.DEFORMETRICA_REFERENCE,
+            landmarks_file=landmarks,
+            procrustes_tolerance=1e-8,
+            approved_procrustes_fingerprint=preview.fingerprint,
+        )
+    )
+    assert result.preprocessing_report_path is not None
+
+    changed_project = tmp_path / "changed"
+    with pytest.raises(ConfigurationError, match="approved preview"):
+        create_project(
+            ProjectSetupRequest(
+                mesh_directory=MESH_DIRECTORY,
+                project_directory=changed_project,
+                units="unitless",
+                engine=DesktopEngine.DEFORMETRICA_REFERENCE,
+                landmarks_file=landmarks,
+                procrustes_tolerance=1e-7,
+                approved_procrustes_fingerprint=preview.fingerprint,
+            )
+        )
+    assert not (changed_project / "atlas.yaml").exists()
+
+
+@pytest.mark.parametrize("fingerprint", ["too-short", "g" * 64])
+def test_project_setup_rejects_invalid_procrustes_preview_fingerprint(
+    fingerprint: str,
+    tmp_path: Path,
+) -> None:
+    project = tmp_path / "invalid fingerprint"
+    with pytest.raises(ConfigurationError, match="64 hexadecimal"):
+        create_project(
+            ProjectSetupRequest(
+                mesh_directory=MESH_DIRECTORY,
+                project_directory=project,
+                units="unitless",
+                engine=DesktopEngine.DEFORMETRICA_REFERENCE,
+                landmarks_file=_write_landmarks(tmp_path / "landmarks.csv"),
+                approved_procrustes_fingerprint=fingerprint,
+            )
+        )
+    assert not project.exists()
+
+
+def test_project_setup_rejects_preview_fingerprint_without_landmarks(
+    tmp_path: Path,
+) -> None:
+    project = tmp_path / "missing landmarks"
+    with pytest.raises(ConfigurationError, match="requires a landmark file"):
+        create_project(
+            ProjectSetupRequest(
+                mesh_directory=MESH_DIRECTORY,
+                project_directory=project,
+                units="unitless",
+                engine=DesktopEngine.DEFORMETRICA_REFERENCE,
+                approved_procrustes_fingerprint="a" * 64,
+            )
+        )
+    assert not project.exists()
 
 
 def test_modern_project_setup_uses_existing_workflow_service(tmp_path: Path) -> None:

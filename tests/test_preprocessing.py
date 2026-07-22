@@ -5,10 +5,15 @@ import json
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 from diffeoforge.analysis.landmarks import LANDMARK_COLUMNS
+from diffeoforge.config import ConfigurationError
 from diffeoforge.mesh import read_vtk_polydata, sha256_file
-from diffeoforge.preprocessing import prepare_landmark_aligned_inputs
+from diffeoforge.preprocessing import (
+    prepare_landmark_aligned_inputs,
+    preview_landmark_alignment,
+)
 
 ROOT = Path(__file__).parents[1]
 MESH_DIRECTORY = ROOT / "examples" / "synthetic" / "meshes"
@@ -61,6 +66,91 @@ def test_procrustes_preprocessing_is_engine_independent_and_preserves_raw_meshes
         np.linalg.norm(values - np.mean(values, axis=0)) for values in aligned_landmarks
     ]
     assert np.allclose(centroid_sizes, 1.0, rtol=1e-12, atol=1e-12)
+
+
+def test_procrustes_preview_is_read_only_and_binds_later_publication(
+    tmp_path: Path,
+) -> None:
+    landmarks = _write_landmarks(tmp_path / "landmarks.csv")
+    project = tmp_path / "project"
+    sources = (MESH_DIRECTORY / "template.vtk", *sorted(MESH_DIRECTORY.glob("subject-*.vtk")))
+    before = {path: sha256_file(path) for path in (*sources, landmarks)}
+
+    preview = preview_landmark_alignment(
+        MESH_DIRECTORY,
+        landmarks_file=landmarks,
+    )
+
+    assert preview.alignment.converged is True
+    assert preview.landmark_labels == ("anterior", "dorsal", "posterior")
+    assert len(preview.subjects) == 5
+    assert len(preview.fingerprint) == 64
+    assert not project.exists()
+    assert {path: sha256_file(path) for path in (*sources, landmarks)} == before
+
+    result = prepare_landmark_aligned_inputs(
+        MESH_DIRECTORY,
+        project_directory=project,
+        landmarks_file=landmarks,
+        expected_fingerprint=preview.fingerprint,
+    )
+    assert result.fingerprint == preview.fingerprint
+
+
+def test_procrustes_publication_rejects_changed_approved_preview(
+    tmp_path: Path,
+) -> None:
+    landmarks = _write_landmarks(tmp_path / "landmarks.csv")
+    preview = preview_landmark_alignment(MESH_DIRECTORY, landmarks_file=landmarks)
+    rows = landmarks.read_text(encoding="utf-8").splitlines()
+    final = rows[-1].split(",")
+    final[2] = str(float(final[2]) + 0.001)
+    rows[-1] = ",".join(final)
+    landmarks.write_text("\n".join(rows) + "\n", encoding="utf-8")
+    project = tmp_path / "project"
+
+    with pytest.raises(ConfigurationError, match="approved preview"):
+        prepare_landmark_aligned_inputs(
+            MESH_DIRECTORY,
+            project_directory=project,
+            landmarks_file=landmarks,
+            expected_fingerprint=preview.fingerprint,
+        )
+
+    assert not project.exists()
+
+
+def test_procrustes_publication_rejects_source_drift_during_copy_preparation(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    landmarks = _write_landmarks(tmp_path / "landmarks.csv")
+    project = tmp_path / "project"
+    from diffeoforge import preprocessing
+
+    original_write = preprocessing.write_vtk_polydata
+    changed = False
+
+    def write_then_change_landmarks(*args, **kwargs) -> None:
+        nonlocal changed
+        original_write(*args, **kwargs)
+        if not changed:
+            changed = True
+            with landmarks.open("a", encoding="utf-8", newline="") as handle:
+                handle.write("\n")
+
+    monkeypatch.setattr(preprocessing, "write_vtk_polydata", write_then_change_landmarks)
+
+    with pytest.raises(ConfigurationError, match="changed while the aligned copies"):
+        prepare_landmark_aligned_inputs(
+            MESH_DIRECTORY,
+            project_directory=project,
+            landmarks_file=landmarks,
+        )
+
+    preprocessing_root = project / "preprocessing"
+    assert list(preprocessing_root.glob("aligned-*")) == []
+    assert list(preprocessing_root.glob(".aligning-*")) == []
 
 
 def test_identical_preprocessing_request_reuses_verified_content_addressed_cohort(

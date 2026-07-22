@@ -39,7 +39,8 @@ terminal:
 6. optionally import a labelled-landmark CSV or place arbitrary triangle-surface
    landmarks in a rotatable, zoomable native 3D view for either engine, with
    hash-validated autosaved draft recovery, then explicitly configure the GPA
-   scaling, reflection, tolerance, and iteration policy;
+   scaling, reflection, tolerance, and iteration policy, run a read-only
+   numerical alignment preview, and approve its exact converged fingerprint;
 7. validate schemas, paths, mesh geometry, and the engine-specific setup
    contract through the same application services used by the CLI;
 8. create a starter configuration, requiring a destructive confirmation before
@@ -132,6 +133,13 @@ python -m diffeoforge.desktop --smoke
   deterministic 20,000-edge display budget is always shown when it omits edges.
   Landmark clicks are resolved against the full triangle set, including when a
   lower-detail transient rendering is used while rotating a high-face-count mesh.
+- Procrustes preview hashes the exact selected meshes and landmark CSV before
+  and after computation, writes nothing, and reports convergence, residual,
+  scale, and fingerprint diagnostics. Project creation is disabled until the
+  exact converged preview is explicitly approved. Form edits clear that
+  approval immediately; in-place source changes are independently detected by
+  the setup service before it creates a configuration or publishes aligned
+  copies.
 - The reference-environment check parses the exact reviewed configuration
   bytes, uses their configured container engine/image, and checks the file hash
   again afterward. It shows raw doctor evidence but performs no install, image

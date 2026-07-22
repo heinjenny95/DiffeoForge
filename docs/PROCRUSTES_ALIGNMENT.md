@@ -75,7 +75,15 @@ source meshes. Work in progress is written atomically beside the target CSV.
 Draft recovery requires the same absolute cohort paths and matching SHA-256 for
 every mesh that already has placements. A completed CSV export removes the
 draft. Project setup exposes whether GPA is applied, unit-centroid-size scaling,
-reflection policy, tolerance, and iteration limit. Step 2 verifies the
+reflection policy, tolerance, and iteration limit. Before project creation,
+the guided desktop computes a read-only preview outside the event loop. It
+reports the exact cohort and landmark counts, convergence status and iteration
+count, final mean change and total squared residual, per-mesh residual range,
+applied scale range, and a content fingerprint. Project creation remains locked
+until the researcher approves that exact converged preview. Any path, pattern,
+or setting edit invalidates the approval; source contents are hashed again by
+the setup service, so an in-place mesh or CSV change is rejected before a
+configuration or aligned cohort is published. Step 2 then verifies the
 content-addressed aligned meshes and landmark copy against their recorded
 hashes before displaying the effective settings.
 
@@ -85,3 +93,6 @@ symmetry models, automated homology, or weights.
 The current combined template-and-subject GPA cohort and default
 unit-centroid-size scaling are explicit preprocessing choices, not
 automatically appropriate biological decisions.
+The numerical preview is a reproducibility and gross-diagnostic gate, not a
+registration rendering, uncertainty estimate, or proof that landmarks are
+homologous or biologically suitable.

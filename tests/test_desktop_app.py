@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import csv
 import hashlib
 import importlib.util
 import os
@@ -11,9 +12,29 @@ from pathlib import Path
 
 import pytest
 
+from diffeoforge.analysis.landmarks import LANDMARK_COLUMNS
 from diffeoforge.desktop.app import build_parser
+from diffeoforge.mesh import read_vtk_polydata
 
 ROOT = Path(__file__).parents[1]
+
+
+def _write_desktop_landmarks(path: Path) -> Path:
+    mesh_directory = ROOT / "examples" / "synthetic" / "meshes"
+    meshes = [
+        mesh_directory / "template.vtk",
+        *sorted(mesh_directory.glob("subject-*.vtk")),
+    ]
+    labels = ("anterior", "dorsal", "posterior")
+    indices = (0, 40, 80)
+    with path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.writer(handle, lineterminator="\n")
+        writer.writerow(LANDMARK_COLUMNS)
+        for mesh in meshes:
+            vertices = read_vtk_polydata(mesh).vertices
+            for label, index in zip(labels, indices, strict=True):
+                writer.writerow((mesh.name, label, *vertices[index]))
+    return path
 
 
 def test_desktop_ui_source_has_no_german_copy() -> None:
@@ -337,6 +358,8 @@ def test_desktop_window_exposes_required_project_controls(monkeypatch) -> None:
     application.processEvents()
     assert window.procrustes_box.isHidden() is False
     assert window._request().landmarks_file == Path("landmarks.csv")
+    assert window.preview_procrustes_button.isEnabled() is True
+    assert window.approve_procrustes_check.isEnabled() is False
     window.procrustes_scale_check.setChecked(False)
     window.procrustes_reflection_check.setChecked(True)
     window.procrustes_tolerance_spin.setValue(0.00000001)
@@ -349,6 +372,7 @@ def test_desktop_window_exposes_required_project_controls(monkeypatch) -> None:
     window.procrustes_apply_check.setChecked(False)
     assert window._request().landmarks_file is None
     assert window.procrustes_scale_check.isEnabled() is False
+    assert window.preview_procrustes_button.isEnabled() is False
     window.procrustes_apply_check.setChecked(True)
     assert window.pairwise_box.isHidden() is True
     assert window.optimization_effort_box.isHidden() is True
@@ -387,6 +411,91 @@ def test_desktop_window_exposes_required_project_controls(monkeypatch) -> None:
     assert expert_request.reference_threads == 8
     assert expert_request.reference_random_seed == 123
     assert window._request().pairwise_mode == "dense"
+    window.close()
+    application.processEvents()
+
+
+def test_desktop_requires_exact_procrustes_preview_approval_and_rejects_drift(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from diffeoforge.desktop.widgets import (
+        DiffeoForgeWindow,
+        _ProcrustesPreviewWorker,
+        _ProjectWorker,
+    )
+
+    application = QApplication.instance() or QApplication(
+        ["diffeoforge-procrustes-preview-test"]
+    )
+    mesh_directory = ROOT / "examples" / "synthetic" / "meshes"
+    landmarks = _write_desktop_landmarks(tmp_path / "landmarks.csv")
+    project_directory = tmp_path / "project"
+    queued = []
+
+    class FakePool:
+        def start(self, worker) -> None:
+            queued.append(worker)
+
+    window = DiffeoForgeWindow()
+    window._thread_pool = FakePool()  # type: ignore[assignment]
+    window.mesh_edit.setText(str(mesh_directory))
+    window.project_edit.setText(str(project_directory))
+    window.units_combo.setCurrentIndex(window.units_combo.findData("unitless"))
+    window.landmarks_edit.setText(str(landmarks))
+    application.processEvents()
+
+    assert window.create_button.isEnabled() is False
+    assert window.create_button.text() == "Preview & approve alignment first"
+    assert window.preview_procrustes_button.isEnabled() is True
+    window.preview_procrustes_button.click()
+    assert len(queued) == 1
+    assert isinstance(queued[0], _ProcrustesPreviewWorker)
+    assert window.create_button.isEnabled() is False
+
+    queued[0].run()
+    application.processEvents()
+
+    assert window._procrustes_preview is not None
+    assert window._procrustes_preview.alignment.converged is True
+    assert window.approve_procrustes_check.isEnabled() is True
+    assert "Final mean change" in window.procrustes_preview_status_label.text()
+    assert "fingerprint" in window.procrustes_preview_status_label.text()
+    window.approve_procrustes_check.setChecked(True)
+    application.processEvents()
+
+    approved = window._request().approved_procrustes_fingerprint
+    assert approved == window._procrustes_preview.fingerprint
+    assert window.create_button.isEnabled() is True
+    assert window.create_button.text() == "Validate data & create project"
+
+    rows = landmarks.read_text(encoding="utf-8").splitlines()
+    changed = rows[-1].split(",")
+    changed[2] = str(float(changed[2]) + 0.001)
+    rows[-1] = ",".join(changed)
+    landmarks.write_text("\n".join(rows) + "\n", encoding="utf-8")
+    window._create_project()
+    assert len(queued) == 2
+    assert isinstance(queued[1], _ProjectWorker)
+    queued[1].run()
+    application.processEvents()
+
+    assert not (project_directory / "modern-atlas.yaml").exists()
+    assert "approved preview" in window.status_label.text()
+    assert window._procrustes_preview is None
+    assert window.approve_procrustes_check.isChecked() is False
+    assert "invalidated" in window.procrustes_preview_status_label.text()
+
+    window.procrustes_tolerance_spin.setValue(0.00000001)
+    application.processEvents()
+    assert window._procrustes_preview is None
+    assert window.approve_procrustes_check.isChecked() is False
+    assert window._request().approved_procrustes_fingerprint is None
+    assert window.create_button.isEnabled() is False
     window.close()
     application.processEvents()
 

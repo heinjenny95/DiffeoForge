@@ -19,6 +19,7 @@ from typing import Any
 import jsonschema
 import psutil
 
+from diffeoforge.atomic_io import replace_atomically
 from diffeoforge.mesh import sha256_file
 from diffeoforge.modern_benchmark import (
     REPORT_CSV_NAME,
@@ -100,7 +101,7 @@ def _write_text_atomic(path: Path, value: str) -> None:
     temporary = path.with_name(f".{path.name}.tmp-{uuid.uuid4().hex}")
     try:
         temporary.write_text(value, encoding="utf-8", newline="\n")
-        os.replace(temporary, path)
+        replace_atomically(temporary, path)
     finally:
         if temporary.exists():
             temporary.unlink()
