@@ -49,6 +49,8 @@ This roadmap describes evidence gates rather than promised dates.
   optimizer parity
 - [x] Cache invariant fixed-target surface geometry and attachment self terms
   across optimizer evaluations with dense/blockwise value and gradient parity
+- [x] Defer Armijo candidate gradients until objective acceptance and reuse the
+  initial evaluation without changing optimizer decisions
 - [x] Add an explicit fresh-process recompute benchmark path and spawn smoke evidence
 - [x] Freeze immutable paired standard/recompute designs before observations
 - [x] Execute/resume frozen designs with strict separate-report verification

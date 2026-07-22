@@ -21,10 +21,7 @@ REFERENCE_FIXTURE = (
     / "deformetrica-4.3.0-objective.json"
 )
 SMOKE_FIXTURE = (
-    Path(__file__).parents[1]
-    / "reference"
-    / "modern-engine-v0.3"
-    / "cc0-momenta-smoke.json"
+    Path(__file__).parents[1] / "reference" / "modern-engine-v0.3" / "cc0-momenta-smoke.json"
 )
 
 
@@ -163,6 +160,32 @@ def test_failed_line_search_preserves_last_accepted_state() -> None:
     assert torch.equal(result.momenta, initial_momenta)
 
 
+def test_rejected_momenta_candidate_does_not_request_an_unused_gradient(
+    monkeypatch,
+) -> None:
+    arguments, keywords = _problem(subjects=1)
+    original_grad = torch.autograd.grad
+    calls = 0
+
+    def counted_grad(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return original_grad(*args, **kwargs)
+
+    monkeypatch.setattr(torch.autograd, "grad", counted_grad)
+    result = optimize_momenta(
+        *arguments,
+        **keywords,
+        max_iterations=3,
+        initial_step_size=10.0,
+        max_line_search_iterations=1,
+    )
+
+    assert result.termination_reason == "line_search_failed"
+    assert result.total_line_search_evaluations == 1
+    assert calls == 1
+
+
 def test_optimizer_remains_differentiable_internally_under_no_grad() -> None:
     arguments, keywords = _problem(subjects=1)
 
@@ -234,13 +257,10 @@ def test_committed_cc0_smoke_matches_versioned_evidence() -> None:
         assert actual_record["iteration"] == expected_record["iteration"]
         assert actual_record["accepted_step_size"] == expected_record["accepted_step_size"]
         assert (
-            actual_record["line_search_evaluations"]
-            == expected_record["line_search_evaluations"]
+            actual_record["line_search_evaluations"] == expected_record["line_search_evaluations"]
         )
         for name in ("objective", "attachment", "regularity", "gradient_norm"):
-            assert actual_record[name] == pytest.approx(
-                expected_record[name], rel=1e-10, abs=1e-12
-            )
+            assert actual_record[name] == pytest.approx(expected_record[name], rel=1e-10, abs=1e-12)
         assert actual_record["residuals"] == pytest.approx(
             expected_record["residuals"], rel=1e-10, abs=1e-12
         )

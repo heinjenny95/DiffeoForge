@@ -171,6 +171,15 @@ source gradients; a first five-subject 1,500-face local observation measured a
 not a full-atlas performance or convergence claim. See
 [prepared fixed-target attachments](PREPARED_ATTACHMENT_TARGETS.md).
 
+Armijo candidate gradients are now deferred until the candidate objective
+passes the acceptance threshold. Rejected candidates therefore avoid unused
+backward work, while accepted candidates reuse the same forward graph. Existing
+optimizer histories remain unchanged. A matched two-subject, 1,500-face local
+observation measured a 1.388x ratio for a one-cycle run containing seven
+rejected candidates in its momenta block; this is rejection-specific
+implementation evidence rather than a full-atlas claim. See
+[deferred Armijo gradients](DEFERRED_ARMIJO_GRADIENTS.md).
+
 ## Gates before a usable atlas engine
 
 1. ~~Add current/varifold fixtures generated through the independent reference

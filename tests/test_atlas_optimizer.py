@@ -21,10 +21,7 @@ REFERENCE_FIXTURE = (
     / "deformetrica-4.3.0-objective.json"
 )
 SMOKE_FIXTURE = (
-    Path(__file__).parents[1]
-    / "reference"
-    / "modern-engine-v0.4"
-    / "cc0-full-atlas-smoke.json"
+    Path(__file__).parents[1] / "reference" / "modern-engine-v0.4" / "cc0-full-atlas-smoke.json"
 )
 
 
@@ -80,9 +77,7 @@ def test_every_accepted_block_monotonically_improves_the_objective() -> None:
         "control_points",
     ]
     assert all(record.status == "accepted" for record in result.history[1:])
-    assert all(
-        later.objective > earlier.objective for earlier, later in pairwise(result.history)
-    )
+    assert all(later.objective > earlier.objective for earlier, later in pairwise(result.history))
     assert all(
         record.objective == pytest.approx(record.attachment + record.regularity)
         for record in result.history
@@ -245,6 +240,34 @@ def test_failed_first_block_preserves_all_initial_parameters() -> None:
     assert torch.equal(result.momenta, arguments[4])
 
 
+def test_rejected_atlas_candidate_does_not_request_an_unused_gradient(
+    monkeypatch,
+) -> None:
+    arguments, keywords = _problem(subjects=1)
+    original_grad = torch.autograd.grad
+    calls = 0
+
+    def counted_grad(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return original_grad(*args, **kwargs)
+
+    monkeypatch.setattr(torch.autograd, "grad", counted_grad)
+    result = optimize_atlas(
+        *arguments,
+        **keywords,
+        max_cycles=3,
+        momenta_step_size=10.0,
+        template_step_size=10.0,
+        control_points_step_size=10.0,
+        max_line_search_iterations=1,
+    )
+
+    assert result.termination_reason == "line_search_failed"
+    assert result.total_line_search_evaluations == 1
+    assert calls == 1
+
+
 def test_all_parameter_blocks_move_on_a_nontrivial_problem() -> None:
     arguments, keywords = _problem()
     template, _, _, control_points, momenta = arguments
@@ -383,9 +406,7 @@ def test_committed_cc0_full_atlas_smoke_matches_versioned_evidence() -> None:
         ):
             assert actual_record[name] == expected_record[name]
         for name in ("objective", "attachment", "regularity", "gradient_norm"):
-            assert actual_record[name] == pytest.approx(
-                expected_record[name], rel=1e-9, abs=1e-11
-            )
+            assert actual_record[name] == pytest.approx(expected_record[name], rel=1e-9, abs=1e-11)
         assert actual_record["residuals"] == pytest.approx(
             expected_record["residuals"], rel=1e-9, abs=1e-11
         )

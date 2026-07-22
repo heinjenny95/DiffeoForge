@@ -130,6 +130,15 @@ class _BlockEvaluation:
     gradient_norm: torch.Tensor
 
 
+@dataclass(frozen=True)
+class _PendingBlockEvaluation:
+    """One finite objective graph whose block gradient has not been requested."""
+
+    state: _State
+    total: torch.Tensor
+    variable: torch.Tensor
+
+
 def _integer(name: str, value: int, *, minimum: int) -> int:
     if isinstance(value, bool) or not isinstance(value, Integral):
         raise TypeError(f"{name} must be an integer")
@@ -293,12 +302,12 @@ def optimize_atlas(
         "prepared_targets": prepared_target_sequence,
     }
 
-    def evaluate(
+    def evaluate_objective(
         template_vertices: torch.Tensor,
         control_points: torch.Tensor,
         momenta: torch.Tensor,
         block: AtlasParameterBlock,
-    ) -> _BlockEvaluation | None:
+    ) -> _PendingBlockEvaluation | None:
         check_cancellation()
         parameters = {
             "template": template_vertices.detach().clone(),
@@ -319,13 +328,6 @@ def optimize_atlas(
             check_cancellation()
             if not bool(torch.isfinite(objective.total)):
                 return None
-            (gradient,) = torch.autograd.grad(objective.total, variable)
-        check_cancellation()
-        if not bool(torch.isfinite(gradient).all()):
-            return None
-        gradient_norm = torch.linalg.vector_norm(gradient)
-        if not bool(torch.isfinite(gradient_norm)):
-            return None
         state = _State(
             template_vertices=parameters["template"].detach(),
             control_points=parameters["control_points"].detach(),
@@ -335,8 +337,26 @@ def optimize_atlas(
             regularity=objective.regularity.detach(),
             residuals=objective.residuals.detach(),
         )
-        return _BlockEvaluation(
+        return _PendingBlockEvaluation(
             state=state,
+            total=objective.total,
+            variable=variable,
+        )
+
+    def evaluate_gradient(
+        pending: _PendingBlockEvaluation,
+    ) -> _BlockEvaluation | None:
+        check_cancellation()
+        with torch.enable_grad():
+            (gradient,) = torch.autograd.grad(pending.total, pending.variable)
+        check_cancellation()
+        if not bool(torch.isfinite(gradient).all()):
+            return None
+        gradient_norm = torch.linalg.vector_norm(gradient)
+        if not bool(torch.isfinite(gradient_norm)):
+            return None
+        return _BlockEvaluation(
+            state=pending.state,
             gradient=gradient.detach(),
             gradient_norm=gradient_norm.detach(),
         )
@@ -352,12 +372,13 @@ def optimize_atlas(
             value if block == "momenta" else state.momenta,
         )
 
-    initial = evaluate(
+    initial_pending = evaluate_objective(
         initial_template_vertices,
         initial_control_points,
         initial_momenta,
         order[0],
     )
+    initial = None if initial_pending is None else evaluate_gradient(initial_pending)
     if initial is None:
         raise FloatingPointError("initial atlas parameters produced a non-finite objective")
     current = initial.state
@@ -398,12 +419,17 @@ def optimize_atlas(
     for cycle in range(1, cycles + 1):
         stationary_blocks = 0
         for block in order:
-            evaluated = evaluate(
-                current.template_vertices,
-                current.control_points,
-                current.momenta,
-                block,
-            )
+            if cycle == 1 and block == order[0]:
+                evaluated = initial
+                initial = None
+            else:
+                pending = evaluate_objective(
+                    current.template_vertices,
+                    current.control_points,
+                    current.momenta,
+                    block,
+                )
+                evaluated = None if pending is None else evaluate_gradient(pending)
             if evaluated is None:
                 raise FloatingPointError(
                     f"accepted atlas state produced a non-finite {block} gradient"
@@ -444,14 +470,19 @@ def optimize_atlas(
                     current_value + step_size * evaluated.gradient,
                 )
                 try:
-                    candidate = evaluate(*candidate_parameters, block)
+                    candidate_pending = evaluate_objective(*candidate_parameters, block)
                 except ValueError:
-                    candidate = None
-                if candidate is not None:
+                    candidate_pending = None
+                if candidate_pending is not None:
                     required = current.objective + armijo * step_size * directional_derivative
-                    if bool(candidate.state.objective >= required):
-                        accepted = candidate
-                        break
+                    if bool(candidate_pending.state.objective >= required):
+                        try:
+                            candidate = evaluate_gradient(candidate_pending)
+                        except ValueError:
+                            candidate = None
+                        if candidate is not None:
+                            accepted = candidate
+                            break
                 step_size *= shrink
 
             if accepted is None:

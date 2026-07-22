@@ -79,6 +79,17 @@ class _Evaluation:
         )
 
 
+@dataclass(frozen=True)
+class _PendingEvaluation:
+    """One finite objective graph whose momenta gradient has not been requested."""
+
+    momenta: torch.Tensor
+    total: torch.Tensor
+    attachment: torch.Tensor
+    regularity: torch.Tensor
+    residuals: torch.Tensor
+
+
 def _integer(name: str, value: int, *, minimum: int) -> int:
     if isinstance(value, bool) or not isinstance(value, Integral):
         raise TypeError(f"{name} must be an integer")
@@ -170,7 +181,7 @@ def optimize_momenta(
         for target_vertices, target_triangles in target_sequence
     )
 
-    def evaluate(candidate: torch.Tensor) -> _Evaluation | None:
+    def evaluate_objective(candidate: torch.Tensor) -> _PendingEvaluation | None:
         variable = candidate.detach().clone().requires_grad_(True)
         with torch.enable_grad():
             objective = atlas_objective(
@@ -190,23 +201,34 @@ def optimize_momenta(
             )
             if not bool(torch.isfinite(objective.total)):
                 return None
-            (gradient,) = torch.autograd.grad(objective.total, variable)
+        return _PendingEvaluation(
+            momenta=variable,
+            total=objective.total,
+            attachment=objective.attachment.detach(),
+            regularity=objective.regularity.detach(),
+            residuals=objective.residuals.detach(),
+        )
+
+    def evaluate_gradient(pending: _PendingEvaluation) -> _Evaluation | None:
+        with torch.enable_grad():
+            (gradient,) = torch.autograd.grad(pending.total, pending.momenta)
         if not bool(torch.isfinite(gradient).all()):
             return None
         gradient_norm = torch.linalg.vector_norm(gradient)
         if not bool(torch.isfinite(gradient_norm)):
             return None
         return _Evaluation(
-            momenta=variable.detach(),
+            momenta=pending.momenta.detach(),
             gradient=gradient.detach(),
-            objective=objective.total.detach(),
-            attachment=objective.attachment.detach(),
-            regularity=objective.regularity.detach(),
-            residuals=objective.residuals.detach(),
+            objective=pending.total.detach(),
+            attachment=pending.attachment,
+            regularity=pending.regularity,
+            residuals=pending.residuals,
             gradient_norm=gradient_norm.detach(),
         )
 
-    current = evaluate(initial_momenta)
+    initial_pending = evaluate_objective(initial_momenta)
+    current = None if initial_pending is None else evaluate_gradient(initial_pending)
     if current is None:
         raise FloatingPointError("initial momenta produced a non-finite objective or gradient")
     history = [
@@ -236,12 +258,14 @@ def optimize_momenta(
                 break
             evaluations += 1
             total_line_search_evaluations += 1
-            candidate = evaluate(current.momenta + step_size * current.gradient)
-            if candidate is not None:
+            candidate_pending = evaluate_objective(current.momenta + step_size * current.gradient)
+            if candidate_pending is not None:
                 required = current.objective + armijo * step_size * directional_derivative
-                if bool(candidate.objective >= required):
-                    accepted = candidate
-                    break
+                if bool(candidate_pending.total.detach() >= required):
+                    candidate = evaluate_gradient(candidate_pending)
+                    if candidate is not None:
+                        accepted = candidate
+                        break
             step_size *= shrink
 
         if accepted is None:

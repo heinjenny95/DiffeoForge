@@ -44,6 +44,14 @@ again. Each parameter block has its own initial step size because their units
 and gradient scales differ. There is no adaptive learning rate, stochastic
 batching, momentum term, or hidden optimizer state.
 
+Candidate objectives are evaluated before their gradients. A rejected Armijo
+candidate releases its graph without an unused backward pass; an acceptable
+candidate requests the gradient from the same graph without repeating its
+forward pass. The initial evaluation is reused for the first block. This
+changes scheduling only: the objective, candidate sequence, acceptance rule,
+accepted states, and recorded history remain identical. See
+[deferred Armijo gradients](DEFERRED_ARMIJO_GRADIENTS.md).
+
 One cycle visits every block once. If every block gradient is below the
 declared threshold in the same cycle, the run terminates as converged. A
 line-search failure terminates the prototype without overwriting any accepted
