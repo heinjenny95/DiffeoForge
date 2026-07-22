@@ -36,9 +36,10 @@ terminal:
 5. explicitly choose either a three-cycle technical pilot or a convergence
    attempt capped at 50 cycles, with early stopping only when every parameter
    block reaches the declared gradient tolerance in one completed cycle;
-6. optionally import a labelled-landmark CSV or place exact vertex landmarks
-   in guided XY/XZ/YZ views for either engine, then explicitly configure the
-   GPA scaling, reflection, tolerance, and iteration policy;
+6. optionally import a labelled-landmark CSV or place arbitrary triangle-surface
+   landmarks in a rotatable, zoomable native 3D view for either engine, with
+   hash-validated autosaved draft recovery, then explicitly configure the GPA
+   scaling, reflection, tolerance, and iteration policy;
 7. validate schemas, paths, mesh geometry, and the engine-specific setup
    contract through the same application services used by the CLI;
 8. create a starter configuration, requiring a destructive confirmation before
@@ -125,10 +126,12 @@ python -m diffeoforge.desktop --smoke
   ownership checks.
 - Review refreshes only reports that carry the expected DiffeoForge generator
   markers; researcher-owned paths are refused.
-- Template preview loading runs outside the GUI event loop, checks the source
+- Template preview and landmark loading check the source
   SHA-256 before and after parsing, and never rewrites or decimates the mesh.
-  Projection switches reuse the same immutable model. A deterministic 20,000-
-  edge display budget is always shown when it omits edges.
+  Projection switches reuse the same immutable model. The inspection preview's
+  deterministic 20,000-edge display budget is always shown when it omits edges.
+  Landmark clicks are resolved against the full triangle set, including when a
+  lower-detail transient rendering is used while rotating a high-face-count mesh.
 - The reference-environment check parses the exact reviewed configuration
   bytes, uses their configured container engine/image, and checks the file hash
   again afterward. It shows raw doctor evidence but performs no install, image
@@ -171,10 +174,10 @@ python -m diffeoforge.desktop --smoke
 
 ## Current limitations
 
-The GUI does not yet provide arbitrary surface-point interactive 3D
-landmarking, resume an interrupted atlas, or reconcile an already dead parent
-application. The current landmark editor selects exact represented vertices in
-orthographic views. Verified Deformetrica momenta enter the shared PCA screen;
+The GUI does not yet resume an interrupted atlas or reconcile an already dead
+parent application. Its 3D landmark editor does not provide semilandmark sliding,
+automated homology, uncertainty estimates, symmetry constraints, or missing-data
+imputation. Verified Deformetrica momenta enter the shared PCA screen;
 reference PC deformation meshes and native registration renderings remain open.
 Source-level Deformetrica supervision is connected and its dedicated execution
 worker is now in the prospective v0.4 Windows freeze contract. A clean-runner

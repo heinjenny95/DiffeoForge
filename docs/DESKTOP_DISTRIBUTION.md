@@ -100,7 +100,9 @@ The reviewed template can now be displayed without adding a visualization
 runtime: an immutable Qt-independent model supplies bounded XY/XZ/YZ wireframe
 projections to QtGui's QPainter. Large meshes use a deterministic, explicitly
 reported display-edge budget. The widget never edits or decimates the source
-mesh and is not an interactive 3D or landmark-placement dependency.
+mesh. A separate QtGui canvas now provides interactive 3D surface-landmark
+placement from that immutable geometry without adding a visualization runtime;
+the orthographic inspection widget remains independently bounded and read-only.
 
 The shared-core `modern-run` callback supplies the worker-to-UI progress
 payload. The v0.1 worker serializes the same strict dictionaries across the

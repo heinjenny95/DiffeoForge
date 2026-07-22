@@ -142,10 +142,11 @@ This repository currently provides:
 - supervised source-level Deformetrica execution followed by strict momenta and
   control-point import, a source-bound deterministic linear-PCA bundle, and the
   shared verified Results & PCA screen;
-- guided orthographic exact-vertex landmark placement, strict reusable landmark
-  CSV output, configurable generalized Procrustes alignment for either engine,
-  immutable content-addressed aligned mesh copies, and hash-verified alignment
-  evidence in parameter review;
+- interactive native 3D surface-landmark placement with rotation, zoom, pan,
+  arbitrary triangle-point interpolation, hash-validated resumable drafts,
+  strict reusable landmark CSV output, configurable generalized Procrustes
+  alignment for either engine, immutable content-addressed aligned mesh copies,
+  and hash-verified alignment evidence in parameter review;
 - scale-aware Deformetrica starter profiles plus explicit basic and expert
   parameter controls whose effective values are persisted in YAML, rendered
   into exact engine XML, and read back for review;
@@ -229,10 +230,11 @@ leases now support exact-destination, read-only discovery after hard crashes;
 automatic deletion, resume, and reconciliation remain deliberately open.
 DiffeoForge can also load selected meshes outside the GUI thread and render
 deterministic native XY/XZ/YZ wireframe projections with an explicit
-display-edge budget and exact source hash. The guided landmark editor can pick
-represented source vertices in those projections and stores their exact 3D
-coordinates. This remains orthographic vertex selection, not arbitrary
-surface-point interactive 3D rendering, mesh QC, or registration evidence.
+display-edge budget and exact source hash. The separate guided landmark editor
+renders a rotatable native 3D surface and stores a barycentrically interpolated
+point on the frontmost triangle under each click. Its autosaved draft is bound
+to the exact mesh paths and SHA-256 identities before it can be resumed. Neither
+view is mesh QC or registration evidence.
 DiffeoForge does **not** yet ship a public redistributable binary. Same-owner
 private Windows installers are used for local testing. A clean-commit,
 exact-inventory Windows one-directory
@@ -244,7 +246,7 @@ has completed its first real install/smoke/uninstall observation; a small
 retained-integrity-verifier refinement has also completed re-observation. No
 usable-installer or release claim follows from either compilation or lifecycle
 evidence.
-DiffeoForge still does not provide interactive native 3D mesh rendering or
+DiffeoForge still does not provide interactive native 3D atlas/result rendering,
 self-intersection detection, or promise
 CPU/GPU equivalence or 300-specimen production performance. See the [modern-workflow
 documentation](docs/MODERN_WORKFLOW.md) and [reference-backend

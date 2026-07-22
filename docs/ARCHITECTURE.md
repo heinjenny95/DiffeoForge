@@ -344,8 +344,13 @@ binds the source SHA-256 before and after loading, freezes vertices, triangles,
 bounds, and sorted unique edges, and computes deterministic aspect-preserving
 XY/XZ/YZ projections without rereading the file. A QPainter widget receives
 only this model and draws at most the disclosed display-edge budget. This is a
-native inspection seam, not a second QC service or an interactive 3D/landmark
-system. See [the template-preview contract](TEMPLATE_PREVIEW.md).
+native inspection seam, not a second QC service. See
+[the template-preview contract](TEMPLATE_PREVIEW.md). A separate native Qt
+landmark canvas consumes the same immutable geometry, applies interactive 3D
+camera transforms, and resolves a click against the frontmost full-resolution
+triangle by barycentric interpolation. The editor stores only surface
+coordinates and hash-bound resumable draft state; project setup remains the
+sole boundary that applies those coordinates as Procrustes preprocessing.
 
 Desktop step 4 consumes no alternate scientific model. A Qt-independent result
 reviewer first invokes the complete outer Modern verifier, binds the unchanged

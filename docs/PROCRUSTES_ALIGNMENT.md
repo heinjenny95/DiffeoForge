@@ -1,8 +1,8 @@
 # Landmark-based Procrustes alignment
 
 Status: **tested engine-independent preprocessing integrated into Modern and
-Deformetrica project setup, with guided orthographic vertex placement in the
-desktop; arbitrary surface-point 3D placement remains future work**
+Deformetrica project setup, with interactive 3D triangle-surface placement and
+hash-validated resumable drafts in the desktop**
 
 Tracked by [scientific-change issue #18](https://github.com/heinjenny95/DiffeoForge/issues/18).
 
@@ -66,19 +66,22 @@ edited. Content-addressed aligned cohorts can feed either Deformetrica project
 setup or the [experimental modern workflow](MODERN_WORKFLOW.md); identical
 verified requests reuse the same immutable aligned cohort.
 
-The desktop can create the strict CSV by clicking exact mesh vertices in
-aspect-preserving XY, XZ, and YZ projections. It requires a complete ordered
-cohort, displays every already placed point, and never changes the source
-meshes. Project setup exposes whether GPA is applied, unit-centroid-size
-scaling, reflection policy, tolerance, and iteration limit. Step 2 verifies
-the content-addressed aligned meshes and landmark copy against their recorded
+The desktop can create the strict CSV by rotating, panning, and zooming each
+mesh, then clicking the visible surface. Each click is resolved by barycentric
+interpolation on the frontmost projected source triangle; it is not snapped to
+a mesh vertex. The editor requires a complete ordered cohort, displays every
+already placed point, supports replacement and undo, and never changes the
+source meshes. Work in progress is written atomically beside the target CSV.
+Draft recovery requires the same absolute cohort paths and matching SHA-256 for
+every mesh that already has placements. A completed CSV export removes the
+draft. Project setup exposes whether GPA is applied, unit-centroid-size scaling,
+reflection policy, tolerance, and iteration limit. Step 2 verifies the
+content-addressed aligned meshes and landmark copy against their recorded
 hashes before displaying the effective settings.
 
-This is a bounded first interactive slice, not a full 3D surface-landmarking
-system: only represented vertices can be selected, occlusion is handled by
-switching orthographic views, and arbitrary triangle-surface points are not yet
-available. The code also does not provide landmark uncertainty estimates,
-missing-landmark handling, semilandmark sliding, symmetry models, or weights.
+This remains a bounded surface-landmarking system. The code does not provide
+landmark uncertainty estimates, missing-landmark handling, semilandmark sliding,
+symmetry models, automated homology, or weights.
 The current combined template-and-subject GPA cohort and default
 unit-centroid-size scaling are explicit preprocessing choices, not
 automatically appropriate biological decisions.

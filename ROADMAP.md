@@ -63,8 +63,9 @@ This roadmap describes evidence gates rather than promised dates.
 - [x] Apply generalized Procrustes to content-addressed immutable mesh copies usable by
   Deformetrica or any future backend
 - [x] Implement conservative observed-rate ETA arithmetic for Deformetrica iteration logs
-- [ ] Add interactive 3D homologous-landmark placement and review
-- [x] Add guided orthographic exact-vertex landmark placement with strict CSV output
+- [x] Add interactive 3D homologous surface-landmark placement, correction,
+  autosaved resume, and strict CSV output
+- [x] Retain guided orthographic inspection as a separate deterministic preview
 - [ ] Connect Procrustes preview/approval to the guided desktop workflow
 - [x] Expose explicit Procrustes application/settings and verify aligned-mesh evidence
   in desktop review
