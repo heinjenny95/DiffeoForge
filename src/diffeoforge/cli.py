@@ -405,6 +405,24 @@ def build_parser() -> argparse.ArgumentParser:
     )
     modern_optimizer_design_verify_parser.add_argument("design_directory", type=Path)
 
+    modern_optimizer_study_parser = subparsers.add_parser(
+        "modern-optimizer-benchmark-study",
+        help="Execute or resume one frozen subject/cycle optimizer design.",
+    )
+    modern_optimizer_study_parser.add_argument("design_directory", type=Path)
+    modern_optimizer_study_parser.add_argument("config", type=Path)
+    modern_optimizer_study_parser.add_argument(
+        "--output",
+        type=Path,
+        help="Study run directory (default: DESIGN_DIRECTORY.run).",
+    )
+
+    modern_optimizer_study_verify_parser = subparsers.add_parser(
+        "modern-optimizer-benchmark-study-verify",
+        help="Verify a completed optimizer study and every separate raw report.",
+    )
+    modern_optimizer_study_verify_parser.add_argument("run_directory", type=Path)
+
     modern_benchmark_design_parser = subparsers.add_parser(
         "modern-benchmark-design",
         help="Freeze a paired blockwise standard/recompute design before measuring.",
@@ -1365,6 +1383,68 @@ def main(argv: Sequence[str] | None = None) -> int:
                 f"{protocol['condition_count']}/{protocol['maximum_condition_count']}"
             )
             print("No optimizer result or performance claim is present.")
+        except (RuntimeError, OSError, ValueError, TypeError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
+
+    if args.command == "modern-optimizer-benchmark-study":
+        try:
+            from diffeoforge.modern_optimizer_benchmark_study import (
+                run_modern_optimizer_benchmark_study,
+                verify_modern_optimizer_benchmark_study_run,
+            )
+
+            def show_optimizer_study_progress(event) -> None:
+                condition = event["condition"]
+                detail = ""
+                if condition is not None:
+                    detail = (
+                        f"; {condition['condition_id']}; "
+                        f"{condition['subject_count']} subjects; "
+                        f"{condition['cycle_cap']} cycles"
+                    )
+                print(
+                    "Optimizer study progress "
+                    f"[{event['completed_conditions']}/{event['total_conditions']}] "
+                    f"{event['status']}{detail}",
+                    flush=True,
+                )
+
+            run_directory = run_modern_optimizer_benchmark_study(
+                args.design_directory,
+                args.config,
+                destination=args.output,
+                progress_callback=show_optimizer_study_progress,
+            )
+            manifest = verify_modern_optimizer_benchmark_study_run(run_directory)
+            print(f"Frozen optimizer benchmark study completed: {run_directory}")
+            print(f"Verified raw conditions: {len(manifest['conditions'])}")
+            print("No automatic comparison, ETA, or convergence claim was produced.")
+        except ImportError as error:
+            print(
+                "ERROR: Modern optimizer study dependencies are missing; install "
+                "diffeoforge[modern-engine].",
+                file=sys.stderr,
+            )
+            print(f"       {error}", file=sys.stderr)
+            return 2
+        except (ConfigurationError, RuntimeError, OSError, ValueError, TypeError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
+
+    if args.command == "modern-optimizer-benchmark-study-verify":
+        try:
+            from diffeoforge.modern_optimizer_benchmark_study import (
+                verify_modern_optimizer_benchmark_study_run,
+            )
+
+            run_directory = args.run_directory.expanduser().resolve()
+            manifest = verify_modern_optimizer_benchmark_study_run(run_directory)
+            print(f"Frozen optimizer benchmark study verified: {run_directory}")
+            print(f"Verified raw conditions: {len(manifest['conditions'])}")
+            print("No automatic comparison, ETA, or convergence claim is present.")
         except (RuntimeError, OSError, ValueError, TypeError) as error:
             print(f"ERROR: {error}", file=sys.stderr)
             return 2

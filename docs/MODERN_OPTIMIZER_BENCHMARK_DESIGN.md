@@ -51,6 +51,39 @@ verifier rejects missing or added files, sidecar changes, schema drift,
 condition-count changes, reordered or edited conditions, and HTML that differs
 from deterministic regeneration.
 
+## Execute, resume, and verify
+
+After the design is frozen, execute it against the unchanged source config:
+
+```powershell
+diffeoforge modern-optimizer-benchmark-study `
+  modern-atlas.optimizer-study modern-atlas.yaml
+
+diffeoforge modern-optimizer-benchmark-study-verify `
+  modern-atlas.optimizer-study.run
+```
+
+The executor freshly rebuilds the design from the current config and complete
+mesh inventory before creating or resuming a run. Any YAML, mesh, software,
+factor, or deterministic-order difference fails before a condition starts.
+
+Each condition calls the versioned optimizer benchmark, which already uses a
+fresh spawned process for every repeat. Raw JSON, CSV, and HTML stay in their
+own frozen condition directory. After each condition, its strict report is
+verified before state and the append-only event log advance.
+
+The run owns a process-identity lock, copied design, copied source config,
+atomic state, append-only events, condition directories, and a final
+`optimizer-study-run.json` plus SHA-256 sidecar. After an interruption, only a
+contiguous prefix of strictly valid raw reports can be reconciled; unknown,
+out-of-order, or changed entries fail closed. Re-running a completed study is a
+read-only re-verification.
+
+The completed-run verifier checks every nested raw report against its frozen
+subject prefix, cycle cap, repeats, warm-ups, optimizer settings, source hash,
+and mesh inventory. It then recomputes the final artifact hashes and event
+order. No aggregate ranking or performance summary is generated.
+
 The design hashes the source YAML and every available template/subject mesh. It
 also records the attachment and integration choices, pairwise plan, optimizer
 block order and line-search settings, control-point/timepoint counts, CPU thread
@@ -72,6 +105,7 @@ extrapolation beyond observed cells, or a convergence claim.
 The design itself contains no optimization, timing, memory sample, result,
 comparison, recommendation, or statistical inference. Nested subject prefixes
 are not independent cohorts; cycle caps are not proof of convergence; sampled
-RSS is not guaranteed peak memory. A future executor must verify the design,
-source config, and complete input inventory before running each condition and
-must retain every raw v0.1 optimizer benchmark separately.
+RSS is not guaranteed peak memory. The executor verifies the design, source
+config, and complete input inventory before running and retains every raw v0.1
+optimizer benchmark separately. A future analysis layer must be designed and
+frozen independently; the executor does not infer one.

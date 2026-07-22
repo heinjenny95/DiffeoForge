@@ -203,7 +203,9 @@ subject-prefix sizes and benchmark-only cycle caps before results exist. It
 hashes the complete input inventory and reviewed optimizer configuration,
 stores a deterministic condition order and exact argv, and has strict
 JSON/sidecar/HTML verification. Creating or verifying it runs no optimizer. A
-source-bound resumable executor remains the next reproducibility gate. See
+source-bound resumable executor now runs the frozen order, reconciles only a
+valid report prefix after interruption, and verifies every nested report plus a
+final hash manifest without analysis. See
 [prospective optimizer scaling design](MODERN_OPTIMIZER_BENCHMARK_DESIGN.md).
 
 The centered matrix implementation completed a two-repeat, all-68-subject,

@@ -54,7 +54,7 @@ This roadmap describes evidence gates rather than promised dates.
 - [x] Add a versioned fresh-process multi-cycle optimizer benchmark with separate
   target-cache timing, exact work counters, result hashes, and strict verification
 - [x] Freeze immutable subject-prefix by cycle-cap optimizer scaling designs before results
-- [ ] Execute and resume frozen optimizer scaling designs with strict raw-report verification
+- [x] Execute and resume frozen optimizer scaling designs with strict raw-report verification
 - [x] Replace ordinary rank-3 Gaussian differences with centered rank-2 matrix
   evaluation and protect values, gradients, translation stability, and workload accounting
 - [x] Add an analytical recomputed Gaussian backward with first/second-derivative
