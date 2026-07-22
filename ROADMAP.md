@@ -67,7 +67,7 @@ This roadmap describes evidence gates rather than promised dates.
 - [x] Emit versioned exact-count study progress without percentages or ETA
 - [x] Specify backward-compatible prospective multi-tile matrix semantics
 - [x] Run a prospective public standard/recompute engineering study without analysis
-- [ ] Run a prospective multi-size/tile blockwise performance study
+- [x] Run a prospective public multi-size/tile engineering study without analysis
 
 ## Milestone 3: Accessible application
 

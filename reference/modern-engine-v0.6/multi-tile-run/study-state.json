@@ -1,0 +1,28 @@
+{
+  "active_condition_id": null,
+  "completed_condition_ids": [
+    "condition-0001-subjects-000005-tiles-q000128-s000128-recompute",
+    "condition-0002-subjects-000005-tiles-q000128-s000128-standard",
+    "condition-0003-subjects-000005-tiles-q000032-s000032-recompute",
+    "condition-0004-subjects-000005-tiles-q000032-s000032-standard",
+    "condition-0005-subjects-000003-tiles-q000032-s000032-standard",
+    "condition-0006-subjects-000003-tiles-q000032-s000032-recompute",
+    "condition-0007-subjects-000005-tiles-q000064-s000064-standard",
+    "condition-0008-subjects-000005-tiles-q000064-s000064-recompute",
+    "condition-0009-subjects-000001-tiles-q000128-s000128-standard",
+    "condition-0010-subjects-000001-tiles-q000128-s000128-recompute",
+    "condition-0011-subjects-000001-tiles-q000064-s000064-standard",
+    "condition-0012-subjects-000001-tiles-q000064-s000064-recompute",
+    "condition-0013-subjects-000003-tiles-q000064-s000064-standard",
+    "condition-0014-subjects-000003-tiles-q000064-s000064-recompute",
+    "condition-0015-subjects-000001-tiles-q000032-s000032-recompute",
+    "condition-0016-subjects-000001-tiles-q000032-s000032-standard",
+    "condition-0017-subjects-000003-tiles-q000128-s000128-recompute",
+    "condition-0018-subjects-000003-tiles-q000128-s000128-standard"
+  ],
+  "design_sha256": "e8c9f70d0cb4b93263f5cb20c465351f4c03fc09025d810890e672b5babb994a",
+  "source_config_sha256": "80484b95e4ed113752372df7e8597e9049c7e16133f3d8fd8b35ceb8e8b3472a",
+  "status": "complete",
+  "study_run_version": "0.2",
+  "updated_at": "2026-07-22T17:00:56.683+00:00"
+}

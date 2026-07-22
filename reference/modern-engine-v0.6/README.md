@@ -22,3 +22,25 @@ Verify without executing a benchmark:
 diffeoforge modern-benchmark-matrix-design-verify `
   reference/modern-engine-v0.6/multi-tile-design
 ```
+
+## Completed raw execution
+
+After the design had been archived in commit `81551d4`, all eighteen frozen
+conditions were executed into `multi-tile-run`. Each condition contains five
+measured fresh-process observations plus one warm-up. All eighteen v0.4
+JSON/CSV/HTML report triplets, atomic state, lifecycle events, and the final
+v0.2 run manifest pass strict verification. Re-opening the completed run left
+all 62 files byte-identical.
+
+The completion manifest records `analysis_performed: false`. This is raw
+engineering evidence on tiny synthetic geometry. It makes no claim about a
+faster strategy, a lower-memory tile shape, statistical significance,
+full-atlas runtime, convergence, a safe public preset, or target-cohort
+feasibility.
+
+Verify the completed run without modifying it:
+
+```powershell
+diffeoforge modern-benchmark-matrix-study-verify `
+  reference/modern-engine-v0.6/multi-tile-run
+```
