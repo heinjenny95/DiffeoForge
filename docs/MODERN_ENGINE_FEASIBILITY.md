@@ -150,17 +150,24 @@ immutable provenance, workload planning, and fresh-process benchmarking. It is
 not an automatic default or evidence-backed performance preset. See
 [blockwise Gaussian primitives](BLOCKWISE_GAUSSIAN.md).
 
-An explicit direct-plan `recompute` autograd strategy now checkpoints each
+Ordinary Gaussian forward evaluation now uses a centered squared-distance
+matrix identity instead of materializing rank-3 XYZ differences. A detached
+common origin preserves translation stability without changing the exact
+mathematical distances or gradients. Direct formula tests, frozen reference
+fixtures, full-objective parity, and optimizer-result checks protect the
+change. See [centered Gaussian matrix evaluation](CENTERED_GAUSSIAN_MATRIX.md).
+
+An explicit direct-plan `recompute` autograd strategy checkpoints each
 deterministic Gaussian/Current/Varifold tile and reconstructs pairwise
 intermediates during backward. Primitive, complete Subject/Atlas objective, and
 one-cycle optimizer tests preserve forward, all-parameter-gradient, and decision
-parity. On the 320-face CC0 Current objective, tested `64 × 64` recompute removes
-the corresponding rank-3 pairwise tensors from the forward saved-tensor graph
-and reduces its largest and summed logical payload. Public workflow plans still
-construct standard autograd only. Benchmark v0.3 can explicitly measure either
-strategy in separate fresh processes, but its spawn smoke coverage is not a
-prospective performance comparison, process peak-memory, or runtime-scaling
-result.
+parity. On the 320-face CC0 Current objective, tested `64 × 64` standard
+evaluation retains tile-sized rank-2 matrices while recompute avoids saving
+them, reducing the largest and summed logical payload. Public workflow plans
+still construct standard autograd only. Benchmark v0.3 can explicitly measure
+either strategy in separate fresh processes, but its spawn smoke coverage is
+not a prospective performance comparison, process peak-memory, or
+runtime-scaling result.
 
 The production optimizer path now prepares the invariant target geometry and
 attachment self term once per subject instead of repeating that quadratic work
@@ -188,6 +195,13 @@ parameters. Strict JSON, CSV, and regenerated HTML verification make optimizer
 performance changes auditable without converting a limited pilot into a
 convergence, ETA, or Deformetrica-comparison claim. See
 [modern multi-cycle optimizer benchmark](MODERN_OPTIMIZER_BENCHMARK.md).
+
+The centered matrix implementation completed a two-repeat, all-68-subject,
+approximately 1,500-face, one-cycle observation in 61.614 s median optimizer
+time with exact cross-process histories and result hashes. Median sampled peak
+RSS was 10.103 GiB. This is useful deterministic integration evidence, but the
+single cycle and sampled memory remain insufficient for convergence, 300-subject
+feasibility, or comparative performance claims.
 
 ## Gates before a usable atlas engine
 

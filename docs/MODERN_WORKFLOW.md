@@ -66,9 +66,10 @@ v0.2 requires it.
 
 `modern-plan` v0.2 is a non-compute review step for the configured exact
 engine. It publishes logical all-pairs operation counts, the largest logical
-pair, the exact largest dense matrix or blockwise tile materialized by the
-reviewed plan, and selected known tensor payloads. It does not predict peak
-RAM or runtime. See [modern workload planning](MODERN_WORKLOAD.md).
+pair, the largest dense or blockwise matrix dimensions evaluated by the
+reviewed plan, and conservative dense-equivalent payload arithmetic. It does
+not predict allocations, peak RAM, or runtime. See
+[modern workload planning](MODERN_WORKLOAD.md).
 
 During `modern-run`, the CLI prints live stage and optimizer-decision events.
 They come from the same versioned application-service callback transported by

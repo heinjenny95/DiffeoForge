@@ -247,6 +247,30 @@ def _gaussian_tile(
     return differences, torch.exp(-squared_distances / (width * width))
 
 
+def _gaussian_matrix(
+    x: torch.Tensor,
+    y: torch.Tensor,
+    width: float,
+) -> torch.Tensor:
+    """Return a Gaussian matrix without materializing rank-3 differences.
+
+    A detached common origin keeps the matrix identity numerically useful for
+    meshes carrying a large global translation. The resulting centered
+    coordinates preserve the exact mathematical distances and gradients while
+    the matrix product avoids the ``rows x columns x 3`` forward payload.
+    """
+
+    origin = 0.5 * (torch.mean(x.detach(), dim=0) + torch.mean(y.detach(), dim=0))
+    centered_x = x - origin
+    centered_y = y - origin
+    squared_distances = (
+        torch.sum(centered_x.square(), dim=1)[:, None]
+        + torch.sum(centered_y.square(), dim=1)[None, :]
+        - 2.0 * (centered_x @ centered_y.T)
+    )
+    return torch.exp(-torch.clamp_min(squared_distances, 0.0) / (width * width))
+
+
 def gaussian_kernel(x: torch.Tensor, y: torch.Tensor, kernel_width: float) -> torch.Tensor:
     """Return the dense Deformetrica-convention Gaussian kernel matrix."""
 
@@ -254,8 +278,7 @@ def gaussian_kernel(x: torch.Tensor, y: torch.Tensor, kernel_width: float) -> to
     _validate_float_matrix("y", y, columns=3)
     _validate_compatible("y", y, x)
     width = _validate_width(kernel_width)
-    _, kernel = _gaussian_tile(x, y, width)
-    return kernel
+    return _gaussian_matrix(x, y, width)
 
 
 def gaussian_convolve(
@@ -302,7 +325,7 @@ def gaussian_convolve_blockwise(
     plan = GaussianTilePlan(query_tile_size, source_tile_size, autograd_strategy)
 
     def evaluate(query: torch.Tensor, source: torch.Tensor, source_weights: torch.Tensor):
-        _, kernel = _gaussian_tile(query, source, width)
+        kernel = _gaussian_matrix(query, source, width)
         return kernel @ source_weights
 
     outputs = []
@@ -358,8 +381,8 @@ def gaussian_convolve_gradient(
         raise ValueError("left_weights and right_weights must have the same column count")
 
     width = _validate_width(kernel_width)
-    differences = x[:, None, :] - y[None, :, :]
-    coefficients = (left_weights @ right_weights.T) * gaussian_kernel(x, y, width)
+    differences, kernel = _gaussian_tile(x, y, width)
+    coefficients = (left_weights @ right_weights.T) * kernel
     return (-2.0 / (width * width)) * torch.sum(coefficients[:, :, None] * differences, dim=1)
 
 
@@ -869,7 +892,7 @@ def _varifold_inner_product_blockwise(
         source_areas: torch.Tensor,
         source_units: torch.Tensor,
     ) -> torch.Tensor:
-        _, kernel = _gaussian_tile(query_centers, source_centers, width)
+        kernel = _gaussian_matrix(query_centers, source_centers, width)
         orientation = (query_units @ source_units.T).square()
         return torch.sum(query_areas * ((kernel * orientation) @ source_areas))
 

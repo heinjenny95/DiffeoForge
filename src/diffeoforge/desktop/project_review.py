@@ -483,10 +483,10 @@ def _modern_review(config_path: Path, config_sha256: str) -> ProjectReviewResult
             (
                 f"{logical['rows']} × {logical['columns']} · "
                 f"{_bytes(logical['float64_xyz_difference_tensor_bytes'])} "
-                "XYZ differences"
+                "dense-equivalent XYZ payload"
             ),
-            "Logical all-pairs dimensions; blockwise evaluation does not necessarily "
-            "allocate this all at once.",
+            "Logical all-pairs dimensions and conservative rank-3 equivalent; the centered "
+            "matrix kernel does not allocate that complete XYZ tensor.",
         ),
         ReviewItem(
             "Largest execution tile",
@@ -494,13 +494,14 @@ def _modern_review(config_path: Path, config_sha256: str) -> ProjectReviewResult
                 f"{tile['tile_rows']} × {tile['tile_columns']} · "
                 f"{_bytes(tile['float64_xyz_difference_tensor_bytes'])}"
             ),
-            "Exact upper bound for one configured XYZ-difference tile, not total peak RAM.",
+            "Conservative rank-3 equivalent for one configured tile, not an allocation or "
+            "total peak-RAM claim.",
         ),
         ReviewItem(
-            "Known payload arithmetic",
+            "Conservative payload arithmetic",
             _bytes(payload["known_payload_arithmetic_subtotal_bytes"]),
-            "Explicitly accounted tensor payloads; Autograd, allocator, BLAS, and the "
-            "operating system are intentionally excluded.",
+            "Versioned dense-equivalent accounting for planning continuity; Autograd, "
+            "allocator, BLAS, and the operating system are intentionally excluded.",
         ),
         ReviewItem(
             "Objective/gradient upper bound",
@@ -564,11 +565,12 @@ def _modern_review(config_path: Path, config_sha256: str) -> ProjectReviewResult
         workload=workload,
         warnings=warnings,
         scientific_boundary=(
-            "This view shows exact all-pairs operation counts and known tensor payloads for "
-            "the configured CPU/float64 plan. It is not a peak-RAM forecast, computation-"
-            "time prediction, benchmark measurement, or guarantee for 300 subjects. Autograd, "
-            "memory management, BLAS threads, and operating-system load can change real "
-            f"resource use. Original report contract: {SCIENTIFIC_BOUNDARY}"
+            "This view shows exact all-pairs operation counts and conservative "
+            "dense-equivalent payload arithmetic for the configured CPU/float64 plan. It is "
+            "not an allocation claim, peak-RAM forecast, computation-time prediction, "
+            "benchmark measurement, or guarantee for 300 subjects. Autograd, memory "
+            "management, BLAS threads, and operating-system load can change real resource "
+            f"use. Original report contract: {SCIENTIFIC_BOUNDARY}"
         ),
     )
 

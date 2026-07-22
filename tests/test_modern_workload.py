@@ -82,9 +82,7 @@ def test_example_workload_has_exact_public_dimensions_and_formulas() -> None:
     assert largest["rows"] == largest["columns"] == 320
     assert largest["float64_xyz_difference_tensor_bytes"] == 2_457_600
     assert report["optimizer_bound"]["objective_gradient_evaluation_upper_bound"] == 190
-    assert report["optimizer_bound"]["gaussian_pair_elements_upper_bound"] == (
-        190 * 1_606_065
-    )
+    assert report["optimizer_bound"]["gaussian_pair_elements_upper_bound"] == (190 * 1_606_065)
     assert report["output_bound"] == {
         "maximum_retained_components": 4,
         "maximum_deformation_components": 3,
@@ -111,18 +109,18 @@ def test_blockwise_plan_separates_logical_pair_from_exact_execution_tile(
     report = collect_modern_workload(path, host_observations=FIXED_HOST)
 
     assert report["engine"]["id"] == "diffeoforge_modern_blockwise"
-    assert report["engine"]["pairwise_evaluation"] == config["runtime"][
-        "pairwise_evaluation"
-    ]
-    assert report["operation_model"]["largest_logical_pair"][
-        "float64_xyz_difference_tensor_bytes"
-    ] == 2_457_600
+    assert report["engine"]["pairwise_evaluation"] == config["runtime"]["pairwise_evaluation"]
+    assert (
+        report["operation_model"]["largest_logical_pair"]["float64_xyz_difference_tensor_bytes"]
+        == 2_457_600
+    )
     tile = report["operation_model"]["largest_execution_tile"]
     assert (tile["tile_rows"], tile["tile_columns"]) == (64, 64)
     assert tile["float64_xyz_difference_tensor_bytes"] == 64 * 64 * 3 * 8
-    assert report["payload_model"][
-        "largest_single_execution_xyz_difference_tensor_bytes"
-    ] == 64 * 64 * 3 * 8
+    assert (
+        report["payload_model"]["largest_single_execution_xyz_difference_tensor_bytes"]
+        == 64 * 64 * 3 * 8
+    )
 
 
 @pytest.mark.parametrize("attachment_type", ["current", "varifold"])
@@ -167,13 +165,19 @@ def test_predicted_gaussian_pairs_equal_instrumented_dense_objective(
     ]
     predicted = _operation_model(config, template, subjects)["one_objective_forward"]
     observed_calls: list[int] = []
-    original = dense.gaussian_kernel
+    original_matrix = dense._gaussian_matrix
+    original_tile = dense._gaussian_tile
 
-    def observed(x, y, kernel_width):
+    def observed_matrix(x, y, kernel_width):
         observed_calls.append(x.shape[0] * y.shape[0])
-        return original(x, y, kernel_width)
+        return original_matrix(x, y, kernel_width)
 
-    monkeypatch.setattr(dense, "gaussian_kernel", observed)
+    def observed_tile(x, y, kernel_width):
+        observed_calls.append(x.shape[0] * y.shape[0])
+        return original_tile(x, y, kernel_width)
+
+    monkeypatch.setattr(dense, "_gaussian_matrix", observed_matrix)
+    monkeypatch.setattr(dense, "_gaussian_tile", observed_tile)
     result = atlas_objective(
         template_vertices,
         template_triangles,
@@ -205,7 +209,7 @@ def test_html_is_escaped_and_reports_known_payloads(tmp_path: Path) -> None:
 
     assert "<script>alert(1)</script>" not in rendered
     assert "&lt;script&gt;alert(1)&lt;/script&gt;" in rendered
-    assert "Known payloads, not peak RAM" in rendered
+    assert "Conservative payload equivalents, not peak RAM" in rendered
     assert "not a peak-RAM predictor" in rendered
     parser = _ReportStructureParser()
     parser.feed(rendered)
@@ -256,13 +260,9 @@ def test_report_directory_is_deterministic_atomic_and_safely_replaceable(
     assert not (tmp_path / "inconsistent").exists()
 
     inconsistent_operation = json.loads(json.dumps(report))
-    inconsistent_operation["operation_model"]["one_objective_forward"][
-        "gaussian_calls"
-    ] += 1
+    inconsistent_operation["operation_model"]["one_objective_forward"]["gaussian_calls"] += 1
     with pytest.raises(ModernWorkloadError, match="inventory and configuration"):
-        write_modern_workload_report(
-            inconsistent_operation, tmp_path / "inconsistent-operation"
-        )
+        write_modern_workload_report(inconsistent_operation, tmp_path / "inconsistent-operation")
 
     import diffeoforge.modern_workload as module
 
@@ -311,6 +311,4 @@ def test_modern_plan_cli_writes_reports_without_starting_optimizer(
 
     assert main(["modern-plan", str(config), "--output", str(destination)]) == 2
     assert "already exists" in capsys.readouterr().err
-    assert main(
-        ["modern-plan", str(config), "--output", str(destination), "--force"]
-    ) == 0
+    assert main(["modern-plan", str(config), "--output", str(destination), "--force"]) == 0

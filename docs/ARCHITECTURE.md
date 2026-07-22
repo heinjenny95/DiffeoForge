@@ -95,9 +95,9 @@ The same application layer exposes a read-only `modern-plan` service before
 compute. It inspects the resolved cohort and configuration, applies a versioned
 exact all-pairs operation model, records the largest logical pair separately
 from the largest configured dense matrix or blockwise execution tile, records
-known tensor payloads and host observations, and publishes strict JSON plus
-self-contained HTML. It deliberately does not cross the backend boundary into
-runtime or peak-memory prediction.
+conservative dense-equivalent payload arithmetic and host observations, and
+publishes strict JSON plus self-contained HTML. It deliberately does not cross
+the backend boundary into runtime or peak-memory prediction.
 
 `modern-run` now accepts a synchronous read-only progress observer. The
 application service emits versioned workflow-stage events and translates the
@@ -421,18 +421,21 @@ explicit version dispatch; the existing v0.1 single-tile study artifacts and
 service retain their exact meaning.
 
 Below the application layer, the engine now contains an explicit blockwise
-Gaussian primitive family. Query and source tile sizes bound each pairwise XYZ
-difference tensor; Current and Varifold inner products accumulate tiles
-without full face-by-face kernel/orientation matrices. This path is
-non-approximate but changes floating reduction order. An explicit public
+Gaussian primitive family. Ordinary Gaussian evaluation uses a centered matrix
+identity and does not materialize rank-3 XYZ differences; query and source tile
+sizes bound the rank-2 pairwise matrices. Current and Varifold inner products
+accumulate tiles without full face-by-face kernel/orientation matrices. This
+path is non-approximate but changes floating reduction order. An explicit public
 workflow setting now carries the plan through the complete optimizer,
 reconstructions, PCA endpoints, nested bundle, outer run provenance, and
 verifier cross-checks. Workload v0.2 accounts for exact logical pairs and the
 configured execution tile, and benchmark v0.3 measures that same plan; a
 v0.4 benchmark can measure one separately recorded effective blockwise tile
 shape. A prospective multi-size scaling study remains open. The tile shape
-bounds a single pairwise allocation; standard autograd may still retain
-multiple tile graphs, so reduced peak RAM remains a measurement gate.
+bounds matrix dimensions, but standard autograd may still retain multiple tile
+graphs, so reduced peak RAM remains a measurement gate. Versioned XYZ-payload
+fields are retained as conservative dense-equivalent arithmetic, not allocation
+claims.
 
 The low-level primitives and direct `GaussianTilePlan` expose a `recompute`
 strategy that places deterministic tile calculations behind non-reentrant

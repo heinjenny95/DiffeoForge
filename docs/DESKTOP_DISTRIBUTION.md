@@ -91,8 +91,9 @@ and validation difference.
 The desktop preview renders the shared-core `modern-plan` workload contract in
 its second step and publishes the strict JSON/HTML report beside the generated
 configuration. It retains the distinction between exact logical all-pairs
-counts, the largest configured dense or blockwise execution tile, known payload
-subtotals, host observations, and unknown measured peak RAM/runtime. The
+counts, the largest configured dense or blockwise execution tile, conservative
+dense-equivalent payload subtotals, host observations, and unknown measured
+peak RAM/runtime. The
 Deformetrica route instead renders its existing preflight parameter ratios and
 labels resource use as unmodelled because computation remains external.
 

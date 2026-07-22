@@ -32,11 +32,13 @@ the production VTK parser, topology and triangle-quality gates, Modern project
 initializer, strict schema validation, and configured-engine workload planner.
 
 For that input, the largest surface-attachment pair has dimensions
-`10,000 × 10,000`. A complete float64 XYZ-difference tensor would contain
+`10,000 × 10,000`. Its conservative dense-equivalent float64 XYZ payload is
 `10,000 × 10,000 × 3 × 8 = 2,400,000,000` bytes. The explicit `256 × 256`
-blockwise plan instead declares a largest individual XYZ-difference tile of
-`256 × 256 × 3 × 8 = 1,572,864` bytes. The total number of logical pair
-interactions is unchanged.
+blockwise plan declares a largest per-tile equivalent of
+`256 × 256 × 3 × 8 = 1,572,864` bytes. The centered matrix kernel does not
+materialize either rank-3 tensor; these values preserve auditable planning
+arithmetic while the total number of logical pair interactions remains
+unchanged.
 
 This test proves configuration, parsing, quality control, provenance, and exact
 pre-compute accounting for a 10,000-face surface. It does **not** execute or
@@ -44,11 +46,12 @@ validate a complete 10,000-face atlas.
 
 ## Scientific and engineering boundary
 
-The tile figure is not total live memory. Standard PyTorch autograd may retain
-graphs from multiple tiles; trajectories, mesh tensors, kernels, the allocator,
-BLAS, Python, and the operating system add further memory. Logical work remains
-quadratic in face count, so blockwise execution can reduce one allocation
-without making a 300-subject run fast.
+The tile figure is a conservative dense-equivalent, not an observed allocation
+or total live memory. Standard PyTorch autograd may retain graphs from multiple
+tiles; trajectories, mesh tensors, rank-2 kernels, the allocator, BLAS, Python,
+and the operating system add further memory. Logical work remains quadratic in
+face count, so avoiding rank-3 differences does not by itself make a
+300-subject run fast.
 
 No tile size is currently claimed to be universally safe. The desktop label
 calls the route experimental, the workload page keeps peak RAM and runtime

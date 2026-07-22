@@ -263,7 +263,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     modern_plan_parser = subparsers.add_parser(
         "modern-plan",
-        help="Inspect configured-engine workload and known tensor payloads without computing.",
+        help=(
+            "Inspect configured-engine workload and conservative payload equivalents "
+            "without computing."
+        ),
     )
     modern_plan_parser.add_argument("config", type=Path)
     modern_plan_parser.add_argument(
@@ -1100,7 +1103,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 f"{report['optimizer_bound']['objective_gradient_evaluation_upper_bound']}"
             )
             print(
-                f"Largest single execution XYZ-difference tensor: {largest_execution_bytes} bytes"
+                "Largest dense-equivalent execution XYZ payload: "
+                f"{largest_execution_bytes} bytes"
             )
             print(f"Pairwise execution: {report['engine']['pairwise_evaluation']['mode']}")
             print(f"Machine-readable report: {report_directory / REPORT_JSON_NAME}")

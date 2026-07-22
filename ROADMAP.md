@@ -53,6 +53,8 @@ This roadmap describes evidence gates rather than promised dates.
   initial evaluation without changing optimizer decisions
 - [x] Add a versioned fresh-process multi-cycle optimizer benchmark with separate
   target-cache timing, exact work counters, result hashes, and strict verification
+- [x] Replace ordinary rank-3 Gaussian differences with centered rank-2 matrix
+  evaluation and protect values, gradients, translation stability, and workload accounting
 - [x] Add an explicit fresh-process recompute benchmark path and spawn smoke evidence
 - [x] Freeze immutable paired standard/recompute designs before observations
 - [x] Execute/resume frozen designs with strict separate-report verification

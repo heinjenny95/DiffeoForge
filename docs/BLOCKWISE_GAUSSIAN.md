@@ -10,11 +10,14 @@ Tile recomputation is tracked prospectively by
 
 ## Why this slice exists
 
-The dense correctness baseline constructs pairwise XYZ differences with shape
-`query_rows × source_rows × 3`. Surface attachment also constructs dense
-face-pair kernels and, for Varifold, a dense orientation matrix. That direct
-implementation is easy to inspect but its quadratic intermediate memory is a
-known barrier for simplified high-face-count meshes.
+The first dense correctness baseline constructed pairwise XYZ differences with
+shape `query_rows × source_rows × 3`. The current implementation instead forms
+ordinary Gaussian kernels through a centered squared-distance matrix identity,
+so forward evaluation uses rank-2 matrices without changing the all-pairs
+mathematics. Analytical Gaussian x-gradients still construct explicit
+differences. Surface attachment also constructs face-pair kernels and, for
+Varifold, an orientation matrix. Quadratic work and rank-2 intermediates remain
+a barrier for high-face-count meshes.
 
 The blockwise functions evaluate the same all-pairs mathematics in explicit
 tiles. They do not truncate neighborhoods, approximate kernels, change the
@@ -32,18 +35,20 @@ The engine exports:
 - `varifold_squared_distance_blockwise`.
 
 Every operation requires positive `query_tile_size` and `source_tile_size`
-arguments. For float64, the declared maximum single XYZ-difference tile is:
+arguments. For float64, the versioned planner declares this conservative
+dense-equivalent XYZ payload for one tile:
 
 ```text
 query_tile_size × source_tile_size × 3 × 8 bytes
 ```
 
-For example, a `1024 × 1024` tile declares a 24 MiB XYZ-difference tensor,
-independent of total face count. Kernel, coefficient/orientation, output,
-Python, PyTorch allocator, and retained trajectory memory still exist. In
-particular, standard autograd may retain intermediates from multiple tiles
-until backward completes. Version 0.1 therefore proves a bound on the largest
-single pairwise tile allocation, not bounded total or peak RAM.
+For example, a `1024 × 1024` tile has a 24 MiB dense-equivalent XYZ payload,
+independent of total face count. The centered matrix path does not allocate that
+rank-3 tensor. Rank-2 kernel, coefficient/orientation, output, Python, PyTorch
+allocator, and retained trajectory memory still exist. In particular, standard
+autograd may retain intermediates from multiple tiles until backward completes.
+The planner therefore records stable conservative arithmetic, not an observed
+single allocation or a bound on total or peak RAM.
 
 Current tiles convolve source normals and accumulate their inner product with
 query normals. Varifold tiles calculate local area, orientation-similarity,
@@ -76,8 +81,8 @@ keyword-only choice `autograd_strategy="standard"` or
 `autograd_strategy="recompute"`. Standard is the unchanged default. Recompute
 uses PyTorch's non-reentrant activation checkpointing around each deterministic
 tile calculation: the forward graph retains tile inputs and reconstructs
-pairwise differences, kernels, coefficients, and orientation values when
-backward needs them.
+distance/kernel matrices, coefficients, and orientation values when backward
+needs them.
 
 ```python
 value = gaussian_convolve_blockwise(
@@ -136,18 +141,18 @@ Tests currently require:
 - recompute forward/gradient parity across uneven Gaussian tile shapes;
 - recompute parity for the explicit Gaussian x-gradient and its differentiated
   result, plus Current/Varifold vertex gradients; and
-- saved-tensor-hook instrumentation showing that the tested recompute
-  convolution forward retains no rank-3 pairwise tensor and a smaller logical
-  saved-tensor payload than standard tiling;
+- saved-tensor-hook instrumentation showing that ordinary standard convolution
+  constructs no rank-3 pairwise tensor and that tested recompute avoids saving
+  the full tile-sized rank-2 matrices retained by standard tiling;
 - Current and Varifold complete Subject trajectories, objective components,
   and template/control-point/momenta gradients under both standard and
   recompute plans;
 - a two-subject Atlas objective and one complete optimizer-cycle decision and
   final-parameter comparison under both plans; and
-- a 320-face CC0 Current-objective probe with `64 × 64` tiles: recompute retains
-  no `64 × 64 × 3` tensor and has a smaller largest and summed logical saved
-  payload while objective and all parameter gradients match standard exactly
-  on the tested CPU run.
+- a 320-face CC0 Current-objective probe with `64 × 64` tiles: standard retains
+  tile-sized rank-2 matrices while recompute does not, giving recompute a
+  smaller largest and summed logical saved payload while objective and all
+  parameter gradients match standard exactly on the tested CPU run.
 
 The dense path remains the correctness oracle and continues to match the
 frozen Deformetrica primitive/objective evidence. `modern-run` can select the
@@ -177,4 +182,5 @@ an automatic default or claim a safe preset until the remaining gates pass.
 Saved-tensor hooks describe tensors requested by autograd under the tested
 PyTorch implementation; their logical byte sum is not unique storage, allocator
 state, process RSS, total live memory, runtime performance, or 300-subject
-feasibility.
+feasibility. The planner's backward-compatible XYZ fields are conservative
+dense-equivalent arithmetic and likewise do not claim actual rank-3 allocation.
