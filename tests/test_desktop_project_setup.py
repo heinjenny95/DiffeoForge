@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import importlib.util
+import json
 import shutil
 from pathlib import Path
 
@@ -9,7 +10,8 @@ import pytest
 import yaml
 
 from diffeoforge.analysis.landmarks import LANDMARK_COLUMNS
-from diffeoforge.config import ConfigurationError
+from diffeoforge.backends.deformetrica_reference import render_engine_file_bytes
+from diffeoforge.config import ConfigurationError, load_config
 from diffeoforge.desktop.project_setup import (
     DesktopEngine,
     ProjectSetupRequest,
@@ -71,6 +73,19 @@ def test_reference_project_setup_persists_visible_parameter_selection(tmp_path: 
             reference_max_iterations=200,
             reference_initial_step_size=0.01,
             reference_convergence_tolerance=0.0001,
+            reference_attachment_type="varifold",
+            reference_timepoints=17,
+            reference_use_rk2=True,
+            reference_max_line_search_iterations=23,
+            reference_save_every_n_iterations=7,
+            reference_print_every_n_iterations=3,
+            reference_scale_initial_step_size=False,
+            reference_use_sobolev_gradient=False,
+            reference_sobolev_kernel_width_ratio=1.75,
+            reference_freeze_template=True,
+            reference_freeze_control_points=True,
+            reference_threads=6,
+            reference_random_seed=42,
         )
     )
 
@@ -78,6 +93,32 @@ def test_reference_project_setup_persists_visible_parameter_selection(tmp_path: 
     assert config["project"]["parameter_provenance"]["profile"] == "high_detail"
     assert config["project"]["parameter_provenance"]["ratios"] == ratios
     assert config["optimization"]["max_iterations"] == 200
+    assert config["model"]["attachment"]["type"] == "varifold"
+    assert config["model"]["deformation"]["timepoints"] == 17
+    assert config["model"]["deformation"]["use_rk2"] is True
+    assert config["optimization"]["max_line_search_iterations"] == 23
+    assert config["optimization"]["save_every_n_iterations"] == 7
+    assert config["optimization"]["print_every_n_iterations"] == 3
+    assert config["optimization"]["scale_initial_step_size"] is False
+    assert config["optimization"]["use_sobolev_gradient"] is False
+    assert config["optimization"]["sobolev_kernel_width_ratio"] == 1.75
+    assert config["optimization"]["freeze_template"] is True
+    assert config["optimization"]["freeze_control_points"] is True
+    assert config["runtime"]["threads"] == 6
+    assert config["runtime"]["random_seed"] == 42
+    rendered = render_engine_file_bytes(
+        load_config(result.config_path),
+        Path("input/template.vtk"),
+        (Path("input/subject.vtk"),),
+    )
+    model_xml = rendered["model.xml"].decode("utf-8")
+    optimization_xml = rendered["optimization_parameters.xml"].decode("utf-8")
+    assert "<attachment-type>varifold</attachment-type>" in model_xml
+    assert "<number-of-timepoints>17</number-of-timepoints>" in model_xml
+    assert "<max-line-search-iterations>23</max-line-search-iterations>" in optimization_xml
+    assert "<use-rk2>On</use-rk2>" in optimization_xml
+    assert "<freeze-template>On</freeze-template>" in optimization_xml
+    assert "<freeze-control-points>On</freeze-control-points>" in optimization_xml
 
 
 def test_project_setup_handles_spaces_and_non_ascii_paths(tmp_path: Path) -> None:
@@ -261,6 +302,10 @@ def test_reference_project_applies_landmarks_before_deformetrica_without_editing
             units="unitless",
             engine=DesktopEngine.DEFORMETRICA_REFERENCE,
             landmarks_file=_write_landmarks(tmp_path / "landmarks.csv"),
+            procrustes_scale_to_unit_centroid_size=False,
+            procrustes_allow_reflection=True,
+            procrustes_tolerance=1e-8,
+            procrustes_max_iterations=250,
         )
     )
 
@@ -268,6 +313,13 @@ def test_reference_project_applies_landmarks_before_deformetrica_without_editing
     assert result.preprocessing_report_path.is_file()
     assert result.template_path.parent.name.startswith("aligned-")
     assert {path: sha256_file(path) for path in sources} == hashes_before
+    evidence = json.loads(result.preprocessing_report_path.read_text(encoding="utf-8"))
+    assert evidence["settings"] == {
+        "allow_reflection": True,
+        "max_iterations": 250,
+        "scale_to_unit_centroid_size": False,
+        "tolerance": 1e-8,
+    }
     config = yaml.safe_load(result.config_path.read_text(encoding="utf-8"))
     assert "preprocessing/aligned-" in config["input"]["directory"]
     assert any("Raw meshes were not modified" in notice for notice in result.notices)
@@ -323,6 +375,21 @@ def test_desktop_project_setup_rejects_invalid_cycle_cap(tmp_path: Path) -> None
                 units="unitless",
                 engine=DesktopEngine.MODERN_CPU,
                 max_cycles=0,
+            )
+        )
+
+
+def test_desktop_project_setup_rejects_nonfinite_procrustes_tolerance(
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(ConfigurationError, match="procrustes_tolerance"):
+        create_project(
+            ProjectSetupRequest(
+                mesh_directory=MESH_DIRECTORY,
+                project_directory=tmp_path / "invalid procrustes",
+                units="unitless",
+                engine=DesktopEngine.DEFORMETRICA_REFERENCE,
+                procrustes_tolerance=float("nan"),
             )
         )
 

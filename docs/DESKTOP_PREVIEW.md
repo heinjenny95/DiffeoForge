@@ -36,14 +36,17 @@ terminal:
 5. explicitly choose either a three-cycle technical pilot or a convergence
    attempt capped at 50 cycles, with early stopping only when every parameter
    block reaches the declared gradient tolerance in one completed cycle;
-6. optionally select a labelled-landmark CSV for the modern workflow;
+6. optionally import a labelled-landmark CSV or place exact vertex landmarks
+   in guided XY/XZ/YZ views for either engine, then explicitly configure the
+   GPA scaling, reflection, tolerance, and iteration policy;
 7. validate schemas, paths, mesh geometry, and the engine-specific setup
    contract through the same application services used by the CLI;
 8. create a starter configuration, requiring a destructive confirmation before
    atomically replacing only a recognized DiffeoForge-generated configuration,
    and review a visible result summary;
 9. continue to a second screen that reads the effective values back from the
-   validated configuration and explains their role;
+   validated configuration, explains their role, and verifies any
+   content-addressed Procrustes evidence and aligned-mesh hashes;
 10. optionally load the exact selected template outside the event loop and view
    native aspect-preserving XY, XZ, or YZ wireframe projections with source
    hash and displayed/total edge counts;
@@ -78,15 +81,22 @@ becomes parameter review, atlas launch becomes verified Results & PCA review,
 and a completed review can be reopened without exposing duplicate primary
 actions inside result cards.
 
-The reference path creates `atlas.yaml` and `atlas.preflight.html`. The modern
+The reference path creates `atlas.yaml` and `atlas.preflight.html`. Its setup
+screen provides provenance-labelled recommended, pilot, high-detail, and
+advanced profiles plus an expert panel for attachment type, deformation time
+discretization, RK2, line search, checkpoint/log cadence, step scaling,
+Sobolev gradient controls, freeze flags, CPU threads, and random seed. Values
+are rendered into the validated configuration and exact Deformetrica XML; the
+fixed float32 reference precision is not shown as editable. The modern
 path creates `modern-atlas.yaml` after its stronger mesh-quality,
 initialization, optional Procrustes, and PCA-dimension checks pass. Its second
 screen publishes `modern-atlas.workload/workload.json` and `workload.html`.
-Both paths label geometry-scaled values as exploratory. Only the Modern route
-can currently continue to numerical work; the external reference button stays
-explicitly unavailable rather than implying unsupported supervision. A passed
-reference diagnostic proves only its listed host/container observations; it is
-not a hidden launch prerequisite or evidence of a completed atlas.
+Both paths label geometry-scaled values as exploratory. The Deformetrica route
+can continue through contained supervised execution, observed optimizer events,
+elapsed time and a bounded estimate to the configured iteration limit, followed
+by independently verified momenta PCA and result review. A passed reference
+diagnostic proves only its listed host/runtime observations; it is not evidence
+of a completed atlas or scientific convergence.
 
 ## Developer launch
 
@@ -161,10 +171,11 @@ python -m diffeoforge.desktop --smoke
 
 ## Current limitations
 
-The GUI does not yet edit scientific parameters, render meshes interactively in
-3D, place landmarks, resume an atlas, or reconcile an already dead parent
-application. Verified Deformetrica momenta now enter the shared PCA screen;
-reference PC deformation meshes and registration renderings remain open.
+The GUI does not yet provide arbitrary surface-point interactive 3D
+landmarking, resume an interrupted atlas, or reconcile an already dead parent
+application. The current landmark editor selects exact represented vertices in
+orthographic views. Verified Deformetrica momenta enter the shared PCA screen;
+reference PC deformation meshes and native registration renderings remain open.
 Source-level Deformetrica supervision is connected and its dedicated execution
 worker is now in the prospective v0.4 Windows freeze contract. A clean-runner
 v0.4 observation and rebuilt installer remain pending. The projection preview is

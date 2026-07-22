@@ -142,6 +142,13 @@ This repository currently provides:
 - supervised source-level Deformetrica execution followed by strict momenta and
   control-point import, a source-bound deterministic linear-PCA bundle, and the
   shared verified Results & PCA screen;
+- guided orthographic exact-vertex landmark placement, strict reusable landmark
+  CSV output, configurable generalized Procrustes alignment for either engine,
+  immutable content-addressed aligned mesh copies, and hash-verified alignment
+  evidence in parameter review;
+- scale-aware Deformetrica starter profiles plus explicit basic and expert
+  parameter controls whose effective values are persisted in YAML, rendered
+  into exact engine XML, and read back for review;
 - a self-contained HTML input-validation and parameter-scale report;
 - a self-contained HTML convergence, lifecycle, and result report;
 - terminal interruption capture, explicit unclean-stop recovery, and
@@ -220,10 +227,12 @@ command-pipe EOF requests cooperative cancellation on every platform.
 Versioned private markers and OS-released
 leases now support exact-destination, read-only discovery after hard crashes;
 automatic deletion, resume, and reconciliation remain deliberately open.
-DiffeoForge can also load the selected template outside the GUI thread and
-render deterministic native XY/XZ/YZ wireframe projections with an explicit
-display-edge budget and exact source hash. This is an inspection preview, not
-interactive 3D rendering, mesh QC, registration evidence, or landmark picking.
+DiffeoForge can also load selected meshes outside the GUI thread and render
+deterministic native XY/XZ/YZ wireframe projections with an explicit
+display-edge budget and exact source hash. The guided landmark editor can pick
+represented source vertices in those projections and stores their exact 3D
+coordinates. This remains orthographic vertex selection, not arbitrary
+surface-point interactive 3D rendering, mesh QC, or registration evidence.
 DiffeoForge does **not** yet ship a public redistributable binary. Same-owner
 private Windows installers are used for local testing. A clean-commit,
 exact-inventory Windows one-directory

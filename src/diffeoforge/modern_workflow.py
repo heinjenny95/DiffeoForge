@@ -238,6 +238,10 @@ def initialize_modern_workflow(
     project_name: str | None = None,
     output_directory: Path | str | None = None,
     landmarks_file: Path | str | None = None,
+    procrustes_scale_to_unit_centroid_size: bool = True,
+    procrustes_allow_reflection: bool = False,
+    procrustes_tolerance: float = 1e-10,
+    procrustes_max_iterations: int = 100,
     control_point_count: int = 9,
     attachment_kernel_width: float | None = None,
     deformation_kernel_width: float | None = None,
@@ -266,6 +270,23 @@ def initialize_modern_workflow(
         raise ConfigurationError("threads must be a positive integer")
     if isinstance(random_seed, bool) or not isinstance(random_seed, int) or random_seed < 0:
         raise ConfigurationError("random_seed must be a nonnegative integer")
+    if not isinstance(procrustes_scale_to_unit_centroid_size, bool):
+        raise ConfigurationError("procrustes_scale_to_unit_centroid_size must be a boolean")
+    if not isinstance(procrustes_allow_reflection, bool):
+        raise ConfigurationError("procrustes_allow_reflection must be a boolean")
+    if (
+        isinstance(procrustes_tolerance, bool)
+        or not isinstance(procrustes_tolerance, (int, float))
+        or not math.isfinite(float(procrustes_tolerance))
+        or procrustes_tolerance <= 0
+    ):
+        raise ConfigurationError("procrustes_tolerance must be finite and positive")
+    if (
+        isinstance(procrustes_max_iterations, bool)
+        or not isinstance(procrustes_max_iterations, int)
+        or procrustes_max_iterations < 1
+    ):
+        raise ConfigurationError("procrustes_max_iterations must be a positive integer")
     try:
         pairwise_evaluation = PairwiseEvaluationPlan(
             mode=pairwise_mode,
@@ -352,10 +373,10 @@ def initialize_modern_workflow(
             "procrustes": {
                 "enabled": landmark_value is not None,
                 "landmarks_file": landmark_value,
-                "scale_to_unit_centroid_size": True,
-                "allow_reflection": False,
-                "tolerance": 1e-10,
-                "max_iterations": 100,
+                "scale_to_unit_centroid_size": procrustes_scale_to_unit_centroid_size,
+                "allow_reflection": procrustes_allow_reflection,
+                "tolerance": float(procrustes_tolerance),
+                "max_iterations": procrustes_max_iterations,
             }
         },
         "quality_control": MeshQualitySettings().as_manifest(),
@@ -436,10 +457,10 @@ def initialize_modern_workflow(
         )
         alignment = generalized_procrustes(
             landmark_values,
-            scale_to_unit_centroid_size=True,
-            allow_reflection=False,
-            tolerance=1e-10,
-            max_iterations=100,
+            scale_to_unit_centroid_size=procrustes_scale_to_unit_centroid_size,
+            allow_reflection=procrustes_allow_reflection,
+            tolerance=float(procrustes_tolerance),
+            max_iterations=procrustes_max_iterations,
         )
         if not alignment.converged:
             raise ConfigurationError(

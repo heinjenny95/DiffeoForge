@@ -64,7 +64,10 @@ This roadmap describes evidence gates rather than promised dates.
   Deformetrica or any future backend
 - [x] Implement conservative observed-rate ETA arithmetic for Deformetrica iteration logs
 - [ ] Add interactive 3D homologous-landmark placement and review
+- [x] Add guided orthographic exact-vertex landmark placement with strict CSV output
 - [ ] Connect Procrustes preview/approval to the guided desktop workflow
+- [x] Expose explicit Procrustes application/settings and verify aligned-mesh evidence
+  in desktop review
 - [x] Connect supervised Deformetrica preparation, execution, and cancellation
 - [ ] Connect interrupted-run discovery and resume to the guided desktop workflow
 - [x] Display observed progress and explicitly labelled ETA-to-iteration-cap
@@ -110,7 +113,8 @@ This roadmap describes evidence gates rather than promised dates.
     queued-cancel and hard-parent-death gates
   - [ ] Record fresh clean-runner v0.4 freeze evidence and rebuild the installer
   - [ ] Guided reference recovery/resume and native registration rendering
-- [ ] Parameter explanations and safe presets
+- [x] Parameter explanations and provenance-labelled exploratory starter profiles
+- [ ] Prospectively validate dataset-specific settings before any safe-preset claim
 - [x] Pre-compute configured all-pairs and known-payload workload report
 - [x] Versioned workflow-stage and committed optimizer-decision reporting
 - [x] Fresh-process objective/gradient wall-time and sampled-RSS protocol

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import math
 from dataclasses import dataclass
 from pathlib import Path
@@ -73,6 +74,88 @@ def _setting(value: Any, *, none: str = "automatic maximum") -> str:
     return str(value)
 
 
+def _reference_alignment_items(preflight) -> tuple[ReviewItem, ...]:
+    """Verify and summarize an optional DiffeoForge Procrustes input cohort."""
+
+    directory = preflight.inputs.input_directory
+    evidence_path = directory / "procrustes.json"
+    if not evidence_path.exists():
+        return ()
+    try:
+        evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
+        settings = evidence["settings"]
+        records = evidence["meshes"]
+        labels = evidence["landmark_labels"]
+        fingerprint = evidence["fingerprint"]
+        expected_names = (
+            preflight.inputs.template.name,
+            *(path.name for path in preflight.inputs.subjects),
+        )
+        if evidence.get("preprocessing_version") != "0.1":
+            raise ValueError("unsupported preprocessing evidence version")
+        if evidence.get("method") != "generalized_procrustes":
+            raise ValueError("unexpected alignment method")
+        if evidence.get("converged") is not True:
+            raise ValueError("alignment is not recorded as converged")
+        if not isinstance(fingerprint, str) or len(fingerprint) != 64:
+            raise ValueError("invalid alignment fingerprint")
+        prefix = directory.name.removeprefix("aligned-")
+        if directory.name.startswith("aligned-") and not fingerprint.startswith(prefix):
+            raise ValueError("alignment directory does not match its fingerprint")
+        if not isinstance(records, list) or tuple(
+            record.get("filename") for record in records
+        ) != expected_names:
+            raise ValueError("alignment evidence lists a different mesh cohort")
+        for record in records:
+            aligned_path = directory / record["filename"]
+            if not aligned_path.is_file() or sha256_file(aligned_path) != record.get(
+                "aligned_sha256"
+            ):
+                raise ValueError(f"aligned mesh no longer matches: {aligned_path.name}")
+        landmark_copy = directory / "landmarks.csv"
+        if not landmark_copy.is_file() or sha256_file(landmark_copy) != evidence.get(
+            "landmark_copy_sha256"
+        ):
+            raise ValueError("landmark copy no longer matches its evidence")
+        if not isinstance(labels, list) or len(labels) < 3:
+            raise ValueError("fewer than three landmark labels are recorded")
+        scale = settings["scale_to_unit_centroid_size"]
+        reflection = settings["allow_reflection"]
+        tolerance = settings["tolerance"]
+        max_iterations = settings["max_iterations"]
+        if not isinstance(scale, bool) or not isinstance(reflection, bool):
+            raise ValueError("invalid Procrustes boolean settings")
+        if isinstance(tolerance, bool) or float(tolerance) <= 0:
+            raise ValueError("invalid Procrustes tolerance")
+        if (
+            isinstance(max_iterations, bool)
+            or not isinstance(max_iterations, int)
+            or max_iterations < 1
+        ):
+            raise ValueError("invalid Procrustes iteration limit")
+    except (KeyError, OSError, TypeError, ValueError, json.JSONDecodeError) as error:
+        raise RuntimeError(
+            f"Landmark-alignment evidence cannot be verified: {evidence_path}: {error}"
+        ) from error
+    return (
+        ReviewItem(
+            "Landmark alignment",
+            f"generalized Procrustes · {len(labels)} landmarks · {len(records)} meshes",
+            "Verified content-addressed aligned copies are used as atlas input. The raw "
+            "source meshes remain unchanged.",
+        ),
+        ReviewItem(
+            "Procrustes settings",
+            (
+                f"unit centroid size {_setting(scale)} · reflections {_setting(reflection)} · "
+                f"tolerance {_number(float(tolerance))} · max. {max_iterations} iterations"
+            ),
+            "These are the effective alignment settings recorded in the verified "
+            "preprocessing evidence.",
+        ),
+    )
+
+
 def _reference_review(config_path: Path, config_sha256: str) -> ProjectReviewResult:
     preflight = collect_preflight(config_path)
     config = preflight.config
@@ -141,6 +224,34 @@ def _reference_review(config_path: Path, config_sha256: str) -> ProjectReviewRes
             "plausibility must be reviewed.",
         ),
         ReviewItem(
+            "Optimizer safeguards",
+            (
+                f"tolerance {_number(optimization['convergence_tolerance'])} · "
+                f"line search {optimization['max_line_search_iterations']} · "
+                f"scale step {_setting(optimization['scale_initial_step_size'])}"
+            ),
+            "Controls stopping and step selection; these settings do not themselves prove "
+            "scientific convergence.",
+        ),
+        ReviewItem(
+            "Regularization and updates",
+            (
+                f"Sobolev {_setting(optimization['use_sobolev_gradient'])} "
+                f"(ratio {_number(optimization['sobolev_kernel_width_ratio'])}) · "
+                f"freeze template {_setting(optimization['freeze_template'])} · "
+                f"freeze control points {_setting(optimization['freeze_control_points'])}"
+            ),
+            "Expert controls for the optimized parameter blocks and gradient smoothing.",
+        ),
+        ReviewItem(
+            "Output cadence",
+            (
+                f"save every {optimization['save_every_n_iterations']} · "
+                f"log every {optimization['print_every_n_iterations']} iterations"
+            ),
+            "Controls checkpoint and log frequency, not mathematical convergence.",
+        ),
+        ReviewItem(
             "Reproducibility",
             (
                 f"Seed {runtime['random_seed']} · {runtime['threads']} Threads · "
@@ -148,6 +259,7 @@ def _reference_review(config_path: Path, config_sha256: str) -> ProjectReviewRes
             ),
             "Explicit engine-execution settings for the external reference route.",
         ),
+        *_reference_alignment_items(preflight),
     )
     subject_points = [subject.points for subject in preflight.subjects]
     subject_faces = [subject.cells for subject in preflight.subjects]

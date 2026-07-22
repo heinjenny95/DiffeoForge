@@ -306,6 +306,7 @@ def test_desktop_window_exposes_required_project_controls(monkeypatch) -> None:
     assert window.findChild(QComboBox, "unitsCombo") is not None
     assert window.findChild(QComboBox, "pairwiseEvaluationCombo") is not None
     assert window.findChild(QComboBox, "optimizationEffortCombo") is not None
+    assert window.place_landmarks_button.text().startswith("Place landmarks")
     assert window.create_button.isEnabled() is False
     assert all(isinstance(step, QPushButton) for step in window.rail_steps)
     assert window.rail_steps[0].isEnabled() is True
@@ -313,6 +314,7 @@ def test_desktop_window_exposes_required_project_controls(monkeypatch) -> None:
     assert window.rail_steps[3].accessibleName() == "Go to step 4: Results & PCA"
     assert "CPU/float64" in window.engine_hint.text()
     assert window.landmarks_edit.isEnabled() is True
+    assert window.procrustes_box.isHidden() is True
     assert window.pairwise_combo.isEnabled() is True
     assert window.optimization_effort_combo.isEnabled() is True
     assert "small pilot" in window.pairwise_combo.currentText()
@@ -332,7 +334,22 @@ def test_desktop_window_exposes_required_project_controls(monkeypatch) -> None:
     assert "Deformetrica 4.3" in window.engine_hint.text()
     assert window.landmarks_edit.isEnabled() is True
     window.landmarks_edit.setText("landmarks.csv")
+    application.processEvents()
+    assert window.procrustes_box.isHidden() is False
     assert window._request().landmarks_file == Path("landmarks.csv")
+    window.procrustes_scale_check.setChecked(False)
+    window.procrustes_reflection_check.setChecked(True)
+    window.procrustes_tolerance_spin.setValue(0.00000001)
+    window.procrustes_iterations_spin.setValue(250)
+    procrustes_request = window._request()
+    assert procrustes_request.procrustes_scale_to_unit_centroid_size is False
+    assert procrustes_request.procrustes_allow_reflection is True
+    assert procrustes_request.procrustes_tolerance == pytest.approx(0.00000001)
+    assert procrustes_request.procrustes_max_iterations == 250
+    window.procrustes_apply_check.setChecked(False)
+    assert window._request().landmarks_file is None
+    assert window.procrustes_scale_check.isEnabled() is False
+    window.procrustes_apply_check.setChecked(True)
     assert window.pairwise_box.isHidden() is True
     assert window.optimization_effort_box.isHidden() is True
     assert window.reference_parameter_box.isHidden() is False
@@ -349,6 +366,26 @@ def test_desktop_window_exposes_required_project_controls(monkeypatch) -> None:
         "attachment_kernel_width"
     ] == pytest.approx(0.035)
     assert advanced_request.reference_max_iterations == 345
+    assert window.reference_expert_box.isHidden() is True
+    window.reference_expert_toggle.setChecked(True)
+    application.processEvents()
+    assert window.reference_expert_box.isHidden() is False
+    window.reference_attachment_type_combo.setCurrentIndex(
+        window.reference_attachment_type_combo.findData("varifold")
+    )
+    window.reference_timepoints_spin.setValue(19)
+    window.reference_rk2_check.setChecked(True)
+    window.reference_sobolev_check.setChecked(False)
+    assert window.reference_sobolev_ratio_spin.isEnabled() is False
+    window.reference_threads_spin.setValue(8)
+    window.reference_random_seed_spin.setValue(123)
+    expert_request = window._request()
+    assert expert_request.reference_attachment_type == "varifold"
+    assert expert_request.reference_timepoints == 19
+    assert expert_request.reference_use_rk2 is True
+    assert expert_request.reference_use_sobolev_gradient is False
+    assert expert_request.reference_threads == 8
+    assert expert_request.reference_random_seed == 123
     assert window._request().pairwise_mode == "dense"
     window.close()
     application.processEvents()

@@ -3,15 +3,62 @@
 from __future__ import annotations
 
 import csv
+import io
 import math
 from collections.abc import Sequence
 from pathlib import Path
 
 import numpy as np
 
+from diffeoforge.atomic_io import write_text_safely
 from diffeoforge.config import ConfigurationError
 
 LANDMARK_COLUMNS = ("mesh_file", "landmark", "x", "y", "z")
+
+
+def write_landmark_csv(
+    path: Path | str,
+    mesh_files: Sequence[str],
+    labels: Sequence[str],
+    values: np.ndarray,
+    *,
+    overwrite: bool = False,
+) -> Path:
+    """Write one complete ordered landmark cohort through the atomic file boundary."""
+
+    destination = Path(path).expanduser().resolve()
+    meshes = tuple(mesh_files)
+    landmark_labels = tuple(labels)
+    coordinates = np.asarray(values)
+    if len(meshes) < 2 or len(set(meshes)) != len(meshes):
+        raise ConfigurationError("Landmark output requires at least two unique mesh filenames")
+    if len(landmark_labels) < 3 or len(set(landmark_labels)) != len(landmark_labels):
+        raise ConfigurationError("Landmark output requires at least three unique labels")
+    if any(not isinstance(label, str) or not label.strip() for label in landmark_labels):
+        raise ConfigurationError("Landmark labels must be non-empty strings")
+    if coordinates.dtype != np.float64:
+        raise ConfigurationError("Landmark output coordinates must use float64")
+    if coordinates.shape != (len(meshes), len(landmark_labels), 3):
+        raise ConfigurationError(
+            "Landmark output coordinates must have shape (meshes, landmarks, 3)"
+        )
+    if not np.isfinite(coordinates).all():
+        raise ConfigurationError("Landmark output coordinates must be finite")
+    stream = io.StringIO(newline="")
+    writer = csv.writer(stream, lineterminator="\n")
+    writer.writerow(LANDMARK_COLUMNS)
+    for mesh_index, mesh_file in enumerate(meshes):
+        for landmark_index, label in enumerate(landmark_labels):
+            writer.writerow(
+                (mesh_file, label, *coordinates[mesh_index, landmark_index].tolist())
+            )
+    try:
+        write_text_safely(destination, stream.getvalue(), overwrite=overwrite)
+    except FileExistsError as error:
+        raise ConfigurationError(
+            f"Landmark CSV already exists and will not be overwritten: {destination}"
+        ) from error
+    return destination
 
 
 def read_landmark_csv(

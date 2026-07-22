@@ -10,7 +10,9 @@ from pathlib import Path
 from PySide6.QtCore import QObject, QRunnable, Qt, QThreadPool, QUrl, Signal, Slot
 from PySide6.QtGui import QCloseEvent, QDesktopServices
 from PySide6.QtWidgets import (
+    QCheckBox,
     QComboBox,
+    QDialog,
     QDoubleSpinBox,
     QFileDialog,
     QFormLayout,
@@ -31,6 +33,7 @@ from PySide6.QtWidgets import (
 )
 
 from diffeoforge.desktop.aspect_svg_widget import AspectRatioSvgWidget
+from diffeoforge.desktop.landmark_editor import LandmarkEditorDialog
 from diffeoforge.desktop.mesh_preview import (
     DEFAULT_EDGE_BUDGET,
     MeshPreviewError,
@@ -1602,6 +1605,84 @@ class DiffeoForgeWindow(QMainWindow):
         ):
             self.reference_parameter_form.addRow(label, widget)
         reference_parameter_layout.addLayout(self.reference_parameter_form)
+        self.reference_expert_toggle = QCheckBox("Show expert settings")
+        self.reference_expert_toggle.setObjectName("referenceExpertToggle")
+        self.reference_expert_toggle.toggled.connect(
+            self._update_reference_expert_visibility
+        )
+        reference_parameter_layout.addWidget(self.reference_expert_toggle)
+        self.reference_expert_box = QWidget()
+        self.reference_expert_box.setObjectName("referenceExpertBox")
+        expert_form = QFormLayout(self.reference_expert_box)
+        expert_form.setContentsMargins(0, 4, 0, 0)
+        expert_form.setHorizontalSpacing(18)
+        expert_form.setVerticalSpacing(7)
+        self.reference_attachment_type_combo = QComboBox()
+        self.reference_attachment_type_combo.addItem("Current (orientation-sensitive)", "current")
+        self.reference_attachment_type_combo.addItem(
+            "Varifold (orientation-insensitive)", "varifold"
+        )
+        self.reference_timepoints_spin = QSpinBox()
+        self.reference_timepoints_spin.setRange(2, 1000)
+        self.reference_timepoints_spin.setValue(10)
+        self.reference_rk2_check = QCheckBox("Use RK2")
+        self.reference_line_search_spin = QSpinBox()
+        self.reference_line_search_spin.setRange(1, 10000)
+        self.reference_line_search_spin.setValue(10)
+        self.reference_save_every_spin = QSpinBox()
+        self.reference_save_every_spin.setRange(1, 100000)
+        self.reference_save_every_spin.setValue(100)
+        self.reference_print_every_spin = QSpinBox()
+        self.reference_print_every_spin.setRange(1, 100000)
+        self.reference_print_every_spin.setValue(1)
+        self.reference_scale_step_check = QCheckBox("Scale initial step size")
+        self.reference_scale_step_check.setChecked(True)
+        self.reference_sobolev_check = QCheckBox("Use Sobolev gradient")
+        self.reference_sobolev_check.setChecked(True)
+        self.reference_sobolev_check.toggled.connect(
+            self._update_reference_expert_dependencies
+        )
+        self.reference_sobolev_ratio_spin = QDoubleSpinBox()
+        self.reference_sobolev_ratio_spin.setDecimals(6)
+        self.reference_sobolev_ratio_spin.setRange(0.000001, 1000000.0)
+        self.reference_sobolev_ratio_spin.setValue(1.0)
+        self.reference_freeze_template_check = QCheckBox("Freeze template")
+        self.reference_freeze_control_points_check = QCheckBox("Freeze control points")
+        self.reference_threads_spin = QSpinBox()
+        self.reference_threads_spin.setRange(1, 256)
+        self.reference_threads_spin.setValue(4)
+        self.reference_random_seed_spin = QSpinBox()
+        self.reference_random_seed_spin.setRange(0, 2147483647)
+        self.reference_random_seed_spin.setValue(20260715)
+        for label, widget in (
+            ("Attachment type", self.reference_attachment_type_combo),
+            ("Time points", self.reference_timepoints_spin),
+            ("Integration", self.reference_rk2_check),
+            ("Line-search limit", self.reference_line_search_spin),
+            ("Save interval", self.reference_save_every_spin),
+            ("Log interval", self.reference_print_every_spin),
+            ("Step-size scaling", self.reference_scale_step_check),
+            ("Sobolev gradient", self.reference_sobolev_check),
+            ("Sobolev width ratio", self.reference_sobolev_ratio_spin),
+            ("Template update", self.reference_freeze_template_check),
+            ("Control-point update", self.reference_freeze_control_points_check),
+            ("CPU threads", self.reference_threads_spin),
+            ("Random seed", self.reference_random_seed_spin),
+        ):
+            expert_form.addRow(label, widget)
+        expert_help = QLabel(
+            "Attachment type controls how surface orientation contributes to matching. "
+            "Time points and RK2 control numerical trajectory integration. Line search and "
+            "step scaling govern optimizer steps. Sobolev settings smooth the template "
+            "gradient. Freeze options hold selected parameter blocks fixed. Save/log "
+            "intervals affect checkpoints and reporting, while threads and seed define the "
+            "execution contract. These choices require dataset-specific scientific review."
+        )
+        expert_help.setObjectName("hint")
+        expert_help.setWordWrap(True)
+        expert_form.addRow("What these control", expert_help)
+        reference_parameter_layout.addWidget(self.reference_expert_box)
+        self.reference_expert_box.hide()
         self.reference_parameter_hint = QLabel(
             "Values are scale-aware starting points, not scientifically validated defaults. "
             "Every effective value will be shown again in Step 2 and stored with the run."
@@ -1669,11 +1750,71 @@ class DiffeoForgeWindow(QMainWindow):
         self.landmarks_edit = QLineEdit()
         self.landmarks_edit.setObjectName("landmarksEdit")
         self.landmarks_edit.setPlaceholderText("optional: homologous landmarks as CSV")
+        self.landmarks_edit.textChanged.connect(self._update_procrustes_visibility)
         landmarks_button = QPushButton("Browse…")
         landmarks_button.setObjectName("secondary")
         landmarks_button.clicked.connect(self._choose_landmarks)
         self.landmarks_button = landmarks_button
-        form.addRow("Landmarks", _path_row(self.landmarks_edit, landmarks_button))
+        self.place_landmarks_button = QPushButton("Place landmarks…")
+        self.place_landmarks_button.setObjectName("secondary")
+        self.place_landmarks_button.clicked.connect(self._place_landmarks)
+        landmarks_row = QHBoxLayout()
+        landmarks_row.setContentsMargins(0, 0, 0, 0)
+        landmarks_row.setSpacing(8)
+        landmarks_row.addWidget(self.landmarks_edit, 1)
+        landmarks_row.addWidget(landmarks_button)
+        landmarks_row.addWidget(self.place_landmarks_button)
+        form.addRow("Landmarks", landmarks_row)
+
+        self.procrustes_box = QWidget()
+        procrustes_layout = QVBoxLayout(self.procrustes_box)
+        procrustes_layout.setContentsMargins(0, 0, 0, 0)
+        procrustes_layout.setSpacing(6)
+        self.procrustes_apply_check = QCheckBox(
+            "Apply generalized Procrustes before atlas computation"
+        )
+        self.procrustes_apply_check.setChecked(True)
+        self.procrustes_apply_check.toggled.connect(
+            self._update_procrustes_controls
+        )
+        self.procrustes_scale_check = QCheckBox("Scale to unit centroid size")
+        self.procrustes_scale_check.setChecked(True)
+        self.procrustes_reflection_check = QCheckBox("Allow reflections")
+        procrustes_settings = QHBoxLayout()
+        procrustes_settings.addWidget(self.procrustes_scale_check)
+        procrustes_settings.addWidget(self.procrustes_reflection_check)
+        procrustes_settings.addStretch()
+        procrustes_advanced = QHBoxLayout()
+        self.procrustes_tolerance_spin = QDoubleSpinBox()
+        self.procrustes_tolerance_spin.setDecimals(12)
+        self.procrustes_tolerance_spin.setRange(0.000000000001, 1.0)
+        self.procrustes_tolerance_spin.setValue(0.0000000001)
+        self.procrustes_iterations_spin = QSpinBox()
+        self.procrustes_iterations_spin.setRange(1, 100000)
+        self.procrustes_iterations_spin.setValue(100)
+        procrustes_advanced.addWidget(QLabel("Tolerance"))
+        procrustes_advanced.addWidget(self.procrustes_tolerance_spin)
+        procrustes_advanced.addWidget(QLabel("Maximum iterations"))
+        procrustes_advanced.addWidget(self.procrustes_iterations_spin)
+        procrustes_advanced.addStretch()
+        procrustes_hint = QLabel(
+            "Raw meshes remain unchanged. DiffeoForge creates immutable aligned copies and "
+            "records every transform. Reflection is off by default."
+        )
+        procrustes_hint.setObjectName("hint")
+        procrustes_hint.setWordWrap(True)
+        procrustes_layout.addWidget(self.procrustes_apply_check)
+        procrustes_layout.addLayout(procrustes_settings)
+        procrustes_layout.addLayout(procrustes_advanced)
+        procrustes_layout.addWidget(procrustes_hint)
+        self._procrustes_setting_widgets = (
+            self.procrustes_scale_check,
+            self.procrustes_reflection_check,
+            self.procrustes_tolerance_spin,
+            self.procrustes_iterations_spin,
+        )
+        self.procrustes_box.hide()
+        form.addRow("Alignment", self.procrustes_box)
 
         card_layout.addLayout(form)
         return card
@@ -1742,6 +1883,49 @@ class DiffeoForgeWindow(QMainWindow):
         )
         if selected:
             self.landmarks_edit.setText(selected)
+
+    @Slot()
+    def _place_landmarks(self) -> None:
+        try:
+            mesh_directory = Path(self.mesh_edit.text().strip()).expanduser().resolve()
+            project_directory = Path(self.project_edit.text().strip()).expanduser().resolve()
+            if not mesh_directory.is_dir() or not self.project_edit.text().strip():
+                raise ValueError("Select the mesh folder and project folder first.")
+            template_text = self.template_edit.text().strip()
+            template = (
+                Path(template_text).expanduser().resolve()
+                if template_text
+                else detect_template(mesh_directory)
+            )
+            if template is None:
+                raise ValueError("Select an explicit template mesh first.")
+            subjects = tuple(
+                path.resolve()
+                for path in sorted(mesh_directory.glob(self.pattern_edit.text().strip()))
+                if path.is_file() and path.resolve() != template
+            )
+            if not subjects:
+                raise ValueError("No subject meshes match the current file pattern.")
+            dialog = LandmarkEditorDialog(
+                (template, *subjects),
+                project_directory / "landmarks.csv",
+                self,
+            )
+            if dialog.exec() == QDialog.DialogCode.Accepted:
+                self.landmarks_edit.setText(str(dialog.output_path))
+        except (OSError, TypeError, ValueError, MeshPreviewError) as error:
+            QMessageBox.warning(self, "Landmark placement unavailable", str(error))
+
+    @Slot()
+    def _update_procrustes_visibility(self) -> None:
+        self.procrustes_box.setVisible(bool(self.landmarks_edit.text().strip()))
+        self._update_procrustes_controls()
+
+    @Slot()
+    def _update_procrustes_controls(self) -> None:
+        enabled = self.procrustes_apply_check.isChecked()
+        for widget in self._procrustes_setting_widgets:
+            widget.setEnabled(enabled)
 
     @Slot()
     def _choose_reference_preparation_approval(self) -> None:
@@ -2170,6 +2354,16 @@ class DiffeoForgeWindow(QMainWindow):
             )
 
     @Slot()
+    def _update_reference_expert_visibility(self) -> None:
+        self.reference_expert_box.setVisible(self.reference_expert_toggle.isChecked())
+
+    @Slot()
+    def _update_reference_expert_dependencies(self) -> None:
+        self.reference_sobolev_ratio_spin.setEnabled(
+            self.reference_sobolev_check.isChecked()
+        )
+
+    @Slot()
     def _update_engine_explanation(self) -> None:
         modern = self.engine_combo.currentData() == DesktopEngine.MODERN_CPU
         self.landmarks_edit.setEnabled(True)
@@ -2375,6 +2569,7 @@ class DiffeoForgeWindow(QMainWindow):
     def _request(self) -> ProjectSetupRequest:
         template = self.template_edit.text().strip()
         landmarks = self.landmarks_edit.text().strip()
+        apply_procrustes = bool(landmarks and self.procrustes_apply_check.isChecked())
         blockwise = bool(
             self.engine_combo.currentData() == DesktopEngine.MODERN_CPU
             and self.pairwise_combo.currentData() == "blockwise_256"
@@ -2395,7 +2590,7 @@ class DiffeoForgeWindow(QMainWindow):
             project_name=self.name_edit.text().strip() or None,
             subject_pattern=self.pattern_edit.text(),
             landmarks_file=(
-                Path(landmarks) if landmarks else None
+                Path(landmarks) if apply_procrustes else None
             ),
             pairwise_mode="blockwise" if blockwise else "dense",
             query_tile_size=256 if blockwise else None,
@@ -2406,6 +2601,25 @@ class DiffeoForgeWindow(QMainWindow):
             reference_max_iterations=self.reference_max_iterations_spin.value(),
             reference_initial_step_size=self.reference_step_size_spin.value(),
             reference_convergence_tolerance=self.reference_tolerance_spin.value(),
+            reference_attachment_type=self.reference_attachment_type_combo.currentData(),
+            reference_timepoints=self.reference_timepoints_spin.value(),
+            reference_use_rk2=self.reference_rk2_check.isChecked(),
+            reference_max_line_search_iterations=self.reference_line_search_spin.value(),
+            reference_save_every_n_iterations=self.reference_save_every_spin.value(),
+            reference_print_every_n_iterations=self.reference_print_every_spin.value(),
+            reference_scale_initial_step_size=self.reference_scale_step_check.isChecked(),
+            reference_use_sobolev_gradient=self.reference_sobolev_check.isChecked(),
+            reference_sobolev_kernel_width_ratio=self.reference_sobolev_ratio_spin.value(),
+            reference_freeze_template=self.reference_freeze_template_check.isChecked(),
+            reference_freeze_control_points=(
+                self.reference_freeze_control_points_check.isChecked()
+            ),
+            reference_threads=self.reference_threads_spin.value(),
+            reference_random_seed=self.reference_random_seed_spin.value(),
+            procrustes_scale_to_unit_centroid_size=self.procrustes_scale_check.isChecked(),
+            procrustes_allow_reflection=self.procrustes_reflection_check.isChecked(),
+            procrustes_tolerance=self.procrustes_tolerance_spin.value(),
+            procrustes_max_iterations=self.procrustes_iterations_spin.value(),
         )
 
     @staticmethod
