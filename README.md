@@ -295,6 +295,9 @@ diffeoforge modern-benchmark modern-atlas.yaml --subjects 5
 # Optional full-optimizer pilot; both subjects and cycle cap are explicit.
 diffeoforge modern-optimizer-benchmark modern-atlas.yaml --subjects 5 --cycles 3
 diffeoforge modern-optimizer-benchmark-verify modern-atlas.optimizer-benchmark
+diffeoforge modern-optimizer-benchmark-design modern-atlas.yaml `
+  --subjects 5 20 68 --cycles 1 3 --repeats 3
+diffeoforge modern-optimizer-benchmark-design-verify modern-atlas.optimizer-study
 diffeoforge modern-run modern-atlas.yaml
 diffeoforge modern-verify modern-atlas-run
 # If a prior hard crash left private state, inspect it without changing files:
@@ -491,6 +494,7 @@ and workflow for another mesh directory.
 - [Versioned modern progress events](docs/MODERN_PROGRESS.md)
 - [Modern objective/gradient benchmark protocol](docs/MODERN_BENCHMARK.md)
 - [Modern multi-cycle optimizer benchmark](docs/MODERN_OPTIMIZER_BENCHMARK.md)
+- [Prospective optimizer scaling design](docs/MODERN_OPTIMIZER_BENCHMARK_DESIGN.md)
 - [Centered Gaussian matrix evaluation](docs/CENTERED_GAUSSIAN_MATRIX.md)
 - [Bounded-memory blockwise Gaussian primitives](docs/BLOCKWISE_GAUSSIAN.md)
 - [Landmark-based Procrustes alignment](docs/PROCRUSTES_ALIGNMENT.md)

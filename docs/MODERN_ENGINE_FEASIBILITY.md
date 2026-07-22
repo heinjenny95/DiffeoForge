@@ -198,6 +198,14 @@ performance changes auditable without converting a limited pilot into a
 convergence, ETA, or Deformetrica-comparison claim. See
 [modern multi-cycle optimizer benchmark](MODERN_OPTIMIZER_BENCHMARK.md).
 
+The separate immutable optimizer-scaling design freezes a full-factorial set of
+subject-prefix sizes and benchmark-only cycle caps before results exist. It
+hashes the complete input inventory and reviewed optimizer configuration,
+stores a deterministic condition order and exact argv, and has strict
+JSON/sidecar/HTML verification. Creating or verifying it runs no optimizer. A
+source-bound resumable executor remains the next reproducibility gate. See
+[prospective optimizer scaling design](MODERN_OPTIMIZER_BENCHMARK_DESIGN.md).
+
 The centered matrix implementation completed a two-repeat, all-68-subject,
 approximately 1,500-face, one-cycle observation in 61.614 s median optimizer
 time with exact cross-process histories and result hashes. Median sampled peak

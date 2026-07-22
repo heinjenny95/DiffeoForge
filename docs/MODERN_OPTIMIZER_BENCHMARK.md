@@ -88,4 +88,7 @@ files, schema drift, inconsistent counters, CSV changes, or HTML changes.
 A limited prefix and cycle count do not establish convergence, robustness,
 scientific validity, an end-to-end runtime, an ETA, 300-subject feasibility, or
 superiority over Deformetrica. Scaling and backend comparisons require a
-prospectively frozen design with independently verified runs.
+prospectively frozen design with independently verified runs. The immutable
+[optimizer scaling design](MODERN_OPTIMIZER_BENCHMARK_DESIGN.md) now freezes the
+subject-by-cycle factorial before measurement; its future executor remains a
+separate gate.

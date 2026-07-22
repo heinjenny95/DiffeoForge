@@ -366,6 +366,45 @@ def build_parser() -> argparse.ArgumentParser:
     )
     modern_optimizer_benchmark_verify_parser.add_argument("report_directory", type=Path)
 
+    modern_optimizer_design_parser = subparsers.add_parser(
+        "modern-optimizer-benchmark-design",
+        help="Freeze a full-factorial subject/cycle optimizer design without running it.",
+    )
+    modern_optimizer_design_parser.add_argument("config", type=Path)
+    modern_optimizer_design_parser.add_argument(
+        "--subjects",
+        type=int,
+        nargs="+",
+        required=True,
+        help="One or more unique deterministic subject-prefix sizes.",
+    )
+    modern_optimizer_design_parser.add_argument(
+        "--cycles",
+        type=int,
+        nargs="+",
+        required=True,
+        help="One or more unique benchmark-only optimizer cycle caps.",
+    )
+    modern_optimizer_design_parser.add_argument("--repeats", type=int, default=3)
+    modern_optimizer_design_parser.add_argument("--warmups", type=int, default=0)
+    modern_optimizer_design_parser.add_argument(
+        "--order-seed",
+        type=int,
+        default=20260722,
+        help="Seed for the versioned deterministic condition order.",
+    )
+    modern_optimizer_design_parser.add_argument(
+        "--output",
+        type=Path,
+        help="New immutable design directory (default: CONFIG_NAME.optimizer-study).",
+    )
+
+    modern_optimizer_design_verify_parser = subparsers.add_parser(
+        "modern-optimizer-benchmark-design-verify",
+        help="Strictly verify an immutable optimizer scaling design without running it.",
+    )
+    modern_optimizer_design_verify_parser.add_argument("design_directory", type=Path)
+
     modern_benchmark_design_parser = subparsers.add_parser(
         "modern-benchmark-design",
         help="Freeze a paired blockwise standard/recompute design before measuring.",
@@ -1260,6 +1299,72 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
             print(f"       {error}", file=sys.stderr)
             return 2
+        except (RuntimeError, OSError, ValueError, TypeError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
+
+    if args.command == "modern-optimizer-benchmark-design":
+        try:
+            from diffeoforge.modern_optimizer_benchmark_design import (
+                DESIGN_HTML_NAME,
+                DESIGN_JSON_NAME,
+                DESIGN_SIDECAR_NAME,
+                create_modern_optimizer_benchmark_design,
+                verify_modern_optimizer_benchmark_design,
+            )
+
+            design_directory = create_modern_optimizer_benchmark_design(
+                args.config,
+                subject_counts=args.subjects,
+                cycle_caps=args.cycles,
+                repeats_per_condition=args.repeats,
+                warmup_runs=args.warmups,
+                order_seed=args.order_seed,
+                destination=args.output,
+            )
+            design = verify_modern_optimizer_benchmark_design(design_directory)
+            protocol = design["protocol"]
+            print(f"Prospective optimizer scaling design created: {design_directory}")
+            print(f"Subject-prefix sizes: {protocol['subject_counts']}")
+            print(f"Cycle caps: {protocol['cycle_caps']}")
+            print(
+                "Frozen condition count: "
+                f"{protocol['condition_count']}/{protocol['maximum_condition_count']}"
+            )
+            print(f"Deterministic order seed: {protocol['order_seed']}")
+            print(f"Machine-readable design: {design_directory / DESIGN_JSON_NAME}")
+            print(f"Integrity sidecar: {design_directory / DESIGN_SIDECAR_NAME}")
+            print(f"Review page: {design_directory / DESIGN_HTML_NAME}")
+            print("WARNING: No optimizer has been run and no performance claim is made.")
+        except ImportError as error:
+            print(
+                "ERROR: Modern optimizer design dependencies are missing; install "
+                "diffeoforge[modern-engine].",
+                file=sys.stderr,
+            )
+            print(f"       {error}", file=sys.stderr)
+            return 2
+        except (ConfigurationError, RuntimeError, OSError, ValueError, TypeError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
+
+    if args.command == "modern-optimizer-benchmark-design-verify":
+        try:
+            from diffeoforge.modern_optimizer_benchmark_design import (
+                verify_modern_optimizer_benchmark_design,
+            )
+
+            design_directory = args.design_directory.expanduser().resolve()
+            design = verify_modern_optimizer_benchmark_design(design_directory)
+            protocol = design["protocol"]
+            print(f"Prospective optimizer scaling design verified: {design_directory}")
+            print(
+                "Frozen condition count: "
+                f"{protocol['condition_count']}/{protocol['maximum_condition_count']}"
+            )
+            print("No optimizer result or performance claim is present.")
         except (RuntimeError, OSError, ValueError, TypeError) as error:
             print(f"ERROR: {error}", file=sys.stderr)
             return 2
