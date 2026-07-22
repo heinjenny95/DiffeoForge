@@ -23,3 +23,24 @@ Verify without executing a benchmark:
 diffeoforge modern-benchmark-design-verify `
   reference/modern-engine-v0.5/paired-standard-recompute-design
 ```
+
+## Completed raw execution
+
+After the design had been archived in commit `ad478e7`, its six frozen
+conditions were executed into `paired-standard-recompute-run`. The run contains
+five measured fresh-process observations plus one warm-up for each condition.
+All six JSON/CSV/HTML report triplets, the atomic state, lifecycle events, and
+the final `study-run.json` SHA-256 sidecar pass strict verification. A repeated
+runner invocation left all 26 files byte-identical.
+
+The completion manifest records `analysis_performed: false`. These files are
+raw engineering evidence only. No speedup, memory advantage, ranking,
+statistical significance, full-atlas runtime, convergence, public preset, or
+large-cohort feasibility conclusion is declared here.
+
+Verify the completed run without modifying it:
+
+```powershell
+diffeoforge modern-benchmark-study-verify `
+  reference/modern-engine-v0.5/paired-standard-recompute-run
+```

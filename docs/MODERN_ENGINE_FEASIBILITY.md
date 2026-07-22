@@ -222,6 +222,14 @@ exactly. The 70.6% sampled peak-RSS reduction is strong implementation evidence;
 the five-subject condition was 15.7% slower, so timing remains cohort- and
 machine-specific rather than a general speed claim.
 
+A separate public CC0 engineering study was frozen in Git before execution.
+It contains six paired standard/recompute conditions across one, three, and
+five-subject prefixes, with five measured fresh processes and one warm-up per
+condition. Every raw JSON/CSV/HTML report and the final run manifest verify.
+The committed run deliberately contains no automatic analysis or ranking; its
+tiny synthetic geometry cannot establish full-atlas performance, a public
+preset, or large-cohort feasibility.
+
 ## Gates before a usable atlas engine
 
 1. ~~Add current/varifold fixtures generated through the independent reference
