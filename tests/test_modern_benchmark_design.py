@@ -27,8 +27,27 @@ from diffeoforge.modern_benchmark_design import (  # noqa: E402
 
 ROOT = Path(__file__).parents[1]
 EXAMPLE = ROOT / "examples" / "minimal-modern-atlas.yaml"
+BLOCKWISE_EXAMPLE = ROOT / "examples" / "minimal-modern-atlas-blockwise.yaml"
 MESHES = ROOT / "examples" / "synthetic" / "meshes"
 FIXED_TIME = "2026-07-16T10:00:00+00:00"
+
+
+def test_committed_blockwise_example_supports_prospective_design() -> None:
+    design = collect_modern_benchmark_design(
+        BLOCKWISE_EXAMPLE,
+        subject_counts=[1, 3, 5],
+        repeats_per_condition=1,
+        warmup_evaluations=0,
+        order_seed=20260722,
+        created_at=FIXED_TIME,
+    )
+
+    assert design["configuration"]["pairwise_evaluation"] == {
+        "mode": "blockwise",
+        "query_tile_size": 64,
+        "source_tile_size": 64,
+    }
+    assert len(design["conditions"]) == 6
 
 
 class _StructureParser(HTMLParser):

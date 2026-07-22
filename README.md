@@ -302,6 +302,8 @@ diffeoforge modern-optimizer-benchmark-study `
   modern-atlas.optimizer-study modern-atlas.yaml
 diffeoforge modern-optimizer-benchmark-study-status modern-atlas.optimizer-study.run
 diffeoforge modern-optimizer-benchmark-study-verify modern-atlas.optimizer-study.run
+diffeoforge modern-benchmark-design examples/minimal-modern-atlas-blockwise.yaml `
+  --subjects 1 3 5 --repeats 5 --warmups 1 --order-seed 20260722
 diffeoforge modern-run modern-atlas.yaml
 diffeoforge modern-verify modern-atlas-run
 # If a prior hard crash left private state, inspect it without changing files:
