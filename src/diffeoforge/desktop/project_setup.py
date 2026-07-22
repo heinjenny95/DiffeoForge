@@ -12,6 +12,7 @@ from diffeoforge.initialization import (
     ensure_generated_configuration_replaceable,
     initialize_project,
 )
+from diffeoforge.reference_parameters import REFERENCE_PARAMETER_PROFILES
 from diffeoforge.reference_runtime import (
     MANAGED_WSL_DISTRIBUTION,
     launcher_label,
@@ -47,6 +48,11 @@ class ProjectSetupRequest:
     query_tile_size: int | None = None
     source_tile_size: int | None = None
     max_cycles: int = 3
+    reference_parameter_profile: str = "recommended"
+    reference_parameter_ratios: dict[str, float] | None = None
+    reference_max_iterations: int | None = None
+    reference_initial_step_size: float | None = None
+    reference_convergence_tolerance: float | None = None
     overwrite_existing_configuration: bool = False
 
 
@@ -116,6 +122,23 @@ def _normalize_request(request: ProjectSetupRequest) -> ProjectSetupRequest:
         or request.max_cycles < 1
     ):
         raise ConfigurationError("Desktop max_cycles must be a positive integer")
+    profile = str(request.reference_parameter_profile).strip().lower()
+    if profile not in {*REFERENCE_PARAMETER_PROFILES, "advanced"}:
+        raise ConfigurationError(f"Unsupported Deformetrica parameter profile: {profile!r}")
+    ratios = request.reference_parameter_ratios
+    if ratios is not None:
+        ratios = dict(ratios)
+        expected = {
+            "attachment_kernel_width",
+            "deformation_kernel_width",
+            "initial_control_point_spacing",
+            "noise_std",
+        }
+        if set(ratios) != expected:
+            raise ConfigurationError(
+                "Deformetrica parameter ratios must define attachment, deformation, "
+                "control-point spacing, and noise"
+            )
     return ProjectSetupRequest(
         mesh_directory=Path(request.mesh_directory).expanduser().resolve(),
         project_directory=Path(request.project_directory).expanduser().resolve(),
@@ -135,6 +158,11 @@ def _normalize_request(request: ProjectSetupRequest) -> ProjectSetupRequest:
         query_tile_size=query_tile_size,
         source_tile_size=source_tile_size,
         max_cycles=request.max_cycles,
+        reference_parameter_profile=profile,
+        reference_parameter_ratios=ratios,
+        reference_max_iterations=request.reference_max_iterations,
+        reference_initial_step_size=request.reference_initial_step_size,
+        reference_convergence_tolerance=request.reference_convergence_tolerance,
         overwrite_existing_configuration=request.overwrite_existing_configuration,
     )
 
@@ -191,6 +219,11 @@ def _create_reference_project(request: ProjectSetupRequest) -> ProjectSetupResul
         subject_pattern=request.subject_pattern,
         project_name=effective_project_name,
         launcher=launcher,
+        parameter_profile=request.reference_parameter_profile,
+        parameter_ratios=request.reference_parameter_ratios,
+        max_iterations=request.reference_max_iterations,
+        initial_step_size=request.reference_initial_step_size,
+        convergence_tolerance=request.reference_convergence_tolerance,
         overwrite=request.overwrite_existing_configuration,
     )
     write_preflight_report(

@@ -82,10 +82,22 @@ def _reference_review(config_path: Path, config_sha256: str) -> ProjectReviewRes
     runtime = config["runtime"]
     diagonal = preflight.template.bounding_box_diagonal
     ratios = preflight.parameter_ratios
+    provenance = config["project"].get("parameter_provenance")
+    provenance_profile = (
+        str(provenance["profile"]).replace("_", " ")
+        if provenance is not None
+        else "legacy configuration"
+    )
     report_path = default_preflight_report_path(config_path)
     write_preflight_report(preflight, report_path, overwrite=report_path.exists())
 
     parameters = (
+        ReviewItem(
+            "Parameter source",
+            provenance_profile,
+            "Identifies the visible starter profile or manual mode used to derive the "
+            "effective values; it is not a claim of scientific suitability.",
+        ),
         ReviewItem(
             "Coordinate unit",
             str(config["input"]["units"]),

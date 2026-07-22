@@ -335,6 +335,20 @@ def test_desktop_window_exposes_required_project_controls(monkeypatch) -> None:
     assert window._request().landmarks_file == Path("landmarks.csv")
     assert window.pairwise_box.isHidden() is True
     assert window.optimization_effort_box.isHidden() is True
+    assert window.reference_parameter_box.isHidden() is False
+    assert window.reference_parameter_profile_combo.currentData() == "recommended"
+    assert window.reference_attachment_ratio_spin.isEnabled() is False
+    window.reference_parameter_profile_combo.setCurrentIndex(
+        window.reference_parameter_profile_combo.findData("advanced")
+    )
+    window.reference_attachment_ratio_spin.setValue(0.035)
+    window.reference_max_iterations_spin.setValue(345)
+    advanced_request = window._request()
+    assert advanced_request.reference_parameter_profile == "advanced"
+    assert advanced_request.reference_parameter_ratios[
+        "attachment_kernel_width"
+    ] == pytest.approx(0.035)
+    assert advanced_request.reference_max_iterations == 345
     assert window._request().pairwise_mode == "dense"
     window.close()
     application.processEvents()

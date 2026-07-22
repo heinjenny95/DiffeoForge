@@ -11,6 +11,7 @@ from PySide6.QtCore import QObject, QRunnable, Qt, QThreadPool, QUrl, Signal, Sl
 from PySide6.QtGui import QCloseEvent, QDesktopServices
 from PySide6.QtWidgets import (
     QComboBox,
+    QDoubleSpinBox,
     QFileDialog,
     QFormLayout,
     QFrame,
@@ -23,6 +24,7 @@ from PySide6.QtWidgets import (
     QProgressBar,
     QPushButton,
     QScrollArea,
+    QSpinBox,
     QStackedWidget,
     QVBoxLayout,
     QWidget,
@@ -92,6 +94,7 @@ from diffeoforge.desktop.worker_controller import (
 )
 from diffeoforge.desktop.worker_protocol import DesktopWorkerEvent
 from diffeoforge.initialization import SUPPORTED_UNITS, detect_template
+from diffeoforge.reference_parameters import reference_parameter_profile
 from diffeoforge.reference_runtime import launcher_label
 
 _STYLE = """
@@ -1541,6 +1544,72 @@ class DiffeoForgeWindow(QMainWindow):
         self.optimization_effort_hint.setWordWrap(True)
         optimization_effort_layout.addWidget(self.optimization_effort_hint)
         form.addRow("Optimization effort", optimization_effort_box)
+
+        self.reference_parameter_box = QFrame()
+        self.reference_parameter_box.setObjectName("parameterEditor")
+        reference_parameter_layout = QVBoxLayout(self.reference_parameter_box)
+        reference_parameter_layout.setContentsMargins(0, 0, 0, 0)
+        reference_parameter_layout.setSpacing(8)
+        self.reference_parameter_profile_combo = QComboBox()
+        self.reference_parameter_profile_combo.setObjectName(
+            "referenceParameterProfileCombo"
+        )
+        self.reference_parameter_profile_combo.addItem(
+            "Recommended starting values", "recommended"
+        )
+        self.reference_parameter_profile_combo.addItem("Fast pilot", "pilot")
+        self.reference_parameter_profile_combo.addItem("High detail", "high_detail")
+        self.reference_parameter_profile_combo.addItem("Advanced manual control", "advanced")
+        self.reference_parameter_profile_combo.currentIndexChanged.connect(
+            self._update_reference_parameter_profile
+        )
+        reference_parameter_layout.addWidget(self.reference_parameter_profile_combo)
+
+        self.reference_parameter_form = QFormLayout()
+        self.reference_parameter_form.setHorizontalSpacing(18)
+        self.reference_parameter_form.setVerticalSpacing(7)
+        self.reference_attachment_ratio_spin = self._ratio_spin_box(
+            "Attachment width as a fraction of the template bounding-box diagonal."
+        )
+        self.reference_deformation_ratio_spin = self._ratio_spin_box(
+            "Deformation width as a fraction of the template bounding-box diagonal."
+        )
+        self.reference_control_spacing_ratio_spin = self._ratio_spin_box(
+            "Initial control-point spacing as a fraction of the template diagonal."
+        )
+        self.reference_noise_ratio_spin = self._ratio_spin_box(
+            "Noise standard deviation as a fraction of the template diagonal."
+        )
+        self.reference_max_iterations_spin = QSpinBox()
+        self.reference_max_iterations_spin.setRange(1, 100000)
+        self.reference_max_iterations_spin.setSingleStep(10)
+        self.reference_step_size_spin = QDoubleSpinBox()
+        self.reference_step_size_spin.setDecimals(8)
+        self.reference_step_size_spin.setRange(0.00000001, 1000000.0)
+        self.reference_step_size_spin.setSingleStep(0.001)
+        self.reference_tolerance_spin = QDoubleSpinBox()
+        self.reference_tolerance_spin.setDecimals(10)
+        self.reference_tolerance_spin.setRange(0.0000000001, 1.0)
+        self.reference_tolerance_spin.setSingleStep(0.0001)
+        for label, widget in (
+            ("Attachment / diagonal", self.reference_attachment_ratio_spin),
+            ("Deformation / diagonal", self.reference_deformation_ratio_spin),
+            ("Control spacing / diagonal", self.reference_control_spacing_ratio_spin),
+            ("Noise SD / diagonal", self.reference_noise_ratio_spin),
+            ("Maximum iterations", self.reference_max_iterations_spin),
+            ("Initial step size", self.reference_step_size_spin),
+            ("Convergence tolerance", self.reference_tolerance_spin),
+        ):
+            self.reference_parameter_form.addRow(label, widget)
+        reference_parameter_layout.addLayout(self.reference_parameter_form)
+        self.reference_parameter_hint = QLabel(
+            "Values are scale-aware starting points, not scientifically validated defaults. "
+            "Every effective value will be shown again in Step 2 and stored with the run."
+        )
+        self.reference_parameter_hint.setObjectName("hint")
+        self.reference_parameter_hint.setWordWrap(True)
+        reference_parameter_layout.addWidget(self.reference_parameter_hint)
+        form.addRow("Deformetrica model", self.reference_parameter_box)
         self.project_input_form = form
 
         self.mesh_edit = QLineEdit()
@@ -2062,6 +2131,44 @@ class DiffeoForgeWindow(QMainWindow):
         if template is not None:
             self.template_edit.setText(str(template))
 
+    @staticmethod
+    def _ratio_spin_box(tooltip: str) -> QDoubleSpinBox:
+        spin = QDoubleSpinBox()
+        spin.setDecimals(5)
+        spin.setRange(0.00001, 2.0)
+        spin.setSingleStep(0.01)
+        spin.setToolTip(tooltip)
+        return spin
+
+    @Slot()
+    def _update_reference_parameter_profile(self) -> None:
+        key = str(self.reference_parameter_profile_combo.currentData())
+        source_key = "recommended" if key == "advanced" else key
+        profile = reference_parameter_profile(source_key)
+        values = (
+            (self.reference_attachment_ratio_spin, profile.attachment_ratio),
+            (self.reference_deformation_ratio_spin, profile.deformation_ratio),
+            (self.reference_control_spacing_ratio_spin, profile.control_point_spacing_ratio),
+            (self.reference_noise_ratio_spin, profile.noise_ratio),
+            (self.reference_max_iterations_spin, profile.max_iterations),
+            (self.reference_step_size_spin, profile.initial_step_size),
+            (self.reference_tolerance_spin, profile.convergence_tolerance),
+        )
+        for widget, value in values:
+            widget.setValue(value)
+            widget.setEnabled(key == "advanced")
+        if key == "advanced":
+            self.reference_parameter_hint.setText(
+                "Advanced values are editable. Length parameters are dimensionless fractions "
+                "of the template bounding-box diagonal; DiffeoForge converts them to the "
+                "declared coordinate unit and records both ratios and effective values."
+            )
+        else:
+            self.reference_parameter_hint.setText(
+                "This exploratory profile is visible and reproducible but is not a "
+                "scientifically validated default. Choose Advanced manual control to edit."
+            )
+
     @Slot()
     def _update_engine_explanation(self) -> None:
         modern = self.engine_combo.currentData() == DesktopEngine.MODERN_CPU
@@ -2069,6 +2176,7 @@ class DiffeoForgeWindow(QMainWindow):
         self.landmarks_button.setEnabled(True)
         self.project_input_form.setRowVisible(self.pairwise_box, modern)
         self.project_input_form.setRowVisible(self.optimization_effort_box, modern)
+        self.project_input_form.setRowVisible(self.reference_parameter_box, not modern)
         if modern:
             self.engine_hint.setText(
                 "Current CPU/float64 engine; PCA is part of the later result bundle."
@@ -2082,6 +2190,7 @@ class DiffeoForgeWindow(QMainWindow):
             )
         self._update_pairwise_explanation()
         self._update_optimization_explanation()
+        self._update_reference_parameter_profile()
 
     @Slot()
     def _update_pairwise_explanation(self) -> None:
@@ -2270,6 +2379,13 @@ class DiffeoForgeWindow(QMainWindow):
             self.engine_combo.currentData() == DesktopEngine.MODERN_CPU
             and self.pairwise_combo.currentData() == "blockwise_256"
         )
+        reference_profile = str(self.reference_parameter_profile_combo.currentData())
+        reference_ratios = {
+            "attachment_kernel_width": self.reference_attachment_ratio_spin.value(),
+            "deformation_kernel_width": self.reference_deformation_ratio_spin.value(),
+            "initial_control_point_spacing": self.reference_control_spacing_ratio_spin.value(),
+            "noise_std": self.reference_noise_ratio_spin.value(),
+        }
         return ProjectSetupRequest(
             mesh_directory=Path(self.mesh_edit.text().strip()),
             project_directory=Path(self.project_edit.text().strip()),
@@ -2285,6 +2401,11 @@ class DiffeoForgeWindow(QMainWindow):
             query_tile_size=256 if blockwise else None,
             source_tile_size=256 if blockwise else None,
             max_cycles=int(self.optimization_effort_combo.currentData()),
+            reference_parameter_profile=reference_profile,
+            reference_parameter_ratios=reference_ratios,
+            reference_max_iterations=self.reference_max_iterations_spin.value(),
+            reference_initial_step_size=self.reference_step_size_spin.value(),
+            reference_convergence_tolerance=self.reference_tolerance_spin.value(),
         )
 
     @staticmethod

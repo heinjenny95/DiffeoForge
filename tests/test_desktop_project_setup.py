@@ -53,6 +53,33 @@ def test_reference_project_setup_uses_shared_core_and_writes_preflight(tmp_path:
     assert any("did not execute Deformetrica" in notice for notice in result.notices)
 
 
+def test_reference_project_setup_persists_visible_parameter_selection(tmp_path: Path) -> None:
+    ratios = {
+        "attachment_kernel_width": 0.05,
+        "deformation_kernel_width": 0.10,
+        "initial_control_point_spacing": 0.10,
+        "noise_std": 0.0125,
+    }
+    result = create_project(
+        ProjectSetupRequest(
+            mesh_directory=MESH_DIRECTORY,
+            project_directory=tmp_path / "high-detail",
+            units="millimeter",
+            engine=DesktopEngine.DEFORMETRICA_REFERENCE,
+            reference_parameter_profile="high_detail",
+            reference_parameter_ratios=ratios,
+            reference_max_iterations=200,
+            reference_initial_step_size=0.01,
+            reference_convergence_tolerance=0.0001,
+        )
+    )
+
+    config = yaml.safe_load(result.config_path.read_text(encoding="utf-8"))
+    assert config["project"]["parameter_provenance"]["profile"] == "high_detail"
+    assert config["project"]["parameter_provenance"]["ratios"] == ratios
+    assert config["optimization"]["max_iterations"] == 200
+
+
 def test_project_setup_handles_spaces_and_non_ascii_paths(tmp_path: Path) -> None:
     mesh_directory = tmp_path / "Käfer Daten" / "meshes"
     shutil.copytree(MESH_DIRECTORY, mesh_directory)

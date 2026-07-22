@@ -20,6 +20,7 @@ from diffeoforge.config import (
 )
 from diffeoforge.diagnostics import DEFAULT_CONTAINER_IMAGE
 from diffeoforge.mesh import inspect_inputs
+from diffeoforge.reference_parameters import reference_parameter_profile
 from diffeoforge.report import PreflightResult, make_preflight_result
 
 SUPPORTED_UNITS = ("unitless", "micrometer", "millimeter", "centimeter", "meter")
@@ -131,18 +132,6 @@ def _scaled_value(diagonal: float, ratio: float) -> float:
     return float(f"{diagonal * ratio:.8g}")
 
 
-def _parameter_value(
-    name: str,
-    override: float | None,
-    diagonal: float,
-    derived: list[str],
-) -> float:
-    if override is not None:
-        return override
-    derived.append(name)
-    return _scaled_value(diagonal, EXPLORATORY_RATIOS[name])
-
-
 def _header(config: Mapping[str, Any], derived_parameters: tuple[str, ...]) -> str:
     lines = [
         _CONFIG_MARKER,
@@ -162,9 +151,12 @@ def _header(config: Mapping[str, Any], derived_parameters: tuple[str, ...]) -> s
             "initial_control_point_spacing": model["deformation"]["initial_control_point_spacing"],
             "noise_std": model["noise_std"],
         }
+        ratios = config["project"].get("parameter_provenance", {}).get(
+            "ratios", EXPLORATORY_RATIOS
+        )
         for name in derived_parameters:
             lines.append(
-                f"#   {name}: {values[name]} ({EXPLORATORY_RATIOS[name]:.3g} x template diagonal)"
+                f"#   {name}: {values[name]} ({ratios[name]:.3g} x template diagonal)"
             )
     return "\n".join(lines) + "\n"
 
@@ -182,6 +174,11 @@ def initialize_project(
     deformation_kernel_width: float | None = None,
     initial_control_point_spacing: float | None = None,
     noise_std: float | None = None,
+    parameter_profile: str = "recommended",
+    parameter_ratios: Mapping[str, float] | None = None,
+    max_iterations: int | None = None,
+    initial_step_size: float | None = None,
+    convergence_tolerance: float | None = None,
     threads: int | None = None,
     random_seed: int = 20260715,
     image: str = DEFAULT_CONTAINER_IMAGE,
@@ -221,9 +218,46 @@ def initialize_project(
         if launcher is None
         else deepcopy(dict(launcher))
     )
+    profile = reference_parameter_profile(
+        "recommended" if parameter_profile == "advanced" else parameter_profile
+    )
+    ratios = dict(parameter_ratios or {})
+    ratio_values = {
+        "attachment_kernel_width": profile.attachment_ratio,
+        "deformation_kernel_width": profile.deformation_ratio,
+        "initial_control_point_spacing": profile.control_point_spacing_ratio,
+        "noise_std": profile.noise_ratio,
+    }
+    ratio_values.update(ratios)
+    explicit_values = {
+        "attachment_kernel_width": attachment_kernel_width,
+        "deformation_kernel_width": deformation_kernel_width,
+        "initial_control_point_spacing": initial_control_point_spacing,
+        "noise_std": noise_std,
+    }
+    parameter_sources = {
+        name: (
+            "absolute_override" if explicit_values[name] is not None else "template_diagonal_ratio"
+        )
+        for name in ratio_values
+    }
+    for parameter_name, ratio in ratio_values.items():
+        if not isinstance(ratio, (int, float)) or isinstance(ratio, bool) or ratio <= 0:
+            raise ConfigurationError(
+                f"{parameter_name} ratio must be a positive number; received {ratio!r}"
+            )
+
     provisional: dict[str, Any] = {
         "schema_version": "0.1",
-        "project": {"name": project_name or f"{default_name_source}-atlas"},
+        "project": {
+            "name": project_name or f"{default_name_source}-atlas",
+            "parameter_provenance": {
+                "profile": parameter_profile,
+                "scale_reference": "template_bounding_box_diagonal",
+                "ratios": ratio_values,
+                "sources": parameter_sources,
+            },
+        },
         "input": {
             "directory": _portable_path(directory, config_base),
             "subject_pattern": subject_pattern,
@@ -245,9 +279,11 @@ def initialize_project(
         },
         "optimization": {
             "method": "gradient_ascent",
-            "max_iterations": 100,
-            "initial_step_size": 0.01,
-            "convergence_tolerance": 0.0001,
+            "max_iterations": max_iterations or profile.max_iterations,
+            "initial_step_size": initial_step_size or profile.initial_step_size,
+            "convergence_tolerance": (
+                convergence_tolerance or profile.convergence_tolerance
+            ),
             "downsampling_factor": 1,
             "max_line_search_iterations": 10,
             "save_every_n_iterations": 100,
@@ -277,19 +313,23 @@ def initialize_project(
 
     derived: list[str] = []
     diagonal = template_metadata.bounding_box_diagonal
-    provisional["model"]["attachment"]["kernel_width"] = _parameter_value(
-        "attachment_kernel_width", attachment_kernel_width, diagonal, derived
+    effective_overrides = explicit_values
+    for parameter_name, override in effective_overrides.items():
+        if override is None:
+            effective_overrides[parameter_name] = _scaled_value(
+                diagonal, ratio_values[parameter_name]
+            )
+            derived.append(parameter_name)
+    provisional["model"]["attachment"]["kernel_width"] = effective_overrides[
+        "attachment_kernel_width"
+    ]
+    provisional["model"]["deformation"]["kernel_width"] = effective_overrides[
+        "deformation_kernel_width"
+    ]
+    provisional["model"]["deformation"]["initial_control_point_spacing"] = (
+        effective_overrides["initial_control_point_spacing"]
     )
-    provisional["model"]["deformation"]["kernel_width"] = _parameter_value(
-        "deformation_kernel_width", deformation_kernel_width, diagonal, derived
-    )
-    provisional["model"]["deformation"]["initial_control_point_spacing"] = _parameter_value(
-        "initial_control_point_spacing",
-        initial_control_point_spacing,
-        diagonal,
-        derived,
-    )
-    provisional["model"]["noise_std"] = _parameter_value("noise_std", noise_std, diagonal, derived)
+    provisional["model"]["noise_std"] = effective_overrides["noise_std"]
     validate_schema(provisional)
 
     derived_parameters = tuple(derived)

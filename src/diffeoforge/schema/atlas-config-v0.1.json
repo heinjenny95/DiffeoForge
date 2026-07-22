@@ -25,6 +25,47 @@
         "name": {
           "type": "string",
           "minLength": 1
+        },
+        "parameter_provenance": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["profile", "scale_reference", "ratios", "sources"],
+          "properties": {
+            "profile": {"enum": ["recommended", "pilot", "high_detail", "advanced"]},
+            "scale_reference": {"const": "template_bounding_box_diagonal"},
+            "ratios": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "attachment_kernel_width",
+                "deformation_kernel_width",
+                "initial_control_point_spacing",
+                "noise_std"
+              ],
+              "properties": {
+                "attachment_kernel_width": {"type": "number", "exclusiveMinimum": 0},
+                "deformation_kernel_width": {"type": "number", "exclusiveMinimum": 0},
+                "initial_control_point_spacing": {"type": "number", "exclusiveMinimum": 0},
+                "noise_std": {"type": "number", "exclusiveMinimum": 0}
+              }
+            },
+            "sources": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "attachment_kernel_width",
+                "deformation_kernel_width",
+                "initial_control_point_spacing",
+                "noise_std"
+              ],
+              "properties": {
+                "attachment_kernel_width": {"enum": ["template_diagonal_ratio", "absolute_override"]},
+                "deformation_kernel_width": {"enum": ["template_diagonal_ratio", "absolute_override"]},
+                "initial_control_point_spacing": {"enum": ["template_diagonal_ratio", "absolute_override"]},
+                "noise_std": {"enum": ["template_diagonal_ratio", "absolute_override"]}
+              }
+            }
+          }
         }
       }
     },
