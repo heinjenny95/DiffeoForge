@@ -9,6 +9,7 @@ from pathlib import Path
 import numpy as np
 from PySide6.QtCore import Qt, Slot
 from PySide6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QDialog,
     QDialogButtonBox,
@@ -37,16 +38,31 @@ class LandmarkEditorDialog(QDialog):
         mesh_paths: tuple[Path, ...],
         output_path: Path,
         parent=None,
+        *,
+        initial_landmark_count: int = 3,
+        auto_advance_mesh: bool = True,
     ) -> None:
         super().__init__(parent)
         if len(mesh_paths) < 2:
             raise ValueError("Landmark placement requires a template and at least one subject")
+        if (
+            isinstance(initial_landmark_count, bool)
+            or not isinstance(initial_landmark_count, int)
+            or initial_landmark_count < 3
+        ):
+            raise ValueError(
+                "Generalized Procrustes requires at least three non-collinear landmarks"
+            )
+        if not isinstance(auto_advance_mesh, bool):
+            raise ValueError("Automatic mesh advancement must be enabled or disabled")
         self.mesh_paths = tuple(path.expanduser().resolve() for path in mesh_paths)
         if len({path.name for path in self.mesh_paths}) != len(self.mesh_paths):
             raise ValueError("Landmark placement requires unique mesh filenames")
         self.output_path = output_path.expanduser().resolve()
         self._draft_owned = True
-        self.labels = ["LM1", "LM2", "LM3"]
+        self.labels = [
+            f"LM{index}" for index in range(1, initial_landmark_count + 1)
+        ]
         self.placements: dict[str, dict[str, SurfacePoint]] = {
             path.name: {} for path in self.mesh_paths
         }
@@ -116,6 +132,17 @@ class LandmarkEditorDialog(QDialog):
         label_buttons.addStretch()
         layout.addLayout(label_buttons)
 
+        self.auto_advance_mesh_check = QCheckBox(
+            "Automatically load the next mesh after all planned landmarks are placed"
+        )
+        self.auto_advance_mesh_check.setObjectName("autoAdvanceLandmarkMeshCheck")
+        self.auto_advance_mesh_check.setChecked(auto_advance_mesh)
+        self.auto_advance_mesh_check.setToolTip(
+            "When disabled, the completed mesh remains visible until you use Next mesh "
+            "or select another mesh."
+        )
+        layout.addWidget(self.auto_advance_mesh_check)
+
         self.canvas = InteractiveMeshCanvas3D()
         self.canvas.surfacePointPicked.connect(self._place_surface_point)
         layout.addWidget(self.canvas, 1)
@@ -149,6 +176,9 @@ class LandmarkEditorDialog(QDialog):
         self.buttons.accepted.connect(self._save_and_accept)
         self.buttons.rejected.connect(self.reject)
         layout.addWidget(self.buttons)
+        self.auto_advance_mesh_check.toggled.connect(
+            self._auto_advance_mesh_changed
+        )
         self._restore_draft_if_available()
         self._load_current_mesh()
 
@@ -158,12 +188,13 @@ class LandmarkEditorDialog(QDialog):
 
     def _draft_payload(self) -> dict[str, object]:
         return {
-            "schema_version": 1,
+            "schema_version": 2,
             "saved_at_utc": datetime.now(UTC).isoformat(),
             "output_path": str(self.output_path),
             "mesh_paths": [str(path) for path in self.mesh_paths],
             "mesh_sha256": dict(sorted(self._known_mesh_hashes.items())),
             "labels": list(self.labels),
+            "auto_advance_mesh": self.auto_advance_mesh_check.isChecked(),
             "placements": {
                 mesh_name: {
                     label: list(point)
@@ -214,7 +245,8 @@ class LandmarkEditorDialog(QDialog):
             return
         try:
             payload = json.loads(self.draft_path.read_text(encoding="utf-8"))
-            if payload.get("schema_version") != 1:
+            schema_version = payload.get("schema_version")
+            if schema_version not in (1, 2):
                 raise ValueError("unsupported draft schema version")
             expected_paths = [str(path) for path in self.mesh_paths]
             if payload.get("mesh_paths") != expected_paths:
@@ -231,6 +263,13 @@ class LandmarkEditorDialog(QDialog):
             placements = payload.get("placements")
             if not isinstance(hashes, dict) or not isinstance(placements, dict):
                 raise ValueError("the draft is missing identity or placement records")
+            auto_advance_mesh = (
+                payload.get("auto_advance_mesh")
+                if schema_version == 2
+                else self.auto_advance_mesh_check.isChecked()
+            )
+            if not isinstance(auto_advance_mesh, bool):
+                raise ValueError("the draft contains an invalid auto-advance setting")
             restored: dict[str, dict[str, SurfacePoint]] = {
                 path.name: {} for path in self.mesh_paths
             }
@@ -270,6 +309,9 @@ class LandmarkEditorDialog(QDialog):
         }
         self.label_combo.clear()
         self.label_combo.addItems(self.labels)
+        self.auto_advance_mesh_check.blockSignals(True)
+        self.auto_advance_mesh_check.setChecked(auto_advance_mesh)
+        self.auto_advance_mesh_check.blockSignals(False)
         self.draft_status_label.setText("Validated autosaved progress was resumed.")
         self.draft_status_label.setStyleSheet("color: #167c6b;")
 
@@ -334,9 +376,17 @@ class LandmarkEditorDialog(QDialog):
         next_label = self.label_combo.currentIndex() + 1
         if next_label < self.label_combo.count():
             self.label_combo.setCurrentIndex(next_label)
-        elif self.mesh_combo.currentIndex() + 1 < self.mesh_combo.count():
+        elif (
+            self.auto_advance_mesh_check.isChecked()
+            and all(label in self.placements[mesh_name] for label in self.labels)
+            and self.mesh_combo.currentIndex() + 1 < self.mesh_combo.count()
+        ):
             self.mesh_combo.setCurrentIndex(self.mesh_combo.currentIndex() + 1)
             self.label_combo.setCurrentIndex(0)
+
+    @Slot(bool)
+    def _auto_advance_mesh_changed(self, _checked: bool) -> None:
+        self._save_draft()
 
     @Slot()
     def _undo_last_placement(self) -> None:

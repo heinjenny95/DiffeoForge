@@ -150,6 +150,53 @@ def test_landmark_editor_undo_restores_replaced_surface_point(
     application.processEvents()
 
 
+def test_landmark_editor_uses_requested_count_and_optional_mesh_advance(
+    monkeypatch, tmp_path: Path
+) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from diffeoforge.desktop.landmark_editor import LandmarkEditorDialog
+
+    application = QApplication.instance() or QApplication(
+        ["landmark-editor-count-test"]
+    )
+    paths = (MESHES / "template.vtk", MESHES / "subject-01.vtk")
+    automatic = LandmarkEditorDialog(
+        paths,
+        tmp_path / "automatic.csv",
+        initial_landmark_count=5,
+        auto_advance_mesh=True,
+    )
+
+    assert automatic.labels == ["LM1", "LM2", "LM3", "LM4", "LM5"]
+    assert automatic.auto_advance_mesh_check.isChecked() is True
+    automatic.label_combo.setCurrentIndex(4)
+    automatic._place_surface_point((4.0, 0.0, 0.0))
+    assert automatic.mesh_combo.currentIndex() == 0
+    automatic._clear_current()
+    automatic.label_combo.setCurrentIndex(0)
+    for index in range(5):
+        automatic._place_surface_point((float(index), 0.0, 0.0))
+    assert automatic.mesh_combo.currentIndex() == 1
+    assert automatic.label_combo.currentIndex() == 0
+    automatic.close()
+
+    manual = LandmarkEditorDialog(
+        paths,
+        tmp_path / "manual.csv",
+        initial_landmark_count=5,
+        auto_advance_mesh=False,
+    )
+    for index in range(5):
+        manual._place_surface_point((float(index), 0.0, 0.0))
+    assert manual.mesh_combo.currentIndex() == 0
+    assert manual.label_combo.currentIndex() == 4
+    manual.close()
+    application.processEvents()
+
+
 def test_landmark_editor_autosaves_and_hash_validates_resumable_draft(
     monkeypatch, tmp_path: Path
 ) -> None:
@@ -162,7 +209,12 @@ def test_landmark_editor_autosaves_and_hash_validates_resumable_draft(
     application = QApplication.instance() or QApplication(["landmark-editor-draft-test"])
     paths = (MESHES / "template.vtk", MESHES / "subject-01.vtk")
     output = tmp_path / "landmarks.csv"
-    first = LandmarkEditorDialog(paths, output)
+    first = LandmarkEditorDialog(
+        paths,
+        output,
+        initial_landmark_count=5,
+        auto_advance_mesh=False,
+    )
     point = _triangle_centroids(paths[0])[0]
     first._place_surface_point(point)
     assert first.draft_path.is_file()
@@ -175,6 +227,8 @@ def test_landmark_editor_autosaves_and_hash_validates_resumable_draft(
     )
     resumed = LandmarkEditorDialog(paths, output)
 
+    assert resumed.labels == ["LM1", "LM2", "LM3", "LM4", "LM5"]
+    assert resumed.auto_advance_mesh_check.isChecked() is False
     assert resumed.placements[paths[0].name]["LM1"] == pytest.approx(point)
     assert "resumed" in resumed.draft_status_label.text().lower()
     resumed.close()

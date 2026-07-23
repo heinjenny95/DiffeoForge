@@ -40,10 +40,13 @@ terminal:
    attempt capped at 50 cycles, with early stopping only when every parameter
    block reaches the declared gradient tolerance in one completed cycle;
 6. optionally import a labelled-landmark CSV or place arbitrary triangle-surface
-   landmarks in a rotatable, zoomable native 3D view for either engine, with
-   hash-validated autosaved draft recovery, then explicitly configure the GPA
-   scaling, reflection, tolerance, and iteration policy, run a read-only
-   numerical alignment preview, and approve its exact converged fingerprint;
+   landmarks in a rotatable, zoomable native 3D view for either engine; choose
+   the planned count before opening the editor and optionally disable automatic
+   next-mesh loading after the final planned point; recover the count,
+   navigation preference, and placements from a hash-validated autosaved draft;
+   then explicitly configure the GPA scaling, reflection, tolerance, and
+   iteration policy, run a read-only numerical alignment preview, and approve
+   its exact converged fingerprint;
 7. validate schemas, paths, mesh geometry, and the engine-specific setup
    contract through the same application services used by the CLI;
 8. create a starter configuration, requiring a destructive confirmation before
@@ -136,6 +139,10 @@ python -m diffeoforge.desktop --smoke
   deterministic 20,000-edge display budget is always shown when it omits edges.
   Landmark clicks are resolved against the full triangle set, including when a
   lower-detail transient rendering is used while rotating a high-face-count mesh.
+  Landmark plans require at least three non-collinear points for GPA and have no
+  arbitrary ten-point cap. The editor advances to the next label after every
+  click; automatic loading of the next mesh after the last label is a visible
+  option that can be changed during placement and is retained in draft recovery.
 - Procrustes preview hashes the exact selected meshes and landmark CSV before
   and after computation, writes nothing, and reports convergence, residual,
   scale, and fingerprint diagnostics. Project creation is disabled until the

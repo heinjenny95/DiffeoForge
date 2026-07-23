@@ -73,14 +73,20 @@ identical verified requests reuse the same immutable aligned cohort. See the
 The desktop can create the strict CSV by rotating, panning, and zooming each
 mesh, then clicking the visible surface. Each click is resolved by barycentric
 interpolation on the frontmost projected source triangle; it is not snapped to
-a mesh vertex. The editor requires a complete ordered cohort, displays every
-already placed point, supports replacement and undo, and never changes the
-source meshes. Work in progress is written atomically beside the target CSV.
-Draft recovery requires the same absolute cohort paths and matching SHA-256 for
-every mesh that already has placements. A completed CSV export removes the
-draft. Project setup exposes whether GPA is applied, unit-centroid-size scaling,
-reflection policy, tolerance, and iteration limit. Before project creation,
-the guided desktop computes a read-only preview outside the event loop. It
+a mesh vertex. The researcher selects the planned label count before the editor
+opens; labels begin as `LM1` through `LMN` and remain addable, removable down to
+the GPA minimum, and renameable. There is no arbitrary ten-landmark cap. The
+editor requires a complete ordered cohort, displays every already placed point,
+supports replacement and undo, and never changes the source meshes. After the
+last planned point, a visible checkbox controls whether the next mesh loads
+automatically or navigation remains manual. Work in progress, including the
+label plan and this navigation choice, is written atomically beside the target
+CSV. Draft recovery requires the same absolute cohort paths and matching
+SHA-256 for every mesh that already has placements. A completed CSV export
+removes the draft. Project setup exposes whether GPA is applied,
+unit-centroid-size scaling, reflection policy, tolerance, and iteration limit.
+Before project creation, the guided desktop computes a read-only preview outside
+the event loop. It
 reports the exact cohort and landmark counts, convergence status and iteration
 count, final mean change and total squared residual, per-mesh residual range,
 applied scale range, and a content fingerprint. Project creation remains locked

@@ -313,7 +313,14 @@ def test_native_mesh_preview_canvas_renders_non_background_pixels(
 def test_desktop_window_exposes_required_project_controls(monkeypatch) -> None:
     pytest.importorskip("PySide6")
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
-    from PySide6.QtWidgets import QApplication, QComboBox, QLineEdit, QPushButton
+    from PySide6.QtWidgets import (
+        QApplication,
+        QCheckBox,
+        QComboBox,
+        QLineEdit,
+        QPushButton,
+        QSpinBox,
+    )
 
     from diffeoforge.desktop.widgets import DiffeoForgeWindow
 
@@ -327,6 +334,15 @@ def test_desktop_window_exposes_required_project_controls(monkeypatch) -> None:
     assert window.findChild(QComboBox, "unitsCombo") is not None
     assert window.findChild(QComboBox, "pairwiseEvaluationCombo") is not None
     assert window.findChild(QComboBox, "optimizationEffortCombo") is not None
+    landmark_count = window.findChild(QSpinBox, "landmarkCountSpin")
+    assert landmark_count is not None
+    assert landmark_count.minimum() == 3
+    assert landmark_count.maximum() > 10
+    assert landmark_count.value() == 3
+    auto_advance = window.findChild(QCheckBox, "autoAdvanceLandmarkMeshCheck")
+    assert auto_advance is not None
+    assert auto_advance.isChecked() is True
+    assert "next mesh" in auto_advance.text()
     assert window.place_landmarks_button.text().startswith("Place landmarks")
     assert window.create_button.isEnabled() is False
     assert all(isinstance(step, QPushButton) for step in window.rail_steps)
@@ -411,6 +427,66 @@ def test_desktop_window_exposes_required_project_controls(monkeypatch) -> None:
     assert expert_request.reference_threads == 8
     assert expert_request.reference_random_seed == 123
     assert window._request().pairwise_mode == "dense"
+    window.close()
+    application.processEvents()
+
+
+def test_desktop_passes_landmark_plan_to_editor(monkeypatch, tmp_path: Path) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QCheckBox, QDialog
+
+    import diffeoforge.desktop.widgets as widgets_module
+    from diffeoforge.desktop.widgets import DiffeoForgeWindow
+
+    application = QApplication.instance() or QApplication(
+        ["diffeoforge-landmark-plan-test"]
+    )
+    observed: dict[str, object] = {}
+
+    class FakeLandmarkEditor:
+        def __init__(
+            self,
+            mesh_paths,
+            output_path,
+            parent,
+            *,
+            initial_landmark_count,
+            auto_advance_mesh,
+        ) -> None:
+            observed["mesh_paths"] = mesh_paths
+            observed["output_path"] = output_path
+            observed["parent"] = parent
+            observed["initial_landmark_count"] = initial_landmark_count
+            observed["auto_advance_mesh"] = auto_advance_mesh
+            self.output_path = output_path
+            self.labels = [
+                f"LM{index}" for index in range(1, initial_landmark_count + 1)
+            ]
+            self.auto_advance_mesh_check = QCheckBox()
+            self.auto_advance_mesh_check.setChecked(auto_advance_mesh)
+
+        @staticmethod
+        def exec():
+            return QDialog.DialogCode.Rejected
+
+    monkeypatch.setattr(
+        widgets_module,
+        "LandmarkEditorDialog",
+        FakeLandmarkEditor,
+    )
+    window = DiffeoForgeWindow()
+    window.mesh_edit.setText(str(ROOT / "examples" / "synthetic" / "meshes"))
+    window.project_edit.setText(str(tmp_path / "project"))
+    window.landmark_count_spin.setValue(7)
+    window.landmark_auto_advance_check.setChecked(False)
+
+    window._place_landmarks()
+
+    assert observed["initial_landmark_count"] == 7
+    assert observed["auto_advance_mesh"] is False
+    assert len(observed["mesh_paths"]) >= 2  # type: ignore[arg-type]
+    assert observed["output_path"] == (tmp_path / "project" / "landmarks.csv")
     window.close()
     application.processEvents()
 

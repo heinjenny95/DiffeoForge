@@ -143,11 +143,13 @@ This repository currently provides:
   control-point import, a source-bound deterministic linear-PCA bundle, and the
   shared verified Results & PCA screen;
 - interactive native 3D surface-landmark placement with rotation, zoom, pan,
-  arbitrary triangle-point interpolation, hash-validated resumable drafts,
-  strict reusable landmark CSV output, configurable generalized Procrustes
-  alignment for either engine, read-only convergence/residual/scale preview
-  with exact fingerprint approval, immutable content-addressed aligned mesh
-  copies, and hash-verified alignment evidence in parameter review;
+  arbitrary triangle-point interpolation, a researcher-selected landmark count,
+  optional automatic next-mesh loading after the final planned point,
+  hash-validated resumable drafts, strict reusable landmark CSV output,
+  configurable generalized Procrustes alignment for either engine, read-only
+  convergence/residual/scale preview with exact fingerprint approval, immutable
+  content-addressed aligned mesh copies, and hash-verified alignment evidence
+  in parameter review;
 - reviewed triangular PLY, OBJ, and ASCII/binary STL import for landmarking and
   GPA, with byte-identical original-format copies under `raw/`, one canonical
   aligned VTK cohort under `aligned-vtk/`, and format/conversion provenance;
@@ -237,11 +239,15 @@ deterministic native XY/XZ/YZ wireframe projections with an explicit
 display-edge budget and exact source hash. The separate guided landmark editor
 renders a rotatable native 3D surface and stores a barycentrically interpolated
 point on the frontmost triangle under each click. Its autosaved draft is bound
-to the exact mesh paths and SHA-256 identities before it can be resumed. Neither
-view is mesh QC or registration evidence. Before project creation, an optional
-GPA route requires explicit approval of a converged numerical preview bound to
-the exact source hashes and settings; it is not proof of landmark homology or
-biological suitability.
+to the exact mesh paths and SHA-256 identities before it can be resumed. The
+researcher chooses the planned landmark count before opening the editor. GPA
+requires at least three non-collinear points, but DiffeoForge does not impose an
+arbitrary ten-landmark study cap. Automatic loading of the next mesh after the
+last planned point is a visible, draft-persisted option and can be disabled for
+manual navigation. Neither view is mesh QC or registration evidence. Before
+project creation, an optional GPA route requires explicit approval of a
+converged numerical preview bound to the exact source hashes and settings; it is
+not proof of landmark homology or biological suitability.
 DiffeoForge does **not** yet ship a public redistributable binary. Same-owner
 private Windows installers are used for local testing. A clean-commit,
 exact-inventory Windows one-directory

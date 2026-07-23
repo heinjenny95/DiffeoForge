@@ -1837,6 +1837,28 @@ class DiffeoForgeWindow(QMainWindow):
         landmarks_row.addWidget(self.place_landmarks_button)
         form.addRow("Landmarks", landmarks_row)
 
+        self.landmark_count_spin = QSpinBox()
+        self.landmark_count_spin.setObjectName("landmarkCountSpin")
+        self.landmark_count_spin.setRange(3, 2_147_483_647)
+        self.landmark_count_spin.setValue(3)
+        self.landmark_count_spin.setToolTip(
+            "At least three non-collinear landmarks are required for generalized "
+            "Procrustes. DiffeoForge imposes no study-specific ten-landmark cap."
+        )
+        self.landmark_auto_advance_check = QCheckBox(
+            "Automatically load the next mesh after all planned landmarks are placed"
+        )
+        self.landmark_auto_advance_check.setObjectName(
+            "autoAdvanceLandmarkMeshCheck"
+        )
+        self.landmark_auto_advance_check.setChecked(True)
+        landmark_plan = QHBoxLayout()
+        landmark_plan.setContentsMargins(0, 0, 0, 0)
+        landmark_plan.setSpacing(12)
+        landmark_plan.addWidget(self.landmark_count_spin)
+        landmark_plan.addWidget(self.landmark_auto_advance_check, 1)
+        form.addRow("Planned landmarks", landmark_plan)
+
         self.procrustes_box = QWidget()
         procrustes_layout = QVBoxLayout(self.procrustes_box)
         procrustes_layout.setContentsMargins(0, 0, 0, 0)
@@ -2016,8 +2038,15 @@ class DiffeoForgeWindow(QMainWindow):
                 (template, *subjects),
                 project_directory / "landmarks.csv",
                 self,
+                initial_landmark_count=self.landmark_count_spin.value(),
+                auto_advance_mesh=self.landmark_auto_advance_check.isChecked(),
             )
-            if dialog.exec() == QDialog.DialogCode.Accepted:
+            result = dialog.exec()
+            self.landmark_count_spin.setValue(len(dialog.labels))
+            self.landmark_auto_advance_check.setChecked(
+                dialog.auto_advance_mesh_check.isChecked()
+            )
+            if result == QDialog.DialogCode.Accepted:
                 self.landmarks_edit.setText(str(dialog.output_path))
         except (OSError, TypeError, ValueError, MeshPreviewError) as error:
             QMessageBox.warning(self, "Landmark placement unavailable", str(error))
