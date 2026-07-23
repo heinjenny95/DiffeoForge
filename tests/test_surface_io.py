@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import importlib.util
 import struct
 from pathlib import Path
 
@@ -436,6 +437,12 @@ def test_desktop_project_routes_supported_sources_through_reviewed_vtk_conversio
     tmp_path: Path,
     engine: DesktopEngine,
 ) -> None:
+    if engine is DesktopEngine.MODERN_CPU and (
+        importlib.util.find_spec("numpy") is None
+        or importlib.util.find_spec("torch") is None
+    ):
+        pytest.skip("modern-engine dependencies are not installed")
+
     source_directory = tmp_path / "source"
     template, subjects = _write_project_cohort(source_directory)
     landmarks = _write_mixed_landmarks(
