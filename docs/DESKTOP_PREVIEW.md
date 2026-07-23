@@ -139,6 +139,9 @@ python -m diffeoforge.desktop --smoke
   deterministic 20,000-edge display budget is always shown when it omits edges.
   Landmark clicks are resolved against the full triangle set, including when a
   lower-detail transient rendering is used while rotating a high-face-count mesh.
+  Releasing the mouse always schedules a complete opaque surface repaint, so
+  the transient triangle budget cannot remain visible as the final placement
+  state.
   Landmark plans require at least three non-collinear points for GPA and have no
   arbitrary ten-point cap. The editor advances to the next label after every
   click; automatic loading of the next mesh after the last label is a visible

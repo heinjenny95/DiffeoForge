@@ -244,10 +244,13 @@ researcher chooses the planned landmark count before opening the editor. GPA
 requires at least three non-collinear points, but DiffeoForge does not impose an
 arbitrary ten-landmark study cap. Automatic loading of the next mesh after the
 last planned point is a visible, draft-persisted option and can be disabled for
-manual navigation. Neither view is mesh QC or registration evidence. Before
-project creation, an optional GPA route requires explicit approval of a
-converged numerical preview bound to the exact source hashes and settings; it is
-not proof of landmark homology or biological suitability.
+manual navigation. High-face-count rotation may use a bounded transient
+triangle preview, but every mouse release schedules a complete opaque surface
+repaint before the next landmark is chosen. Neither view is mesh QC or
+registration evidence. Before project creation, an optional GPA route requires
+explicit approval of a converged numerical preview bound to the exact source
+hashes and settings; it is not proof of landmark homology or biological
+suitability.
 DiffeoForge does **not** yet ship a public redistributable binary. Same-owner
 private Windows installers are used for local testing. A clean-commit,
 exact-inventory Windows one-directory

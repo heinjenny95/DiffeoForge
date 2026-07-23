@@ -13,6 +13,7 @@ from PySide6.QtWidgets import QWidget
 from diffeoforge.desktop.mesh_preview import MeshPreviewModel
 
 INTERACTIVE_TRIANGLE_BUDGET = 5_000
+SURFACE_OPACITY = 255
 
 
 @dataclass(frozen=True)
@@ -264,6 +265,10 @@ class InteractiveMeshCanvas3D(QWidget):
         self._drag_button = None
         self._interacting = False
         self.setCursor(Qt.CursorShape.CrossCursor)
+        # Mouse-move paints may use the bounded interactive triangle preview.
+        # Always schedule a new paint after release so that preview can never
+        # remain as the apparent final surface.
+        self.update()
         if should_pick:
             point = self.pick_at(event.position())
             if point is not None:
@@ -321,7 +326,14 @@ class InteractiveMeshCanvas3D(QWidget):
             coordinates = surface.screen_vertices[triangles[triangle_index]]
             polygon = QPolygonF([QPointF(float(x), float(y)) for x, y in coordinates])
             shade = int(198 + 38 * float(light[triangle_index]))
-            painter.setBrush(QColor(max(0, shade - 38), shade, max(0, shade - 16), 235))
+            painter.setBrush(
+                QColor(
+                    max(0, shade - 38),
+                    shade,
+                    max(0, shade - 16),
+                    SURFACE_OPACITY,
+                )
+            )
             painter.setPen(QPen(QColor("#6e9992"), 0.35))
             painter.drawPolygon(polygon)
 
@@ -345,7 +357,7 @@ class InteractiveMeshCanvas3D(QWidget):
         painter.drawText(
             self.rect().adjusted(14, 10, -14, -10),
             Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignBottom,
-            "Click: place/replace landmark  ·  Drag: rotate  ·  Right-drag: pan  ·  "
-            "Wheel: zoom  ·  Double-click: reset view",
+            "Click: place/replace landmark  ·  Drag: rotate (full surface on release)  "
+            "·  Right-drag: pan  ·  Wheel: zoom  ·  Double-click: reset view",
         )
         painter.end()

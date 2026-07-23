@@ -123,6 +123,59 @@ def test_3d_canvas_click_emits_an_arbitrary_surface_point(monkeypatch, tmp_path:
     application.processEvents()
 
 
+def test_3d_canvas_release_requests_full_surface_repaint_after_rotation(
+    monkeypatch,
+) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtCore import QPoint, Qt
+    from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QApplication
+
+    from diffeoforge.desktop.landmark_3d_widget import InteractiveMeshCanvas3D
+    from diffeoforge.desktop.mesh_preview import load_mesh_preview
+
+    class UpdateTrackingCanvas(InteractiveMeshCanvas3D):
+        def __init__(self) -> None:
+            self.update_requests = 0
+            super().__init__()
+
+        def update(self, *args) -> None:
+            self.update_requests += 1
+            super().update(*args)
+
+    application = QApplication.instance() or QApplication(
+        ["landmark-canvas-release-test"]
+    )
+    canvas = UpdateTrackingCanvas()
+    canvas.resize(400, 400)
+    source = MESHES / "template.vtk"
+    canvas.set_model(load_mesh_preview(source))
+    canvas.set_markers({"LM1": _triangle_centroids(source)[0]})
+    canvas.show()
+    application.processEvents()
+
+    QTest.mousePress(
+        canvas,
+        Qt.MouseButton.LeftButton,
+        pos=QPoint(160, 180),
+    )
+    QTest.mouseMove(canvas, QPoint(230, 180))
+    assert canvas._interacting is True
+    before_release = canvas.update_requests
+
+    QTest.mouseRelease(
+        canvas,
+        Qt.MouseButton.LeftButton,
+        pos=QPoint(230, 180),
+    )
+
+    assert canvas._interacting is False
+    assert canvas.update_requests == before_release + 1
+    canvas.close()
+    application.processEvents()
+
+
 def test_landmark_editor_undo_restores_replaced_surface_point(
     monkeypatch, tmp_path: Path
 ) -> None:
