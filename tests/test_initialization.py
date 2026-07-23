@@ -6,10 +6,33 @@ import pytest
 
 from diffeoforge.cli import main
 from diffeoforge.config import ConfigurationError, load_config, validate_input_paths
-from diffeoforge.initialization import EXPLORATORY_RATIOS, initialize_project
+from diffeoforge.initialization import (
+    EXPLORATORY_RATIOS,
+    detect_template,
+    initialize_project,
+)
 
 REPOSITORY_ROOT = Path(__file__).parents[1]
 MESH_DIRECTORY = REPOSITORY_ROOT / "examples" / "synthetic" / "meshes"
+
+
+@pytest.mark.parametrize("extension", (".vtk", ".ply", ".obj", ".stl"))
+def test_template_detection_accepts_each_supported_source_extension(
+    tmp_path: Path,
+    extension: str,
+) -> None:
+    expected = tmp_path / f"template{extension}"
+    expected.write_bytes(b"identity-only fixture")
+
+    assert detect_template(tmp_path) == expected.resolve()
+
+
+def test_template_detection_rejects_ambiguous_supported_formats(tmp_path: Path) -> None:
+    (tmp_path / "template.obj").write_bytes(b"obj")
+    (tmp_path / "Template.ply").write_bytes(b"ply")
+
+    with pytest.raises(ConfigurationError, match="More than one supported"):
+        detect_template(tmp_path)
 
 
 def test_init_creates_valid_transparent_geometry_scaled_config(tmp_path: Path) -> None:

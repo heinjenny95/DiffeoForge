@@ -78,6 +78,8 @@ This roadmap describes evidence gates rather than promised dates.
 - [x] Implement conservative observed-rate ETA arithmetic for Deformetrica iteration logs
 - [x] Add interactive 3D homologous surface-landmark placement, correction,
   autosaved resume, and strict CSV output
+- [x] Add reviewed triangular PLY/OBJ/STL landmark and GPA import with
+  byte-identical raw copies and canonical aligned VTK publication
 - [x] Retain guided orthographic inspection as a separate deterministic preview
 - [x] Connect hash-bound read-only Procrustes preview/approval to the guided
   desktop workflow

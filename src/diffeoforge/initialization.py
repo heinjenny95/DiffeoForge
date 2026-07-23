@@ -22,6 +22,7 @@ from diffeoforge.diagnostics import DEFAULT_CONTAINER_IMAGE
 from diffeoforge.mesh import inspect_inputs
 from diffeoforge.reference_parameters import reference_parameter_profile
 from diffeoforge.report import PreflightResult, make_preflight_result
+from diffeoforge.surface_io import SUPPORTED_SURFACE_EXTENSIONS
 
 SUPPORTED_UNITS = ("unitless", "micrometer", "millimeter", "centimeter", "meter")
 EXPLORATORY_RATIOS = {
@@ -83,7 +84,7 @@ def ensure_generated_configuration_replaceable(
 
 
 def detect_template(mesh_directory: Path | str) -> Path | None:
-    """Detect only an unambiguous file literally named ``template.vtk``."""
+    """Detect one unambiguous ``template`` in a supported surface format."""
 
     directory = Path(mesh_directory).expanduser().resolve()
     if not directory.is_dir():
@@ -91,11 +92,16 @@ def detect_template(mesh_directory: Path | str) -> Path | None:
     matches = sorted(
         path.resolve()
         for path in directory.iterdir()
-        if path.is_file() and path.name.casefold() == "template.vtk"
+        if (
+            path.is_file()
+            and path.stem.casefold() == "template"
+            and path.suffix.casefold() in SUPPORTED_SURFACE_EXTENSIONS
+        )
     )
     if len(matches) > 1:
         raise ConfigurationError(
-            "More than one case-insensitive template.vtk candidate exists; pass --template."
+            "More than one supported case-insensitive template candidate exists; "
+            "select the template explicitly."
         )
     return matches[0] if matches else None
 
@@ -105,8 +111,9 @@ def _resolve_template(mesh_directory: Path, template: Path | str | None) -> Path
         detected = detect_template(mesh_directory)
         if detected is None:
             raise ConfigurationError(
-                "No file named template.vtk was found. Pass --template with the initial "
-                "template mesh; DiffeoForge will not guess one from the subjects."
+                "No supported file named template.vtk, template.ply, template.obj, or "
+                "template.stl was found. Pass --template with the initial template mesh; "
+                "DiffeoForge will not guess one from the subjects."
             )
         return detected
 

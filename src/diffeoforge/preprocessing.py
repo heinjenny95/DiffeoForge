@@ -19,9 +19,17 @@ from diffeoforge.analysis.procrustes import (
 from diffeoforge.atomic_io import replace_atomically
 from diffeoforge.config import ConfigurationError
 from diffeoforge.initialization import detect_template
-from diffeoforge.mesh import read_vtk_polydata, sha256_file, write_vtk_polydata
+from diffeoforge.mesh import sha256_file, write_vtk_polydata
+from diffeoforge.surface_io import (
+    SUPPORTED_SURFACE_EXTENSIONS,
+    SurfaceMeshMetadata,
+    canonical_vtk_filename,
+    inspect_surface_mesh,
+    is_supported_surface_path,
+    read_surface_mesh,
+)
 
-PREPROCESSING_VERSION = "0.1"
+PREPROCESSING_VERSION = "0.2"
 DEFAULT_PROCRUSTES_TOLERANCE = 1e-10
 DEFAULT_PROCRUSTES_MAX_ITERATIONS = 100
 
@@ -31,6 +39,8 @@ class AlignedInputCohort:
     """Immutable aligned inputs ready for any atlas engine."""
 
     directory: Path
+    raw_directory: Path
+    aligned_directory: Path
     template: Path
     subjects: tuple[Path, ...]
     landmarks: Path
@@ -50,6 +60,8 @@ class LandmarkAlignmentPreview:
     landmark_labels: tuple[str, ...]
     landmark_sha256: str
     mesh_sha256: tuple[str, ...]
+    source_metadata: tuple[SurfaceMeshMetadata, ...]
+    aligned_filenames: tuple[str, ...]
     scale_to_unit_centroid_size: bool
     allow_reflection: bool
     tolerance: float
@@ -67,7 +79,8 @@ def _resolve_template(directory: Path, template: Path | str | None) -> Path:
         detected = detect_template(directory)
         if detected is None:
             raise ConfigurationError(
-                "No file named template.vtk was found. Select the template explicitly."
+                "No supported file named template.vtk, template.ply, template.obj, or "
+                "template.stl was found. Select the template explicitly."
             )
         return detected
     candidate = Path(template).expanduser()
@@ -76,6 +89,11 @@ def _resolve_template(directory: Path, template: Path | str | None) -> Path:
     candidate = candidate.resolve()
     if not candidate.is_file():
         raise ConfigurationError(f"Template mesh does not exist: {candidate}")
+    if not is_supported_surface_path(candidate):
+        raise ConfigurationError(
+            f"Unsupported template format {candidate.suffix or '<none>'!r}. "
+            "Supported inputs are VTK, PLY, OBJ, and STL."
+        )
     return candidate
 
 
@@ -98,7 +116,8 @@ def _select_inputs(
     subjects = tuple(
         path
         for path in candidates
-        if path != template_path and path.suffix.casefold() == ".vtk"
+        if path != template_path
+        and path.suffix.casefold() in SUPPORTED_SURFACE_EXTENSIONS
     )
     if len(subjects) < 2:
         raise ConfigurationError("Atlas estimation requires at least two subject meshes")
@@ -106,6 +125,12 @@ def _select_inputs(
     if len({path.name.casefold() for path in cohort}) != len(cohort):
         raise ConfigurationError(
             "Template and subject filenames must be unique when compared case-insensitively"
+        )
+    canonical_names = tuple(canonical_vtk_filename(path) for path in cohort)
+    if len({name.casefold() for name in canonical_names}) != len(canonical_names):
+        raise ConfigurationError(
+            "Template and subject stems must be unique when converted to canonical VTK "
+            "filenames"
         )
     return template_path, subjects
 
@@ -142,7 +167,9 @@ def preview_landmark_alignment(
         raise ConfigurationError(f"Landmark CSV does not exist: {landmark_source}")
     template_path, subject_paths = _select_inputs(directory, template, subject_pattern)
     source_paths = (template_path, *subject_paths)
-    source_hashes = tuple(sha256_file(path) for path in source_paths)
+    source_metadata = tuple(inspect_surface_mesh(path) for path in source_paths)
+    source_hashes = tuple(item.sha256 for item in source_metadata)
+    aligned_filenames = tuple(canonical_vtk_filename(path) for path in source_paths)
     landmark_hash = sha256_file(landmark_source)
     labels, landmark_values = read_landmark_csv(
         landmark_source,
@@ -165,8 +192,19 @@ def preview_landmark_alignment(
             "A mesh or landmark file changed while the Procrustes preview was computed"
         )
     source_records = tuple(
-        {"filename": path.name, "source_sha256": digest}
-        for path, digest in zip(source_paths, source_hashes, strict=True)
+        {
+            "source_filename": path.name,
+            "source_sha256": metadata.sha256,
+            "source_format": metadata.source_format,
+            "source_encoding": metadata.encoding,
+            "aligned_filename": aligned_filename,
+        }
+        for path, metadata, aligned_filename in zip(
+            source_paths,
+            source_metadata,
+            aligned_filenames,
+            strict=True,
+        )
     )
     settings = {
         "scale_to_unit_centroid_size": scale_to_unit_centroid_size,
@@ -192,6 +230,8 @@ def preview_landmark_alignment(
         landmark_labels=labels,
         landmark_sha256=landmark_hash,
         mesh_sha256=source_hashes,
+        source_metadata=source_metadata,
+        aligned_filenames=aligned_filenames,
         scale_to_unit_centroid_size=scale_to_unit_centroid_size,
         allow_reflection=allow_reflection,
         tolerance=float(tolerance),
@@ -205,8 +245,8 @@ def _load_existing(
     destination: Path,
     *,
     fingerprint: str,
-    template_name: str,
-    subject_names: tuple[str, ...],
+    source_names: tuple[str, ...],
+    aligned_names: tuple[str, ...],
 ) -> AlignedInputCohort:
     evidence_path = destination / "procrustes.json"
     try:
@@ -219,28 +259,59 @@ def _load_existing(
         raise ConfigurationError("Existing aligned-input evidence uses an unsupported version")
     if evidence.get("fingerprint") != fingerprint:
         raise ConfigurationError("Existing aligned-input directory has a different fingerprint")
-    expected_names = (template_name, *subject_names)
     records = evidence.get("meshes")
     if (
         not isinstance(records, list)
-        or tuple(item.get("filename") for item in records) != expected_names
+        or tuple(item.get("source_filename") for item in records) != source_names
+        or tuple(item.get("filename") for item in records) != aligned_names
     ):
         raise ConfigurationError("Existing aligned-input evidence lists different meshes")
-    for record in records:
-        path = destination / record["filename"]
-        if not path.is_file() or sha256_file(path) != record.get("aligned_sha256"):
+    raw_directory = destination / "raw"
+    aligned_directory = destination / "aligned-vtk"
+    if raw_directory.is_symlink() or aligned_directory.is_symlink():
+        raise ConfigurationError(
+            "Existing aligned-input raw or aligned directory is a symbolic link"
+        )
+    for source_name, aligned_name, record in zip(
+        source_names,
+        aligned_names,
+        records,
+        strict=True,
+    ):
+        raw_path = raw_directory / source_name
+        aligned_path = aligned_directory / aligned_name
+        if (
+            record.get("raw_copy_path") != f"raw/{source_name}"
+            or not raw_path.is_file()
+            or raw_path.is_symlink()
+            or sha256_file(raw_path) != record.get("raw_copy_sha256")
+            or record.get("raw_copy_sha256") != record.get("source_sha256")
+        ):
             raise ConfigurationError(
-                f"Existing aligned mesh no longer matches its evidence: {path}"
+                f"Existing raw mesh copy no longer matches its evidence: {raw_path}"
+            )
+        if (
+            record.get("aligned_path") != f"aligned-vtk/{aligned_name}"
+            or not aligned_path.is_file()
+            or aligned_path.is_symlink()
+            or sha256_file(aligned_path) != record.get("aligned_sha256")
+        ):
+            raise ConfigurationError(
+                f"Existing aligned mesh no longer matches its evidence: {aligned_path}"
             )
     landmark_copy = destination / "landmarks.csv"
-    if not landmark_copy.is_file() or sha256_file(landmark_copy) != evidence.get(
-        "landmark_copy_sha256"
+    if (
+        not landmark_copy.is_file()
+        or landmark_copy.is_symlink()
+        or sha256_file(landmark_copy) != evidence.get("landmark_copy_sha256")
     ):
         raise ConfigurationError("Existing aligned landmark copy no longer matches its evidence")
     return AlignedInputCohort(
         directory=destination,
-        template=destination / template_name,
-        subjects=tuple(destination / name for name in subject_names),
+        raw_directory=raw_directory,
+        aligned_directory=aligned_directory,
+        template=aligned_directory / aligned_names[0],
+        subjects=tuple(aligned_directory / name for name in aligned_names[1:]),
         landmarks=landmark_copy,
         evidence=evidence_path,
         fingerprint=fingerprint,
@@ -287,16 +358,25 @@ def prepare_landmark_aligned_inputs(
             "Landmark Procrustes did not converge; no aligned inputs were published"
         )
     landmark_source = preview.landmarks
-    template_path = preview.template
-    subject_paths = preview.subjects
     source_paths = preview.source_paths
     labels = preview.landmark_labels
     source_records = tuple(
         {
-            "filename": path.name,
-            "source_sha256": digest,
+            "source_filename": path.name,
+            "source_sha256": metadata.sha256,
+            "source_format": metadata.source_format,
+            "source_encoding": metadata.encoding,
+            "source_points": metadata.points,
+            "source_triangles": metadata.triangles,
+            "topology_note": metadata.topology_note,
+            "filename": aligned_name,
         }
-        for path, digest in zip(source_paths, preview.mesh_sha256, strict=True)
+        for path, metadata, aligned_name in zip(
+            source_paths,
+            preview.source_metadata,
+            preview.aligned_filenames,
+            strict=True,
+        )
     )
     settings = {
         "scale_to_unit_centroid_size": scale_to_unit_centroid_size,
@@ -320,12 +400,16 @@ def prepare_landmark_aligned_inputs(
         return _load_existing(
             destination,
             fingerprint=fingerprint,
-            template_name=template_path.name,
-            subject_names=tuple(path.name for path in subject_paths),
+            source_names=tuple(path.name for path in source_paths),
+            aligned_names=preview.aligned_filenames,
         )
 
     temporary = Path(tempfile.mkdtemp(prefix=".aligning-", dir=preprocessing_root))
     try:
+        raw_directory = temporary / "raw"
+        aligned_directory = temporary / "aligned-vtk"
+        raw_directory.mkdir()
+        aligned_directory.mkdir()
         landmark_copy = temporary / "landmarks.csv"
         if sha256_file(landmark_source) != preview.landmark_sha256:
             raise ConfigurationError(
@@ -337,33 +421,58 @@ def prepare_landmark_aligned_inputs(
                 "The copied landmark file differs from the approved Procrustes preview"
             )
         geometries = []
-        for path, expected_sha256 in zip(
-            source_paths, preview.mesh_sha256, strict=True
+        for path, expected_sha256, expected_metadata in zip(
+            source_paths,
+            preview.mesh_sha256,
+            preview.source_metadata,
+            strict=True,
         ):
             if sha256_file(path) != expected_sha256:
                 raise ConfigurationError(
                     f"Mesh changed after the approved Procrustes preview: {path}"
                 )
-            geometry = read_vtk_polydata(path)
+            raw_copy = raw_directory / path.name
+            shutil.copyfile(path, raw_copy)
+            if sha256_file(raw_copy) != expected_sha256:
+                raise ConfigurationError(
+                    f"Raw mesh copy differs from the approved Procrustes preview: {path}"
+                )
+            geometry = read_surface_mesh(path)
             if sha256_file(path) != expected_sha256:
                 raise ConfigurationError(
                     f"Mesh changed while the aligned copy was prepared: {path}"
                 )
+            if (
+                len(geometry.vertices) != expected_metadata.points
+                or len(geometry.triangles) != expected_metadata.triangles
+            ):
+                raise ConfigurationError(
+                    f"Mesh geometry changed after the approved Procrustes preview: {path}"
+                )
             geometries.append(geometry)
         mesh_evidence: list[dict[str, object]] = []
-        for index, (source, geometry, transform, residual) in enumerate(
+        for index, (
+            source,
+            geometry,
+            transform,
+            residual,
+            aligned_filename,
+            source_record,
+        ) in enumerate(
             zip(
                 source_paths,
                 geometries,
                 alignment.transforms,
                 alignment.residuals,
+                preview.aligned_filenames,
+                source_records,
                 strict=True,
             )
         ):
             aligned_vertices = transform.apply(
                 np.asarray(geometry.vertices, dtype=np.float64)
             )
-            aligned_path = temporary / source.name
+            aligned_path = aligned_directory / aligned_filename
             write_vtk_polydata(
                 aligned_path,
                 aligned_vertices.tolist(),
@@ -373,9 +482,14 @@ def prepare_landmark_aligned_inputs(
             mesh_evidence.append(
                 {
                     "index": index,
-                    "filename": source.name,
-                    "source_sha256": source_records[index]["source_sha256"],
+                    **source_record,
+                    "raw_copy_path": f"raw/{source.name}",
+                    "raw_copy_sha256": sha256_file(raw_directory / source.name),
+                    "aligned_path": f"aligned-vtk/{aligned_filename}",
                     "aligned_sha256": sha256_file(aligned_path),
+                    "aligned_format": "legacy_vtk",
+                    "aligned_points": len(geometry.vertices),
+                    "aligned_triangles": len(geometry.triangles),
                     "residual": residual,
                     "transform": {
                         "centroid": transform.centroid.tolist(),
@@ -389,6 +503,12 @@ def prepare_landmark_aligned_inputs(
             "fingerprint": fingerprint,
             "method": "generalized_procrustes",
             "coordinate_convention": "aligned = ((raw - centroid) * scale) @ rotation",
+            "directory_layout": {
+                "raw": "raw",
+                "aligned_vtk": "aligned-vtk",
+                "raw_policy": "byte-identical immutable source copies",
+                "aligned_policy": "deterministic ASCII legacy VTK triangle surfaces",
+            },
             "landmark_columns": list(LANDMARK_COLUMNS),
             "landmark_labels": list(labels),
             "landmark_source_sha256": preview.landmark_sha256,
@@ -432,6 +552,6 @@ def prepare_landmark_aligned_inputs(
     return _load_existing(
         destination,
         fingerprint=fingerprint,
-        template_name=template_path.name,
-        subject_names=tuple(path.name for path in subject_paths),
+        source_names=tuple(path.name for path in source_paths),
+        aligned_names=preview.aligned_filenames,
     )

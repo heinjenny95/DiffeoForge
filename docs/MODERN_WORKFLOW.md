@@ -42,6 +42,12 @@ The geometry-scaled values produced by `modern-init` are visibly labelled
 exploratory. They are starting values, not biologically or numerically
 validated presets.
 
+The direct CLI workflow remains a VTK contract. The guided desktop can first
+read triangular PLY, OBJ, or STL surfaces for landmarking and reviewed GPA,
+preserve byte-identical raw copies, and point this workflow at the resulting
+canonical `aligned-vtk/` cohort. See
+[surface input formats](SURFACE_INPUT_FORMATS.md).
+
 The generated runtime section always declares exact pairwise evaluation:
 
 ```yaml

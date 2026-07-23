@@ -8,7 +8,8 @@ from pathlib import Path
 from typing import Literal
 
 from diffeoforge.config import ConfigurationError
-from diffeoforge.mesh import inspect_vtk, read_vtk_polydata, sha256_file
+from diffeoforge.mesh import sha256_file
+from diffeoforge.surface_io import load_surface_mesh
 
 DEFAULT_EDGE_BUDGET = 20_000
 PreviewPlane = Literal["xy", "xz", "yz"]
@@ -150,21 +151,22 @@ def _unique_edges(
 
 
 def load_mesh_preview(path: Path | str) -> MeshPreviewModel:
-    """Load one exact VTK template and reject concurrent source changes."""
+    """Load one exact supported surface and reject concurrent source changes."""
 
     source = Path(path).expanduser().resolve()
     try:
         hash_before = sha256_file(source)
-        metadata = inspect_vtk(source)
-        geometry = read_vtk_polydata(source)
+        loaded = load_surface_mesh(source)
         hash_after = sha256_file(source)
     except (ConfigurationError, OSError, TypeError, ValueError) as error:
         raise MeshPreviewError(f"Template preview could not read {source}: {error}") from error
+    metadata = loaded.metadata
+    geometry = loaded.geometry
     if hash_before != metadata.sha256 or hash_before != hash_after:
         raise MeshPreviewError("Template changed while its preview model was loaded")
     if len(geometry.vertices) != metadata.points:
         raise MeshPreviewError("Template point count changed while preview was loaded")
-    if len(geometry.triangles) != metadata.cells:
+    if len(geometry.triangles) != metadata.triangles:
         raise MeshPreviewError("Template triangle count changed while preview was loaded")
     return MeshPreviewModel(
         path=source,

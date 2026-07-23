@@ -60,11 +60,15 @@ reason.
 
 The shared preprocessing layer defines a strict long-form CSV with
 `mesh_file,landmark,x,y,z`, requires identical ordered labels for the template
-and every subject, writes transformed full-mesh copies, and inventories the
-complete transformations and convergence evidence. Raw meshes are never
-edited. Content-addressed aligned cohorts can feed either Deformetrica project
-setup or the [experimental modern workflow](MODERN_WORKFLOW.md); identical
-verified requests reuse the same immutable aligned cohort.
+and every subject, reads triangular VTK, PLY, OBJ, or STL source surfaces,
+writes transformed full-mesh copies in one canonical VTK representation, and
+inventories the complete transformations and convergence evidence. Raw meshes
+are never edited. A content-addressed publication separates byte-identical
+original-format files under `raw/` from transformed products under
+`aligned-vtk/`. Content-addressed aligned cohorts can feed either Deformetrica
+project setup or the [experimental modern workflow](MODERN_WORKFLOW.md);
+identical verified requests reuse the same immutable aligned cohort. See the
+[format and conversion contract](SURFACE_INPUT_FORMATS.md).
 
 The desktop can create the strict CSV by rotating, panning, and zooming each
 mesh, then clicking the visible surface. Each click is resolved by barycentric

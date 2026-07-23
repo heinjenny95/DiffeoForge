@@ -27,8 +27,11 @@ The optional PySide6 application provides one complete setup path without a
 terminal:
 
 1. choose the modern CPU or external Deformetrica 4.3 reference engine;
-2. select a directory of VTK meshes and an explicit template, or allow only a
-   literally named `template.vtk` to be detected;
+2. select a directory of triangular VTK, PLY, OBJ, or STL meshes and an
+   explicit template, or allow one unambiguous file named `template` with a
+   supported extension to be detected; non-VTK sources require the reviewed
+   landmark/GPA path and become canonical aligned VTK copies before either
+   engine is configured;
 3. select the coordinate unit, project directory, optional project name, and
    subject filename pattern;
 4. for the Modern route, explicitly choose the dense small-pilot baseline or

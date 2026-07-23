@@ -56,7 +56,15 @@ def test_procrustes_preprocessing_is_engine_independent_and_preserves_raw_meshes
     assert evidence["converged"] is True
     assert evidence["landmark_labels"] == ["anterior", "dorsal", "posterior"]
     assert len(evidence["meshes"]) == 6
-    assert all(Path(result.directory / item["filename"]).is_file() for item in evidence["meshes"])
+    assert all(
+        Path(result.directory / item["aligned_path"]).is_file()
+        for item in evidence["meshes"]
+    )
+    assert all(
+        Path(result.directory / item["raw_copy_path"]).read_bytes()
+        == (MESH_DIRECTORY / item["source_filename"]).read_bytes()
+        for item in evidence["meshes"]
+    )
 
     aligned_landmarks = []
     for mesh in (result.template, *result.subjects):

@@ -79,10 +79,13 @@ def _reference_alignment_items(preflight) -> tuple[ReviewItem, ...]:
 
     directory = preflight.inputs.input_directory
     evidence_path = directory / "procrustes.json"
+    if not evidence_path.exists() and directory.name == "aligned-vtk":
+        evidence_path = directory.parent / "procrustes.json"
     if not evidence_path.exists():
         return ()
     try:
         evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
+        version = evidence.get("preprocessing_version")
         settings = evidence["settings"]
         records = evidence["meshes"]
         labels = evidence["landmark_labels"]
@@ -91,7 +94,7 @@ def _reference_alignment_items(preflight) -> tuple[ReviewItem, ...]:
             preflight.inputs.template.name,
             *(path.name for path in preflight.inputs.subjects),
         )
-        if evidence.get("preprocessing_version") != "0.1":
+        if version not in {"0.1", "0.2"}:
             raise ValueError("unsupported preprocessing evidence version")
         if evidence.get("method") != "generalized_procrustes":
             raise ValueError("unexpected alignment method")
@@ -99,22 +102,58 @@ def _reference_alignment_items(preflight) -> tuple[ReviewItem, ...]:
             raise ValueError("alignment is not recorded as converged")
         if not isinstance(fingerprint, str) or len(fingerprint) != 64:
             raise ValueError("invalid alignment fingerprint")
-        prefix = directory.name.removeprefix("aligned-")
-        if directory.name.startswith("aligned-") and not fingerprint.startswith(prefix):
+        root = directory if version == "0.1" else directory.parent
+        if version == "0.2" and (
+            (root / "raw").is_symlink() or (root / "aligned-vtk").is_symlink()
+        ):
+            raise ValueError("alignment raw or aligned directory is a symbolic link")
+        prefix = root.name.removeprefix("aligned-")
+        if root.name.startswith("aligned-") and not fingerprint.startswith(prefix):
             raise ValueError("alignment directory does not match its fingerprint")
         if not isinstance(records, list) or tuple(
             record.get("filename") for record in records
         ) != expected_names:
             raise ValueError("alignment evidence lists a different mesh cohort")
         for record in records:
-            aligned_path = directory / record["filename"]
-            if not aligned_path.is_file() or sha256_file(aligned_path) != record.get(
-                "aligned_sha256"
+            aligned_path = (
+                directory / record["filename"]
+                if version == "0.1"
+                else root / "aligned-vtk" / record["filename"]
+            )
+            if version == "0.2" and record.get("aligned_path") != (
+                f"aligned-vtk/{record['filename']}"
+            ):
+                raise ValueError("aligned mesh path does not match its canonical filename")
+            if (
+                not aligned_path.is_file()
+                or aligned_path.is_symlink()
+                or sha256_file(aligned_path) != record.get("aligned_sha256")
             ):
                 raise ValueError(f"aligned mesh no longer matches: {aligned_path.name}")
-        landmark_copy = directory / "landmarks.csv"
-        if not landmark_copy.is_file() or sha256_file(landmark_copy) != evidence.get(
-            "landmark_copy_sha256"
+            if version == "0.2":
+                source_filename = record.get("source_filename")
+                if (
+                    not isinstance(source_filename, str)
+                    or not source_filename
+                    or Path(source_filename).name != source_filename
+                    or record.get("raw_copy_path") != f"raw/{source_filename}"
+                ):
+                    raise ValueError("raw mesh path or source filename is unsafe")
+                raw_path = root / "raw" / source_filename
+                if (
+                    not raw_path.is_file()
+                    or raw_path.is_symlink()
+                    or sha256_file(raw_path) != record.get("raw_copy_sha256")
+                    or record.get("raw_copy_sha256") != record.get("source_sha256")
+                ):
+                    raise ValueError(
+                        f"raw mesh copy no longer matches: {record.get('source_filename')}"
+                    )
+        landmark_copy = root / "landmarks.csv"
+        if (
+            not landmark_copy.is_file()
+            or landmark_copy.is_symlink()
+            or sha256_file(landmark_copy) != evidence.get("landmark_copy_sha256")
         ):
             raise ValueError("landmark copy no longer matches its evidence")
         if not isinstance(labels, list) or len(labels) < 3:
@@ -141,8 +180,13 @@ def _reference_alignment_items(preflight) -> tuple[ReviewItem, ...]:
         ReviewItem(
             "Landmark alignment",
             f"generalized Procrustes · {len(labels)} landmarks · {len(records)} meshes",
-            "Verified content-addressed aligned copies are used as atlas input. The raw "
-            "source meshes remain unchanged.",
+            (
+                "Verified content-addressed aligned VTK copies are used as atlas input. "
+                "Byte-identical raw source copies and original formats remain recorded."
+                if version == "0.2"
+                else "Verified content-addressed aligned copies are used as atlas input. "
+                "The raw source meshes remain unchanged."
+            ),
         ),
         ReviewItem(
             "Procrustes settings",

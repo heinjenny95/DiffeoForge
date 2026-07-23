@@ -103,6 +103,19 @@ from diffeoforge.preprocessing import (
 )
 from diffeoforge.reference_parameters import reference_parameter_profile
 from diffeoforge.reference_runtime import launcher_label
+from diffeoforge.surface_io import (
+    SUPPORTED_SURFACE_EXTENSIONS,
+    is_supported_surface_path,
+)
+
+_SURFACE_FILE_FILTER = (
+    "Supported surface meshes (*.vtk *.ply *.obj *.stl);;"
+    "Legacy VTK PolyData (*.vtk);;PLY meshes (*.ply);;"
+    "Wavefront OBJ meshes (*.obj);;STL meshes (*.stl)"
+)
+_DEFAULT_SURFACE_PATTERNS = {
+    f"*{extension}" for extension in SUPPORTED_SURFACE_EXTENSIONS
+}
 
 _STYLE = """
 QMainWindow { background: #f4f7f8; }
@@ -1757,7 +1770,9 @@ class DiffeoForgeWindow(QMainWindow):
 
         self.template_edit = QLineEdit()
         self.template_edit.setObjectName("templateEdit")
-        self.template_edit.setPlaceholderText("automatic: template.vtk")
+        self.template_edit.setPlaceholderText(
+            "automatic: template.vtk/.ply/.obj/.stl"
+        )
         self.template_edit.textChanged.connect(self._invalidate_procrustes_preview)
         template_button = QPushButton("Browse…")
         template_button.setObjectName("secondary")
@@ -1767,7 +1782,9 @@ class DiffeoForgeWindow(QMainWindow):
         self.pattern_edit = QLineEdit("*.vtk")
         self.pattern_edit.setObjectName("subjectPatternEdit")
         self.pattern_edit.setToolTip(
-            "The template is automatically removed from the subject list."
+            "The template is automatically removed from the subject list. PLY, OBJ, "
+            "and STL inputs require reviewed landmark Procrustes preprocessing and are "
+            "then converted to canonical VTK copies."
         )
         self.pattern_edit.textChanged.connect(self._invalidate_procrustes_preview)
         form.addRow("File pattern", self.pattern_edit)
@@ -1952,10 +1969,11 @@ class DiffeoForgeWindow(QMainWindow):
             self,
             "Select template",
             self.mesh_edit.text().strip(),
-            "VTK PolyData (*.vtk)",
+            _SURFACE_FILE_FILTER,
         )
         if selected:
             self.template_edit.setText(selected)
+            self._adopt_template_format_pattern(Path(selected))
 
     @Slot()
     def _choose_landmarks(self) -> None:
@@ -1986,7 +2004,11 @@ class DiffeoForgeWindow(QMainWindow):
             subjects = tuple(
                 path.resolve()
                 for path in sorted(mesh_directory.glob(self.pattern_edit.text().strip()))
-                if path.is_file() and path.resolve() != template
+                if (
+                    path.is_file()
+                    and path.resolve() != template
+                    and is_supported_surface_path(path)
+                )
             )
             if not subjects:
                 raise ValueError("No subject meshes match the current file pattern.")
@@ -2181,6 +2203,14 @@ class DiffeoForgeWindow(QMainWindow):
         scales = tuple(transform.scale for transform in alignment.transforms)
         final_iteration = alignment.history[-1]
         specimen_count = len(preview.source_paths)
+        format_counts: dict[str, int] = {}
+        for metadata in preview.source_metadata:
+            format_counts[metadata.source_format] = (
+                format_counts.get(metadata.source_format, 0) + 1
+            )
+        format_summary = ", ".join(
+            f"{name.upper()}: {count}" for name, count in sorted(format_counts.items())
+        )
         status = "converged" if alignment.converged else "did not converge"
         self.procrustes_preview_status_label.setObjectName(
             "statusSuccess" if alignment.converged else "statusError"
@@ -2190,6 +2220,8 @@ class DiffeoForgeWindow(QMainWindow):
             f"Read-only preview {status}: {specimen_count} meshes, "
             f"{len(preview.landmark_labels)} landmarks, "
             f"{len(alignment.history)} iterations ({alignment.termination_reason}).\n"
+            f"Source formats: {format_summary}. Approved publication will preserve "
+            "byte-identical raw copies and write aligned-vtk/*.vtk for both engines.\n"
             f"Final mean change: {final_iteration.mean_change:.6g}; total squared "
             f"residual: {final_iteration.total_squared_residual:.6g}.\n"
             f"Per-mesh squared residual min / median / max: "
@@ -2607,6 +2639,14 @@ class DiffeoForgeWindow(QMainWindow):
             return
         if template is not None:
             self.template_edit.setText(str(template))
+            self._adopt_template_format_pattern(template)
+
+    def _adopt_template_format_pattern(self, template: Path) -> None:
+        """Follow a newly selected format while preserving an explicit custom glob."""
+
+        current = self.pattern_edit.text().strip().casefold()
+        if current in _DEFAULT_SURFACE_PATTERNS:
+            self.pattern_edit.setText(f"*{template.suffix.casefold()}")
 
     @staticmethod
     def _ratio_spin_box(tooltip: str) -> QDoubleSpinBox:

@@ -148,6 +148,9 @@ This repository currently provides:
   alignment for either engine, read-only convergence/residual/scale preview
   with exact fingerprint approval, immutable content-addressed aligned mesh
   copies, and hash-verified alignment evidence in parameter review;
+- reviewed triangular PLY, OBJ, and ASCII/binary STL import for landmarking and
+  GPA, with byte-identical original-format copies under `raw/`, one canonical
+  aligned VTK cohort under `aligned-vtk/`, and format/conversion provenance;
 - scale-aware Deformetrica starter profiles plus explicit basic and expert
   parameter controls whose effective values are persisted in YAML, rendered
   into exact engine XML, and read back for review;
@@ -546,6 +549,7 @@ and workflow for another mesh directory.
 - [Nonnumerical reference harness controller](docs/REFERENCE_HARNESS_CONTROLLER.md)
 - [Frozen reference-worker parent-death evidence](docs/FROZEN_REFERENCE_PARENT_DEATH.md)
 - [Open synthetic validation dataset](docs/SYNTHETIC_DATASET.md)
+- [Surface input formats for landmark preprocessing](docs/SURFACE_INPUT_FORMATS.md)
 - [Synthetic numerical reference](reference/synthetic-v1/README.md)
 - [Frozen Deformetrica CPU container](docs/CONTAINER_REFERENCE.md)
 - [First-run workflow](docs/FIRST_RUN.md)

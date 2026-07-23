@@ -10,6 +10,7 @@ from pathlib import Path
 from diffeoforge.config import ConfigurationError, validate_input_paths
 from diffeoforge.initialization import (
     SUPPORTED_UNITS,
+    detect_template,
     ensure_generated_configuration_replaceable,
     initialize_project,
 )
@@ -24,6 +25,7 @@ from diffeoforge.report import (
     ensure_preflight_report_replaceable,
     write_preflight_report,
 )
+from diffeoforge.surface_io import is_supported_surface_path
 
 
 class DesktopEngine(StrEnum):
@@ -289,6 +291,7 @@ def _create_reference_project(request: ProjectSetupRequest) -> ProjectSetupResul
 
     input_directory = request.mesh_directory
     input_template = request.template
+    input_subject_pattern = request.subject_pattern
     preprocessing_report_path: Path | None = None
     effective_project_name = request.project_name
     if request.landmarks_file is not None:
@@ -312,8 +315,9 @@ def _create_reference_project(request: ProjectSetupRequest) -> ProjectSetupResul
             max_iterations=request.procrustes_max_iterations,
             expected_fingerprint=request.approved_procrustes_fingerprint,
         )
-        input_directory = aligned.directory
+        input_directory = aligned.aligned_directory
         input_template = aligned.template
+        input_subject_pattern = "*.vtk"
         preprocessing_report_path = aligned.evidence
         if effective_project_name is None:
             source = request.mesh_directory
@@ -329,7 +333,7 @@ def _create_reference_project(request: ProjectSetupRequest) -> ProjectSetupResul
         units=request.units,
         config_path=config_path,
         template=input_template,
-        subject_pattern=request.subject_pattern,
+        subject_pattern=input_subject_pattern,
         project_name=effective_project_name,
         launcher=launcher,
         parameter_profile=request.reference_parameter_profile,
@@ -377,8 +381,9 @@ def _create_reference_project(request: ProjectSetupRequest) -> ProjectSetupResul
     if preprocessing_report_path is not None:
         notices.insert(
             0,
-            "Homologous landmarks were validated and generalized Procrustes was applied "
-            "to immutable aligned mesh copies. Raw meshes were not modified.",
+            "Homologous landmarks were validated and generalized Procrustes was applied. "
+            "Byte-identical raw copies and canonical aligned VTK meshes were published "
+            "separately. Raw meshes were not modified.",
         )
     notices.append(
         "Project creation did not execute Deformetrica; prepare and run are separate "
@@ -398,6 +403,9 @@ def _create_reference_project(request: ProjectSetupRequest) -> ProjectSetupResul
 def _create_modern_project(request: ProjectSetupRequest) -> ProjectSetupResult:
     try:
         from diffeoforge.modern_workflow import (
+            CONFIG_MARKER as MODERN_CONFIG_MARKER,
+        )
+        from diffeoforge.modern_workflow import (
             initialize_modern_workflow,
             load_modern_workflow_config,
         )
@@ -406,7 +414,76 @@ def _create_modern_project(request: ProjectSetupRequest) -> ProjectSetupResult:
             "Modern engine dependencies are missing; install diffeoforge[modern-engine]."
         ) from error
 
-    if (
+    config_path = request.project_directory / "modern-atlas.yaml"
+    if config_path.is_symlink():
+        raise ConfigurationError(
+            "Refusing to create or replace a modern workflow configuration through a "
+            f"symbolic link: {config_path}"
+        )
+    if config_path.exists():
+        if not request.overwrite_existing_configuration:
+            raise ConfigurationError(
+                f"Configuration already exists and will not be overwritten: {config_path}"
+            )
+        if not config_path.is_file() or config_path.is_symlink():
+            raise ConfigurationError(
+                "Refusing overwrite because the existing modern workflow configuration "
+                f"path is not a regular file: {config_path}"
+            )
+        try:
+            first_line = config_path.read_text(encoding="utf-8").splitlines()[0]
+        except (OSError, UnicodeError, IndexError) as error:
+            raise ConfigurationError(
+                f"Could not verify existing configuration {config_path}: {error}"
+            ) from error
+        if first_line != MODERN_CONFIG_MARKER:
+            raise ConfigurationError(
+                "Refusing overwrite because the existing file is not a generated modern "
+                f"workflow configuration: {config_path}"
+            )
+
+    input_directory = request.mesh_directory
+    input_template = request.template
+    input_subject_pattern = request.subject_pattern
+    input_landmarks_file = request.landmarks_file
+    preprocessing_report_path: Path | None = None
+    selected_template = request.template or detect_template(request.mesh_directory)
+    selected_sources = tuple(
+        path
+        for path in request.mesh_directory.glob(request.subject_pattern)
+        if path.is_file() and is_supported_surface_path(path)
+    )
+    requires_canonical_conversion = bool(
+        request.landmarks_file is not None
+        and (
+            selected_template is not None
+            and selected_template.suffix.casefold() != ".vtk"
+            or any(path.suffix.casefold() != ".vtk" for path in selected_sources)
+        )
+    )
+    if request.landmarks_file is not None and requires_canonical_conversion:
+        from diffeoforge.preprocessing import prepare_landmark_aligned_inputs
+
+        aligned = prepare_landmark_aligned_inputs(
+            request.mesh_directory,
+            project_directory=request.project_directory,
+            landmarks_file=request.landmarks_file,
+            template=request.template,
+            subject_pattern=request.subject_pattern,
+            scale_to_unit_centroid_size=(
+                request.procrustes_scale_to_unit_centroid_size
+            ),
+            allow_reflection=request.procrustes_allow_reflection,
+            tolerance=request.procrustes_tolerance,
+            max_iterations=request.procrustes_max_iterations,
+            expected_fingerprint=request.approved_procrustes_fingerprint,
+        )
+        input_directory = aligned.aligned_directory
+        input_template = aligned.template
+        input_subject_pattern = "*.vtk"
+        input_landmarks_file = None
+        preprocessing_report_path = aligned.evidence
+    elif (
         request.landmarks_file is not None
         and request.approved_procrustes_fingerprint is not None
     ):
@@ -429,19 +506,16 @@ def _create_modern_project(request: ProjectSetupRequest) -> ProjectSetupResult:
                 "The current Procrustes inputs or settings differ from the approved preview"
             )
         if not preview.alignment.converged:
-            raise ConfigurationError(
-                "The approved Procrustes preview is not converged"
-            )
+            raise ConfigurationError("The approved Procrustes preview is not converged")
 
-    config_path = request.project_directory / "modern-atlas.yaml"
     initialize_modern_workflow(
-        request.mesh_directory,
+        input_directory,
         units=request.units,
         config_path=config_path,
-        template=request.template,
-        subject_pattern=request.subject_pattern,
+        template=input_template,
+        subject_pattern=input_subject_pattern,
         project_name=request.project_name,
-        landmarks_file=request.landmarks_file,
+        landmarks_file=input_landmarks_file,
         pairwise_mode=request.pairwise_mode,
         query_tile_size=request.query_tile_size,
         source_tile_size=request.source_tile_size,
@@ -461,6 +535,13 @@ def _create_modern_project(request: ProjectSetupRequest) -> ProjectSetupResult:
         "Project creation validated the supported meshes and quality gates but did not "
         "run an atlas.",
     ]
+    if preprocessing_report_path is not None:
+        notices.insert(
+            0,
+            "Homologous landmarks were validated and generalized Procrustes was applied. "
+            "Byte-identical raw copies and canonical aligned VTK meshes were published "
+            "separately; both source meshes and their formats remain recorded.",
+        )
     if request.max_cycles <= 3:
         notices.insert(
             0,
@@ -499,7 +580,7 @@ def _create_modern_project(request: ProjectSetupRequest) -> ProjectSetupResult:
         template_path=inputs.template,
         subject_count=inputs.subject_count,
         report_path=None,
-        preprocessing_report_path=None,
+        preprocessing_report_path=preprocessing_report_path,
         notices=tuple(notices),
     )
 
@@ -512,6 +593,23 @@ def create_project(request: ProjectSetupRequest) -> ProjectSetupResult:
         raise ConfigurationError(
             f"Project directory path is not a directory: {normalized.project_directory}"
         )
+    if normalized.landmarks_file is None:
+        template = normalized.template or detect_template(normalized.mesh_directory)
+        selected = tuple(
+            path
+            for path in normalized.mesh_directory.glob(normalized.subject_pattern)
+            if path.is_file() and is_supported_surface_path(path)
+        )
+        if (
+            (template is not None and template.suffix.casefold() != ".vtk")
+            or any(path.suffix.casefold() != ".vtk" for path in selected)
+        ):
+            raise ConfigurationError(
+                "PLY, OBJ, and STL sources are accepted only through reviewed landmark "
+                "placement and generalized Procrustes preprocessing. Select or create a "
+                "landmark CSV and approve its preview; DiffeoForge will then preserve raw "
+                "copies and create canonical aligned VTK inputs."
+            )
     if normalized.engine is DesktopEngine.MODERN_CPU:
         return _create_modern_project(normalized)
     return _create_reference_project(normalized)
