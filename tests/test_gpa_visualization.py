@@ -102,6 +102,18 @@ def test_gpa_visual_rejects_mesh_drift_after_numerical_preview(
         build_gpa_alignment_visual(preview)
 
 
+def test_cohort_overlay_assigns_distinct_visible_colors() -> None:
+    pytest.importorskip("PySide6")
+    from diffeoforge.desktop.gpa_visualization_widget import cohort_overlay_color
+
+    colors = [cohort_overlay_color(index, 10) for index in range(10)]
+
+    assert len({color.name() for color in colors}) == 10
+    assert all(color.alpha() >= 72 for color in colors)
+    assert cohort_overlay_color(3, 10, selected=True).name() == colors[3].name()
+    assert cohort_overlay_color(3, 10, selected=True).alpha() > colors[3].alpha()
+
+
 def test_gpa_review_dialog_can_inspect_and_complete_exact_visual(
     monkeypatch,
     tmp_path: Path,
@@ -127,6 +139,8 @@ def test_gpa_review_dialog_can_inspect_and_complete_exact_visual(
 
     assert dialog.mesh_combo.count() == len(visual.meshes)
     assert dialog.canvas.show_cohort is True
+    assert dialog.canvas.show_selected_surface is False
+    assert dialog.selected_surface_check.isChecked() is False
     assert dialog.canvas.show_landmarks is True
     assert dialog.viewed_mesh_count == 1
     assert dialog.complete_button.isEnabled() is False
@@ -135,6 +149,11 @@ def test_gpa_review_dialog_can_inspect_and_complete_exact_visual(
     assert dialog.viewed_mesh_count >= 1
     assert "squared landmark residual" in dialog.mesh_status_label.text()
     assert "/" in dialog.inspection_progress_label.text()
+
+    dialog.selected_surface_check.setChecked(True)
+    assert dialog.canvas.show_selected_surface is True
+    dialog.selected_surface_check.setChecked(False)
+    assert dialog.canvas.show_selected_surface is False
 
     dialog.review_complete_check.setChecked(True)
     assert dialog.complete_button.isEnabled() is True

@@ -27,7 +27,7 @@ from diffeoforge.desktop.mesh_preview import MeshPreviewModel
 
 
 class GpaAlignmentCanvas3D(QWidget):
-    """Render one full aligned mesh over a sampled all-cohort wireframe."""
+    """Render an equal-weight, color-separated overlay of every aligned mesh."""
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -37,6 +37,7 @@ class GpaAlignmentCanvas3D(QWidget):
         self._detail_triangles = np.empty((0, 3), dtype=np.int64)
         self._selected_index = 0
         self._show_cohort = True
+        self._show_selected_surface = False
         self._show_landmarks = True
         self._center = np.zeros(3, dtype=np.float64)
         self._scale = 1.0
@@ -65,6 +66,10 @@ class GpaAlignmentCanvas3D(QWidget):
     @property
     def show_landmarks(self) -> bool:
         return self._show_landmarks
+
+    @property
+    def show_selected_surface(self) -> bool:
+        return self._show_selected_surface
 
     def set_visual(self, visual: GpaAlignmentVisual) -> None:
         self._visual = visual
@@ -99,6 +104,10 @@ class GpaAlignmentCanvas3D(QWidget):
 
     def set_show_cohort(self, visible: bool) -> None:
         self._show_cohort = bool(visible)
+        self.update()
+
+    def set_show_selected_surface(self, visible: bool) -> None:
+        self._show_selected_surface = bool(visible)
         self.update()
 
     def set_show_landmarks(self, visible: bool) -> None:
@@ -239,10 +248,17 @@ class GpaAlignmentCanvas3D(QWidget):
                 second = screen[end]
                 path.moveTo(float(first[0]), float(first[1]))
                 path.lineTo(float(second[0]), float(second[1]))
-            if index == self._selected_index:
-                painter.setPen(QPen(QColor(217, 72, 28, 215), 1.15))
-            else:
-                painter.setPen(QPen(QColor(33, 102, 172, 42), 0.55))
+            selected = index == self._selected_index
+            painter.setPen(
+                QPen(
+                    cohort_overlay_color(
+                        index,
+                        len(self._visual.meshes),
+                        selected=selected,
+                    ),
+                    1.35 if selected else 0.85,
+                )
+            )
             painter.drawPath(path)
 
     def _draw_landmarks(self, painter: QPainter) -> None:
@@ -250,8 +266,14 @@ class GpaAlignmentCanvas3D(QWidget):
             return
         if self._show_cohort:
             painter.setPen(Qt.PenStyle.NoPen)
-            painter.setBrush(QColor(33, 102, 172, 55))
-            for mesh in self._visual.meshes:
+            for index, mesh in enumerate(self._visual.meshes):
+                painter.setBrush(
+                    cohort_overlay_color(
+                        index,
+                        len(self._visual.meshes),
+                        selected=False,
+                    )
+                )
                 _camera, points = self._project(mesh.landmarks)
                 for x, y in points:
                     painter.drawEllipse(QPointF(float(x), float(y)), 2.2, 2.2)
@@ -292,7 +314,8 @@ class GpaAlignmentCanvas3D(QWidget):
             painter.end()
             return
 
-        self._draw_selected_surface(painter)
+        if self._show_selected_surface:
+            self._draw_selected_surface(painter)
         self._draw_wireframes(painter)
         self._draw_landmarks(painter)
 
@@ -307,7 +330,34 @@ class GpaAlignmentCanvas3D(QWidget):
         painter.drawText(
             self.rect().adjusted(14, 10, -14, -10),
             Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop,
-            "Orange: selected mesh/landmarks  |  Blue: cohort overlay  |  "
-            "Green: GPA consensus landmarks",
+            f"Colored lines: all {len(self._visual.meshes)} aligned meshes simultaneously  |  "
+            "Thicker/brighter: selected mesh  |  Green: GPA consensus landmarks",
         )
         painter.end()
+
+
+def cohort_overlay_color(
+    index: int,
+    mesh_count: int,
+    *,
+    selected: bool = False,
+) -> QColor:
+    """Return one stable, high-contrast cohort color for a light canvas."""
+
+    if isinstance(index, bool) or not isinstance(index, int):
+        raise TypeError("cohort color index must be an integer")
+    if isinstance(mesh_count, bool) or not isinstance(mesh_count, int):
+        raise TypeError("cohort mesh count must be an integer")
+    if mesh_count < 1:
+        raise ValueError("cohort mesh count must be positive")
+    if index < 0 or index >= mesh_count:
+        raise IndexError("cohort color index is outside the cohort")
+
+    hue = (0.57 + index * 0.618033988749895) % 1.0
+    cycle = index // 12
+    saturation = 0.82 if cycle % 2 == 0 else 0.68
+    value = 0.72 if (cycle // 2) % 2 == 0 else 0.61
+    color = QColor.fromHsvF(hue, saturation, value)
+    ordinary_alpha = max(72, min(190, round(500 / math.sqrt(mesh_count))))
+    color.setAlpha(238 if selected else ordinary_alpha)
+    return color

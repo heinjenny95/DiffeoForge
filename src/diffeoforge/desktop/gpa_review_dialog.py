@@ -51,10 +51,12 @@ class GpaAlignmentReviewDialog(QDialog):
         layout = QVBoxLayout(self)
         explanation = QLabel(
             "This window renders the exact in-memory transforms from the numerical GPA "
-            "preview. The selected mesh is shown as a shaded surface; the complete cohort "
-            "is a sampled blue wireframe overlay. Rotate the cohort, inspect suspicious or "
-            "high-residual specimens individually, and verify the landmark/consensus "
-            "markers. No source or aligned file is created or changed."
+            "preview. By default, every aligned mesh is shown simultaneously as an "
+            "equal-weight, high-contrast colored wireframe: coincident silhouettes indicate "
+            "matching position, scale, and orientation, while separated colors expose "
+            "misalignment immediately. The selected mesh is only drawn slightly thicker. "
+            "Enable its shaded surface when you want an individual detail inspection. "
+            "No source or aligned file is created or changed."
         )
         explanation.setWordWrap(True)
         explanation.setObjectName("boundaryText")
@@ -108,9 +110,16 @@ class GpaAlignmentReviewDialog(QDialog):
         layout.addLayout(controls)
 
         display_controls = QHBoxLayout()
-        self.cohort_overlay_check = QCheckBox("Show complete cohort overlay")
+        self.cohort_overlay_check = QCheckBox(
+            "Show all meshes simultaneously (colored overlay)"
+        )
         self.cohort_overlay_check.setChecked(True)
         self.cohort_overlay_check.toggled.connect(self._set_cohort_visible)
+        self.selected_surface_check = QCheckBox(
+            "Show selected shaded surface (individual inspection)"
+        )
+        self.selected_surface_check.setChecked(False)
+        self.selected_surface_check.toggled.connect(self._set_selected_surface_visible)
         self.landmarks_check = QCheckBox(
             "Show selected, cohort, and consensus landmarks"
         )
@@ -122,6 +131,7 @@ class GpaAlignmentReviewDialog(QDialog):
         )
         self.sampling_label.setObjectName("hint")
         display_controls.addWidget(self.cohort_overlay_check)
+        display_controls.addWidget(self.selected_surface_check)
         display_controls.addWidget(self.landmarks_check)
         display_controls.addStretch()
         display_controls.addWidget(self.sampling_label)
@@ -245,6 +255,10 @@ class GpaAlignmentReviewDialog(QDialog):
     @Slot(bool)
     def _set_cohort_visible(self, visible: bool) -> None:
         self.canvas.set_show_cohort(visible)
+
+    @Slot(bool)
+    def _set_selected_surface_visible(self, visible: bool) -> None:
+        self.canvas.set_show_selected_surface(visible)
 
     @Slot(bool)
     def _set_landmarks_visible(self, visible: bool) -> None:
