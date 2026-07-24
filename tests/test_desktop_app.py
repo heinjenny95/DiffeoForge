@@ -500,12 +500,14 @@ def test_desktop_requires_exact_procrustes_preview_approval_and_rejects_drift(
     pytest.importorskip("PySide6")
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtCore import Qt
-    from PySide6.QtWidgets import QApplication
+    from PySide6.QtWidgets import QApplication, QDialog
 
+    import diffeoforge.desktop.widgets as widgets_module
     from diffeoforge.desktop.project_setup import DesktopEngine
     from diffeoforge.desktop.widgets import (
         DiffeoForgeWindow,
         _ProcrustesPreviewWorker,
+        _ProcrustesVisualWorker,
         _ProjectWorker,
         _ReferenceParameterWorker,
     )
@@ -522,7 +524,29 @@ def test_desktop_requires_exact_procrustes_preview_approval_and_rejects_drift(
         def start(self, worker) -> None:
             queued.append(worker)
 
+    class FakeSignal:
+        @staticmethod
+        def connect(_callback) -> None:
+            return None
+
+    class FakeVisualReviewDialog:
+        def __init__(self, preview, visual, parent) -> None:
+            assert visual.fingerprint == preview.fingerprint
+            assert parent is window
+            self.previewInvalidated = FakeSignal()
+            self.reviewed_fingerprint = preview.fingerprint
+            self.viewed_mesh_count = 3
+
+        @staticmethod
+        def exec():
+            return QDialog.DialogCode.Accepted
+
     window = DiffeoForgeWindow()
+    monkeypatch.setattr(
+        widgets_module,
+        "GpaAlignmentReviewDialog",
+        FakeVisualReviewDialog,
+    )
     window._thread_pool = FakePool()  # type: ignore[assignment]
     window.engine_combo.setCurrentIndex(
         window.engine_combo.findData(DesktopEngine.DEFORMETRICA_REFERENCE)
@@ -546,7 +570,9 @@ def test_desktop_requires_exact_procrustes_preview_approval_and_rejects_drift(
 
     assert window._procrustes_preview is not None
     assert window._procrustes_preview.alignment.converged is True
-    assert window.approve_procrustes_check.isEnabled() is True
+    assert window.review_procrustes_visual_button.isEnabled() is True
+    assert window.approve_procrustes_check.isEnabled() is False
+    assert window.create_button.text() == "Complete visual GPA review first"
     preview_report = window.procrustes_preview_status_label
     assert preview_report.isReadOnly() is True
     assert (
@@ -566,6 +592,19 @@ def test_desktop_requires_exact_procrustes_preview_approval_and_rejects_drift(
     preview_report.resize(360, preview_report.height())
     application.processEvents()
     assert preview_report.verticalScrollBar().maximum() > 0
+    window.review_procrustes_visual_button.click()
+    assert len(queued) == 2
+    assert isinstance(queued[1], _ProcrustesVisualWorker)
+    queued[1].run()
+    application.processEvents()
+    assert window._procrustes_visual is not None
+    assert (
+        window._procrustes_visual_reviewed_fingerprint
+        == window._procrustes_preview.fingerprint
+    )
+    assert window.approve_procrustes_check.isEnabled() is True
+    assert "Visual GPA review completed" in preview_report.text()
+    assert window.create_button.text() == "Approve reviewed alignment first"
     window.approve_procrustes_check.setChecked(True)
     application.processEvents()
 
@@ -578,9 +617,9 @@ def test_desktop_requires_exact_procrustes_preview_approval_and_rejects_drift(
     )
     assert window.analyze_reference_parameters_button.isEnabled() is True
     window.analyze_reference_parameters_button.click()
-    assert len(queued) == 2
-    assert isinstance(queued[1], _ReferenceParameterWorker)
-    queued[1].run()
+    assert len(queued) == 3
+    assert isinstance(queued[2], _ReferenceParameterWorker)
+    queued[2].run()
     application.processEvents()
 
     assert window._reference_recommendation is not None
@@ -599,9 +638,9 @@ def test_desktop_requires_exact_procrustes_preview_approval_and_rejects_drift(
     rows[-1] = ",".join(changed)
     landmarks.write_text("\n".join(rows) + "\n", encoding="utf-8")
     window._create_project()
-    assert len(queued) == 3
-    assert isinstance(queued[2], _ProjectWorker)
-    queued[2].run()
+    assert len(queued) == 4
+    assert isinstance(queued[3], _ProjectWorker)
+    queued[3].run()
     application.processEvents()
 
     assert not (project_directory / "atlas.yaml").exists()

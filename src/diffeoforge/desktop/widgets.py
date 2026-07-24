@@ -33,6 +33,11 @@ from PySide6.QtWidgets import (
 )
 
 from diffeoforge.desktop.aspect_svg_widget import AspectRatioSvgWidget
+from diffeoforge.desktop.gpa_review_dialog import GpaAlignmentReviewDialog
+from diffeoforge.desktop.gpa_visualization import (
+    GpaAlignmentVisual,
+    build_gpa_alignment_visual,
+)
 from diffeoforge.desktop.landmark_editor import LandmarkEditorDialog
 from diffeoforge.desktop.mesh_preview import (
     DEFAULT_EDGE_BUDGET,
@@ -381,6 +386,24 @@ class _ProcrustesPreviewWorker(QRunnable):
         self.signals.succeeded.emit(preview)
 
 
+class _ProcrustesVisualWorker(QRunnable):
+    """Build one memory-bounded, hash-bound visual GPA cohort."""
+
+    def __init__(self, preview: LandmarkAlignmentPreview) -> None:
+        super().__init__()
+        self.preview = preview
+        self.signals = _WorkerSignals()
+
+    @Slot()
+    def run(self) -> None:
+        try:
+            visual = build_gpa_alignment_visual(self.preview)
+        except (MeshPreviewError, OSError, RuntimeError, TypeError, ValueError) as error:
+            self.signals.failed.emit(str(error))
+            return
+        self.signals.succeeded.emit(visual)
+
+
 class _ReferenceParameterWorker(QRunnable):
     """Analyze one aligned cohort without blocking the Qt event loop."""
 
@@ -680,6 +703,7 @@ class DiffeoForgeWindow(QMainWindow):
             | _ReviewWorker
             | _TemplatePreviewWorker
             | _ProcrustesPreviewWorker
+            | _ProcrustesVisualWorker
             | _ReferenceParameterWorker
             | _ReferenceReadinessWorker
             | _ReferencePreparationStatusWorker
@@ -694,6 +718,8 @@ class DiffeoForgeWindow(QMainWindow):
         self._review: ProjectReviewResult | None = None
         self._template_preview: MeshPreviewModel | None = None
         self._procrustes_preview: LandmarkAlignmentPreview | None = None
+        self._procrustes_visual: GpaAlignmentVisual | None = None
+        self._procrustes_visual_reviewed_fingerprint: str | None = None
         self._reference_recommendation: ReferenceParameterRecommendation | None = None
         self._reference_recommendation_paths: tuple[Path, ...] | None = None
         self._reference_readiness: DesktopReferenceReadiness | None = None
@@ -2133,8 +2159,16 @@ class DiffeoForgeWindow(QMainWindow):
             "No alignment preview has been reviewed."
         )
         self.procrustes_preview_status_label.setObjectName("status")
+        self.review_procrustes_visual_button = QPushButton(
+            "Open visual GPA review..."
+        )
+        self.review_procrustes_visual_button.setObjectName("secondary")
+        self.review_procrustes_visual_button.setEnabled(False)
+        self.review_procrustes_visual_button.clicked.connect(
+            self._open_procrustes_visual_review
+        )
         self.approve_procrustes_check = QCheckBox(
-            "I reviewed and approve this exact alignment preview"
+            "I reviewed the numerical report and completed the visual GPA review"
         )
         self.approve_procrustes_check.setEnabled(False)
         self.approve_procrustes_check.toggled.connect(
@@ -2142,6 +2176,7 @@ class DiffeoForgeWindow(QMainWindow):
         )
         procrustes_layout.addWidget(self.preview_procrustes_button)
         procrustes_layout.addWidget(self.procrustes_preview_status_label)
+        procrustes_layout.addWidget(self.review_procrustes_visual_button)
         procrustes_layout.addWidget(self.approve_procrustes_check)
         self._procrustes_setting_widgets = (
             self.procrustes_scale_check,
@@ -2380,10 +2415,17 @@ class DiffeoForgeWindow(QMainWindow):
     @Slot()
     def _invalidate_procrustes_preview(self) -> None:
         had_preview = self._procrustes_preview is not None
-        preview_running = isinstance(self._worker, _ProcrustesPreviewWorker)
+        preview_running = isinstance(
+            self._worker,
+            (_ProcrustesPreviewWorker, _ProcrustesVisualWorker),
+        )
         self._procrustes_preview = None
+        self._procrustes_visual = None
+        self._procrustes_visual_reviewed_fingerprint = None
         self.approve_procrustes_check.setChecked(False)
         self.approve_procrustes_check.setEnabled(False)
+        self.review_procrustes_visual_button.setText("Open visual GPA review...")
+        self.review_procrustes_visual_button.setEnabled(False)
         self.procrustes_preview_status_label.setObjectName("status")
         self.procrustes_preview_status_label.setStyleSheet("")
         if preview_running:
@@ -2417,11 +2459,20 @@ class DiffeoForgeWindow(QMainWindow):
             and bool(self.landmarks_edit.text().strip())
             and self._worker is None
         )
-        self.approve_procrustes_check.setEnabled(
+        visual_ready = bool(
             enabled
             and self._procrustes_preview is not None
             and self._procrustes_preview.alignment.converged
             and self._preview_matches_current_procrustes_inputs()
+        )
+        self.review_procrustes_visual_button.setEnabled(
+            visual_ready and self._worker is None
+        )
+        self.approve_procrustes_check.setEnabled(
+            visual_ready
+            and self._procrustes_preview is not None
+            and self._procrustes_visual_reviewed_fingerprint
+            == self._procrustes_preview.fingerprint
             and self._worker is None
         )
 
@@ -2768,6 +2819,8 @@ class DiffeoForgeWindow(QMainWindow):
             and self._preview_matches_current_procrustes_inputs()
             and self._procrustes_preview is not None
             and self._procrustes_preview.alignment.converged
+            and self._procrustes_visual_reviewed_fingerprint
+            == self._procrustes_preview.fingerprint
         ):
             return self._procrustes_preview.fingerprint
         return None
@@ -2797,6 +2850,8 @@ class DiffeoForgeWindow(QMainWindow):
         worker.signals.failed.connect(self._procrustes_preview_failed)
         self._worker = worker
         self._procrustes_preview = None
+        self._procrustes_visual = None
+        self._procrustes_visual_reviewed_fingerprint = None
         self.approve_procrustes_check.setChecked(False)
         self.approve_procrustes_check.setEnabled(False)
         self.procrustes_preview_status_label.setObjectName("status")
@@ -2815,6 +2870,8 @@ class DiffeoForgeWindow(QMainWindow):
     ) -> None:
         self._worker = None
         self._procrustes_preview = preview
+        self._procrustes_visual = None
+        self._procrustes_visual_reviewed_fingerprint = None
         if not self._preview_matches_current_procrustes_inputs():
             self._procrustes_preview = None
             self.approve_procrustes_check.setChecked(False)
@@ -2866,10 +2923,142 @@ class DiffeoForgeWindow(QMainWindow):
             f"Applied scale min / max: {min(scales):.6g} / {max(scales):.6g}.\n"
             f"Exact preview fingerprint: {preview.fingerprint}\n"
             "Raw meshes and the landmark CSV remain unchanged. This numerical preview "
-            "does not establish biological landmark quality."
+            "does not establish biological landmark quality.\n"
+            "Next: open the visual GPA review to inspect the transformed cohort before "
+            "the approval checkbox becomes available."
         )
         self.approve_procrustes_check.setChecked(False)
-        self.approve_procrustes_check.setEnabled(alignment.converged)
+        self.approve_procrustes_check.setEnabled(False)
+        self._update_procrustes_controls()
+        self._sync_ready_state()
+
+    @Slot()
+    def _open_procrustes_visual_review(self) -> None:
+        preview = self._procrustes_preview
+        if (
+            self._worker is not None
+            or preview is None
+            or not preview.alignment.converged
+            or not self._preview_matches_current_procrustes_inputs()
+        ):
+            return
+        if (
+            self._procrustes_visual is not None
+            and self._procrustes_visual.fingerprint == preview.fingerprint
+        ):
+            self._show_loaded_procrustes_visual_review()
+            return
+        worker = _ProcrustesVisualWorker(preview)
+        worker.signals.succeeded.connect(self._procrustes_visual_succeeded)
+        worker.signals.failed.connect(self._procrustes_visual_failed)
+        self._worker = worker
+        self.review_procrustes_visual_button.setText(
+            "Loading visual GPA review..."
+        )
+        self._update_procrustes_controls()
+        self._sync_ready_state()
+        self._thread_pool.start(worker)
+
+    @Slot(object)
+    def _procrustes_visual_succeeded(self, visual: GpaAlignmentVisual) -> None:
+        self._worker = None
+        preview = self._procrustes_preview
+        self.review_procrustes_visual_button.setText("Open visual GPA review...")
+        if (
+            preview is None
+            or visual.fingerprint != preview.fingerprint
+            or not self._preview_matches_current_procrustes_inputs()
+        ):
+            self._procrustes_visual = None
+            self._procrustes_visual_reviewed_fingerprint = None
+            self.approve_procrustes_check.setChecked(False)
+            self.procrustes_preview_status_label.setObjectName("statusWarning")
+            self.procrustes_preview_status_label.setStyleSheet("")
+            self.procrustes_preview_status_label.setText(
+                "Visual GPA preview discarded because the numerical preview or its "
+                "inputs changed while meshes were loading. Run the alignment preview "
+                "again; no file was created or changed."
+            )
+            self._update_procrustes_controls()
+            self._sync_ready_state()
+            return
+        self._procrustes_visual = visual
+        self._update_procrustes_controls()
+        self._sync_ready_state()
+        self._show_loaded_procrustes_visual_review()
+
+    def _show_loaded_procrustes_visual_review(self) -> None:
+        preview = self._procrustes_preview
+        visual = self._procrustes_visual
+        if (
+            preview is None
+            or visual is None
+            or preview.fingerprint != visual.fingerprint
+        ):
+            return
+        try:
+            dialog = GpaAlignmentReviewDialog(preview, visual, self)
+        except (OSError, RuntimeError, TypeError, ValueError) as error:
+            self._procrustes_visual_failed(str(error))
+            return
+        dialog.previewInvalidated.connect(
+            self._procrustes_visual_invalidated
+        )
+        result = dialog.exec()
+        if (
+            result == QDialog.DialogCode.Accepted
+            and dialog.reviewed_fingerprint == preview.fingerprint
+            and self._preview_matches_current_procrustes_inputs()
+        ):
+            self._procrustes_visual_reviewed_fingerprint = preview.fingerprint
+            report = self.procrustes_preview_status_label.text()
+            completion = (
+                "Visual GPA review completed for this exact fingerprint. "
+                f"The reviewer opened {dialog.viewed_mesh_count} individual mesh(es); "
+                "the cohort overlay included every mesh."
+            )
+            if "Visual GPA review completed for this exact fingerprint." not in report:
+                self.procrustes_preview_status_label.setText(
+                    f"{report}\n{completion}"
+                )
+            self.approve_procrustes_check.setChecked(False)
+        self._update_procrustes_controls()
+        self._sync_ready_state()
+
+    @Slot(str)
+    def _procrustes_visual_failed(self, message: str) -> None:
+        if isinstance(self._worker, _ProcrustesVisualWorker):
+            self._worker = None
+        self._procrustes_visual = None
+        self._procrustes_visual_reviewed_fingerprint = None
+        self.review_procrustes_visual_button.setText("Open visual GPA review...")
+        self.approve_procrustes_check.setChecked(False)
+        report = self.procrustes_preview_status_label.text()
+        self.procrustes_preview_status_label.setObjectName("statusError")
+        self.procrustes_preview_status_label.setStyleSheet("")
+        self.procrustes_preview_status_label.setText(
+            f"{report}\nVisual GPA review could not be built: {message}\n"
+            "Approval remains locked. No source or aligned file was created or changed."
+        )
+        self._update_procrustes_controls()
+        self._sync_ready_state()
+
+    @Slot(str)
+    def _procrustes_visual_invalidated(self, message: str) -> None:
+        self._procrustes_preview = None
+        self._procrustes_visual = None
+        self._procrustes_visual_reviewed_fingerprint = None
+        self.approve_procrustes_check.setChecked(False)
+        self.approve_procrustes_check.setEnabled(False)
+        self.procrustes_preview_status_label.setObjectName("statusError")
+        self.procrustes_preview_status_label.setStyleSheet("")
+        self.procrustes_preview_status_label.setText(
+            f"{message}\nRun the numerical GPA preview again. No file was changed."
+        )
+        self._invalidate_reference_recommendation(
+            "The visual GPA review detected changed inputs; analyze again.",
+            sync=False,
+        )
         self._update_procrustes_controls()
         self._sync_ready_state()
 
@@ -2878,6 +3067,8 @@ class DiffeoForgeWindow(QMainWindow):
         if isinstance(self._worker, _ProcrustesPreviewWorker):
             self._worker = None
         self._procrustes_preview = None
+        self._procrustes_visual = None
+        self._procrustes_visual_reviewed_fingerprint = None
         self.approve_procrustes_check.setChecked(False)
         self.approve_procrustes_check.setEnabled(False)
         self.procrustes_preview_status_label.setObjectName("statusError")
@@ -3594,8 +3785,17 @@ class DiffeoForgeWindow(QMainWindow):
                     )
                 )
             )
+            if self._procrustes_preview is None:
+                alignment_action = "Preview & approve alignment first"
+            elif (
+                self._procrustes_visual_reviewed_fingerprint
+                != self._procrustes_preview.fingerprint
+            ):
+                alignment_action = "Complete visual GPA review first"
+            else:
+                alignment_action = "Approve reviewed alignment first"
             self.create_button.setText(
-                "Preview & approve alignment first"
+                alignment_action
                 if approval_required
                 else (
                     "Analyze aligned meshes or choose manual parameters"
