@@ -17,12 +17,16 @@ run can instead be stopped in three materially different states:
 
 `desktop-reference-worker-command-v0.1.json` defines one request-bound cancel
 command. `desktop-reference-worker-event-v0.1.json` defines UTF-8 JSON-compatible
-event envelopes with a contiguous zero-based sequence and one of four kinds:
+event envelopes with a contiguous zero-based sequence and one of five kinds:
 
 - `accepted`: exact engine, config hash, destination, and the explicit
   `phase_dependent` cancellation contract;
 - `phase`: a strictly advancing lifecycle phase from request verification
   through result verification;
+- `activity`: a strictly increasing elapsed-time heartbeat emitted only during
+  `execute`, including whether the worker is still computing the first complete
+  iteration or is between later optimizer observations, plus the latest native
+  Deformetrica log message;
 - `progress`: a strictly increasing Deformetrica iteration observation emitted
   only during `execute`, including objective terms, elapsed time, and a clearly
   bounded ETA-to-iteration-cap; or
@@ -35,8 +39,8 @@ event envelopes with a contiguous zero-based sequence and one of four kinds:
 The Qt-independent ledger is constructed from the immutable prelaunch request
 and binds acceptance to its request ID, configuration hash, and exact
 destination. It rejects a different request ID, hash, destination, sequence gaps,
-repeated acceptance, phase repetition or regression, progress outside execute,
-non-increasing iterations, non-failure terminal data without acceptance, a
+repeated acceptance, phase repetition or regression, activity or progress
+outside execute, non-increasing activity time or iterations, non-failure terminal data without acceptance, a
 completed outcome before `verify_result`, stop outcomes
 that contradict the observed phase, post-terminal data, and a stream ending
 without a terminal event.

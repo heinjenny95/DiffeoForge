@@ -29,8 +29,11 @@ A prepared-but-not-executed stop must pass the prepared-run verifier. A stop
 before preparation must leave no destination. Protocol, exit-code, lifecycle,
 hash, and filesystem contradictions fail closed.
 
-Raw Deformetrica output remains in `logs/deformetrica.log`; the worker sends only
-schema-valid lifecycle and progress events on its protocol stdout.
+Deformetrica can write optimizer output to timestamped `output/*_info.log`
+files instead of its process stdout. The adapter tails both sources, de-duplicates
+cross-source repeats, and flushes the observed stream into
+`logs/deformetrica.log`. The worker sends only schema-valid lifecycle, activity,
+and progress events on its protocol stdout.
 
 After the parent accepts a completed run, a separate GUI task strictly imports
 the estimated momenta and control points, publishes a source-bound linear PCA
@@ -40,10 +43,21 @@ This postprocessing is documented in
 
 ## Progress and ETA meaning
 
+Before launch, the review screen shows a deliberately broad, low-confidence
+planning range. It scales an engineering workload heuristic by template and
+subject face counts, cohort size, time points, RK2, relative control-point
+spacing, CPU threads, and the configured iteration cap. It is neither a
+hardware benchmark nor a convergence prediction.
+
 Progress is derived from Deformetrica's own iteration and objective log lines.
 The desktop displays the observed iteration, configured maximum iteration,
 objective, attachment, regularity, and elapsed time. It does not claim that the
 iteration count is a convergence percentage.
+
+While Deformetrica is active but has not completed another logged iteration,
+the worker emits a heartbeat every ten seconds. The first-iteration state is
+shown explicitly with elapsed time and the latest native log message, so an
+expensive initial objective and gradient evaluation does not look frozen.
 
 After at least three measured iteration intervals, the tracker takes the median
 seconds per iteration from a rolling ten-observation window and computes:
@@ -54,8 +68,9 @@ ETA to iteration cap = (configured maximum - observed iteration)
 ```
 
 The UI labels this value **ETA to iteration cap (not convergence)**. Before
-enough observations exist it says that the estimate is warming up. The value is
-an observed-rate extrapolation, not a runtime guarantee, convergence forecast,
+enough observations exist it retains the broad planning range and says that the
+live estimate is warming up. The observed value replaces the pre-run heuristic;
+it remains a rate extrapolation, not a runtime guarantee, convergence forecast,
 or production-performance claim.
 
 ## Cancellation outcomes

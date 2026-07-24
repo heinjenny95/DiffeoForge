@@ -95,6 +95,22 @@ def _progress(sequence: int, iteration: int):
     )
 
 
+def _activity(sequence: int, elapsed_seconds: float):
+    return DesktopReferenceWorkerEvent(
+        request_id=REQUEST_ID,
+        sequence=sequence,
+        kind="activity",
+        payload={
+            "state": "computing_first_iteration",
+            "elapsed_seconds": elapsed_seconds,
+            "maximum_iterations": 100,
+            "latest_message": "Started estimator: GradientAscent",
+            "log_source": "output/reference_info.log",
+            "last_iteration": None,
+        },
+    )
+
+
 def _ledger_with_phases(*phases: str) -> ReferenceWorkerEventLedger:
     ledger = ReferenceWorkerEventLedger(REQUEST)
     ledger.accept(_accepted())
@@ -146,6 +162,18 @@ def test_reference_worker_accepts_strictly_increasing_progress_only_during_execu
     before_execute = _ledger_with_phases("verify_request", "preflight", "prepare")
     with pytest.raises(DesktopReferenceWorkerProtocolError, match="execute phase"):
         before_execute.accept(_progress(4, 0))
+
+
+def test_reference_worker_accepts_increasing_activity_only_during_execute() -> None:
+    ledger = _ledger_with_phases("verify_request", "preflight", "prepare", "execute")
+    ledger.accept(_activity(5, 10.0))
+    ledger.accept(_activity(6, 20.0))
+    with pytest.raises(DesktopReferenceWorkerProtocolError, match="increase strictly"):
+        ledger.accept(_activity(7, 20.0))
+
+    before_execute = _ledger_with_phases("verify_request", "preflight", "prepare")
+    with pytest.raises(DesktopReferenceWorkerProtocolError, match="execute phase"):
+        before_execute.accept(_activity(4, 10.0))
 
 
 def test_reference_worker_progress_rejects_nonfinite_json_numbers() -> None:

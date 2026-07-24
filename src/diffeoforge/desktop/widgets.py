@@ -1323,6 +1323,21 @@ class DiffeoForgeWindow(QMainWindow):
         boundary_layout.addWidget(self.run_boundary_label)
         layout.addWidget(boundary)
 
+        self.run_technical_toggle = QPushButton("+ Technical details")
+        self.run_technical_toggle.setObjectName("secondary")
+        self.run_technical_toggle.setCheckable(True)
+        self.run_technical_toggle.setAccessibleDescription(
+            "Show configuration hashes, destination binding, and runtime installation details."
+        )
+        self.run_technical_toggle.toggled.connect(
+            self._set_run_technical_details_expanded
+        )
+        layout.addWidget(self.run_technical_toggle, 0, Qt.AlignmentFlag.AlignLeft)
+        self.run_technical_details = QWidget()
+        run_technical_layout = QVBoxLayout(self.run_technical_details)
+        run_technical_layout.setContentsMargins(0, 0, 0, 0)
+        run_technical_layout.setSpacing(15)
+
         summary = QFrame()
         summary.setObjectName("card")
         summary_layout = QVBoxLayout(summary)
@@ -1334,7 +1349,7 @@ class DiffeoForgeWindow(QMainWindow):
         self.run_summary_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         summary_layout.addWidget(summary_title)
         summary_layout.addWidget(self.run_summary_label)
-        layout.addWidget(summary)
+        run_technical_layout.addWidget(summary)
 
         readiness = QFrame()
         readiness.setObjectName("card")
@@ -1361,7 +1376,9 @@ class DiffeoForgeWindow(QMainWindow):
         readiness_layout.addWidget(self.run_readiness_status_label)
         readiness_layout.addWidget(self.run_readiness_detail_label)
         readiness_layout.addWidget(self.refresh_run_readiness_button, 0, Qt.AlignmentFlag.AlignLeft)
-        layout.addWidget(readiness)
+        run_technical_layout.addWidget(readiness)
+        self.run_technical_details.hide()
+        layout.addWidget(self.run_technical_details)
 
         progress = QFrame()
         progress.setObjectName("card")
@@ -1829,6 +1846,13 @@ class DiffeoForgeWindow(QMainWindow):
         self.reference_noise_ratio_spin = self._ratio_spin_box(
             "Noise standard deviation as a fraction of the template diagonal."
         )
+        for spin in (
+            self.reference_attachment_ratio_spin,
+            self.reference_deformation_ratio_spin,
+            self.reference_control_spacing_ratio_spin,
+            self.reference_noise_ratio_spin,
+        ):
+            spin.setSuffix(" x template diagonal")
         self.reference_max_iterations_spin = QSpinBox()
         self.reference_max_iterations_spin.setRange(1, 100000)
         self.reference_max_iterations_spin.setSingleStep(10)
@@ -1842,12 +1866,12 @@ class DiffeoForgeWindow(QMainWindow):
         self.reference_tolerance_spin.setSingleStep(0.0001)
         for label, widget, key in (
             (
-                "Attachment / diagonal",
+                "Attachment kernel width (KW) / template diagonal",
                 self.reference_attachment_ratio_spin,
                 "attachment_ratio",
             ),
             (
-                "Deformation / diagonal",
+                "Deformation kernel width (KW) / template diagonal",
                 self.reference_deformation_ratio_spin,
                 "deformation_ratio",
             ),
@@ -1882,6 +1906,20 @@ class DiffeoForgeWindow(QMainWindow):
                 ),
             )
         reference_parameter_layout.addLayout(self.reference_parameter_form)
+        self.reference_effective_widths_label = QLabel()
+        self.reference_effective_widths_label.setObjectName("status")
+        self.reference_effective_widths_label.setWordWrap(True)
+        self.reference_effective_widths_label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+        )
+        reference_parameter_layout.addWidget(self.reference_effective_widths_label)
+        for spin in (
+            self.reference_attachment_ratio_spin,
+            self.reference_deformation_ratio_spin,
+            self.reference_control_spacing_ratio_spin,
+            self.reference_noise_ratio_spin,
+        ):
+            spin.valueChanged.connect(self._update_reference_effective_widths)
         self.reference_expert_toggle = QCheckBox("Show expert settings")
         self.reference_expert_toggle.setObjectName("referenceExpertToggle")
         self.reference_expert_toggle.toggled.connect(
@@ -2589,6 +2627,7 @@ class DiffeoForgeWindow(QMainWindow):
             self.reference_guidance_status_label.setText(
                 "No aligned-mesh analysis has been completed."
             )
+        self._update_reference_effective_widths()
         if sync:
             self._update_reference_guidance_controls()
             self._sync_ready_state()
@@ -2760,6 +2799,7 @@ class DiffeoForgeWindow(QMainWindow):
         self.reference_guidance_status_label.setText(
             f"Aligned-mesh parameter analysis failed: {message}"
         )
+        self._update_reference_effective_widths()
         self._update_reference_guidance_controls()
         self._sync_ready_state()
 
@@ -3540,6 +3580,29 @@ class DiffeoForgeWindow(QMainWindow):
             label = self.reference_parameter_form.labelForField(field)
             if label is not None:
                 label.setVisible(visible)
+        self.reference_effective_widths_label.setVisible(visible)
+
+    @Slot()
+    def _update_reference_effective_widths(self) -> None:
+        recommendation = self._reference_recommendation
+        if recommendation is None:
+            self.reference_effective_widths_label.setText(
+                "There is no single KW: attachment KW controls matching detail; "
+                "deformation KW controls deformation smoothness. Effective absolute "
+                "values will appear here after the aligned meshes are analyzed."
+            )
+            return
+        diagonal = recommendation.template_diagonal
+        attachment = self.reference_attachment_ratio_spin.value() * diagonal
+        deformation = self.reference_deformation_ratio_spin.value() * diagonal
+        control_spacing = self.reference_control_spacing_ratio_spin.value() * diagonal
+        noise = self.reference_noise_ratio_spin.value() * diagonal
+        self.reference_effective_widths_label.setText(
+            f"Two distinct KWs at template diagonal {diagonal:.6g}: "
+            f"attachment KW (matching detail) {attachment:.6g} | "
+            f"deformation KW (smoothness) {deformation:.6g} | "
+            f"control-point spacing {control_spacing:.6g} | noise SD {noise:.6g}"
+        )
 
     @Slot()
     def _update_reference_parameter_profile(self) -> None:
@@ -3550,6 +3613,7 @@ class DiffeoForgeWindow(QMainWindow):
                 "No parameter values are active. Confirm existing GPA alignment or complete "
                 "the DiffeoForge landmark-GPA preview, then analyze the aligned meshes."
             )
+            self._update_reference_effective_widths()
             self._sync_ready_state()
             return
 
@@ -3561,6 +3625,7 @@ class DiffeoForgeWindow(QMainWindow):
                     "No current aligned-mesh recommendation is available. Run the geometry "
                     "analysis again or choose Advanced manual control."
                 )
+                self._update_reference_effective_widths()
                 self._sync_ready_state()
                 return
             values = (
@@ -3596,6 +3661,7 @@ class DiffeoForgeWindow(QMainWindow):
                 "and deformation-scale choices. Noise and optimizer settings remain "
                 "provisional and require pilot validation."
             )
+            self._update_reference_effective_widths()
             self._sync_ready_state()
             return
 
@@ -3624,6 +3690,7 @@ class DiffeoForgeWindow(QMainWindow):
                 "of the template bounding-box diagonal; DiffeoForge converts them to the "
                 "declared coordinate unit and records both ratios and effective values."
             )
+        self._update_reference_effective_widths()
         self._sync_ready_state()
 
     @Slot()
@@ -4714,10 +4781,9 @@ class DiffeoForgeWindow(QMainWindow):
             "time estimate."
         )
         self.run_boundary_label.setText(
-            "Estimated computation time appears only after several observed iterations. It "
-            "means time to the configured iteration maximum if the recent rate continues, "
-            "not time to convergence. Cancellation preserves terminal evidence and a "
-            "checkpoint when Deformetrica produced one."
+            "A broad pre-run planning range is shown before launch and recalibrated from "
+            "observed optimizer timing. It is not a convergence guarantee. Cancellation "
+            "preserves terminal evidence and a checkpoint when Deformetrica produced one."
         )
         if readiness is None or not readiness.ready:
             self.run_readiness_status_label.setObjectName("statusError")
@@ -4780,8 +4846,7 @@ class DiffeoForgeWindow(QMainWindow):
         self.run_progress_bar.setValue(0)
         self.run_progress_bar.setFormat("Not started")
         self.run_optimizer_label.setText(
-            "Estimated computation time: waiting for several observed Deformetrica "
-            "iterations."
+            self._reference_runtime_estimate_text(review)
         )
         self.run_state_label.setObjectName("status")
         self.run_state_label.setStyleSheet("")
@@ -4866,6 +4931,13 @@ class DiffeoForgeWindow(QMainWindow):
     def _show_review_page(self) -> None:
         self._navigate_to_step(1)
 
+    @Slot(bool)
+    def _set_run_technical_details_expanded(self, expanded: bool) -> None:
+        self.run_technical_details.setVisible(expanded)
+        self.run_technical_toggle.setText(
+            "- Hide technical details" if expanded else "+ Technical details"
+        )
+
     @Slot()
     def _start_atlas(self) -> None:
         if (
@@ -4899,6 +4971,7 @@ class DiffeoForgeWindow(QMainWindow):
         self._result_review = None
         self.run_result_card.hide()
         self.run_event_log.clear()
+        self.run_technical_toggle.setChecked(False)
         if reference:
             self.run_progress_bar.setRange(0, 0)
             self.run_progress_bar.setFormat("Starting Deformetrica")
@@ -4908,7 +4981,10 @@ class DiffeoForgeWindow(QMainWindow):
             self.run_progress_bar.setFormat("Completed stages: %v of %m")
         self.run_stage_label.setText("Workflow stage: worker is starting")
         self.run_optimizer_label.setText(
-            "No Deformetrica iteration observed yet."
+            (
+                self._reference_runtime_estimate_text(self._review)
+                + "\nLive timing: waiting for Deformetrica activity."
+            )
             if reference
             else "No optimization decision yet."
         )
@@ -5029,7 +5105,51 @@ class DiffeoForgeWindow(QMainWindow):
             if phase != "execute":
                 self.run_progress_bar.setRange(0, 0)
                 self.run_progress_bar.setFormat(f"Stage: {phase.replace('_', ' ')}")
+            else:
+                self.run_progress_bar.setRange(0, 0)
+                self.run_progress_bar.setFormat("Computing first iteration")
             self.run_state_label.setText(message)
+        elif event.kind == "activity":
+            elapsed = float(event.payload["elapsed_seconds"])
+            state = str(event.payload["state"])
+            latest_message = str(event.payload["latest_message"])
+            source = event.payload["log_source"]
+            if state == "computing_first_iteration":
+                message = (
+                    "Deformetrica is active and computing its first complete objective and "
+                    "gradient evaluation."
+                )
+                self.run_stage_label.setText(
+                    "Deformetrica stage: execute | computing first iteration"
+                )
+                self.run_progress_bar.setRange(0, 0)
+                self.run_progress_bar.setFormat(
+                    f"First iteration active | {self._format_duration(elapsed)} elapsed"
+                )
+                self.run_optimizer_label.setText(
+                    f"{self._reference_runtime_estimate_text(self._review)}\n"
+                    f"Live activity: {self._format_duration(elapsed)} elapsed; no complete "
+                    f"iteration logged yet. Latest Deformetrica message: {latest_message}"
+                )
+            else:
+                last_iteration = event.payload["last_iteration"]
+                message = (
+                    "Deformetrica is active between logged optimizer iterations."
+                )
+                self.run_stage_label.setText(
+                    "Deformetrica stage: execute | optimizer computation is active"
+                )
+                self.run_optimizer_label.setText(
+                    f"Live activity: {self._format_duration(elapsed)} elapsed | last logged "
+                    f"iteration {last_iteration} of {event.payload['maximum_iterations']} | "
+                    f"latest message: {latest_message}"
+                )
+            self.run_state_label.setText(message)
+            source_text = "Deformetrica log" if source is None else str(source)
+            message = (
+                f"{message} Elapsed {self._format_duration(elapsed)}; "
+                f"source {source_text}."
+            )
         elif event.kind == "progress":
             iteration = int(event.payload["iteration"])
             maximum = int(event.payload["maximum_iterations"])
@@ -5507,6 +5627,25 @@ class DiffeoForgeWindow(QMainWindow):
         if minutes:
             return f"{minutes} min {remaining_seconds:02d} s"
         return f"{remaining_seconds} s"
+
+    def _reference_runtime_estimate_text(
+        self,
+        review: ProjectReviewResult | None,
+    ) -> str:
+        estimate = None if review is None else review.runtime_estimate
+        if estimate is None:
+            return (
+                "Pre-run runtime estimate unavailable. Live timing begins when "
+                "Deformetrica reports activity."
+            )
+        return (
+            "Pre-run planning estimate (low confidence): typically about "
+            f"{self._format_duration(estimate.typical_seconds)}; broad range "
+            f"{self._format_duration(estimate.lower_seconds)} to "
+            f"{self._format_duration(estimate.upper_seconds)}. Based on mesh faces, "
+            "cohort size, time points, control spacing, threads, and iteration cap; "
+            "live observations will replace it."
+        )
 
     @staticmethod
     def _format_result_duration(seconds: float) -> str:

@@ -219,8 +219,10 @@ def run_reference_execution_worker(
         )
         tracker = ReferenceProgressTracker(maximum_iterations)
         started = time.monotonic()
+        last_iteration: int | None = None
 
         def observe_line(line: str) -> None:
+            nonlocal last_iteration
             if cancel_event.is_set():
                 raise KeyboardInterrupt
             progress = tracker.observe(
@@ -228,12 +230,40 @@ def run_reference_execution_worker(
                 elapsed_seconds=time.monotonic() - started,
             )
             if progress is not None:
+                last_iteration = progress.iteration
                 emit("progress", progress.as_dict())
+
+        def observe_activity(
+            elapsed_seconds: float,
+            latest_message: str | None,
+            log_source: str | None,
+        ) -> None:
+            state = (
+                "computing_first_iteration"
+                if last_iteration is None
+                else "optimizing"
+            )
+            emit(
+                "activity",
+                {
+                    "state": state,
+                    "elapsed_seconds": elapsed_seconds,
+                    "maximum_iterations": maximum_iterations,
+                    "latest_message": (
+                        latest_message
+                        or "Deformetrica process is active; waiting for detailed optimizer output."
+                    ),
+                    "log_source": log_source,
+                    "last_iteration": last_iteration,
+                },
+            )
 
         with contextlib.redirect_stdout(stderr):
             return_code = execute_run(
                 run_directory,
                 line_callback=observe_line,
+                activity_callback=observe_activity,
+                cancel_requested=cancel_event.is_set,
             )
 
         emit(

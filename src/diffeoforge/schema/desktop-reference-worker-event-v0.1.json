@@ -17,7 +17,7 @@
       "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
     },
     "sequence": {"type": "integer", "minimum": 0},
-    "kind": {"enum": ["accepted", "phase", "progress", "terminal"]},
+    "kind": {"enum": ["accepted", "phase", "activity", "progress", "terminal"]},
     "payload": {"type": "object"}
   },
   "allOf": [
@@ -28,6 +28,10 @@
     {
       "if": {"properties": {"kind": {"const": "phase"}}},
       "then": {"properties": {"payload": {"$ref": "#/$defs/phase"}}}
+    },
+    {
+      "if": {"properties": {"kind": {"const": "activity"}}},
+      "then": {"properties": {"payload": {"$ref": "#/$defs/activity"}}}
     },
     {
       "if": {"properties": {"kind": {"const": "progress"}}},
@@ -99,6 +103,28 @@
         "estimate_status": {
           "enum": ["warming_up", "observed_rate_to_iteration_cap"]
         }
+      }
+    },
+    "activity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "elapsed_seconds",
+        "maximum_iterations",
+        "latest_message",
+        "log_source",
+        "last_iteration"
+      ],
+      "properties": {
+        "state": {
+          "enum": ["computing_first_iteration", "optimizing"]
+        },
+        "elapsed_seconds": {"type": "number", "minimum": 0},
+        "maximum_iterations": {"type": "integer", "minimum": 1},
+        "latest_message": {"type": "string", "minLength": 1},
+        "log_source": {"type": ["string", "null"]},
+        "last_iteration": {"type": ["integer", "null"], "minimum": 0}
       }
     },
     "terminal": {

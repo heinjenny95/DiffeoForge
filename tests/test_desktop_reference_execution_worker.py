@@ -92,8 +92,20 @@ def test_reference_execution_worker_runs_full_lifecycle_and_emits_eta_progress(
         request.destination.mkdir(parents=True)
         return request.destination
 
-    def execute(run_directory, *, line_callback):
+    def execute(
+        run_directory,
+        *,
+        line_callback,
+        activity_callback,
+        cancel_requested,
+    ):
         assert run_directory == request.destination
+        assert cancel_requested() is False
+        activity_callback(
+            5.0,
+            "Started estimator: GradientAscent",
+            "output/reference_info.log",
+        )
         for iteration in range(4):
             line_callback(f"---------------- Iteration: {iteration} ----------------\n")
             line_callback(
@@ -125,6 +137,7 @@ def test_reference_execution_worker_runs_full_lifecycle_and_emits_eta_progress(
         "phase",
         "phase",
         "phase",
+        "activity",
         "progress",
         "progress",
         "progress",

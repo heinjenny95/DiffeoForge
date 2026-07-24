@@ -9,6 +9,10 @@ from pathlib import Path
 from typing import Any
 
 from diffeoforge.desktop.project_setup import DesktopEngine
+from diffeoforge.desktop.reference_runtime_estimate import (
+    ReferenceRuntimeEstimate,
+    estimate_reference_runtime,
+)
 from diffeoforge.desktop.worker_protocol import sha256_file
 from diffeoforge.report import (
     collect_preflight,
@@ -41,6 +45,7 @@ class ProjectReviewResult:
     workload: tuple[ReviewItem, ...]
     warnings: tuple[str, ...]
     scientific_boundary: str
+    runtime_estimate: ReferenceRuntimeEstimate | None = None
 
 
 def _number(value: int | float) -> str:
@@ -60,6 +65,24 @@ def _bytes(value: int | None) -> str:
             break
         amount /= 1024
     return f"{amount:.3g} {unit}"
+
+
+def _duration(seconds: float) -> str:
+    rounded = max(0, int(round(float(seconds))))
+    if rounded < 60:
+        return f"{rounded} s"
+    minutes = rounded // 60
+    if minutes < 60:
+        return f"{minutes} min"
+    hours, remaining_minutes = divmod(minutes, 60)
+    if hours < 24:
+        return (
+            f"{hours} h"
+            if remaining_minutes == 0
+            else f"{hours} h {remaining_minutes} min"
+        )
+    days, remaining_hours = divmod(hours, 24)
+    return f"{days} d" if remaining_hours == 0 else f"{days} d {remaining_hours} h"
 
 
 def _setting(value: Any, *, none: str = "automatic maximum") -> str:
@@ -202,6 +225,7 @@ def _reference_alignment_items(preflight) -> tuple[ReviewItem, ...]:
 
 def _reference_review(config_path: Path, config_sha256: str) -> ProjectReviewResult:
     preflight = collect_preflight(config_path)
+    runtime_estimate = estimate_reference_runtime(preflight)
     config = preflight.config
     model = config["model"]
     deformation = model["deformation"]
@@ -404,9 +428,14 @@ def _reference_review(config_path: Path, config_sha256: str) -> ProjectReviewRes
         ),
         ReviewItem(
             "Compute cost",
-            "not modeled",
-            "Execution occurs in the external Deformetrica 4.3 environment; "
-            "a pilot measurement is required.",
+            (
+                f"roughly {_duration(runtime_estimate.typical_seconds)} typical "
+                f"({_duration(runtime_estimate.lower_seconds)} to "
+                f"{_duration(runtime_estimate.upper_seconds)} broad range)"
+            ),
+            "Low-confidence engineering planning estimate from mesh faces, cohort size, "
+            "time points, control spacing, threads, and the iteration cap. It is not a "
+            "convergence prediction and is replaced by observed timing during the run.",
         ),
     )
     warnings = (
@@ -416,8 +445,8 @@ def _reference_review(config_path: Path, config_sha256: str) -> ProjectReviewRes
             "validated presets."
         ),
         *preflight.notices,
-        "DiffeoForge did not start Deformetrica and does not forecast peak RAM or "
-        "computation time here.",
+        "The computation-time range is an uncalibrated planning heuristic. Actual runtime "
+        "depends on hardware, line search, stopping behavior, and numerical workload.",
     )
     return ProjectReviewResult(
         engine=DesktopEngine.DEFORMETRICA_REFERENCE,
@@ -435,6 +464,7 @@ def _reference_review(config_path: Path, config_sha256: str) -> ProjectReviewRes
             "It confirms neither parameter suitability nor biological validity and does not "
             "execute the external Deformetrica engine."
         ),
+        runtime_estimate=runtime_estimate,
     )
 
 

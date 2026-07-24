@@ -400,6 +400,13 @@ def test_desktop_window_exposes_required_project_controls(monkeypatch) -> None:
     window.reference_parameter_profile_combo.setCurrentIndex(
         window.reference_parameter_profile_combo.findData("advanced")
     )
+    attachment_field = window._reference_parameter_field(
+        window.reference_attachment_ratio_spin
+    )
+    attachment_label = window.reference_parameter_form.labelForField(attachment_field)
+    assert attachment_label is not None
+    assert "Attachment kernel width" in attachment_label.text()
+    assert "template diagonal" in window.reference_attachment_ratio_spin.suffix()
     window.reference_attachment_ratio_spin.setValue(0.035)
     window.reference_max_iterations_spin.setValue(345)
     advanced_request = window._request()
@@ -629,6 +636,15 @@ def test_desktop_requires_exact_procrustes_preview_approval_and_rejects_drift(
     )
     assert "Analyzed 6 aligned meshes" in window.reference_guidance_status_label.text()
     assert "not inferable from geometry" in window.reference_guidance_status_label.text()
+    assert "attachment KW (matching detail)" in (
+        window.reference_effective_widths_label.text()
+    )
+    original_effective_text = window.reference_effective_widths_label.text()
+    window.reference_parameter_profile_combo.setCurrentIndex(
+        window.reference_parameter_profile_combo.findData("advanced")
+    )
+    window.reference_attachment_ratio_spin.setValue(0.075)
+    assert window.reference_effective_widths_label.text() != original_effective_text
     assert window.create_button.isEnabled() is True
     assert window.create_button.text() == "Validate data & create project"
 
@@ -854,6 +870,11 @@ def test_desktop_window_renders_parameter_review_as_second_step(monkeypatch, tmp
     window.rail_steps[2].click()
     assert window.page_stack.currentIndex() == 2
     assert window.rail_steps[2].objectName() == "stepActive"
+    assert window.run_technical_details.isHidden() is True
+    window.run_technical_toggle.click()
+    assert window.run_technical_details.isHidden() is False
+    window.run_technical_toggle.click()
+    assert window.run_technical_details.isHidden() is True
     assert "a" * 64 in window.run_summary_label.text()
     assert window.start_atlas_button.isEnabled() is True
     window._show_review_page()
@@ -1618,6 +1639,45 @@ def test_desktop_window_renders_deformetrica_iteration_and_bounded_eta(
     )
     assert "not convergence" in window.run_optimizer_label.text()
     assert "#3 progress" in window.run_event_log.toPlainText()
+    window.close()
+    application.processEvents()
+
+
+def test_desktop_window_renders_deformetrica_first_iteration_heartbeat(
+    monkeypatch,
+) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from diffeoforge.desktop.reference_worker_protocol import DesktopReferenceWorkerEvent
+    from diffeoforge.desktop.widgets import DiffeoForgeWindow
+
+    application = QApplication.instance() or QApplication(
+        ["diffeoforge-reference-activity-test"]
+    )
+    window = DiffeoForgeWindow()
+    event = DesktopReferenceWorkerEvent(
+        request_id="reference-test",
+        sequence=4,
+        kind="activity",
+        payload={
+            "state": "computing_first_iteration",
+            "elapsed_seconds": 367.0,
+            "maximum_iterations": 150,
+            "latest_message": "Started estimator: GradientAscent",
+            "log_source": "output/reference_info.log",
+            "last_iteration": None,
+        },
+    )
+
+    window._atlas_event(event)
+
+    assert "computing first iteration" in window.run_stage_label.text()
+    assert "6 min 07 s elapsed" in window.run_progress_bar.format()
+    assert "no complete iteration logged yet" in window.run_optimizer_label.text()
+    assert "Started estimator" in window.run_optimizer_label.text()
+    assert "#4 activity" in window.run_event_log.toPlainText()
     window.close()
     application.processEvents()
 

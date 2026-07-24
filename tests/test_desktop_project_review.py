@@ -60,7 +60,14 @@ def test_reference_review_uses_effective_preflight_parameters(tmp_path: Path) ->
     assert values["Output cadence"].startswith("save every 100")
     assert evidence["Attachment / template scale"] == "10.000%"
     assert evidence["Deformation / template scale"] == "15.000%"
-    assert evidence["Compute cost"] == "not modeled"
+    assert evidence["Compute cost"].startswith("roughly ")
+    assert "broad range" in evidence["Compute cost"]
+    assert review.runtime_estimate is not None
+    assert (
+        review.runtime_estimate.lower_seconds
+        <= review.runtime_estimate.typical_seconds
+        <= review.runtime_estimate.upper_seconds
+    )
     assert any("exploratory" in warning for warning in review.warnings)
 
 

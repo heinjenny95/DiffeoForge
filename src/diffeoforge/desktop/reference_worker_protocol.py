@@ -23,7 +23,13 @@ REFERENCE_WORKER_PHASES = (
     "finalize",
     "verify_result",
 )
-ReferenceWorkerEventKind = Literal["accepted", "phase", "progress", "terminal"]
+ReferenceWorkerEventKind = Literal[
+    "accepted",
+    "phase",
+    "activity",
+    "progress",
+    "terminal",
+]
 ReferenceWorkerOutcome = Literal[
     "completed",
     "stopped_before_prepare",
@@ -172,6 +178,7 @@ class ReferenceWorkerEventLedger:
         self._events: list[DesktopReferenceWorkerEvent] = []
         self._accepted = False
         self._last_phase_index: int | None = None
+        self._last_activity_elapsed: float | None = None
         self._last_progress_iteration: int | None = None
         self._terminal: DesktopReferenceWorkerEvent | None = None
 
@@ -224,6 +231,21 @@ class ReferenceWorkerEventLedger:
                     "Reference worker phases must advance without repetition or regression"
                 )
             self._last_phase_index = phase_index
+        elif event.kind == "activity":
+            execute_index = REFERENCE_WORKER_PHASES.index("execute")
+            if self._last_phase_index != execute_index:
+                raise DesktopReferenceWorkerProtocolError(
+                    "Reference worker activity is allowed only during the execute phase"
+                )
+            elapsed = float(event.payload["elapsed_seconds"])
+            if (
+                self._last_activity_elapsed is not None
+                and elapsed <= self._last_activity_elapsed
+            ):
+                raise DesktopReferenceWorkerProtocolError(
+                    "Reference worker activity elapsed time must increase strictly"
+                )
+            self._last_activity_elapsed = elapsed
         elif event.kind == "progress":
             execute_index = REFERENCE_WORKER_PHASES.index("execute")
             if self._last_phase_index != execute_index:
