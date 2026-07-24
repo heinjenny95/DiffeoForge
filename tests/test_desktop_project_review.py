@@ -16,6 +16,7 @@ from diffeoforge.desktop.project_setup import (
 )
 from diffeoforge.desktop.worker_protocol import sha256_file
 from diffeoforge.mesh import read_vtk_polydata
+from diffeoforge.reference_recommendation import recommend_reference_parameters
 
 ROOT = Path(__file__).parents[1]
 MESH_DIRECTORY = ROOT / "examples" / "synthetic" / "meshes"
@@ -61,6 +62,49 @@ def test_reference_review_uses_effective_preflight_parameters(tmp_path: Path) ->
     assert evidence["Deformation / template scale"] == "15.000%"
     assert evidence["Compute cost"] == "not modeled"
     assert any("exploratory" in warning for warning in review.warnings)
+
+
+def test_reference_review_exposes_data_assisted_evidence(tmp_path: Path) -> None:
+    cohort = (
+        MESH_DIRECTORY / "template.vtk",
+        *sorted(MESH_DIRECTORY.glob("subject-*.vtk")),
+    )
+    recommendation = recommend_reference_parameters(
+        cohort,
+        alignment_basis="declared_gpa",
+        surface_detail_intent="fine",
+        deformation_scale_intent="local",
+    )
+    setup = create_project(
+        ProjectSetupRequest(
+            mesh_directory=MESH_DIRECTORY,
+            project_directory=tmp_path / "data-assisted review",
+            units="unitless",
+            engine=DesktopEngine.DEFORMETRICA_REFERENCE,
+            reference_parameter_profile="data_assisted",
+            reference_parameter_ratios=recommendation.parameter_ratios,
+            reference_parameter_recommendation=recommendation.provenance,
+            reference_max_iterations=recommendation.max_iterations,
+            reference_initial_step_size=recommendation.initial_step_size,
+            reference_convergence_tolerance=recommendation.convergence_tolerance,
+        )
+    )
+
+    review = review_project(setup.config_path, setup.engine)
+
+    values = {item.label: item.value for item in review.parameters}
+    html = review.report_path.read_text(encoding="utf-8")
+    assert values["Parameter source"] == "data assisted"
+    assert "researcher-declared external GPA" in values["Recommendation evidence"]
+    assert recommendation.fingerprint[:12] in values["Recommendation evidence"]
+    assert values["Researcher decisions"] == "fine surface detail · local deformation scale"
+    assert values["Pilot calibration"] == "required"
+    assert "Parameter provenance" in html
+    assert recommendation.fingerprint in html
+    assert "Inferred automatically" in html
+    assert "Chosen by researcher" in html
+    assert "Requires pilot validation" in html
+    assert any("cannot be inferred" in warning for warning in review.warnings)
 
 
 def test_reference_review_verifies_and_exposes_procrustes_evidence(tmp_path: Path) -> None:

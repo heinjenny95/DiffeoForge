@@ -393,8 +393,10 @@ def test_desktop_window_exposes_required_project_controls(monkeypatch) -> None:
     assert window.pairwise_box.isHidden() is True
     assert window.optimization_effort_box.isHidden() is True
     assert window.reference_parameter_box.isHidden() is False
-    assert window.reference_parameter_profile_combo.currentData() == "recommended"
-    assert window.reference_attachment_ratio_spin.isEnabled() is False
+    assert window.reference_parameter_profile_combo.currentData() == "pending"
+    assert window.reference_attachment_ratio_spin.isHidden() is True
+    assert window.analyze_reference_parameters_button.isEnabled() is False
+    assert window.already_gpa_check.isEnabled() is False
     window.reference_parameter_profile_combo.setCurrentIndex(
         window.reference_parameter_profile_combo.findData("advanced")
     )
@@ -504,6 +506,7 @@ def test_desktop_requires_exact_procrustes_preview_approval_and_rejects_drift(
         DiffeoForgeWindow,
         _ProcrustesPreviewWorker,
         _ProjectWorker,
+        _ReferenceParameterWorker,
     )
 
     application = QApplication.instance() or QApplication(
@@ -550,6 +553,25 @@ def test_desktop_requires_exact_procrustes_preview_approval_and_rejects_drift(
 
     approved = window._request().approved_procrustes_fingerprint
     assert approved == window._procrustes_preview.fingerprint
+    assert window.create_button.isEnabled() is False
+    assert (
+        window.create_button.text()
+        == "Analyze aligned meshes or choose manual parameters"
+    )
+    assert window.analyze_reference_parameters_button.isEnabled() is True
+    window.analyze_reference_parameters_button.click()
+    assert len(queued) == 2
+    assert isinstance(queued[1], _ReferenceParameterWorker)
+    queued[1].run()
+    application.processEvents()
+
+    assert window._reference_recommendation is not None
+    assert (
+        window.reference_parameter_profile_combo.currentData()
+        == "data_assisted"
+    )
+    assert "Analyzed 6 aligned meshes" in window.reference_guidance_status_label.text()
+    assert "not inferable from geometry" in window.reference_guidance_status_label.text()
     assert window.create_button.isEnabled() is True
     assert window.create_button.text() == "Validate data & create project"
 
@@ -559,9 +581,9 @@ def test_desktop_requires_exact_procrustes_preview_approval_and_rejects_drift(
     rows[-1] = ",".join(changed)
     landmarks.write_text("\n".join(rows) + "\n", encoding="utf-8")
     window._create_project()
-    assert len(queued) == 2
-    assert isinstance(queued[1], _ProjectWorker)
-    queued[1].run()
+    assert len(queued) == 3
+    assert isinstance(queued[2], _ProjectWorker)
+    queued[2].run()
     application.processEvents()
 
     assert not (project_directory / "atlas.yaml").exists()
@@ -575,6 +597,77 @@ def test_desktop_requires_exact_procrustes_preview_approval_and_rejects_drift(
     assert window._procrustes_preview is None
     assert window.approve_procrustes_check.isChecked() is False
     assert window._request().approved_procrustes_fingerprint is None
+    assert window.create_button.isEnabled() is False
+    window.close()
+    application.processEvents()
+
+
+def test_desktop_analyzes_user_declared_gpa_meshes_before_project_creation(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from diffeoforge.desktop.project_setup import DesktopEngine
+    from diffeoforge.desktop.widgets import (
+        DiffeoForgeWindow,
+        _ReferenceParameterWorker,
+    )
+
+    application = QApplication.instance() or QApplication(
+        ["diffeoforge-declared-gpa-guidance-test"]
+    )
+    queued = []
+
+    class FakePool:
+        def start(self, worker) -> None:
+            queued.append(worker)
+
+    window = DiffeoForgeWindow()
+    window._thread_pool = FakePool()  # type: ignore[assignment]
+    window.engine_combo.setCurrentIndex(
+        window.engine_combo.findData(DesktopEngine.DEFORMETRICA_REFERENCE)
+    )
+    window.mesh_edit.setText(str(ROOT / "examples" / "synthetic" / "meshes"))
+    window.project_edit.setText(str(tmp_path / "project"))
+    window.units_combo.setCurrentIndex(window.units_combo.findData("unitless"))
+    window.already_gpa_check.setChecked(True)
+    application.processEvents()
+
+    assert window.analyze_reference_parameters_button.isEnabled() is True
+    assert window.create_button.isEnabled() is False
+    window.reference_surface_detail_combo.setCurrentIndex(
+        window.reference_surface_detail_combo.findData("fine")
+    )
+    window.reference_deformation_scale_combo.setCurrentIndex(
+        window.reference_deformation_scale_combo.findData("local")
+    )
+    window.analyze_reference_parameters_button.click()
+    assert len(queued) == 1
+    assert isinstance(queued[0], _ReferenceParameterWorker)
+    queued[0].run()
+    application.processEvents()
+
+    recommendation = window._reference_recommendation
+    assert recommendation is not None
+    assert recommendation.alignment_basis == "declared_gpa"
+    assert recommendation.surface_detail_intent == "fine"
+    assert recommendation.deformation_scale_intent == "local"
+    assert window._request().reference_parameter_recommendation == (
+        recommendation.provenance
+    )
+    assert window.create_button.isEnabled() is True
+    assert "cannot prove homologous alignment" in (
+        window.reference_guidance_status_label.text()
+    )
+    window.reference_deformation_scale_combo.setCurrentIndex(
+        window.reference_deformation_scale_combo.findData("global")
+    )
+    application.processEvents()
+    assert window._reference_recommendation is None
+    assert window.reference_parameter_profile_combo.currentData() == "pending"
     assert window.create_button.isEnabled() is False
     window.close()
     application.processEvents()

@@ -102,6 +102,10 @@ from diffeoforge.preprocessing import (
     preview_landmark_alignment,
 )
 from diffeoforge.reference_parameters import reference_parameter_profile
+from diffeoforge.reference_recommendation import (
+    ReferenceParameterRecommendation,
+    recommend_reference_parameters,
+)
 from diffeoforge.reference_runtime import launcher_label
 from diffeoforge.surface_io import (
     SUPPORTED_SURFACE_EXTENSIONS,
@@ -276,6 +280,45 @@ class _ProcrustesPreviewWorker(QRunnable):
             self.signals.failed.emit(str(error))
             return
         self.signals.succeeded.emit(preview)
+
+
+class _ReferenceParameterWorker(QRunnable):
+    """Analyze one aligned cohort without blocking the Qt event loop."""
+
+    def __init__(
+        self,
+        *,
+        mesh_paths: tuple[Path, ...],
+        alignment_basis: str,
+        surface_detail_intent: str,
+        deformation_scale_intent: str,
+        transforms: tuple[object, ...] | None,
+        alignment_fingerprint: str | None,
+    ) -> None:
+        super().__init__()
+        self.mesh_paths = mesh_paths
+        self.alignment_basis = alignment_basis
+        self.surface_detail_intent = surface_detail_intent
+        self.deformation_scale_intent = deformation_scale_intent
+        self.transforms = transforms
+        self.alignment_fingerprint = alignment_fingerprint
+        self.signals = _WorkerSignals()
+
+    @Slot()
+    def run(self) -> None:
+        try:
+            recommendation = recommend_reference_parameters(
+                self.mesh_paths,
+                alignment_basis=self.alignment_basis,
+                surface_detail_intent=self.surface_detail_intent,
+                deformation_scale_intent=self.deformation_scale_intent,
+                transforms=self.transforms,
+                alignment_fingerprint=self.alignment_fingerprint,
+            )
+        except (OSError, RuntimeError, TypeError, ValueError) as error:
+            self.signals.failed.emit(str(error))
+            return
+        self.signals.succeeded.emit(recommendation)
 
 
 class _ReferenceReadinessWorker(QRunnable):
@@ -538,6 +581,7 @@ class DiffeoForgeWindow(QMainWindow):
             | _ReviewWorker
             | _TemplatePreviewWorker
             | _ProcrustesPreviewWorker
+            | _ReferenceParameterWorker
             | _ReferenceReadinessWorker
             | _ReferencePreparationStatusWorker
             | _SavedReferencePreparationStatusVerificationWorker
@@ -551,6 +595,8 @@ class DiffeoForgeWindow(QMainWindow):
         self._review: ProjectReviewResult | None = None
         self._template_preview: MeshPreviewModel | None = None
         self._procrustes_preview: LandmarkAlignmentPreview | None = None
+        self._reference_recommendation: ReferenceParameterRecommendation | None = None
+        self._reference_recommendation_paths: tuple[Path, ...] | None = None
         self._reference_readiness: DesktopReferenceReadiness | None = None
         self._reference_preparation_status: DesktopReferencePreparationStatus | None = None
         self._saved_reference_preparation_status_verification: (
@@ -1622,10 +1668,11 @@ class DiffeoForgeWindow(QMainWindow):
             "referenceParameterProfileCombo"
         )
         self.reference_parameter_profile_combo.addItem(
-            "Recommended starting values", "recommended"
+            "Analyze aligned meshes first", "pending"
         )
-        self.reference_parameter_profile_combo.addItem("Fast pilot", "pilot")
-        self.reference_parameter_profile_combo.addItem("High detail", "high_detail")
+        self.reference_parameter_profile_combo.addItem(
+            "Data-assisted recommendation", "data_assisted"
+        )
         self.reference_parameter_profile_combo.addItem("Advanced manual control", "advanced")
         self.reference_parameter_profile_combo.currentIndexChanged.connect(
             self._update_reference_parameter_profile
@@ -1748,13 +1795,12 @@ class DiffeoForgeWindow(QMainWindow):
         reference_parameter_layout.addWidget(self.reference_expert_box)
         self.reference_expert_box.hide()
         self.reference_parameter_hint = QLabel(
-            "Values are scale-aware starting points, not scientifically validated defaults. "
-            "Every effective value will be shown again in Step 2 and stored with the run."
+            "No values are active until aligned meshes are analyzed or Advanced manual "
+            "control is selected. Every effective value will be shown again in Step 2."
         )
         self.reference_parameter_hint.setObjectName("hint")
         self.reference_parameter_hint.setWordWrap(True)
         reference_parameter_layout.addWidget(self.reference_parameter_hint)
-        form.addRow("Deformetrica model", self.reference_parameter_box)
         self.project_input_form = form
 
         self.mesh_edit = QLineEdit()
@@ -1816,6 +1862,9 @@ class DiffeoForgeWindow(QMainWindow):
         for unit in SUPPORTED_UNITS:
             self.units_combo.addItem(labels[unit], unit)
         self.units_combo.currentIndexChanged.connect(self._sync_ready_state)
+        self.units_combo.currentIndexChanged.connect(
+            self._reference_recommendation_inputs_changed
+        )
         form.addRow("Coordinate unit", self.units_combo)
 
         self.landmarks_edit = QLineEdit()
@@ -1926,7 +1975,9 @@ class DiffeoForgeWindow(QMainWindow):
             "I reviewed and approve this exact alignment preview"
         )
         self.approve_procrustes_check.setEnabled(False)
-        self.approve_procrustes_check.toggled.connect(self._sync_ready_state)
+        self.approve_procrustes_check.toggled.connect(
+            self._reference_recommendation_inputs_changed
+        )
         procrustes_layout.addWidget(self.preview_procrustes_button)
         procrustes_layout.addWidget(self.procrustes_preview_status_label)
         procrustes_layout.addWidget(self.approve_procrustes_check)
@@ -1938,6 +1989,99 @@ class DiffeoForgeWindow(QMainWindow):
         )
         self.procrustes_box.hide()
         form.addRow("Alignment", self.procrustes_box)
+
+        self.already_gpa_check = QCheckBox(
+            "I confirm that these mesh coordinates are already GPA aligned"
+        )
+        self.already_gpa_check.setObjectName("alreadyGpaAlignedCheck")
+        self.already_gpa_check.setToolTip(
+            "Use this only when translation, rotation, and the intended size treatment "
+            "have already been completed outside DiffeoForge. Geometry diagnostics can "
+            "flag suspicious dispersion but cannot prove homologous alignment."
+        )
+        self.already_gpa_check.toggled.connect(
+            self._reference_recommendation_inputs_changed
+        )
+        form.addRow("Existing alignment", self.already_gpa_check)
+
+        self.reference_guidance_box = QWidget()
+        guidance_layout = QVBoxLayout(self.reference_guidance_box)
+        guidance_layout.setContentsMargins(0, 0, 0, 0)
+        guidance_layout.setSpacing(7)
+        self.reference_surface_detail_combo = QComboBox()
+        self.reference_surface_detail_combo.setObjectName(
+            "referenceSurfaceDetailCombo"
+        )
+        self.reference_surface_detail_combo.addItem(
+            "Fine anatomical detail", "fine"
+        )
+        self.reference_surface_detail_combo.addItem(
+            "Balanced anatomical detail", "balanced"
+        )
+        self.reference_surface_detail_combo.addItem(
+            "Coarse / global surface detail", "coarse"
+        )
+        self.reference_surface_detail_combo.setCurrentIndex(
+            self.reference_surface_detail_combo.findData("balanced")
+        )
+        self.reference_surface_detail_combo.currentIndexChanged.connect(
+            self._reference_recommendation_inputs_changed
+        )
+        self.reference_deformation_scale_combo = QComboBox()
+        self.reference_deformation_scale_combo.setObjectName(
+            "referenceDeformationScaleCombo"
+        )
+        self.reference_deformation_scale_combo.addItem(
+            "Local shape differences", "local"
+        )
+        self.reference_deformation_scale_combo.addItem(
+            "Balanced local and global differences", "balanced"
+        )
+        self.reference_deformation_scale_combo.addItem(
+            "Global shape differences", "global"
+        )
+        self.reference_deformation_scale_combo.setCurrentIndex(
+            self.reference_deformation_scale_combo.findData("balanced")
+        )
+        self.reference_deformation_scale_combo.currentIndexChanged.connect(
+            self._reference_recommendation_inputs_changed
+        )
+        guidance_form = QFormLayout()
+        guidance_form.setContentsMargins(0, 0, 0, 0)
+        guidance_form.setHorizontalSpacing(18)
+        guidance_form.setVerticalSpacing(7)
+        guidance_form.addRow("Surface detail to preserve", self.reference_surface_detail_combo)
+        guidance_form.addRow(
+            "Scale of biological variation",
+            self.reference_deformation_scale_combo,
+        )
+        guidance_layout.addLayout(guidance_form)
+        guidance_hint = QLabel(
+            "DiffeoForge derives scale and a mesh-sampling lower bound. You decide which "
+            "anatomical detail and deformation scale are scientifically relevant."
+        )
+        guidance_hint.setObjectName("hint")
+        guidance_hint.setWordWrap(True)
+        guidance_layout.addWidget(guidance_hint)
+        self.analyze_reference_parameters_button = QPushButton(
+            "Analyze aligned meshes & suggest parameters"
+        )
+        self.analyze_reference_parameters_button.setObjectName("secondary")
+        self.analyze_reference_parameters_button.clicked.connect(
+            self._analyze_reference_parameters
+        )
+        guidance_layout.addWidget(self.analyze_reference_parameters_button)
+        self.reference_guidance_status_label = QLabel(
+            "No aligned-mesh analysis has been completed."
+        )
+        self.reference_guidance_status_label.setObjectName("status")
+        self.reference_guidance_status_label.setWordWrap(True)
+        self.reference_guidance_status_label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+        )
+        guidance_layout.addWidget(self.reference_guidance_status_label)
+        form.addRow("Parameter guidance", self.reference_guidance_box)
+        form.addRow("Deformetrica parameters", self.reference_parameter_box)
 
         card_layout.addLayout(form)
         return card
@@ -2083,6 +2227,10 @@ class DiffeoForgeWindow(QMainWindow):
             self.procrustes_preview_status_label.setText(
                 "No alignment preview has been reviewed."
             )
+        self._invalidate_reference_recommendation(
+            "Alignment inputs changed; analyze the aligned meshes again.",
+            sync=False,
+        )
         self._update_procrustes_controls()
         self._sync_ready_state()
 
@@ -2103,6 +2251,293 @@ class DiffeoForgeWindow(QMainWindow):
             and self._preview_matches_current_procrustes_inputs()
             and self._worker is None
         )
+
+    def _current_surface_cohort(self) -> tuple[Path, ...]:
+        directory = Path(self.mesh_edit.text().strip()).expanduser().resolve()
+        if not directory.is_dir():
+            raise ValueError("Select an existing mesh folder first.")
+        template_text = self.template_edit.text().strip()
+        template = (
+            Path(template_text).expanduser().resolve()
+            if template_text
+            else detect_template(directory)
+        )
+        if template is None or not template.is_file():
+            raise ValueError("Select an explicit template mesh first.")
+        if not is_supported_surface_path(template):
+            raise ValueError("The selected template is not a supported surface mesh.")
+        pattern = self.pattern_edit.text().strip()
+        if not pattern:
+            raise ValueError("Enter a subject file pattern.")
+        try:
+            subjects = tuple(
+                path.resolve()
+                for path in sorted(directory.glob(pattern))
+                if (
+                    path.is_file()
+                    and path.resolve() != template
+                    and is_supported_surface_path(path)
+                )
+            )
+        except (OSError, ValueError) as error:
+            raise ValueError(f"Invalid subject file pattern: {error}") from error
+        if len(subjects) < 2:
+            raise ValueError(
+                "Parameter guidance requires at least two subject meshes in addition "
+                "to the template."
+            )
+        return (template, *subjects)
+
+    def _reference_alignment_context(
+        self,
+    ) -> tuple[str, tuple[object, ...] | None, str | None]:
+        uses_diffeoforge_gpa = bool(
+            self.landmarks_edit.text().strip()
+            and self.procrustes_apply_check.isChecked()
+        )
+        if uses_diffeoforge_gpa:
+            fingerprint = self._approved_procrustes_fingerprint()
+            preview = self._procrustes_preview
+            if fingerprint is None or preview is None:
+                raise ValueError(
+                    "Complete and approve the read-only DiffeoForge GPA preview first."
+                )
+            return (
+                "diffeoforge_gpa",
+                tuple(preview.alignment.transforms),
+                fingerprint,
+            )
+        if not self.already_gpa_check.isChecked():
+            raise ValueError(
+                "Confirm that the meshes are already GPA aligned, or place landmarks "
+                "and complete the DiffeoForge GPA preview first."
+            )
+        return "declared_gpa", None, None
+
+    def _reference_recommendation_matches_current_inputs(self) -> bool:
+        recommendation = self._reference_recommendation
+        if recommendation is None or self._reference_recommendation_paths is None:
+            return False
+        try:
+            paths = self._current_surface_cohort()
+            alignment_basis, _transforms, alignment_fingerprint = (
+                self._reference_alignment_context()
+            )
+        except (OSError, TypeError, ValueError):
+            return False
+        return bool(
+            paths == self._reference_recommendation_paths
+            and recommendation.alignment_basis == alignment_basis
+            and recommendation.alignment_fingerprint == alignment_fingerprint
+            and recommendation.surface_detail_intent
+            == self.reference_surface_detail_combo.currentData()
+            and recommendation.deformation_scale_intent
+            == self.reference_deformation_scale_combo.currentData()
+        )
+
+    def _invalidate_reference_recommendation(
+        self,
+        message: str = "Inputs changed; analyze the aligned meshes again.",
+        *,
+        sync: bool = True,
+    ) -> None:
+        had_recommendation = self._reference_recommendation is not None
+        self._reference_recommendation = None
+        self._reference_recommendation_paths = None
+        if self.reference_parameter_profile_combo.currentData() == "data_assisted":
+            self.reference_parameter_profile_combo.blockSignals(True)
+            self.reference_parameter_profile_combo.setCurrentIndex(
+                self.reference_parameter_profile_combo.findData("pending")
+            )
+            self.reference_parameter_profile_combo.blockSignals(False)
+            self._set_reference_parameter_fields_visible(False)
+            self.reference_parameter_hint.setText(
+                "No parameter values are active. Analyze the aligned meshes again or "
+                "choose Advanced manual control."
+            )
+        if had_recommendation:
+            self.reference_guidance_status_label.setObjectName("statusWarning")
+            self.reference_guidance_status_label.setStyleSheet("")
+            self.reference_guidance_status_label.setText(message)
+        elif not isinstance(self._worker, _ReferenceParameterWorker):
+            self.reference_guidance_status_label.setObjectName("status")
+            self.reference_guidance_status_label.setStyleSheet("")
+            self.reference_guidance_status_label.setText(
+                "No aligned-mesh analysis has been completed."
+            )
+        if sync:
+            self._update_reference_guidance_controls()
+            self._sync_ready_state()
+
+    @Slot()
+    def _reference_recommendation_inputs_changed(self) -> None:
+        self._invalidate_reference_recommendation()
+
+    def _update_reference_guidance_controls(self) -> None:
+        reference = (
+            self.engine_combo.currentData()
+            == DesktopEngine.DEFORMETRICA_REFERENCE
+        )
+        uses_diffeoforge_gpa = bool(
+            self.landmarks_edit.text().strip()
+            and self.procrustes_apply_check.isChecked()
+        )
+        self.already_gpa_check.setEnabled(
+            reference and not uses_diffeoforge_gpa and self._worker is None
+        )
+        alignment_ready = bool(
+            self._approved_procrustes_fingerprint() is not None
+            if uses_diffeoforge_gpa
+            else self.already_gpa_check.isChecked()
+        )
+        self.analyze_reference_parameters_button.setEnabled(
+            reference and alignment_ready and self._worker is None
+        )
+        if isinstance(self._worker, _ReferenceParameterWorker):
+            self.analyze_reference_parameters_button.setText(
+                "Analyzing aligned meshes…"
+            )
+        else:
+            self.analyze_reference_parameters_button.setText(
+                "Analyze aligned meshes & suggest parameters"
+            )
+
+    @Slot()
+    def _analyze_reference_parameters(self) -> None:
+        if self._worker is not None:
+            return
+        try:
+            paths = self._current_surface_cohort()
+            alignment_basis, transforms, alignment_fingerprint = (
+                self._reference_alignment_context()
+            )
+        except (OSError, TypeError, ValueError) as error:
+            self._reference_parameter_analysis_failed(str(error))
+            return
+        worker = _ReferenceParameterWorker(
+            mesh_paths=paths,
+            alignment_basis=alignment_basis,
+            surface_detail_intent=str(
+                self.reference_surface_detail_combo.currentData()
+            ),
+            deformation_scale_intent=str(
+                self.reference_deformation_scale_combo.currentData()
+            ),
+            transforms=transforms,
+            alignment_fingerprint=alignment_fingerprint,
+        )
+        worker.signals.succeeded.connect(
+            self._reference_parameter_analysis_succeeded
+        )
+        worker.signals.failed.connect(self._reference_parameter_analysis_failed)
+        self._worker = worker
+        self._reference_recommendation = None
+        self._reference_recommendation_paths = None
+        self.reference_guidance_status_label.setObjectName("status")
+        self.reference_guidance_status_label.setStyleSheet("")
+        self.reference_guidance_status_label.setText(
+            "Reading the aligned coordinates and measuring cohort scale, centroid "
+            "dispersion, and mesh sampling. No mesh is being changed."
+        )
+        self._update_reference_guidance_controls()
+        self._sync_ready_state()
+        self._thread_pool.start(worker)
+
+    @Slot(object)
+    def _reference_parameter_analysis_succeeded(
+        self,
+        recommendation: ReferenceParameterRecommendation,
+    ) -> None:
+        worker = self._worker
+        self._worker = None
+        if not isinstance(worker, _ReferenceParameterWorker):
+            self._reference_parameter_analysis_failed(
+                "The completed analysis is no longer bound to the active request."
+            )
+            return
+        try:
+            current_paths = self._current_surface_cohort()
+            alignment_basis, _transforms, alignment_fingerprint = (
+                self._reference_alignment_context()
+            )
+        except (OSError, TypeError, ValueError) as error:
+            self._reference_parameter_analysis_failed(str(error))
+            return
+        inputs_match = bool(
+            current_paths == worker.mesh_paths
+            and alignment_basis == worker.alignment_basis
+            and alignment_fingerprint == worker.alignment_fingerprint
+            and self.reference_surface_detail_combo.currentData()
+            == worker.surface_detail_intent
+            and self.reference_deformation_scale_combo.currentData()
+            == worker.deformation_scale_intent
+        )
+        if not inputs_match:
+            self._reference_parameter_analysis_failed(
+                "Analysis discarded because alignment, mesh selection, or scientific "
+                "scale choices changed while it was running."
+            )
+            return
+
+        self._reference_recommendation = recommendation
+        self._reference_recommendation_paths = current_paths
+        self.reference_parameter_profile_combo.blockSignals(True)
+        self.reference_parameter_profile_combo.setCurrentIndex(
+            self.reference_parameter_profile_combo.findData("data_assisted")
+        )
+        self.reference_parameter_profile_combo.blockSignals(False)
+        self._update_reference_parameter_profile()
+        effective = recommendation.effective_values
+        coordinate_label = (
+            "unit-centroid-size coordinates"
+            if (
+                recommendation.alignment_basis == "diffeoforge_gpa"
+                and self._procrustes_preview is not None
+                and self._procrustes_preview.scale_to_unit_centroid_size
+            )
+            else self.units_combo.currentText()
+        )
+        warning_lines = "\n".join(
+            f"• {warning}" for warning in recommendation.warnings
+        )
+        self.reference_guidance_status_label.setObjectName("statusSuccess")
+        self.reference_guidance_status_label.setStyleSheet("")
+        self.reference_guidance_status_label.setText(
+            f"Analyzed {recommendation.mesh_count} aligned meshes "
+            f"({recommendation.subject_count} subjects + template).\n"
+            f"Cohort median diagonal: {recommendation.cohort_median_diagonal:.6g}; "
+            f"median sampled edge / diagonal: "
+            f"{recommendation.median_edge_to_diagonal_ratio:.4g}; "
+            f"centroid dispersion / diagonal: "
+            f"{recommendation.normalized_centroid_dispersion:.4g}.\n"
+            f"Suggested attachment: {recommendation.attachment_kernel_width_ratio:.5g} × "
+            f"template diagonal = {effective['attachment_kernel_width']:.6g}; "
+            f"deformation: {recommendation.deformation_kernel_width_ratio:.5g} × "
+            f"diagonal = {effective['deformation_kernel_width']:.6g}; "
+            f"control spacing: {recommendation.control_point_spacing_ratio:.5g} × "
+            f"diagonal = {effective['initial_control_point_spacing']:.6g} "
+            f"({coordinate_label}).\n"
+            f"Provisional noise SD: {recommendation.provisional_noise_std_ratio:.5g} × "
+            f"diagonal = {effective['noise_std']:.6g}; this is not inferable from "
+            "geometry and must be calibrated in pilot registrations.\n"
+            f"Recommendation fingerprint: {recommendation.fingerprint}\n"
+            f"{warning_lines}"
+        )
+        self._update_reference_guidance_controls()
+        self._sync_ready_state()
+
+    @Slot(str)
+    def _reference_parameter_analysis_failed(self, message: str) -> None:
+        self._worker = None
+        self._reference_recommendation = None
+        self._reference_recommendation_paths = None
+        self.reference_guidance_status_label.setObjectName("statusError")
+        self.reference_guidance_status_label.setStyleSheet("")
+        self.reference_guidance_status_label.setText(
+            f"Aligned-mesh parameter analysis failed: {message}"
+        )
+        self._update_reference_guidance_controls()
+        self._sync_ready_state()
 
     def _current_procrustes_paths(
         self,
@@ -2686,34 +3121,108 @@ class DiffeoForgeWindow(QMainWindow):
         spin.setToolTip(tooltip)
         return spin
 
+    def _reference_parameter_widgets(self) -> tuple[QWidget, ...]:
+        return (
+            self.reference_attachment_ratio_spin,
+            self.reference_deformation_ratio_spin,
+            self.reference_control_spacing_ratio_spin,
+            self.reference_noise_ratio_spin,
+            self.reference_max_iterations_spin,
+            self.reference_step_size_spin,
+            self.reference_tolerance_spin,
+        )
+
+    def _set_reference_parameter_fields_visible(self, visible: bool) -> None:
+        for widget in self._reference_parameter_widgets():
+            widget.setVisible(visible)
+            label = self.reference_parameter_form.labelForField(widget)
+            if label is not None:
+                label.setVisible(visible)
+
     @Slot()
     def _update_reference_parameter_profile(self) -> None:
         key = str(self.reference_parameter_profile_combo.currentData())
-        source_key = "recommended" if key == "advanced" else key
-        profile = reference_parameter_profile(source_key)
-        values = (
-            (self.reference_attachment_ratio_spin, profile.attachment_ratio),
-            (self.reference_deformation_ratio_spin, profile.deformation_ratio),
-            (self.reference_control_spacing_ratio_spin, profile.control_point_spacing_ratio),
-            (self.reference_noise_ratio_spin, profile.noise_ratio),
-            (self.reference_max_iterations_spin, profile.max_iterations),
-            (self.reference_step_size_spin, profile.initial_step_size),
-            (self.reference_tolerance_spin, profile.convergence_tolerance),
-        )
-        for widget, value in values:
-            widget.setValue(value)
-            widget.setEnabled(key == "advanced")
+        if key == "pending":
+            self._set_reference_parameter_fields_visible(False)
+            self.reference_parameter_hint.setText(
+                "No parameter values are active. Confirm existing GPA alignment or complete "
+                "the DiffeoForge landmark-GPA preview, then analyze the aligned meshes."
+            )
+            self._sync_ready_state()
+            return
+
+        recommendation = self._reference_recommendation
+        if key == "data_assisted":
+            if recommendation is None:
+                self._set_reference_parameter_fields_visible(False)
+                self.reference_parameter_hint.setText(
+                    "No current aligned-mesh recommendation is available. Run the geometry "
+                    "analysis again or choose Advanced manual control."
+                )
+                self._sync_ready_state()
+                return
+            values = (
+                (
+                    self.reference_attachment_ratio_spin,
+                    recommendation.attachment_kernel_width_ratio,
+                ),
+                (
+                    self.reference_deformation_ratio_spin,
+                    recommendation.deformation_kernel_width_ratio,
+                ),
+                (
+                    self.reference_control_spacing_ratio_spin,
+                    recommendation.control_point_spacing_ratio,
+                ),
+                (
+                    self.reference_noise_ratio_spin,
+                    recommendation.provisional_noise_std_ratio,
+                ),
+                (self.reference_max_iterations_spin, recommendation.max_iterations),
+                (self.reference_step_size_spin, recommendation.initial_step_size),
+                (
+                    self.reference_tolerance_spin,
+                    recommendation.convergence_tolerance,
+                ),
+            )
+            self._set_reference_parameter_fields_visible(True)
+            for widget, value in values:
+                widget.setValue(value)
+                widget.setEnabled(False)
+            self.reference_parameter_hint.setText(
+                "Geometry-derived scale and sampling constraints plus your stated detail "
+                "and deformation-scale choices. Noise and optimizer settings remain "
+                "provisional and require pilot validation."
+            )
+            self._sync_ready_state()
+            return
+
+        profile = reference_parameter_profile("recommended")
+        if self._reference_recommendation is None:
+            values = (
+                (self.reference_attachment_ratio_spin, profile.attachment_ratio),
+                (self.reference_deformation_ratio_spin, profile.deformation_ratio),
+                (
+                    self.reference_control_spacing_ratio_spin,
+                    profile.control_point_spacing_ratio,
+                ),
+                (self.reference_noise_ratio_spin, profile.noise_ratio),
+                (self.reference_max_iterations_spin, profile.max_iterations),
+                (self.reference_step_size_spin, profile.initial_step_size),
+                (self.reference_tolerance_spin, profile.convergence_tolerance),
+            )
+            for widget, value in values:
+                widget.setValue(value)
+        self._set_reference_parameter_fields_visible(True)
+        for widget in self._reference_parameter_widgets():
+            widget.setEnabled(True)
         if key == "advanced":
             self.reference_parameter_hint.setText(
                 "Advanced values are editable. Length parameters are dimensionless fractions "
                 "of the template bounding-box diagonal; DiffeoForge converts them to the "
                 "declared coordinate unit and records both ratios and effective values."
             )
-        else:
-            self.reference_parameter_hint.setText(
-                "This exploratory profile is visible and reproducible but is not a "
-                "scientifically validated default. Choose Advanced manual control to edit."
-            )
+        self._sync_ready_state()
 
     @Slot()
     def _update_reference_expert_visibility(self) -> None:
@@ -2732,6 +3241,8 @@ class DiffeoForgeWindow(QMainWindow):
         self.landmarks_button.setEnabled(True)
         self.project_input_form.setRowVisible(self.pairwise_box, modern)
         self.project_input_form.setRowVisible(self.optimization_effort_box, modern)
+        self.project_input_form.setRowVisible(self.already_gpa_check, not modern)
+        self.project_input_form.setRowVisible(self.reference_guidance_box, not modern)
         self.project_input_form.setRowVisible(self.reference_parameter_box, not modern)
         if modern:
             self.engine_hint.setText(
@@ -2747,6 +3258,7 @@ class DiffeoForgeWindow(QMainWindow):
         self._update_pairwise_explanation()
         self._update_optimization_explanation()
         self._update_reference_parameter_profile()
+        self._update_reference_guidance_controls()
 
     @Slot()
     def _update_pairwise_explanation(self) -> None:
@@ -2858,10 +3370,27 @@ class DiffeoForgeWindow(QMainWindow):
                 and self.procrustes_apply_check.isChecked()
                 and self._approved_procrustes_fingerprint() is None
             )
+            parameter_guidance_required = bool(
+                self.engine_combo.currentData()
+                == DesktopEngine.DEFORMETRICA_REFERENCE
+                and (
+                    self.reference_parameter_profile_combo.currentData()
+                    == "pending"
+                    or (
+                        self.reference_parameter_profile_combo.currentData()
+                        == "data_assisted"
+                        and not self._reference_recommendation_matches_current_inputs()
+                    )
+                )
+            )
             self.create_button.setText(
                 "Preview & approve alignment first"
                 if approval_required
-                else "Validate data & create project"
+                else (
+                    "Analyze aligned meshes or choose manual parameters"
+                    if parameter_guidance_required
+                    else "Validate data & create project"
+                )
             )
             self.create_button.setEnabled(form_ready and self._worker is None)
 
@@ -2909,13 +3438,24 @@ class DiffeoForgeWindow(QMainWindow):
             or not self.procrustes_apply_check.isChecked()
             or approved_alignment is not None
         )
+        reference_profile = self.reference_parameter_profile_combo.currentData()
+        reference_parameters_ready = bool(
+            self.engine_combo.currentData() != DesktopEngine.DEFORMETRICA_REFERENCE
+            or reference_profile == "advanced"
+            or (
+                reference_profile == "data_assisted"
+                and self._reference_recommendation_matches_current_inputs()
+            )
+        )
         ready = bool(
             self.mesh_edit.text().strip()
             and self.project_edit.text().strip()
             and self.units_combo.currentData() is not None
             and alignment_ready
+            and reference_parameters_ready
         )
         self._update_procrustes_controls()
+        self._update_reference_guidance_controls()
         self._sync_setup_primary_action(form_ready=ready)
         self._sync_run_primary_action()
         self._sync_navigation_state()
@@ -2954,12 +3494,28 @@ class DiffeoForgeWindow(QMainWindow):
             and self.pairwise_combo.currentData() == "blockwise_256"
         )
         reference_profile = str(self.reference_parameter_profile_combo.currentData())
-        reference_ratios = {
-            "attachment_kernel_width": self.reference_attachment_ratio_spin.value(),
-            "deformation_kernel_width": self.reference_deformation_ratio_spin.value(),
-            "initial_control_point_spacing": self.reference_control_spacing_ratio_spin.value(),
-            "noise_std": self.reference_noise_ratio_spin.value(),
-        }
+        recommendation_is_current = bool(
+            reference_profile == "data_assisted"
+            and self._reference_recommendation is not None
+            and self._reference_recommendation_matches_current_inputs()
+        )
+        if (
+            self.engine_combo.currentData() == DesktopEngine.MODERN_CPU
+            and reference_profile == "pending"
+        ):
+            reference_profile = "recommended"
+        reference_ratios = (
+            self._reference_recommendation.parameter_ratios
+            if recommendation_is_current and self._reference_recommendation is not None
+            else {
+                "attachment_kernel_width": self.reference_attachment_ratio_spin.value(),
+                "deformation_kernel_width": self.reference_deformation_ratio_spin.value(),
+                "initial_control_point_spacing": (
+                    self.reference_control_spacing_ratio_spin.value()
+                ),
+                "noise_std": self.reference_noise_ratio_spin.value(),
+            }
+        )
         return ProjectSetupRequest(
             mesh_directory=Path(self.mesh_edit.text().strip()),
             project_directory=Path(self.project_edit.text().strip()),
@@ -2977,6 +3533,12 @@ class DiffeoForgeWindow(QMainWindow):
             max_cycles=int(self.optimization_effort_combo.currentData()),
             reference_parameter_profile=reference_profile,
             reference_parameter_ratios=reference_ratios,
+            reference_parameter_recommendation=(
+                self._reference_recommendation.provenance
+                if recommendation_is_current
+                and self._reference_recommendation is not None
+                else None
+            ),
             reference_max_iterations=self.reference_max_iterations_spin.value(),
             reference_initial_step_size=self.reference_step_size_spin.value(),
             reference_convergence_tolerance=self.reference_tolerance_spin.value(),

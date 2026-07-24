@@ -33,6 +33,7 @@ Select mesh directory
   -> validate and inspect meshes
   -> optionally place/import homologous landmarks
   -> review Procrustes alignment and immutable aligned copies
+  -> analyze the aligned cohort and state the biological detail/locality of interest
   -> review warnings, parameters, and estimated resource use
   -> run the recommended Deformetrica backend with progress and bounded ETA
   -> inspect atlas convergence, quality, PCA, and shape plots
@@ -153,9 +154,12 @@ This repository currently provides:
 - reviewed triangular PLY, OBJ, and ASCII/binary STL import for landmarking and
   GPA, with byte-identical original-format copies under `raw/`, one canonical
   aligned VTK cohort under `aligned-vtk/`, and format/conversion provenance;
-- scale-aware Deformetrica starter profiles plus explicit basic and expert
-  parameter controls whose effective values are persisted in YAML, rendered
-  into exact engine XML, and read back for review;
+- GPA-gated, data-assisted Deformetrica parameter guidance that measures cohort
+  scale, centroid dispersion, and mesh sampling, combines those observations
+  with explicit researcher choices for anatomical detail and deformation
+  locality, and records the recommendation fingerprint, automatic inferences,
+  user decisions, and pilot-validation requirements in YAML; advanced manual
+  and expert controls remain available;
 - a self-contained HTML input-validation and parameter-scale report;
 - a self-contained HTML convergence, lifecycle, and result report;
 - terminal interruption capture, explicit unclean-stop recovery, and

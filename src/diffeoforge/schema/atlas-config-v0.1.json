@@ -31,7 +31,15 @@
           "additionalProperties": false,
           "required": ["profile", "scale_reference", "ratios", "sources"],
           "properties": {
-            "profile": {"enum": ["recommended", "pilot", "high_detail", "advanced"]},
+            "profile": {
+              "enum": [
+                "recommended",
+                "pilot",
+                "high_detail",
+                "advanced",
+                "data_assisted"
+              ]
+            },
             "scale_reference": {"const": "template_bounding_box_diagonal"},
             "ratios": {
               "type": "object",
@@ -63,6 +71,141 @@
                 "deformation_kernel_width": {"enum": ["template_diagonal_ratio", "absolute_override"]},
                 "initial_control_point_spacing": {"enum": ["template_diagonal_ratio", "absolute_override"]},
                 "noise_std": {"enum": ["template_diagonal_ratio", "absolute_override"]}
+              }
+            },
+            "recommendation": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "version",
+                "fingerprint",
+                "alignment_basis",
+                "alignment_fingerprint",
+                "surface_detail_intent",
+                "deformation_scale_intent",
+                "template_filename",
+                "template_sha256",
+                "mesh_count",
+                "subject_count",
+                "measurements",
+                "parameter_ratios",
+                "automatic_inferences",
+                "user_decisions",
+                "pilot_validation_required",
+                "warnings"
+              ],
+              "properties": {
+                "version": {"const": "0.1"},
+                "fingerprint": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                },
+                "alignment_basis": {
+                  "enum": ["declared_gpa", "diffeoforge_gpa"]
+                },
+                "alignment_fingerprint": {
+                  "type": ["string", "null"],
+                  "pattern": "^[0-9a-f]{64}$"
+                },
+                "surface_detail_intent": {
+                  "enum": ["fine", "balanced", "coarse"]
+                },
+                "deformation_scale_intent": {
+                  "enum": ["local", "balanced", "global"]
+                },
+                "template_filename": {"type": "string", "minLength": 1},
+                "template_sha256": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                },
+                "mesh_count": {"type": "integer", "minimum": 3},
+                "subject_count": {"type": "integer", "minimum": 2},
+                "measurements": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "template_diagonal",
+                    "cohort_median_diagonal",
+                    "cohort_diagonal_cv",
+                    "normalized_centroid_dispersion",
+                    "median_edge_to_diagonal_ratio",
+                    "sampling_floor_ratio"
+                  ],
+                  "properties": {
+                    "template_diagonal": {
+                      "type": "number",
+                      "exclusiveMinimum": 0
+                    },
+                    "cohort_median_diagonal": {
+                      "type": "number",
+                      "exclusiveMinimum": 0
+                    },
+                    "cohort_diagonal_cv": {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    "normalized_centroid_dispersion": {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    "median_edge_to_diagonal_ratio": {
+                      "type": "number",
+                      "exclusiveMinimum": 0
+                    },
+                    "sampling_floor_ratio": {
+                      "type": "number",
+                      "exclusiveMinimum": 0
+                    }
+                  }
+                },
+                "parameter_ratios": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "attachment_kernel_width",
+                    "deformation_kernel_width",
+                    "initial_control_point_spacing",
+                    "noise_std"
+                  ],
+                  "properties": {
+                    "attachment_kernel_width": {
+                      "type": "number",
+                      "exclusiveMinimum": 0
+                    },
+                    "deformation_kernel_width": {
+                      "type": "number",
+                      "exclusiveMinimum": 0
+                    },
+                    "initial_control_point_spacing": {
+                      "type": "number",
+                      "exclusiveMinimum": 0
+                    },
+                    "noise_std": {
+                      "type": "number",
+                      "exclusiveMinimum": 0
+                    }
+                  }
+                },
+                "automatic_inferences": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {"type": "string", "minLength": 1}
+                },
+                "user_decisions": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {"type": "string", "minLength": 1}
+                },
+                "pilot_validation_required": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {"type": "string", "minLength": 1}
+                },
+                "warnings": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {"type": "string", "minLength": 1}
+                }
               }
             }
           }

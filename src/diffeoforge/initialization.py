@@ -183,6 +183,7 @@ def initialize_project(
     noise_std: float | None = None,
     parameter_profile: str = "recommended",
     parameter_ratios: Mapping[str, float] | None = None,
+    parameter_recommendation: Mapping[str, Any] | None = None,
     max_iterations: int | None = None,
     initial_step_size: float | None = None,
     convergence_tolerance: float | None = None,
@@ -237,8 +238,23 @@ def initialize_project(
         else deepcopy(dict(launcher))
     )
     profile = reference_parameter_profile(
-        "recommended" if parameter_profile == "advanced" else parameter_profile
+        "recommended"
+        if parameter_profile in {"advanced", "data_assisted"}
+        else parameter_profile
     )
+    recommendation = (
+        None
+        if parameter_recommendation is None
+        else deepcopy(dict(parameter_recommendation))
+    )
+    if parameter_profile == "data_assisted" and recommendation is None:
+        raise ConfigurationError(
+            "A data-assisted parameter profile requires recommendation provenance"
+        )
+    if parameter_profile != "data_assisted" and recommendation is not None:
+        raise ConfigurationError(
+            "Recommendation provenance is allowed only for the data-assisted profile"
+        )
     ratios = dict(parameter_ratios or {})
     ratio_values = {
         "attachment_kernel_width": profile.attachment_ratio,
@@ -274,6 +290,11 @@ def initialize_project(
                 "scale_reference": "template_bounding_box_diagonal",
                 "ratios": ratio_values,
                 "sources": parameter_sources,
+                **(
+                    {"recommendation": recommendation}
+                    if recommendation is not None
+                    else {}
+                ),
             },
         },
         "input": {

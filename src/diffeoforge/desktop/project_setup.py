@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from copy import deepcopy
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
@@ -53,6 +54,7 @@ class ProjectSetupRequest:
     max_cycles: int = 3
     reference_parameter_profile: str = "recommended"
     reference_parameter_ratios: dict[str, float] | None = None
+    reference_parameter_recommendation: dict[str, object] | None = None
     reference_max_iterations: int | None = None
     reference_initial_step_size: float | None = None
     reference_convergence_tolerance: float | None = None
@@ -144,7 +146,7 @@ def _normalize_request(request: ProjectSetupRequest) -> ProjectSetupRequest:
     ):
         raise ConfigurationError("Desktop max_cycles must be a positive integer")
     profile = str(request.reference_parameter_profile).strip().lower()
-    if profile not in {*REFERENCE_PARAMETER_PROFILES, "advanced"}:
+    if profile not in {*REFERENCE_PARAMETER_PROFILES, "advanced", "data_assisted"}:
         raise ConfigurationError(f"Unsupported Deformetrica parameter profile: {profile!r}")
     ratios = request.reference_parameter_ratios
     if ratios is not None:
@@ -160,6 +162,33 @@ def _normalize_request(request: ProjectSetupRequest) -> ProjectSetupRequest:
                 "Deformetrica parameter ratios must define attachment, deformation, "
                 "control-point spacing, and noise"
             )
+    recommendation = (
+        None
+        if request.reference_parameter_recommendation is None
+        else deepcopy(dict(request.reference_parameter_recommendation))
+    )
+    if profile == "data_assisted":
+        if recommendation is None:
+            raise ConfigurationError(
+                "The data-assisted profile requires bound recommendation provenance"
+            )
+        fingerprint = recommendation.get("fingerprint")
+        if (
+            not isinstance(fingerprint, str)
+            or len(fingerprint) != 64
+            or any(character not in "0123456789abcdef" for character in fingerprint)
+        ):
+            raise ConfigurationError(
+                "Recommendation provenance requires a SHA-256 fingerprint"
+            )
+        if recommendation.get("parameter_ratios") != ratios:
+            raise ConfigurationError(
+                "Recommendation provenance parameter ratios do not match the request"
+            )
+    elif recommendation is not None:
+        raise ConfigurationError(
+            "Recommendation provenance is allowed only for the data-assisted profile"
+        )
     attachment_type = str(request.reference_attachment_type).strip().lower()
     if attachment_type not in {"current", "varifold"}:
         raise ConfigurationError("Deformetrica attachment type must be current or varifold")
@@ -246,6 +275,7 @@ def _normalize_request(request: ProjectSetupRequest) -> ProjectSetupRequest:
         max_cycles=request.max_cycles,
         reference_parameter_profile=profile,
         reference_parameter_ratios=ratios,
+        reference_parameter_recommendation=recommendation,
         reference_max_iterations=request.reference_max_iterations,
         reference_initial_step_size=request.reference_initial_step_size,
         reference_convergence_tolerance=request.reference_convergence_tolerance,
@@ -338,6 +368,7 @@ def _create_reference_project(request: ProjectSetupRequest) -> ProjectSetupResul
         launcher=launcher,
         parameter_profile=request.reference_parameter_profile,
         parameter_ratios=request.reference_parameter_ratios,
+        parameter_recommendation=request.reference_parameter_recommendation,
         max_iterations=request.reference_max_iterations,
         initial_step_size=request.reference_initial_step_size,
         convergence_tolerance=request.reference_convergence_tolerance,

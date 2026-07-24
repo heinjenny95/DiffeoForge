@@ -175,6 +175,68 @@ def _mesh_row(role: str, mesh: MeshMetadata) -> str:
     return "<tr>" + "".join(f"<td>{escape(value)}</td>" for value in values) + "</tr>"
 
 
+def _list_html(values: list[str]) -> str:
+    return "<ul>" + "".join(f"<li>{escape(str(value))}</li>" for value in values) + "</ul>"
+
+
+def _parameter_provenance_html(config: Mapping[str, Any]) -> str:
+    provenance = config["project"].get("parameter_provenance")
+    if provenance is None:
+        return """
+  <section>
+    <h2>Parameter provenance</h2>
+    <p>This legacy configuration does not contain structured parameter provenance.</p>
+  </section>"""
+
+    profile = escape(str(provenance["profile"]).replace("_", " "))
+    recommendation = provenance.get("recommendation")
+    if recommendation is None:
+        return f"""
+  <section>
+    <h2>Parameter provenance</h2>
+    <p><strong>Source:</strong> {profile}. The effective configuration below records the
+      exact ratios and any absolute overrides.</p>
+  </section>"""
+
+    measurements = recommendation["measurements"]
+    alignment_basis = (
+        "DiffeoForge GPA evidence"
+        if recommendation["alignment_basis"] == "diffeoforge_gpa"
+        else "researcher-declared external GPA"
+    )
+    automatic = _list_html(recommendation["automatic_inferences"])
+    decisions = _list_html(recommendation["user_decisions"])
+    pilot = _list_html(recommendation["pilot_validation_required"])
+    warnings = _list_html(recommendation["warnings"])
+    fingerprint = escape(str(recommendation["fingerprint"]))
+    return f"""
+  <section>
+    <h2>Parameter provenance</h2>
+    <p><strong>Source:</strong> {profile}<br>
+      <strong>Alignment basis:</strong> {escape(alignment_basis)}<br>
+      <strong>Analyzed cohort:</strong> {recommendation["subject_count"]} subjects plus
+      template <code>{escape(str(recommendation["template_filename"]))}</code><br>
+      <strong>Evidence fingerprint:</strong> <code>{fingerprint}</code></p>
+    <div class="cards">
+      <div class="card"><span>Median aligned diagonal</span>
+        <strong>{measurements["cohort_median_diagonal"]:.6g}</strong></div>
+      <div class="card"><span>Aligned size CV</span>
+        <strong>{measurements["cohort_diagonal_cv"]:.3%}</strong></div>
+      <div class="card"><span>Centroid dispersion / diagonal</span>
+        <strong>{measurements["normalized_centroid_dispersion"]:.3%}</strong></div>
+      <div class="card"><span>Sampling-aware attachment floor</span>
+        <strong>{measurements["sampling_floor_ratio"]:.3%}</strong></div>
+    </div>
+    <table>
+      <thead><tr><th>Inferred automatically</th><th>Chosen by researcher</th>
+        <th>Requires pilot validation</th></tr></thead>
+      <tbody><tr><td>{automatic}</td><td>{decisions}</td><td>{pilot}</td></tr></tbody>
+    </table>
+    <h3>Recommendation warnings</h3>
+    <div class="notices">{warnings}</div>
+  </section>"""
+
+
 def render_preflight_html(result: PreflightResult) -> str:
     """Render a portable report with no scripts, network calls, or external assets."""
 
@@ -205,6 +267,7 @@ def render_preflight_html(result: PreflightResult) -> str:
     effective_yaml = escape(
         yaml.safe_dump(dict(config), sort_keys=False, allow_unicode=True), quote=False
     )
+    provenance_html = _parameter_provenance_html(config)
 
     return f"""<!doctype html>
 <html lang="en">
@@ -280,6 +343,8 @@ def render_preflight_html(result: PreflightResult) -> str:
     <table><thead><tr><th>Parameter</th><th>Ratio</th><th>Template diagonal</th></tr></thead>
       <tbody>{parameter_rows}</tbody></table>
   </section>
+
+  {provenance_html}
 
   <section>
     <h2>Mesh inventory</h2>

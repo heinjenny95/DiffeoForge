@@ -215,6 +215,65 @@ def _reference_review(config_path: Path, config_sha256: str) -> ProjectReviewRes
         if provenance is not None
         else "legacy configuration"
     )
+    recommendation = (
+        provenance.get("recommendation") if provenance is not None else None
+    )
+    recommendation_items: tuple[ReviewItem, ...] = ()
+    recommendation_warnings: tuple[str, ...] = ()
+    if recommendation is not None:
+        measurements = recommendation["measurements"]
+        alignment_basis = str(recommendation["alignment_basis"])
+        alignment_value = (
+            "DiffeoForge GPA evidence"
+            if alignment_basis == "diffeoforge_gpa"
+            else "researcher-declared external GPA"
+        )
+        recommendation_items = (
+            ReviewItem(
+                "Recommendation evidence",
+                (
+                    f"{alignment_value} · {recommendation['subject_count']} subjects · "
+                    f"fingerprint {str(recommendation['fingerprint'])[:12]}…"
+                ),
+                "Binds the displayed proposal to the analyzed aligned cohort and the "
+                "recorded alignment basis.",
+            ),
+            ReviewItem(
+                "Measured geometry",
+                (
+                    f"median diagonal {_number(measurements['cohort_median_diagonal'])} · "
+                    f"size CV {measurements['cohort_diagonal_cv']:.2%} · centroid "
+                    f"dispersion {measurements['normalized_centroid_dispersion']:.2%}"
+                ),
+                "Read-only cohort measurements; they diagnose scale and gross residual "
+                "translation but cannot prove anatomical correspondence.",
+            ),
+            ReviewItem(
+                "Researcher decisions",
+                (
+                    f"{str(recommendation['surface_detail_intent']).replace('_', ' ')} "
+                    "surface detail · "
+                    f"{str(recommendation['deformation_scale_intent']).replace('_', ' ')} "
+                    "deformation scale"
+                ),
+                "These biological scale choices are not inferred from mesh geometry.",
+            ),
+            ReviewItem(
+                "Sampling constraint",
+                f"attachment-width floor {measurements['sampling_floor_ratio']:.3%}",
+                "Derived from sampled triangle-edge lengths to avoid proposing a surface "
+                "scale finer than the observed mesh sampling.",
+            ),
+            ReviewItem(
+                "Pilot calibration",
+                "required",
+                "Noise, registration residuals, visual correspondence, convergence, and "
+                "neighboring kernel widths still require a representative pilot.",
+            ),
+        )
+        recommendation_warnings = tuple(
+            str(warning) for warning in recommendation["warnings"]
+        )
     report_path = default_preflight_report_path(config_path)
     write_preflight_report(preflight, report_path, overwrite=report_path.exists())
 
@@ -225,6 +284,7 @@ def _reference_review(config_path: Path, config_sha256: str) -> ProjectReviewRes
             "Identifies the visible starter profile or manual mode used to derive the "
             "effective values; it is not a claim of scientific suitability.",
         ),
+        *recommendation_items,
         ReviewItem(
             "Coordinate unit",
             str(config["input"]["units"]),
@@ -350,8 +410,11 @@ def _reference_review(config_path: Path, config_sha256: str) -> ProjectReviewRes
         ),
     )
     warnings = (
-        "Geometry-scaled starter values are exploratory and are not scientifically "
-        "validated presets.",
+        *recommendation_warnings,
+        (
+            "Geometry-scaled starter values are exploratory and are not scientifically "
+            "validated presets."
+        ),
         *preflight.notices,
         "DiffeoForge did not start Deformetrica and does not forecast peak RAM or "
         "computation time here.",

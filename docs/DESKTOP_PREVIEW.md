@@ -47,35 +47,44 @@ terminal:
    then explicitly configure the GPA scaling, reflection, tolerance, and
    iteration policy, run a read-only numerical alignment preview, and approve
    its exact converged fingerprint;
-7. validate schemas, paths, mesh geometry, and the engine-specific setup
+7. for the Deformetrica route, either confirm that the selected coordinates
+   were already GPA aligned outside DiffeoForge or use the exact approved
+   DiffeoForge GPA transforms; then choose the anatomical surface-detail scale
+   and whether the biological differences of interest are local, balanced, or
+   global, and run the read-only aligned-mesh parameter analysis;
+8. inspect the measured cohort scale, centroid and size dispersion, sampled
+   mesh resolution, sampling-aware attachment lower bound, proposed effective
+   values, explicit user decisions, non-inferable provisional noise value, and
+   the recommendation fingerprint;
+9. validate schemas, paths, mesh geometry, and the engine-specific setup
    contract through the same application services used by the CLI;
-8. create a starter configuration, requiring a destructive confirmation before
+10. create a starter configuration, requiring a destructive confirmation before
    atomically replacing only a recognized DiffeoForge-generated configuration,
    and review a visible result summary;
-9. continue to a second screen that reads the effective values back from the
+11. continue to a second screen that reads the effective values back from the
    validated configuration, explains their role, and verifies any
    content-addressed Procrustes evidence and aligned-mesh hashes;
-10. optionally load the exact selected template outside the event loop and view
+12. optionally load the exact selected template outside the event loop and view
    native aspect-preserving XY, XZ, or YZ wireframe projections with source
    hash and displayed/total edge counts;
-11. for the modern route, generate and render the existing exact-count
+13. for the modern route, generate and render the existing exact-count
    `modern-plan` JSON/HTML evidence; or, for the reference route, render the
    existing preflight parameter ratios and external-engine boundary, then
    optionally diagnose the exact configured container engine and image without
    changing or starting either one, then inspect one externally hash-bound
    preparation approval and its exact destination/private-stage state through
    the shared read-only reconciliation core;
-12. for a reviewed Modern project, continue to a third screen that binds the
+14. for a reviewed Modern project, continue to a third screen that binds the
    exact reviewed configuration SHA-256, displays and refreshes the read-only
    destination/private-state evidence, checks it again immediately before
    starting the separate worker, shows real workflow stages and committed
    optimizer decisions, and offers one cooperative cancel action; and
-13. expose the result directory only after the parent controller independently
+15. expose the result directory only after the parent controller independently
     verifies the published workflow, manifest hash, subject count, and bundle;
-14. automatically continue to a fourth screen only after a fresh full
+16. automatically continue to a fourth screen only after a fresh full
     verification of the workflow, nested bundle, exact inventories, hashes,
     mesh QC, and static SVG safety checks; and
-15. inspect bounded Atlas, optimizer, momenta-PCA, and QC summaries together
+17. inspect bounded Atlas, optimizer, momenta-PCA, and QC summaries together
     with an embedded verified objective/gradient convergence plot plus verified
     PC1/PC2 and PC2/PC3 score plots, then open only
     inventoried VTK/CSV/JSON/SVG artifacts whose manifest bindings, size, and
@@ -90,12 +99,16 @@ and a completed review can be reopened without exposing duplicate primary
 actions inside result cards.
 
 The reference path creates `atlas.yaml` and `atlas.preflight.html`. Its setup
-screen provides provenance-labelled recommended, pilot, high-detail, and
-advanced profiles plus an expert panel for attachment type, deformation time
-discretization, RK2, line search, checkpoint/log cadence, step scaling,
-Sobolev gradient controls, freeze flags, CPU threads, and random seed. Values
-are rendered into the validated configuration and exact Deformetrica XML; the
-fixed float32 reference precision is not shown as editable. The modern
+screen does not expose a static “recommended” profile. Parameter values remain
+inactive until an aligned-mesh analysis is complete or the researcher selects
+advanced manual control. The data-assisted route records geometry measurements,
+researcher-selected surface detail and deformation scale, a recommendation
+fingerprint, and explicit pilot-validation requirements. The expert panel
+retains attachment type, deformation time discretization, RK2, line search,
+checkpoint/log cadence, step scaling, Sobolev gradient controls, freeze flags,
+CPU threads, and random seed. Values are rendered into the validated
+configuration and exact Deformetrica XML; the fixed float32 reference precision
+is not shown as editable. The modern
 path creates `modern-atlas.yaml` after its stronger mesh-quality,
 initialization, optional Procrustes, and PCA-dimension checks pass. Its second
 screen publishes `modern-atlas.workload/workload.json` and `workload.html`.

@@ -19,6 +19,7 @@ from diffeoforge.desktop.project_setup import (
 )
 from diffeoforge.mesh import read_vtk_polydata, sha256_file
 from diffeoforge.preprocessing import preview_landmark_alignment
+from diffeoforge.reference_recommendation import recommend_reference_parameters
 
 ROOT = Path(__file__).parents[1]
 MESH_DIRECTORY = ROOT / "examples" / "synthetic" / "meshes"
@@ -120,6 +121,44 @@ def test_reference_project_setup_persists_visible_parameter_selection(tmp_path: 
     assert "<use-rk2>On</use-rk2>" in optimization_xml
     assert "<freeze-template>On</freeze-template>" in optimization_xml
     assert "<freeze-control-points>On</freeze-control-points>" in optimization_xml
+
+
+def test_reference_project_setup_persists_data_assisted_provenance(
+    tmp_path: Path,
+) -> None:
+    cohort = (
+        MESH_DIRECTORY / "template.vtk",
+        *sorted(MESH_DIRECTORY.glob("subject-*.vtk")),
+    )
+    recommendation = recommend_reference_parameters(
+        cohort,
+        alignment_basis="declared_gpa",
+        surface_detail_intent="balanced",
+        deformation_scale_intent="local",
+    )
+
+    result = create_project(
+        ProjectSetupRequest(
+            mesh_directory=MESH_DIRECTORY,
+            project_directory=tmp_path / "data-assisted",
+            units="unitless",
+            engine=DesktopEngine.DEFORMETRICA_REFERENCE,
+            reference_parameter_profile="data_assisted",
+            reference_parameter_ratios=recommendation.parameter_ratios,
+            reference_parameter_recommendation=recommendation.provenance,
+            reference_max_iterations=recommendation.max_iterations,
+            reference_initial_step_size=recommendation.initial_step_size,
+            reference_convergence_tolerance=(
+                recommendation.convergence_tolerance
+            ),
+        )
+    )
+
+    config = yaml.safe_load(result.config_path.read_text(encoding="utf-8"))
+    provenance = config["project"]["parameter_provenance"]
+    assert provenance["profile"] == "data_assisted"
+    assert provenance["ratios"] == recommendation.parameter_ratios
+    assert provenance["recommendation"] == recommendation.provenance
 
 
 def test_project_setup_handles_spaces_and_non_ascii_paths(tmp_path: Path) -> None:
