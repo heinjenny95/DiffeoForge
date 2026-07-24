@@ -232,13 +232,13 @@ def test_every_observed_gaussian_tile_respects_explicit_bounds(
 
     vertices, triangles = _tetrahedron()
     observed = []
-    original = dense_module._gaussian_tile
+    original = dense_module._gaussian_matrix
 
     def observe(x, y, width):
         observed.append((x.shape[0], y.shape[0]))
         return original(x, y, width)
 
-    monkeypatch.setattr(dense_module, "_gaussian_tile", observe)
+    monkeypatch.setattr(dense_module, "_gaussian_matrix", observe)
     value = varifold_squared_distance_blockwise(
         vertices,
         triangles,
@@ -273,7 +273,7 @@ def test_tile_plan_has_exact_float64_payload_and_rejects_invalid_bounds() -> Non
         GaussianTilePlan(3, 2, "automatic")
 
 
-def test_recompute_avoids_saving_pairwise_rank_three_convolution_tensors() -> None:
+def test_recompute_avoids_saving_pairwise_convolution_matrices() -> None:
     generator = torch.Generator().manual_seed(20260716)
     inputs = (
         torch.randn((64, 3), dtype=DTYPE, generator=generator),
@@ -308,11 +308,9 @@ def test_recompute_avoids_saving_pairwise_rank_three_convolution_tensors() -> No
     torch.testing.assert_close(recomputed, standard, rtol=0, atol=0)
     for actual, expected in zip(recomputed_gradients, standard_gradients, strict=True):
         torch.testing.assert_close(actual, expected, rtol=0, atol=0)
-    assert any(rank == 3 for _, rank in standard_saved)
-    assert all(rank <= 2 for _, rank in recomputed_saved)
-    assert sum(size for size, _ in recomputed_saved) < sum(
-        size for size, _ in standard_saved
-    )
+    assert any(size == 16 * 16 * 8 and rank == 2 for size, rank in standard_saved)
+    assert all(size != 16 * 16 * 8 for size, _ in recomputed_saved)
+    assert sum(size for size, _ in recomputed_saved) < sum(size for size, _ in standard_saved)
 
 
 def test_recompute_strategy_is_strict_and_opt_in() -> None:

@@ -39,6 +39,7 @@ analysis = [
   "numpy>=2,<3",
 ]
 desktop = [
+  "numpy>=2,<3",
   "PySide6-Essentials>=6.8,<7",
 ]
 dev = [

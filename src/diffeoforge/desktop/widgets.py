@@ -9,13 +9,16 @@ from pathlib import Path
 
 from PySide6.QtCore import QObject, QRunnable, Qt, QThreadPool, QUrl, Signal, Slot
 from PySide6.QtGui import QCloseEvent, QDesktopServices
-from PySide6.QtSvgWidgets import QSvgWidget
 from PySide6.QtWidgets import (
+    QCheckBox,
     QComboBox,
+    QDialog,
+    QDoubleSpinBox,
     QFileDialog,
     QFormLayout,
     QFrame,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
     QLineEdit,
     QMainWindow,
@@ -24,11 +27,24 @@ from PySide6.QtWidgets import (
     QProgressBar,
     QPushButton,
     QScrollArea,
+    QSpinBox,
     QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
 
+from diffeoforge.desktop.aspect_svg_widget import AspectRatioSvgWidget
+from diffeoforge.desktop.completed_results import (
+    CompletedResultDiscoveryError,
+    CompletedResultRun,
+    discover_completed_results,
+)
+from diffeoforge.desktop.gpa_review_dialog import GpaAlignmentReviewDialog
+from diffeoforge.desktop.gpa_visualization import (
+    GpaAlignmentVisual,
+    build_gpa_alignment_visual,
+)
+from diffeoforge.desktop.landmark_editor import LandmarkEditorDialog
 from diffeoforge.desktop.mesh_preview import (
     DEFAULT_EDGE_BUDGET,
     MeshPreviewError,
@@ -36,12 +52,26 @@ from diffeoforge.desktop.mesh_preview import (
     load_mesh_preview,
 )
 from diffeoforge.desktop.mesh_preview_widget import MeshPreviewCanvas
+from diffeoforge.desktop.parameter_guidance import (
+    DEFORMETRICA_PARAMETER_GUIDANCE,
+    ParameterGuidance,
+)
 from diffeoforge.desktop.project_review import ProjectReviewResult, review_project
 from diffeoforge.desktop.project_setup import (
     DesktopEngine,
     ProjectSetupRequest,
     ProjectSetupResult,
     create_project,
+)
+from diffeoforge.desktop.reference_execution_controller import (
+    ReferenceExecutionController,
+    ReferenceExecutionControllerError,
+    ReferenceExecutionControllerResult,
+)
+from diffeoforge.desktop.reference_prelaunch import (
+    DesktopReferenceLaunchRequest,
+    DesktopReferencePrelaunchError,
+    build_reference_launch_request,
 )
 from diffeoforge.desktop.reference_preparation_status import (
     DesktopReferencePreparationStatus,
@@ -62,6 +92,8 @@ from diffeoforge.desktop.reference_readiness import (
     DesktopReferenceReadinessError,
     check_reference_environment,
 )
+from diffeoforge.desktop.reference_result_review import review_reference_result
+from diffeoforge.desktop.reference_worker_protocol import DesktopReferenceWorkerEvent
 from diffeoforge.desktop.result_review import (
     ModernResultReview,
     ModernResultReviewError,
@@ -80,6 +112,27 @@ from diffeoforge.desktop.worker_controller import (
 )
 from diffeoforge.desktop.worker_protocol import DesktopWorkerEvent
 from diffeoforge.initialization import SUPPORTED_UNITS, detect_template
+from diffeoforge.preprocessing import (
+    LandmarkAlignmentPreview,
+    preview_landmark_alignment,
+)
+from diffeoforge.reference_parameters import reference_parameter_profile
+from diffeoforge.reference_recommendation import (
+    ReferenceParameterRecommendation,
+    recommend_reference_parameters,
+)
+from diffeoforge.reference_runtime import launcher_label
+from diffeoforge.surface_io import (
+    SUPPORTED_SURFACE_EXTENSIONS,
+    is_supported_surface_path,
+)
+
+_SURFACE_FILE_FILTER = (
+    "Supported surface meshes (*.vtk *.ply *.obj *.stl);;"
+    "Legacy VTK PolyData (*.vtk);;PLY meshes (*.ply);;"
+    "Wavefront OBJ meshes (*.obj);;STL meshes (*.stl)"
+)
+_DEFAULT_SURFACE_PATTERNS = {f"*{extension}" for extension in SUPPORTED_SURFACE_EXTENSIONS}
 
 _STYLE = """
 QMainWindow { background: #f4f7f8; }
@@ -114,15 +167,36 @@ QLineEdit, QComboBox { background: #ffffff; border: 1px solid #bdcbce; border-ra
 QLineEdit:focus, QComboBox:focus { border: 2px solid #268f7a; }
 QPushButton { border-radius: 6px; min-height: 34px; padding: 2px 13px; font-weight: 600; }
 QPushButton#secondary { background: #eef3f4; border: 1px solid #c8d5d7; color: #24474b; }
+QPushButton#parameterHelpButton {
+    background: transparent; border: 0; color: #167c6b; min-height: 24px;
+    padding: 2px 1px; text-align: left; font-size: 12px; font-weight: 650;
+}
+QPushButton#parameterHelpButton:hover { color: #0f5f52; text-decoration: underline; }
+QFrame#parameterHelpPanel {
+    background: #f2f8f6; border: 1px solid #cee3dd; border-radius: 7px;
+}
+QLabel#parameterHelpText { color: #405d61; font-size: 12px; }
 QPushButton#primary { background: #167c6b; border: 1px solid #167c6b; color: #ffffff;
                       min-height: 42px; padding: 2px 20px; }
 QPushButton#primary:hover { background: #116858; }
 QPushButton#primary:disabled { background: #a9bdb9; border-color: #a9bdb9; }
 QPushButton#danger { background: #fff0ed; border: 1px solid #d98a7d; color: #8d3025; }
-QLabel#status { background: #f2f5f6; border-radius: 7px; color: #526b70; padding: 10px; }
-QLabel#statusSuccess { background: #e5f5ed; border-radius: 7px; color: #176345; padding: 10px; }
-QLabel#statusWarning { background: #fff7df; border-radius: 7px; color: #765500; padding: 10px; }
-QLabel#statusError { background: #fff0ed; border-radius: 7px; color: #a13a2d; padding: 10px; }
+QLabel#status, QPlainTextEdit#status {
+    background: #f2f5f6; border-radius: 7px; color: #526b70; padding: 10px;
+}
+QLabel#statusSuccess, QPlainTextEdit#statusSuccess {
+    background: #e5f5ed; border-radius: 7px; color: #176345; padding: 10px;
+}
+QLabel#statusWarning, QPlainTextEdit#statusWarning {
+    background: #fff7df; border-radius: 7px; color: #765500; padding: 10px;
+}
+QLabel#statusError, QPlainTextEdit#statusError {
+    background: #fff0ed; border-radius: 7px; color: #a13a2d; padding: 10px;
+}
+QPlainTextEdit#status, QPlainTextEdit#statusSuccess,
+QPlainTextEdit#statusWarning, QPlainTextEdit#statusError {
+    border: 0; font-family: "Segoe UI"; font-size: 13px;
+}
 QLabel#reviewValue { color: #123b3a; font-weight: 700; }
 QLabel#reviewDetail { color: #526b70; font-size: 12px; }
 QProgressBar { border: 1px solid #bdcbce; border-radius: 6px; text-align: center;
@@ -140,6 +214,78 @@ _PRIVATE_STATUS_EXPLANATIONS = {
     "indeterminate": "Permissions or file-system behavior prevent a safe decision.",
     "unsafe_link": "The matching path is a link and was not followed.",
 }
+
+
+class _ReadOnlyStatusText(QPlainTextEdit):
+    """Scrollable status report with the QLabel-compatible API used by the window."""
+
+    def __init__(self, text: str) -> None:
+        super().__init__(text)
+        self.setReadOnly(True)
+        self.setLineWrapMode(QPlainTextEdit.LineWrapMode.WidgetWidth)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.setMinimumHeight(150)
+        self.setMaximumHeight(190)
+        self.setAccessibleName("Alignment preview report")
+        self.setToolTip(
+            "Read-only GPA diagnostics. Scroll to review the complete report; "
+            "the text can also be selected and copied."
+        )
+
+    def setText(self, text: str) -> None:
+        self.setPlainText(text)
+        self.verticalScrollBar().setValue(0)
+
+    def text(self) -> str:
+        return self.toPlainText()
+
+
+class _ExpandableParameterHelp(QWidget):
+    """Accessible disclosure containing guidance for one parameter."""
+
+    def __init__(
+        self,
+        parameter_name: str,
+        guidance: ParameterGuidance,
+        parent: QWidget | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self.parameter_name = parameter_name
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(4)
+
+        self.toggle_button = QPushButton("+ Parameter guide")
+        self.toggle_button.setObjectName("parameterHelpButton")
+        self.toggle_button.setCheckable(True)
+        self.toggle_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.toggle_button.setAccessibleName(f"Explain {parameter_name}")
+        self.toggle_button.setAccessibleDescription(guidance.summary)
+        self.toggle_button.toggled.connect(self._set_expanded)
+        layout.addWidget(self.toggle_button)
+
+        self.panel = QFrame()
+        self.panel.setObjectName("parameterHelpPanel")
+        panel_layout = QVBoxLayout(self.panel)
+        panel_layout.setContentsMargins(10, 7, 10, 7)
+        self.text_label = QLabel(guidance.to_html())
+        self.text_label.setObjectName("parameterHelpText")
+        self.text_label.setTextFormat(Qt.TextFormat.RichText)
+        self.text_label.setWordWrap(True)
+        self.text_label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+            | Qt.TextInteractionFlag.TextSelectableByKeyboard
+        )
+        self.text_label.setAccessibleName(f"{parameter_name} parameter guidance")
+        panel_layout.addWidget(self.text_label)
+        self.panel.hide()
+        layout.addWidget(self.panel)
+
+    @Slot(bool)
+    def _set_expanded(self, expanded: bool) -> None:
+        self.panel.setVisible(expanded)
+        self.toggle_button.setText("- Hide parameter guide" if expanded else "+ Parameter guide")
 
 
 class _WorkerSignals(QObject):
@@ -195,6 +341,108 @@ class _TemplatePreviewWorker(QRunnable):
             self.signals.failed.emit(str(error))
             return
         self.signals.succeeded.emit(model)
+
+
+class _ProcrustesPreviewWorker(QRunnable):
+    """Compute one immutable landmark-alignment preview outside the GUI thread."""
+
+    def __init__(
+        self,
+        *,
+        mesh_directory: Path,
+        landmarks_file: Path,
+        template: Path | None,
+        subject_pattern: str,
+        scale_to_unit_centroid_size: bool,
+        allow_reflection: bool,
+        tolerance: float,
+        max_iterations: int,
+    ) -> None:
+        super().__init__()
+        self.mesh_directory = mesh_directory
+        self.landmarks_file = landmarks_file
+        self.template = template
+        self.subject_pattern = subject_pattern
+        self.scale_to_unit_centroid_size = scale_to_unit_centroid_size
+        self.allow_reflection = allow_reflection
+        self.tolerance = tolerance
+        self.max_iterations = max_iterations
+        self.signals = _WorkerSignals()
+
+    @Slot()
+    def run(self) -> None:
+        try:
+            preview = preview_landmark_alignment(
+                self.mesh_directory,
+                landmarks_file=self.landmarks_file,
+                template=self.template,
+                subject_pattern=self.subject_pattern,
+                scale_to_unit_centroid_size=self.scale_to_unit_centroid_size,
+                allow_reflection=self.allow_reflection,
+                tolerance=self.tolerance,
+                max_iterations=self.max_iterations,
+            )
+        except (OSError, RuntimeError, TypeError, ValueError) as error:
+            self.signals.failed.emit(str(error))
+            return
+        self.signals.succeeded.emit(preview)
+
+
+class _ProcrustesVisualWorker(QRunnable):
+    """Build one memory-bounded, hash-bound visual GPA cohort."""
+
+    def __init__(self, preview: LandmarkAlignmentPreview) -> None:
+        super().__init__()
+        self.preview = preview
+        self.signals = _WorkerSignals()
+
+    @Slot()
+    def run(self) -> None:
+        try:
+            visual = build_gpa_alignment_visual(self.preview)
+        except (MeshPreviewError, OSError, RuntimeError, TypeError, ValueError) as error:
+            self.signals.failed.emit(str(error))
+            return
+        self.signals.succeeded.emit(visual)
+
+
+class _ReferenceParameterWorker(QRunnable):
+    """Analyze one aligned cohort without blocking the Qt event loop."""
+
+    def __init__(
+        self,
+        *,
+        mesh_paths: tuple[Path, ...],
+        alignment_basis: str,
+        surface_detail_intent: str,
+        deformation_scale_intent: str,
+        transforms: tuple[object, ...] | None,
+        alignment_fingerprint: str | None,
+    ) -> None:
+        super().__init__()
+        self.mesh_paths = mesh_paths
+        self.alignment_basis = alignment_basis
+        self.surface_detail_intent = surface_detail_intent
+        self.deformation_scale_intent = deformation_scale_intent
+        self.transforms = transforms
+        self.alignment_fingerprint = alignment_fingerprint
+        self.signals = _WorkerSignals()
+
+    @Slot()
+    def run(self) -> None:
+        try:
+            recommendation = recommend_reference_parameters(
+                self.mesh_paths,
+                alignment_basis=self.alignment_basis,
+                surface_detail_intent=self.surface_detail_intent,
+                deformation_scale_intent=self.deformation_scale_intent,
+                transforms=self.transforms,
+                alignment_fingerprint=self.alignment_fingerprint,
+            )
+        except (OSError, RuntimeError, TypeError, ValueError) as error:
+            self.signals.failed.emit(str(error))
+            return
+        self.signals.succeeded.emit(recommendation)
 
 
 class _ReferenceReadinessWorker(QRunnable):
@@ -285,17 +533,22 @@ class _SavedReferencePreparationStatusVerificationWorker(QRunnable):
 
 
 class _ResultReviewWorker(QRunnable):
-    """Fully verify one completed Modern workflow outside the GUI thread."""
+    """Fully verify one completed atlas/PCA workflow outside the GUI thread."""
 
-    def __init__(self, directory: Path) -> None:
+    def __init__(self, directory: Path, *, reference: bool = False) -> None:
         super().__init__()
         self.directory = directory
+        self.reference = reference
         self.signals = _WorkerSignals()
 
     @Slot()
     def run(self) -> None:
         try:
-            review = review_modern_result(self.directory)
+            review = (
+                review_reference_result(self.directory)
+                if self.reference
+                else review_modern_result(self.directory)
+            )
         except (ModernResultReviewError, OSError, RuntimeError, TypeError, ValueError) as error:
             self.signals.failed.emit(str(error))
             return
@@ -377,6 +630,55 @@ class _AtlasWorker(QRunnable):
                 self._finished = True
 
 
+class _ReferenceAtlasWorker(QRunnable):
+    """Bridge the contained Deformetrica controller into the Qt event loop."""
+
+    def __init__(self, controller: ReferenceExecutionController) -> None:
+        super().__init__()
+        self.controller = controller
+        self.signals = _AtlasWorkerSignals()
+        self._lock = threading.Lock()
+        self._cancel_requested = False
+        self._finished = False
+
+    def request_cancel(self) -> bool:
+        with self._lock:
+            if self._finished or self._cancel_requested:
+                return False
+            self._cancel_requested = True
+            idle = self.controller.state == "idle"
+        if idle:
+            return True
+        try:
+            self.controller.request_cancel()
+        except ReferenceExecutionControllerError as error:
+            self.signals.cancel_failed.emit(str(error))
+        return True
+
+    def _forward_event(self, event: DesktopReferenceWorkerEvent) -> None:
+        with self._lock:
+            cancel_requested = self._cancel_requested
+        if cancel_requested:
+            self.controller.request_cancel()
+        self.signals.event.emit(event)
+
+    @Slot()
+    def run(self) -> None:
+        try:
+            result = self.controller.run(event_callback=self._forward_event)
+        except ReferenceExecutionControllerError as error:
+            message = str(error)
+            stderr = getattr(error, "stderr", "").strip()
+            if stderr:
+                message = f"{message}\n\nWorker stderr:\n{stderr}"
+            self.signals.failed.emit(message)
+        else:
+            self.signals.succeeded.emit(result)
+        finally:
+            with self._lock:
+                self._finished = True
+
+
 def _path_row(edit: QLineEdit, button: QPushButton) -> QWidget:
     row = QWidget()
     layout = QHBoxLayout(row)
@@ -402,28 +704,44 @@ class DiffeoForgeWindow(QMainWindow):
             _ProjectWorker
             | _ReviewWorker
             | _TemplatePreviewWorker
+            | _ProcrustesPreviewWorker
+            | _ProcrustesVisualWorker
+            | _ReferenceParameterWorker
             | _ReferenceReadinessWorker
             | _ReferencePreparationStatusWorker
             | _SavedReferencePreparationStatusVerificationWorker
             | _ResultReviewWorker
             | _ArtifactWorker
             | _AtlasWorker
+            | _ReferenceAtlasWorker
             | None
         ) = None
         self._result: ProjectSetupResult | None = None
         self._review: ProjectReviewResult | None = None
         self._template_preview: MeshPreviewModel | None = None
+        self._procrustes_preview: LandmarkAlignmentPreview | None = None
+        self._procrustes_visual: GpaAlignmentVisual | None = None
+        self._procrustes_visual_reviewed_fingerprint: str | None = None
+        self._reference_recommendation: ReferenceParameterRecommendation | None = None
+        self._reference_recommendation_paths: tuple[Path, ...] | None = None
         self._reference_readiness: DesktopReferenceReadiness | None = None
         self._reference_preparation_status: DesktopReferencePreparationStatus | None = None
         self._saved_reference_preparation_status_verification: (
             DesktopSavedReferencePreparationStatusVerification | None
         ) = None
         self._run_readiness: DesktopReviewedRunReadiness | None = None
-        self._run_result: DesktopWorkerControllerResult | None = None
+        self._reference_run_request: DesktopReferenceLaunchRequest | None = None
+        self._run_result: (
+            DesktopWorkerControllerResult | ReferenceExecutionControllerResult | None
+        ) = None
         self._result_review: ModernResultReview | None = None
         self._close_after_worker = False
         self._active_step = 0
+        self.reference_parameter_help_panels: dict[str, _ExpandableParameterHelp] = {}
+        self._reference_parameter_field_pairs: list[tuple[QWidget, QWidget]] = []
         self._build_ui()
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.setFocus(Qt.FocusReason.OtherFocusReason)
         self._update_engine_explanation()
         self._sync_ready_state()
 
@@ -482,9 +800,7 @@ class DiffeoForgeWindow(QMainWindow):
             button.setProperty("stepLabel", step_label)
             button.setAccessibleName(f"Go to step {index + 1}: {step_label}")
             button.setCursor(Qt.CursorShape.PointingHandCursor)
-            button.clicked.connect(
-                lambda _checked=False, step=index: self._navigate_to_step(step)
-            )
+            button.clicked.connect(lambda _checked=False, step=index: self._navigate_to_step(step))
             layout.addWidget(button)
             self.rail_steps.append(button)
         layout.addStretch()
@@ -530,6 +846,22 @@ class DiffeoForgeWindow(QMainWindow):
         boundary_text.setWordWrap(True)
         boundary_layout.addWidget(boundary_text)
         layout.addWidget(boundary)
+        resume_row = QWidget()
+        resume_layout = QHBoxLayout(resume_row)
+        resume_layout.setContentsMargins(0, 0, 0, 0)
+        resume_layout.setSpacing(10)
+        resume_label = QLabel("Returning to an existing analysis?")
+        resume_label.setObjectName("hint")
+        self.open_completed_run_button = QPushButton("Open completed run…")
+        self.open_completed_run_button.setObjectName("secondary")
+        self.open_completed_run_button.setToolTip(
+            "Select a completed run folder or its DiffeoForge project folder."
+        )
+        self.open_completed_run_button.clicked.connect(self._select_completed_run)
+        resume_layout.addWidget(resume_label)
+        resume_layout.addWidget(self.open_completed_run_button)
+        resume_layout.addStretch()
+        layout.addWidget(resume_row)
         layout.addWidget(self._build_form_card())
 
         self.result_card = self._build_result_card()
@@ -581,9 +913,7 @@ class DiffeoForgeWindow(QMainWindow):
         form.setVerticalSpacing(10)
         form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
         self.saved_reference_status_report_edit = QLineEdit()
-        self.saved_reference_status_report_edit.setObjectName(
-            "savedReferenceStatusReportEdit"
-        )
+        self.saved_reference_status_report_edit.setObjectName("savedReferenceStatusReportEdit")
         self.saved_reference_status_report_edit.setPlaceholderText(
             "Previously exported preparation-status JSON report"
         )
@@ -598,9 +928,7 @@ class DiffeoForgeWindow(QMainWindow):
             _path_row(self.saved_reference_status_report_edit, choose),
         )
         self.saved_reference_status_hash_edit = QLineEdit()
-        self.saved_reference_status_hash_edit.setObjectName(
-            "savedReferenceStatusHashEdit"
-        )
+        self.saved_reference_status_hash_edit.setObjectName("savedReferenceStatusHashEdit")
         self.saved_reference_status_hash_edit.setPlaceholderText(
             "Independently recorded SHA-256 of the complete report file"
         )
@@ -613,16 +941,12 @@ class DiffeoForgeWindow(QMainWindow):
             "This check reads only the selected report file. It opens no project, YAML, "
             "approval, run, container, or engine state and changes nothing."
         )
-        self.saved_reference_status_verification_detail_label.setObjectName(
-            "reviewDetail"
-        )
+        self.saved_reference_status_verification_detail_label.setObjectName("reviewDetail")
         self.saved_reference_status_verification_detail_label.setWordWrap(True)
         self.saved_reference_status_verification_detail_label.setTextInteractionFlags(
             Qt.TextInteractionFlag.TextSelectableByMouse
         )
-        self.verify_saved_reference_status_button = QPushButton(
-            "Verify saved report read-only"
-        )
+        self.verify_saved_reference_status_button = QPushButton("Verify saved report read-only")
         self.verify_saved_reference_status_button.setObjectName("secondary")
         self.verify_saved_reference_status_button.clicked.connect(
             self._verify_saved_reference_status
@@ -639,9 +963,7 @@ class DiffeoForgeWindow(QMainWindow):
         self.export_saved_reference_status_verification_button = QPushButton(
             "Export verified evidence as a new JSON file"
         )
-        self.export_saved_reference_status_verification_button.setObjectName(
-            "secondary"
-        )
+        self.export_saved_reference_status_verification_button.setObjectName("secondary")
         self.export_saved_reference_status_verification_button.clicked.connect(
             self._export_saved_reference_status_verification
         )
@@ -743,13 +1065,9 @@ class DiffeoForgeWindow(QMainWindow):
         self.template_preview_detail_label.setTextInteractionFlags(
             Qt.TextInteractionFlag.TextSelectableByMouse
         )
-        self.refresh_template_preview_button = QPushButton(
-            "Load template read-only"
-        )
+        self.refresh_template_preview_button = QPushButton("Load template read-only")
         self.refresh_template_preview_button.setObjectName("secondary")
-        self.refresh_template_preview_button.clicked.connect(
-            self._load_template_preview
-        )
+        self.refresh_template_preview_button.clicked.connect(self._load_template_preview)
         preview_controls = QHBoxLayout()
         preview_controls.addWidget(QLabel("Projection"))
         preview_controls.addWidget(self.template_preview_plane_combo)
@@ -773,29 +1091,25 @@ class DiffeoForgeWindow(QMainWindow):
         reference_readiness_layout = QVBoxLayout(reference_readiness)
         reference_readiness_layout.setContentsMargins(24, 22, 24, 24)
         reference_readiness_layout.setSpacing(10)
-        reference_readiness_title = QLabel("External Deformetrica reference environment")
+        reference_readiness_title = QLabel("Deformetrica installation & system check")
         reference_readiness_title.setObjectName("sectionTitle")
         self.reference_readiness_status_label = QLabel(
-            "The configured container environment has not been checked."
+            "The automatic Deformetrica setup check has not started."
         )
         self.reference_readiness_status_label.setObjectName("status")
         self.reference_readiness_status_label.setWordWrap(True)
         self.reference_readiness_detail_label = QLabel(
-            "This diagnostic is read-only. It installs, builds, starts, prepares, and "
-            "repairs nothing."
+            "DiffeoForge verifies the installed engine, available memory, and project folder "
+            "automatically. This is a safety check, not an estimated computation time."
         )
         self.reference_readiness_detail_label.setObjectName("reviewDetail")
         self.reference_readiness_detail_label.setWordWrap(True)
         self.reference_readiness_detail_label.setTextInteractionFlags(
             Qt.TextInteractionFlag.TextSelectableByMouse
         )
-        self.refresh_reference_readiness_button = QPushButton(
-            "Check reference environment read-only"
-        )
+        self.refresh_reference_readiness_button = QPushButton("Check setup again")
         self.refresh_reference_readiness_button.setObjectName("secondary")
-        self.refresh_reference_readiness_button.clicked.connect(
-            self._check_reference_readiness
-        )
+        self.refresh_reference_readiness_button.clicked.connect(self._check_reference_readiness)
         reference_readiness_layout.addWidget(reference_readiness_title)
         reference_readiness_layout.addWidget(self.reference_readiness_status_label)
         reference_readiness_layout.addWidget(self.reference_readiness_detail_label)
@@ -810,14 +1124,10 @@ class DiffeoForgeWindow(QMainWindow):
 
         reference_preparation_status = QFrame()
         reference_preparation_status.setObjectName("card")
-        reference_preparation_status_layout = QVBoxLayout(
-            reference_preparation_status
-        )
+        reference_preparation_status_layout = QVBoxLayout(reference_preparation_status)
         reference_preparation_status_layout.setContentsMargins(24, 22, 24, 24)
         reference_preparation_status_layout.setSpacing(10)
-        reference_preparation_status_title = QLabel(
-            "Approval-bound preparation status"
-        )
+        reference_preparation_status_title = QLabel("Approval-bound preparation status")
         reference_preparation_status_title.setObjectName("sectionTitle")
         self.reference_preparation_status_label = QLabel(
             "No approval file has been checked read-only."
@@ -829,9 +1139,7 @@ class DiffeoForgeWindow(QMainWindow):
         preparation_form.setVerticalSpacing(10)
         preparation_form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
         self.reference_preparation_approval_edit = QLineEdit()
-        self.reference_preparation_approval_edit.setObjectName(
-            "referencePreparationApprovalEdit"
-        )
+        self.reference_preparation_approval_edit.setObjectName("referencePreparationApprovalEdit")
         self.reference_preparation_approval_edit.setPlaceholderText(
             "Previously verified preparation-only approval file"
         )
@@ -851,9 +1159,7 @@ class DiffeoForgeWindow(QMainWindow):
             ),
         )
         self.reference_preparation_hash_edit = QLineEdit()
-        self.reference_preparation_hash_edit.setObjectName(
-            "referencePreparationHashEdit"
-        )
+        self.reference_preparation_hash_edit.setObjectName("referencePreparationHashEdit")
         self.reference_preparation_hash_edit.setPlaceholderText(
             "Independently recorded SHA-256 of the complete approval file"
         )
@@ -896,24 +1202,16 @@ class DiffeoForgeWindow(QMainWindow):
         self.export_reference_preparation_status_button.clicked.connect(
             self._export_reference_preparation_status
         )
-        reference_preparation_status_layout.addWidget(
-            reference_preparation_status_title
-        )
-        reference_preparation_status_layout.addWidget(
-            self.reference_preparation_status_label
-        )
+        reference_preparation_status_layout.addWidget(reference_preparation_status_title)
+        reference_preparation_status_layout.addWidget(self.reference_preparation_status_label)
         reference_preparation_status_layout.addLayout(preparation_form)
-        reference_preparation_status_layout.addWidget(
-            self.reference_preparation_detail_label
-        )
+        reference_preparation_status_layout.addWidget(self.reference_preparation_detail_label)
         reference_preparation_status_layout.addWidget(
             self.refresh_reference_preparation_status_button,
             0,
             Qt.AlignmentFlag.AlignLeft,
         )
-        reference_preparation_status_layout.addWidget(
-            self.reference_preparation_export_label
-        )
+        reference_preparation_status_layout.addWidget(self.reference_preparation_export_label)
         reference_preparation_status_layout.addWidget(
             self.export_reference_preparation_status_button,
             0,
@@ -981,31 +1279,44 @@ class DiffeoForgeWindow(QMainWindow):
 
         eyebrow = QLabel("STEP 3 OF 4")
         eyebrow.setObjectName("eyebrow")
-        title = QLabel("Compute Modern atlas")
-        title.setObjectName("title")
-        subtitle = QLabel(
+        self.run_title_label = QLabel("Compute atlas")
+        self.run_title_label.setObjectName("title")
+        self.run_subtitle_label = QLabel(
             "Run the exact reviewed configuration in a separate process and observe real "
             "workflow events."
         )
-        subtitle.setObjectName("subtitle")
-        subtitle.setWordWrap(True)
+        self.run_subtitle_label.setObjectName("subtitle")
+        self.run_subtitle_label.setWordWrap(True)
         layout.addWidget(eyebrow)
-        layout.addWidget(title)
-        layout.addWidget(subtitle)
+        layout.addWidget(self.run_title_label)
+        layout.addWidget(self.run_subtitle_label)
 
         boundary = QFrame()
         boundary.setObjectName("boundary")
         boundary_layout = QHBoxLayout(boundary)
         boundary_layout.setContentsMargins(13, 9, 13, 9)
-        boundary_text = QLabel(
+        self.run_boundary_label = QLabel(
             "Experimental Modern CPU route. Runtime, peak RAM, and percentage progress are "
             "not estimated. Cancellation acts only at designated safe points and runs are "
             "not currently resumable."
         )
-        boundary_text.setObjectName("boundaryText")
-        boundary_text.setWordWrap(True)
-        boundary_layout.addWidget(boundary_text)
+        self.run_boundary_label.setObjectName("boundaryText")
+        self.run_boundary_label.setWordWrap(True)
+        boundary_layout.addWidget(self.run_boundary_label)
         layout.addWidget(boundary)
+
+        self.run_technical_toggle = QPushButton("+ Technical details")
+        self.run_technical_toggle.setObjectName("secondary")
+        self.run_technical_toggle.setCheckable(True)
+        self.run_technical_toggle.setAccessibleDescription(
+            "Show configuration hashes, destination binding, and runtime installation details."
+        )
+        self.run_technical_toggle.toggled.connect(self._set_run_technical_details_expanded)
+        layout.addWidget(self.run_technical_toggle, 0, Qt.AlignmentFlag.AlignLeft)
+        self.run_technical_details = QWidget()
+        run_technical_layout = QVBoxLayout(self.run_technical_details)
+        run_technical_layout.setContentsMargins(0, 0, 0, 0)
+        run_technical_layout.setSpacing(15)
 
         summary = QFrame()
         summary.setObjectName("card")
@@ -1018,7 +1329,7 @@ class DiffeoForgeWindow(QMainWindow):
         self.run_summary_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         summary_layout.addWidget(summary_title)
         summary_layout.addWidget(self.run_summary_label)
-        layout.addWidget(summary)
+        run_technical_layout.addWidget(summary)
 
         readiness = QFrame()
         readiness.setObjectName("card")
@@ -1045,7 +1356,9 @@ class DiffeoForgeWindow(QMainWindow):
         readiness_layout.addWidget(self.run_readiness_status_label)
         readiness_layout.addWidget(self.run_readiness_detail_label)
         readiness_layout.addWidget(self.refresh_run_readiness_button, 0, Qt.AlignmentFlag.AlignLeft)
-        layout.addWidget(readiness)
+        run_technical_layout.addWidget(readiness)
+        self.run_technical_details.hide()
+        layout.addWidget(self.run_technical_details)
 
         progress = QFrame()
         progress.setObjectName("card")
@@ -1160,9 +1473,7 @@ class DiffeoForgeWindow(QMainWindow):
         boundary.setObjectName("boundary")
         boundary_layout = QHBoxLayout(boundary)
         boundary_layout.setContentsMargins(13, 9, 13, 9)
-        self.result_boundary_label = QLabel(
-            "Technical verification is not scientific validation."
-        )
+        self.result_boundary_label = QLabel("Technical verification is not scientific validation.")
         self.result_boundary_label.setObjectName("boundaryText")
         self.result_boundary_label.setWordWrap(True)
         self.result_boundary_label.setTextInteractionFlags(
@@ -1210,13 +1521,13 @@ class DiffeoForgeWindow(QMainWindow):
         convergence_plot_layout.setSpacing(14)
         convergence_plot_title = QLabel("Optimizer convergence")
         convergence_plot_title.setObjectName("sectionTitle")
-        convergence_plot_hint = QLabel(
+        self.result_optimizer_convergence_hint = QLabel(
             "The upper panel shows committed objective components; the lower panel shows "
             "block-gradient norms against the configured tolerance. A completed curve is "
             "not automatically a converged curve."
         )
-        convergence_plot_hint.setObjectName("hint")
-        convergence_plot_hint.setWordWrap(True)
+        self.result_optimizer_convergence_hint.setObjectName("hint")
+        self.result_optimizer_convergence_hint.setWordWrap(True)
         (
             convergence_panel,
             self.result_optimizer_convergence_plot,
@@ -1227,7 +1538,7 @@ class DiffeoForgeWindow(QMainWindow):
             "Awaiting a verified optimizer-convergence plot.",
         )
         convergence_plot_layout.addWidget(convergence_plot_title)
-        convergence_plot_layout.addWidget(convergence_plot_hint)
+        convergence_plot_layout.addWidget(self.result_optimizer_convergence_hint)
         convergence_plot_layout.addWidget(convergence_panel)
         layout.addWidget(convergence_plot_card)
         layout.addWidget(pca_card)
@@ -1237,14 +1548,21 @@ class DiffeoForgeWindow(QMainWindow):
         pca_plots_layout = QVBoxLayout(pca_plots)
         pca_plots_layout.setContentsMargins(24, 22, 24, 24)
         pca_plots_layout.setSpacing(14)
-        pca_plots_title = QLabel("PCA score plots")
+        pca_plots_title = QLabel("PCA plots")
         pca_plots_title.setObjectName("sectionTitle")
         pca_plots_hint = QLabel(
-            "Both views are loaded directly from independently verified, script-free SVG "
+            "All views are loaded directly from independently verified, script-free SVG "
             "artifacts. Axis labels report explained variance; PCA signs remain conventional."
         )
         pca_plots_hint.setObjectName("hint")
         pca_plots_hint.setWordWrap(True)
+        (
+            scree_panel,
+            self.result_pca_scree_plot,
+            self.result_pca_scree_plot_status,
+        ) = self._build_result_plot_panel(
+            "Explained variance", "resultPcaScreePlot", "Awaiting a verified scree plot."
+        )
         (
             pc1_pc2_panel,
             self.result_pc1_pc2_plot,
@@ -1261,6 +1579,7 @@ class DiffeoForgeWindow(QMainWindow):
         )
         pca_plots_layout.addWidget(pca_plots_title)
         pca_plots_layout.addWidget(pca_plots_hint)
+        pca_plots_layout.addWidget(scree_panel)
         pca_plots_layout.addWidget(pc1_pc2_panel)
         pca_plots_layout.addWidget(pc2_pc3_panel)
         layout.addWidget(pca_plots)
@@ -1335,7 +1654,7 @@ class DiffeoForgeWindow(QMainWindow):
         title: str,
         object_name: str,
         pending_text: str,
-    ) -> tuple[QWidget, QSvgWidget, QLabel]:
+    ) -> tuple[QWidget, AspectRatioSvgWidget, QLabel]:
         panel = QFrame()
         panel.setObjectName("resultPlotPanel")
         layout = QVBoxLayout(panel)
@@ -1346,13 +1665,15 @@ class DiffeoForgeWindow(QMainWindow):
         status = QLabel(pending_text)
         status.setObjectName("status")
         status.setWordWrap(True)
-        plot = QSvgWidget()
+        plot = AspectRatioSvgWidget()
         plot.setObjectName(object_name)
-        plot.setMinimumHeight(360)
+        plot.setMinimumHeight(440)
+        plot.setMaximumHeight(900)
+        plot.setMaximumWidth(1320)
         plot.hide()
         layout.addWidget(heading)
         layout.addWidget(status)
-        layout.addWidget(plot)
+        layout.addWidget(plot, 0, Qt.AlignmentFlag.AlignHCenter)
         return panel, plot, status
 
     def _build_review_card(self, title: str, object_name: str) -> QWidget:
@@ -1392,11 +1713,10 @@ class DiffeoForgeWindow(QMainWindow):
 
         self.engine_combo = QComboBox()
         self.engine_combo.setObjectName("engineCombo")
+        self.engine_combo.addItem("DiffeoForge Modern CPU (experimental)", DesktopEngine.MODERN_CPU)
         self.engine_combo.addItem(
-            "DiffeoForge Modern CPU (experimental)", DesktopEngine.MODERN_CPU
-        )
-        self.engine_combo.addItem(
-            "Deformetrica 4.3 reference (external)", DesktopEngine.DEFORMETRICA_REFERENCE
+            "Deformetrica 4.3 (recommended backend)",
+            DesktopEngine.DEFORMETRICA_REFERENCE,
         )
         self.engine_combo.currentIndexChanged.connect(self._update_engine_explanation)
         engine_box = QWidget()
@@ -1420,10 +1740,9 @@ class DiffeoForgeWindow(QMainWindow):
             "Blockwise 256 × 256 — high-face-count experiment",
             "blockwise_256",
         )
-        self.pairwise_combo.currentIndexChanged.connect(
-            self._update_pairwise_explanation
-        )
+        self.pairwise_combo.currentIndexChanged.connect(self._update_pairwise_explanation)
         pairwise_box = QWidget()
+        self.pairwise_box = pairwise_box
         pairwise_layout = QVBoxLayout(pairwise_box)
         pairwise_layout.setContentsMargins(0, 0, 0, 0)
         pairwise_layout.setSpacing(4)
@@ -1448,6 +1767,7 @@ class DiffeoForgeWindow(QMainWindow):
             self._update_optimization_explanation
         )
         optimization_effort_box = QWidget()
+        self.optimization_effort_box = optimization_effort_box
         optimization_effort_layout = QVBoxLayout(optimization_effort_box)
         optimization_effort_layout.setContentsMargins(0, 0, 0, 0)
         optimization_effort_layout.setSpacing(4)
@@ -1458,10 +1778,226 @@ class DiffeoForgeWindow(QMainWindow):
         optimization_effort_layout.addWidget(self.optimization_effort_hint)
         form.addRow("Optimization effort", optimization_effort_box)
 
+        self.reference_parameter_box = QFrame()
+        self.reference_parameter_box.setObjectName("parameterEditor")
+        reference_parameter_layout = QVBoxLayout(self.reference_parameter_box)
+        reference_parameter_layout.setContentsMargins(0, 0, 0, 0)
+        reference_parameter_layout.setSpacing(8)
+        self.reference_parameter_profile_combo = QComboBox()
+        self.reference_parameter_profile_combo.setObjectName("referenceParameterProfileCombo")
+        self.reference_parameter_profile_combo.addItem("Analyze aligned meshes first", "pending")
+        self.reference_parameter_profile_combo.addItem(
+            "Data-assisted recommendation", "data_assisted"
+        )
+        self.reference_parameter_profile_combo.addItem("Advanced manual control", "advanced")
+        self.reference_parameter_profile_combo.currentIndexChanged.connect(
+            self._update_reference_parameter_profile
+        )
+        reference_parameter_layout.addWidget(self.reference_parameter_profile_combo)
+        reference_parameter_layout.addWidget(
+            self._parameter_help(
+                "recommendation_mode",
+                "Deformetrica parameter mode",
+            )
+        )
+
+        self.reference_parameter_form = QFormLayout()
+        self.reference_parameter_form.setHorizontalSpacing(18)
+        self.reference_parameter_form.setVerticalSpacing(7)
+        self.reference_attachment_ratio_spin = self._ratio_spin_box(
+            "Attachment width as a fraction of the template bounding-box diagonal."
+        )
+        self.reference_deformation_ratio_spin = self._ratio_spin_box(
+            "Deformation width as a fraction of the template bounding-box diagonal."
+        )
+        self.reference_control_spacing_ratio_spin = self._ratio_spin_box(
+            "Initial control-point spacing as a fraction of the template diagonal."
+        )
+        self.reference_noise_ratio_spin = self._ratio_spin_box(
+            "Noise standard deviation as a fraction of the template diagonal."
+        )
+        for spin in (
+            self.reference_attachment_ratio_spin,
+            self.reference_deformation_ratio_spin,
+            self.reference_control_spacing_ratio_spin,
+            self.reference_noise_ratio_spin,
+        ):
+            spin.setSuffix(" x template diagonal")
+        self.reference_max_iterations_spin = QSpinBox()
+        self.reference_max_iterations_spin.setRange(1, 100000)
+        self.reference_max_iterations_spin.setSingleStep(10)
+        self.reference_step_size_spin = QDoubleSpinBox()
+        self.reference_step_size_spin.setDecimals(8)
+        self.reference_step_size_spin.setRange(0.00000001, 1000000.0)
+        self.reference_step_size_spin.setSingleStep(0.001)
+        self.reference_tolerance_spin = QDoubleSpinBox()
+        self.reference_tolerance_spin.setDecimals(10)
+        self.reference_tolerance_spin.setRange(0.0000000001, 1.0)
+        self.reference_tolerance_spin.setSingleStep(0.0001)
+        for label, widget, key in (
+            (
+                "Attachment kernel width (KW) / template diagonal",
+                self.reference_attachment_ratio_spin,
+                "attachment_ratio",
+            ),
+            (
+                "Deformation kernel width (KW) / template diagonal",
+                self.reference_deformation_ratio_spin,
+                "deformation_ratio",
+            ),
+            (
+                "Control spacing / diagonal",
+                self.reference_control_spacing_ratio_spin,
+                "control_spacing_ratio",
+            ),
+            ("Noise SD / diagonal", self.reference_noise_ratio_spin, "noise_ratio"),
+            (
+                "Maximum iterations",
+                self.reference_max_iterations_spin,
+                "maximum_iterations",
+            ),
+            (
+                "Initial step size",
+                self.reference_step_size_spin,
+                "initial_step_size",
+            ),
+            (
+                "Convergence tolerance",
+                self.reference_tolerance_spin,
+                "convergence_tolerance",
+            ),
+        ):
+            self.reference_parameter_form.addRow(
+                label,
+                self._parameter_field_with_help(
+                    widget,
+                    key=key,
+                    parameter_name=label,
+                ),
+            )
+        reference_parameter_layout.addLayout(self.reference_parameter_form)
+        self.reference_effective_widths_label = QLabel()
+        self.reference_effective_widths_label.setObjectName("status")
+        self.reference_effective_widths_label.setWordWrap(True)
+        self.reference_effective_widths_label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+        )
+        reference_parameter_layout.addWidget(self.reference_effective_widths_label)
+        for spin in (
+            self.reference_attachment_ratio_spin,
+            self.reference_deformation_ratio_spin,
+            self.reference_control_spacing_ratio_spin,
+            self.reference_noise_ratio_spin,
+        ):
+            spin.valueChanged.connect(self._update_reference_effective_widths)
+        self.reference_expert_toggle = QCheckBox("Show expert settings")
+        self.reference_expert_toggle.setObjectName("referenceExpertToggle")
+        self.reference_expert_toggle.toggled.connect(self._update_reference_expert_visibility)
+        reference_parameter_layout.addWidget(self.reference_expert_toggle)
+        self.reference_expert_box = QWidget()
+        self.reference_expert_box.setObjectName("referenceExpertBox")
+        expert_form = QFormLayout(self.reference_expert_box)
+        expert_form.setContentsMargins(0, 4, 0, 0)
+        expert_form.setHorizontalSpacing(18)
+        expert_form.setVerticalSpacing(7)
+        self.reference_attachment_type_combo = QComboBox()
+        self.reference_attachment_type_combo.addItem("Current (orientation-sensitive)", "current")
+        self.reference_attachment_type_combo.addItem(
+            "Varifold (orientation-insensitive)", "varifold"
+        )
+        self.reference_timepoints_spin = QSpinBox()
+        self.reference_timepoints_spin.setRange(2, 1000)
+        self.reference_timepoints_spin.setValue(10)
+        self.reference_rk2_check = QCheckBox("Use RK2")
+        self.reference_line_search_spin = QSpinBox()
+        self.reference_line_search_spin.setRange(1, 10000)
+        self.reference_line_search_spin.setValue(10)
+        self.reference_save_every_spin = QSpinBox()
+        self.reference_save_every_spin.setRange(1, 100000)
+        self.reference_save_every_spin.setValue(100)
+        self.reference_print_every_spin = QSpinBox()
+        self.reference_print_every_spin.setRange(1, 100000)
+        self.reference_print_every_spin.setValue(1)
+        self.reference_scale_step_check = QCheckBox("Scale initial step size")
+        self.reference_scale_step_check.setChecked(True)
+        self.reference_sobolev_check = QCheckBox("Use Sobolev gradient")
+        self.reference_sobolev_check.setChecked(True)
+        self.reference_sobolev_check.toggled.connect(self._update_reference_expert_dependencies)
+        self.reference_sobolev_ratio_spin = QDoubleSpinBox()
+        self.reference_sobolev_ratio_spin.setDecimals(6)
+        self.reference_sobolev_ratio_spin.setRange(0.000001, 1000000.0)
+        self.reference_sobolev_ratio_spin.setValue(1.0)
+        self.reference_freeze_template_check = QCheckBox("Freeze template")
+        self.reference_freeze_control_points_check = QCheckBox("Freeze control points")
+        self.reference_threads_spin = QSpinBox()
+        self.reference_threads_spin.setRange(1, 256)
+        self.reference_threads_spin.setValue(4)
+        self.reference_random_seed_spin = QSpinBox()
+        self.reference_random_seed_spin.setRange(0, 2147483647)
+        self.reference_random_seed_spin.setValue(20260715)
+        for label, widget, key in (
+            (
+                "Attachment type",
+                self.reference_attachment_type_combo,
+                "attachment_type",
+            ),
+            ("Time points", self.reference_timepoints_spin, "time_points"),
+            ("Integration", self.reference_rk2_check, "integration"),
+            (
+                "Line-search limit",
+                self.reference_line_search_spin,
+                "line_search_limit",
+            ),
+            ("Save interval", self.reference_save_every_spin, "save_interval"),
+            ("Log interval", self.reference_print_every_spin, "log_interval"),
+            (
+                "Step-size scaling",
+                self.reference_scale_step_check,
+                "step_size_scaling",
+            ),
+            ("Sobolev gradient", self.reference_sobolev_check, "sobolev_gradient"),
+            (
+                "Sobolev width ratio",
+                self.reference_sobolev_ratio_spin,
+                "sobolev_width_ratio",
+            ),
+            (
+                "Template update",
+                self.reference_freeze_template_check,
+                "template_update",
+            ),
+            (
+                "Control-point update",
+                self.reference_freeze_control_points_check,
+                "control_point_update",
+            ),
+            ("CPU threads", self.reference_threads_spin, "cpu_threads"),
+            ("Random seed", self.reference_random_seed_spin, "random_seed"),
+        ):
+            expert_form.addRow(
+                label,
+                self._parameter_field_with_help(
+                    widget,
+                    key=key,
+                    parameter_name=label,
+                ),
+            )
+        reference_parameter_layout.addWidget(self.reference_expert_box)
+        self.reference_expert_box.hide()
+        self.reference_parameter_hint = QLabel(
+            "No values are active until aligned meshes are analyzed or Advanced manual "
+            "control is selected. Every effective value will be shown again in Step 2."
+        )
+        self.reference_parameter_hint.setObjectName("hint")
+        self.reference_parameter_hint.setWordWrap(True)
+        reference_parameter_layout.addWidget(self.reference_parameter_hint)
+        self.project_input_form = form
+
         self.mesh_edit = QLineEdit()
         self.mesh_edit.setObjectName("meshDirectoryEdit")
         self.mesh_edit.setPlaceholderText(r"e.g. C:\Data\Beetles\meshes")
         self.mesh_edit.textChanged.connect(self._sync_ready_state)
+        self.mesh_edit.textChanged.connect(self._invalidate_procrustes_preview)
         self.mesh_edit.editingFinished.connect(self._detect_template_from_text)
         mesh_button = QPushButton("Browse…")
         mesh_button.setObjectName("secondary")
@@ -1470,7 +2006,8 @@ class DiffeoForgeWindow(QMainWindow):
 
         self.template_edit = QLineEdit()
         self.template_edit.setObjectName("templateEdit")
-        self.template_edit.setPlaceholderText("automatic: template.vtk")
+        self.template_edit.setPlaceholderText("automatic: template.vtk/.ply/.obj/.stl")
+        self.template_edit.textChanged.connect(self._invalidate_procrustes_preview)
         template_button = QPushButton("Browse…")
         template_button.setObjectName("secondary")
         template_button.clicked.connect(self._choose_template)
@@ -1479,8 +2016,11 @@ class DiffeoForgeWindow(QMainWindow):
         self.pattern_edit = QLineEdit("*.vtk")
         self.pattern_edit.setObjectName("subjectPatternEdit")
         self.pattern_edit.setToolTip(
-            "The template is automatically removed from the subject list."
+            "The template is automatically removed from the subject list. PLY, OBJ, "
+            "and STL inputs require reviewed landmark Procrustes preprocessing and are "
+            "then converted to canonical VTK copies."
         )
+        self.pattern_edit.textChanged.connect(self._invalidate_procrustes_preview)
         form.addRow("File pattern", self.pattern_edit)
 
         self.project_edit = QLineEdit()
@@ -1510,16 +2050,208 @@ class DiffeoForgeWindow(QMainWindow):
         for unit in SUPPORTED_UNITS:
             self.units_combo.addItem(labels[unit], unit)
         self.units_combo.currentIndexChanged.connect(self._sync_ready_state)
+        self.units_combo.currentIndexChanged.connect(self._reference_recommendation_inputs_changed)
         form.addRow("Coordinate unit", self.units_combo)
 
         self.landmarks_edit = QLineEdit()
         self.landmarks_edit.setObjectName("landmarksEdit")
         self.landmarks_edit.setPlaceholderText("optional: homologous landmarks as CSV")
+        self.landmarks_edit.textChanged.connect(self._update_procrustes_visibility)
         landmarks_button = QPushButton("Browse…")
         landmarks_button.setObjectName("secondary")
         landmarks_button.clicked.connect(self._choose_landmarks)
         self.landmarks_button = landmarks_button
-        form.addRow("Landmarks", _path_row(self.landmarks_edit, landmarks_button))
+        self.place_landmarks_button = QPushButton("Place landmarks…")
+        self.place_landmarks_button.setObjectName("secondary")
+        self.place_landmarks_button.clicked.connect(self._place_landmarks)
+        landmarks_row = QHBoxLayout()
+        landmarks_row.setContentsMargins(0, 0, 0, 0)
+        landmarks_row.setSpacing(8)
+        landmarks_row.addWidget(self.landmarks_edit, 1)
+        landmarks_row.addWidget(landmarks_button)
+        landmarks_row.addWidget(self.place_landmarks_button)
+        form.addRow("Landmarks", landmarks_row)
+
+        self.landmark_count_spin = QSpinBox()
+        self.landmark_count_spin.setObjectName("landmarkCountSpin")
+        self.landmark_count_spin.setRange(3, 2_147_483_647)
+        self.landmark_count_spin.setValue(3)
+        self.landmark_count_spin.setToolTip(
+            "At least three non-collinear landmarks are required for generalized "
+            "Procrustes. DiffeoForge imposes no study-specific ten-landmark cap."
+        )
+        self.landmark_auto_advance_check = QCheckBox(
+            "Automatically load the next mesh after all planned landmarks are placed"
+        )
+        self.landmark_auto_advance_check.setObjectName("autoAdvanceLandmarkMeshCheck")
+        self.landmark_auto_advance_check.setChecked(True)
+        landmark_plan = QHBoxLayout()
+        landmark_plan.setContentsMargins(0, 0, 0, 0)
+        landmark_plan.setSpacing(12)
+        landmark_plan.addWidget(self.landmark_count_spin)
+        landmark_plan.addWidget(self.landmark_auto_advance_check, 1)
+        form.addRow("Planned landmarks", landmark_plan)
+
+        self.procrustes_box = QWidget()
+        procrustes_layout = QVBoxLayout(self.procrustes_box)
+        procrustes_layout.setContentsMargins(0, 0, 0, 0)
+        procrustes_layout.setSpacing(6)
+        self.procrustes_apply_check = QCheckBox(
+            "Apply generalized Procrustes before atlas computation"
+        )
+        self.procrustes_apply_check.setChecked(True)
+        self.procrustes_apply_check.toggled.connect(self._procrustes_inputs_changed)
+        self.procrustes_scale_check = QCheckBox("Scale to unit centroid size")
+        self.procrustes_scale_check.setChecked(True)
+        self.procrustes_scale_check.toggled.connect(self._procrustes_inputs_changed)
+        self.procrustes_reflection_check = QCheckBox("Allow reflections")
+        self.procrustes_reflection_check.toggled.connect(self._procrustes_inputs_changed)
+        procrustes_settings = QHBoxLayout()
+        procrustes_settings.addWidget(self.procrustes_scale_check)
+        procrustes_settings.addWidget(self.procrustes_reflection_check)
+        procrustes_settings.addStretch()
+        procrustes_advanced = QHBoxLayout()
+        self.procrustes_tolerance_spin = QDoubleSpinBox()
+        self.procrustes_tolerance_spin.setDecimals(12)
+        self.procrustes_tolerance_spin.setRange(0.000000000001, 1.0)
+        self.procrustes_tolerance_spin.setValue(0.0000000001)
+        self.procrustes_tolerance_spin.valueChanged.connect(self._procrustes_inputs_changed)
+        self.procrustes_iterations_spin = QSpinBox()
+        self.procrustes_iterations_spin.setRange(1, 100000)
+        self.procrustes_iterations_spin.setValue(100)
+        self.procrustes_iterations_spin.valueChanged.connect(self._procrustes_inputs_changed)
+        procrustes_advanced.addWidget(QLabel("Tolerance"))
+        procrustes_advanced.addWidget(self.procrustes_tolerance_spin)
+        procrustes_advanced.addWidget(QLabel("Maximum iterations"))
+        procrustes_advanced.addWidget(self.procrustes_iterations_spin)
+        procrustes_advanced.addStretch()
+        procrustes_hint = QLabel(
+            "This preview uses the homologous landmarks to estimate translation, "
+            "rotation, and optional centroid-size scaling for the complete cohort. "
+            "It writes nothing until you review and approve the report below. Raw "
+            "meshes remain unchanged; approved project creation writes immutable "
+            "aligned VTK copies and records every transform. Reflection is off by default."
+        )
+        procrustes_hint.setObjectName("hint")
+        procrustes_hint.setWordWrap(True)
+        procrustes_layout.addWidget(self.procrustes_apply_check)
+        procrustes_layout.addLayout(procrustes_settings)
+        procrustes_layout.addLayout(procrustes_advanced)
+        procrustes_layout.addWidget(procrustes_hint)
+        self.preview_procrustes_button = QPushButton("Preview alignment read-only")
+        self.preview_procrustes_button.setObjectName("secondary")
+        self.preview_procrustes_button.clicked.connect(self._preview_procrustes)
+        self.procrustes_preview_status_label = _ReadOnlyStatusText(
+            "No alignment preview has been reviewed."
+        )
+        self.procrustes_preview_status_label.setObjectName("status")
+        self.review_procrustes_visual_button = QPushButton("Open visual GPA review...")
+        self.review_procrustes_visual_button.setObjectName("secondary")
+        self.review_procrustes_visual_button.setEnabled(False)
+        self.review_procrustes_visual_button.clicked.connect(self._open_procrustes_visual_review)
+        self.approve_procrustes_check = QCheckBox(
+            "I reviewed the numerical report and completed the visual GPA review"
+        )
+        self.approve_procrustes_check.setEnabled(False)
+        self.approve_procrustes_check.toggled.connect(self._reference_recommendation_inputs_changed)
+        procrustes_layout.addWidget(self.preview_procrustes_button)
+        procrustes_layout.addWidget(self.procrustes_preview_status_label)
+        procrustes_layout.addWidget(self.review_procrustes_visual_button)
+        procrustes_layout.addWidget(self.approve_procrustes_check)
+        self._procrustes_setting_widgets = (
+            self.procrustes_scale_check,
+            self.procrustes_reflection_check,
+            self.procrustes_tolerance_spin,
+            self.procrustes_iterations_spin,
+        )
+        self.procrustes_box.hide()
+        form.addRow("Alignment", self.procrustes_box)
+
+        self.already_gpa_check = QCheckBox(
+            "I confirm that these mesh coordinates are already GPA aligned"
+        )
+        self.already_gpa_check.setObjectName("alreadyGpaAlignedCheck")
+        self.already_gpa_check.setToolTip(
+            "Use this only when translation, rotation, and the intended size treatment "
+            "have already been completed outside DiffeoForge. Geometry diagnostics can "
+            "flag suspicious dispersion but cannot prove homologous alignment."
+        )
+        self.already_gpa_check.toggled.connect(self._reference_recommendation_inputs_changed)
+        form.addRow("Existing alignment", self.already_gpa_check)
+
+        self.reference_guidance_box = QWidget()
+        guidance_layout = QVBoxLayout(self.reference_guidance_box)
+        guidance_layout.setContentsMargins(0, 0, 0, 0)
+        guidance_layout.setSpacing(7)
+        self.reference_surface_detail_combo = QComboBox()
+        self.reference_surface_detail_combo.setObjectName("referenceSurfaceDetailCombo")
+        self.reference_surface_detail_combo.addItem("Fine anatomical detail", "fine")
+        self.reference_surface_detail_combo.addItem("Balanced anatomical detail", "balanced")
+        self.reference_surface_detail_combo.addItem("Coarse / global surface detail", "coarse")
+        self.reference_surface_detail_combo.setCurrentIndex(
+            self.reference_surface_detail_combo.findData("balanced")
+        )
+        self.reference_surface_detail_combo.currentIndexChanged.connect(
+            self._reference_recommendation_inputs_changed
+        )
+        self.reference_deformation_scale_combo = QComboBox()
+        self.reference_deformation_scale_combo.setObjectName("referenceDeformationScaleCombo")
+        self.reference_deformation_scale_combo.addItem("Local shape differences", "local")
+        self.reference_deformation_scale_combo.addItem(
+            "Balanced local and global differences", "balanced"
+        )
+        self.reference_deformation_scale_combo.addItem("Global shape differences", "global")
+        self.reference_deformation_scale_combo.setCurrentIndex(
+            self.reference_deformation_scale_combo.findData("balanced")
+        )
+        self.reference_deformation_scale_combo.currentIndexChanged.connect(
+            self._reference_recommendation_inputs_changed
+        )
+        guidance_form = QFormLayout()
+        guidance_form.setContentsMargins(0, 0, 0, 0)
+        guidance_form.setHorizontalSpacing(18)
+        guidance_form.setVerticalSpacing(7)
+        guidance_form.addRow(
+            "Surface detail to preserve",
+            self._parameter_field_with_help(
+                self.reference_surface_detail_combo,
+                key="surface_detail",
+                parameter_name="Surface detail to preserve",
+            ),
+        )
+        guidance_form.addRow(
+            "Scale of biological variation",
+            self._parameter_field_with_help(
+                self.reference_deformation_scale_combo,
+                key="deformation_scale",
+                parameter_name="Scale of biological variation",
+            ),
+        )
+        guidance_layout.addLayout(guidance_form)
+        guidance_hint = QLabel(
+            "DiffeoForge derives scale and a mesh-sampling lower bound. You decide which "
+            "anatomical detail and deformation scale are scientifically relevant."
+        )
+        guidance_hint.setObjectName("hint")
+        guidance_hint.setWordWrap(True)
+        guidance_layout.addWidget(guidance_hint)
+        self.analyze_reference_parameters_button = QPushButton(
+            "Analyze aligned meshes & suggest parameters"
+        )
+        self.analyze_reference_parameters_button.setObjectName("secondary")
+        self.analyze_reference_parameters_button.clicked.connect(self._analyze_reference_parameters)
+        guidance_layout.addWidget(self.analyze_reference_parameters_button)
+        self.reference_guidance_status_label = QLabel(
+            "No aligned-mesh analysis has been completed."
+        )
+        self.reference_guidance_status_label.setObjectName("status")
+        self.reference_guidance_status_label.setWordWrap(True)
+        self.reference_guidance_status_label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+        )
+        guidance_layout.addWidget(self.reference_guidance_status_label)
+        form.addRow("Parameter guidance", self.reference_guidance_box)
+        form.addRow("Deformetrica parameters", self.reference_parameter_box)
 
         card_layout.addLayout(form)
         return card
@@ -1573,10 +2305,11 @@ class DiffeoForgeWindow(QMainWindow):
             self,
             "Select template",
             self.mesh_edit.text().strip(),
-            "VTK PolyData (*.vtk)",
+            _SURFACE_FILE_FILTER,
         )
         if selected:
             self.template_edit.setText(selected)
+            self._adopt_template_format_pattern(Path(selected))
 
     @Slot()
     def _choose_landmarks(self) -> None:
@@ -1588,6 +2321,682 @@ class DiffeoForgeWindow(QMainWindow):
         )
         if selected:
             self.landmarks_edit.setText(selected)
+
+    @Slot()
+    def _place_landmarks(self) -> None:
+        try:
+            mesh_directory = Path(self.mesh_edit.text().strip()).expanduser().resolve()
+            project_directory = Path(self.project_edit.text().strip()).expanduser().resolve()
+            if not mesh_directory.is_dir() or not self.project_edit.text().strip():
+                raise ValueError("Select the mesh folder and project folder first.")
+            template_text = self.template_edit.text().strip()
+            template = (
+                Path(template_text).expanduser().resolve()
+                if template_text
+                else detect_template(mesh_directory)
+            )
+            if template is None:
+                raise ValueError("Select an explicit template mesh first.")
+            subjects = tuple(
+                path.resolve()
+                for path in sorted(mesh_directory.glob(self.pattern_edit.text().strip()))
+                if (
+                    path.is_file()
+                    and path.resolve() != template
+                    and is_supported_surface_path(path)
+                )
+            )
+            if not subjects:
+                raise ValueError("No subject meshes match the current file pattern.")
+            dialog = LandmarkEditorDialog(
+                (template, *subjects),
+                project_directory / "landmarks.csv",
+                self,
+                initial_landmark_count=self.landmark_count_spin.value(),
+                auto_advance_mesh=self.landmark_auto_advance_check.isChecked(),
+            )
+            result = dialog.exec()
+            self.landmark_count_spin.setValue(len(dialog.labels))
+            self.landmark_auto_advance_check.setChecked(dialog.auto_advance_mesh_check.isChecked())
+            if result == QDialog.DialogCode.Accepted:
+                self.landmarks_edit.setText(str(dialog.output_path))
+        except (OSError, TypeError, ValueError, MeshPreviewError) as error:
+            QMessageBox.warning(self, "Landmark placement unavailable", str(error))
+
+    @Slot()
+    def _update_procrustes_visibility(self) -> None:
+        self.procrustes_box.setVisible(bool(self.landmarks_edit.text().strip()))
+        self._invalidate_procrustes_preview()
+
+    @Slot()
+    def _procrustes_inputs_changed(self) -> None:
+        self._invalidate_procrustes_preview()
+
+    @Slot()
+    def _invalidate_procrustes_preview(self) -> None:
+        had_preview = self._procrustes_preview is not None
+        preview_running = isinstance(
+            self._worker,
+            (_ProcrustesPreviewWorker, _ProcrustesVisualWorker),
+        )
+        self._procrustes_preview = None
+        self._procrustes_visual = None
+        self._procrustes_visual_reviewed_fingerprint = None
+        self.approve_procrustes_check.setChecked(False)
+        self.approve_procrustes_check.setEnabled(False)
+        self.review_procrustes_visual_button.setText("Open visual GPA review...")
+        self.review_procrustes_visual_button.setEnabled(False)
+        self.procrustes_preview_status_label.setObjectName("status")
+        self.procrustes_preview_status_label.setStyleSheet("")
+        if preview_running:
+            self.procrustes_preview_status_label.setText(
+                "Inputs changed while the read-only preview was running. Its result will "
+                "be discarded."
+            )
+        elif had_preview:
+            self.procrustes_preview_status_label.setText(
+                "The approved preview was invalidated because an input or alignment "
+                "setting changed. Run the preview again."
+            )
+        else:
+            self.procrustes_preview_status_label.setText("No alignment preview has been reviewed.")
+        self._invalidate_reference_recommendation(
+            "Alignment inputs changed; analyze the aligned meshes again.",
+            sync=False,
+        )
+        self._update_procrustes_controls()
+        self._sync_ready_state()
+
+    @Slot()
+    def _update_procrustes_controls(self) -> None:
+        enabled = self.procrustes_apply_check.isChecked()
+        for widget in self._procrustes_setting_widgets:
+            widget.setEnabled(enabled)
+        self.preview_procrustes_button.setEnabled(
+            enabled and bool(self.landmarks_edit.text().strip()) and self._worker is None
+        )
+        visual_ready = bool(
+            enabled
+            and self._procrustes_preview is not None
+            and self._procrustes_preview.alignment.converged
+            and self._preview_matches_current_procrustes_inputs()
+        )
+        self.review_procrustes_visual_button.setEnabled(visual_ready and self._worker is None)
+        self.approve_procrustes_check.setEnabled(
+            visual_ready
+            and self._procrustes_preview is not None
+            and self._procrustes_visual_reviewed_fingerprint == self._procrustes_preview.fingerprint
+            and self._worker is None
+        )
+
+    def _current_surface_cohort(self) -> tuple[Path, ...]:
+        directory = Path(self.mesh_edit.text().strip()).expanduser().resolve()
+        if not directory.is_dir():
+            raise ValueError("Select an existing mesh folder first.")
+        template_text = self.template_edit.text().strip()
+        template = (
+            Path(template_text).expanduser().resolve()
+            if template_text
+            else detect_template(directory)
+        )
+        if template is None or not template.is_file():
+            raise ValueError("Select an explicit template mesh first.")
+        if not is_supported_surface_path(template):
+            raise ValueError("The selected template is not a supported surface mesh.")
+        pattern = self.pattern_edit.text().strip()
+        if not pattern:
+            raise ValueError("Enter a subject file pattern.")
+        try:
+            subjects = tuple(
+                path.resolve()
+                for path in sorted(directory.glob(pattern))
+                if (
+                    path.is_file()
+                    and path.resolve() != template
+                    and is_supported_surface_path(path)
+                )
+            )
+        except (OSError, ValueError) as error:
+            raise ValueError(f"Invalid subject file pattern: {error}") from error
+        if len(subjects) < 2:
+            raise ValueError(
+                "Parameter guidance requires at least two subject meshes in addition "
+                "to the template."
+            )
+        return (template, *subjects)
+
+    def _reference_alignment_context(
+        self,
+    ) -> tuple[str, tuple[object, ...] | None, str | None]:
+        uses_diffeoforge_gpa = bool(
+            self.landmarks_edit.text().strip() and self.procrustes_apply_check.isChecked()
+        )
+        if uses_diffeoforge_gpa:
+            fingerprint = self._approved_procrustes_fingerprint()
+            preview = self._procrustes_preview
+            if fingerprint is None or preview is None:
+                raise ValueError(
+                    "Complete and approve the read-only DiffeoForge GPA preview first."
+                )
+            return (
+                "diffeoforge_gpa",
+                tuple(preview.alignment.transforms),
+                fingerprint,
+            )
+        if not self.already_gpa_check.isChecked():
+            raise ValueError(
+                "Confirm that the meshes are already GPA aligned, or place landmarks "
+                "and complete the DiffeoForge GPA preview first."
+            )
+        return "declared_gpa", None, None
+
+    def _reference_recommendation_matches_current_inputs(self) -> bool:
+        recommendation = self._reference_recommendation
+        if recommendation is None or self._reference_recommendation_paths is None:
+            return False
+        try:
+            paths = self._current_surface_cohort()
+            alignment_basis, _transforms, alignment_fingerprint = (
+                self._reference_alignment_context()
+            )
+        except (OSError, TypeError, ValueError):
+            return False
+        return bool(
+            paths == self._reference_recommendation_paths
+            and recommendation.alignment_basis == alignment_basis
+            and recommendation.alignment_fingerprint == alignment_fingerprint
+            and recommendation.surface_detail_intent
+            == self.reference_surface_detail_combo.currentData()
+            and recommendation.deformation_scale_intent
+            == self.reference_deformation_scale_combo.currentData()
+        )
+
+    def _invalidate_reference_recommendation(
+        self,
+        message: str = "Inputs changed; analyze the aligned meshes again.",
+        *,
+        sync: bool = True,
+    ) -> None:
+        had_recommendation = self._reference_recommendation is not None
+        self._reference_recommendation = None
+        self._reference_recommendation_paths = None
+        if self.reference_parameter_profile_combo.currentData() == "data_assisted":
+            self.reference_parameter_profile_combo.blockSignals(True)
+            self.reference_parameter_profile_combo.setCurrentIndex(
+                self.reference_parameter_profile_combo.findData("pending")
+            )
+            self.reference_parameter_profile_combo.blockSignals(False)
+            self._set_reference_parameter_fields_visible(False)
+            self.reference_parameter_hint.setText(
+                "No parameter values are active. Analyze the aligned meshes again or "
+                "choose Advanced manual control."
+            )
+        if had_recommendation:
+            self.reference_guidance_status_label.setObjectName("statusWarning")
+            self.reference_guidance_status_label.setStyleSheet("")
+            self.reference_guidance_status_label.setText(message)
+        elif not isinstance(self._worker, _ReferenceParameterWorker):
+            self.reference_guidance_status_label.setObjectName("status")
+            self.reference_guidance_status_label.setStyleSheet("")
+            self.reference_guidance_status_label.setText(
+                "No aligned-mesh analysis has been completed."
+            )
+        self._update_reference_effective_widths()
+        if sync:
+            self._update_reference_guidance_controls()
+            self._sync_ready_state()
+
+    @Slot()
+    def _reference_recommendation_inputs_changed(self) -> None:
+        self._invalidate_reference_recommendation()
+
+    def _update_reference_guidance_controls(self) -> None:
+        reference = self.engine_combo.currentData() == DesktopEngine.DEFORMETRICA_REFERENCE
+        uses_diffeoforge_gpa = bool(
+            self.landmarks_edit.text().strip() and self.procrustes_apply_check.isChecked()
+        )
+        self.already_gpa_check.setEnabled(
+            reference and not uses_diffeoforge_gpa and self._worker is None
+        )
+        alignment_ready = bool(
+            self._approved_procrustes_fingerprint() is not None
+            if uses_diffeoforge_gpa
+            else self.already_gpa_check.isChecked()
+        )
+        self.analyze_reference_parameters_button.setEnabled(
+            reference and alignment_ready and self._worker is None
+        )
+        if isinstance(self._worker, _ReferenceParameterWorker):
+            self.analyze_reference_parameters_button.setText("Analyzing aligned meshes…")
+        else:
+            self.analyze_reference_parameters_button.setText(
+                "Analyze aligned meshes & suggest parameters"
+            )
+
+    @Slot()
+    def _analyze_reference_parameters(self) -> None:
+        if self._worker is not None:
+            return
+        try:
+            paths = self._current_surface_cohort()
+            alignment_basis, transforms, alignment_fingerprint = self._reference_alignment_context()
+        except (OSError, TypeError, ValueError) as error:
+            self._reference_parameter_analysis_failed(str(error))
+            return
+        worker = _ReferenceParameterWorker(
+            mesh_paths=paths,
+            alignment_basis=alignment_basis,
+            surface_detail_intent=str(self.reference_surface_detail_combo.currentData()),
+            deformation_scale_intent=str(self.reference_deformation_scale_combo.currentData()),
+            transforms=transforms,
+            alignment_fingerprint=alignment_fingerprint,
+        )
+        worker.signals.succeeded.connect(self._reference_parameter_analysis_succeeded)
+        worker.signals.failed.connect(self._reference_parameter_analysis_failed)
+        self._worker = worker
+        self._reference_recommendation = None
+        self._reference_recommendation_paths = None
+        self.reference_guidance_status_label.setObjectName("status")
+        self.reference_guidance_status_label.setStyleSheet("")
+        self.reference_guidance_status_label.setText(
+            "Reading the aligned coordinates and measuring cohort scale, centroid "
+            "dispersion, and mesh sampling. No mesh is being changed."
+        )
+        self._update_reference_guidance_controls()
+        self._sync_ready_state()
+        self._thread_pool.start(worker)
+
+    @Slot(object)
+    def _reference_parameter_analysis_succeeded(
+        self,
+        recommendation: ReferenceParameterRecommendation,
+    ) -> None:
+        worker = self._worker
+        self._worker = None
+        if not isinstance(worker, _ReferenceParameterWorker):
+            self._reference_parameter_analysis_failed(
+                "The completed analysis is no longer bound to the active request."
+            )
+            return
+        try:
+            current_paths = self._current_surface_cohort()
+            alignment_basis, _transforms, alignment_fingerprint = (
+                self._reference_alignment_context()
+            )
+        except (OSError, TypeError, ValueError) as error:
+            self._reference_parameter_analysis_failed(str(error))
+            return
+        inputs_match = bool(
+            current_paths == worker.mesh_paths
+            and alignment_basis == worker.alignment_basis
+            and alignment_fingerprint == worker.alignment_fingerprint
+            and self.reference_surface_detail_combo.currentData() == worker.surface_detail_intent
+            and self.reference_deformation_scale_combo.currentData()
+            == worker.deformation_scale_intent
+        )
+        if not inputs_match:
+            self._reference_parameter_analysis_failed(
+                "Analysis discarded because alignment, mesh selection, or scientific "
+                "scale choices changed while it was running."
+            )
+            return
+
+        self._reference_recommendation = recommendation
+        self._reference_recommendation_paths = current_paths
+        self.reference_parameter_profile_combo.blockSignals(True)
+        self.reference_parameter_profile_combo.setCurrentIndex(
+            self.reference_parameter_profile_combo.findData("data_assisted")
+        )
+        self.reference_parameter_profile_combo.blockSignals(False)
+        self._update_reference_parameter_profile()
+        effective = recommendation.effective_values
+        coordinate_label = (
+            "unit-centroid-size coordinates"
+            if (
+                recommendation.alignment_basis == "diffeoforge_gpa"
+                and self._procrustes_preview is not None
+                and self._procrustes_preview.scale_to_unit_centroid_size
+            )
+            else self.units_combo.currentText()
+        )
+        warning_lines = "\n".join(f"• {warning}" for warning in recommendation.warnings)
+        self.reference_guidance_status_label.setObjectName("statusSuccess")
+        self.reference_guidance_status_label.setStyleSheet("")
+        self.reference_guidance_status_label.setText(
+            f"Analyzed {recommendation.mesh_count} aligned meshes "
+            f"({recommendation.subject_count} subjects + template).\n"
+            f"Cohort median diagonal: {recommendation.cohort_median_diagonal:.6g}; "
+            f"median sampled edge / diagonal: "
+            f"{recommendation.median_edge_to_diagonal_ratio:.4g}; "
+            f"centroid dispersion / diagonal: "
+            f"{recommendation.normalized_centroid_dispersion:.4g}.\n"
+            f"Suggested attachment: {recommendation.attachment_kernel_width_ratio:.5g} × "
+            f"template diagonal = {effective['attachment_kernel_width']:.6g}; "
+            f"deformation: {recommendation.deformation_kernel_width_ratio:.5g} × "
+            f"diagonal = {effective['deformation_kernel_width']:.6g}; "
+            f"control spacing: {recommendation.control_point_spacing_ratio:.5g} × "
+            f"diagonal = {effective['initial_control_point_spacing']:.6g} "
+            f"({coordinate_label}).\n"
+            f"Provisional noise SD: {recommendation.provisional_noise_std_ratio:.5g} × "
+            f"diagonal = {effective['noise_std']:.6g}; this is not inferable from "
+            "geometry and must be calibrated in pilot registrations.\n"
+            f"Recommendation fingerprint: {recommendation.fingerprint}\n"
+            f"{warning_lines}"
+        )
+        self._update_reference_guidance_controls()
+        self._sync_ready_state()
+
+    @Slot(str)
+    def _reference_parameter_analysis_failed(self, message: str) -> None:
+        self._worker = None
+        self._reference_recommendation = None
+        self._reference_recommendation_paths = None
+        self.reference_guidance_status_label.setObjectName("statusError")
+        self.reference_guidance_status_label.setStyleSheet("")
+        self.reference_guidance_status_label.setText(
+            f"Aligned-mesh parameter analysis failed: {message}"
+        )
+        self._update_reference_effective_widths()
+        self._update_reference_guidance_controls()
+        self._sync_ready_state()
+
+    def _current_procrustes_paths(
+        self,
+    ) -> tuple[Path, Path, Path | None, str]:
+        mesh_text = self.mesh_edit.text().strip()
+        landmark_text = self.landmarks_edit.text().strip()
+        pattern = self.pattern_edit.text().strip()
+        if not mesh_text:
+            raise ValueError("Select a mesh folder first.")
+        if not landmark_text:
+            raise ValueError("Select or create a landmark CSV first.")
+        if not pattern:
+            raise ValueError("Enter a subject file pattern first.")
+        mesh_directory = Path(mesh_text).expanduser().resolve()
+        if not mesh_directory.is_dir():
+            raise ValueError(f"Mesh folder does not exist: {mesh_directory}")
+        landmarks_file = Path(landmark_text).expanduser().resolve()
+        if not landmarks_file.is_file():
+            raise ValueError(f"Landmark CSV does not exist: {landmarks_file}")
+        template_text = self.template_edit.text().strip()
+        template = Path(template_text).expanduser().resolve() if template_text else None
+        if template is not None and not template.is_file():
+            raise ValueError(f"Template mesh does not exist: {template}")
+        return mesh_directory, landmarks_file, template, pattern
+
+    def _preview_matches_current_procrustes_inputs(self) -> bool:
+        preview = self._procrustes_preview
+        if preview is None:
+            return False
+        try:
+            mesh_directory, landmarks_file, template, pattern = self._current_procrustes_paths()
+            resolved_template = template or detect_template(mesh_directory)
+        except (OSError, TypeError, ValueError):
+            return False
+        return bool(
+            resolved_template is not None
+            and preview.mesh_directory == mesh_directory
+            and preview.landmarks == landmarks_file
+            and preview.template == resolved_template.resolve()
+            and preview.subject_pattern == pattern
+            and preview.scale_to_unit_centroid_size == self.procrustes_scale_check.isChecked()
+            and preview.allow_reflection == self.procrustes_reflection_check.isChecked()
+            and preview.tolerance == self.procrustes_tolerance_spin.value()
+            and preview.max_iterations == self.procrustes_iterations_spin.value()
+        )
+
+    def _approved_procrustes_fingerprint(self) -> str | None:
+        if (
+            self.procrustes_apply_check.isChecked()
+            and self.approve_procrustes_check.isChecked()
+            and self._preview_matches_current_procrustes_inputs()
+            and self._procrustes_preview is not None
+            and self._procrustes_preview.alignment.converged
+            and self._procrustes_visual_reviewed_fingerprint == self._procrustes_preview.fingerprint
+        ):
+            return self._procrustes_preview.fingerprint
+        return None
+
+    @Slot()
+    def _preview_procrustes(self) -> None:
+        if self._worker is not None or not self.procrustes_apply_check.isChecked():
+            return
+        try:
+            mesh_directory, landmarks_file, template, pattern = self._current_procrustes_paths()
+        except (OSError, TypeError, ValueError) as error:
+            self._procrustes_preview_failed(str(error))
+            return
+        worker = _ProcrustesPreviewWorker(
+            mesh_directory=mesh_directory,
+            landmarks_file=landmarks_file,
+            template=template,
+            subject_pattern=pattern,
+            scale_to_unit_centroid_size=self.procrustes_scale_check.isChecked(),
+            allow_reflection=self.procrustes_reflection_check.isChecked(),
+            tolerance=self.procrustes_tolerance_spin.value(),
+            max_iterations=self.procrustes_iterations_spin.value(),
+        )
+        worker.signals.succeeded.connect(self._procrustes_preview_succeeded)
+        worker.signals.failed.connect(self._procrustes_preview_failed)
+        self._worker = worker
+        self._procrustes_preview = None
+        self._procrustes_visual = None
+        self._procrustes_visual_reviewed_fingerprint = None
+        self.approve_procrustes_check.setChecked(False)
+        self.approve_procrustes_check.setEnabled(False)
+        self.procrustes_preview_status_label.setObjectName("status")
+        self.procrustes_preview_status_label.setStyleSheet("")
+        self.procrustes_preview_status_label.setText(
+            "Landmarks and meshes are being hashed and aligned read-only outside the "
+            "event loop. No file is being created or changed."
+        )
+        self._sync_ready_state()
+        self._thread_pool.start(worker)
+
+    @Slot(object)
+    def _procrustes_preview_succeeded(
+        self,
+        preview: LandmarkAlignmentPreview,
+    ) -> None:
+        self._worker = None
+        self._procrustes_preview = preview
+        self._procrustes_visual = None
+        self._procrustes_visual_reviewed_fingerprint = None
+        if not self._preview_matches_current_procrustes_inputs():
+            self._procrustes_preview = None
+            self.approve_procrustes_check.setChecked(False)
+            self.approve_procrustes_check.setEnabled(False)
+            self.procrustes_preview_status_label.setObjectName("statusWarning")
+            self.procrustes_preview_status_label.setStyleSheet("")
+            self.procrustes_preview_status_label.setText(
+                "Preview discarded because its path, file pattern, or settings no longer "
+                "match the form. No file was changed; run the preview again."
+            )
+            self._update_procrustes_controls()
+            self._sync_ready_state()
+            return
+
+        alignment = preview.alignment
+        residuals = sorted(alignment.residuals)
+        midpoint = len(residuals) // 2
+        median_residual = (
+            residuals[midpoint]
+            if len(residuals) % 2
+            else (residuals[midpoint - 1] + residuals[midpoint]) / 2.0
+        )
+        scales = tuple(transform.scale for transform in alignment.transforms)
+        final_iteration = alignment.history[-1]
+        specimen_count = len(preview.source_paths)
+        format_counts: dict[str, int] = {}
+        for metadata in preview.source_metadata:
+            format_counts[metadata.source_format] = format_counts.get(metadata.source_format, 0) + 1
+        format_summary = ", ".join(
+            f"{name.upper()}: {count}" for name, count in sorted(format_counts.items())
+        )
+        status = "converged" if alignment.converged else "did not converge"
+        self.procrustes_preview_status_label.setObjectName(
+            "statusSuccess" if alignment.converged else "statusError"
+        )
+        self.procrustes_preview_status_label.setStyleSheet("")
+        self.procrustes_preview_status_label.setText(
+            f"Read-only preview {status}: {specimen_count} meshes, "
+            f"{len(preview.landmark_labels)} landmarks, "
+            f"{len(alignment.history)} iterations ({alignment.termination_reason}).\n"
+            f"Source formats: {format_summary}. Approved publication will preserve "
+            "byte-identical raw copies and write aligned-vtk/*.vtk for both engines.\n"
+            f"Final mean change: {final_iteration.mean_change:.6g}; total squared "
+            f"residual: {final_iteration.total_squared_residual:.6g}.\n"
+            f"Per-mesh squared residual min / median / max: "
+            f"{residuals[0]:.6g} / {median_residual:.6g} / {residuals[-1]:.6g}.\n"
+            f"Applied scale min / max: {min(scales):.6g} / {max(scales):.6g}.\n"
+            f"Exact preview fingerprint: {preview.fingerprint}\n"
+            "Raw meshes and the landmark CSV remain unchanged. This numerical preview "
+            "does not establish biological landmark quality.\n"
+            "Next: open the visual GPA review to inspect the transformed cohort before "
+            "the approval checkbox becomes available."
+        )
+        self.approve_procrustes_check.setChecked(False)
+        self.approve_procrustes_check.setEnabled(False)
+        self._update_procrustes_controls()
+        self._sync_ready_state()
+
+    @Slot()
+    def _open_procrustes_visual_review(self) -> None:
+        preview = self._procrustes_preview
+        if (
+            self._worker is not None
+            or preview is None
+            or not preview.alignment.converged
+            or not self._preview_matches_current_procrustes_inputs()
+        ):
+            return
+        if (
+            self._procrustes_visual is not None
+            and self._procrustes_visual.fingerprint == preview.fingerprint
+        ):
+            self._show_loaded_procrustes_visual_review()
+            return
+        worker = _ProcrustesVisualWorker(preview)
+        worker.signals.succeeded.connect(self._procrustes_visual_succeeded)
+        worker.signals.failed.connect(self._procrustes_visual_failed)
+        self._worker = worker
+        self.review_procrustes_visual_button.setText("Loading visual GPA review...")
+        self._update_procrustes_controls()
+        self._sync_ready_state()
+        self._thread_pool.start(worker)
+
+    @Slot(object)
+    def _procrustes_visual_succeeded(self, visual: GpaAlignmentVisual) -> None:
+        self._worker = None
+        preview = self._procrustes_preview
+        self.review_procrustes_visual_button.setText("Open visual GPA review...")
+        if (
+            preview is None
+            or visual.fingerprint != preview.fingerprint
+            or not self._preview_matches_current_procrustes_inputs()
+        ):
+            self._procrustes_visual = None
+            self._procrustes_visual_reviewed_fingerprint = None
+            self.approve_procrustes_check.setChecked(False)
+            self.procrustes_preview_status_label.setObjectName("statusWarning")
+            self.procrustes_preview_status_label.setStyleSheet("")
+            self.procrustes_preview_status_label.setText(
+                "Visual GPA preview discarded because the numerical preview or its "
+                "inputs changed while meshes were loading. Run the alignment preview "
+                "again; no file was created or changed."
+            )
+            self._update_procrustes_controls()
+            self._sync_ready_state()
+            return
+        self._procrustes_visual = visual
+        self._update_procrustes_controls()
+        self._sync_ready_state()
+        self._show_loaded_procrustes_visual_review()
+
+    def _show_loaded_procrustes_visual_review(self) -> None:
+        preview = self._procrustes_preview
+        visual = self._procrustes_visual
+        if preview is None or visual is None or preview.fingerprint != visual.fingerprint:
+            return
+        try:
+            dialog = GpaAlignmentReviewDialog(preview, visual, self)
+        except (OSError, RuntimeError, TypeError, ValueError) as error:
+            self._procrustes_visual_failed(str(error))
+            return
+        dialog.previewInvalidated.connect(self._procrustes_visual_invalidated)
+        result = dialog.exec()
+        if (
+            result == QDialog.DialogCode.Accepted
+            and dialog.reviewed_fingerprint == preview.fingerprint
+            and self._preview_matches_current_procrustes_inputs()
+        ):
+            self._procrustes_visual_reviewed_fingerprint = preview.fingerprint
+            report = self.procrustes_preview_status_label.text()
+            completion = (
+                "Visual GPA review completed for this exact fingerprint. "
+                f"The reviewer opened {dialog.viewed_mesh_count} individual mesh(es); "
+                "the cohort overlay included every mesh."
+            )
+            if "Visual GPA review completed for this exact fingerprint." not in report:
+                self.procrustes_preview_status_label.setText(f"{report}\n{completion}")
+            self.approve_procrustes_check.setChecked(False)
+        self._update_procrustes_controls()
+        self._sync_ready_state()
+
+    @Slot(str)
+    def _procrustes_visual_failed(self, message: str) -> None:
+        if isinstance(self._worker, _ProcrustesVisualWorker):
+            self._worker = None
+        self._procrustes_visual = None
+        self._procrustes_visual_reviewed_fingerprint = None
+        self.review_procrustes_visual_button.setText("Open visual GPA review...")
+        self.approve_procrustes_check.setChecked(False)
+        report = self.procrustes_preview_status_label.text()
+        self.procrustes_preview_status_label.setObjectName("statusError")
+        self.procrustes_preview_status_label.setStyleSheet("")
+        self.procrustes_preview_status_label.setText(
+            f"{report}\nVisual GPA review could not be built: {message}\n"
+            "Approval remains locked. No source or aligned file was created or changed."
+        )
+        self._update_procrustes_controls()
+        self._sync_ready_state()
+
+    @Slot(str)
+    def _procrustes_visual_invalidated(self, message: str) -> None:
+        self._procrustes_preview = None
+        self._procrustes_visual = None
+        self._procrustes_visual_reviewed_fingerprint = None
+        self.approve_procrustes_check.setChecked(False)
+        self.approve_procrustes_check.setEnabled(False)
+        self.procrustes_preview_status_label.setObjectName("statusError")
+        self.procrustes_preview_status_label.setStyleSheet("")
+        self.procrustes_preview_status_label.setText(
+            f"{message}\nRun the numerical GPA preview again. No file was changed."
+        )
+        self._invalidate_reference_recommendation(
+            "The visual GPA review detected changed inputs; analyze again.",
+            sync=False,
+        )
+        self._update_procrustes_controls()
+        self._sync_ready_state()
+
+    @Slot(str)
+    def _procrustes_preview_failed(self, message: str) -> None:
+        if isinstance(self._worker, _ProcrustesPreviewWorker):
+            self._worker = None
+        self._procrustes_preview = None
+        self._procrustes_visual = None
+        self._procrustes_visual_reviewed_fingerprint = None
+        self.approve_procrustes_check.setChecked(False)
+        self.approve_procrustes_check.setEnabled(False)
+        self.procrustes_preview_status_label.setObjectName("statusError")
+        self.procrustes_preview_status_label.setStyleSheet("")
+        self.procrustes_preview_status_label.setText(
+            f"Alignment preview failed: {message}\n"
+            "No aligned meshes or project files were created or changed."
+        )
+        self._update_procrustes_controls()
+        self._sync_ready_state()
 
     @Slot()
     def _choose_reference_preparation_approval(self) -> None:
@@ -1671,8 +3080,7 @@ class DiffeoForgeWindow(QMainWindow):
             self._saved_reference_status_inputs_valid() and self._worker is None
         )
         self.export_saved_reference_status_verification_button.setEnabled(
-            self._saved_reference_status_result_matches_inputs()
-            and self._worker is None
+            self._saved_reference_status_result_matches_inputs() and self._worker is None
         )
 
     def _saved_reference_status_result_matches_inputs(self) -> bool:
@@ -1727,8 +3135,7 @@ class DiffeoForgeWindow(QMainWindow):
         )
         self.refresh_reference_preparation_status_button.setEnabled(ready)
         self.export_reference_preparation_status_button.setEnabled(
-            self._reference_preparation_status_matches_inputs()
-            and self._worker is None
+            self._reference_preparation_status_matches_inputs() and self._worker is None
         )
 
     def _reference_preparation_status_matches_inputs(self) -> bool:
@@ -1755,17 +3162,14 @@ class DiffeoForgeWindow(QMainWindow):
             Path(self.saved_reference_status_report_edit.text().strip()),
             self.saved_reference_status_hash_edit.text().strip(),
         )
-        worker.signals.succeeded.connect(
-            self._saved_reference_status_verification_succeeded
-        )
+        worker.signals.succeeded.connect(self._saved_reference_status_verification_succeeded)
         worker.signals.failed.connect(self._saved_reference_status_verification_failed)
         self._worker = worker
         self._saved_reference_preparation_status_verification = None
         self.saved_reference_status_verification_label.setObjectName("status")
         self.saved_reference_status_verification_label.setStyleSheet("")
         self.saved_reference_status_verification_label.setText(
-            "File hash, strict JSON, schema, and deterministic bytes are being checked "
-            "read-only…"
+            "File hash, strict JSON, schema, and deterministic bytes are being checked read-only…"
         )
         self.saved_reference_status_verification_detail_label.setText(
             "Current project, approval, run, container, and engine state is not read."
@@ -1797,8 +3201,7 @@ class DiffeoForgeWindow(QMainWindow):
                 DesktopSavedReferencePreparationStatusVerification,
             )
             or result.report_path != worker.report_path.expanduser().resolve()
-            or result.expected_report_sha256
-            != worker.expected_report_sha256.strip().lower()
+            or result.expected_report_sha256 != worker.expected_report_sha256.strip().lower()
         ):
             self._saved_reference_preparation_status_verification = None
             self.saved_reference_status_verification_label.setObjectName("statusError")
@@ -1810,9 +3213,7 @@ class DiffeoForgeWindow(QMainWindow):
             self.saved_reference_status_verification_detail_label.setText(
                 "Nothing was changed. Verify again with the current inputs."
             )
-            self.saved_reference_status_verification_export_label.setObjectName(
-                "statusError"
-            )
+            self.saved_reference_status_verification_export_label.setObjectName("statusError")
             self.saved_reference_status_verification_export_label.setStyleSheet("")
             self.saved_reference_status_verification_export_label.setText(
                 "No evidence export: the discarded result is no longer bound to the current inputs."
@@ -1822,9 +3223,7 @@ class DiffeoForgeWindow(QMainWindow):
 
         self._saved_reference_preparation_status_verification = result
         engine_started = (
-            "no"
-            if result.engine_execution_started is False
-            else "not observed in the saved status"
+            "no" if result.engine_execution_started is False else "not observed in the saved status"
         )
         details = [
             f"Report: {self._wrappable_path(result.report_path)}",
@@ -1851,9 +3250,7 @@ class DiffeoForgeWindow(QMainWindow):
         ]
         if result.manifest_sha256 is not None:
             details.insert(12, f"Manifest-SHA-256: {result.manifest_sha256}")
-        self.saved_reference_status_verification_detail_label.setText(
-            "\n".join(details)
-        )
+        self.saved_reference_status_verification_detail_label.setText("\n".join(details))
         self.saved_reference_status_verification_label.setObjectName("statusSuccess")
         self.saved_reference_status_verification_label.setStyleSheet("")
         self.saved_reference_status_verification_label.setText(
@@ -1891,9 +3288,7 @@ class DiffeoForgeWindow(QMainWindow):
             "No artifact release. No file was repaired or modified, and no project, run, "
             "container, or engine state was read."
         )
-        self.saved_reference_status_verification_export_label.setObjectName(
-            "statusError"
-        )
+        self.saved_reference_status_verification_export_label.setObjectName("statusError")
         self.saved_reference_status_verification_export_label.setStyleSheet("")
         self.saved_reference_status_verification_export_label.setText(
             "No evidence export without a currently bound, fully validated verification."
@@ -1922,9 +3317,7 @@ class DiffeoForgeWindow(QMainWindow):
         if not selected:
             return
         if not self._saved_reference_status_result_matches_inputs():
-            self.saved_reference_status_verification_export_label.setObjectName(
-                "statusError"
-            )
+            self.saved_reference_status_verification_export_label.setObjectName("statusError")
             self.saved_reference_status_verification_export_label.setStyleSheet("")
             self.saved_reference_status_verification_export_label.setText(
                 "Evidence export discarded because the report path or hash input no longer "
@@ -1943,18 +3336,14 @@ class DiffeoForgeWindow(QMainWindow):
             TypeError,
             ValueError,
         ) as error:
-            self.saved_reference_status_verification_export_label.setObjectName(
-                "statusError"
-            )
+            self.saved_reference_status_verification_export_label.setObjectName("statusError")
             self.saved_reference_status_verification_export_label.setStyleSheet("")
             self.saved_reference_status_verification_export_label.setText(
                 f"Verification evidence was not exported: {error}"
             )
             self._sync_saved_reference_status_verification_controls()
             return
-        self.saved_reference_status_verification_export_label.setObjectName(
-            "statusSuccess"
-        )
+        self.saved_reference_status_verification_export_label.setObjectName("statusSuccess")
         self.saved_reference_status_verification_export_label.setStyleSheet("")
         self.saved_reference_status_verification_export_label.setText(
             f"New verification evidence written: "
@@ -1976,25 +3365,225 @@ class DiffeoForgeWindow(QMainWindow):
             return
         if template is not None:
             self.template_edit.setText(str(template))
+            self._adopt_template_format_pattern(template)
+
+    def _adopt_template_format_pattern(self, template: Path) -> None:
+        """Follow a newly selected format while preserving an explicit custom glob."""
+
+        current = self.pattern_edit.text().strip().casefold()
+        if current in _DEFAULT_SURFACE_PATTERNS:
+            self.pattern_edit.setText(f"*{template.suffix.casefold()}")
+
+    @staticmethod
+    def _ratio_spin_box(tooltip: str) -> QDoubleSpinBox:
+        spin = QDoubleSpinBox()
+        spin.setDecimals(5)
+        spin.setRange(0.00001, 2.0)
+        spin.setSingleStep(0.01)
+        spin.setToolTip(tooltip)
+        return spin
+
+    def _parameter_help(
+        self,
+        key: str,
+        parameter_name: str,
+    ) -> _ExpandableParameterHelp:
+        help_panel = _ExpandableParameterHelp(
+            parameter_name,
+            DEFORMETRICA_PARAMETER_GUIDANCE[key],
+        )
+        help_panel.setObjectName(f"parameterHelp_{key}")
+        self.reference_parameter_help_panels[key] = help_panel
+        return help_panel
+
+    def _parameter_field_with_help(
+        self,
+        widget: QWidget,
+        *,
+        key: str,
+        parameter_name: str,
+    ) -> QWidget:
+        field = QWidget()
+        field.setObjectName(f"parameterField_{key}")
+        layout = QVBoxLayout(field)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(2)
+        layout.addWidget(widget)
+        layout.addWidget(self._parameter_help(key, parameter_name))
+        self._reference_parameter_field_pairs.append((widget, field))
+        return field
+
+    def _reference_parameter_field(self, widget: QWidget) -> QWidget:
+        for candidate, field in self._reference_parameter_field_pairs:
+            if candidate is widget:
+                return field
+        raise LookupError("No parameter field is registered for the requested widget")
+
+    def _reference_parameter_widgets(self) -> tuple[QWidget, ...]:
+        return (
+            self.reference_attachment_ratio_spin,
+            self.reference_deformation_ratio_spin,
+            self.reference_control_spacing_ratio_spin,
+            self.reference_noise_ratio_spin,
+            self.reference_max_iterations_spin,
+            self.reference_step_size_spin,
+            self.reference_tolerance_spin,
+        )
+
+    def _set_reference_parameter_fields_visible(self, visible: bool) -> None:
+        for widget in self._reference_parameter_widgets():
+            widget.setVisible(visible)
+            field = self._reference_parameter_field(widget)
+            field.setVisible(visible)
+            label = self.reference_parameter_form.labelForField(field)
+            if label is not None:
+                label.setVisible(visible)
+        self.reference_effective_widths_label.setVisible(visible)
+
+    @Slot()
+    def _update_reference_effective_widths(self) -> None:
+        recommendation = self._reference_recommendation
+        if recommendation is None:
+            self.reference_effective_widths_label.setText(
+                "There is no single KW: attachment KW controls matching detail; "
+                "deformation KW controls deformation smoothness. Effective absolute "
+                "values will appear here after the aligned meshes are analyzed."
+            )
+            return
+        diagonal = recommendation.template_diagonal
+        attachment = self.reference_attachment_ratio_spin.value() * diagonal
+        deformation = self.reference_deformation_ratio_spin.value() * diagonal
+        control_spacing = self.reference_control_spacing_ratio_spin.value() * diagonal
+        noise = self.reference_noise_ratio_spin.value() * diagonal
+        self.reference_effective_widths_label.setText(
+            f"Two distinct KWs at template diagonal {diagonal:.6g}: "
+            f"attachment KW (matching detail) {attachment:.6g} | "
+            f"deformation KW (smoothness) {deformation:.6g} | "
+            f"control-point spacing {control_spacing:.6g} | noise SD {noise:.6g}"
+        )
+
+    @Slot()
+    def _update_reference_parameter_profile(self) -> None:
+        key = str(self.reference_parameter_profile_combo.currentData())
+        if key == "pending":
+            self._set_reference_parameter_fields_visible(False)
+            self.reference_parameter_hint.setText(
+                "No parameter values are active. Confirm existing GPA alignment or complete "
+                "the DiffeoForge landmark-GPA preview, then analyze the aligned meshes."
+            )
+            self._update_reference_effective_widths()
+            self._sync_ready_state()
+            return
+
+        recommendation = self._reference_recommendation
+        if key == "data_assisted":
+            if recommendation is None:
+                self._set_reference_parameter_fields_visible(False)
+                self.reference_parameter_hint.setText(
+                    "No current aligned-mesh recommendation is available. Run the geometry "
+                    "analysis again or choose Advanced manual control."
+                )
+                self._update_reference_effective_widths()
+                self._sync_ready_state()
+                return
+            values = (
+                (
+                    self.reference_attachment_ratio_spin,
+                    recommendation.attachment_kernel_width_ratio,
+                ),
+                (
+                    self.reference_deformation_ratio_spin,
+                    recommendation.deformation_kernel_width_ratio,
+                ),
+                (
+                    self.reference_control_spacing_ratio_spin,
+                    recommendation.control_point_spacing_ratio,
+                ),
+                (
+                    self.reference_noise_ratio_spin,
+                    recommendation.provisional_noise_std_ratio,
+                ),
+                (self.reference_max_iterations_spin, recommendation.max_iterations),
+                (self.reference_step_size_spin, recommendation.initial_step_size),
+                (
+                    self.reference_tolerance_spin,
+                    recommendation.convergence_tolerance,
+                ),
+            )
+            self._set_reference_parameter_fields_visible(True)
+            for widget, value in values:
+                widget.setValue(value)
+                widget.setEnabled(False)
+            self.reference_parameter_hint.setText(
+                "Geometry-derived scale and sampling constraints plus your stated detail "
+                "and deformation-scale choices. Noise and optimizer settings remain "
+                "provisional and require pilot validation."
+            )
+            self._update_reference_effective_widths()
+            self._sync_ready_state()
+            return
+
+        profile = reference_parameter_profile("recommended")
+        if self._reference_recommendation is None:
+            values = (
+                (self.reference_attachment_ratio_spin, profile.attachment_ratio),
+                (self.reference_deformation_ratio_spin, profile.deformation_ratio),
+                (
+                    self.reference_control_spacing_ratio_spin,
+                    profile.control_point_spacing_ratio,
+                ),
+                (self.reference_noise_ratio_spin, profile.noise_ratio),
+                (self.reference_max_iterations_spin, profile.max_iterations),
+                (self.reference_step_size_spin, profile.initial_step_size),
+                (self.reference_tolerance_spin, profile.convergence_tolerance),
+            )
+            for widget, value in values:
+                widget.setValue(value)
+        self._set_reference_parameter_fields_visible(True)
+        for widget in self._reference_parameter_widgets():
+            widget.setEnabled(True)
+        if key == "advanced":
+            self.reference_parameter_hint.setText(
+                "Advanced values are editable. Length parameters are dimensionless fractions "
+                "of the template bounding-box diagonal; DiffeoForge converts them to the "
+                "declared coordinate unit and records both ratios and effective values."
+            )
+        self._update_reference_effective_widths()
+        self._sync_ready_state()
+
+    @Slot()
+    def _update_reference_expert_visibility(self) -> None:
+        self.reference_expert_box.setVisible(self.reference_expert_toggle.isChecked())
+
+    @Slot()
+    def _update_reference_expert_dependencies(self) -> None:
+        self.reference_sobolev_ratio_spin.setEnabled(self.reference_sobolev_check.isChecked())
 
     @Slot()
     def _update_engine_explanation(self) -> None:
         modern = self.engine_combo.currentData() == DesktopEngine.MODERN_CPU
-        self.landmarks_edit.setEnabled(modern)
-        self.landmarks_button.setEnabled(modern)
-        self.pairwise_combo.setEnabled(modern)
-        self.optimization_effort_combo.setEnabled(modern)
+        self.landmarks_edit.setEnabled(True)
+        self.landmarks_button.setEnabled(True)
+        self.project_input_form.setRowVisible(self.pairwise_box, modern)
+        self.project_input_form.setRowVisible(self.optimization_effort_box, modern)
+        self.project_input_form.setRowVisible(self.already_gpa_check, not modern)
+        self.project_input_form.setRowVisible(self.reference_guidance_box, not modern)
+        self.project_input_form.setRowVisible(self.reference_parameter_box, not modern)
         if modern:
             self.engine_hint.setText(
                 "Current CPU/float64 engine; PCA is part of the later result bundle."
             )
         else:
             self.engine_hint.setText(
-                "Independent Deformetrica 4.3 reference; Docker remains external and is "
-                "not bundled."
+                "Deformetrica 4.3 is the recommended numerical backend. Optional landmark "
+                "Procrustes is performed by DiffeoForge first; its verified execution "
+                "environment is "
+                "managed automatically."
             )
         self._update_pairwise_explanation()
         self._update_optimization_explanation()
+        self._update_reference_parameter_profile()
+        self._update_reference_guidance_controls()
 
     @Slot()
     def _update_pairwise_explanation(self) -> None:
@@ -2006,8 +3595,8 @@ class DiffeoForgeWindow(QMainWindow):
         if self.pairwise_combo.currentData() == "blockwise_256":
             self.pairwise_hint.setText(
                 "Exact same all-pairs mathematics in explicit tiles. This bounds one "
-                "pairwise allocation, not total RAM or runtime; benchmark representative "
-                "meshes before production."
+                "pairwise allocation, not total RAM or computation time; benchmark "
+                "representative meshes before production."
             )
             return
         self.pairwise_hint.setText(
@@ -2041,13 +3630,13 @@ class DiffeoForgeWindow(QMainWindow):
         if step == 1:
             return self._review is not None
         if step == 2:
-            return bool(
-                (
-                    self._review is not None
-                    and self._review.engine is DesktopEngine.MODERN_CPU
-                )
-                or (self._run_result is not None and self._run_result.completed)
-            )
+            if self._run_result is not None or self._result_review is not None:
+                return True
+            if self._review is None:
+                return False
+            if self._review.engine is DesktopEngine.MODERN_CPU:
+                return True
+            return bool(self._reference_readiness is not None and self._reference_readiness.ready)
         if step == 3:
             return self._result_review is not None
         return False
@@ -2062,9 +3651,7 @@ class DiffeoForgeWindow(QMainWindow):
             unlocked = self._step_is_unlocked(index)
             button.setEnabled(unlocked)
             button.setCursor(
-                Qt.CursorShape.PointingHandCursor
-                if unlocked
-                else Qt.CursorShape.ArrowCursor
+                Qt.CursorShape.PointingHandCursor if unlocked else Qt.CursorShape.ArrowCursor
             )
             if index == self._active_step:
                 button.setObjectName("stepActive")
@@ -2098,11 +3685,42 @@ class DiffeoForgeWindow(QMainWindow):
             self.create_button.setText("Review parameters & workload")
             self.create_button.setEnabled(self._worker is None)
         else:
-            self.create_button.setText("Validate data & create project")
+            approval_required = bool(
+                self.landmarks_edit.text().strip()
+                and self.procrustes_apply_check.isChecked()
+                and self._approved_procrustes_fingerprint() is None
+            )
+            parameter_guidance_required = bool(
+                self.engine_combo.currentData() == DesktopEngine.DEFORMETRICA_REFERENCE
+                and (
+                    self.reference_parameter_profile_combo.currentData() == "pending"
+                    or (
+                        self.reference_parameter_profile_combo.currentData() == "data_assisted"
+                        and not self._reference_recommendation_matches_current_inputs()
+                    )
+                )
+            )
+            if self._procrustes_preview is None:
+                alignment_action = "Preview & approve alignment first"
+            elif (
+                self._procrustes_visual_reviewed_fingerprint != self._procrustes_preview.fingerprint
+            ):
+                alignment_action = "Complete visual GPA review first"
+            else:
+                alignment_action = "Approve reviewed alignment first"
+            self.create_button.setText(
+                alignment_action
+                if approval_required
+                else (
+                    "Analyze aligned meshes or choose manual parameters"
+                    if parameter_guidance_required
+                    else "Validate data & create project"
+                )
+            )
             self.create_button.setEnabled(form_ready and self._worker is None)
 
     def _sync_run_primary_action(self) -> None:
-        if isinstance(self._worker, _AtlasWorker):
+        if isinstance(self._worker, (_AtlasWorker, _ReferenceAtlasWorker)):
             self.start_atlas_button.setText("Atlas computation running…")
             self.start_atlas_button.setEnabled(False)
         elif isinstance(self._worker, _ResultReviewWorker):
@@ -2111,31 +3729,128 @@ class DiffeoForgeWindow(QMainWindow):
         elif self._result_review is not None:
             self.start_atlas_button.setText("Open Results & PCA")
             self.start_atlas_button.setEnabled(self._worker is None)
-        elif self._run_result is not None and self._run_result.completed:
-            self.start_atlas_button.setText("Continue to Results & PCA")
-            self.start_atlas_button.setEnabled(self._worker is None)
+        elif self._run_result is not None:
+            if self._run_result.completed:
+                self.start_atlas_button.setText("Continue to Results & PCA")
+                self.start_atlas_button.setEnabled(self._worker is None)
         else:
-            self.start_atlas_button.setText("Start reviewed Modern atlas")
+            reference = bool(
+                self._review is not None
+                and self._review.engine is DesktopEngine.DEFORMETRICA_REFERENCE
+            )
+            self.start_atlas_button.setText(
+                "Start reviewed Deformetrica atlas" if reference else "Start reviewed Modern atlas"
+            )
             self.start_atlas_button.setEnabled(
                 bool(
                     self._worker is None
-                    and self._run_readiness is not None
-                    and self._run_readiness.ready_for_worker
+                    and (
+                        self._reference_run_request is not None
+                        if reference
+                        else self._run_readiness is not None
+                        and self._run_readiness.ready_for_worker
+                    )
                 )
             )
 
     @Slot()
     def _sync_ready_state(self) -> None:
+        approved_alignment = self._approved_procrustes_fingerprint()
+        alignment_ready = bool(
+            not self.landmarks_edit.text().strip()
+            or not self.procrustes_apply_check.isChecked()
+            or approved_alignment is not None
+        )
+        reference_profile = self.reference_parameter_profile_combo.currentData()
+        reference_parameters_ready = bool(
+            self.engine_combo.currentData() != DesktopEngine.DEFORMETRICA_REFERENCE
+            or reference_profile == "advanced"
+            or (
+                reference_profile == "data_assisted"
+                and self._reference_recommendation_matches_current_inputs()
+            )
+        )
         ready = bool(
             self.mesh_edit.text().strip()
             and self.project_edit.text().strip()
             and self.units_combo.currentData() is not None
+            and alignment_ready
+            and reference_parameters_ready
         )
+        self._update_procrustes_controls()
+        self._update_reference_guidance_controls()
         self._sync_setup_primary_action(form_ready=ready)
         self._sync_run_primary_action()
         self._sync_navigation_state()
         self._sync_reference_preparation_status_controls()
         self._sync_saved_reference_status_verification_controls()
+        self.open_completed_run_button.setEnabled(self._worker is None)
+
+    @Slot()
+    def _select_completed_run(self) -> None:
+        if self._worker is not None:
+            return
+        initial = self.project_edit.text().strip() or self.mesh_edit.text().strip()
+        selected = QFileDialog.getExistingDirectory(
+            self,
+            "Select a completed run or DiffeoForge project folder",
+            initial,
+        )
+        if not selected:
+            return
+        try:
+            results = discover_completed_results(selected)
+        except CompletedResultDiscoveryError as error:
+            self.status_label.setObjectName("statusError")
+            self.status_label.setStyleSheet("")
+            self.status_label.setText(f"Completed runs could not be inspected: {error}")
+            return
+        if not results:
+            self.status_label.setObjectName("statusError")
+            self.status_label.setStyleSheet("")
+            self.status_label.setText(
+                "No completed DiffeoForge run was found there. Select either the exact "
+                "completed run folder or the project folder that contains its runs."
+            )
+            return
+        result = results[0]
+        if len(results) > 1:
+            labels = [
+                (f"{candidate.run_directory.name} — {candidate.run_directory.parent}")
+                for candidate in results
+            ]
+            chosen, accepted = QInputDialog.getItem(
+                self,
+                "Choose completed run",
+                "More than one completed run was found:",
+                labels,
+                0,
+                False,
+            )
+            if not accepted:
+                return
+            result = results[labels.index(chosen)]
+        self._open_completed_result(result)
+
+    def _open_completed_result(self, result: CompletedResultRun) -> None:
+        if self._worker is not None:
+            return
+        worker = _ResultReviewWorker(
+            result.run_directory,
+            reference=result.reference,
+        )
+        worker.signals.succeeded.connect(self._result_review_succeeded)
+        worker.signals.failed.connect(self._completed_result_review_failed)
+        self._worker = worker
+        self.status_label.setObjectName("status")
+        self.status_label.setStyleSheet("")
+        self.status_label.setText(
+            "Reverifying the complete Deformetrica run and rebuilding its bound PCA snapshot…"
+            if result.reference
+            else "Reverifying the complete Modern workflow and result bundle…"
+        )
+        self._sync_ready_state()
+        self._thread_pool.start(worker)
 
     @Slot()
     def _setup_primary_action(self) -> None:
@@ -2154,17 +3869,42 @@ class DiffeoForgeWindow(QMainWindow):
             return
         if self._result_review is not None:
             self._navigate_to_step(3)
-        elif self._run_result is not None and self._run_result.completed:
-            self._review_run_result()
+        elif self._run_result is not None:
+            if self._run_result.completed:
+                self._review_run_result()
         else:
             self._start_atlas()
 
     def _request(self) -> ProjectSetupRequest:
         template = self.template_edit.text().strip()
         landmarks = self.landmarks_edit.text().strip()
+        apply_procrustes = bool(landmarks and self.procrustes_apply_check.isChecked())
         blockwise = bool(
             self.engine_combo.currentData() == DesktopEngine.MODERN_CPU
             and self.pairwise_combo.currentData() == "blockwise_256"
+        )
+        reference_profile = str(self.reference_parameter_profile_combo.currentData())
+        recommendation_is_current = bool(
+            reference_profile == "data_assisted"
+            and self._reference_recommendation is not None
+            and self._reference_recommendation_matches_current_inputs()
+        )
+        if (
+            self.engine_combo.currentData() == DesktopEngine.MODERN_CPU
+            and reference_profile == "pending"
+        ):
+            reference_profile = "recommended"
+        reference_ratios = (
+            self._reference_recommendation.parameter_ratios
+            if recommendation_is_current and self._reference_recommendation is not None
+            else {
+                "attachment_kernel_width": self.reference_attachment_ratio_spin.value(),
+                "deformation_kernel_width": self.reference_deformation_ratio_spin.value(),
+                "initial_control_point_spacing": (
+                    self.reference_control_spacing_ratio_spin.value()
+                ),
+                "noise_std": self.reference_noise_ratio_spin.value(),
+            }
         )
         return ProjectSetupRequest(
             mesh_directory=Path(self.mesh_edit.text().strip()),
@@ -2174,23 +3914,49 @@ class DiffeoForgeWindow(QMainWindow):
             template=Path(template) if template else None,
             project_name=self.name_edit.text().strip() or None,
             subject_pattern=self.pattern_edit.text(),
-            landmarks_file=(
-                Path(landmarks)
-                if landmarks and self.engine_combo.currentData() == DesktopEngine.MODERN_CPU
-                else None
-            ),
+            landmarks_file=(Path(landmarks) if apply_procrustes else None),
             pairwise_mode="blockwise" if blockwise else "dense",
             query_tile_size=256 if blockwise else None,
             source_tile_size=256 if blockwise else None,
             max_cycles=int(self.optimization_effort_combo.currentData()),
+            reference_parameter_profile=reference_profile,
+            reference_parameter_ratios=reference_ratios,
+            reference_parameter_recommendation=(
+                self._reference_recommendation.provenance
+                if recommendation_is_current and self._reference_recommendation is not None
+                else None
+            ),
+            reference_max_iterations=self.reference_max_iterations_spin.value(),
+            reference_initial_step_size=self.reference_step_size_spin.value(),
+            reference_convergence_tolerance=self.reference_tolerance_spin.value(),
+            reference_attachment_type=self.reference_attachment_type_combo.currentData(),
+            reference_timepoints=self.reference_timepoints_spin.value(),
+            reference_use_rk2=self.reference_rk2_check.isChecked(),
+            reference_max_line_search_iterations=self.reference_line_search_spin.value(),
+            reference_save_every_n_iterations=self.reference_save_every_spin.value(),
+            reference_print_every_n_iterations=self.reference_print_every_spin.value(),
+            reference_scale_initial_step_size=self.reference_scale_step_check.isChecked(),
+            reference_use_sobolev_gradient=self.reference_sobolev_check.isChecked(),
+            reference_sobolev_kernel_width_ratio=self.reference_sobolev_ratio_spin.value(),
+            reference_freeze_template=self.reference_freeze_template_check.isChecked(),
+            reference_freeze_control_points=(
+                self.reference_freeze_control_points_check.isChecked()
+            ),
+            reference_threads=self.reference_threads_spin.value(),
+            reference_random_seed=self.reference_random_seed_spin.value(),
+            procrustes_scale_to_unit_centroid_size=self.procrustes_scale_check.isChecked(),
+            procrustes_allow_reflection=self.procrustes_reflection_check.isChecked(),
+            procrustes_tolerance=self.procrustes_tolerance_spin.value(),
+            procrustes_max_iterations=self.procrustes_iterations_spin.value(),
+            approved_procrustes_fingerprint=(
+                self._approved_procrustes_fingerprint() if apply_procrustes else None
+            ),
         )
 
     @staticmethod
     def _configuration_path(request: ProjectSetupRequest) -> Path:
         filename = (
-            "modern-atlas.yaml"
-            if request.engine == DesktopEngine.MODERN_CPU
-            else "atlas.yaml"
+            "modern-atlas.yaml" if request.engine == DesktopEngine.MODERN_CPU else "atlas.yaml"
         )
         return (request.project_directory / filename).expanduser().resolve()
 
@@ -2219,6 +3985,19 @@ class DiffeoForgeWindow(QMainWindow):
 
     @Slot()
     def _create_project(self) -> None:
+        if (
+            self.landmarks_edit.text().strip()
+            and self.procrustes_apply_check.isChecked()
+            and self._approved_procrustes_fingerprint() is None
+        ):
+            self.status_label.setObjectName("statusWarning")
+            self.status_label.setStyleSheet("")
+            self.status_label.setText(
+                "Run the read-only Procrustes preview and approve that exact result "
+                "before creating the project."
+            )
+            self._sync_ready_state()
+            return
         request = self._request()
         config_path = self._configuration_path(request)
         if config_path.exists():
@@ -2238,6 +4017,7 @@ class DiffeoForgeWindow(QMainWindow):
         self._reference_readiness = None
         self._reference_preparation_status = None
         self._run_readiness = None
+        self._reference_run_request = None
         self._run_result = None
         self._result_review = None
         self.template_preview_card.hide()
@@ -2267,11 +4047,16 @@ class DiffeoForgeWindow(QMainWindow):
             f"Validation passed: {result.subject_count} subject meshes were accepted."
         )
         report = f"\nPreflight report: {result.report_path}" if result.report_path else ""
+        preprocessing = (
+            f"\nProcrustes evidence: {result.preprocessing_report_path}"
+            if result.preprocessing_report_path
+            else ""
+        )
         notices = "\n".join(f"• {notice}" for notice in result.notices)
         self.result_label.setText(
             f"Engine: {result.engine_label}\n"
             f"Template: {result.template_path}\n"
-            f"Configuration: {result.config_path}{report}\n\n"
+            f"Configuration: {result.config_path}{report}{preprocessing}\n\n"
             f"Important notices:\n{notices}"
         )
         self.result_card.show()
@@ -2280,6 +4065,8 @@ class DiffeoForgeWindow(QMainWindow):
     @Slot(str)
     def _project_failed(self, message: str) -> None:
         self._worker = None
+        if self._approved_procrustes_fingerprint() is not None:
+            self._invalidate_procrustes_preview()
         self.status_label.setObjectName("statusError")
         self.status_label.setStyleSheet("")
         self.status_label.setText(f"Project could not be created: {message}")
@@ -2295,10 +4082,18 @@ class DiffeoForgeWindow(QMainWindow):
             "Effective parameters and available workload evidence are being collected…"
         )
         self._worker = _ReviewWorker(self._result)
-        self._worker.signals.succeeded.connect(self._review_succeeded)
+        self._worker.signals.succeeded.connect(self._review_worker_succeeded)
         self._worker.signals.failed.connect(self._review_failed)
         self._sync_ready_state()
         self._thread_pool.start(self._worker)
+
+    @Slot(object)
+    def _review_worker_succeeded(self, review: ProjectReviewResult) -> None:
+        """Publish a review and start the reference safety check automatically."""
+
+        self._review_succeeded(review)
+        if review.engine is DesktopEngine.DEFORMETRICA_REFERENCE:
+            self._check_reference_readiness()
 
     @Slot(object)
     def _review_succeeded(self, review: ProjectReviewResult) -> None:
@@ -2308,6 +4103,7 @@ class DiffeoForgeWindow(QMainWindow):
         self._reference_readiness = None
         self._reference_preparation_status = None
         self._run_readiness = None
+        self._reference_run_request = None
         self.reference_preparation_approval_edit.clear()
         self.reference_preparation_hash_edit.clear()
         self._populate_review_rows(self.parameter_review_layout, review.parameters)
@@ -2316,7 +4112,7 @@ class DiffeoForgeWindow(QMainWindow):
         engine_label = (
             "DiffeoForge Modern CPU (experimental)"
             if review.engine is DesktopEngine.MODERN_CPU
-            else "Deformetrica 4.3 reference (external)"
+            else "Deformetrica 4.3 (managed installation)"
         )
         config_display = self._wrappable_path(review.config_path)
         report_display = self._wrappable_path(review.report_path)
@@ -2357,15 +4153,17 @@ class DiffeoForgeWindow(QMainWindow):
             self.show_run_button.setEnabled(True)
         else:
             self.reference_readiness_card.show()
-            self.reference_preparation_status_card.show()
+            # Advanced approval/status evidence remains implemented for developer and
+            # provenance audits, but it is not an end-user prerequisite.
+            self.reference_preparation_status_card.hide()
             self.reference_readiness_status_label.setObjectName("status")
             self.reference_readiness_status_label.setStyleSheet("")
             self.reference_readiness_status_label.setText(
-                "The configured container environment has not been checked."
+                "The automatic Deformetrica setup check is pending."
             )
             self.reference_readiness_detail_label.setText(
-                "The check is bound to the displayed configuration SHA-256 and is read-only. "
-                "It installs, builds, starts, prepares, and repairs nothing."
+                "DiffeoForge will verify the installed engine and current system resources "
+                "in the background. This is not an estimate of atlas computation time."
             )
             self.refresh_reference_readiness_button.setEnabled(True)
             self.reference_preparation_status_label.setObjectName("status")
@@ -2377,7 +4175,7 @@ class DiffeoForgeWindow(QMainWindow):
                 "An approval file and independently recorded SHA-256 are required. "
                 "The check changes, publishes, deletes, and starts nothing."
             )
-            self.show_run_button.setText("Reference execution is not connected yet")
+            self.show_run_button.setText("Checking Deformetrica setup automatically…")
             self.show_run_button.setEnabled(False)
         self._set_active_step(1)
         self.page_stack.setCurrentIndex(1)
@@ -2403,8 +4201,7 @@ class DiffeoForgeWindow(QMainWindow):
         self.template_preview_status_label.setObjectName("status")
         self.template_preview_status_label.setStyleSheet("")
         self.template_preview_status_label.setText(
-            "Template geometry and unique edges are being loaded read-only outside the "
-            "event loop…"
+            "Template geometry and unique edges are being loaded read-only outside the event loop…"
         )
         self.template_preview_detail_label.setText(
             "The source file is hashed before and after loading. No points, faces, or files "
@@ -2416,10 +4213,7 @@ class DiffeoForgeWindow(QMainWindow):
     @Slot(object)
     def _template_preview_succeeded(self, model: MeshPreviewModel) -> None:
         self._worker = None
-        if (
-            self._result is None
-            or model.path.resolve() != self._result.template_path.resolve()
-        ):
+        if self._result is None or model.path.resolve() != self._result.template_path.resolve():
             self._template_preview_failed(
                 "The loaded preview model does not belong to the current template"
             )
@@ -2483,9 +4277,7 @@ class DiffeoForgeWindow(QMainWindow):
         )
         self.template_preview_status_label.setObjectName("statusError")
         self.template_preview_status_label.setStyleSheet("")
-        self.template_preview_status_label.setText(
-            f"Template preview was not loaded: {message}"
-        )
+        self.template_preview_status_label.setText(f"Template preview was not loaded: {message}")
         self.template_preview_detail_label.setText(
             "No preview released; the template file was not modified."
         )
@@ -2508,79 +4300,85 @@ class DiffeoForgeWindow(QMainWindow):
         self.reference_readiness_status_label.setObjectName("status")
         self.reference_readiness_status_label.setStyleSheet("")
         self.reference_readiness_status_label.setText(
-            "Host, project folder, container service, and exact configured image are being "
-            "checked read-only…"
+            "Deformetrica 4.3, available memory, and the project folder are being checked "
+            "automatically…"
         )
         self.reference_readiness_detail_label.setText(
-            "No reference run is prepared or started. The configuration is bound to its "
-            "review hash before and after external observations."
+            "This safety check does not start an atlas. Estimated computation time is shown "
+            "separately in Step 3 after several optimizer iterations have been observed."
         )
+        self.show_run_button.setText("Checking Deformetrica setup automatically…")
+        self.show_run_button.setEnabled(False)
         self._sync_ready_state()
         self._thread_pool.start(worker)
 
     @Slot(object)
-    def _reference_readiness_succeeded(
-        self, readiness: DesktopReferenceReadiness
-    ) -> None:
+    def _reference_readiness_succeeded(self, readiness: DesktopReferenceReadiness) -> None:
         self._worker = None
         self._reference_readiness = readiness
         details = [
             f"Configuration: {self._wrappable_path(readiness.config_path)}",
             f"Bound SHA-256: {readiness.config_sha256}",
             f"Project folder: {self._wrappable_path(readiness.workspace)}",
-            f"Container engine: {readiness.engine}",
-            f"Reference image: {readiness.image}",
+            f"Deformetrica installation: {launcher_label(readiness.launcher)}",
             "Observed checks:",
         ]
         for check in readiness.report.checks:
             details.append(f"[{check.status.upper()}] {check.label}: {check.summary}")
             if check.guidance:
                 details.append(f"  Guidance: {check.guidance}")
-        details.append(
-            "Action: observation only; nothing installed, built, started, prepared, resumed, "
-            "or repaired."
-        )
+        details.append("No atlas process was started; nothing installed or changed by this check.")
         self.reference_readiness_detail_label.setText("\n".join(details))
         if readiness.report.status == "ready":
             self.reference_readiness_status_label.setObjectName("statusSuccess")
             message = (
-                "The external reference environment is ready for the observed checks. "
-                "Reference execution remains locked pending separate process supervision."
+                "The DiffeoForge Deformetrica installation is ready. "
+                "The supervised Deformetrica execution step is now available."
             )
         elif readiness.report.status == "warning":
             self.reference_readiness_status_label.setObjectName("status")
             message = (
-                "The external reference environment has no blocking error but has warnings. "
+                "The Deformetrica setup check has no blocking error but has warnings. "
                 "Reference execution remains locked."
             )
+            self.show_run_button.setText("Setup check needs attention")
+            self.show_run_button.setEnabled(False)
         else:
             self.reference_readiness_status_label.setObjectName("statusError")
             message = (
-                "The external reference environment is blocked. Guidance appears below; "
+                "The DiffeoForge Deformetrica installation needs repair. Guidance appears "
+                "below; "
                 "nothing was changed or started."
             )
+            self.show_run_button.setText("Setup check failed – see guidance")
+            self.show_run_button.setEnabled(False)
         self.reference_readiness_status_label.setStyleSheet("")
         self.reference_readiness_status_label.setText(message)
         self.refresh_reference_readiness_button.setEnabled(True)
+        if readiness.ready:
+            self.show_run_button.setText("Continue to supervised Deformetrica execution")
+            self.show_run_button.setEnabled(True)
         self._sync_ready_state()
 
     @Slot(str)
     def _reference_readiness_failed(self, message: str) -> None:
         self._worker = None
         self._reference_readiness = None
+        self._reference_run_request = None
         self.reference_readiness_status_label.setObjectName("statusError")
         self.reference_readiness_status_label.setStyleSheet("")
         self.reference_readiness_status_label.setText(
-            f"Reference environment cannot be checked safely: {message}"
+            f"Automatic Deformetrica setup check failed: {message}"
         )
         self.reference_readiness_detail_label.setText(
             "Diagnostic discarded. No reference run was prepared or started, and no "
             "environment setting was changed."
         )
         self.refresh_reference_readiness_button.setEnabled(
-            self._review is not None
-            and self._review.engine is DesktopEngine.DEFORMETRICA_REFERENCE
+            self._review is not None and self._review.engine is DesktopEngine.DEFORMETRICA_REFERENCE
         )
+        self.show_run_button.setText("Setup check failed – check again")
+        self.show_run_button.setEnabled(False)
         self._sync_ready_state()
 
     def _reference_preparation_worker_matches_inputs(
@@ -2611,9 +4409,7 @@ class DiffeoForgeWindow(QMainWindow):
             Path(self.reference_preparation_approval_edit.text().strip()),
             self.reference_preparation_hash_edit.text().strip(),
         )
-        worker.signals.succeeded.connect(
-            self._reference_preparation_status_succeeded
-        )
+        worker.signals.succeeded.connect(self._reference_preparation_status_succeeded)
         worker.signals.failed.connect(self._reference_preparation_status_failed)
         self._worker = worker
         self._reference_preparation_status = None
@@ -2649,8 +4445,7 @@ class DiffeoForgeWindow(QMainWindow):
             or status.config_path != self._review.config_path.resolve()
             or status.config_sha256 != self._review.config_sha256
             or status.approval_path != worker.approval_path.expanduser().resolve()
-            or status.approval_sha256
-            != worker.expected_approval_sha256.strip().lower()
+            or status.approval_sha256 != worker.expected_approval_sha256.strip().lower()
         ):
             self._reference_preparation_status = None
             self.reference_preparation_status_label.setObjectName("statusError")
@@ -2695,9 +4490,7 @@ class DiffeoForgeWindow(QMainWindow):
         if status.manifest_sha256 is not None:
             details.append(f"Manifest-SHA-256: {status.manifest_sha256}")
         for stage in status.private_stages:
-            details.append(
-                f"[{stage.status}] {self._wrappable_path(stage.path)}: {stage.reason}"
-            )
+            details.append(f"[{stage.status}] {self._wrappable_path(stage.path)}: {stage.reason}")
         details.extend(
             (
                 "Stable double observation: yes",
@@ -2714,14 +4507,10 @@ class DiffeoForgeWindow(QMainWindow):
             )
         elif status.status == "published_prepared_not_executed_verified":
             self.reference_preparation_status_label.setObjectName("statusSuccess")
-            message = (
-                "The prepared reference run is fully verified and was not executed."
-            )
+            message = "The prepared reference run is fully verified and was not executed."
         else:
             self.reference_preparation_status_label.setObjectName("statusError")
-            message = (
-                "The observed state requires an explicit human decision. Nothing was changed."
-            )
+            message = "The observed state requires an explicit human decision. Nothing was changed."
         self.reference_preparation_status_label.setStyleSheet("")
         self.reference_preparation_status_label.setText(message)
         self.reference_preparation_export_label.setObjectName("hint")
@@ -2772,9 +4561,7 @@ class DiffeoForgeWindow(QMainWindow):
         ):
             self._sync_reference_preparation_status_controls()
             return
-        default = status.config_path.parent / (
-            f"reference-preparation-status-{status.run_id}.json"
-        )
+        default = status.config_path.parent / (f"reference-preparation-status-{status.run_id}.json")
         selected, _ = QFileDialog.getSaveFileName(
             self,
             "Select a new status-report file (no overwrite)",
@@ -2822,10 +4609,14 @@ class DiffeoForgeWindow(QMainWindow):
         self._navigate_to_step(2)
 
     @Slot()
-    def _refresh_run_readiness(self) -> DesktopReviewedRunReadiness | None:
+    def _refresh_run_readiness(
+        self,
+    ) -> DesktopReviewedRunReadiness | DesktopReferenceLaunchRequest | None:
         review = self._review
-        if review is None or review.engine is not DesktopEngine.MODERN_CPU:
+        if review is None:
             return None
+        if review.engine is DesktopEngine.DEFORMETRICA_REFERENCE:
+            return self._refresh_reference_run_readiness(review)
         try:
             readiness = check_reviewed_run_readiness(
                 review,
@@ -2858,7 +4649,104 @@ class DiffeoForgeWindow(QMainWindow):
         self._apply_run_readiness(readiness)
         return readiness
 
+    def _refresh_reference_run_readiness(
+        self,
+        review: ProjectReviewResult,
+    ) -> DesktopReferenceLaunchRequest | None:
+        readiness = self._reference_readiness
+        previous_request = self._reference_run_request
+        self._run_readiness = None
+        self._reference_run_request = None
+        self.run_title_label.setText("Compute Deformetrica atlas")
+        self.run_subtitle_label.setText(
+            "Run the exact reviewed configuration in a contained child process and observe "
+            "Deformetrica iterations, objective values, elapsed time, and a live computation-"
+            "time estimate."
+        )
+        self.run_boundary_label.setText(
+            "A broad pre-run planning range is shown before launch and recalibrated from "
+            "observed optimizer timing. It is not a convergence guarantee. Cancellation "
+            "preserves terminal evidence and a checkpoint when Deformetrica produced one."
+        )
+        if readiness is None or not readiness.ready:
+            self.run_readiness_status_label.setObjectName("statusError")
+            self.run_readiness_status_label.setStyleSheet("")
+            self.run_readiness_status_label.setText(
+                "Deformetrica execution is blocked until the reviewed environment check passes."
+            )
+            self.start_atlas_button.setEnabled(False)
+            return None
+        try:
+            request = build_reference_launch_request(
+                review,
+                readiness,
+                request_id=(
+                    previous_request.request_id
+                    if previous_request is not None
+                    else f"reference-{uuid.uuid4().hex}"
+                ),
+                run_id=(
+                    previous_request.run_id
+                    if previous_request is not None
+                    else f"desktop-ref-{uuid.uuid4().hex[:12]}"
+                ),
+            )
+        except (
+            DesktopReferencePrelaunchError,
+            OSError,
+            RuntimeError,
+            TypeError,
+            ValueError,
+        ) as error:
+            self.run_readiness_status_label.setObjectName("statusError")
+            self.run_readiness_status_label.setStyleSheet("")
+            self.run_readiness_status_label.setText(
+                f"Reference destination cannot be bound safely: {error}"
+            )
+            self.run_readiness_detail_label.setText(
+                "No worker was started and no run directory was created."
+            )
+            self.start_atlas_button.setEnabled(False)
+            return None
+        self._reference_run_request = request
+        self.run_summary_label.setText(
+            f"Project: {review.project_name}\n"
+            f"Configuration: {self._wrappable_path(request.config_path)}\n"
+            f"Bound SHA-256: {request.expected_config_sha256}\n"
+            f"Non-overwritable destination: {self._wrappable_path(request.destination)}"
+        )
+        self.run_readiness_status_label.setObjectName("statusSuccess")
+        self.run_readiness_status_label.setStyleSheet("")
+        self.run_readiness_status_label.setText(
+            "Reviewed configuration, ready environment, and absent destination are bound."
+        )
+        self.run_readiness_detail_label.setText(
+            f"Deformetrica installation: {launcher_label(request.launcher)}\n"
+            "This check was read-only. The destination and all reviewed inputs are checked "
+            "again inside the worker immediately before preparation."
+        )
+        self.run_progress_bar.setRange(0, 1)
+        self.run_progress_bar.setValue(0)
+        self.run_progress_bar.setFormat("Not started")
+        self.run_optimizer_label.setText(self._reference_runtime_estimate_text(review))
+        self.run_state_label.setObjectName("status")
+        self.run_state_label.setStyleSheet("")
+        self.run_state_label.setText("Ready; no Deformetrica process has started.")
+        self._sync_ready_state()
+        return request
+
     def _apply_run_readiness(self, readiness: DesktopReviewedRunReadiness) -> None:
+        self._reference_run_request = None
+        self.run_title_label.setText("Compute Modern atlas")
+        self.run_subtitle_label.setText(
+            "Run the exact reviewed configuration in a separate process and observe real "
+            "workflow events."
+        )
+        self.run_boundary_label.setText(
+            "Experimental Modern CPU route. Runtime, peak RAM, and percentage progress are "
+            "not estimated. Cancellation acts only at designated safe points and runs are "
+            "not currently resumable."
+        )
         self._run_readiness = readiness
         request = readiness.request
         discovery = readiness.discovery
@@ -2887,11 +4775,7 @@ class DiffeoForgeWindow(QMainWindow):
             "Action by this check: read only; nothing deleted, renamed, resumed, or published."
         )
         self.run_readiness_detail_label.setText("\n".join(details))
-        can_start = (
-            readiness.ready_for_worker
-            and self._run_result is None
-            and self._worker is None
-        )
+        can_start = readiness.ready_for_worker and self._run_result is None and self._worker is None
         self.start_atlas_button.setEnabled(can_start)
         if readiness.ready_for_worker:
             self.run_readiness_status_label.setObjectName("statusSuccess")
@@ -2924,21 +4808,34 @@ class DiffeoForgeWindow(QMainWindow):
     def _show_review_page(self) -> None:
         self._navigate_to_step(1)
 
+    @Slot(bool)
+    def _set_run_technical_details_expanded(self, expanded: bool) -> None:
+        self.run_technical_details.setVisible(expanded)
+        self.run_technical_toggle.setText(
+            "- Hide technical details" if expanded else "+ Technical details"
+        )
+
     @Slot()
     def _start_atlas(self) -> None:
-        if (
-            self._review is None
-            or self._review.engine is not DesktopEngine.MODERN_CPU
-            or self._worker is not None
-            or self._run_result is not None
-        ):
+        if self._review is None or self._worker is not None or self._run_result is not None:
             return
         readiness = self._refresh_run_readiness()
-        if readiness is None or not readiness.ready_for_worker:
-            return
-        request = readiness.request
-
-        worker = _AtlasWorker(DesktopWorkerController(request))
+        reference = self._review.engine is DesktopEngine.DEFORMETRICA_REFERENCE
+        if reference:
+            if not isinstance(readiness, DesktopReferenceLaunchRequest):
+                return
+            request = readiness
+            worker: _AtlasWorker | _ReferenceAtlasWorker = _ReferenceAtlasWorker(
+                ReferenceExecutionController(request)
+            )
+        else:
+            if (
+                not isinstance(readiness, DesktopReviewedRunReadiness)
+                or not readiness.ready_for_worker
+            ):
+                return
+            request = readiness.request
+            worker = _AtlasWorker(DesktopWorkerController(request))
         worker.signals.event.connect(self._atlas_event)
         worker.signals.succeeded.connect(self._atlas_succeeded)
         worker.signals.failed.connect(self._atlas_failed)
@@ -2947,9 +4844,23 @@ class DiffeoForgeWindow(QMainWindow):
         self._result_review = None
         self.run_result_card.hide()
         self.run_event_log.clear()
-        self.run_progress_bar.setValue(0)
+        self.run_technical_toggle.setChecked(False)
+        if reference:
+            self.run_progress_bar.setRange(0, 0)
+            self.run_progress_bar.setFormat("Starting Deformetrica")
+        else:
+            self.run_progress_bar.setRange(0, 7)
+            self.run_progress_bar.setValue(0)
+            self.run_progress_bar.setFormat("Completed stages: %v of %m")
         self.run_stage_label.setText("Workflow stage: worker is starting")
-        self.run_optimizer_label.setText("No optimization decision yet.")
+        self.run_optimizer_label.setText(
+            (
+                self._reference_runtime_estimate_text(self._review)
+                + "\nLive timing: waiting for Deformetrica activity."
+            )
+            if reference
+            else "No optimization decision yet."
+        )
         self.run_state_label.setObjectName("status")
         self.run_state_label.setStyleSheet("")
         self.run_state_label.setText(
@@ -2973,15 +4884,25 @@ class DiffeoForgeWindow(QMainWindow):
     @Slot()
     def _cancel_atlas(self) -> None:
         worker = self._worker
-        if not isinstance(worker, _AtlasWorker) or not worker.request_cancel():
+        if (
+            not isinstance(worker, (_AtlasWorker, _ReferenceAtlasWorker))
+            or not worker.request_cancel()
+        ):
             return
         self.cancel_atlas_button.setEnabled(False)
         self.run_state_label.setObjectName("status")
         self.run_state_label.setStyleSheet("")
-        self.run_state_label.setText(
-            "Cancellation requested. The current tensor operation may finish; DiffeoForge "
-            "will stop at the next safe point and will not publish a partial run."
-        )
+        if isinstance(worker, _ReferenceAtlasWorker):
+            self.run_state_label.setText(
+                "Cancellation requested. Deformetrica will be interrupted after the current "
+                "log/optimizer operation; terminal evidence and any checkpoint are preserved."
+            )
+        else:
+            self.run_state_label.setText(
+                "Cancellation requested. The current tensor operation may finish; "
+                "DiffeoForge will stop at the next safe point and will not publish a "
+                "partial run."
+            )
         self.run_event_log.appendPlainText("GUI: cooperative cancellation requested")
 
     @Slot(str)
@@ -2995,7 +4916,13 @@ class DiffeoForgeWindow(QMainWindow):
         self.run_event_log.appendPlainText(f"GUI: cancellation transfer failed: {message}")
 
     @Slot(object)
-    def _atlas_event(self, event: DesktopWorkerEvent) -> None:
+    def _atlas_event(
+        self,
+        event: DesktopWorkerEvent | DesktopReferenceWorkerEvent,
+    ) -> None:
+        if isinstance(event, DesktopReferenceWorkerEvent):
+            self._reference_atlas_event(event)
+            return
         message: str
         if event.kind == "started":
             message = "Worker started; the reviewed configuration is bound."
@@ -3038,12 +4965,114 @@ class DiffeoForgeWindow(QMainWindow):
             )
         self.run_event_log.appendPlainText(f"#{event.sequence} {event.kind}: {message}")
 
+    def _reference_atlas_event(self, event: DesktopReferenceWorkerEvent) -> None:
+        message: str
+        if event.kind == "accepted":
+            message = "Reference worker accepted the exact reviewed configuration."
+            self.run_state_label.setText(message)
+        elif event.kind == "phase":
+            phase = str(event.payload["phase"])
+            message = str(event.payload["message"])
+            self.run_stage_label.setText(
+                f"Deformetrica stage: {phase.replace('_', ' ')} · {message}"
+            )
+            if phase != "execute":
+                self.run_progress_bar.setRange(0, 0)
+                self.run_progress_bar.setFormat(f"Stage: {phase.replace('_', ' ')}")
+            else:
+                self.run_progress_bar.setRange(0, 0)
+                self.run_progress_bar.setFormat("Computing first iteration")
+            self.run_state_label.setText(message)
+        elif event.kind == "activity":
+            elapsed = float(event.payload["elapsed_seconds"])
+            state = str(event.payload["state"])
+            latest_message = str(event.payload["latest_message"])
+            source = event.payload["log_source"]
+            if state == "computing_first_iteration":
+                message = (
+                    "Deformetrica is active and computing its first complete objective and "
+                    "gradient evaluation."
+                )
+                self.run_stage_label.setText(
+                    "Deformetrica stage: execute | computing first iteration"
+                )
+                self.run_progress_bar.setRange(0, 0)
+                self.run_progress_bar.setFormat(
+                    f"First iteration active | {self._format_duration(elapsed)} elapsed"
+                )
+                self.run_optimizer_label.setText(
+                    f"{self._reference_runtime_estimate_text(self._review)}\n"
+                    f"Live activity: {self._format_duration(elapsed)} elapsed; no complete "
+                    f"iteration logged yet. Latest Deformetrica message: {latest_message}"
+                )
+            else:
+                last_iteration = event.payload["last_iteration"]
+                message = "Deformetrica is active between logged optimizer iterations."
+                self.run_stage_label.setText(
+                    "Deformetrica stage: execute | optimizer computation is active"
+                )
+                self.run_optimizer_label.setText(
+                    f"Live activity: {self._format_duration(elapsed)} elapsed | last logged "
+                    f"iteration {last_iteration} of {event.payload['maximum_iterations']} | "
+                    f"latest message: {latest_message}"
+                )
+            self.run_state_label.setText(message)
+            source_text = "Deformetrica log" if source is None else str(source)
+            message = f"{message} Elapsed {self._format_duration(elapsed)}; source {source_text}."
+        elif event.kind == "progress":
+            iteration = int(event.payload["iteration"])
+            maximum = int(event.payload["maximum_iterations"])
+            elapsed = float(event.payload["elapsed_seconds"])
+            eta_value = event.payload["eta_to_iteration_cap_seconds"]
+            eta_text = (
+                "estimating from observed iterations…"
+                if eta_value is None
+                else self._format_duration(float(eta_value))
+            )
+            rate_value = event.payload["seconds_per_iteration"]
+            rate_text = (
+                "warming up" if rate_value is None else f"{float(rate_value):.2f} s/iteration"
+            )
+            message = (
+                f"Iteration {iteration} of {maximum}; objective "
+                f"{float(event.payload['log_likelihood']):.6g}"
+            )
+            self.run_progress_bar.setRange(0, maximum)
+            self.run_progress_bar.setValue(min(iteration, maximum))
+            self.run_progress_bar.setFormat("Iteration %v of maximum %m")
+            self.run_stage_label.setText(
+                "Deformetrica stage: execute · optimizer output is being observed"
+            )
+            self.run_optimizer_label.setText(
+                f"Iteration {iteration} of maximum {maximum} · objective "
+                f"{float(event.payload['log_likelihood']):.6g} · attachment "
+                f"{float(event.payload['attachment']):.6g} · regularity "
+                f"{float(event.payload['regularity']):.6g}\n"
+                f"Elapsed: {self._format_duration(elapsed)} · observed rate: {rate_text} · "
+                f"Estimated computation time to maximum: {eta_text} "
+                "(live upper bound, not convergence)"
+            )
+            self.run_state_label.setText(message)
+        else:
+            message = str(event.payload["message"])
+            self.run_state_label.setText(
+                "Reference worker reported its terminal outcome; independent parent "
+                "verification is running."
+            )
+        self.run_event_log.appendPlainText(f"#{event.sequence} {event.kind}: {message}")
+
     @Slot(object)
-    def _atlas_succeeded(self, result: DesktopWorkerControllerResult) -> None:
+    def _atlas_succeeded(
+        self,
+        result: DesktopWorkerControllerResult | ReferenceExecutionControllerResult,
+    ) -> None:
         self._worker = None
         self.cancel_atlas_button.setEnabled(False)
         self.refresh_run_readiness_button.setEnabled(True)
         self.run_back_button.setEnabled(True)
+        if isinstance(result, ReferenceExecutionControllerResult):
+            self._reference_atlas_succeeded(result)
+            return
         terminal = result.terminal_event
         if result.completed:
             self._run_result = result
@@ -3077,6 +5106,62 @@ class DiffeoForgeWindow(QMainWindow):
         elif result.completed:
             self._review_run_result()
 
+    def _reference_atlas_succeeded(
+        self,
+        result: ReferenceExecutionControllerResult,
+    ) -> None:
+        terminal = result.terminal_event
+        outcome = result.outcome
+        destination_exists = bool(terminal.payload["destination_exists"])
+        if destination_exists:
+            self._run_result = result
+            result_hash = terminal.payload["result_sha256"] or "not created"
+            self.run_result_label.setText(
+                f"Destination: "
+                f"{self._wrappable_path(Path(terminal.payload['destination']))}\n"
+                f"Outcome: {outcome}\n"
+                f"Result SHA-256: {result_hash}\n"
+                f"Process exit code: {result.exit_code}\n"
+                f"Worker message: {terminal.payload['message']}"
+            )
+            self.run_result_card.show()
+        else:
+            self._run_result = None
+            self.run_result_card.hide()
+
+        if result.completed:
+            self.run_state_label.setObjectName("statusSuccess")
+            self.run_state_label.setText(
+                "Deformetrica completed and the result was independently verified. "
+                "Its momenta will now be imported into a source-bound linear PCA snapshot."
+            )
+            self.run_progress_bar.setValue(self.run_progress_bar.maximum())
+        elif result.interrupted:
+            self.run_state_label.setObjectName("status")
+            self.run_state_label.setText(
+                "Deformetrica was interrupted safely. Terminal evidence and any checkpoint "
+                "reported by the run were preserved and independently verified."
+            )
+        elif outcome == "prepared_not_executed":
+            self.run_state_label.setObjectName("status")
+            self.run_state_label.setText(
+                "Cancelled after immutable preparation. Deformetrica was not started; the "
+                "prepared run directory was verified and preserved."
+            )
+        else:
+            self.run_state_label.setObjectName("status")
+            self.run_state_label.setText(
+                "Cancelled before preparation. No run directory was created or modified."
+            )
+        self.run_state_label.setStyleSheet("")
+        self._reference_run_request = None
+        self._sync_ready_state()
+        if self._close_after_worker:
+            self._close_after_worker = False
+            self.close()
+        elif result.completed:
+            self._review_run_result()
+
     @Slot(str)
     def _atlas_failed(self, message: str) -> None:
         self._worker = None
@@ -3095,10 +5180,18 @@ class DiffeoForgeWindow(QMainWindow):
 
     @Slot()
     def _review_run_result(self) -> None:
-        if self._run_result is None or not self._run_result.completed or self._worker is not None:
+        if (
+            not isinstance(
+                self._run_result,
+                (DesktopWorkerControllerResult, ReferenceExecutionControllerResult),
+            )
+            or not self._run_result.completed
+            or self._worker is not None
+        ):
             return
         destination = Path(self._run_result.terminal_event.payload["destination"])
-        worker = _ResultReviewWorker(destination)
+        reference = isinstance(self._run_result, ReferenceExecutionControllerResult)
+        worker = _ResultReviewWorker(destination, reference=reference)
         worker.signals.succeeded.connect(self._result_review_succeeded)
         worker.signals.failed.connect(self._result_review_failed)
         self._worker = worker
@@ -3106,8 +5199,11 @@ class DiffeoForgeWindow(QMainWindow):
         self.run_state_label.setObjectName("status")
         self.run_state_label.setStyleSheet("")
         self.run_state_label.setText(
-            "Workflow, bundle, inventory, mesh QC, and static SVGs are being fully "
-            "reverified before the results view is enabled."
+            "Deformetrica completion was independently verified; its output parameters "
+            "are now being imported and bound to a recomputed linear PCA snapshot."
+            if reference
+            else "Workflow, bundle, inventory, mesh QC, and static SVGs are being "
+            "fully reverified before the results view is enabled."
         )
         self._sync_ready_state()
         self._thread_pool.start(worker)
@@ -3120,6 +5216,18 @@ class DiffeoForgeWindow(QMainWindow):
         self._populate_review_rows(self.result_optimization_layout, review.optimization)
         self._populate_review_rows(self.result_pca_layout, review.pca)
         self._populate_review_rows(self.result_quality_layout, review.quality)
+        if review.engine_route == "deformetrica_reference":
+            self.result_optimizer_convergence_hint.setText(
+                "The upper panel shows Deformetrica's logged objective and attachment; the "
+                "lower panel shows its regularity term. The final accepted step that triggers "
+                "Deformetrica 4.3's tolerance test is not printed in the terminal history."
+            )
+        else:
+            self.result_optimizer_convergence_hint.setText(
+                "The upper panel shows committed objective components; the lower panel shows "
+                "block-gradient norms against the configured tolerance. A completed curve is "
+                "not automatically a converged curve."
+            )
         try:
             self._load_verified_optimizer_plot(review)
             self._load_verified_pca_plots(review)
@@ -3129,14 +5237,17 @@ class DiffeoForgeWindow(QMainWindow):
         self.result_boundary_label.setText(
             "\n".join(f"• {boundary}" for boundary in review.scientific_boundaries)
         )
+        run_label = (
+            "Deformetrica run" if review.engine_route == "deformetrica_reference" else "Workflow"
+        )
         self.result_summary_label.setText(
             f"Project: {review.project_name}\n"
             f"Created: {review.created_at}\n"
-            f"Workflow: {self._wrappable_path(review.run_directory)}\n"
-            f"Workflow-Manifest SHA-256: {review.workflow_manifest_sha256}\n"
+            f"{run_label}: {self._wrappable_path(review.run_directory)}\n"
+            f"Run/Workflow manifest SHA-256: {review.workflow_manifest_sha256}\n"
             f"Bundle-Manifest SHA-256: {review.bundle_manifest_sha256}"
         )
-        if review.optimizer_converged:
+        if review.optimizer_converged is True:
             self.result_completion_label.setObjectName("statusSuccess")
             self.result_completion_label.setStyleSheet("")
             self.result_completion_label.setText(
@@ -3145,7 +5256,7 @@ class DiffeoForgeWindow(QMainWindow):
                 f"{review.optimizer_cycles_completed} cycles). This still does not establish "
                 "scientific validity."
             )
-        else:
+        elif review.optimizer_converged is False:
             self.result_completion_label.setObjectName("statusWarning")
             self.result_completion_label.setStyleSheet("")
             self.result_completion_label.setText(
@@ -3154,6 +5265,41 @@ class DiffeoForgeWindow(QMainWindow):
                 f"{review.optimizer_cycles_completed} of {review.optimizer_max_cycles} cycles). "
                 "Inspect the convergence plot before selecting a longer convergence attempt. "
                 "Treat this as a technical pilot result, not a converged scientific atlas."
+            )
+        elif (
+            review.engine_route == "deformetrica_reference"
+            and review.optimizer_termination_reason == "tolerance_threshold"
+        ):
+            self.result_completion_label.setObjectName("statusSuccess")
+            self.result_completion_label.setStyleSheet("")
+            duration = (
+                self._format_result_duration(review.execution_duration_seconds)
+                if review.execution_duration_seconds is not None
+                else "an unreported duration"
+            )
+            self.result_completion_label.setText(
+                f"Deformetrica completed in {duration} and reported that its configured "
+                "numerical tolerance criterion was met. "
+                f"{review.optimizer_cycles_completed} was the last visible logged iteration "
+                f"of maximum {review.optimizer_max_cycles}; Deformetrica 4.3 does not print "
+                "the final accepted step that triggers this test. This is technical "
+                "convergence by the configured stopping rule, not proof of adequate "
+                "registration or scientific validity."
+            )
+        else:
+            self.result_completion_label.setObjectName("statusWarning")
+            self.result_completion_label.setStyleSheet("")
+            duration = (
+                self._format_result_duration(review.execution_duration_seconds)
+                if review.execution_duration_seconds is not None
+                else "an unreported duration"
+            )
+            stop = review.optimizer_termination_reason.replace("_", " ")
+            self.result_completion_label.setText(
+                f"Deformetrica completed in {duration}; {review.optimizer_cycles_completed} "
+                f"was the last logged iteration of maximum {review.optimizer_max_cycles}. "
+                f"Reported stop signal: {stop}. This is independently verified execution "
+                "evidence, not proof of adequate registration or scientific convergence."
             )
         self._populate_result_artifacts(review)
         self.result_status_label.setObjectName("statusSuccess")
@@ -3169,6 +5315,17 @@ class DiffeoForgeWindow(QMainWindow):
         if self._close_after_worker:
             self._close_after_worker = False
             self.close()
+
+    @Slot(str)
+    def _completed_result_review_failed(self, message: str) -> None:
+        self._worker = None
+        self._result_review = None
+        self.status_label.setObjectName("statusError")
+        self.status_label.setStyleSheet("")
+        self.status_label.setText(
+            f"Completed run could not be opened because full verification failed: {message}"
+        )
+        self._sync_ready_state()
 
     def _load_verified_optimizer_plot(self, review: ModernResultReview) -> None:
         try:
@@ -3193,11 +5350,25 @@ class DiffeoForgeWindow(QMainWindow):
         self.result_optimizer_convergence_plot_status.setObjectName("statusSuccess")
         self.result_optimizer_convergence_plot_status.setStyleSheet("")
         self.result_optimizer_convergence_plot_status.setText(
-            "Verified objective components and block-gradient norms from the bound "
+            "Verified Deformetrica objective, attachment, and regularity history from "
+            "the versioned result-analysis bundle."
+            if review.engine_route == "deformetrica_reference"
+            else "Verified objective components and block-gradient norms from the bound "
             "optimizer history."
         )
 
     def _load_verified_pca_plots(self, review: ModernResultReview) -> None:
+        scree = verify_result_artifact(review, "pca-scree")
+        self.result_pca_scree_plot.load(str(scree))
+        if not self.result_pca_scree_plot.renderer().isValid():
+            raise ModernResultReviewError("The verified PCA scree SVG is invalid")
+        self.result_pca_scree_plot.show()
+        self.result_pca_scree_plot_status.setObjectName("statusSuccess")
+        self.result_pca_scree_plot_status.setStyleSheet("")
+        self.result_pca_scree_plot_status.setText(
+            "Verified explained variance for all retained principal components."
+        )
+
         primary = verify_result_artifact(review, "pca-score-plot")
         self.result_pc1_pc2_plot.load(str(primary))
         if not self.result_pc1_pc2_plot.renderer().isValid():
@@ -3218,9 +5389,7 @@ class DiffeoForgeWindow(QMainWindow):
             reason = review.pca_pc2_pc3_unavailable_reason or (
                 "This result does not contain the mandatory PC2-versus-PC3 artifact."
             )
-            self.result_pc2_pc3_plot_status.setText(
-                f"PC2 versus PC3 unavailable: {reason}"
-            )
+            self.result_pc2_pc3_plot_status.setText(f"PC2 versus PC3 unavailable: {reason}")
             return
 
         secondary = verify_result_artifact(review, "pca-score-plot-pc2-pc3")
@@ -3334,11 +5503,52 @@ class DiffeoForgeWindow(QMainWindow):
 
     @Slot()
     def _show_run_page_from_results(self) -> None:
-        self._navigate_to_step(2)
+        self._navigate_to_step(2 if self._run_result is not None else 0)
 
     @staticmethod
     def _wrappable_path(path: Path) -> str:
         return str(path).replace("\\", "\\\u200b").replace("/", "/\u200b")
+
+    @staticmethod
+    def _format_duration(seconds: float) -> str:
+        whole_seconds = max(0, round(seconds))
+        hours, remainder = divmod(whole_seconds, 3600)
+        minutes, remaining_seconds = divmod(remainder, 60)
+        if hours:
+            return f"{hours} h {minutes:02d} min {remaining_seconds:02d} s"
+        if minutes:
+            return f"{minutes} min {remaining_seconds:02d} s"
+        return f"{remaining_seconds} s"
+
+    def _reference_runtime_estimate_text(
+        self,
+        review: ProjectReviewResult | None,
+    ) -> str:
+        estimate = None if review is None else review.runtime_estimate
+        if estimate is None:
+            return (
+                "Pre-run runtime estimate unavailable. Live timing begins when "
+                "Deformetrica reports activity."
+            )
+        return (
+            "Pre-run planning estimate (low confidence): typically about "
+            f"{self._format_duration(estimate.typical_seconds)}; broad range "
+            f"{self._format_duration(estimate.lower_seconds)} to "
+            f"{self._format_duration(estimate.upper_seconds)}. Based on mesh faces, "
+            "cohort size, time points, control spacing, threads, and iteration cap; "
+            "live observations will replace it."
+        )
+
+    @staticmethod
+    def _format_result_duration(seconds: float) -> str:
+        normalized = max(0.0, float(seconds))
+        hours, remainder = divmod(normalized, 3600.0)
+        minutes, remaining_seconds = divmod(remainder, 60.0)
+        if hours >= 1:
+            return f"{int(hours)} h {int(minutes):02d} min {remaining_seconds:04.1f} s"
+        if minutes >= 1:
+            return f"{int(minutes)} min {remaining_seconds:.1f} s"
+        return f"{remaining_seconds:.1f} s"
 
     @Slot(str)
     def _review_failed(self, message: str) -> None:
@@ -3406,13 +5616,16 @@ class DiffeoForgeWindow(QMainWindow):
 
     @Slot()
     def _open_run_result(self) -> None:
-        if self._run_result is None or not self._run_result.completed:
+        if self._run_result is None:
             return
-        destination = Path(self._run_result.terminal_event.payload["destination"])
+        payload = self._run_result.terminal_event.payload
+        if not bool(payload.get("destination_exists", True)):
+            return
+        destination = Path(payload["destination"])
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(destination)))
 
     def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802 - Qt API name
-        if isinstance(self._worker, _AtlasWorker):
+        if isinstance(self._worker, (_AtlasWorker, _ReferenceAtlasWorker)):
             self._close_after_worker = True
             self._cancel_atlas()
             self.run_state_label.setText(

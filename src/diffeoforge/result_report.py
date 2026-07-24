@@ -186,6 +186,76 @@ def _load_inventory(
     return tuple(records), check
 
 
+def _check_output_artifact_integrity(
+    run_directory: Path,
+    inventory: Sequence[Mapping[str, Any]],
+) -> EvidenceCheck:
+    output_directory = run_directory / "output"
+    issues: list[str] = []
+    declared: set[str] = set()
+    if not output_directory.is_dir() or output_directory.is_symlink():
+        return EvidenceCheck(
+            "Output artifact integrity",
+            "fail",
+            "The output directory is missing, is not a directory, or is symbolic.",
+        )
+
+    for record in inventory:
+        relative = PurePosixPath(str(record["path"]))
+        normalized = relative.as_posix()
+        if relative.is_absolute() or ".." in relative.parts or normalized in {"", "."}:
+            issues.append(f"unsafe inventory path {normalized!r}")
+            continue
+        if normalized in declared:
+            issues.append(f"duplicate inventory path {normalized!r}")
+            continue
+        declared.add(normalized)
+        candidate = output_directory.joinpath(*relative.parts)
+        cursor = output_directory
+        symbolic = False
+        for part in relative.parts:
+            cursor = cursor / part
+            if cursor.is_symlink():
+                symbolic = True
+                break
+        if symbolic:
+            issues.append(f"symbolic output path {normalized!r}")
+            continue
+        if not candidate.is_file():
+            issues.append(f"missing output file {normalized!r}")
+            continue
+        if candidate.stat().st_size != int(record["bytes"]):
+            issues.append(f"size mismatch for {normalized!r}")
+            continue
+        if sha256_file(candidate) != str(record["sha256"]):
+            issues.append(f"SHA-256 mismatch for {normalized!r}")
+
+    actual: set[str] = set()
+    for candidate in output_directory.rglob("*"):
+        relative = candidate.relative_to(output_directory).as_posix()
+        if candidate.is_symlink():
+            issues.append(f"symbolic untrusted output {relative!r}")
+        elif candidate.is_file():
+            actual.add(relative)
+    for unexpected in sorted(actual - declared):
+        issues.append(f"unlisted output file {unexpected!r}")
+    for absent in sorted(declared - actual):
+        if not any(absent in issue for issue in issues):
+            issues.append(f"declared output file is absent {absent!r}")
+
+    if issues:
+        detail = "; ".join(issues[:5])
+        if len(issues) > 5:
+            detail += f"; and {len(issues) - 5} more issue(s)"
+        return EvidenceCheck("Output artifact integrity", "fail", detail + ".")
+    return EvidenceCheck(
+        "Output artifact integrity",
+        "pass",
+        f"All {len(inventory)} inventoried output files match path, size, and SHA-256; "
+        "no unlisted files were found.",
+    )
+
+
 def _load_convergence(path: Path) -> tuple[ConvergenceRow, ...]:
     if not path.is_file():
         return ()
@@ -246,6 +316,7 @@ def collect_run_report(run_directory: Path | str) -> RunReport:
     manifest = _load_json(run_path / "manifest.json", "Run manifest")
     events = _load_events(run_path / "events.jsonl")
     inventory, inventory_digest_check = _load_inventory(run_path, result)
+    output_artifact_check = _check_output_artifact_integrity(run_path, inventory)
     convergence = _load_convergence(run_path / "logs" / "convergence.csv")
 
     outputs = result["outputs"]
@@ -274,6 +345,7 @@ def collect_run_report(run_directory: Path | str) -> RunReport:
             ),
         ),
         inventory_digest_check,
+        output_artifact_check,
         EvidenceCheck(
             "Output inventory summary",
             "pass" if inventory_summary_matches else "fail",

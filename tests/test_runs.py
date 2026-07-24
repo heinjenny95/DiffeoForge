@@ -1,14 +1,18 @@
 from __future__ import annotations
 
 import json
+import sys
+import time
 from pathlib import Path
 
 import pytest
 import yaml
 
+from diffeoforge.backends import CommandSpec
 from diffeoforge.config import ConfigurationError
 from diffeoforge.mesh import sha256_file
 from diffeoforge.runs import (
+    REFERENCE_ACTIVITY_INTERVAL_SECONDS,
     execute_run,
     parse_convergence,
     prepare_resume_run,
@@ -161,6 +165,38 @@ def test_prepare_creates_verifiable_immutable_run(tmp_path: Path) -> None:
     assert run_status(run_directory)["status"] == "prepared"
 
 
+def test_prepare_preserves_parameter_provenance_in_effective_config(tmp_path: Path) -> None:
+    config_path = write_run_config(tmp_path)
+    config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    provenance = {
+        "profile": "advanced",
+        "scale_reference": "template_bounding_box_diagonal",
+        "ratios": {
+            "attachment_kernel_width": 0.1,
+            "deformation_kernel_width": 0.1,
+            "initial_control_point_spacing": 0.1,
+            "noise_std": 0.05,
+        },
+        "sources": {
+            "attachment_kernel_width": "template_diagonal_ratio",
+            "deformation_kernel_width": "template_diagonal_ratio",
+            "initial_control_point_spacing": "template_diagonal_ratio",
+            "noise_std": "template_diagonal_ratio",
+        },
+    }
+    config["project"]["parameter_provenance"] = provenance
+    config_path.write_text(
+        yaml.safe_dump(config, sort_keys=False),
+        encoding="utf-8",
+    )
+
+    run_directory = prepare_run(config_path, run_id="parameter-provenance")
+    manifest = verify_prepared_run(run_directory)
+
+    assert manifest["project"] == {"name": "immutable-test"}
+    assert manifest["effective_config"]["project"]["parameter_provenance"] == provenance
+
+
 def test_convergence_parser_preserves_backend_iteration_numbers(tmp_path: Path) -> None:
     log_path = tmp_path / "deformetrica.log"
     csv_path = tmp_path / "convergence.csv"
@@ -182,6 +218,39 @@ def test_convergence_parser_preserves_backend_iteration_numbers(tmp_path: Path) 
         "6,-8.181,-8.128,-0.05328",
         "7,-6.831,-6.77,-0.06049",
     ]
+
+
+def test_convergence_parser_collapses_exact_native_log_duplicates(tmp_path: Path) -> None:
+    log_path = tmp_path / "deformetrica.log"
+    csv_path = tmp_path / "convergence.csv"
+    log_path.write_text(
+        "------------------------------------- Iteration: 6 "
+        "-------------------------------------\n"
+        ">> Log-likelihood = -8.181E+00 [ attachment = -8.128E+00 ; "
+        "regularity = -5.328E-02 ]\n"
+        "2026-07-24 15:00:00 - estimator - INFO - "
+        "------------------------------------- Iteration: 6 "
+        "-------------------------------------\n"
+        "2026-07-24 15:00:01 - estimator - INFO - "
+        ">> Log-likelihood = -8.181E+00 [ attachment = -8.128E+00 ; "
+        "regularity = -5.328E-02 ]\n"
+        "------------------------------------- Iteration: 7 "
+        "-------------------------------------\n"
+        ">> Log-likelihood = -6.831E+00 [ attachment = -6.770E+00 ; "
+        "regularity = -6.049E-02 ]\n",
+        encoding="utf-8",
+    )
+
+    assert parse_convergence(log_path, csv_path) == 2
+    assert csv_path.read_text(encoding="utf-8").splitlines() == [
+        "iteration,log_likelihood,attachment,regularity",
+        "6,-8.181,-8.128,-0.05328",
+        "7,-6.831,-6.77,-0.06049",
+    ]
+
+
+def test_reference_activity_interval_is_thirty_seconds() -> None:
+    assert REFERENCE_ACTIVITY_INTERVAL_SECONDS == 30.0
 
 
 def test_prepare_refuses_to_overwrite_existing_run(tmp_path: Path) -> None:
@@ -441,6 +510,94 @@ def test_child_reported_keyboard_interrupt_is_terminal_interruption(
     assert snapshot["result"]["execution_error"] == (
         "Backend process reported KeyboardInterrupt"
     )
+
+
+def test_execute_run_tails_native_deformetrica_log_and_reports_activity(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run_directory = prepare_run(write_run_config(tmp_path), run_id="native-log")
+    script = (
+        "from pathlib import Path; import time; "
+        "p=Path('output')/'test_info.log'; "
+        "h=p.open('w', encoding='utf-8'); "
+        "h.write('------------------------------------- Iteration: 0 "
+        "-------------------------------------\\n'); h.flush(); time.sleep(0.08); "
+        "h.write('>> Log-likelihood = -8.0 [ attachment = -7.0 ; "
+        "regularity = -1.0 ]\\n'); h.flush(); time.sleep(0.20); h.close()"
+    )
+    monkeypatch.setattr("diffeoforge.runs.ensure_launcher_available", lambda config: None)
+    monkeypatch.setattr(
+        "diffeoforge.runs._probe_backend_environment",
+        lambda config: {"probe_status": "verified"},
+    )
+    monkeypatch.setattr(
+        "diffeoforge.runs.build_command",
+        lambda config, run_path: CommandSpec(
+            argv=(sys.executable, "-c", script),
+            working_directory=str(run_path),
+            environment={},
+        ),
+    )
+    monkeypatch.setattr(
+        "diffeoforge.runs.REFERENCE_ACTIVITY_INTERVAL_SECONDS",
+        0.05,
+    )
+    observed_lines: list[str] = []
+    activities: list[tuple[float, str | None, str | None]] = []
+
+    assert (
+        execute_run(
+            run_directory,
+            line_callback=observed_lines.append,
+            activity_callback=lambda elapsed, latest, source: activities.append(
+                (elapsed, latest, source)
+            ),
+        )
+        == 0
+    )
+
+    assert any("Iteration: 0" in line for line in observed_lines)
+    assert any("Log-likelihood = -8.0" in line for line in observed_lines)
+    assert activities
+    assert activities[-1][2] == "output/test_info.log"
+    assert parse_convergence(
+        run_directory / "logs" / "deformetrica.log",
+        run_directory / "logs" / "test-convergence.csv",
+    ) == 1
+
+
+def test_execute_run_polls_cancellation_when_backend_emits_no_output(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run_directory = prepare_run(write_run_config(tmp_path), run_id="silent-cancel")
+    monkeypatch.setattr("diffeoforge.runs.ensure_launcher_available", lambda config: None)
+    monkeypatch.setattr(
+        "diffeoforge.runs._probe_backend_environment",
+        lambda config: {"probe_status": "verified"},
+    )
+    monkeypatch.setattr(
+        "diffeoforge.runs.build_command",
+        lambda config, run_path: CommandSpec(
+            argv=(sys.executable, "-c", "import time; time.sleep(30)"),
+            working_directory=str(run_path),
+            environment={},
+        ),
+    )
+    cancel_checks = 0
+
+    def cancel_requested() -> bool:
+        nonlocal cancel_checks
+        cancel_checks += 1
+        return cancel_checks >= 3
+
+    started = time.monotonic()
+    assert execute_run(run_directory, cancel_requested=cancel_requested) == 130
+
+    assert time.monotonic() - started < 5
+    assert cancel_checks >= 3
+    assert run_status(run_directory)["status"] == "interrupted"
 
 
 def test_resume_execution_uses_copy_and_preserves_protected_checkpoint(

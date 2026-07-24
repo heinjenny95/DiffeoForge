@@ -29,7 +29,7 @@ jobs:
       - name: Install package and development tools
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -e ".[dev,sbom-builder]"
+          python -m pip install -e ".[analysis,dev,sbom-builder]"
 
       - name: Lint
         run: ruff check .
@@ -75,7 +75,17 @@ jobs:
           tests/test_pca_visualization.py tests/test_modern_bundle.py
           tests/test_modern_workflow.py tests/test_mesh_quality.py
           tests/test_modern_workload.py tests/test_modern_progress.py
-          tests/test_modern_benchmark.py tests/test_desktop_project_setup.py
+          tests/test_modern_benchmark.py tests/test_modern_benchmark_design.py
+          tests/test_modern_benchmark_progress.py
+          tests/test_modern_benchmark_study.py
+          tests/test_modern_benchmark_matrix_design.py
+          tests/test_modern_benchmark_matrix_progress.py
+          tests/test_modern_benchmark_matrix_study.py
+          tests/test_modern_optimizer_benchmark.py
+          tests/test_modern_optimizer_benchmark_design.py
+          tests/test_modern_optimizer_benchmark_progress.py
+          tests/test_modern_optimizer_benchmark_study.py
+          tests/test_desktop_project_setup.py
           tests/test_desktop_project_review.py tests/test_desktop_worker.py
           tests/test_desktop_worker_controller.py tests/test_desktop_reviewed_run.py
           tests/test_desktop_result_review.py
@@ -106,6 +116,8 @@ jobs:
           pytest tests/test_desktop_app.py tests/test_desktop_project_setup.py
           tests/test_desktop_project_review.py tests/test_desktop_reviewed_run.py
           tests/test_desktop_worker_controller.py tests/test_windows_parent_death.py
+          tests/test_desktop_reference_execution_worker.py
+          tests/test_desktop_reference_execution_controller.py
           tests/test_desktop_reference_preparation_request.py
           tests/test_desktop_reference_preparation_worker_protocol.py
           tests/test_desktop_reference_preparation_worker_harness.py

@@ -62,11 +62,11 @@ The default subject pattern is `*.vtk`; the resolved template is excluded from
 the subject list. Use `--subject-pattern` when a directory contains unrelated
 VTK files.
 
-## Exploratory starting values
+## Command-line exploratory fallback values
 
 Four model parameters cannot be inferred scientifically from file validity.
-When they are not supplied, `init` creates clearly labelled exploratory values
-from the template bounding-box diagonal:
+When they are not supplied to the command-line `init` command, it creates
+clearly labelled compatibility values from the template bounding-box diagonal:
 
 | Parameter | Exploratory ratio |
 | --- | ---: |
@@ -87,6 +87,23 @@ diffeoforge init "C:\path\to\meshes" `
   --control-point-spacing 0.60 `
   --noise-std 0.10
 ```
+
+The desktop Deformetrica workflow no longer presents these ratios as
+“recommended.” It first requires either a user declaration that the selected
+coordinates are already GPA aligned or an exact approved DiffeoForge
+landmark-GPA preview. It then analyzes the aligned coordinates and combines:
+
+- measured cohort and template scale;
+- centroid and bounding-box size dispersion;
+- deterministic sampled triangle-edge resolution;
+- the researcher-selected surface-detail scale;
+- the researcher-selected local, balanced, or global deformation scale.
+
+The resulting configuration uses the `data_assisted` provenance profile and
+stores the recommendation fingerprint, measurements, user decisions, warnings,
+and parameters that still require pilot validation. Noise standard deviation
+and optimization behavior are not claimed to be inferable from geometry.
+See [Data-assisted Deformetrica parameter guidance](DATA_ASSISTED_PARAMETERS.md).
 
 ## 3. Regenerate or relocate the report
 

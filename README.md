@@ -2,15 +2,23 @@
 
 > [!WARNING]
 > **Pre-alpha research software.** DiffeoForge is not yet validated for
-> scientific production use. Its experimental reference backend can invoke a
-> hash-locked Deformetrica 4.3.0 CPU container, but scientific equivalence,
-> cross-platform distribution, and production-scale use are not yet validated.
+> scientific production use. Its reference backend can invoke exact
+> Deformetrica 4.3.0 CPU runtimes through native, WSL, or developer-container
+> launchers, but scientific equivalence, public redistribution, and
+> production-scale use are not yet validated.
 
 DiffeoForge is the working title for an open-source, reproducible workflow for
 diffeomorphic atlas construction from 3D surface meshes. The project aims to
-make landmark-free atlas estimation usable by researchers without requiring
-Python, notebook, XML, or CUDA expertise while preserving full access to every
-scientific parameter and generated file.
+make Deformetrica usable by researchers without requiring Python, notebook,
+XML, or CUDA expertise while preserving full access to every scientific
+parameter and generated file. Optional homologous landmarks and an explicit
+generalized-Procrustes step belong to DiffeoForge's engine-independent
+preprocessing, not to one numerical backend.
+
+DiffeoForge code is open source. Deformetrica 4.3.0 is a separately licensed,
+non-free reference component restricted to educational, research, and
+evaluation use under the INRIA Non-Commercial License; a future bundled
+installer must retain that separate license and cannot broaden its terms.
 
 The project is being developed in public from its first engineering decisions.
 The name may change before the first release.
@@ -22,11 +30,13 @@ same operations from a command line:
 
 ```text
 Select mesh directory
-  -> validate meshes and configuration
-  -> review warnings and estimated resource use
-  -> generate explicit engine configuration
-  -> estimate atlas
-  -> inspect convergence and quality report
+  -> validate and inspect meshes
+  -> optionally place/import homologous landmarks
+  -> review Procrustes alignment and immutable aligned copies
+  -> analyze the aligned cohort and state the biological detail/locality of interest
+  -> review warnings, parameters, and estimated resource use
+  -> run the recommended Deformetrica backend with progress and bounded ETA
+  -> inspect atlas convergence, quality, PCA, and shape plots
   -> export a reproducible run bundle
 ```
 
@@ -73,8 +83,8 @@ the source run.
 
 - **No hidden defaults:** effective values are written to every run manifest.
 - **Engine independence:** workflow logic is separated from numerical engines.
-- **Reference before replacement:** a frozen Deformetrica backend will establish
-  reference behavior before a modern engine is accepted.
+- **Deformetrica-first product:** the established backend is recommended while
+  a replacement engine remains experimental until it passes evidence gates.
 - **Fail before compute:** invalid paths, meshes, units, and parameter ranges
   should be detected before an expensive run starts.
 - **Immutable runs:** inputs, configuration, software versions, hashes, logs,
@@ -130,6 +140,26 @@ This repository currently provides:
   Atlas/PCA/QC summary with embedded optimizer-convergence, PC1/PC2, and
   PC2/PC3 plots and
   inventory-bound artifact handoff;
+- supervised source-level Deformetrica execution followed by strict momenta and
+  control-point import, a source-bound deterministic linear-PCA bundle, and the
+  shared verified Results & PCA screen;
+- interactive native 3D surface-landmark placement with rotation, zoom, pan,
+  arbitrary triangle-point interpolation, a researcher-selected landmark count,
+  optional automatic next-mesh loading after the final planned point,
+  hash-validated resumable drafts, strict reusable landmark CSV output,
+  configurable generalized Procrustes alignment for either engine, read-only
+  convergence/residual/scale preview with exact fingerprint approval, immutable
+  content-addressed aligned mesh copies, and hash-verified alignment evidence
+  in parameter review;
+- reviewed triangular PLY, OBJ, and ASCII/binary STL import for landmarking and
+  GPA, with byte-identical original-format copies under `raw/`, one canonical
+  aligned VTK cohort under `aligned-vtk/`, and format/conversion provenance;
+- GPA-gated, data-assisted Deformetrica parameter guidance that measures cohort
+  scale, centroid dispersion, and mesh sampling, combines those observations
+  with explicit researcher choices for anatomical detail and deformation
+  locality, and records the recommendation fingerprint, automatic inferences,
+  user decisions, and pilot-validation requirements in YAML; advanced manual
+  and expert controls remain available;
 - a self-contained HTML input-validation and parameter-scale report;
 - a self-contained HTML convergence, lifecycle, and result report;
 - terminal interruption capture, explicit unclean-stop recovery, and
@@ -185,16 +215,22 @@ destination, existing-result state, and any private candidate status/path/reason
 it checks again immediately before launch and never mutates recovery state.
 Each selected result artifact is rechecked by size
 and SHA-256 immediately before it is opened by a local application. The
-external Deformetrica route can now run an explicit read-only, configuration-
-hash-bound diagnostic of its exact container engine and image from review
-step 2. A separate source-level child can also consume an independently
-hash-bound preparation-only approval and atomically publish a verified
-`prepared_not_executed` run through a strict pipe. It still cannot start or
-supervise Deformetrica. A Qt-independent parent contains this child, bounds its
-transport and independently verifies the prepared run. The same child is now a
-fourth sibling in the evidence-only Windows freeze and has a mandatory real
-frozen controller smoke based on an externally created, independently
-hash-bound approval; it remains disabled in the GUI. The Modern path does not
+Deformetrica route can run a read-only, configuration-hash-bound diagnostic of
+its exact native, WSL, or developer-container launcher from review step 2.
+Normal Windows projects prefer the installer-owned WSL identity and the private
+alpha can reuse an existing exact Deformetrica 4.3.0 WSL environment read-only.
+When the check passes, the source desktop binds one immutable launch request and supervises
+preflight, preparation, execution, phase-dependent cancellation, observed
+iterations, and an explicitly bounded ETA-to-iteration-cap in a contained child
+process. A Qt-independent parent independently reconciles terminal filesystem,
+result-report, and hash evidence before the GUI accepts the outcome. This real
+execution child now has a dedicated PyInstaller sibling, cancel-before-prepare
+smoke, and hard-parent-death gate in the next freeze contract; a fresh clean-runner
+v0.4 observation and rebuilt installer have not yet been produced. Interrupted
+run recovery and reference PC deformation rendering remain open. The verified
+source-level momenta PCA handoff is connected. The older preparation-only child
+remains a separate narrow sibling in the
+evidence-only freeze and cannot authorize engine execution. The Modern path does not
 provide checkpoint/resume. The real source preparation worker also has suspended-process Windows
 hard-parent-death evidence before request delivery. For the Modern compute
 worker, Windows parent death terminates the contained worker tree and
@@ -202,12 +238,26 @@ command-pipe EOF requests cooperative cancellation on every platform.
 Versioned private markers and OS-released
 leases now support exact-destination, read-only discovery after hard crashes;
 automatic deletion, resume, and reconciliation remain deliberately open.
-DiffeoForge can also load the selected template outside the GUI thread and
-render deterministic native XY/XZ/YZ wireframe projections with an explicit
-display-edge budget and exact source hash. This is an inspection preview, not
-interactive 3D rendering, mesh QC, registration evidence, or landmark picking.
-DiffeoForge also does **not** yet ship a desktop installer or redistributable
-binary. A clean-commit, exact-inventory Windows one-directory
+DiffeoForge can also load selected meshes outside the GUI thread and render
+deterministic native XY/XZ/YZ wireframe projections with an explicit
+display-edge budget and exact source hash. The separate guided landmark editor
+renders a rotatable native 3D surface and stores a barycentrically interpolated
+point on the frontmost triangle under each click. Its autosaved draft is bound
+to the exact mesh paths and SHA-256 identities before it can be resumed. The
+researcher chooses the planned landmark count before opening the editor. GPA
+requires at least three non-collinear points, but DiffeoForge does not impose an
+arbitrary ten-landmark study cap. Automatic loading of the next mesh after the
+last planned point is a visible, draft-persisted option and can be disabled for
+manual navigation. High-face-count rotation may use a bounded transient
+triangle preview, but every mouse release schedules a complete opaque surface
+repaint before the next landmark is chosen. Neither view is mesh QC or
+registration evidence. Before project creation, an optional GPA route requires
+explicit approval of a converged numerical preview bound to the exact source
+hashes and settings; it is not proof of landmark homology or biological
+suitability.
+DiffeoForge does **not** yet ship a public redistributable binary. Same-owner
+private Windows installers are used for local testing. A clean-commit,
+exact-inventory Windows one-directory
 [engineering build](docs/WINDOWS_FREEZE_EVIDENCE.md) now exercises the GUI and
 separate frozen workers. The exact Inno Setup pipeline has compiled one private,
 unsigned engineering setup without executing or distributing it. A separate
@@ -216,7 +266,7 @@ has completed its first real install/smoke/uninstall observation; a small
 retained-integrity-verifier refinement has also completed re-observation. No
 usable-installer or release claim follows from either compilation or lifecycle
 evidence.
-DiffeoForge still does not provide interactive native 3D mesh rendering or
+DiffeoForge still does not provide interactive native 3D atlas/result rendering,
 self-intersection detection, or promise
 CPU/GPU equivalence or 300-specimen production performance. See the [modern-workflow
 documentation](docs/MODERN_WORKFLOW.md) and [reference-backend
@@ -237,6 +287,10 @@ diffeoforge init "C:\path\to\meshes" --units millimeter
 # Review atlas.yaml and atlas.preflight.html before computation.
 diffeoforge run atlas.yaml --run-id pilot-001
 diffeoforge report runs/pilot-001
+# After a completed Deformetrica atlas, create and independently recheck PCA:
+diffeoforge reference-pca runs/pilot-001
+diffeoforge reference-pca-verify `
+  runs/pilot-001/analysis/reference-result-analysis-v0.2 --source-run runs/pilot-001
 ```
 
 `init` never guesses coordinate units or silently overwrites files. A file
@@ -258,6 +312,20 @@ diffeoforge modern-plan modern-atlas.yaml
 # Review modern-atlas.workload/workload.html. It is not a runtime forecast.
 # Optional measured microbenchmark; subject count is always explicit.
 diffeoforge modern-benchmark modern-atlas.yaml --subjects 5
+# Optional full-optimizer pilot; both subjects and cycle cap are explicit.
+diffeoforge modern-optimizer-benchmark modern-atlas.yaml --subjects 5 --cycles 3
+diffeoforge modern-optimizer-benchmark-verify modern-atlas.optimizer-benchmark
+diffeoforge modern-optimizer-benchmark-design modern-atlas.yaml `
+  --subjects 5 20 68 --cycles 1 3 --repeats 3
+diffeoforge modern-optimizer-benchmark-design-verify modern-atlas.optimizer-study
+diffeoforge modern-optimizer-benchmark-study `
+  modern-atlas.optimizer-study modern-atlas.yaml
+diffeoforge modern-optimizer-benchmark-study-status modern-atlas.optimizer-study.run
+diffeoforge modern-optimizer-benchmark-study-verify modern-atlas.optimizer-study.run
+diffeoforge modern-benchmark-design examples/minimal-modern-atlas-blockwise.yaml `
+  --subjects 1 3 5 --repeats 5 --warmups 1 --order-seed 20260722
+diffeoforge modern-benchmark-design-verify `
+  minimal-modern-atlas-blockwise.benchmark-study
 diffeoforge modern-run modern-atlas.yaml
 diffeoforge modern-verify modern-atlas-run
 # If a prior hard crash left private state, inspect it without changing files:
@@ -271,7 +339,12 @@ publishes. See the [private-run discovery contract](docs/PRIVATE_RUN_DISCOVERY.m
 
 For high-face-count Modern experiments, the desktop can write an explicit exact
 `256 × 256` blockwise plan and Step 2 reports the supplied face counts, complete
-logical all-pairs dimensions, and largest execution tile. A synthetic
+logical all-pairs dimensions, and largest execution tile. Ordinary Gaussian
+evaluation uses centered rank-2 matrix arithmetic rather than rank-3 XYZ
+difference tensors. Its analytical backward reconstructs kernels instead of
+retaining their construction matrices for every subject; backward-compatible
+XYZ payload fields are conservative
+dense-equivalent planning values. A synthetic
 10,000-face pre-compute contract is covered by automated tests. This is not a
 full-atlas performance claim, automatic safe preset, or proof that 300 subjects
 are feasible. See the [high-detail surface workflow
@@ -413,11 +486,13 @@ subject to the validation and scaling gates in the modern-engine documentation.
 
 The bundled example uses one template and five deterministic synthetic meshes.
 It exercises geometry preflight and immutable run preparation without private
-research data. Execution requires either a compatible external Deformetrica
-installation or the frozen reference container below.
+research data. Reference execution currently requires a compatible verified
+Deformetrica runtime. The public Windows installer target will import its own
+offline, hash-verified WSL runtime; Docker remains a developer and CI option
+below.
 
-For an isolated, hash-locked Deformetrica 4.3.0 CPU environment, build the
-reference container and use the container example:
+For developer/CI validation of an isolated, hash-locked Deformetrica 4.3.0 CPU
+environment, build the reference container and use the container example:
 
 ```bash
 docker build --platform linux/amd64 -f container/Dockerfile \
@@ -436,6 +511,7 @@ and workflow for another mesh directory.
 - [Project specification](docs/PROJECT_SPECIFICATION.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Deformetrica reference backend](docs/REFERENCE_BACKEND.md)
+- [Managed Windows reference runtime](docs/MANAGED_REFERENCE_RUNTIME.md)
 - [Modern-engine feasibility baseline](docs/MODERN_ENGINE_FEASIBILITY.md)
 - [Experimental momenta-only optimizer](docs/MOMENTA_OPTIMIZER.md)
 - [Experimental full atlas optimizer](docs/FULL_ATLAS_OPTIMIZER.md)
@@ -445,9 +521,13 @@ and workflow for another mesh directory.
 - [Modern configured-engine workload planning](docs/MODERN_WORKLOAD.md)
 - [Versioned modern progress events](docs/MODERN_PROGRESS.md)
 - [Modern objective/gradient benchmark protocol](docs/MODERN_BENCHMARK.md)
+- [Modern multi-cycle optimizer benchmark](docs/MODERN_OPTIMIZER_BENCHMARK.md)
+- [Prospective optimizer scaling design](docs/MODERN_OPTIMIZER_BENCHMARK_DESIGN.md)
+- [Centered Gaussian matrix evaluation](docs/CENTERED_GAUSSIAN_MATRIX.md)
 - [Bounded-memory blockwise Gaussian primitives](docs/BLOCKWISE_GAUSSIAN.md)
 - [Landmark-based Procrustes alignment](docs/PROCRUSTES_ALIGNMENT.md)
 - [PCA of atlas-derived subject features](docs/ATLAS_PCA.md)
+- [Verified PCA of Deformetrica momenta](docs/REFERENCE_PCA.md)
 - [Desktop executable and installer architecture](docs/DESKTOP_DISTRIBUTION.md)
 - [Reproducible Windows installer build contract](docs/WINDOWS_INSTALLER_CONTRACT.md)
 - [Inno Setup toolchain authenticity evidence](docs/INNO_TOOLCHAIN_EVIDENCE.md)
@@ -477,10 +557,12 @@ and workflow for another mesh directory.
 - [Source preparation-worker parent-death evidence](docs/REFERENCE_PREPARATION_PARENT_DEATH.md)
 - [Frozen preparation-worker parent-death evidence](docs/FROZEN_REFERENCE_PREPARATION_PARENT_DEATH.md)
 - [Versioned reference worker lifecycle protocol](docs/REFERENCE_WORKER_PROTOCOL.md)
+- [Supervised desktop Deformetrica execution](docs/DESKTOP_REFERENCE_EXECUTION.md)
 - [Nonnumerical reference worker pipe harness](docs/REFERENCE_WORKER_HARNESS.md)
 - [Nonnumerical reference harness controller](docs/REFERENCE_HARNESS_CONTROLLER.md)
 - [Frozen reference-worker parent-death evidence](docs/FROZEN_REFERENCE_PARENT_DEATH.md)
 - [Open synthetic validation dataset](docs/SYNTHETIC_DATASET.md)
+- [Surface input formats for landmark preprocessing](docs/SURFACE_INPUT_FORMATS.md)
 - [Synthetic numerical reference](reference/synthetic-v1/README.md)
 - [Frozen Deformetrica CPU container](docs/CONTAINER_REFERENCE.md)
 - [First-run workflow](docs/FIRST_RUN.md)

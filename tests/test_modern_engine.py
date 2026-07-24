@@ -58,7 +58,6 @@ def test_gaussian_kernel_and_convolution_match_hand_calculation() -> None:
         [[1.0, off_diagonal], [off_diagonal, 1.0]],
         dtype=DTYPE,
     )
-
     actual = gaussian_kernel(points, points, kernel_width=2.0)
 
     torch.testing.assert_close(actual, expected, rtol=1e-14, atol=1e-14)
@@ -68,6 +67,76 @@ def test_gaussian_kernel_and_convolution_match_hand_calculation() -> None:
         rtol=1e-14,
         atol=1e-14,
     )
+
+
+def test_gaussian_matrix_remains_translation_stable_without_rank3_differences(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import diffeoforge.engine.dense as dense_module
+
+    points = torch.tensor(
+        [[0.0, 0.0, 0.0], [1.25, -0.5, 0.75], [-0.2, 0.4, 1.1]],
+        dtype=DTYPE,
+    )
+    translated = points + torch.tensor([1.0e9, -2.0e9, 3.0e9], dtype=DTYPE)
+    expected = gaussian_kernel(points, points, 0.8)
+
+    def fail(*_args, **_kwargs):
+        raise AssertionError("rank-3 difference path must not be used")
+
+    monkeypatch.setattr(dense_module, "_gaussian_tile", fail)
+    observed = dense_module.gaussian_kernel(translated, translated, 0.8)
+
+    torch.testing.assert_close(observed, expected, rtol=2e-7, atol=2e-7)
+
+
+def test_gaussian_matrix_matches_direct_difference_values_and_gradients() -> None:
+    generator = torch.Generator().manual_seed(817)
+    x = torch.randn((7, 3), dtype=DTYPE, generator=generator, requires_grad=True)
+    y = torch.randn((5, 3), dtype=DTYPE, generator=generator, requires_grad=True)
+    weights = torch.randn((7, 5), dtype=DTYPE, generator=generator)
+    width = 1.3
+
+    observed = gaussian_kernel(x, y, width)
+    expected = torch.exp(
+        -torch.sum((x[:, None, :] - y[None, :, :]).square(), dim=2) / (width * width)
+    )
+    observed_gradients = torch.autograd.grad(torch.sum(observed * weights), (x, y))
+    expected_gradients = torch.autograd.grad(torch.sum(expected * weights), (x, y))
+
+    torch.testing.assert_close(observed, expected, rtol=5e-14, atol=5e-14)
+    for actual, direct in zip(observed_gradients, expected_gradients, strict=True):
+        torch.testing.assert_close(actual, direct, rtol=5e-13, atol=5e-13)
+
+
+def test_gaussian_matrix_passes_first_and_second_derivative_checks() -> None:
+    generator = torch.Generator().manual_seed(20260722)
+    x = torch.randn((3, 3), dtype=DTYPE, generator=generator, requires_grad=True)
+    y = torch.randn((4, 3), dtype=DTYPE, generator=generator, requires_grad=True)
+
+    def function(left: torch.Tensor, right: torch.Tensor) -> torch.Tensor:
+        return gaussian_kernel(left, right, 0.9)
+
+    assert torch.autograd.gradcheck(function, (x, y), eps=1e-6, atol=2e-6, rtol=2e-5)
+    assert torch.autograd.gradgradcheck(function, (x, y), eps=1e-6, atol=3e-6, rtol=3e-5)
+
+
+def test_gaussian_backward_does_not_save_rank2_construction_matrices() -> None:
+    generator = torch.Generator().manual_seed(11)
+    x = torch.randn((64, 3), dtype=DTYPE, generator=generator, requires_grad=True)
+    y = torch.randn((48, 3), dtype=DTYPE, generator=generator, requires_grad=True)
+    saved_shapes: list[tuple[int, ...]] = []
+
+    def pack(tensor: torch.Tensor) -> torch.Tensor:
+        saved_shapes.append(tuple(tensor.shape))
+        return tensor
+
+    with torch.autograd.graph.saved_tensors_hooks(pack, lambda tensor: tensor):
+        value = gaussian_kernel(x, y, 1.1).sum()
+        torch.autograd.grad(value, (x, y))
+
+    assert (64, 48) not in saved_shapes
+    assert (64, 48, 3) not in saved_shapes
 
 
 def test_dense_primitives_match_deformetrica_4_3_golden_values() -> None:
@@ -151,9 +220,7 @@ def test_explicit_kernel_gradient_matches_autograd() -> None:
 
     half_energy = 0.5 * deformation_energy(control_points, momenta, 1.25)
     (autograd_gradient,) = torch.autograd.grad(half_energy, control_points)
-    explicit_gradient = gaussian_convolve_gradient(
-        momenta, control_points, kernel_width=1.25
-    )
+    explicit_gradient = gaussian_convolve_gradient(momenta, control_points, kernel_width=1.25)
 
     torch.testing.assert_close(explicit_gradient, autograd_gradient, rtol=1e-12, atol=1e-13)
 
@@ -233,9 +300,7 @@ def test_current_and_varifold_orientation_contracts() -> None:
     torch.testing.assert_close(current_self, torch.zeros((), dtype=DTYPE), atol=1e-14, rtol=0)
     torch.testing.assert_close(varifold_self, torch.zeros((), dtype=DTYPE), atol=1e-14, rtol=0)
     assert float(reversed_current) > 0.0
-    torch.testing.assert_close(
-        reversed_varifold, torch.zeros((), dtype=DTYPE), atol=1e-14, rtol=0
-    )
+    torch.testing.assert_close(reversed_varifold, torch.zeros((), dtype=DTYPE), atol=1e-14, rtol=0)
 
 
 def test_surface_distances_are_jointly_translation_invariant() -> None:
@@ -261,9 +326,7 @@ def test_varifold_distance_passes_double_precision_gradcheck() -> None:
     source.requires_grad_(True)
 
     assert torch.autograd.gradcheck(
-        lambda candidate: varifold_squared_distance(
-            candidate, triangles, target, triangles, 0.8
-        ),
+        lambda candidate: varifold_squared_distance(candidate, triangles, target, triangles, 0.8),
         (source,),
         eps=1e-6,
         atol=1e-5,
@@ -302,13 +365,9 @@ def test_invalid_triangle_connectivity_and_degenerate_faces_fail_explicitly() ->
     with pytest.raises(TypeError, match="int64"):
         triangle_centers_and_area_normals(vertices, triangles.to(torch.int32))
     with pytest.raises(ValueError, match="out-of-range"):
-        triangle_centers_and_area_normals(
-            vertices, torch.tensor([[0, 1, 99]], dtype=torch.int64)
-        )
+        triangle_centers_and_area_normals(vertices, torch.tensor([[0, 1, 99]], dtype=torch.int64))
     with pytest.raises(ValueError, match="degenerate"):
-        triangle_centers_and_area_normals(
-            collinear, torch.tensor([[0, 1, 2]], dtype=torch.int64)
-        )
+        triangle_centers_and_area_normals(collinear, torch.tensor([[0, 1, 2]], dtype=torch.int64))
 
 
 def test_invalid_trajectory_fails_explicitly() -> None:

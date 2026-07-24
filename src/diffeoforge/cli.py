@@ -263,7 +263,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     modern_plan_parser = subparsers.add_parser(
         "modern-plan",
-        help="Inspect configured-engine workload and known tensor payloads without computing.",
+        help=(
+            "Inspect configured-engine workload and conservative payload equivalents "
+            "without computing."
+        ),
     )
     modern_plan_parser.add_argument("config", type=Path)
     modern_plan_parser.add_argument(
@@ -323,6 +326,110 @@ def build_parser() -> argparse.ArgumentParser:
         help="Replace only a recognized generated benchmark-report directory.",
     )
 
+    modern_optimizer_benchmark_parser = subparsers.add_parser(
+        "modern-optimizer-benchmark",
+        help="Measure declared multi-cycle optimizer runs in fresh CPU processes.",
+    )
+    modern_optimizer_benchmark_parser.add_argument("config", type=Path)
+    modern_optimizer_benchmark_parser.add_argument(
+        "--subjects",
+        type=int,
+        required=True,
+        help="Explicit deterministic subject-prefix size to benchmark.",
+    )
+    modern_optimizer_benchmark_parser.add_argument(
+        "--cycles",
+        type=int,
+        required=True,
+        help="Explicit benchmark cycle cap; the source configuration is not modified.",
+    )
+    modern_optimizer_benchmark_parser.add_argument("--repeats", type=int, default=3)
+    modern_optimizer_benchmark_parser.add_argument(
+        "--warmups",
+        type=int,
+        default=0,
+        help="Full optimizer warm-up runs inside each fresh process (default: 0).",
+    )
+    modern_optimizer_benchmark_parser.add_argument(
+        "--output",
+        type=Path,
+        help="Report directory (default: CONFIG_NAME.optimizer-benchmark).",
+    )
+    modern_optimizer_benchmark_parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Replace only a recognized generated optimizer-benchmark directory.",
+    )
+    modern_optimizer_benchmark_verify_parser = subparsers.add_parser(
+        "modern-optimizer-benchmark-verify",
+        help="Strictly verify a published multi-cycle optimizer benchmark.",
+    )
+    modern_optimizer_benchmark_verify_parser.add_argument("report_directory", type=Path)
+
+    modern_optimizer_design_parser = subparsers.add_parser(
+        "modern-optimizer-benchmark-design",
+        help="Freeze a full-factorial subject/cycle optimizer design without running it.",
+    )
+    modern_optimizer_design_parser.add_argument("config", type=Path)
+    modern_optimizer_design_parser.add_argument(
+        "--subjects",
+        type=int,
+        nargs="+",
+        required=True,
+        help="One or more unique deterministic subject-prefix sizes.",
+    )
+    modern_optimizer_design_parser.add_argument(
+        "--cycles",
+        type=int,
+        nargs="+",
+        required=True,
+        help="One or more unique benchmark-only optimizer cycle caps.",
+    )
+    modern_optimizer_design_parser.add_argument("--repeats", type=int, default=3)
+    modern_optimizer_design_parser.add_argument("--warmups", type=int, default=0)
+    modern_optimizer_design_parser.add_argument(
+        "--order-seed",
+        type=int,
+        default=20260722,
+        help="Seed for the versioned deterministic condition order.",
+    )
+    modern_optimizer_design_parser.add_argument(
+        "--output",
+        type=Path,
+        help="New immutable design directory (default: CONFIG_NAME.optimizer-study).",
+    )
+
+    modern_optimizer_design_verify_parser = subparsers.add_parser(
+        "modern-optimizer-benchmark-design-verify",
+        help="Strictly verify an immutable optimizer scaling design without running it.",
+    )
+    modern_optimizer_design_verify_parser.add_argument("design_directory", type=Path)
+
+    modern_optimizer_study_parser = subparsers.add_parser(
+        "modern-optimizer-benchmark-study",
+        help="Execute or resume one frozen subject/cycle optimizer design.",
+    )
+    modern_optimizer_study_parser.add_argument("design_directory", type=Path)
+    modern_optimizer_study_parser.add_argument("config", type=Path)
+    modern_optimizer_study_parser.add_argument(
+        "--output",
+        type=Path,
+        help="Study run directory (default: DESIGN_DIRECTORY.run).",
+    )
+
+    modern_optimizer_study_status_parser = subparsers.add_parser(
+        "modern-optimizer-benchmark-study-status",
+        help="Strictly inspect partial or complete optimizer evidence without changing it.",
+    )
+    modern_optimizer_study_status_parser.add_argument("run_directory", type=Path)
+    modern_optimizer_study_status_parser.add_argument("--json", action="store_true")
+
+    modern_optimizer_study_verify_parser = subparsers.add_parser(
+        "modern-optimizer-benchmark-study-verify",
+        help="Verify a completed optimizer study and every separate raw report.",
+    )
+    modern_optimizer_study_verify_parser.add_argument("run_directory", type=Path)
+
     modern_benchmark_design_parser = subparsers.add_parser(
         "modern-benchmark-design",
         help="Freeze a paired blockwise standard/recompute design before measuring.",
@@ -348,6 +455,12 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         help="New immutable design directory (default: CONFIG_NAME.benchmark-study).",
     )
+
+    modern_benchmark_design_verify_parser = subparsers.add_parser(
+        "modern-benchmark-design-verify",
+        help="Strictly verify one immutable paired benchmark design.",
+    )
+    modern_benchmark_design_verify_parser.add_argument("design_directory", type=Path)
 
     modern_benchmark_matrix_design_parser = subparsers.add_parser(
         "modern-benchmark-matrix-design",
@@ -387,9 +500,7 @@ def build_parser() -> argparse.ArgumentParser:
         "modern-benchmark-matrix-design-verify",
         help="Strictly verify an immutable multi-tile design without running it.",
     )
-    modern_benchmark_matrix_design_verify_parser.add_argument(
-        "design_directory", type=Path
-    )
+    modern_benchmark_matrix_design_verify_parser.add_argument("design_directory", type=Path)
 
     modern_benchmark_matrix_study_parser = subparsers.add_parser(
         "modern-benchmark-matrix-study",
@@ -407,20 +518,14 @@ def build_parser() -> argparse.ArgumentParser:
         "modern-benchmark-matrix-study-status",
         help="Strictly inspect partial or complete matrix evidence without changing it.",
     )
-    modern_benchmark_matrix_study_status_parser.add_argument(
-        "run_directory", type=Path
-    )
-    modern_benchmark_matrix_study_status_parser.add_argument(
-        "--json", action="store_true"
-    )
+    modern_benchmark_matrix_study_status_parser.add_argument("run_directory", type=Path)
+    modern_benchmark_matrix_study_status_parser.add_argument("--json", action="store_true")
 
     modern_benchmark_matrix_study_verify_parser = subparsers.add_parser(
         "modern-benchmark-matrix-study-verify",
         help="Verify a completed matrix study and every separate raw v0.4 report.",
     )
-    modern_benchmark_matrix_study_verify_parser.add_argument(
-        "run_directory", type=Path
-    )
+    modern_benchmark_matrix_study_verify_parser.add_argument("run_directory", type=Path)
 
     modern_benchmark_study_parser = subparsers.add_parser(
         "modern-benchmark-study",
@@ -452,6 +557,40 @@ def build_parser() -> argparse.ArgumentParser:
         help="Verify an immutable modern workflow run and its nested atlas/PCA bundle.",
     )
     modern_verify_parser.add_argument("run_directory", type=Path)
+
+    reference_pca_parser = subparsers.add_parser(
+        "reference-pca",
+        help="Create a verified linear PCA snapshot from completed Deformetrica momenta.",
+    )
+    reference_pca_parser.add_argument(
+        "run_directory",
+        type=Path,
+        help="Completed immutable Deformetrica run directory.",
+    )
+    reference_pca_parser.add_argument(
+        "--output",
+        type=Path,
+        help=(
+            "New result-analysis bundle directory "
+            "(default: RUN/analysis/reference-result-analysis-v0.2)."
+        ),
+    )
+    reference_pca_parser.add_argument(
+        "--components",
+        type=int,
+        help="Retain an explicit number of components (default: all available).",
+    )
+
+    reference_pca_verify_parser = subparsers.add_parser(
+        "reference-pca-verify",
+        help="Verify and recompute one Deformetrica momenta PCA snapshot.",
+    )
+    reference_pca_verify_parser.add_argument("bundle_directory", type=Path)
+    reference_pca_verify_parser.add_argument(
+        "--source-run",
+        type=Path,
+        help="Also require an exact hash binding to this current Deformetrica run.",
+    )
 
     validate_parser = subparsers.add_parser(
         "validate",
@@ -512,8 +651,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--output",
         type=Path,
         help=(
-            "Write exact verification evidence to a new file; an existing path is "
-            "never replaced."
+            "Write exact verification evidence to a new file; an existing path is never replaced."
         ),
     )
     reference_plan_approve_parser = subparsers.add_parser(
@@ -555,8 +693,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--output",
         type=Path,
         help=(
-            "Write exact verification evidence to a new file; an existing path is "
-            "never replaced."
+            "Write exact verification evidence to a new file; an existing path is never replaced."
         ),
     )
     reference_preparation_status_parser = subparsers.add_parser(
@@ -606,8 +743,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--output",
         type=Path,
         help=(
-            "Write exact verification evidence to a new file; an existing path is "
-            "never replaced."
+            "Write exact verification evidence to a new file; an existing path is never replaced."
         ),
     )
     reference_prepare_approved_parser = subparsers.add_parser(
@@ -969,6 +1105,50 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 2
         return 0
 
+    if args.command == "reference-pca":
+        try:
+            from diffeoforge.reference_pca import (
+                verify_reference_pca_bundle,
+                write_reference_pca_bundle,
+            )
+
+            bundle = write_reference_pca_bundle(
+                args.run_directory,
+                args.output,
+                pca_components=args.components,
+            )
+            verified = verify_reference_pca_bundle(bundle, source_run=args.run_directory)
+            print(f"Verified Deformetrica momenta PCA created: {bundle}")
+            print(f"Subjects: {verified.manifest['inputs']['subjects']}")
+            print(f"Control points: {verified.manifest['inputs']['control_point_count']}")
+            print(f"Components: {verified.pca.number_of_components}")
+            print(
+                "PCA method: centered linear PCA by deterministic float64 SVD (not RBF KernelPCA)"
+            )
+            print(f"PCA scores: {bundle / verified.manifest['pca']['scores_path']}")
+            print(f"PCA scree plot: {bundle / verified.manifest['pca']['plots']['scree_path']}")
+        except (OSError, RuntimeError, TypeError, ValueError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
+
+    if args.command == "reference-pca-verify":
+        try:
+            from diffeoforge.reference_pca import verify_reference_pca_bundle
+
+            verified = verify_reference_pca_bundle(
+                args.bundle_directory,
+                source_run=args.source_run,
+            )
+            print(f"Deformetrica momenta PCA verified: {verified.bundle_directory}")
+            print(f"Subjects: {verified.manifest['inputs']['subjects']}")
+            print(f"Components: {verified.pca.number_of_components}")
+            print("Raw parameter hashes and recomputed PCA tables match.")
+        except (OSError, RuntimeError, TypeError, ValueError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
+
     if args.command == "modern-plan":
         try:
             from diffeoforge.modern_workload import (
@@ -993,7 +1173,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 f"{report['optimizer_bound']['objective_gradient_evaluation_upper_bound']}"
             )
             print(
-                f"Largest single execution XYZ-difference tensor: {largest_execution_bytes} bytes"
+                "Largest dense-equivalent execution XYZ payload: "
+                f"{largest_execution_bytes} bytes"
             )
             print(f"Pairwise execution: {report['engine']['pairwise_evaluation']['mode']}")
             print(f"Machine-readable report: {report_directory / REPORT_JSON_NAME}")
@@ -1071,6 +1252,260 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 2
         return 0
 
+    if args.command == "modern-optimizer-benchmark":
+        try:
+            from diffeoforge.modern_optimizer_benchmark import (
+                REPORT_HTML_NAME,
+                REPORT_JSON_NAME,
+                benchmark_modern_optimizer,
+            )
+
+            report_directory = benchmark_modern_optimizer(
+                args.config,
+                subject_count=args.subjects,
+                max_cycles=args.cycles,
+                repeats=args.repeats,
+                warmup_runs=args.warmups,
+                destination=args.output,
+                overwrite=args.force,
+            )
+            report = json.loads((report_directory / REPORT_JSON_NAME).read_text(encoding="utf-8"))
+            optimizer_seconds = report["summary"]["optimizer_wall_time_ns"]["median"] / 1e9
+            preparation_seconds = (
+                report["summary"]["target_preparation_wall_time_ns"]["median"] / 1e9
+            )
+            sample = report["samples"][0]
+            print(f"Modern optimizer benchmark created: {report_directory}")
+            print(f"Selected subjects: {report['input']['selected_subject_count']}")
+            print(f"Measured cycle cap: {report['configuration']['measured_max_cycles']}")
+            print(f"Fresh-process repeats: {report['configuration']['repeats']}")
+            print(f"Median target-cache preparation: {preparation_seconds:.3f} s")
+            print(f"Median optimizer wall time: {optimizer_seconds:.3f} s")
+            print(
+                "Objective/gradient evaluations: "
+                f"{sample['objective_evaluations']}/{sample['gradient_evaluations']}"
+            )
+            print(
+                "Line-search candidates without backward pass: "
+                f"{sample['line_search_candidates_without_gradient']}"
+            )
+            print(
+                "Repeat-consistent results: "
+                f"{str(report['repeat_consistency']['consistent']).lower()}"
+            )
+            print(f"Machine-readable report: {report_directory / REPORT_JSON_NAME}")
+            print(f"Review report: {report_directory / REPORT_HTML_NAME}")
+            print("WARNING: This limited-cycle benchmark is not a convergence or ETA result.")
+        except ImportError as error:
+            print(
+                "ERROR: Modern optimizer benchmark dependencies are missing; install "
+                "diffeoforge[modern-engine].",
+                file=sys.stderr,
+            )
+            print(f"       {error}", file=sys.stderr)
+            return 2
+        except (ConfigurationError, RuntimeError, OSError, ValueError, TypeError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
+
+    if args.command == "modern-optimizer-benchmark-verify":
+        try:
+            from diffeoforge.modern_optimizer_benchmark import (
+                verify_modern_optimizer_benchmark_report,
+            )
+
+            report = verify_modern_optimizer_benchmark_report(args.report_directory)
+            print(f"Modern optimizer benchmark verified: {args.report_directory.resolve()}")
+            print(f"Fresh-process repeats: {report['configuration']['repeats']}")
+            print(
+                "Repeat-consistent results: "
+                f"{str(report['repeat_consistency']['consistent']).lower()}"
+            )
+        except ImportError as error:
+            print(
+                "ERROR: Modern optimizer benchmark dependencies are missing; install "
+                "diffeoforge[modern-engine].",
+                file=sys.stderr,
+            )
+            print(f"       {error}", file=sys.stderr)
+            return 2
+        except (RuntimeError, OSError, ValueError, TypeError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
+
+    if args.command == "modern-optimizer-benchmark-design":
+        try:
+            from diffeoforge.modern_optimizer_benchmark_design import (
+                DESIGN_HTML_NAME,
+                DESIGN_JSON_NAME,
+                DESIGN_SIDECAR_NAME,
+                create_modern_optimizer_benchmark_design,
+                verify_modern_optimizer_benchmark_design,
+            )
+
+            design_directory = create_modern_optimizer_benchmark_design(
+                args.config,
+                subject_counts=args.subjects,
+                cycle_caps=args.cycles,
+                repeats_per_condition=args.repeats,
+                warmup_runs=args.warmups,
+                order_seed=args.order_seed,
+                destination=args.output,
+            )
+            design = verify_modern_optimizer_benchmark_design(design_directory)
+            protocol = design["protocol"]
+            print(f"Prospective optimizer scaling design created: {design_directory}")
+            print(f"Subject-prefix sizes: {protocol['subject_counts']}")
+            print(f"Cycle caps: {protocol['cycle_caps']}")
+            print(
+                "Frozen condition count: "
+                f"{protocol['condition_count']}/{protocol['maximum_condition_count']}"
+            )
+            print(f"Deterministic order seed: {protocol['order_seed']}")
+            print(f"Machine-readable design: {design_directory / DESIGN_JSON_NAME}")
+            print(f"Integrity sidecar: {design_directory / DESIGN_SIDECAR_NAME}")
+            print(f"Review page: {design_directory / DESIGN_HTML_NAME}")
+            print("WARNING: No optimizer has been run and no performance claim is made.")
+        except ImportError as error:
+            print(
+                "ERROR: Modern optimizer design dependencies are missing; install "
+                "diffeoforge[modern-engine].",
+                file=sys.stderr,
+            )
+            print(f"       {error}", file=sys.stderr)
+            return 2
+        except (ConfigurationError, RuntimeError, OSError, ValueError, TypeError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
+
+    if args.command == "modern-optimizer-benchmark-design-verify":
+        try:
+            from diffeoforge.modern_optimizer_benchmark_design import (
+                verify_modern_optimizer_benchmark_design,
+            )
+
+            design_directory = args.design_directory.expanduser().resolve()
+            design = verify_modern_optimizer_benchmark_design(design_directory)
+            protocol = design["protocol"]
+            print(f"Prospective optimizer scaling design verified: {design_directory}")
+            print(
+                "Frozen condition count: "
+                f"{protocol['condition_count']}/{protocol['maximum_condition_count']}"
+            )
+            print("No optimizer result or performance claim is present.")
+        except (RuntimeError, OSError, ValueError, TypeError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
+
+    if args.command == "modern-optimizer-benchmark-study":
+        try:
+            from diffeoforge.modern_optimizer_benchmark_study import (
+                run_modern_optimizer_benchmark_study,
+                verify_modern_optimizer_benchmark_study_run,
+            )
+
+            def show_optimizer_study_progress(event) -> None:
+                condition = event.condition
+                detail = ""
+                if condition is not None:
+                    detail = (
+                        f"; {condition.condition_id}; "
+                        f"{condition.subject_count} subjects; "
+                        f"{condition.cycle_cap} cycles"
+                    )
+                print(
+                    "Optimizer study progress "
+                    f"[{event.completed_conditions}/{event.total_conditions}] "
+                    f"{event.status}{detail}",
+                    flush=True,
+                )
+
+            run_directory = run_modern_optimizer_benchmark_study(
+                args.design_directory,
+                args.config,
+                destination=args.output,
+                progress_callback=show_optimizer_study_progress,
+            )
+            manifest = verify_modern_optimizer_benchmark_study_run(run_directory)
+            print(f"Frozen optimizer benchmark study completed: {run_directory}")
+            print(f"Verified raw conditions: {len(manifest['conditions'])}")
+            print("No automatic comparison, ETA, or convergence claim was produced.")
+        except ImportError as error:
+            print(
+                "ERROR: Modern optimizer study dependencies are missing; install "
+                "diffeoforge[modern-engine].",
+                file=sys.stderr,
+            )
+            print(f"       {error}", file=sys.stderr)
+            return 2
+        except (ConfigurationError, RuntimeError, OSError, ValueError, TypeError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
+
+    if args.command == "modern-optimizer-benchmark-study-status":
+        try:
+            from diffeoforge.modern_optimizer_benchmark_study import (
+                inspect_modern_optimizer_benchmark_study_run,
+            )
+
+            status = inspect_modern_optimizer_benchmark_study_run(args.run_directory)
+            if args.json:
+                print(json.dumps(status, indent=2, ensure_ascii=False, sort_keys=True))
+            else:
+                print(f"Optimizer study status: {status['status']}")
+                print(
+                    "Strictly verified raw reports: "
+                    f"{status['verified_report_count']}/{status['total_condition_count']}"
+                )
+                print(
+                    "State-recorded completed conditions: "
+                    f"{status['state_completed_condition_count']}"
+                )
+                print(f"Execution lock: {status['lock']['status']}")
+                if status["next_condition"] is not None:
+                    condition = status["next_condition"]
+                    print(
+                        "Next frozen condition: "
+                        f"{condition['condition_id']} "
+                        f"({condition['subject_count']} subjects, "
+                        f"{condition['cycle_cap']} cycles)"
+                    )
+                if status["reconciliation_required"]:
+                    print(
+                        "RECOVERABLE: Valid report evidence is ahead of atomic state; "
+                        "the runner can reconcile it."
+                    )
+                print(
+                    "Completion manifest: "
+                    f"{status['completion_manifest_status']}; "
+                    f"verified={str(status['completion_manifest_verified']).lower()}"
+                )
+        except (RuntimeError, OSError, ValueError, TypeError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
+
+    if args.command == "modern-optimizer-benchmark-study-verify":
+        try:
+            from diffeoforge.modern_optimizer_benchmark_study import (
+                verify_modern_optimizer_benchmark_study_run,
+            )
+
+            run_directory = args.run_directory.expanduser().resolve()
+            manifest = verify_modern_optimizer_benchmark_study_run(run_directory)
+            print(f"Frozen optimizer benchmark study verified: {run_directory}")
+            print(f"Verified raw conditions: {len(manifest['conditions'])}")
+            print("No automatic comparison, ETA, or convergence claim is present.")
+        except (RuntimeError, OSError, ValueError, TypeError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
+
     if args.command == "modern-benchmark-design":
         try:
             from diffeoforge.modern_benchmark_design import (
@@ -1107,6 +1542,22 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"       {error}", file=sys.stderr)
             return 2
         except (ConfigurationError, RuntimeError, OSError, ValueError, TypeError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
+
+    if args.command == "modern-benchmark-design-verify":
+        try:
+            from diffeoforge.modern_benchmark_design import (
+                verify_modern_benchmark_design,
+            )
+
+            design_directory = args.design_directory.expanduser().resolve()
+            design = verify_modern_benchmark_design(design_directory)
+            print(f"Prospective benchmark design verified: {design_directory}")
+            print(f"Frozen condition count: {len(design['conditions'])}")
+            print("No benchmark result or performance claim is present.")
+        except (RuntimeError, OSError, ValueError, TypeError) as error:
             print(f"ERROR: {error}", file=sys.stderr)
             return 2
         return 0
@@ -1577,8 +2028,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 )
                 if written.read_bytes() != payload:
                     raise ConfigurationError(
-                        "Saved approval verification evidence changed after writing: "
-                        f"{written}"
+                        f"Saved approval verification evidence changed after writing: {written}"
                     )
                 encoded_path = json.dumps(str(written), ensure_ascii=True)
                 print(f"Saved approval verification evidence: {encoded_path}")
@@ -1596,9 +2046,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 expected_request_sha256=args.expect_request_sha256,
             )
             if args.json:
-                _write_stdout_bytes(
-                    serialize_reference_preparation_reconciliation(report)
-                )
+                _write_stdout_bytes(serialize_reference_preparation_reconciliation(report))
             elif args.output is not None:
                 payload = serialize_reference_preparation_reconciliation(report)
                 written = write_reference_preparation_reconciliation(
@@ -1635,9 +2083,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 args.report,
                 expected_report_sha256=args.expect_report_sha256,
             )
-            payload = serialize_reference_preparation_reconciliation_verification(
-                evidence
-            )
+            payload = serialize_reference_preparation_reconciliation_verification(evidence)
             if args.output is None:
                 _write_stdout_bytes(payload)
             else:

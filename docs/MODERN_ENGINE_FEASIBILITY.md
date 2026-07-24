@@ -64,6 +64,8 @@ The experimental `diffeoforge.engine` module currently implements:
 - the complete per-subject deterministic-atlas contribution, with attachment
   `-distance / noise_variance`, regularity `-p^T K(q,q) p`, and their sum;
 - an unaveraged, order-preserving multi-subject objective sum.
+- exact reusable fixed-target Current/Varifold geometry and self terms, with
+  stale-cache rejection and unchanged source gradients.
 - a deterministic momenta-only gradient-ascent prototype with Armijo
   backtracking and complete accepted-state history.
 - a deterministic full-parameter block optimizer for per-subject momenta,
@@ -148,17 +150,85 @@ immutable provenance, workload planning, and fresh-process benchmarking. It is
 not an automatic default or evidence-backed performance preset. See
 [blockwise Gaussian primitives](BLOCKWISE_GAUSSIAN.md).
 
-An explicit direct-plan `recompute` autograd strategy now checkpoints each
+Ordinary Gaussian forward evaluation now uses a centered squared-distance
+matrix identity instead of materializing rank-3 XYZ differences. A detached
+common origin preserves translation stability without changing the exact
+mathematical distances or gradients. Its analytical backward reconstructs the
+rank-2 kernel rather than retaining construction matrices for every subject.
+Direct formula tests, first- and second-derivative checks, frozen reference
+fixtures, full-objective parity, and optimizer-result checks protect the change.
+See [centered Gaussian matrix evaluation](CENTERED_GAUSSIAN_MATRIX.md).
+
+An explicit direct-plan `recompute` autograd strategy checkpoints each
 deterministic Gaussian/Current/Varifold tile and reconstructs pairwise
 intermediates during backward. Primitive, complete Subject/Atlas objective, and
 one-cycle optimizer tests preserve forward, all-parameter-gradient, and decision
-parity. On the 320-face CC0 Current objective, tested `64 × 64` recompute removes
-the corresponding rank-3 pairwise tensors from the forward saved-tensor graph
-and reduces its largest and summed logical payload. Public workflow plans still
-construct standard autograd only. Benchmark v0.3 can explicitly measure either
-strategy in separate fresh processes, but its spawn smoke coverage is not a
-prospective performance comparison, process peak-memory, or runtime-scaling
-result.
+parity. On the 320-face CC0 Current objective, tested `64 × 64` standard
+evaluation retains tile-sized rank-2 matrices while recompute avoids saving
+them, reducing the largest and summed logical payload. Public workflow plans
+still construct standard autograd only. Benchmark v0.3 can explicitly measure
+either strategy in separate fresh processes, but its spawn smoke coverage is
+not a prospective performance comparison, process peak-memory, or
+runtime-scaling result.
+
+The production optimizer path now prepares the invariant target geometry and
+attachment self term once per subject instead of repeating that quadratic work
+for every line-search evaluation. The uncached path remains the oracle. Dense,
+blockwise-standard, and blockwise-recompute tests preserve exact values and
+source gradients; a first five-subject 1,500-face local observation measured a
+1.239x objective-plus-momenta-gradient ratio. This is implementation evidence,
+not a full-atlas performance or convergence claim. See
+[prepared fixed-target attachments](PREPARED_ATTACHMENT_TARGETS.md).
+
+Armijo candidate gradients are now deferred until the candidate objective
+passes the acceptance threshold. Rejected candidates therefore avoid unused
+backward work, while accepted candidates reuse the same forward graph. Existing
+optimizer histories remain unchanged. A matched two-subject, 1,500-face local
+observation measured a 1.388x ratio for a one-cycle run containing seven
+rejected candidates in its momenta block; this is rejection-specific
+implementation evidence rather than a full-atlas claim. See
+[deferred Armijo gradients](DEFERRED_ARMIJO_GRADIENTS.md).
+
+The versioned multi-cycle optimizer benchmark now runs the production block
+optimizer in a fresh process per repeat. It separates fixed-target cache
+preparation from optimizer wall time, samples process RSS, records exact
+objective/gradient/line-search counts, and hashes the complete history and final
+parameters. Strict JSON, CSV, and regenerated HTML verification make optimizer
+performance changes auditable without converting a limited pilot into a
+convergence, ETA, or Deformetrica-comparison claim. See
+[modern multi-cycle optimizer benchmark](MODERN_OPTIMIZER_BENCHMARK.md).
+
+The separate immutable optimizer-scaling design freezes a full-factorial set of
+subject-prefix sizes and benchmark-only cycle caps before results exist. It
+hashes the complete input inventory and reviewed optimizer configuration,
+stores a deterministic condition order and exact argv, and has strict
+JSON/sidecar/HTML verification. Creating or verifying it runs no optimizer. A
+source-bound resumable executor now runs the frozen order, reconciles only a
+valid report prefix after interruption, and verifies every nested report plus a
+final hash manifest without analysis. See
+[prospective optimizer scaling design](MODERN_OPTIMIZER_BENCHMARK_DESIGN.md).
+
+The centered matrix implementation completed a two-repeat, all-68-subject,
+approximately 1,500-face, one-cycle observation in 61.614 s median optimizer
+time with exact cross-process histories and result hashes. Median sampled peak
+RSS was 10.103 GiB. This is useful deterministic integration evidence, but the
+single cycle and sampled memory remain insufficient for convergence, 300-subject
+feasibility, or comparative performance claims.
+
+With analytical backward recomputation enabled, a second two-repeat observation
+of the same 68-subject condition measured 57.385 s median optimizer time and
+2.975 GiB median sampled peak RSS. Internal repeat hashes and decisions matched
+exactly. The 70.6% sampled peak-RSS reduction is strong implementation evidence;
+the five-subject condition was 15.7% slower, so timing remains cohort- and
+machine-specific rather than a general speed claim.
+
+A separate public CC0 engineering study was frozen in Git before execution.
+It contains six paired standard/recompute conditions across one, three, and
+five-subject prefixes, with five measured fresh processes and one warm-up per
+condition. Every raw JSON/CSV/HTML report and the final run manifest verify.
+The committed run deliberately contains no automatic analysis or ranking; its
+tiny synthetic geometry cannot establish full-atlas performance, a public
+preset, or large-cohort feasibility.
 
 ## Gates before a usable atlas engine
 
@@ -180,6 +250,8 @@ result.
    as an explicit v0.2 configuration and report path with immutable plan
    cross-checks and fresh-process execution coverage.
 8. Benchmark runtime and peak memory over mesh, control-point, and subject count.
+   A versioned fresh-process multi-cycle primitive is complete; the prospective
+   multi-dimensional study and peak-memory characterization remain open.
 9. Define evidence-derived tolerances before accepting a production backend.
 10. Integrate the engine through immutable run manifests without weakening the
     existing reference workflow.

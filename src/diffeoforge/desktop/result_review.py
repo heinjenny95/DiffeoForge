@@ -11,7 +11,7 @@ from typing import Literal
 
 from diffeoforge.desktop.worker_protocol import sha256_file
 
-ResultArtifactKind = Literal["csv", "json", "svg", "vtk"]
+ResultArtifactKind = Literal["csv", "json", "svg", "txt", "vtk"]
 _PCA_DISPLAY_LIMIT = 10
 _HISTORY_COLUMNS = (
     "cycle",
@@ -54,7 +54,7 @@ class ModernResultArtifact:
 
 @dataclass(frozen=True)
 class ModernResultReview:
-    """Read-only summary created only from a fully verified Modern workflow."""
+    """Read-only summary created only from a fully verified atlas/PCA workflow."""
 
     run_directory: Path
     bundle_directory: Path
@@ -64,7 +64,7 @@ class ModernResultReview:
     workflow_manifest_sha256: str
     bundle_manifest_path: Path
     bundle_manifest_sha256: str
-    optimizer_converged: bool
+    optimizer_converged: bool | None
     optimizer_termination_reason: str
     optimizer_cycles_completed: int
     optimizer_max_cycles: int
@@ -76,6 +76,9 @@ class ModernResultReview:
     scientific_boundaries: tuple[str, ...]
     pca_pc2_pc3_unavailable_reason: str | None = None
     optimizer_convergence_plot_unavailable_reason: str | None = None
+    engine_route: Literal["modern", "deformetrica_reference"] = "modern"
+    execution_duration_seconds: float | None = None
+    optimizer_stop_interpretation: str | None = None
 
     def artifact(self, key: str) -> ModernResultArtifact:
         for artifact in self.artifacts:

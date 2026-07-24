@@ -802,7 +802,7 @@ padding:.45rem;text-align:left}} th{{background:#eef4f8}}
 <li>RSS sampling interval: {config["rss_sampling_interval_ms"]:.3f} ms</li>
 <li>Logical Gaussian pair elements/evaluation:
 {operation["gaussian_pair_elements_per_evaluation"]:,}</li>
-<li>Largest execution XYZ tile:
+<li>Largest dense-equivalent execution XYZ payload:
 {_format_bytes(operation["largest_execution_tile"]["float64_xyz_difference_tensor_bytes"])}</li></ul>
 <h2>Descriptive summary</h2>
 <ul><li>Median measured wall time:

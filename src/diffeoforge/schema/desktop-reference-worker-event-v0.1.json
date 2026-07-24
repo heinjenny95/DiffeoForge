@@ -17,7 +17,7 @@
       "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
     },
     "sequence": {"type": "integer", "minimum": 0},
-    "kind": {"enum": ["accepted", "phase", "terminal"]},
+    "kind": {"enum": ["accepted", "phase", "activity", "progress", "terminal"]},
     "payload": {"type": "object"}
   },
   "allOf": [
@@ -28,6 +28,14 @@
     {
       "if": {"properties": {"kind": {"const": "phase"}}},
       "then": {"properties": {"payload": {"$ref": "#/$defs/phase"}}}
+    },
+    {
+      "if": {"properties": {"kind": {"const": "activity"}}},
+      "then": {"properties": {"payload": {"$ref": "#/$defs/activity"}}}
+    },
+    {
+      "if": {"properties": {"kind": {"const": "progress"}}},
+      "then": {"properties": {"payload": {"$ref": "#/$defs/progress"}}}
     },
     {
       "if": {"properties": {"kind": {"const": "terminal"}}},
@@ -67,6 +75,56 @@
           ]
         },
         "message": {"type": "string", "minLength": 1}
+      }
+    },
+    "progress": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "iteration",
+        "maximum_iterations",
+        "log_likelihood",
+        "attachment",
+        "regularity",
+        "elapsed_seconds",
+        "seconds_per_iteration",
+        "eta_to_iteration_cap_seconds",
+        "estimate_status"
+      ],
+      "properties": {
+        "iteration": {"type": "integer", "minimum": 0},
+        "maximum_iterations": {"type": "integer", "minimum": 1},
+        "log_likelihood": {"type": "number"},
+        "attachment": {"type": "number"},
+        "regularity": {"type": "number"},
+        "elapsed_seconds": {"type": "number", "minimum": 0},
+        "seconds_per_iteration": {"type": ["number", "null"], "exclusiveMinimum": 0},
+        "eta_to_iteration_cap_seconds": {"type": ["number", "null"], "minimum": 0},
+        "estimate_status": {
+          "enum": ["warming_up", "observed_rate_to_iteration_cap"]
+        }
+      }
+    },
+    "activity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "elapsed_seconds",
+        "maximum_iterations",
+        "latest_message",
+        "log_source",
+        "last_iteration"
+      ],
+      "properties": {
+        "state": {
+          "enum": ["computing_first_iteration", "optimizing"]
+        },
+        "elapsed_seconds": {"type": "number", "minimum": 0},
+        "maximum_iterations": {"type": "integer", "minimum": 1},
+        "latest_message": {"type": "string", "minLength": 1},
+        "log_source": {"type": ["string", "null"]},
+        "last_iteration": {"type": ["integer", "null"], "minimum": 0}
       }
     },
     "terminal": {

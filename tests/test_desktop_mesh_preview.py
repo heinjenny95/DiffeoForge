@@ -127,14 +127,14 @@ def test_mesh_preview_discards_model_if_source_changes_during_load(
     from diffeoforge.desktop import mesh_preview
 
     source = _tetrahedron(tmp_path / "template.vtk")
-    real_read = mesh_preview.read_vtk_polydata
+    real_read = mesh_preview.load_surface_mesh
 
     def changing_read(path):
-        geometry = real_read(path)
+        loaded = real_read(path)
         source.write_bytes(source.read_bytes() + b"\n")
-        return geometry
+        return loaded
 
-    monkeypatch.setattr(mesh_preview, "read_vtk_polydata", changing_read)
+    monkeypatch.setattr(mesh_preview, "load_surface_mesh", changing_read)
 
     with pytest.raises(MeshPreviewError, match="changed while"):
         load_mesh_preview(source)

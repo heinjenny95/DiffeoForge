@@ -22,6 +22,12 @@ not allowed in this full-parameter entry point. The earlier
 `optimize_momenta` function remains available for a deliberately frozen
 template/control-point experiment.
 
+Because the observed target surfaces are fixed, their triangle geometry and
+quadratic attachment self terms are prepared once per optimizer invocation and
+reused without approximation. Source-dependent and cross terms are still
+recomputed, and exact dense/blockwise value and gradient parity is tested. See
+[prepared fixed-target attachments](PREPARED_ATTACHMENT_TARGETS.md).
+
 ## Transparent block update
 
 For current block value `x`, gradient `g`, and proposed step `s`, the candidate
@@ -37,6 +43,14 @@ Otherwise, `s` is multiplied by the declared backtracking factor and tried
 again. Each parameter block has its own initial step size because their units
 and gradient scales differ. There is no adaptive learning rate, stochastic
 batching, momentum term, or hidden optimizer state.
+
+Candidate objectives are evaluated before their gradients. A rejected Armijo
+candidate releases its graph without an unused backward pass; an acceptable
+candidate requests the gradient from the same graph without repeating its
+forward pass. The initial evaluation is reused for the first block. This
+changes scheduling only: the objective, candidate sequence, acceptance rule,
+accepted states, and recorded history remain identical. See
+[deferred Armijo gradients](DEFERRED_ARMIJO_GRADIENTS.md).
 
 One cycle visits every block once. If every block gradient is below the
 declared threshold in the same cycle, the run terminates as converged. A
@@ -57,8 +71,13 @@ copies. Every optimizer decision records:
 - number of line-search evaluations.
 
 The result additionally records the termination reason, failed block, completed
-cycles, convergence flag, and total line-search evaluations. Caller-owned
-inputs are never mutated.
+cycles, convergence flag, total line-search evaluations, total objective and
+gradient evaluations, and candidate gradients actually requested inside the
+line search. The latter separates Armijo candidates rejected by their forward
+objective from candidates that required a backward pass. Caller-owned inputs
+are never mutated. See the versioned
+[multi-cycle optimizer benchmark](MODERN_OPTIMIZER_BENCHMARK.md) for the strict
+fresh-process measurement contract built on these counters.
 
 ## Versioned CC0 evidence
 

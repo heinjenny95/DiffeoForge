@@ -1,0 +1,356 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DiffeoForge modern multi-cycle optimizer benchmark",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "benchmark_version",
+    "benchmark_id",
+    "created_at",
+    "source_config",
+    "input",
+    "configuration",
+    "environment",
+    "operation_model",
+    "samples",
+    "summary",
+    "repeat_consistency",
+    "warnings",
+    "scientific_boundary"
+  ],
+  "$defs": {
+    "mesh": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["label", "role", "bytes", "sha256", "points", "triangles"],
+      "properties": {
+        "label": {"type": "string", "minLength": 1},
+        "role": {"enum": ["template", "subject"]},
+        "bytes": {"type": "integer", "minimum": 1},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "points": {"type": "integer", "minimum": 1},
+        "triangles": {"type": "integer", "minimum": 1}
+      }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["minimum", "median", "maximum"],
+      "properties": {
+        "minimum": {"type": "number", "minimum": 0},
+        "median": {"type": "number", "minimum": 0},
+        "maximum": {"type": "number", "minimum": 0}
+      }
+    },
+    "pairwiseEvaluation": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mode", "query_tile_size", "source_tile_size"],
+          "properties": {
+            "mode": {"const": "dense"},
+            "query_tile_size": {"type": "null"},
+            "source_tile_size": {"type": "null"}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mode", "query_tile_size", "source_tile_size"],
+          "properties": {
+            "mode": {"const": "blockwise"},
+            "query_tile_size": {"type": "integer", "minimum": 1},
+            "source_tile_size": {"type": "integer", "minimum": 1}
+          }
+        }
+      ]
+    },
+    "logicalPair": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "operation",
+        "subject_label",
+        "rows",
+        "columns",
+        "pair_elements",
+        "float64_matrix_bytes",
+        "float64_xyz_difference_tensor_bytes"
+      ],
+      "properties": {
+        "operation": {"type": "string", "minLength": 1},
+        "subject_label": {"type": ["string", "null"]},
+        "rows": {"type": "integer", "minimum": 1},
+        "columns": {"type": "integer", "minimum": 1},
+        "pair_elements": {"type": "integer", "minimum": 1},
+        "float64_matrix_bytes": {"type": "integer", "minimum": 8},
+        "float64_xyz_difference_tensor_bytes": {"type": "integer", "minimum": 24}
+      }
+    },
+    "executionTile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "operation",
+        "subject_label",
+        "logical_rows",
+        "logical_columns",
+        "tile_rows",
+        "tile_columns",
+        "pair_elements",
+        "float64_matrix_bytes",
+        "float64_xyz_difference_tensor_bytes"
+      ],
+      "properties": {
+        "operation": {"type": "string", "minLength": 1},
+        "subject_label": {"type": ["string", "null"]},
+        "logical_rows": {"type": "integer", "minimum": 1},
+        "logical_columns": {"type": "integer", "minimum": 1},
+        "tile_rows": {"type": "integer", "minimum": 1},
+        "tile_columns": {"type": "integer", "minimum": 1},
+        "pair_elements": {"type": "integer", "minimum": 1},
+        "float64_matrix_bytes": {"type": "integer", "minimum": 8},
+        "float64_xyz_difference_tensor_bytes": {"type": "integer", "minimum": 24}
+      }
+    },
+    "sample": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repeat",
+        "target_preparation_wall_time_ns",
+        "optimizer_wall_time_ns",
+        "rss_before_bytes",
+        "sampled_peak_rss_bytes",
+        "sampled_rss_delta_bytes",
+        "rss_sample_count",
+        "termination_reason",
+        "converged",
+        "failed_block",
+        "cycles_completed",
+        "accepted_decisions",
+        "stationary_decisions",
+        "failed_decisions",
+        "line_search_evaluations",
+        "objective_evaluations",
+        "gradient_evaluations",
+        "candidate_gradient_evaluations",
+        "line_search_candidates_without_gradient",
+        "final_objective",
+        "final_attachment",
+        "final_regularity",
+        "history_sha256",
+        "template_sha256",
+        "control_points_sha256",
+        "momenta_sha256"
+      ],
+      "properties": {
+        "repeat": {"type": "integer", "minimum": 1},
+        "target_preparation_wall_time_ns": {"type": "integer", "minimum": 1},
+        "optimizer_wall_time_ns": {"type": "integer", "minimum": 1},
+        "rss_before_bytes": {"type": "integer", "minimum": 1},
+        "sampled_peak_rss_bytes": {"type": "integer", "minimum": 1},
+        "sampled_rss_delta_bytes": {"type": "integer", "minimum": 0},
+        "rss_sample_count": {"type": "integer", "minimum": 2},
+        "termination_reason": {
+          "enum": ["gradient_tolerance", "max_cycles", "line_search_failed"]
+        },
+        "converged": {"type": "boolean"},
+        "failed_block": {
+          "type": ["string", "null"],
+          "enum": [null, "momenta", "template", "control_points"]
+        },
+        "cycles_completed": {"type": "integer", "minimum": 0},
+        "accepted_decisions": {"type": "integer", "minimum": 0},
+        "stationary_decisions": {"type": "integer", "minimum": 0},
+        "failed_decisions": {"type": "integer", "minimum": 0, "maximum": 1},
+        "line_search_evaluations": {"type": "integer", "minimum": 0},
+        "objective_evaluations": {"type": "integer", "minimum": 1},
+        "gradient_evaluations": {"type": "integer", "minimum": 1},
+        "candidate_gradient_evaluations": {"type": "integer", "minimum": 0},
+        "line_search_candidates_without_gradient": {"type": "integer", "minimum": 0},
+        "final_objective": {"type": "number"},
+        "final_attachment": {"type": "number"},
+        "final_regularity": {"type": "number"},
+        "history_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "template_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "control_points_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "momenta_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
+    }
+  },
+  "properties": {
+    "benchmark_version": {"const": "0.1"},
+    "benchmark_id": {"const": "production_multi_cycle_optimizer"},
+    "created_at": {"type": "string", "minLength": 1},
+    "source_config": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["filename", "sha256", "project"],
+      "properties": {
+        "filename": {"type": "string", "minLength": 1},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "project": {"type": "string", "minLength": 1}
+      }
+    },
+    "input": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "template",
+        "subjects",
+        "available_subject_count",
+        "selected_subject_count",
+        "selection"
+      ],
+      "properties": {
+        "template": {"$ref": "#/$defs/mesh"},
+        "subjects": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/mesh"}},
+        "available_subject_count": {"type": "integer", "minimum": 1},
+        "selected_subject_count": {"type": "integer", "minimum": 1},
+        "selection": {"const": "first subjects in validated deterministic path order"}
+      }
+    },
+    "configuration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_max_cycles",
+        "measured_max_cycles",
+        "block_order",
+        "momenta_step_size",
+        "template_step_size",
+        "control_points_step_size",
+        "backtracking_factor",
+        "armijo_constant",
+        "gradient_tolerance",
+        "minimum_step_size",
+        "max_line_search_iterations",
+        "threads",
+        "random_seed",
+        "warmup_runs_per_repeat",
+        "repeats",
+        "rss_sampling_interval_ms",
+        "process_isolation",
+        "pairwise_evaluation",
+        "prepared_target_cache"
+      ],
+      "properties": {
+        "source_max_cycles": {"type": "integer", "minimum": 0},
+        "measured_max_cycles": {"type": "integer", "minimum": 1, "maximum": 100},
+        "block_order": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "uniqueItems": true,
+          "items": {"enum": ["momenta", "template", "control_points"]}
+        },
+        "momenta_step_size": {"type": "number", "exclusiveMinimum": 0},
+        "template_step_size": {"type": "number", "exclusiveMinimum": 0},
+        "control_points_step_size": {"type": "number", "exclusiveMinimum": 0},
+        "backtracking_factor": {"type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 1},
+        "armijo_constant": {"type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 1},
+        "gradient_tolerance": {"type": "number", "minimum": 0},
+        "minimum_step_size": {"type": "number", "exclusiveMinimum": 0},
+        "max_line_search_iterations": {"type": "integer", "minimum": 1},
+        "threads": {"type": "integer", "minimum": 1},
+        "random_seed": {"type": "integer", "minimum": 0},
+        "warmup_runs_per_repeat": {"type": "integer", "minimum": 0, "maximum": 10},
+        "repeats": {"type": "integer", "minimum": 1, "maximum": 50},
+        "rss_sampling_interval_ms": {"const": 5.0},
+        "process_isolation": {"const": "fresh multiprocessing spawn process per repeat"},
+        "pairwise_evaluation": {"$ref": "#/$defs/pairwiseEvaluation"},
+        "prepared_target_cache": {
+          "const": "target geometry and target self-term prepared once per fresh process"
+        }
+      }
+    },
+    "environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "diffeoforge",
+        "python",
+        "numpy",
+        "pytorch",
+        "psutil",
+        "platform",
+        "logical_cpus",
+        "physical_memory_bytes",
+        "parent_executable"
+      ],
+      "properties": {
+        "diffeoforge": {"type": "string", "minLength": 1},
+        "python": {"type": "string", "minLength": 1},
+        "numpy": {"type": "string", "minLength": 1},
+        "pytorch": {"type": "string", "minLength": 1},
+        "psutil": {"type": "string", "minLength": 1},
+        "platform": {"type": "string", "minLength": 1},
+        "logical_cpus": {"type": ["integer", "null"], "minimum": 1},
+        "physical_memory_bytes": {"type": ["integer", "null"], "minimum": 1},
+        "parent_executable": {"type": "string", "minLength": 1}
+      }
+    },
+    "operation_model": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "gaussian_calls_per_objective_forward",
+        "gaussian_pair_elements_per_objective_forward",
+        "largest_logical_pair",
+        "largest_execution_tile"
+      ],
+      "properties": {
+        "gaussian_calls_per_objective_forward": {"type": "integer", "minimum": 1},
+        "gaussian_pair_elements_per_objective_forward": {"type": "integer", "minimum": 1},
+        "largest_logical_pair": {"$ref": "#/$defs/logicalPair"},
+        "largest_execution_tile": {"$ref": "#/$defs/executionTile"}
+      }
+    },
+    "samples": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 50,
+      "items": {"$ref": "#/$defs/sample"}
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "target_preparation_wall_time_ns",
+        "optimizer_wall_time_ns",
+        "rss_before_bytes",
+        "sampled_peak_rss_bytes",
+        "sampled_rss_delta_bytes"
+      ],
+      "properties": {
+        "target_preparation_wall_time_ns": {"$ref": "#/$defs/summary"},
+        "optimizer_wall_time_ns": {"$ref": "#/$defs/summary"},
+        "rss_before_bytes": {"$ref": "#/$defs/summary"},
+        "sampled_peak_rss_bytes": {"$ref": "#/$defs/summary"},
+        "sampled_rss_delta_bytes": {"$ref": "#/$defs/summary"}
+      }
+    },
+    "repeat_consistency": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "relative_tolerance",
+        "absolute_tolerance",
+        "exact_discrete_and_hash_match",
+        "numerical_match",
+        "consistent"
+      ],
+      "properties": {
+        "relative_tolerance": {"const": 1e-12},
+        "absolute_tolerance": {"const": 1e-12},
+        "exact_discrete_and_hash_match": {"type": "boolean"},
+        "numerical_match": {"type": "boolean"},
+        "consistent": {"type": "boolean"}
+      }
+    },
+    "warnings": {"type": "array", "minItems": 3, "items": {"type": "string", "minLength": 1}},
+    "scientific_boundary": {"type": "string", "minLength": 1}
+  }
+}

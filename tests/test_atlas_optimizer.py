@@ -21,10 +21,7 @@ REFERENCE_FIXTURE = (
     / "deformetrica-4.3.0-objective.json"
 )
 SMOKE_FIXTURE = (
-    Path(__file__).parents[1]
-    / "reference"
-    / "modern-engine-v0.4"
-    / "cc0-full-atlas-smoke.json"
+    Path(__file__).parents[1] / "reference" / "modern-engine-v0.4" / "cc0-full-atlas-smoke.json"
 )
 
 
@@ -80,9 +77,7 @@ def test_every_accepted_block_monotonically_improves_the_objective() -> None:
         "control_points",
     ]
     assert all(record.status == "accepted" for record in result.history[1:])
-    assert all(
-        later.objective > earlier.objective for earlier, later in pairwise(result.history)
-    )
+    assert all(later.objective > earlier.objective for earlier, later in pairwise(result.history))
     assert all(
         record.objective == pytest.approx(record.attachment + record.regularity)
         for record in result.history
@@ -90,6 +85,11 @@ def test_every_accepted_block_monotonically_improves_the_objective() -> None:
     assert result.total_line_search_evaluations == sum(
         record.line_search_evaluations for record in result.history
     )
+    decisions = len(result.history) - 1
+    accepted = sum(record.status == "accepted" for record in result.history)
+    assert result.objective_evaluations == decisions + result.total_line_search_evaluations
+    assert result.gradient_evaluations == decisions + accepted
+    assert result.candidate_gradient_evaluations == accepted
     assert result.settings.max_cycles == 2
     assert result.settings.block_order == ("momenta", "template", "control_points")
     assert result.settings.momenta_step_size == 0.1
@@ -220,6 +220,9 @@ def test_zero_cycles_returns_fully_evaluated_initial_state() -> None:
     assert result.history[0].status == "initial"
     assert math.isfinite(result.history[0].objective)
     assert result.total_line_search_evaluations == 0
+    assert result.objective_evaluations == 1
+    assert result.gradient_evaluations == 1
+    assert result.candidate_gradient_evaluations == 0
 
 
 def test_failed_first_block_preserves_all_initial_parameters() -> None:
@@ -243,6 +246,37 @@ def test_failed_first_block_preserves_all_initial_parameters() -> None:
     assert torch.equal(result.template_vertices, arguments[0])
     assert torch.equal(result.control_points, arguments[3])
     assert torch.equal(result.momenta, arguments[4])
+
+
+def test_rejected_atlas_candidate_does_not_request_an_unused_gradient(
+    monkeypatch,
+) -> None:
+    arguments, keywords = _problem(subjects=1)
+    original_grad = torch.autograd.grad
+    calls = 0
+
+    def counted_grad(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return original_grad(*args, **kwargs)
+
+    monkeypatch.setattr(torch.autograd, "grad", counted_grad)
+    result = optimize_atlas(
+        *arguments,
+        **keywords,
+        max_cycles=3,
+        momenta_step_size=10.0,
+        template_step_size=10.0,
+        control_points_step_size=10.0,
+        max_line_search_iterations=1,
+    )
+
+    assert result.termination_reason == "line_search_failed"
+    assert result.total_line_search_evaluations == 1
+    assert result.objective_evaluations == 2
+    assert result.gradient_evaluations == 1
+    assert result.candidate_gradient_evaluations == 0
+    assert calls == 1
 
 
 def test_all_parameter_blocks_move_on_a_nontrivial_problem() -> None:
@@ -383,9 +417,7 @@ def test_committed_cc0_full_atlas_smoke_matches_versioned_evidence() -> None:
         ):
             assert actual_record[name] == expected_record[name]
         for name in ("objective", "attachment", "regularity", "gradient_norm"):
-            assert actual_record[name] == pytest.approx(
-                expected_record[name], rel=1e-9, abs=1e-11
-            )
+            assert actual_record[name] == pytest.approx(expected_record[name], rel=1e-9, abs=1e-11)
         assert actual_record["residuals"] == pytest.approx(
             expected_record["residuals"], rel=1e-9, abs=1e-11
         )

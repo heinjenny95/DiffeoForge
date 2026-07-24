@@ -20,6 +20,7 @@ def test_preflight_report_contains_geometry_parameters_and_boundary() -> None:
     assert "Engineering preflight passed" in html
     assert "Subject meshes</span><strong>5" in html
     assert "Attachment kernel width / template diagonal" in html
+    assert "Parameter provenance" in html
     assert result.template.sha256 in html
     assert "does not establish biological validity" in html
     assert "<script" not in html

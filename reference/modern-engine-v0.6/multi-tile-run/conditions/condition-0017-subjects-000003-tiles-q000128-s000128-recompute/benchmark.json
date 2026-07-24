@@ -1,0 +1,201 @@
+{
+  "benchmark_id": "declared_objective_gradient",
+  "benchmark_version": "0.4",
+  "configuration": {
+    "attachment_type": "current",
+    "control_points": 9,
+    "effective_pairwise_evaluation": {
+      "mode": "blockwise",
+      "query_tile_size": 128,
+      "source_tile_size": 128
+    },
+    "flow_integrator": "deformetrica_heun",
+    "gradient_block": "momenta",
+    "process_isolation": "fresh multiprocessing spawn process per repeat",
+    "random_seed": 20260715,
+    "repeats": 5,
+    "rss_sampling_interval_ms": 5.0,
+    "shooting_integrator": "rk2",
+    "source_pairwise_evaluation": {
+      "mode": "blockwise",
+      "query_tile_size": 64,
+      "source_tile_size": 64
+    },
+    "threads": 1,
+    "tile_autograd_strategy": "recompute",
+    "timepoints": 5,
+    "warmup_evaluations_per_repeat": 1
+  },
+  "created_at": "2026-07-22T17:00:47+00:00",
+  "environment": {
+    "diffeoforge": "0.0.0.dev0",
+    "logical_cpus": 32,
+    "numpy": "2.5.1",
+    "parent_executable": "python.exe",
+    "physical_memory_bytes": 136522924032,
+    "platform": "Windows-11-10.0.26200-SP0",
+    "psutil": "7.2.2",
+    "python": "3.12.13",
+    "pytorch": "2.13.0+cpu"
+  },
+  "input": {
+    "available_subject_count": 5,
+    "selected_subject_count": 3,
+    "selection": "first subjects in validated deterministic path order",
+    "subjects": [
+      {
+        "bytes": 10026,
+        "label": "subject-01.vtk",
+        "points": 162,
+        "role": "subject",
+        "sha256": "25c07a447699028e63b535c00ca094803664fcda15595c1645d9cb3a5b73233b",
+        "triangles": 320
+      },
+      {
+        "bytes": 10024,
+        "label": "subject-02.vtk",
+        "points": 162,
+        "role": "subject",
+        "sha256": "932d282639be32a04f127f86ba67bb9b2d7559a849a0169f7e87e668dbec9cc2",
+        "triangles": 320
+      },
+      {
+        "bytes": 10038,
+        "label": "subject-03.vtk",
+        "points": 162,
+        "role": "subject",
+        "sha256": "87503b00d72e5700619a3c46a9dca185f42e5be8b362de7087b3d9b97a9a8486",
+        "triangles": 320
+      }
+    ],
+    "template": {
+      "bytes": 10021,
+      "label": "template.vtk",
+      "points": 162,
+      "role": "template",
+      "sha256": "e3f5fa71028d419e28e07403af2eff932d6e950acce9a989e1f1a2cc441b8325",
+      "triangles": 320
+    }
+  },
+  "numerical_consistency": {
+    "absolute_tolerance": 1e-12,
+    "consistent": true,
+    "gradient_norm_maximum": 146.1312994556688,
+    "gradient_norm_minimum": 146.1312994556688,
+    "gradient_norm_span": 0.0,
+    "objective_maximum": -16.612572371375478,
+    "objective_minimum": -16.612572371375478,
+    "objective_span": 0.0,
+    "relative_tolerance": 1e-12
+  },
+  "operation_model": {
+    "gaussian_calls_per_evaluation": 120,
+    "gaussian_pair_elements_per_evaluation": 963639,
+    "largest_execution_tile": {
+      "float64_matrix_bytes": 131072,
+      "float64_xyz_difference_tensor_bytes": 393216,
+      "logical_columns": 320,
+      "logical_rows": 320,
+      "operation": "template_attachment_self",
+      "pair_elements": 16384,
+      "subject_label": null,
+      "tile_columns": 128,
+      "tile_rows": 128
+    },
+    "largest_logical_pair": {
+      "columns": 320,
+      "float64_matrix_bytes": 819200,
+      "float64_xyz_difference_tensor_bytes": 2457600,
+      "operation": "template_attachment_self",
+      "pair_elements": 102400,
+      "rows": 320,
+      "subject_label": null
+    }
+  },
+  "samples": [
+    {
+      "gradient_norm": 146.1312994556688,
+      "objective": -16.612572371375478,
+      "repeat": 1,
+      "rss_before_bytes": 297934848,
+      "rss_sample_count": 9,
+      "sampled_peak_rss_bytes": 298127360,
+      "sampled_rss_delta_bytes": 192512,
+      "wall_time_ns": 107288000
+    },
+    {
+      "gradient_norm": 146.1312994556688,
+      "objective": -16.612572371375478,
+      "repeat": 2,
+      "rss_before_bytes": 296419328,
+      "rss_sample_count": 8,
+      "sampled_peak_rss_bytes": 296755200,
+      "sampled_rss_delta_bytes": 335872,
+      "wall_time_ns": 109699000
+    },
+    {
+      "gradient_norm": 146.1312994556688,
+      "objective": -16.612572371375478,
+      "repeat": 3,
+      "rss_before_bytes": 296869888,
+      "rss_sample_count": 8,
+      "sampled_peak_rss_bytes": 297377792,
+      "sampled_rss_delta_bytes": 507904,
+      "wall_time_ns": 107557600
+    },
+    {
+      "gradient_norm": 146.1312994556688,
+      "objective": -16.612572371375478,
+      "repeat": 4,
+      "rss_before_bytes": 297373696,
+      "rss_sample_count": 9,
+      "sampled_peak_rss_bytes": 297717760,
+      "sampled_rss_delta_bytes": 344064,
+      "wall_time_ns": 109353700
+    },
+    {
+      "gradient_norm": 146.1312994556688,
+      "objective": -16.612572371375478,
+      "repeat": 5,
+      "rss_before_bytes": 297115648,
+      "rss_sample_count": 8,
+      "sampled_peak_rss_bytes": 297480192,
+      "sampled_rss_delta_bytes": 364544,
+      "wall_time_ns": 108079100
+    }
+  ],
+  "scientific_boundary": "Fresh CPU processes measure one explicitly declared exact objective plus gradient for the first configured optimizer block. Wall time excludes tensor/input preparation and warm-up. Process RSS is sampled every 5 ms after warm-up and can miss shorter peaks; it is not total system memory, GPU memory, full-optimizer peak RAM, end-to-end workflow runtime, an ETA model, an extrapolation to 300 subjects, or a hardware pass/fail verdict.",
+  "source_config": {
+    "filename": "minimal-modern-atlas-blockwise.yaml",
+    "project": "synthetic-modern-atlas-blockwise",
+    "sha256": "80484b95e4ed113752372df7e8597e9049c7e16133f3d8fd8b35ceb8e8b3472a"
+  },
+  "summary": {
+    "rss_before_bytes": {
+      "maximum": 297934848,
+      "median": 297115648,
+      "minimum": 296419328
+    },
+    "sampled_peak_rss_bytes": {
+      "maximum": 298127360,
+      "median": 297480192,
+      "minimum": 296755200
+    },
+    "sampled_rss_delta_bytes": {
+      "maximum": 507904,
+      "median": 344064,
+      "minimum": 192512
+    },
+    "wall_time_ns": {
+      "maximum": 109699000,
+      "median": 108079100,
+      "minimum": 107288000
+    }
+  },
+  "warnings": [
+    "Sampled process RSS can miss peaks shorter than the 5 ms sampling interval.",
+    "This measures one objective+gradient evaluation, not a full optimizer or workflow.",
+    "Do not extrapolate these repeats to 300 subjects without a prospective scaling design.",
+    "Recompute trades additional backward calculation for a different saved-tensor graph."
+  ]
+}

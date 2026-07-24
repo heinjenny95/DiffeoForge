@@ -28,6 +28,7 @@ def test_windows_evidence_builder_is_explicitly_pinned_and_onedir() -> None:
     assert 'name="DiffeoForgeWorker"' in spec
     assert 'name="DiffeoForgeReferenceWorker"' in spec
     assert 'name="DiffeoForgeReferencePreparationWorker"' in spec
+    assert 'name="DiffeoForgeReferenceExecutionWorker"' in spec
     assert "console=False" in spec
     assert "console=True" in spec
     assert "bundle = COLLECT(" in spec
@@ -60,7 +61,7 @@ def test_windows_freeze_excludes_and_audits_builder_only_sbom_modules() -> None:
     assert "*builder_only_module_prefixes" in spec
     assert "for module_name, *_ in analysis.pure" in spec
     assert "contains builder-only modules" in spec
-    assert spec.count("assert_builder_only_modules_absent(") == 5
+    assert spec.count("assert_builder_only_modules_absent(") == 6
     compile(spec, str(WINDOWS / "DiffeoForge.spec"), "exec")
 
 
@@ -73,6 +74,9 @@ def test_windows_freeze_has_separate_desktop_and_pipe_worker_entry_points() -> N
     preparation_worker = (
         WINDOWS / "diffeoforge_reference_preparation_worker.py"
     ).read_text(encoding="utf-8")
+    execution_worker = (
+        WINDOWS / "diffeoforge_reference_execution_worker.py"
+    ).read_text(encoding="utf-8")
     build = (WINDOWS / "build-evidence.ps1").read_text(encoding="utf-8")
 
     assert "diffeoforge.desktop.app import main" in desktop
@@ -83,14 +87,20 @@ def test_windows_freeze_has_separate_desktop_and_pipe_worker_entry_points() -> N
         in preparation_worker
     )
     assert "main," in preparation_worker
+    assert "diffeoforge.desktop.reference_execution_worker import _process_main" in (
+        execution_worker
+    )
     assert "git status --porcelain=v1 --untracked-files=all" in build
     assert "DiffeoForgeWorker.exe" in build
     assert "DiffeoForgeReferenceWorker.exe" in build
     assert "DiffeoForgeReferencePreparationWorker.exe" in build
+    assert "DiffeoForgeReferenceExecutionWorker.exe" in build
     assert "smoke_frozen_reference_worker.py" in build
     assert "audit_frozen_reference_parent_death.py" in build
     assert "audit_frozen_reference_preparation_parent_death.py" in build
     assert "smoke_frozen_reference_preparation_worker.py" in build
+    assert "smoke_frozen_reference_execution_worker.py" in build
+    assert "--execution" in build
     assert "PreparationApprovalSha256" in build
     assert "reference-plan-approval-verify" in build
     assert "Preparation approval does not match" in build

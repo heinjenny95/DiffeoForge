@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import csv
 import hashlib
 import importlib.util
 import os
@@ -11,9 +12,29 @@ from pathlib import Path
 
 import pytest
 
+from diffeoforge.analysis.landmarks import LANDMARK_COLUMNS
 from diffeoforge.desktop.app import build_parser
+from diffeoforge.mesh import read_vtk_polydata
 
 ROOT = Path(__file__).parents[1]
+
+
+def _write_desktop_landmarks(path: Path) -> Path:
+    mesh_directory = ROOT / "examples" / "synthetic" / "meshes"
+    meshes = [
+        mesh_directory / "template.vtk",
+        *sorted(mesh_directory.glob("subject-*.vtk")),
+    ]
+    labels = ("anterior", "dorsal", "posterior")
+    indices = (0, 40, 80)
+    with path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.writer(handle, lineterminator="\n")
+        writer.writerow(LANDMARK_COLUMNS)
+        for mesh in meshes:
+            vertices = read_vtk_polydata(mesh).vertices
+            for label, index in zip(labels, indices, strict=True):
+                writer.writerow((mesh.name, label, *vertices[index]))
+    return path
 
 
 def test_desktop_ui_source_has_no_german_copy() -> None:
@@ -162,9 +183,7 @@ def _saved_reference_status_verification_fixture(*, report: Path, digest: str):
         "checks": list(CHECKS),
         "scientific_boundary": scientific_boundary,
     }
-    evidence_bytes = serialize_reference_preparation_reconciliation_verification(
-        evidence
-    )
+    evidence_bytes = serialize_reference_preparation_reconciliation_verification(evidence)
     return DesktopSavedReferencePreparationStatusVerification(
         report_path=report.resolve(),
         report_byte_count=2649,
@@ -195,9 +214,22 @@ def _saved_reference_status_verification_fixture(*, report: Path, digest: str):
 
 def test_desktop_parser_is_available_without_importing_qt() -> None:
     args = build_parser().parse_args([])
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import sys; from diffeoforge.desktop.app import build_parser; "
+            "assert build_parser().parse_args([]).smoke is False; "
+            "assert 'PySide6' not in sys.modules",
+        ],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
 
     assert args.smoke is False
-    assert "PySide6" not in sys.modules
+    assert completed.returncode == 0, completed.stderr
 
 
 def test_desktop_module_reports_a_clear_optional_dependency_error() -> None:
@@ -268,9 +300,7 @@ def test_native_mesh_preview_canvas_renders_non_background_pixels(
 
     background = QColor("#f7f9f9").rgba()
     non_background = sum(
-        image.pixel(x, y) != background
-        for y in range(image.height())
-        for x in range(image.width())
+        image.pixel(x, y) != background for y in range(image.height()) for x in range(image.width())
     )
     assert non_background > 100
     application.processEvents()
@@ -279,7 +309,14 @@ def test_native_mesh_preview_canvas_renders_non_background_pixels(
 def test_desktop_window_exposes_required_project_controls(monkeypatch) -> None:
     pytest.importorskip("PySide6")
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
-    from PySide6.QtWidgets import QApplication, QComboBox, QLineEdit, QPushButton
+    from PySide6.QtWidgets import (
+        QApplication,
+        QCheckBox,
+        QComboBox,
+        QLineEdit,
+        QPushButton,
+        QSpinBox,
+    )
 
     from diffeoforge.desktop.widgets import DiffeoForgeWindow
 
@@ -293,6 +330,16 @@ def test_desktop_window_exposes_required_project_controls(monkeypatch) -> None:
     assert window.findChild(QComboBox, "unitsCombo") is not None
     assert window.findChild(QComboBox, "pairwiseEvaluationCombo") is not None
     assert window.findChild(QComboBox, "optimizationEffortCombo") is not None
+    landmark_count = window.findChild(QSpinBox, "landmarkCountSpin")
+    assert landmark_count is not None
+    assert landmark_count.minimum() == 3
+    assert landmark_count.maximum() > 10
+    assert landmark_count.value() == 3
+    auto_advance = window.findChild(QCheckBox, "autoAdvanceLandmarkMeshCheck")
+    assert auto_advance is not None
+    assert auto_advance.isChecked() is True
+    assert "next mesh" in auto_advance.text()
+    assert window.place_landmarks_button.text().startswith("Place landmarks")
     assert window.create_button.isEnabled() is False
     assert all(isinstance(step, QPushButton) for step in window.rail_steps)
     assert window.rail_steps[0].isEnabled() is True
@@ -300,6 +347,7 @@ def test_desktop_window_exposes_required_project_controls(monkeypatch) -> None:
     assert window.rail_steps[3].accessibleName() == "Go to step 4: Results & PCA"
     assert "CPU/float64" in window.engine_hint.text()
     assert window.landmarks_edit.isEnabled() is True
+    assert window.procrustes_box.isHidden() is True
     assert window.pairwise_combo.isEnabled() is True
     assert window.optimization_effort_combo.isEnabled() is True
     assert "small pilot" in window.pairwise_combo.currentText()
@@ -317,17 +365,352 @@ def test_desktop_window_exposes_required_project_controls(monkeypatch) -> None:
     window.engine_combo.setCurrentIndex(1)
     application.processEvents()
     assert "Deformetrica 4.3" in window.engine_hint.text()
-    assert window.landmarks_edit.isEnabled() is False
-    assert window.pairwise_combo.isEnabled() is False
-    assert window.optimization_effort_combo.isEnabled() is False
+    assert window.landmarks_edit.isEnabled() is True
+    window.landmarks_edit.setText("landmarks.csv")
+    application.processEvents()
+    assert window.procrustes_box.isHidden() is False
+    assert window._request().landmarks_file == Path("landmarks.csv")
+    assert window.preview_procrustes_button.isEnabled() is True
+    assert window.approve_procrustes_check.isEnabled() is False
+    window.procrustes_scale_check.setChecked(False)
+    window.procrustes_reflection_check.setChecked(True)
+    window.procrustes_tolerance_spin.setValue(0.00000001)
+    window.procrustes_iterations_spin.setValue(250)
+    procrustes_request = window._request()
+    assert procrustes_request.procrustes_scale_to_unit_centroid_size is False
+    assert procrustes_request.procrustes_allow_reflection is True
+    assert procrustes_request.procrustes_tolerance == pytest.approx(0.00000001)
+    assert procrustes_request.procrustes_max_iterations == 250
+    window.procrustes_apply_check.setChecked(False)
+    assert window._request().landmarks_file is None
+    assert window.procrustes_scale_check.isEnabled() is False
+    assert window.preview_procrustes_button.isEnabled() is False
+    window.procrustes_apply_check.setChecked(True)
+    assert window.pairwise_box.isHidden() is True
+    assert window.optimization_effort_box.isHidden() is True
+    assert window.reference_parameter_box.isHidden() is False
+    assert window.reference_parameter_profile_combo.currentData() == "pending"
+    assert window.reference_attachment_ratio_spin.isHidden() is True
+    assert window.analyze_reference_parameters_button.isEnabled() is False
+    assert window.already_gpa_check.isEnabled() is False
+    window.reference_parameter_profile_combo.setCurrentIndex(
+        window.reference_parameter_profile_combo.findData("advanced")
+    )
+    attachment_field = window._reference_parameter_field(window.reference_attachment_ratio_spin)
+    attachment_label = window.reference_parameter_form.labelForField(attachment_field)
+    assert attachment_label is not None
+    assert "Attachment kernel width" in attachment_label.text()
+    assert "template diagonal" in window.reference_attachment_ratio_spin.suffix()
+    window.reference_attachment_ratio_spin.setValue(0.035)
+    window.reference_max_iterations_spin.setValue(345)
+    advanced_request = window._request()
+    assert advanced_request.reference_parameter_profile == "advanced"
+    assert advanced_request.reference_parameter_ratios["attachment_kernel_width"] == pytest.approx(
+        0.035
+    )
+    assert advanced_request.reference_max_iterations == 345
+    assert window.reference_expert_box.isHidden() is True
+    window.reference_expert_toggle.setChecked(True)
+    application.processEvents()
+    assert window.reference_expert_box.isHidden() is False
+    window.reference_attachment_type_combo.setCurrentIndex(
+        window.reference_attachment_type_combo.findData("varifold")
+    )
+    window.reference_timepoints_spin.setValue(19)
+    window.reference_rk2_check.setChecked(True)
+    window.reference_sobolev_check.setChecked(False)
+    assert window.reference_sobolev_ratio_spin.isEnabled() is False
+    window.reference_threads_spin.setValue(8)
+    window.reference_random_seed_spin.setValue(123)
+    expert_request = window._request()
+    assert expert_request.reference_attachment_type == "varifold"
+    assert expert_request.reference_timepoints == 19
+    assert expert_request.reference_use_rk2 is True
+    assert expert_request.reference_use_sobolev_gradient is False
+    assert expert_request.reference_threads == 8
+    assert expert_request.reference_random_seed == 123
     assert window._request().pairwise_mode == "dense"
     window.close()
     application.processEvents()
 
 
-def test_desktop_project_overwrite_requires_explicit_confirmation(
-    monkeypatch, tmp_path
+def test_desktop_passes_landmark_plan_to_editor(monkeypatch, tmp_path: Path) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QCheckBox, QDialog
+
+    import diffeoforge.desktop.widgets as widgets_module
+    from diffeoforge.desktop.widgets import DiffeoForgeWindow
+
+    application = QApplication.instance() or QApplication(["diffeoforge-landmark-plan-test"])
+    observed: dict[str, object] = {}
+
+    class FakeLandmarkEditor:
+        def __init__(
+            self,
+            mesh_paths,
+            output_path,
+            parent,
+            *,
+            initial_landmark_count,
+            auto_advance_mesh,
+        ) -> None:
+            observed["mesh_paths"] = mesh_paths
+            observed["output_path"] = output_path
+            observed["parent"] = parent
+            observed["initial_landmark_count"] = initial_landmark_count
+            observed["auto_advance_mesh"] = auto_advance_mesh
+            self.output_path = output_path
+            self.labels = [f"LM{index}" for index in range(1, initial_landmark_count + 1)]
+            self.auto_advance_mesh_check = QCheckBox()
+            self.auto_advance_mesh_check.setChecked(auto_advance_mesh)
+
+        @staticmethod
+        def exec():
+            return QDialog.DialogCode.Rejected
+
+    monkeypatch.setattr(
+        widgets_module,
+        "LandmarkEditorDialog",
+        FakeLandmarkEditor,
+    )
+    window = DiffeoForgeWindow()
+    window.mesh_edit.setText(str(ROOT / "examples" / "synthetic" / "meshes"))
+    window.project_edit.setText(str(tmp_path / "project"))
+    window.landmark_count_spin.setValue(7)
+    window.landmark_auto_advance_check.setChecked(False)
+
+    window._place_landmarks()
+
+    assert observed["initial_landmark_count"] == 7
+    assert observed["auto_advance_mesh"] is False
+    assert len(observed["mesh_paths"]) >= 2  # type: ignore[arg-type]
+    assert observed["output_path"] == (tmp_path / "project" / "landmarks.csv")
+    window.close()
+    application.processEvents()
+
+
+def test_desktop_requires_exact_procrustes_preview_approval_and_rejects_drift(
+    monkeypatch,
+    tmp_path,
 ) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtCore import Qt
+    from PySide6.QtWidgets import QApplication, QDialog
+
+    import diffeoforge.desktop.widgets as widgets_module
+    from diffeoforge.desktop.project_setup import DesktopEngine
+    from diffeoforge.desktop.widgets import (
+        DiffeoForgeWindow,
+        _ProcrustesPreviewWorker,
+        _ProcrustesVisualWorker,
+        _ProjectWorker,
+        _ReferenceParameterWorker,
+    )
+
+    application = QApplication.instance() or QApplication(["diffeoforge-procrustes-preview-test"])
+    mesh_directory = ROOT / "examples" / "synthetic" / "meshes"
+    landmarks = _write_desktop_landmarks(tmp_path / "landmarks.csv")
+    project_directory = tmp_path / "project"
+    queued = []
+
+    class FakePool:
+        def start(self, worker) -> None:
+            queued.append(worker)
+
+    class FakeSignal:
+        @staticmethod
+        def connect(_callback) -> None:
+            return None
+
+    class FakeVisualReviewDialog:
+        def __init__(self, preview, visual, parent) -> None:
+            assert visual.fingerprint == preview.fingerprint
+            assert parent is window
+            self.previewInvalidated = FakeSignal()
+            self.reviewed_fingerprint = preview.fingerprint
+            self.viewed_mesh_count = 3
+
+        @staticmethod
+        def exec():
+            return QDialog.DialogCode.Accepted
+
+    window = DiffeoForgeWindow()
+    monkeypatch.setattr(
+        widgets_module,
+        "GpaAlignmentReviewDialog",
+        FakeVisualReviewDialog,
+    )
+    window._thread_pool = FakePool()  # type: ignore[assignment]
+    window.engine_combo.setCurrentIndex(
+        window.engine_combo.findData(DesktopEngine.DEFORMETRICA_REFERENCE)
+    )
+    window.mesh_edit.setText(str(mesh_directory))
+    window.project_edit.setText(str(project_directory))
+    window.units_combo.setCurrentIndex(window.units_combo.findData("unitless"))
+    window.landmarks_edit.setText(str(landmarks))
+    application.processEvents()
+
+    assert window.create_button.isEnabled() is False
+    assert window.create_button.text() == "Preview & approve alignment first"
+    assert window.preview_procrustes_button.isEnabled() is True
+    window.preview_procrustes_button.click()
+    assert len(queued) == 1
+    assert isinstance(queued[0], _ProcrustesPreviewWorker)
+    assert window.create_button.isEnabled() is False
+
+    queued[0].run()
+    application.processEvents()
+
+    assert window._procrustes_preview is not None
+    assert window._procrustes_preview.alignment.converged is True
+    assert window.review_procrustes_visual_button.isEnabled() is True
+    assert window.approve_procrustes_check.isEnabled() is False
+    assert window.create_button.text() == "Complete visual GPA review first"
+    preview_report = window.procrustes_preview_status_label
+    assert preview_report.isReadOnly() is True
+    assert preview_report.horizontalScrollBarPolicy() == Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+    assert preview_report.verticalScrollBarPolicy() == Qt.ScrollBarPolicy.ScrollBarAsNeeded
+    assert "Final mean change" in preview_report.text()
+    assert "fingerprint" in preview_report.text()
+    assert "does not establish biological landmark quality." in preview_report.text()
+    preview_report.resize(360, preview_report.height())
+    application.processEvents()
+    assert preview_report.verticalScrollBar().maximum() > 0
+    window.review_procrustes_visual_button.click()
+    assert len(queued) == 2
+    assert isinstance(queued[1], _ProcrustesVisualWorker)
+    queued[1].run()
+    application.processEvents()
+    assert window._procrustes_visual is not None
+    assert window._procrustes_visual_reviewed_fingerprint == window._procrustes_preview.fingerprint
+    assert window.approve_procrustes_check.isEnabled() is True
+    assert "Visual GPA review completed" in preview_report.text()
+    assert window.create_button.text() == "Approve reviewed alignment first"
+    window.approve_procrustes_check.setChecked(True)
+    application.processEvents()
+
+    approved = window._request().approved_procrustes_fingerprint
+    assert approved == window._procrustes_preview.fingerprint
+    assert window.create_button.isEnabled() is False
+    assert window.create_button.text() == "Analyze aligned meshes or choose manual parameters"
+    assert window.analyze_reference_parameters_button.isEnabled() is True
+    window.analyze_reference_parameters_button.click()
+    assert len(queued) == 3
+    assert isinstance(queued[2], _ReferenceParameterWorker)
+    queued[2].run()
+    application.processEvents()
+
+    assert window._reference_recommendation is not None
+    assert window.reference_parameter_profile_combo.currentData() == "data_assisted"
+    assert "Analyzed 6 aligned meshes" in window.reference_guidance_status_label.text()
+    assert "not inferable from geometry" in window.reference_guidance_status_label.text()
+    assert "attachment KW (matching detail)" in (window.reference_effective_widths_label.text())
+    original_effective_text = window.reference_effective_widths_label.text()
+    window.reference_parameter_profile_combo.setCurrentIndex(
+        window.reference_parameter_profile_combo.findData("advanced")
+    )
+    window.reference_attachment_ratio_spin.setValue(0.075)
+    assert window.reference_effective_widths_label.text() != original_effective_text
+    assert window.create_button.isEnabled() is True
+    assert window.create_button.text() == "Validate data & create project"
+
+    rows = landmarks.read_text(encoding="utf-8").splitlines()
+    changed = rows[-1].split(",")
+    changed[2] = str(float(changed[2]) + 0.001)
+    rows[-1] = ",".join(changed)
+    landmarks.write_text("\n".join(rows) + "\n", encoding="utf-8")
+    window._create_project()
+    assert len(queued) == 4
+    assert isinstance(queued[3], _ProjectWorker)
+    queued[3].run()
+    application.processEvents()
+
+    assert not (project_directory / "atlas.yaml").exists()
+    assert "approved preview" in window.status_label.text()
+    assert window._procrustes_preview is None
+    assert window.approve_procrustes_check.isChecked() is False
+    assert "invalidated" in window.procrustes_preview_status_label.text()
+
+    window.procrustes_tolerance_spin.setValue(0.00000001)
+    application.processEvents()
+    assert window._procrustes_preview is None
+    assert window.approve_procrustes_check.isChecked() is False
+    assert window._request().approved_procrustes_fingerprint is None
+    assert window.create_button.isEnabled() is False
+    window.close()
+    application.processEvents()
+
+
+def test_desktop_analyzes_user_declared_gpa_meshes_before_project_creation(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from diffeoforge.desktop.project_setup import DesktopEngine
+    from diffeoforge.desktop.widgets import (
+        DiffeoForgeWindow,
+        _ReferenceParameterWorker,
+    )
+
+    application = QApplication.instance() or QApplication(
+        ["diffeoforge-declared-gpa-guidance-test"]
+    )
+    queued = []
+
+    class FakePool:
+        def start(self, worker) -> None:
+            queued.append(worker)
+
+    window = DiffeoForgeWindow()
+    window._thread_pool = FakePool()  # type: ignore[assignment]
+    window.engine_combo.setCurrentIndex(
+        window.engine_combo.findData(DesktopEngine.DEFORMETRICA_REFERENCE)
+    )
+    window.mesh_edit.setText(str(ROOT / "examples" / "synthetic" / "meshes"))
+    window.project_edit.setText(str(tmp_path / "project"))
+    window.units_combo.setCurrentIndex(window.units_combo.findData("unitless"))
+    window.already_gpa_check.setChecked(True)
+    application.processEvents()
+
+    assert window.analyze_reference_parameters_button.isEnabled() is True
+    assert window.create_button.isEnabled() is False
+    window.reference_surface_detail_combo.setCurrentIndex(
+        window.reference_surface_detail_combo.findData("fine")
+    )
+    window.reference_deformation_scale_combo.setCurrentIndex(
+        window.reference_deformation_scale_combo.findData("local")
+    )
+    window.analyze_reference_parameters_button.click()
+    assert len(queued) == 1
+    assert isinstance(queued[0], _ReferenceParameterWorker)
+    queued[0].run()
+    application.processEvents()
+
+    recommendation = window._reference_recommendation
+    assert recommendation is not None
+    assert recommendation.alignment_basis == "declared_gpa"
+    assert recommendation.surface_detail_intent == "fine"
+    assert recommendation.deformation_scale_intent == "local"
+    assert window._request().reference_parameter_recommendation == (recommendation.provenance)
+    assert window.create_button.isEnabled() is True
+    assert "cannot prove homologous alignment" in (window.reference_guidance_status_label.text())
+    window.reference_deformation_scale_combo.setCurrentIndex(
+        window.reference_deformation_scale_combo.findData("global")
+    )
+    application.processEvents()
+    assert window._reference_recommendation is None
+    assert window.reference_parameter_profile_combo.currentData() == "pending"
+    assert window.create_button.isEnabled() is False
+    window.close()
+    application.processEvents()
+
+
+def test_desktop_project_overwrite_requires_explicit_confirmation(monkeypatch, tmp_path) -> None:
     pytest.importorskip("PySide6")
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
@@ -449,6 +832,11 @@ def test_desktop_window_renders_parameter_review_as_second_step(monkeypatch, tmp
     window.rail_steps[2].click()
     assert window.page_stack.currentIndex() == 2
     assert window.rail_steps[2].objectName() == "stepActive"
+    assert window.run_technical_details.isHidden() is True
+    window.run_technical_toggle.click()
+    assert window.run_technical_details.isHidden() is False
+    window.run_technical_toggle.click()
+    assert window.run_technical_details.isHidden() is True
     assert "a" * 64 in window.run_summary_label.text()
     assert window.start_atlas_button.isEnabled() is True
     window._show_review_page()
@@ -459,7 +847,7 @@ def test_desktop_window_renders_parameter_review_as_second_step(monkeypatch, tmp
     application.processEvents()
 
 
-def test_desktop_window_keeps_reference_compute_route_explicitly_unavailable(
+def test_desktop_window_keeps_reference_compute_locked_until_automatic_setup_check(
     monkeypatch, tmp_path
 ) -> None:
     pytest.importorskip("PySide6")
@@ -491,20 +879,21 @@ def test_desktop_window_keeps_reference_compute_route_explicitly_unavailable(
 
     assert window.page_stack.currentIndex() == 1
     assert window.show_run_button.isEnabled() is False
-    assert "not connected yet" in window.show_run_button.text()
+    assert "Checking Deformetrica setup automatically" in window.show_run_button.text()
     assert window.reference_readiness_card.isHidden() is False
-    assert window.reference_preparation_status_card.isHidden() is False
+    assert window.reference_preparation_status_card.isHidden() is True
     assert window.refresh_reference_readiness_button.isEnabled() is True
     assert window.refresh_reference_preparation_status_button.isEnabled() is False
     assert window.export_reference_preparation_status_button.isEnabled() is False
-    assert "has not been checked" in window.reference_readiness_status_label.text()
+    assert "automatic Deformetrica setup check" in (window.reference_readiness_status_label.text())
+    assert "not an estimate of atlas computation time" in (
+        window.reference_readiness_detail_label.text()
+    )
     window.close()
     application.processEvents()
 
 
-def test_desktop_verifies_saved_reference_status_without_a_project(
-    monkeypatch, tmp_path
-) -> None:
+def test_desktop_verifies_saved_reference_status_without_a_project(monkeypatch, tmp_path) -> None:
     pytest.importorskip("PySide6")
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication, QFileDialog
@@ -549,9 +938,7 @@ def test_desktop_verifies_saved_reference_status_without_a_project(
     assert window.page_stack.currentIndex() == 0
     assert window._review is None
     assert window.verify_saved_reference_status_button.isEnabled() is False
-    assert (
-        window.export_saved_reference_status_verification_button.isEnabled() is False
-    )
+    assert window.export_saved_reference_status_verification_button.isEnabled() is False
     window._choose_saved_reference_status_report()
     window.saved_reference_status_hash_edit.setText(digest)
     application.processEvents()
@@ -561,16 +948,12 @@ def test_desktop_verifies_saved_reference_status_without_a_project(
     assert len(queued) == 1
     assert isinstance(queued[0], _SavedReferencePreparationStatusVerificationWorker)
     assert window.verify_saved_reference_status_button.isEnabled() is False
-    assert "checked read-only" in (
-        window.saved_reference_status_verification_label.text()
-    )
+    assert "checked read-only" in (window.saved_reference_status_verification_label.text())
 
     queued[0].run()
     application.processEvents()
 
-    detail = window.saved_reference_status_verification_detail_label.text().replace(
-        "\u200b", ""
-    )
+    detail = window.saved_reference_status_verification_detail_label.text().replace("\u200b", "")
     assert window._saved_reference_preparation_status_verification is result
     assert "exactly matches" in window.saved_reference_status_verification_label.text()
     assert str(report) in detail
@@ -580,9 +963,7 @@ def test_desktop_verifies_saved_reference_status_without_a_project(
     assert "Mutation by this verification: no" in detail
     assert "reads no current project" in detail
     assert window.verify_saved_reference_status_button.isEnabled() is True
-    assert (
-        window.export_saved_reference_status_verification_button.isEnabled() is True
-    )
+    assert window.export_saved_reference_status_verification_button.isEnabled() is True
     assert window._review is None
     assert window.page_stack.currentIndex() == 0
 
@@ -595,9 +976,7 @@ def test_desktop_verifies_saved_reference_status_without_a_project(
     window.export_saved_reference_status_verification_button.click()
 
     assert evidence_path.read_bytes() == result.evidence_bytes
-    assert list(tmp_path.glob("verification-evidence-Käfer.json*")) == [
-        evidence_path
-    ]
+    assert list(tmp_path.glob("verification-evidence-Käfer.json*")) == [evidence_path]
     assert result.evidence_sha256 in (
         window.saved_reference_status_verification_export_label.text()
     )
@@ -605,9 +984,7 @@ def test_desktop_verifies_saved_reference_status_without_a_project(
     preserved = evidence_path.read_bytes()
     window.export_saved_reference_status_verification_button.click()
     assert evidence_path.read_bytes() == preserved
-    assert "not exported" in (
-        window.saved_reference_status_verification_export_label.text()
-    )
+    assert "not exported" in (window.saved_reference_status_verification_export_label.text())
 
     drift_path = tmp_path / "must-not-exist-verification.json"
 
@@ -624,9 +1001,7 @@ def test_desktop_verifies_saved_reference_status_without_a_project(
     assert not drift_path.exists()
     assert window._saved_reference_preparation_status_verification is None
     assert "No saved" in window.saved_reference_status_verification_label.text()
-    assert (
-        window.export_saved_reference_status_verification_button.isEnabled() is False
-    )
+    assert window.export_saved_reference_status_verification_button.isEnabled() is False
     window.close()
     application.processEvents()
 
@@ -671,20 +1046,14 @@ def test_desktop_discards_saved_status_verification_after_inputs_change(
 
     assert window._saved_reference_preparation_status_verification is None
     assert "discarded" in window.saved_reference_status_verification_label.text()
-    assert "Nothing was changed" in (
-        window.saved_reference_status_verification_detail_label.text()
-    )
+    assert "Nothing was changed" in (window.saved_reference_status_verification_detail_label.text())
     assert window.verify_saved_reference_status_button.isEnabled() is True
-    assert (
-        window.export_saved_reference_status_verification_button.isEnabled() is False
-    )
+    assert window.export_saved_reference_status_verification_button.isEnabled() is False
     window.close()
     application.processEvents()
 
 
-def test_desktop_saved_status_verification_failure_is_read_only(
-    monkeypatch, tmp_path
-) -> None:
+def test_desktop_saved_status_verification_failure_is_read_only(monkeypatch, tmp_path) -> None:
     pytest.importorskip("PySide6")
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
@@ -714,21 +1083,15 @@ def test_desktop_saved_status_verification_failure_is_read_only(
 
     assert report.read_bytes() == before
     assert window._saved_reference_preparation_status_verification is None
-    assert "cannot be verified safely" in (
-        window.saved_reference_status_verification_label.text()
-    )
-    assert "No artifact release" in (
-        window.saved_reference_status_verification_detail_label.text()
-    )
+    assert "cannot be verified safely" in (window.saved_reference_status_verification_label.text())
+    assert "No artifact release" in (window.saved_reference_status_verification_detail_label.text())
     assert window.verify_saved_reference_status_button.isEnabled() is True
-    assert (
-        window.export_saved_reference_status_verification_button.isEnabled() is False
-    )
+    assert window.export_saved_reference_status_verification_button.isEnabled() is False
     window.close()
     application.processEvents()
 
 
-def test_desktop_reference_environment_check_is_read_only_and_keeps_start_locked(
+def test_desktop_reference_setup_check_starts_automatically_and_unlocks_execution(
     monkeypatch, tmp_path
 ) -> None:
     pytest.importorskip("PySide6")
@@ -741,9 +1104,7 @@ def test_desktop_reference_environment_check_is_read_only_and_keeps_start_locked
     from diffeoforge.desktop.widgets import DiffeoForgeWindow, _ReferenceReadinessWorker
     from diffeoforge.diagnostics import DoctorCheck, DoctorReport
 
-    application = QApplication.instance() or QApplication(
-        ["diffeoforge-reference-readiness-test"]
-    )
+    application = QApplication.instance() or QApplication(["diffeoforge-reference-readiness-test"])
     config = (tmp_path / "atlas.yaml").resolve()
     config.write_text("reviewed\n", encoding="utf-8")
     review = ProjectReviewResult(
@@ -794,14 +1155,13 @@ def test_desktop_reference_environment_check_is_read_only_and_keeps_start_locked
 
     window = DiffeoForgeWindow()
     window._thread_pool = FakePool()  # type: ignore[assignment]
-    window._review_succeeded(review)
-
-    window.refresh_reference_readiness_button.click()
+    window._review_worker_succeeded(review)
 
     assert len(queued) == 1
     assert isinstance(queued[0], _ReferenceReadinessWorker)
     assert window.refresh_reference_readiness_button.isEnabled() is False
-    assert "No reference run" in window.reference_readiness_detail_label.text()
+    assert "does not start an atlas" in window.reference_readiness_detail_label.text()
+    assert "Estimated computation time" in window.reference_readiness_detail_label.text()
     queued[0].run()
     application.processEvents()
 
@@ -812,8 +1172,9 @@ def test_desktop_reference_environment_check_is_read_only_and_keeps_start_locked
     assert "nothing installed" in detail
     assert "is ready" in window.reference_readiness_status_label.text()
     assert window.refresh_reference_readiness_button.isEnabled() is True
-    assert window.show_run_button.isEnabled() is False
-    assert "not connected yet" in window.show_run_button.text()
+    assert window.show_run_button.isEnabled() is True
+    assert "supervised Deformetrica execution" in window.show_run_button.text()
+    assert window.rail_steps[2].isEnabled() is True
     assert window.page_stack.currentIndex() == 1
     window.close()
     application.processEvents()
@@ -871,9 +1232,7 @@ def test_desktop_reference_preparation_status_is_read_only_and_keeps_start_locke
         "diffeoforge.desktop.widgets.review_reference_preparation_status",
         lambda observed, path, expected: (
             status
-            if observed is review
-            and Path(path).resolve() == approval
-            and expected == digest
+            if observed is review and Path(path).resolve() == approval and expected == digest
             else pytest.fail("wrong preparation status inputs")
         ),
     )
@@ -945,9 +1304,7 @@ def test_desktop_reference_preparation_status_is_read_only_and_keeps_start_locke
     application.processEvents()
 
 
-def test_desktop_discards_preparation_status_after_inputs_change(
-    monkeypatch, tmp_path
-) -> None:
+def test_desktop_discards_preparation_status_after_inputs_change(monkeypatch, tmp_path) -> None:
     pytest.importorskip("PySide6")
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
@@ -1034,9 +1391,7 @@ def test_desktop_loads_native_template_preview_without_modifying_source(
     from diffeoforge.desktop.widgets import DiffeoForgeWindow, _TemplatePreviewWorker
     from diffeoforge.mesh import write_vtk_polydata
 
-    application = QApplication.instance() or QApplication(
-        ["diffeoforge-template-preview-test"]
-    )
+    application = QApplication.instance() or QApplication(["diffeoforge-template-preview-test"])
     template = write_vtk_polydata(
         tmp_path / "template.vtk",
         (
@@ -1161,6 +1516,216 @@ def test_desktop_window_renders_exact_modern_progress_event(monkeypatch) -> None
     assert "decision 1 of 6" in window.run_optimizer_label.text()
     assert "Objective 12.5" in window.run_optimizer_label.text()
     assert "#2 progress" in window.run_event_log.toPlainText()
+    window.close()
+    application.processEvents()
+
+
+def test_desktop_window_renders_deformetrica_iteration_and_bounded_eta(
+    monkeypatch,
+) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from diffeoforge.desktop.reference_worker_protocol import DesktopReferenceWorkerEvent
+    from diffeoforge.desktop.widgets import DiffeoForgeWindow
+
+    application = QApplication.instance() or QApplication(["diffeoforge-reference-progress-test"])
+    window = DiffeoForgeWindow()
+    event = DesktopReferenceWorkerEvent(
+        request_id="reference-test",
+        sequence=3,
+        kind="progress",
+        payload={
+            "iteration": 12,
+            "maximum_iterations": 100,
+            "log_likelihood": -123.5,
+            "attachment": -100.0,
+            "regularity": -23.5,
+            "elapsed_seconds": 3661.0,
+            "seconds_per_iteration": 305.0,
+            "eta_to_iteration_cap_seconds": 26840.0,
+            "estimate_status": "observed_rate_to_iteration_cap",
+        },
+    )
+
+    window._atlas_event(event)
+
+    assert window.run_progress_bar.value() == 12
+    assert window.run_progress_bar.maximum() == 100
+    assert "maximum" in window.run_progress_bar.format()
+    assert "Iteration 12 of maximum 100" in window.run_optimizer_label.text()
+    assert "Elapsed: 1 h 01 min 01 s" in window.run_optimizer_label.text()
+    assert "Estimated computation time to maximum: 7 h 27 min 20 s" in (
+        window.run_optimizer_label.text()
+    )
+    assert "not convergence" in window.run_optimizer_label.text()
+    assert "#3 progress" in window.run_event_log.toPlainText()
+    window.close()
+    application.processEvents()
+
+
+def test_desktop_window_renders_deformetrica_first_iteration_heartbeat(
+    monkeypatch,
+) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from diffeoforge.desktop.reference_worker_protocol import DesktopReferenceWorkerEvent
+    from diffeoforge.desktop.widgets import DiffeoForgeWindow
+
+    application = QApplication.instance() or QApplication(["diffeoforge-reference-activity-test"])
+    window = DiffeoForgeWindow()
+    event = DesktopReferenceWorkerEvent(
+        request_id="reference-test",
+        sequence=4,
+        kind="activity",
+        payload={
+            "state": "computing_first_iteration",
+            "elapsed_seconds": 367.0,
+            "maximum_iterations": 150,
+            "latest_message": "Started estimator: GradientAscent",
+            "log_source": "output/reference_info.log",
+            "last_iteration": None,
+        },
+    )
+
+    window._atlas_event(event)
+
+    assert "computing first iteration" in window.run_stage_label.text()
+    assert "6 min 07 s elapsed" in window.run_progress_bar.format()
+    assert "no complete iteration logged yet" in window.run_optimizer_label.text()
+    assert "Started estimator" in window.run_optimizer_label.text()
+    assert "#4 activity" in window.run_event_log.toPlainText()
+    window.close()
+    application.processEvents()
+
+
+def test_desktop_reference_prelaunch_refresh_retains_visible_run_identity(
+    monkeypatch, tmp_path
+) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from types import SimpleNamespace
+
+    from PySide6.QtWidgets import QApplication
+
+    from diffeoforge.desktop.project_review import ProjectReviewResult
+    from diffeoforge.desktop.project_setup import DesktopEngine
+    from diffeoforge.desktop.reference_prelaunch import DesktopReferenceLaunchRequest
+    from diffeoforge.desktop.widgets import DiffeoForgeWindow
+
+    application = QApplication.instance() or QApplication(["diffeoforge-reference-identity-test"])
+    config = (tmp_path / "atlas.yaml").resolve()
+    review = ProjectReviewResult(
+        engine=DesktopEngine.DEFORMETRICA_REFERENCE,
+        project_name="Reference",
+        config_path=config,
+        config_sha256="a" * 64,
+        report_path=tmp_path / "preflight.html",
+        report_label="Preflight report",
+        subject_count=5,
+        parameters=(),
+        workload=(),
+        warnings=(),
+        scientific_boundary="boundary",
+    )
+    observed_identities = []
+
+    def build(_review, _readiness, *, request_id, run_id):
+        observed_identities.append((request_id, run_id))
+        return DesktopReferenceLaunchRequest(
+            request_id=request_id,
+            config_path=config,
+            destination=(tmp_path / "runs" / run_id).resolve(),
+            run_id=run_id,
+            expected_config_sha256="a" * 64,
+            launcher_engine="docker",
+            launcher_image="reference:test",
+        )
+
+    monkeypatch.setattr("diffeoforge.desktop.widgets.build_reference_launch_request", build)
+    window = DiffeoForgeWindow()
+    window._review = review
+    window._reference_readiness = SimpleNamespace(ready=True)  # type: ignore[assignment]
+
+    first = window._refresh_reference_run_readiness(review)
+    second = window._refresh_reference_run_readiness(review)
+
+    assert first is not None
+    assert second is not None
+    assert observed_identities[0] == observed_identities[1]
+    assert first.destination == second.destination
+    assert str(second.destination).replace("\u200b", "") in (
+        window.run_summary_label.text().replace("\u200b", "")
+    )
+    window.close()
+    application.processEvents()
+
+
+def test_desktop_accepts_only_parent_verified_deformetrica_terminal_result(
+    monkeypatch, tmp_path
+) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from diffeoforge.desktop.project_review import ProjectReviewResult
+    from diffeoforge.desktop.project_setup import DesktopEngine
+    from diffeoforge.desktop.reference_execution_controller import (
+        ReferenceExecutionControllerResult,
+    )
+    from diffeoforge.desktop.reference_worker_protocol import DesktopReferenceWorkerEvent
+    from diffeoforge.desktop.widgets import DiffeoForgeWindow
+
+    application = QApplication.instance() or QApplication(["diffeoforge-reference-result-test"])
+    destination = (tmp_path / "runs" / "reference-001").resolve()
+    destination.mkdir(parents=True)
+    review = ProjectReviewResult(
+        engine=DesktopEngine.DEFORMETRICA_REFERENCE,
+        project_name="Reference",
+        config_path=(tmp_path / "atlas.yaml").resolve(),
+        config_sha256="a" * 64,
+        report_path=tmp_path / "preflight.html",
+        report_label="Preflight report",
+        subject_count=5,
+        parameters=(),
+        workload=(),
+        warnings=(),
+        scientific_boundary="boundary",
+    )
+    terminal = DesktopReferenceWorkerEvent(
+        request_id="reference-result",
+        sequence=7,
+        kind="terminal",
+        payload={
+            "outcome": "completed",
+            "destination": str(destination),
+            "destination_exists": True,
+            "result_sha256": "b" * 64,
+            "message": "verified",
+        },
+    )
+    result = ReferenceExecutionControllerResult(
+        request_id="reference-result",
+        exit_code=0,
+        terminal_event=terminal,
+        events=(terminal,),
+        stderr="",
+    )
+    window = DiffeoForgeWindow()
+    window._review = review
+
+    window._atlas_succeeded(result)
+
+    assert window._run_result is result
+    assert window.run_result_card.isHidden() is False
+    assert "independently verified" in window.run_state_label.text()
+    assert "Outcome: completed" in window.run_result_label.text()
+    assert window.start_atlas_button.text().startswith("Verifying Results & PCA")
+    assert window.rail_steps[2].isEnabled() is False
+    assert window.rail_steps[3].isEnabled() is False
     window.close()
     application.processEvents()
 
@@ -1604,6 +2169,8 @@ def test_desktop_window_verifies_and_renders_step_four_before_artifact_handoff(
     assert len(window.result_artifact_buttons) == 4
     assert window.result_optimizer_convergence_plot.isHidden() is False
     assert "Verified objective components" in window.result_optimizer_convergence_plot_status.text()
+    assert window.result_pca_scree_plot.isHidden() is False
+    assert "Verified explained variance" in window.result_pca_scree_plot_status.text()
     assert window.result_pc1_pc2_plot.isHidden() is False
     assert window.result_pc2_pc3_plot.isHidden() is False
     assert "Verified PC1-versus-PC2" in window.result_pc1_pc2_plot_status.text()
@@ -1654,9 +2221,74 @@ def test_desktop_window_verifies_and_renders_step_four_before_artifact_handoff(
     )
     assert window.result_completion_label.objectName() == "statusSuccess"
     assert "optimizer converged" in window.result_completion_label.text()
+    window._result_review_succeeded(
+        replace(
+            review,
+            engine_route="deformetrica_reference",
+            optimizer_converged=None,
+            optimizer_termination_reason="tolerance_threshold",
+            optimizer_cycles_completed=65,
+            optimizer_max_cycles=150,
+            execution_duration_seconds=1394.469,
+        )
+    )
+    assert window.result_completion_label.objectName() == "statusSuccess"
+    assert "numerical tolerance criterion was met" in window.result_completion_label.text()
+    assert "last visible logged iteration" in window.result_completion_label.text()
+    assert "not proof" in window.result_completion_label.text()
     window._show_run_page_from_results()
     assert window.page_stack.currentIndex() == 2
     window.start_atlas_button.click()
     assert window.page_stack.currentIndex() == 3
+    window.close()
+    application.processEvents()
+
+
+def test_desktop_can_select_a_saved_completed_run(monkeypatch, tmp_path) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QFileDialog
+
+    from diffeoforge.desktop.widgets import DiffeoForgeWindow, _ResultReviewWorker
+
+    application = QApplication.instance() or QApplication(["diffeoforge-open-completed-run-test"])
+    project = tmp_path / "study"
+    run = project / "diffeoforge-project" / "runs" / "desktop-ref-complete"
+    run.mkdir(parents=True)
+    (run / "manifest.json").write_text(
+        '{"backend":{"id":"deformetrica_reference"}}\n',
+        encoding="utf-8",
+    )
+    (run / "result.json").write_text(
+        '{"status":"completed","return_code":0}\n',
+        encoding="utf-8",
+    )
+    queued = []
+
+    class FakePool:
+        def start(self, worker) -> None:
+            queued.append(worker)
+
+    monkeypatch.setattr(
+        QFileDialog,
+        "getExistingDirectory",
+        lambda *_args, **_kwargs: str(project),
+    )
+    window = DiffeoForgeWindow()
+    window._thread_pool = FakePool()  # type: ignore[assignment]
+
+    assert window.open_completed_run_button.text() == "Open completed run…"
+    window.open_completed_run_button.click()
+    application.processEvents()
+
+    assert isinstance(window._worker, _ResultReviewWorker)
+    assert queued == [window._worker]
+    assert window._worker.directory == run.resolve()
+    assert window._worker.reference is True
+    assert "Reverifying the complete Deformetrica run" in window.status_label.text()
+    assert window.open_completed_run_button.isEnabled() is False
+    window._completed_result_review_failed("test failure")
+    assert window.open_completed_run_button.isEnabled() is True
+    assert "full verification failed" in window.status_label.text()
     window.close()
     application.processEvents()

@@ -1,6 +1,7 @@
 # PCA of atlas-derived subject features
 
-Status: **tested experimental analysis product in the modern workflow; not scientifically validated**
+Status: **tested experimental analysis product in the Modern and Deformetrica
+reference workflows; not scientifically validated**
 
 Core PCA is tracked by
 [scientific-change issue #19](https://github.com/heinjenny95/DiffeoForge/issues/19);
@@ -59,6 +60,11 @@ passes the detached subject momenta directly into `momenta_pca`. The
 feature order as a JSON summary plus CSV scores, loadings, and mean vector and
 tests those files against the in-memory PCA arrays.
 
+The [Deformetrica reference importer](REFERENCE_PCA.md) strictly reads the
+engine's estimated momenta header and subject blocks, binds specimen order to
+the immutable run manifest, copies the raw parameter files, writes the same
+open PCA tables and plots, and recomputes them during bundle verification.
+
 The bundle writes dependency-light static SVGs for the scree plot and the two
 standard subject-score views: PC1 versus PC2 and PC2 versus PC3. Every score
 axis includes its explained-variance percentage, and both score views preserve
@@ -88,8 +94,9 @@ paths, and any numerical zero-variance components skipped.
 
 ## Remaining gates
 
-The experimental [modern workflow](MODERN_WORKFLOW.md) invokes, visualizes, and
-records this PCA automatically. Before it becomes a validated scientific
+The experimental [modern workflow](MODERN_WORKFLOW.md) and the connected
+Deformetrica desktop result handoff invoke, visualize, and record this PCA
+automatically. Before it becomes a validated scientific
 product, DiffeoForge still needs missing-subject handling, loading-focused
 views, mesh rendering/quality evidence, and validation on predeclared
 biological data. The paper must state the feature space, centering, component

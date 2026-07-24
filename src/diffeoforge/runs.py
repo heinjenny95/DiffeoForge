@@ -9,11 +9,14 @@ import importlib.metadata
 import json
 import os
 import platform
+import queue
 import re
 import shutil
 import subprocess
 import sys
+import threading
 import time
+from collections import deque
 from collections.abc import Callable, Mapping
 from copy import deepcopy
 from datetime import UTC, datetime
@@ -43,6 +46,7 @@ from diffeoforge.config import (
     validate_input_paths,
 )
 from diffeoforge.mesh import MeshMetadata, inspect_inputs, sha256_file
+from diffeoforge.subprocess_policy import hidden_windows_process_kwargs
 
 RUN_MANIFEST_VERSION = "0.1"
 RESUME_PROVENANCE_VERSION = "0.1"
@@ -57,6 +61,7 @@ CONVERGENCE_RE = re.compile(
     rf".*?regularity\s*=\s*({NUMBER})"
 )
 ITERATION_RE = re.compile(r"-+\s*Iteration:\s*(\d+)\s*-+")
+REFERENCE_ACTIVITY_INTERVAL_SECONDS = 30.0
 
 
 def utc_now() -> str:
@@ -230,7 +235,7 @@ def _safe_cleanup_temporary_run(temp_directory: Path, output_root: Path) -> None
         shutil.rmtree(resolved_temp)
 
 
-def _publish_directory_exclusive(source: Path, destination: Path) -> None:
+def publish_directory_exclusive(source: Path, destination: Path) -> None:
     """Atomically publish one directory without replacing an appearing destination."""
 
     if os.name == "nt":
@@ -447,7 +452,7 @@ def _prepare_run(
             "manifest_version": RUN_MANIFEST_VERSION,
             "run_id": resolved_run_id,
             "created_at": utc_now(),
-            "project": dict(config["project"]),
+            "project": {"name": str(config["project"]["name"])},
             "source_config": {
                 "path": str(source_config),
                 "sha256": sha256_file(source_config_copy),
@@ -499,7 +504,7 @@ def _prepare_run(
 
         if before_publish is not None:
             before_publish(temp_directory, manifest)
-        _publish_directory_exclusive(temp_directory, final_directory)
+        publish_directory_exclusive(temp_directory, final_directory)
     except Exception:
         _safe_cleanup_temporary_run(temp_directory, output_root)
         raise
@@ -704,6 +709,7 @@ def _probe_backend_environment(config: Mapping[str, Any]) -> Mapping[str, Any]:
             errors="replace",
             timeout=30,
             check=False,
+            **hidden_windows_process_kwargs(),
         )
         if inspected.returncode != 0:
             raise ConfigurationError(
@@ -755,6 +761,7 @@ def _probe_backend_environment(config: Mapping[str, Any]) -> Mapping[str, Any]:
         errors="replace",
         timeout=60,
         check=False,
+        **hidden_windows_process_kwargs(),
     )
     if completed.returncode != 0:
         raise ConfigurationError(
@@ -779,6 +786,7 @@ def _probe_backend_environment(config: Mapping[str, Any]) -> Mapping[str, Any]:
 
 def parse_convergence(log_path: Path, csv_path: Path) -> int:
     rows: list[list[float | int]] = []
+    seen_rows: set[tuple[int, float, float, float]] = set()
     current_iteration: int | None = None
     with log_path.open("r", encoding="utf-8", errors="replace") as handle:
         for line in handle:
@@ -787,14 +795,19 @@ def parse_convergence(log_path: Path, csv_path: Path) -> int:
                 current_iteration = int(iteration_match.group(1))
             match = CONVERGENCE_RE.search(line)
             if match:
-                rows.append(
-                    [
-                        current_iteration if current_iteration is not None else len(rows),
-                        float(match.group(1)),
-                        float(match.group(2)),
-                        float(match.group(3)),
-                    ]
+                row = (
+                    current_iteration if current_iteration is not None else len(rows),
+                    float(match.group(1)),
+                    float(match.group(2)),
+                    float(match.group(3)),
                 )
+                # Deformetrica can emit the same state both to stdout and to its
+                # timestamped native log. Preserve one exact observation while
+                # leaving genuinely different repeated states visible for review.
+                if row in seen_rows:
+                    continue
+                seen_rows.add(row)
+                rows.append(list(row))
     with csv_path.open("x", encoding="utf-8", newline="") as handle:
         writer = csv.writer(handle)
         writer.writerow(["iteration", "log_likelihood", "attachment", "regularity"])
@@ -914,8 +927,21 @@ def _log_reports_keyboard_interrupt(log_path: Path) -> bool:
     return any(line.strip() == "KeyboardInterrupt" for line in tail.splitlines())
 
 
-def execute_run(run_directory: Path | str) -> int:
+def execute_run(
+    run_directory: Path | str,
+    *,
+    line_callback: Callable[[str], None] | None = None,
+    activity_callback: Callable[[float, str | None, str | None], None] | None = None,
+    cancel_requested: Callable[[], bool] | None = None,
+) -> int:
     """Execute a prepared run exactly once and record append-only lifecycle evidence."""
+
+    if line_callback is not None and not callable(line_callback):
+        raise TypeError("line_callback must be callable or None")
+    if activity_callback is not None and not callable(activity_callback):
+        raise TypeError("activity_callback must be callable or None")
+    if cancel_requested is not None and not callable(cancel_requested):
+        raise TypeError("cancel_requested must be callable or None")
 
     run_path = Path(run_directory).expanduser().resolve()
     manifest = verify_prepared_run(run_path)
@@ -952,10 +978,10 @@ def execute_run(run_directory: Path | str) -> int:
         environment = os.environ.copy()
         environment.update(command.environment)
         process_group_options: dict[str, Any]
+        process_group_creationflags = 0
         if os.name == "nt":
-            process_group_options = {
-                "creationflags": subprocess.CREATE_NEW_PROCESS_GROUP,
-            }
+            process_group_options = {}
+            process_group_creationflags = subprocess.CREATE_NEW_PROCESS_GROUP
         else:
             process_group_options = {"start_new_session": True}
         with log_path.open("x", encoding="utf-8", newline="\n") as log_handle:
@@ -970,11 +996,109 @@ def execute_run(run_directory: Path | str) -> int:
                 errors="replace",
                 bufsize=1,
                 **process_group_options,
+                **hidden_windows_process_kwargs(
+                    creationflags=process_group_creationflags
+                ),
             )
             assert process.stdout is not None
-            for line in process.stdout:
-                print(line, end="", flush=True)
+            output_queue: queue.Queue[tuple[str, object]] = queue.Queue()
+
+            def read_process_output() -> None:
+                try:
+                    for observed_line in process.stdout:
+                        output_queue.put(("line", observed_line))
+                except BaseException as error:
+                    output_queue.put(("error", error))
+                finally:
+                    output_queue.put(("eof", None))
+
+            output_reader = threading.Thread(
+                target=read_process_output,
+                name="diffeoforge-reference-output-reader",
+                daemon=True,
+            )
+            output_reader.start()
+            native_offsets: dict[Path, int] = {}
+            recent_lines: deque[tuple[float, str, str]] = deque(maxlen=200)
+            latest_message: str | None = None
+            latest_source: str | None = None
+            stdout_eof = False
+            last_activity_emit = start_time
+
+            def dispatch_line(line: str, source: str) -> None:
+                nonlocal latest_message, latest_source
+                observed_at = time.monotonic()
+                while recent_lines and observed_at - recent_lines[0][0] > 3.0:
+                    recent_lines.popleft()
+                duplicate = any(
+                    previous_line == line and previous_source != source
+                    for _seen_at, previous_line, previous_source in recent_lines
+                )
+                recent_lines.append((observed_at, line, source))
+                stripped = line.strip()
+                if stripped:
+                    latest_message = stripped[-400:]
+                    latest_source = source
+                if duplicate:
+                    return
                 log_handle.write(line)
+                log_handle.flush()
+                if source == "process output":
+                    print(line, end="", flush=True)
+                if line_callback is not None:
+                    line_callback(line)
+
+            def observe_native_logs() -> None:
+                output_directory = run_path / "output"
+                for native_log in sorted(output_directory.glob("*_info.log")):
+                    if not native_log.is_file() or native_log.is_symlink():
+                        continue
+                    offset = native_offsets.get(native_log, 0)
+                    with native_log.open(
+                        "r",
+                        encoding="utf-8",
+                        errors="replace",
+                    ) as native_handle:
+                        native_handle.seek(offset)
+                        for native_line in native_handle:
+                            dispatch_line(
+                                native_line,
+                                f"output/{native_log.name}",
+                            )
+                        native_offsets[native_log] = native_handle.tell()
+
+            while True:
+                while True:
+                    try:
+                        output_kind, observed = output_queue.get_nowait()
+                    except queue.Empty:
+                        break
+                    if output_kind == "eof":
+                        stdout_eof = True
+                    elif output_kind == "error":
+                        raise observed
+                    else:
+                        dispatch_line(str(observed), "process output")
+                observe_native_logs()
+                if cancel_requested is not None and cancel_requested():
+                    raise KeyboardInterrupt
+                now = time.monotonic()
+                if (
+                    activity_callback is not None
+                    and now - last_activity_emit
+                    >= REFERENCE_ACTIVITY_INTERVAL_SECONDS
+                ):
+                    activity_callback(
+                        now - start_time,
+                        latest_message,
+                        latest_source,
+                    )
+                    last_activity_emit = now
+                if process.poll() is not None and stdout_eof and output_queue.empty():
+                    observe_native_logs()
+                    break
+                time.sleep(0.25)
+            output_reader.join(timeout=2)
             return_code = process.wait()
     except KeyboardInterrupt:
         interrupted = True

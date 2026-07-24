@@ -91,8 +91,9 @@ and validation difference.
 The desktop preview renders the shared-core `modern-plan` workload contract in
 its second step and publishes the strict JSON/HTML report beside the generated
 configuration. It retains the distinction between exact logical all-pairs
-counts, the largest configured dense or blockwise execution tile, known payload
-subtotals, host observations, and unknown measured peak RAM/runtime. The
+counts, the largest configured dense or blockwise execution tile, conservative
+dense-equivalent payload subtotals, host observations, and unknown measured
+peak RAM/runtime. The
 Deformetrica route instead renders its existing preflight parameter ratios and
 labels resource use as unmodelled because computation remains external.
 
@@ -100,7 +101,9 @@ The reviewed template can now be displayed without adding a visualization
 runtime: an immutable Qt-independent model supplies bounded XY/XZ/YZ wireframe
 projections to QtGui's QPainter. Large meshes use a deterministic, explicitly
 reported display-edge budget. The widget never edits or decimates the source
-mesh and is not an interactive 3D or landmark-placement dependency.
+mesh. A separate QtGui canvas now provides interactive 3D surface-landmark
+placement from that immutable geometry without adding a visualization runtime;
+the orthographic inspection widget remains independently bounded and read-only.
 
 The shared-core `modern-run` callback supplies the worker-to-UI progress
 payload. The v0.1 worker serializes the same strict dictionaries across the
@@ -108,7 +111,7 @@ process boundary inside its own versioned event envelope. It also accepts one
 versioned cooperative cancellation command and guarantees that cancellation at
 a safe point removes private temporary work without publishing a destination.
 The Modern path remains explicitly nonresumable because it has no checkpoints.
-Neither worker nor GUI may turn stage/decision counts into an unmeasured
+Neither its worker nor GUI may turn stage/decision counts into an unmeasured
 runtime percentage or ETA.
 
 The Qt bridge queues a cancel request even if it arrives before its thread-pool
@@ -129,20 +132,32 @@ Deformetrica 4.3 remains an external reference backend. Its Python 3.8 stack is
 not copied into the desktop executable. Desktop step 2 can now bind the exact
 reviewed container engine/image to the existing read-only `doctor` checks and
 show their raw status, summary, and guidance outside the GUI thread. It neither
-installs nor starts that environment, and the reference compute button remains
-disabled until a separately tested process supervisor exists.
+installs nor starts that environment. A passing check unlocks a separately
+tested source execution supervisor.
 
 The read-only prelaunch layer can now serialize the exact reviewed hash,
 container settings, normalized run ID, and resolved destination through a
 versioned JSON Schema. It rechecks those inputs without creating the destination
-or starting a process. The eventual supervisor must consume and reverify this
-request inside its contained child; this contract alone does not unlock the
-reference button.
+or starting a process. The current source supervisor consumes and reverifies
+this request inside its contained child before any preparation mutation.
 
 The reference route also has a separate schema-valid worker event vocabulary
 and parent-side lifecycle ledger. Unlike Modern cancellation, it explicitly
 distinguishes stopping before preparation, retaining an immutable prepared run,
 and interrupting active execution with a terminal result hash.
+
+A dedicated source execution child now consumes that request, rechecks preflight,
+prepares immutably, starts the existing external adapter, reports phases and
+parsed optimizer observations, and verifies terminal evidence. Its independent
+parent controller provides Windows Job containment, strict protocol/exit
+reconciliation, iteration-cap binding, and a second result verification. The Qt
+bridge exposes phase-dependent cancellation and labels its rolling observed-rate
+estimate as ETA to the configured iteration cap, not convergence. The prospective
+v0.4 freeze now gives this worker its own sibling executable, queued-cancel smoke,
+and hard-parent-death audit. Fresh clean-runner evidence and a rebuilt installer
+remain pending; recovery/resume and reference PC deformation rendering remain
+open. Source-level shared PCA import is connected. See
+[supervised desktop Deformetrica execution](DESKTOP_REFERENCE_EXECUTION.md).
 
 A source-level nonnumerical harness consumes it over real stdin/stdout, rechecks
 the prelaunch request in the child process, and guarantees a terminal stop
@@ -154,8 +169,8 @@ evidence build now freezes this harness as the sibling
 `stopped_before_prepare` smoke mandatory before bundle evidence can be
 written. A second mandatory audit starts that frozen worker suspended, assigns
 it through the real controller to the Windows kill-on-close Job, hard-exits the
-controller, and verifies bounded worker termination. No run is prepared and no
-reference compute control is enabled.
+controller, and verifies bounded worker termination. No run is prepared by this
+historical harness; it is not the source execution worker.
 
 A separate child can consume an independently hash-bound
 preparation-only approval and atomically publish a verified immutable run with

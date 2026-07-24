@@ -47,17 +47,51 @@ This roadmap describes evidence gates rather than promised dates.
   saved-tensor evidence
 - [x] Carry tile recomputation through complete Subject/Atlas objectives and
   optimizer parity
+- [x] Cache invariant fixed-target surface geometry and attachment self terms
+  across optimizer evaluations with dense/blockwise value and gradient parity
+- [x] Defer Armijo candidate gradients until objective acceptance and reuse the
+  initial evaluation without changing optimizer decisions
+- [x] Add a versioned fresh-process multi-cycle optimizer benchmark with separate
+  target-cache timing, exact work counters, result hashes, and strict verification
+- [x] Freeze immutable subject-prefix by cycle-cap optimizer scaling designs before results
+- [x] Execute and resume frozen optimizer scaling designs with strict raw-report verification
+- [x] Expose versioned exact-count optimizer-study progress and read-only partial status
+- [x] Replace ordinary rank-3 Gaussian differences with centered rank-2 matrix
+  evaluation and protect values, gradients, translation stability, and workload accounting
+- [x] Add an analytical recomputed Gaussian backward with first/second-derivative
+  evidence and full-cohort sampled-memory measurement
 - [x] Add an explicit fresh-process recompute benchmark path and spawn smoke evidence
 - [x] Freeze immutable paired standard/recompute designs before observations
 - [x] Execute/resume frozen designs with strict separate-report verification
 - [x] Expose read-only partial status and dedicated completed-run verification
 - [x] Emit versioned exact-count study progress without percentages or ETA
 - [x] Specify backward-compatible prospective multi-tile matrix semantics
-- [ ] Run a prospective standard/recompute study before public integration
-- [ ] Run a prospective multi-size/tile blockwise performance study
+- [x] Run a prospective public standard/recompute engineering study without analysis
+- [x] Run a prospective public multi-size/tile engineering study without analysis
 
 ## Milestone 3: Accessible application
 
+- [x] Adopt the Deformetrica-first product decision with an evidence-gated Modern engine
+- [x] Extract strict landmark CSV handling from the Modern engine
+- [x] Apply generalized Procrustes to content-addressed immutable mesh copies usable by
+  Deformetrica or any future backend
+- [x] Implement conservative observed-rate ETA arithmetic for Deformetrica iteration logs
+- [x] Add interactive 3D homologous surface-landmark placement, correction,
+  autosaved resume, and strict CSV output
+- [x] Add researcher-selected landmark counts without an arbitrary ten-point cap
+  and a draft-persisted optional automatic next-mesh transition
+- [x] Add reviewed triangular PLY/OBJ/STL landmark and GPA import with
+  byte-identical raw copies and canonical aligned VTK publication
+- [x] Retain guided orthographic inspection as a separate deterministic preview
+- [x] Connect hash-bound read-only Procrustes preview/approval to the guided
+  desktop workflow
+- [x] Expose explicit Procrustes application/settings and verify aligned-mesh evidence
+  in desktop review
+- [x] Connect supervised Deformetrica preparation, execution, and cancellation
+- [ ] Connect interrupted-run discovery and resume to the guided desktop workflow
+- [x] Display observed progress and explicitly labelled ETA-to-iteration-cap
+- [x] Import verified Deformetrica momenta into the shared PCA/result pipeline
+- [ ] Add verified reference PC deformation meshes and registration-quality rendering
 - [x] Define desktop executable/installer architecture and release gates
 - [ ] Local graphical interface backed by the shared core
   - [x] First non-overwriting mesh-folder and project-setup slice
@@ -93,8 +127,13 @@ This roadmap describes evidence gates rather than promised dates.
   - [x] Project-independent saved reference-status verification in the desktop GUI
   - [x] Exact non-overwriting saved-status verification-evidence export in CLI and desktop
   - [x] Exact non-overwriting plan/approval verification-evidence export in CLI
-  - [ ] User-approved private-stage mutation, reference supervision, and native mesh rendering
-- [ ] Parameter explanations and safe presets
+  - [x] Hash-bound source-level reference execution supervision and cancellation
+  - [x] Add the reference execution sibling to the v0.4 freeze contract with
+    queued-cancel and hard-parent-death gates
+  - [ ] Record fresh clean-runner v0.4 freeze evidence and rebuild the installer
+  - [ ] Guided reference recovery/resume and native registration rendering
+- [x] Parameter explanations and provenance-labelled exploratory starter profiles
+- [ ] Prospectively validate dataset-specific settings before any safe-preset claim
 - [x] Pre-compute configured all-pairs and known-payload workload report
 - [x] Versioned workflow-stage and committed optimizer-decision reporting
 - [x] Fresh-process objective/gradient wall-time and sampled-RSS protocol

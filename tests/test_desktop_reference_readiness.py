@@ -114,18 +114,29 @@ def test_reference_readiness_discards_probe_if_config_changes_during_doctor(
         check_reference_environment(review)
 
 
-def test_reference_readiness_rejects_unimplemented_native_route(
+def test_reference_readiness_supports_native_route(
     monkeypatch, tmp_path: Path
 ) -> None:
     config = tmp_path / "atlas.yaml"
     shutil.copyfile(ROOT / "examples" / "minimal-atlas.yaml", config)
+    launcher = {"type": "native", "executable": "deformetrica"}
+    report = DoctorReport(
+        status="ready",
+        workspace=str(tmp_path.resolve()),
+        engine="native",
+        image="deformetrica",
+        checks=(DoctorCheck("reference_runtime", "Runtime", "pass", "4.3.0"),),
+        launcher=launcher,
+    )
     monkeypatch.setattr(
-        "diffeoforge.desktop.reference_readiness.run_doctor",
-        lambda *_args, **_kwargs: pytest.fail("doctor must not run"),
+        "diffeoforge.desktop.reference_readiness.run_reference_doctor",
+        lambda workspace, *, launcher: report,
     )
 
-    with pytest.raises(DesktopReferenceReadinessError, match="container launcher only"):
-        check_reference_environment(_review(config))
+    readiness = check_reference_environment(_review(config))
+
+    assert readiness.ready is True
+    assert readiness.launcher == launcher
 
 
 def test_reference_readiness_rejects_modern_review(tmp_path: Path) -> None:

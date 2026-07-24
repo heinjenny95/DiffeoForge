@@ -88,39 +88,50 @@ The report records two deliberately different maxima:
 
 - `largest_logical_pair` is the largest complete all-pairs problem reached by
   one operation; and
-- `largest_execution_tile` is the largest pairwise matrix actually
-  materialized at once by the configured plan.
+- `largest_execution_tile` is the largest pairwise matrix dimension evaluated
+  at once by the configured plan.
 
 For dense mode these dimensions are equal. For blockwise mode the execution
 rows and columns are exactly `min(logical_rows, query_tile_size)` and
 `min(logical_columns, source_tile_size)` for every candidate operation, with
 the largest resulting tile reported. The model therefore preserves the total
-logical work while exposing the configured bound on one XYZ-difference tile.
-It does not infer a tile size, switch algorithms, or treat fewer materialized
-rows as fewer mathematical interactions.
+logical work while exposing the configured execution dimensions. It does not
+infer a tile size, switch algorithms, or treat fewer evaluated rows as fewer
+mathematical interactions.
 
-## Known tensor payloads
+## Conservative tensor-payload equivalents
 
-The report calculates exact byte counts for selected visible payloads:
+The report calculates exact byte counts for selected visible tensors and
+versioned dense-equivalent payloads:
 
 - initial float64 vertices, control points, and momenta plus int64 triangle
   connectivity passed to the engine;
 - subject trajectories and flowed-template paths retained by one objective;
 - the largest logical all-pairs float64 matrix dimension; and
-- the exact largest single dense or blockwise
-  `tile_rows * tile_columns * 3 * 8` XYZ-difference tensor.
+- the conservative dense-equivalent
+  `tile_rows * tile_columns * 3 * 8` XYZ-difference payload for the largest
+  dense or blockwise execution dimensions.
 
-Their arithmetic subtotal is useful for catching obviously impossible plans,
+The versioned v0.2 JSON field names retain
+`float64_xyz_difference_tensor_bytes` for backward compatibility. Since the
+centered matrix-kernel optimization, ordinary Gaussian forward evaluation does
+not materialize a `rows × columns × 3` difference tensor: it constructs
+rank-2 distance/kernel matrices from centered norms and matrix multiplication.
+The XYZ values are therefore conservative dense-equivalent planning numbers,
+not observed allocations. Analytical Gaussian x-gradients still need explicit
+differences.
+
+Their arithmetic subtotal remains useful as stable conservative accounting,
 but it is **not peak RAM**. PyTorch autograd saves intermediates and standard
 blockwise backward can retain graphs from multiple tiles until the gradient
-completes; kernel construction creates additional matrices; the allocator can
+completes; kernel construction creates rank-2 matrices; the allocator can
 retain blocks; Python/NumPy objects, reports, operating-system memory, and
 threaded numerical libraries add overhead. Some allocations have different
 lifetimes.
 
 The report records detected physical memory and output-filesystem free space.
-If a known payload alone exceeds physical memory, it emits a warning. Passing
-that comparison is not evidence that the run fits.
+If a conservative equivalent alone exceeds physical memory, it emits a
+warning. Passing that comparison is not evidence that the run fits.
 
 ## PCA and output bound
 
@@ -137,9 +148,10 @@ running an expensive atlas only to fail during final bundle creation.
 ## Evidence and maintenance rule
 
 Tests cover every supported combination of Current/Varifold, Euler/RK2
-shooting, and Euler/Heun/Deformetrica-Heun flow. They wrap the real
-`gaussian_kernel`, count every observed logical pair dimension during an actual
-objective forward, and require exact equality with the planning formula.
+shooting, and Euler/Heun/Deformetrica-Heun flow. They instrument both centered
+matrix-kernel and explicit analytical-gradient paths, count every observed
+logical pair dimension during an actual objective forward, and require exact
+equality with the planning formula.
 Separate blockwise tests bind the configured tile plan to the reported engine
 and require the execution dimensions and byte arithmetic to remain exact.
 
@@ -155,9 +167,10 @@ deterministic for fixed configuration and mesh dimensions.
 This plan describes the configured exact dense or blockwise CPU/float64
 implementation. It is not a benchmark, a wall-time forecast, a peak-RAM
 estimate, evidence that 300 specimens are feasible, a GPU model, or a
-Deformetrica resource model. A blockwise tile bound is one visible allocation,
-not a bound on total live autograd memory. Measured scaling experiments on
-representative simplified meshes remain a separate prospective gate.
+Deformetrica resource model. A blockwise tile record is a conservative
+dense-equivalent payload, not proof of an allocation and not a bound on total
+live autograd memory. Measured scaling experiments on representative simplified
+meshes remain a separate prospective gate.
 `modern-benchmark` provides the first narrow objective/gradient measurement
 protocol; it does not convert this plan into a runtime predictor. See
 [modern benchmark protocol](MODERN_BENCHMARK.md).

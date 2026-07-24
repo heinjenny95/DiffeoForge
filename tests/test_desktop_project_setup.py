@@ -1,21 +1,40 @@
 from __future__ import annotations
 
+import csv
 import importlib.util
+import json
 import shutil
 from pathlib import Path
 
 import pytest
 import yaml
 
-from diffeoforge.config import ConfigurationError
+from diffeoforge.analysis.landmarks import LANDMARK_COLUMNS
+from diffeoforge.backends.deformetrica_reference import render_engine_file_bytes
+from diffeoforge.config import ConfigurationError, load_config
 from diffeoforge.desktop.project_setup import (
     DesktopEngine,
     ProjectSetupRequest,
     create_project,
 )
+from diffeoforge.mesh import read_vtk_polydata, sha256_file
+from diffeoforge.preprocessing import preview_landmark_alignment
+from diffeoforge.reference_recommendation import recommend_reference_parameters
 
 ROOT = Path(__file__).parents[1]
 MESH_DIRECTORY = ROOT / "examples" / "synthetic" / "meshes"
+
+
+def _write_landmarks(path: Path) -> Path:
+    meshes = [MESH_DIRECTORY / "template.vtk", *sorted(MESH_DIRECTORY.glob("subject-*.vtk"))]
+    with path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.writer(handle, lineterminator="\n")
+        writer.writerow(LANDMARK_COLUMNS)
+        for mesh in meshes:
+            points = read_vtk_polydata(mesh).vertices
+            for label, index in zip(("a", "b", "c"), (0, 40, 80), strict=True):
+                writer.writerow((mesh.name, label, *points[index]))
+    return path
 
 
 def test_reference_project_setup_uses_shared_core_and_writes_preflight(tmp_path: Path) -> None:
@@ -36,6 +55,110 @@ def test_reference_project_setup_uses_shared_core_and_writes_preflight(tmp_path:
     assert result.report_path == result.config_path.with_suffix(".preflight.html")
     assert result.report_path.is_file()
     assert any("did not execute Deformetrica" in notice for notice in result.notices)
+
+
+def test_reference_project_setup_persists_visible_parameter_selection(tmp_path: Path) -> None:
+    ratios = {
+        "attachment_kernel_width": 0.05,
+        "deformation_kernel_width": 0.10,
+        "initial_control_point_spacing": 0.10,
+        "noise_std": 0.0125,
+    }
+    result = create_project(
+        ProjectSetupRequest(
+            mesh_directory=MESH_DIRECTORY,
+            project_directory=tmp_path / "high-detail",
+            units="millimeter",
+            engine=DesktopEngine.DEFORMETRICA_REFERENCE,
+            reference_parameter_profile="high_detail",
+            reference_parameter_ratios=ratios,
+            reference_max_iterations=200,
+            reference_initial_step_size=0.01,
+            reference_convergence_tolerance=0.0001,
+            reference_attachment_type="varifold",
+            reference_timepoints=17,
+            reference_use_rk2=True,
+            reference_max_line_search_iterations=23,
+            reference_save_every_n_iterations=7,
+            reference_print_every_n_iterations=3,
+            reference_scale_initial_step_size=False,
+            reference_use_sobolev_gradient=False,
+            reference_sobolev_kernel_width_ratio=1.75,
+            reference_freeze_template=True,
+            reference_freeze_control_points=True,
+            reference_threads=6,
+            reference_random_seed=42,
+        )
+    )
+
+    config = yaml.safe_load(result.config_path.read_text(encoding="utf-8"))
+    assert config["project"]["parameter_provenance"]["profile"] == "high_detail"
+    assert config["project"]["parameter_provenance"]["ratios"] == ratios
+    assert config["optimization"]["max_iterations"] == 200
+    assert config["model"]["attachment"]["type"] == "varifold"
+    assert config["model"]["deformation"]["timepoints"] == 17
+    assert config["model"]["deformation"]["use_rk2"] is True
+    assert config["optimization"]["max_line_search_iterations"] == 23
+    assert config["optimization"]["save_every_n_iterations"] == 7
+    assert config["optimization"]["print_every_n_iterations"] == 3
+    assert config["optimization"]["scale_initial_step_size"] is False
+    assert config["optimization"]["use_sobolev_gradient"] is False
+    assert config["optimization"]["sobolev_kernel_width_ratio"] == 1.75
+    assert config["optimization"]["freeze_template"] is True
+    assert config["optimization"]["freeze_control_points"] is True
+    assert config["runtime"]["threads"] == 6
+    assert config["runtime"]["random_seed"] == 42
+    rendered = render_engine_file_bytes(
+        load_config(result.config_path),
+        Path("input/template.vtk"),
+        (Path("input/subject.vtk"),),
+    )
+    model_xml = rendered["model.xml"].decode("utf-8")
+    optimization_xml = rendered["optimization_parameters.xml"].decode("utf-8")
+    assert "<attachment-type>varifold</attachment-type>" in model_xml
+    assert "<number-of-timepoints>17</number-of-timepoints>" in model_xml
+    assert "<max-line-search-iterations>23</max-line-search-iterations>" in optimization_xml
+    assert "<use-rk2>On</use-rk2>" in optimization_xml
+    assert "<freeze-template>On</freeze-template>" in optimization_xml
+    assert "<freeze-control-points>On</freeze-control-points>" in optimization_xml
+
+
+def test_reference_project_setup_persists_data_assisted_provenance(
+    tmp_path: Path,
+) -> None:
+    cohort = (
+        MESH_DIRECTORY / "template.vtk",
+        *sorted(MESH_DIRECTORY.glob("subject-*.vtk")),
+    )
+    recommendation = recommend_reference_parameters(
+        cohort,
+        alignment_basis="declared_gpa",
+        surface_detail_intent="balanced",
+        deformation_scale_intent="local",
+    )
+
+    result = create_project(
+        ProjectSetupRequest(
+            mesh_directory=MESH_DIRECTORY,
+            project_directory=tmp_path / "data-assisted",
+            units="unitless",
+            engine=DesktopEngine.DEFORMETRICA_REFERENCE,
+            reference_parameter_profile="data_assisted",
+            reference_parameter_ratios=recommendation.parameter_ratios,
+            reference_parameter_recommendation=recommendation.provenance,
+            reference_max_iterations=recommendation.max_iterations,
+            reference_initial_step_size=recommendation.initial_step_size,
+            reference_convergence_tolerance=(
+                recommendation.convergence_tolerance
+            ),
+        )
+    )
+
+    config = yaml.safe_load(result.config_path.read_text(encoding="utf-8"))
+    provenance = config["project"]["parameter_provenance"]
+    assert provenance["profile"] == "data_assisted"
+    assert provenance["ratios"] == recommendation.parameter_ratios
+    assert provenance["recommendation"] == recommendation.provenance
 
 
 def test_project_setup_handles_spaces_and_non_ascii_paths(tmp_path: Path) -> None:
@@ -206,20 +329,116 @@ def test_reference_overwrite_prechecks_report_ownership_before_config_mutation(
     assert initial.report_path.read_text(encoding="utf-8") == "researcher-owned HTML\n"
 
 
-def test_reference_project_rejects_modern_only_landmarks_before_writing(tmp_path: Path) -> None:
+def test_reference_project_applies_landmarks_before_deformetrica_without_editing_raw_meshes(
+    tmp_path: Path,
+) -> None:
     project_directory = tmp_path / "reference"
-    with pytest.raises(ConfigurationError, match="only for the modern CPU"):
+    sources = (MESH_DIRECTORY / "template.vtk", *sorted(MESH_DIRECTORY.glob("subject-*.vtk")))
+    hashes_before = {path: sha256_file(path) for path in sources}
+    result = create_project(
+        ProjectSetupRequest(
+            mesh_directory=MESH_DIRECTORY,
+            project_directory=project_directory,
+            units="unitless",
+            engine=DesktopEngine.DEFORMETRICA_REFERENCE,
+            landmarks_file=_write_landmarks(tmp_path / "landmarks.csv"),
+            procrustes_scale_to_unit_centroid_size=False,
+            procrustes_allow_reflection=True,
+            procrustes_tolerance=1e-8,
+            procrustes_max_iterations=250,
+        )
+    )
+
+    assert result.preprocessing_report_path is not None
+    assert result.preprocessing_report_path.is_file()
+    assert result.template_path.parent.name.startswith("aligned-")
+    assert {path: sha256_file(path) for path in sources} == hashes_before
+    evidence = json.loads(result.preprocessing_report_path.read_text(encoding="utf-8"))
+    assert evidence["settings"] == {
+        "allow_reflection": True,
+        "max_iterations": 250,
+        "scale_to_unit_centroid_size": False,
+        "tolerance": 1e-8,
+    }
+    config = yaml.safe_load(result.config_path.read_text(encoding="utf-8"))
+    assert "preprocessing/aligned-" in config["input"]["directory"]
+    assert any("Raw meshes were not modified" in notice for notice in result.notices)
+
+
+def test_project_creation_is_bound_to_approved_procrustes_preview(
+    tmp_path: Path,
+) -> None:
+    landmarks = _write_landmarks(tmp_path / "landmarks.csv")
+    preview = preview_landmark_alignment(
+        MESH_DIRECTORY,
+        landmarks_file=landmarks,
+        tolerance=1e-8,
+    )
+    approved_project = tmp_path / "approved"
+    result = create_project(
+        ProjectSetupRequest(
+            mesh_directory=MESH_DIRECTORY,
+            project_directory=approved_project,
+            units="unitless",
+            engine=DesktopEngine.DEFORMETRICA_REFERENCE,
+            landmarks_file=landmarks,
+            procrustes_tolerance=1e-8,
+            approved_procrustes_fingerprint=preview.fingerprint,
+        )
+    )
+    assert result.preprocessing_report_path is not None
+
+    changed_project = tmp_path / "changed"
+    with pytest.raises(ConfigurationError, match="approved preview"):
         create_project(
             ProjectSetupRequest(
                 mesh_directory=MESH_DIRECTORY,
-                project_directory=project_directory,
+                project_directory=changed_project,
                 units="unitless",
                 engine=DesktopEngine.DEFORMETRICA_REFERENCE,
-                landmarks_file=tmp_path / "landmarks.csv",
+                landmarks_file=landmarks,
+                procrustes_tolerance=1e-7,
+                approved_procrustes_fingerprint=preview.fingerprint,
             )
         )
+    assert not (changed_project / "atlas.yaml").exists()
 
-    assert not project_directory.exists()
+
+@pytest.mark.parametrize("fingerprint", ["too-short", "g" * 64])
+def test_project_setup_rejects_invalid_procrustes_preview_fingerprint(
+    fingerprint: str,
+    tmp_path: Path,
+) -> None:
+    project = tmp_path / "invalid fingerprint"
+    with pytest.raises(ConfigurationError, match="64 hexadecimal"):
+        create_project(
+            ProjectSetupRequest(
+                mesh_directory=MESH_DIRECTORY,
+                project_directory=project,
+                units="unitless",
+                engine=DesktopEngine.DEFORMETRICA_REFERENCE,
+                landmarks_file=_write_landmarks(tmp_path / "landmarks.csv"),
+                approved_procrustes_fingerprint=fingerprint,
+            )
+        )
+    assert not project.exists()
+
+
+def test_project_setup_rejects_preview_fingerprint_without_landmarks(
+    tmp_path: Path,
+) -> None:
+    project = tmp_path / "missing landmarks"
+    with pytest.raises(ConfigurationError, match="requires a landmark file"):
+        create_project(
+            ProjectSetupRequest(
+                mesh_directory=MESH_DIRECTORY,
+                project_directory=project,
+                units="unitless",
+                engine=DesktopEngine.DEFORMETRICA_REFERENCE,
+                approved_procrustes_fingerprint="a" * 64,
+            )
+        )
+    assert not project.exists()
 
 
 def test_modern_project_setup_uses_existing_workflow_service(tmp_path: Path) -> None:
@@ -276,6 +495,21 @@ def test_desktop_project_setup_rejects_invalid_cycle_cap(tmp_path: Path) -> None
         )
 
 
+def test_desktop_project_setup_rejects_nonfinite_procrustes_tolerance(
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(ConfigurationError, match="procrustes_tolerance"):
+        create_project(
+            ProjectSetupRequest(
+                mesh_directory=MESH_DIRECTORY,
+                project_directory=tmp_path / "invalid procrustes",
+                units="unitless",
+                engine=DesktopEngine.DEFORMETRICA_REFERENCE,
+                procrustes_tolerance=float("nan"),
+            )
+        )
+
+
 def test_modern_project_setup_records_an_explicit_blockwise_high_face_plan(
     tmp_path: Path,
 ) -> None:
@@ -301,4 +535,4 @@ def test_modern_project_setup_records_an_explicit_blockwise_high_face_plan(
         "query_tile_size": 256,
         "source_tile_size": 256,
     }
-    assert any("not total RAM or runtime" in notice for notice in result.notices)
+    assert any("not total RAM or computation time" in notice for notice in result.notices)
