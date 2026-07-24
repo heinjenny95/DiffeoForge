@@ -41,6 +41,10 @@ from diffeoforge.desktop.mesh_preview import (
     load_mesh_preview,
 )
 from diffeoforge.desktop.mesh_preview_widget import MeshPreviewCanvas
+from diffeoforge.desktop.parameter_guidance import (
+    DEFORMETRICA_PARAMETER_GUIDANCE,
+    ParameterGuidance,
+)
 from diffeoforge.desktop.project_review import ProjectReviewResult, review_project
 from diffeoforge.desktop.project_setup import (
     DesktopEngine,
@@ -154,6 +158,15 @@ QLineEdit, QComboBox { background: #ffffff; border: 1px solid #bdcbce; border-ra
 QLineEdit:focus, QComboBox:focus { border: 2px solid #268f7a; }
 QPushButton { border-radius: 6px; min-height: 34px; padding: 2px 13px; font-weight: 600; }
 QPushButton#secondary { background: #eef3f4; border: 1px solid #c8d5d7; color: #24474b; }
+QPushButton#parameterHelpButton {
+    background: transparent; border: 0; color: #167c6b; min-height: 24px;
+    padding: 2px 1px; text-align: left; font-size: 12px; font-weight: 650;
+}
+QPushButton#parameterHelpButton:hover { color: #0f5f52; text-decoration: underline; }
+QFrame#parameterHelpPanel {
+    background: #f2f8f6; border: 1px solid #cee3dd; border-radius: 7px;
+}
+QLabel#parameterHelpText { color: #405d61; font-size: 12px; }
 QPushButton#primary { background: #167c6b; border: 1px solid #167c6b; color: #ffffff;
                       min-height: 42px; padding: 2px 20px; }
 QPushButton#primary:hover { background: #116858; }
@@ -217,6 +230,55 @@ class _ReadOnlyStatusText(QPlainTextEdit):
 
     def text(self) -> str:
         return self.toPlainText()
+
+
+class _ExpandableParameterHelp(QWidget):
+    """Accessible disclosure containing guidance for one parameter."""
+
+    def __init__(
+        self,
+        parameter_name: str,
+        guidance: ParameterGuidance,
+        parent: QWidget | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self.parameter_name = parameter_name
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(4)
+
+        self.toggle_button = QPushButton("+ Parameter guide")
+        self.toggle_button.setObjectName("parameterHelpButton")
+        self.toggle_button.setCheckable(True)
+        self.toggle_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.toggle_button.setAccessibleName(f"Explain {parameter_name}")
+        self.toggle_button.setAccessibleDescription(guidance.summary)
+        self.toggle_button.toggled.connect(self._set_expanded)
+        layout.addWidget(self.toggle_button)
+
+        self.panel = QFrame()
+        self.panel.setObjectName("parameterHelpPanel")
+        panel_layout = QVBoxLayout(self.panel)
+        panel_layout.setContentsMargins(10, 7, 10, 7)
+        self.text_label = QLabel(guidance.to_html())
+        self.text_label.setObjectName("parameterHelpText")
+        self.text_label.setTextFormat(Qt.TextFormat.RichText)
+        self.text_label.setWordWrap(True)
+        self.text_label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+            | Qt.TextInteractionFlag.TextSelectableByKeyboard
+        )
+        self.text_label.setAccessibleName(f"{parameter_name} parameter guidance")
+        panel_layout.addWidget(self.text_label)
+        self.panel.hide()
+        layout.addWidget(self.panel)
+
+    @Slot(bool)
+    def _set_expanded(self, expanded: bool) -> None:
+        self.panel.setVisible(expanded)
+        self.toggle_button.setText(
+            "- Hide parameter guide" if expanded else "+ Parameter guide"
+        )
 
 
 class _WorkerSignals(QObject):
@@ -647,6 +709,10 @@ class DiffeoForgeWindow(QMainWindow):
         self._result_review: ModernResultReview | None = None
         self._close_after_worker = False
         self._active_step = 0
+        self.reference_parameter_help_panels: dict[
+            str, _ExpandableParameterHelp
+        ] = {}
+        self._reference_parameter_field_pairs: list[tuple[QWidget, QWidget]] = []
         self._build_ui()
         self._update_engine_explanation()
         self._sync_ready_state()
@@ -1715,6 +1781,12 @@ class DiffeoForgeWindow(QMainWindow):
             self._update_reference_parameter_profile
         )
         reference_parameter_layout.addWidget(self.reference_parameter_profile_combo)
+        reference_parameter_layout.addWidget(
+            self._parameter_help(
+                "recommendation_mode",
+                "Deformetrica parameter mode",
+            )
+        )
 
         self.reference_parameter_form = QFormLayout()
         self.reference_parameter_form.setHorizontalSpacing(18)
@@ -1742,16 +1814,47 @@ class DiffeoForgeWindow(QMainWindow):
         self.reference_tolerance_spin.setDecimals(10)
         self.reference_tolerance_spin.setRange(0.0000000001, 1.0)
         self.reference_tolerance_spin.setSingleStep(0.0001)
-        for label, widget in (
-            ("Attachment / diagonal", self.reference_attachment_ratio_spin),
-            ("Deformation / diagonal", self.reference_deformation_ratio_spin),
-            ("Control spacing / diagonal", self.reference_control_spacing_ratio_spin),
-            ("Noise SD / diagonal", self.reference_noise_ratio_spin),
-            ("Maximum iterations", self.reference_max_iterations_spin),
-            ("Initial step size", self.reference_step_size_spin),
-            ("Convergence tolerance", self.reference_tolerance_spin),
+        for label, widget, key in (
+            (
+                "Attachment / diagonal",
+                self.reference_attachment_ratio_spin,
+                "attachment_ratio",
+            ),
+            (
+                "Deformation / diagonal",
+                self.reference_deformation_ratio_spin,
+                "deformation_ratio",
+            ),
+            (
+                "Control spacing / diagonal",
+                self.reference_control_spacing_ratio_spin,
+                "control_spacing_ratio",
+            ),
+            ("Noise SD / diagonal", self.reference_noise_ratio_spin, "noise_ratio"),
+            (
+                "Maximum iterations",
+                self.reference_max_iterations_spin,
+                "maximum_iterations",
+            ),
+            (
+                "Initial step size",
+                self.reference_step_size_spin,
+                "initial_step_size",
+            ),
+            (
+                "Convergence tolerance",
+                self.reference_tolerance_spin,
+                "convergence_tolerance",
+            ),
         ):
-            self.reference_parameter_form.addRow(label, widget)
+            self.reference_parameter_form.addRow(
+                label,
+                self._parameter_field_with_help(
+                    widget,
+                    key=key,
+                    parameter_name=label,
+                ),
+            )
         reference_parameter_layout.addLayout(self.reference_parameter_form)
         self.reference_expert_toggle = QCheckBox("Show expert settings")
         self.reference_expert_toggle.setObjectName("referenceExpertToggle")
@@ -1802,33 +1905,53 @@ class DiffeoForgeWindow(QMainWindow):
         self.reference_random_seed_spin = QSpinBox()
         self.reference_random_seed_spin.setRange(0, 2147483647)
         self.reference_random_seed_spin.setValue(20260715)
-        for label, widget in (
-            ("Attachment type", self.reference_attachment_type_combo),
-            ("Time points", self.reference_timepoints_spin),
-            ("Integration", self.reference_rk2_check),
-            ("Line-search limit", self.reference_line_search_spin),
-            ("Save interval", self.reference_save_every_spin),
-            ("Log interval", self.reference_print_every_spin),
-            ("Step-size scaling", self.reference_scale_step_check),
-            ("Sobolev gradient", self.reference_sobolev_check),
-            ("Sobolev width ratio", self.reference_sobolev_ratio_spin),
-            ("Template update", self.reference_freeze_template_check),
-            ("Control-point update", self.reference_freeze_control_points_check),
-            ("CPU threads", self.reference_threads_spin),
-            ("Random seed", self.reference_random_seed_spin),
+        for label, widget, key in (
+            (
+                "Attachment type",
+                self.reference_attachment_type_combo,
+                "attachment_type",
+            ),
+            ("Time points", self.reference_timepoints_spin, "time_points"),
+            ("Integration", self.reference_rk2_check, "integration"),
+            (
+                "Line-search limit",
+                self.reference_line_search_spin,
+                "line_search_limit",
+            ),
+            ("Save interval", self.reference_save_every_spin, "save_interval"),
+            ("Log interval", self.reference_print_every_spin, "log_interval"),
+            (
+                "Step-size scaling",
+                self.reference_scale_step_check,
+                "step_size_scaling",
+            ),
+            ("Sobolev gradient", self.reference_sobolev_check, "sobolev_gradient"),
+            (
+                "Sobolev width ratio",
+                self.reference_sobolev_ratio_spin,
+                "sobolev_width_ratio",
+            ),
+            (
+                "Template update",
+                self.reference_freeze_template_check,
+                "template_update",
+            ),
+            (
+                "Control-point update",
+                self.reference_freeze_control_points_check,
+                "control_point_update",
+            ),
+            ("CPU threads", self.reference_threads_spin, "cpu_threads"),
+            ("Random seed", self.reference_random_seed_spin, "random_seed"),
         ):
-            expert_form.addRow(label, widget)
-        expert_help = QLabel(
-            "Attachment type controls how surface orientation contributes to matching. "
-            "Time points and RK2 control numerical trajectory integration. Line search and "
-            "step scaling govern optimizer steps. Sobolev settings smooth the template "
-            "gradient. Freeze options hold selected parameter blocks fixed. Save/log "
-            "intervals affect checkpoints and reporting, while threads and seed define the "
-            "execution contract. These choices require dataset-specific scientific review."
-        )
-        expert_help.setObjectName("hint")
-        expert_help.setWordWrap(True)
-        expert_form.addRow("What these control", expert_help)
+            expert_form.addRow(
+                label,
+                self._parameter_field_with_help(
+                    widget,
+                    key=key,
+                    parameter_name=label,
+                ),
+            )
         reference_parameter_layout.addWidget(self.reference_expert_box)
         self.reference_expert_box.hide()
         self.reference_parameter_hint = QLabel(
@@ -2089,10 +2212,21 @@ class DiffeoForgeWindow(QMainWindow):
         guidance_form.setContentsMargins(0, 0, 0, 0)
         guidance_form.setHorizontalSpacing(18)
         guidance_form.setVerticalSpacing(7)
-        guidance_form.addRow("Surface detail to preserve", self.reference_surface_detail_combo)
+        guidance_form.addRow(
+            "Surface detail to preserve",
+            self._parameter_field_with_help(
+                self.reference_surface_detail_combo,
+                key="surface_detail",
+                parameter_name="Surface detail to preserve",
+            ),
+        )
         guidance_form.addRow(
             "Scale of biological variation",
-            self.reference_deformation_scale_combo,
+            self._parameter_field_with_help(
+                self.reference_deformation_scale_combo,
+                key="deformation_scale",
+                parameter_name="Scale of biological variation",
+            ),
         )
         guidance_layout.addLayout(guidance_form)
         guidance_hint = QLabel(
@@ -3160,6 +3294,42 @@ class DiffeoForgeWindow(QMainWindow):
         spin.setToolTip(tooltip)
         return spin
 
+    def _parameter_help(
+        self,
+        key: str,
+        parameter_name: str,
+    ) -> _ExpandableParameterHelp:
+        help_panel = _ExpandableParameterHelp(
+            parameter_name,
+            DEFORMETRICA_PARAMETER_GUIDANCE[key],
+        )
+        help_panel.setObjectName(f"parameterHelp_{key}")
+        self.reference_parameter_help_panels[key] = help_panel
+        return help_panel
+
+    def _parameter_field_with_help(
+        self,
+        widget: QWidget,
+        *,
+        key: str,
+        parameter_name: str,
+    ) -> QWidget:
+        field = QWidget()
+        field.setObjectName(f"parameterField_{key}")
+        layout = QVBoxLayout(field)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(2)
+        layout.addWidget(widget)
+        layout.addWidget(self._parameter_help(key, parameter_name))
+        self._reference_parameter_field_pairs.append((widget, field))
+        return field
+
+    def _reference_parameter_field(self, widget: QWidget) -> QWidget:
+        for candidate, field in self._reference_parameter_field_pairs:
+            if candidate is widget:
+                return field
+        raise LookupError("No parameter field is registered for the requested widget")
+
     def _reference_parameter_widgets(self) -> tuple[QWidget, ...]:
         return (
             self.reference_attachment_ratio_spin,
@@ -3174,7 +3344,9 @@ class DiffeoForgeWindow(QMainWindow):
     def _set_reference_parameter_fields_visible(self, visible: bool) -> None:
         for widget in self._reference_parameter_widgets():
             widget.setVisible(visible)
-            label = self.reference_parameter_form.labelForField(widget)
+            field = self._reference_parameter_field(widget)
+            field.setVisible(visible)
+            label = self.reference_parameter_form.labelForField(field)
             if label is not None:
                 label.setVisible(visible)
 
