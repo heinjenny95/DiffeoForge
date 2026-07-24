@@ -61,7 +61,7 @@ CONVERGENCE_RE = re.compile(
     rf".*?regularity\s*=\s*({NUMBER})"
 )
 ITERATION_RE = re.compile(r"-+\s*Iteration:\s*(\d+)\s*-+")
-REFERENCE_ACTIVITY_INTERVAL_SECONDS = 10.0
+REFERENCE_ACTIVITY_INTERVAL_SECONDS = 30.0
 
 
 def utc_now() -> str:
@@ -786,6 +786,7 @@ def _probe_backend_environment(config: Mapping[str, Any]) -> Mapping[str, Any]:
 
 def parse_convergence(log_path: Path, csv_path: Path) -> int:
     rows: list[list[float | int]] = []
+    seen_rows: set[tuple[int, float, float, float]] = set()
     current_iteration: int | None = None
     with log_path.open("r", encoding="utf-8", errors="replace") as handle:
         for line in handle:
@@ -794,14 +795,19 @@ def parse_convergence(log_path: Path, csv_path: Path) -> int:
                 current_iteration = int(iteration_match.group(1))
             match = CONVERGENCE_RE.search(line)
             if match:
-                rows.append(
-                    [
-                        current_iteration if current_iteration is not None else len(rows),
-                        float(match.group(1)),
-                        float(match.group(2)),
-                        float(match.group(3)),
-                    ]
+                row = (
+                    current_iteration if current_iteration is not None else len(rows),
+                    float(match.group(1)),
+                    float(match.group(2)),
+                    float(match.group(3)),
                 )
+                # Deformetrica can emit the same state both to stdout and to its
+                # timestamped native log. Preserve one exact observation while
+                # leaving genuinely different repeated states visible for review.
+                if row in seen_rows:
+                    continue
+                seen_rows.add(row)
+                rows.append(list(row))
     with csv_path.open("x", encoding="utf-8", newline="") as handle:
         writer = csv.writer(handle)
         writer.writerow(["iteration", "log_likelihood", "attachment", "regularity"])

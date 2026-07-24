@@ -12,6 +12,7 @@ from diffeoforge.backends import CommandSpec
 from diffeoforge.config import ConfigurationError
 from diffeoforge.mesh import sha256_file
 from diffeoforge.runs import (
+    REFERENCE_ACTIVITY_INTERVAL_SECONDS,
     execute_run,
     parse_convergence,
     prepare_resume_run,
@@ -217,6 +218,39 @@ def test_convergence_parser_preserves_backend_iteration_numbers(tmp_path: Path) 
         "6,-8.181,-8.128,-0.05328",
         "7,-6.831,-6.77,-0.06049",
     ]
+
+
+def test_convergence_parser_collapses_exact_native_log_duplicates(tmp_path: Path) -> None:
+    log_path = tmp_path / "deformetrica.log"
+    csv_path = tmp_path / "convergence.csv"
+    log_path.write_text(
+        "------------------------------------- Iteration: 6 "
+        "-------------------------------------\n"
+        ">> Log-likelihood = -8.181E+00 [ attachment = -8.128E+00 ; "
+        "regularity = -5.328E-02 ]\n"
+        "2026-07-24 15:00:00 - estimator - INFO - "
+        "------------------------------------- Iteration: 6 "
+        "-------------------------------------\n"
+        "2026-07-24 15:00:01 - estimator - INFO - "
+        ">> Log-likelihood = -8.181E+00 [ attachment = -8.128E+00 ; "
+        "regularity = -5.328E-02 ]\n"
+        "------------------------------------- Iteration: 7 "
+        "-------------------------------------\n"
+        ">> Log-likelihood = -6.831E+00 [ attachment = -6.770E+00 ; "
+        "regularity = -6.049E-02 ]\n",
+        encoding="utf-8",
+    )
+
+    assert parse_convergence(log_path, csv_path) == 2
+    assert csv_path.read_text(encoding="utf-8").splitlines() == [
+        "iteration,log_likelihood,attachment,regularity",
+        "6,-8.181,-8.128,-0.05328",
+        "7,-6.831,-6.77,-0.06049",
+    ]
+
+
+def test_reference_activity_interval_is_thirty_seconds() -> None:
+    assert REFERENCE_ACTIVITY_INTERVAL_SECONDS == 30.0
 
 
 def test_prepare_refuses_to_overwrite_existing_run(tmp_path: Path) -> None:
