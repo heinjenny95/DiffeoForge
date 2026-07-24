@@ -448,7 +448,7 @@ def _prepare_run(
             "manifest_version": RUN_MANIFEST_VERSION,
             "run_id": resolved_run_id,
             "created_at": utc_now(),
-            "project": dict(config["project"]),
+            "project": {"name": str(config["project"]["name"])},
             "source_config": {
                 "path": str(source_config),
                 "sha256": sha256_file(source_config_copy),

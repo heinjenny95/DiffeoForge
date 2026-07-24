@@ -161,6 +161,38 @@ def test_prepare_creates_verifiable_immutable_run(tmp_path: Path) -> None:
     assert run_status(run_directory)["status"] == "prepared"
 
 
+def test_prepare_preserves_parameter_provenance_in_effective_config(tmp_path: Path) -> None:
+    config_path = write_run_config(tmp_path)
+    config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    provenance = {
+        "profile": "advanced",
+        "scale_reference": "template_bounding_box_diagonal",
+        "ratios": {
+            "attachment_kernel_width": 0.1,
+            "deformation_kernel_width": 0.1,
+            "initial_control_point_spacing": 0.1,
+            "noise_std": 0.05,
+        },
+        "sources": {
+            "attachment_kernel_width": "template_diagonal_ratio",
+            "deformation_kernel_width": "template_diagonal_ratio",
+            "initial_control_point_spacing": "template_diagonal_ratio",
+            "noise_std": "template_diagonal_ratio",
+        },
+    }
+    config["project"]["parameter_provenance"] = provenance
+    config_path.write_text(
+        yaml.safe_dump(config, sort_keys=False),
+        encoding="utf-8",
+    )
+
+    run_directory = prepare_run(config_path, run_id="parameter-provenance")
+    manifest = verify_prepared_run(run_directory)
+
+    assert manifest["project"] == {"name": "immutable-test"}
+    assert manifest["effective_config"]["project"]["parameter_provenance"] == provenance
+
+
 def test_convergence_parser_preserves_backend_iteration_numbers(tmp_path: Path) -> None:
     log_path = tmp_path / "deformetrica.log"
     csv_path = tmp_path / "convergence.csv"
