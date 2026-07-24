@@ -499,6 +499,7 @@ def test_desktop_requires_exact_procrustes_preview_approval_and_rejects_drift(
 ) -> None:
     pytest.importorskip("PySide6")
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtCore import Qt
     from PySide6.QtWidgets import QApplication
 
     from diffeoforge.desktop.project_setup import DesktopEngine
@@ -546,8 +547,25 @@ def test_desktop_requires_exact_procrustes_preview_approval_and_rejects_drift(
     assert window._procrustes_preview is not None
     assert window._procrustes_preview.alignment.converged is True
     assert window.approve_procrustes_check.isEnabled() is True
-    assert "Final mean change" in window.procrustes_preview_status_label.text()
-    assert "fingerprint" in window.procrustes_preview_status_label.text()
+    preview_report = window.procrustes_preview_status_label
+    assert preview_report.isReadOnly() is True
+    assert (
+        preview_report.horizontalScrollBarPolicy()
+        == Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+    )
+    assert (
+        preview_report.verticalScrollBarPolicy()
+        == Qt.ScrollBarPolicy.ScrollBarAsNeeded
+    )
+    assert "Final mean change" in preview_report.text()
+    assert "fingerprint" in preview_report.text()
+    assert (
+        "does not establish biological landmark quality."
+        in preview_report.text()
+    )
+    preview_report.resize(360, preview_report.height())
+    application.processEvents()
+    assert preview_report.verticalScrollBar().maximum() > 0
     window.approve_procrustes_check.setChecked(True)
     application.processEvents()
 

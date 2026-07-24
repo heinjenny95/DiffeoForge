@@ -159,10 +159,22 @@ QPushButton#primary { background: #167c6b; border: 1px solid #167c6b; color: #ff
 QPushButton#primary:hover { background: #116858; }
 QPushButton#primary:disabled { background: #a9bdb9; border-color: #a9bdb9; }
 QPushButton#danger { background: #fff0ed; border: 1px solid #d98a7d; color: #8d3025; }
-QLabel#status { background: #f2f5f6; border-radius: 7px; color: #526b70; padding: 10px; }
-QLabel#statusSuccess { background: #e5f5ed; border-radius: 7px; color: #176345; padding: 10px; }
-QLabel#statusWarning { background: #fff7df; border-radius: 7px; color: #765500; padding: 10px; }
-QLabel#statusError { background: #fff0ed; border-radius: 7px; color: #a13a2d; padding: 10px; }
+QLabel#status, QPlainTextEdit#status {
+    background: #f2f5f6; border-radius: 7px; color: #526b70; padding: 10px;
+}
+QLabel#statusSuccess, QPlainTextEdit#statusSuccess {
+    background: #e5f5ed; border-radius: 7px; color: #176345; padding: 10px;
+}
+QLabel#statusWarning, QPlainTextEdit#statusWarning {
+    background: #fff7df; border-radius: 7px; color: #765500; padding: 10px;
+}
+QLabel#statusError, QPlainTextEdit#statusError {
+    background: #fff0ed; border-radius: 7px; color: #a13a2d; padding: 10px;
+}
+QPlainTextEdit#status, QPlainTextEdit#statusSuccess,
+QPlainTextEdit#statusWarning, QPlainTextEdit#statusError {
+    border: 0; font-family: "Segoe UI"; font-size: 13px;
+}
 QLabel#reviewValue { color: #123b3a; font-weight: 700; }
 QLabel#reviewDetail { color: #526b70; font-size: 12px; }
 QProgressBar { border: 1px solid #bdcbce; border-radius: 6px; text-align: center;
@@ -180,6 +192,31 @@ _PRIVATE_STATUS_EXPLANATIONS = {
     "indeterminate": "Permissions or file-system behavior prevent a safe decision.",
     "unsafe_link": "The matching path is a link and was not followed.",
 }
+
+
+class _ReadOnlyStatusText(QPlainTextEdit):
+    """Scrollable status report with the QLabel-compatible API used by the window."""
+
+    def __init__(self, text: str) -> None:
+        super().__init__(text)
+        self.setReadOnly(True)
+        self.setLineWrapMode(QPlainTextEdit.LineWrapMode.WidgetWidth)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.setMinimumHeight(150)
+        self.setMaximumHeight(190)
+        self.setAccessibleName("Alignment preview report")
+        self.setToolTip(
+            "Read-only GPA diagnostics. Scroll to review the complete report; "
+            "the text can also be selected and copied."
+        )
+
+    def setText(self, text: str) -> None:
+        self.setPlainText(text)
+        self.verticalScrollBar().setValue(0)
+
+    def text(self) -> str:
+        return self.toPlainText()
 
 
 class _WorkerSignals(QObject):
@@ -1952,8 +1989,11 @@ class DiffeoForgeWindow(QMainWindow):
         procrustes_advanced.addWidget(self.procrustes_iterations_spin)
         procrustes_advanced.addStretch()
         procrustes_hint = QLabel(
-            "Raw meshes remain unchanged. DiffeoForge creates immutable aligned copies and "
-            "records every transform. Reflection is off by default."
+            "This preview uses the homologous landmarks to estimate translation, "
+            "rotation, and optional centroid-size scaling for the complete cohort. "
+            "It writes nothing until you review and approve the report below. Raw "
+            "meshes remain unchanged; approved project creation writes immutable "
+            "aligned VTK copies and records every transform. Reflection is off by default."
         )
         procrustes_hint.setObjectName("hint")
         procrustes_hint.setWordWrap(True)
@@ -1966,11 +2006,10 @@ class DiffeoForgeWindow(QMainWindow):
         )
         self.preview_procrustes_button.setObjectName("secondary")
         self.preview_procrustes_button.clicked.connect(self._preview_procrustes)
-        self.procrustes_preview_status_label = QLabel(
+        self.procrustes_preview_status_label = _ReadOnlyStatusText(
             "No alignment preview has been reviewed."
         )
         self.procrustes_preview_status_label.setObjectName("status")
-        self.procrustes_preview_status_label.setWordWrap(True)
         self.approve_procrustes_check = QCheckBox(
             "I reviewed and approve this exact alignment preview"
         )
