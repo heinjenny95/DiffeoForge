@@ -40,12 +40,21 @@ therefore keeps three sources of information separate:
 9. Start the current stage once. DiffeoForge runs all pending candidates
    sequentially and retains already completed candidates if execution is
    continued later.
-10. Open each completed candidate and rotate through its final atlas and all
-    pilot-subject reconstructions. Mark only anatomically acceptable candidates
-    as visually approved.
-11. Select one eligible candidate. DiffeoForge records the explicit researcher
+10. Read the plain-language question, parameter value, and direction-of-change
+    explanation on each candidate card. Relative automatic observations such
+    as closest surface match, least atlas area change, lowest deformation cost,
+    and fastest pilot run describe trade-offs; none is an automatic winner.
+11. Open **Compare originals & reconstructions** for each candidate. Blue
+    wireframes show the exact bound original pilot meshes and orange surfaces
+    show their Deformetrica reconstructions in the same rotatable camera.
+    Original and reconstruction can be toggled independently.
+12. Open every pilot-specimen pair and inspect the anatomy relevant to the
+    study. Visual approval remains locked until every required pair has been
+    opened. Record a pass only when relevant features are preserved and there
+    is no implausible stretching, collapse, or warping.
+13. Select one eligible candidate. DiffeoForge records the explicit researcher
     decision and only then prepares the next stage with earlier values locked.
-12. After stage four, switch the main workflow to
+14. After stage four, switch the main workflow to
     `selected/atlas-calibrated.yaml` and review it before the required
     full-cohort confirmation run.
 
@@ -187,6 +196,12 @@ Automatic evidence currently includes:
 - explicit Deformetrica optimizer stop-signal classification and runtime;
 - neighboring-atlas RMS and relative objective/residual differences for the
   integration stage.
+
+The desktop keeps these exact technical measurements behind **Show technical
+measurements** so a new user first sees the experimental question and the
+observed trade-off. Progressive disclosure changes presentation only: the
+verified values and their interpretation limits remain available and
+selectable for methods reporting.
 
 ## Scientific and implementation boundary
 
