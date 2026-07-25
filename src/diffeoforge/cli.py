@@ -19,6 +19,8 @@ from diffeoforge.initialization import (
 )
 from diffeoforge.reference import compare_reference_run
 from diffeoforge.reference_approved_preparation import prepare_approved_reference_run
+from diffeoforge.reference_calibration import build_reference_calibration_plan
+from diffeoforge.reference_calibration_report import export_reference_calibration_plan
 from diffeoforge.reference_preparation_approval import (
     create_reference_preparation_approval,
     serialize_reference_preparation_approval_verification,
@@ -45,6 +47,7 @@ from diffeoforge.reference_preparation_verification import (
     verify_saved_reference_preparation_plan,
     write_reference_preparation_plan_verification,
 )
+from diffeoforge.reference_recommendation import recommend_reference_parameters
 from diffeoforge.report import (
     collect_preflight,
     default_preflight_report_path,
@@ -58,6 +61,7 @@ from diffeoforge.runs import (
     recover_run,
     run_status,
 )
+from diffeoforge.surface_io import is_supported_surface_path
 
 _AUTO_REPORT = Path("__diffeoforge_auto_report__")
 
@@ -599,6 +603,75 @@ def build_parser() -> argparse.ArgumentParser:
         "--source-run",
         type=Path,
         help="Also require an exact hash binding to this current Deformetrica run.",
+    )
+
+    reference_calibration_parser = subparsers.add_parser(
+        "reference-calibration-plan",
+        help=(
+            "Analyze an already GPA-aligned cohort and export a transparent, "
+            "non-executing Deformetrica pilot-calibration plan."
+        ),
+    )
+    reference_calibration_parser.add_argument(
+        "mesh_directory",
+        type=Path,
+        help="Folder containing the aligned template and subject meshes.",
+    )
+    reference_calibration_parser.add_argument(
+        "--template",
+        type=Path,
+        help=(
+            "Template mesh (default: the single supported file named template "
+            "inside the mesh folder)."
+        ),
+    )
+    reference_calibration_parser.add_argument(
+        "--subject-pattern",
+        default="*",
+        help="Glob selecting subjects before supported-format filtering (default: *).",
+    )
+    reference_calibration_parser.add_argument(
+        "--units",
+        required=True,
+        choices=SUPPORTED_UNITS,
+        help="Coordinate unit of the aligned mesh coordinates.",
+    )
+    reference_calibration_parser.add_argument(
+        "--surface-detail",
+        required=True,
+        choices=("fine", "balanced", "coarse"),
+        help="Researcher-declared surface-detail intent.",
+    )
+    reference_calibration_parser.add_argument(
+        "--deformation-scale",
+        required=True,
+        choices=("local", "balanced", "global"),
+        help="Researcher-declared biological deformation scale.",
+    )
+    reference_calibration_parser.add_argument(
+        "--smallest-relevant-feature",
+        type=float,
+        help=(
+            "Optional researcher-measured smallest feature to preserve, expressed "
+            "in --units."
+        ),
+    )
+    reference_calibration_parser.add_argument(
+        "--pilot-subjects",
+        type=int,
+        default=8,
+        help="Requested deterministic pilot-cohort size (default: 8; minimum: 2).",
+    )
+    reference_calibration_parser.add_argument(
+        "--output",
+        required=True,
+        type=Path,
+        help="Calibration-report output folder.",
+    )
+    reference_calibration_parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Explicitly replace an existing DiffeoForge calibration-plan export.",
     )
 
     validate_parser = subparsers.add_parser(
@@ -1912,6 +1985,75 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"       {error}", file=sys.stderr)
             return 2
         except (ConfigurationError, RuntimeError, ValueError, TypeError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
+
+    if args.command == "reference-calibration-plan":
+        try:
+            mesh_directory = args.mesh_directory.expanduser().resolve()
+            if not mesh_directory.is_dir():
+                raise ConfigurationError(
+                    f"Mesh directory does not exist: {mesh_directory}"
+                )
+            if args.template is None:
+                template = detect_template(mesh_directory)
+                if template is None:
+                    raise ConfigurationError(
+                        "No unambiguous supported file named template was found; "
+                        "pass --template explicitly"
+                    )
+            else:
+                template = args.template.expanduser()
+                if not template.is_absolute():
+                    template = mesh_directory / template
+                template = template.resolve()
+                if not template.is_file() or not is_supported_surface_path(template):
+                    raise ConfigurationError(
+                        f"Template is not a supported surface mesh: {template}"
+                    )
+            subjects = tuple(
+                path.resolve()
+                for path in sorted(
+                    mesh_directory.glob(args.subject_pattern),
+                    key=lambda candidate: candidate.name.casefold(),
+                )
+                if (
+                    path.is_file()
+                    and is_supported_surface_path(path)
+                    and path.resolve() != template
+                )
+            )
+            recommendation = recommend_reference_parameters(
+                (template, *subjects),
+                alignment_basis="declared_gpa",
+                surface_detail_intent=args.surface_detail,
+                deformation_scale_intent=args.deformation_scale,
+            )
+            plan = build_reference_calibration_plan(
+                recommendation,
+                coordinate_unit=args.units,
+                requested_pilot_subject_count=args.pilot_subjects,
+                smallest_relevant_feature=args.smallest_relevant_feature,
+            )
+            exported = export_reference_calibration_plan(
+                plan,
+                args.output,
+                recommendation=recommendation,
+                overwrite=args.force,
+            )
+            print(plan.summary_text())
+            print(f"Plan JSON: {exported.json_path}")
+            print(f"Methods report: {exported.html_path}")
+            print(f"Geometry evidence: {exported.recommendation_path}")
+            print(f"JSON SHA-256: {exported.json_sha256}")
+        except (
+            ConfigurationError,
+            FileExistsError,
+            OSError,
+            TypeError,
+            ValueError,
+        ) as error:
             print(f"ERROR: {error}", file=sys.stderr)
             return 2
         return 0

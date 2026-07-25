@@ -209,6 +209,48 @@ def _parameter_provenance_html(config: Mapping[str, Any]) -> str:
     pilot = _list_html(recommendation["pilot_validation_required"])
     warnings = _list_html(recommendation["warnings"])
     fingerprint = escape(str(recommendation["fingerprint"]))
+    calibration_plan = recommendation.get("calibration_plan")
+    if calibration_plan is None:
+        calibration_html = """
+    <h3>Dataset-specific calibration</h3>
+    <div class="notices"><ul><li>No staged calibration plan is bound to this
+      configuration. Representative neighboring-parameter pilots remain required.</li>
+    </ul></div>"""
+    else:
+        selected = _list_html(
+            [
+                f"{item['selection_order']}: {item['filename']} "
+                f"({str(item['selection_role']).replace('_', ' ')})"
+                for item in calibration_plan["selected_pilot_subjects"]
+            ]
+        )
+        stages = _list_html(
+            [
+                f"Stage {stage['order']}: {stage['title']} "
+                f"({len(stage['candidates'])} candidates)"
+                for stage in calibration_plan["stages"]
+            ]
+        )
+        feature = calibration_plan["smallest_relevant_feature"]
+        feature_text = (
+            "not measured"
+            if feature is None
+            else f"{float(feature):.8g} {calibration_plan['coordinate_unit']}"
+        )
+        calibration_html = f"""
+    <h3>Dataset-specific calibration plan</h3>
+    <p><strong>Status:</strong> planned — not executed<br>
+      <strong>Plan fingerprint:</strong>
+        <code>{escape(str(calibration_plan["fingerprint"]))}</code><br>
+      <strong>Pilot cohort:</strong> {calibration_plan["pilot_subject_count"]} of
+        {calibration_plan["subject_count"]} subjects<br>
+      <strong>Smallest relevant feature:</strong> {escape(feature_text)}</p>
+    <div class="cards">
+      <div class="card"><span>Representative specimens</span>{selected}</div>
+      <div class="card"><span>Sequential comparisons</span>{stages}</div>
+    </div>
+    <div class="notices"><ul><li>This plan is predeclared provenance, not evidence
+      that a pilot ran or that any parameter was approved.</li></ul></div>"""
     return f"""
   <section>
     <h2>Parameter provenance</h2>
@@ -234,6 +276,7 @@ def _parameter_provenance_html(config: Mapping[str, Any]) -> str:
     </table>
     <h3>Recommendation warnings</h3>
     <div class="notices">{warnings}</div>
+    {calibration_html}
   </section>"""
 
 

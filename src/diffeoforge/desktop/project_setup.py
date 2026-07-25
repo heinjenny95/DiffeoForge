@@ -187,6 +187,36 @@ def _normalize_request(request: ProjectSetupRequest) -> ProjectSetupRequest:
             raise ConfigurationError(
                 "Recommendation provenance parameter ratios do not match the request"
             )
+        calibration_plan = recommendation.get("calibration_plan")
+        if calibration_plan is not None:
+            if not isinstance(calibration_plan, dict):
+                raise ConfigurationError(
+                    "Calibration-plan provenance must be an object"
+                )
+            from diffeoforge.reference_calibration import (
+                verify_reference_calibration_plan_provenance,
+            )
+
+            verify_reference_calibration_plan_provenance(calibration_plan)
+            if calibration_plan.get("recommendation_fingerprint") != fingerprint:
+                raise ConfigurationError(
+                    "Calibration plan is not bound to the active recommendation"
+                )
+            if calibration_plan.get("status") != "planned_not_executed":
+                raise ConfigurationError(
+                    "Only an explicitly non-executed calibration plan can be stored "
+                    "with project setup"
+                )
+            if calibration_plan.get("template_sha256") != recommendation.get(
+                "template_sha256"
+            ):
+                raise ConfigurationError(
+                    "Calibration plan template does not match the recommendation"
+                )
+            if calibration_plan.get("coordinate_unit") != request.units:
+                raise ConfigurationError(
+                    "Calibration plan coordinate unit does not match the project"
+                )
     elif recommendation is not None:
         raise ConfigurationError(
             "Recommendation provenance is allowed only for the data-assisted profile"

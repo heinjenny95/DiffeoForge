@@ -246,6 +246,7 @@ def _reference_review(config_path: Path, config_sha256: str) -> ProjectReviewRes
     recommendation_warnings: tuple[str, ...] = ()
     if recommendation is not None:
         measurements = recommendation["measurements"]
+        calibration_plan = recommendation.get("calibration_plan")
         alignment_basis = str(recommendation["alignment_basis"])
         alignment_value = (
             "DiffeoForge GPA evidence"
@@ -290,14 +291,34 @@ def _reference_review(config_path: Path, config_sha256: str) -> ProjectReviewRes
             ),
             ReviewItem(
                 "Pilot calibration",
-                "required",
-                "Noise, registration residuals, visual correspondence, convergence, and "
-                "neighboring kernel widths still require a representative pilot.",
+                (
+                    "predeclared · not executed · "
+                    f"{calibration_plan['pilot_subject_count']} selected subjects · "
+                    f"fingerprint {str(calibration_plan['fingerprint'])[:12]}…"
+                    if calibration_plan is not None
+                    else "required"
+                ),
+                (
+                    "The bound plan records a deterministic pilot cohort, neighboring "
+                    "values, evidence requirements, and decision rules. It is not an "
+                    "execution result or parameter approval."
+                    if calibration_plan is not None
+                    else "Noise, registration residuals, visual correspondence, "
+                    "convergence, and neighboring kernel widths still require a "
+                    "representative pilot."
+                ),
             ),
         )
         recommendation_warnings = tuple(
             str(warning) for warning in recommendation["warnings"]
         )
+        if calibration_plan is not None:
+            recommendation_warnings = (
+                *recommendation_warnings,
+                "The stored calibration plan has status planned-not-executed; no "
+                "candidate has been validated or approved.",
+                *(str(item) for item in calibration_plan["limitations"]),
+            )
     report_path = default_preflight_report_path(config_path)
     write_preflight_report(preflight, report_path, overwrite=report_path.exists())
 

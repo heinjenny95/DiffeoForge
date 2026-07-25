@@ -133,18 +133,49 @@ A data-assisted `atlas.yaml` records:
 The record supports exact reconstruction of what DiffeoForge proposed and why.
 It does not turn the proposal into scientific validation.
 
-## Required next validation
+## Transparent pilot-calibration plan
 
-For a manuscript-scale workflow, DiffeoForge should next automate a small,
-predeclared calibration grid on representative specimens. That study should
-compare neighboring attachment/deformation widths and noise values using:
+After geometry analysis, the desktop can now create a versioned, hash-bound
+calibration plan. The researcher may first measure the smallest biologically
+relevant feature directly on the 3D template. DiffeoForge then:
+
+1. selects a deterministic geometry-descriptor medoid and farthest-first
+   extremes from the subjects;
+2. proposes neighboring attachment-width candidates, respecting the measured
+   mesh-sampling floor;
+3. proposes neighboring deformation-width/control-spacing candidates;
+4. proposes neighboring noise-weight candidates;
+5. proposes 10/20/30-time-point numerical-accuracy checks;
+6. records the evidence, rejection criteria, and decision rule required at
+   every stage.
+
+The pilot-subject heuristic covers geometric diversity only. It cannot infer
+biological strata that are absent from mesh coordinates. A manuscript study
+must therefore confirm representation of relevant groups and may replace or
+augment the selected pilot cohort with a predeclared stratified selection.
+
+The exported JSON, HTML, and SHA-256 sidecar explicitly say
+`planned_not_executed`. Creating the plan does not run Deformetrica, choose a
+winner, or approve parameters. Project creation embeds the full plan beneath
+the recommendation provenance, and recomputes the plan fingerprint before
+accepting it.
+
+See [Transparent Deformetrica parameter calibration](PARAMETER_CALIBRATION.md)
+for the complete staged protocol and command-line reproduction.
+
+## Evidence still required
+
+Only executed pilot evidence can convert a starting proposal into a
+dataset-specific parameter justification. The plan requires:
 
 - objective and component histories;
 - registration residual distributions;
 - visual and mesh-quality inspection;
 - deformation smoothness and plausibility;
 - runtime, memory, and control-point count;
-- stability of the atlas and PCA under neighboring settings.
+- stability of the atlas and PCA under neighboring settings;
+- a final full-resolution, full-cohort confirmation.
 
-Only that evidence can convert a starting proposal into a dataset-specific
-parameter justification.
+Automated candidate execution and result ingestion remain a separate
+implementation and validation step. Until that exists, the exported plan is a
+pre-registration aid rather than an automatic optimizer.

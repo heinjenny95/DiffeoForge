@@ -88,6 +88,60 @@ def test_package_module_can_be_imported_without_executing_cli(tmp_path: Path) ->
     assert result.stderr == ""
 
 
+def test_reference_calibration_plan_cli_exports_reproducible_methods_bundle(
+    capsys,
+    tmp_path: Path,
+) -> None:
+    meshes = Path(__file__).parents[1] / "examples" / "synthetic" / "meshes"
+    output = tmp_path / "calibration"
+
+    return_code = main(
+        [
+            "reference-calibration-plan",
+            str(meshes),
+            "--units",
+            "unitless",
+            "--surface-detail",
+            "fine",
+            "--deformation-scale",
+            "local",
+            "--pilot-subjects",
+            "4",
+            "--smallest-relevant-feature",
+            "0.1",
+            "--output",
+            str(output),
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert return_code == 0
+    assert "Status: planned, not executed" in captured.out
+    assert "Pilot cohort: 4" in captured.out
+    assert (output / "parameter-calibration-plan.json").is_file()
+    assert (output / "parameter-calibration-plan.html").is_file()
+    assert (output / "parameter-calibration-plan.sha256").is_file()
+    assert (output / "aligned-mesh-recommendation.json").is_file()
+
+    blocked_code = main(
+        [
+            "reference-calibration-plan",
+            str(meshes),
+            "--units",
+            "unitless",
+            "--surface-detail",
+            "fine",
+            "--deformation-scale",
+            "local",
+            "--output",
+            str(output),
+        ]
+    )
+    blocked = capsys.readouterr()
+    assert blocked_code == 2
+    assert "will not be overwritten" in blocked.err
+
+
 def test_doctor_json_uses_distinct_blocked_exit_code(capsys, monkeypatch, tmp_path: Path) -> None:
     report = DoctorReport(
         status="blocked",

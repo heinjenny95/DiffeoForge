@@ -39,6 +39,7 @@ from diffeoforge.desktop.completed_results import (
     CompletedResultRun,
     discover_completed_results,
 )
+from diffeoforge.desktop.feature_scale_dialog import FeatureScaleRulerDialog
 from diffeoforge.desktop.gpa_review_dialog import GpaAlignmentReviewDialog
 from diffeoforge.desktop.gpa_visualization import (
     GpaAlignmentVisual,
@@ -116,6 +117,14 @@ from diffeoforge.initialization import SUPPORTED_UNITS, detect_template
 from diffeoforge.preprocessing import (
     LandmarkAlignmentPreview,
     preview_landmark_alignment,
+)
+from diffeoforge.reference_calibration import (
+    ReferenceCalibrationPlan,
+    build_reference_calibration_plan,
+)
+from diffeoforge.reference_calibration_report import (
+    CalibrationPlanExport,
+    export_reference_calibration_plan,
 )
 from diffeoforge.reference_recommendation import (
     ReferenceParameterRecommendation,
@@ -756,6 +765,8 @@ class DiffeoForgeWindow(QMainWindow):
         self._procrustes_visual_reviewed_fingerprint: str | None = None
         self._reference_recommendation: ReferenceParameterRecommendation | None = None
         self._reference_recommendation_paths: tuple[Path, ...] | None = None
+        self._reference_calibration_plan: ReferenceCalibrationPlan | None = None
+        self._reference_calibration_export: CalibrationPlanExport | None = None
         self._template_preview_worker: _TemplatePreviewWorker | None = None
         self._template_preview_scroll_value: int | None = None
         self._reference_readiness: DesktopReferenceReadiness | None = None
@@ -2369,6 +2380,103 @@ class DiffeoForgeWindow(QMainWindow):
             Qt.TextInteractionFlag.TextSelectableByMouse
         )
         guidance_layout.addWidget(self.reference_guidance_status_label)
+
+        calibration_box = QFrame()
+        calibration_box.setObjectName("parameterEditor")
+        calibration_layout = QVBoxLayout(calibration_box)
+        calibration_layout.setContentsMargins(0, 10, 0, 0)
+        calibration_layout.setSpacing(8)
+        calibration_title = QLabel("Transparent pilot calibration")
+        calibration_title.setObjectName("sectionTitle")
+        calibration_layout.addWidget(calibration_title)
+        calibration_intro = QLabel(
+            "After aligned-mesh analysis, predeclare a deterministic representative "
+            "pilot cohort and sequential comparisons for surface detail, deformation "
+            "locality, fit-versus-regularity weight, and numerical time points. Building "
+            "the plan starts no Deformetrica process."
+        )
+        calibration_intro.setObjectName("hint")
+        calibration_intro.setWordWrap(True)
+        calibration_layout.addWidget(calibration_intro)
+        calibration_form = QFormLayout()
+        calibration_form.setContentsMargins(0, 0, 0, 0)
+        calibration_form.setHorizontalSpacing(18)
+        calibration_form.setVerticalSpacing(7)
+        self.reference_feature_scale_spin = QDoubleSpinBox()
+        self.reference_feature_scale_spin.setObjectName("referenceFeatureScaleSpin")
+        self.reference_feature_scale_spin.setDecimals(8)
+        self.reference_feature_scale_spin.setRange(0.0, 1_000_000_000.0)
+        self.reference_feature_scale_spin.setSpecialValueText("Not measured")
+        self.reference_feature_scale_spin.setToolTip(
+            "Optional researcher-measured smallest anatomical feature to preserve. "
+            "This is recorded as a scientific decision and constrained by the measured "
+            "mesh-sampling floor."
+        )
+        self.reference_feature_scale_spin.valueChanged.connect(
+            self._reference_calibration_inputs_changed
+        )
+        self.measure_reference_feature_button = QPushButton(
+            "Measure on 3D template…"
+        )
+        self.measure_reference_feature_button.setObjectName("secondary")
+        self.measure_reference_feature_button.clicked.connect(
+            self._measure_reference_feature
+        )
+        feature_row = QWidget()
+        feature_row_layout = QHBoxLayout(feature_row)
+        feature_row_layout.setContentsMargins(0, 0, 0, 0)
+        feature_row_layout.setSpacing(8)
+        feature_row_layout.addWidget(self.reference_feature_scale_spin, 1)
+        feature_row_layout.addWidget(self.measure_reference_feature_button)
+        calibration_form.addRow("Smallest relevant feature", feature_row)
+
+        self.reference_pilot_subject_count_spin = QSpinBox()
+        self.reference_pilot_subject_count_spin.setObjectName(
+            "referencePilotSubjectCountSpin"
+        )
+        self.reference_pilot_subject_count_spin.setRange(2, 20)
+        self.reference_pilot_subject_count_spin.setValue(8)
+        self.reference_pilot_subject_count_spin.setToolTip(
+            "Requested pilot size. DiffeoForge selects a geometry-descriptor medoid "
+            "plus deterministic farthest-first extremes and caps the request at the "
+            "available subject count."
+        )
+        self.reference_pilot_subject_count_spin.valueChanged.connect(
+            self._reference_calibration_inputs_changed
+        )
+        calibration_form.addRow(
+            "Representative pilot subjects",
+            self.reference_pilot_subject_count_spin,
+        )
+        calibration_layout.addLayout(calibration_form)
+
+        calibration_actions = QHBoxLayout()
+        self.build_reference_calibration_button = QPushButton(
+            "Build staged calibration plan"
+        )
+        self.build_reference_calibration_button.setObjectName("secondary")
+        self.build_reference_calibration_button.clicked.connect(
+            self._build_reference_calibration_plan
+        )
+        self.export_reference_calibration_button = QPushButton(
+            "Export plan & methods report…"
+        )
+        self.export_reference_calibration_button.setObjectName("secondary")
+        self.export_reference_calibration_button.clicked.connect(
+            self._export_reference_calibration_plan
+        )
+        calibration_actions.addWidget(self.build_reference_calibration_button)
+        calibration_actions.addWidget(self.export_reference_calibration_button)
+        calibration_actions.addStretch()
+        calibration_layout.addLayout(calibration_actions)
+        self.reference_calibration_status = _ReadOnlyStatusText(
+            "Analyze the aligned meshes before building a calibration plan."
+        )
+        self.reference_calibration_status.setAccessibleName(
+            "Parameter calibration plan summary"
+        )
+        calibration_layout.addWidget(self.reference_calibration_status)
+        guidance_layout.addWidget(calibration_box)
         form.addRow("Parameter guidance", self.reference_guidance_box)
         form.addRow("Deformetrica parameters", self.reference_parameter_box)
 
@@ -2636,6 +2744,10 @@ class DiffeoForgeWindow(QMainWindow):
         *,
         sync: bool = True,
     ) -> None:
+        self._invalidate_reference_calibration_plan(
+            "Aligned-mesh inputs changed; rebuild the calibration plan after analysis.",
+            sync=False,
+        )
         had_recommendation = self._reference_recommendation is not None
         self._reference_recommendation = None
         self._reference_recommendation_paths = None
@@ -2672,6 +2784,50 @@ class DiffeoForgeWindow(QMainWindow):
     def _reference_recommendation_inputs_changed(self) -> None:
         self._invalidate_reference_recommendation()
 
+    def _current_reference_feature_scale(self) -> float | None:
+        value = self.reference_feature_scale_spin.value()
+        return None if value <= 0 else float(value)
+
+    def _reference_calibration_plan_matches_current_inputs(self) -> bool:
+        plan = self._reference_calibration_plan
+        recommendation = self._reference_recommendation
+        if plan is None or recommendation is None:
+            return False
+        return bool(
+            plan.recommendation_fingerprint == recommendation.fingerprint
+            and plan.coordinate_unit == str(self.units_combo.currentData() or "unitless")
+            and plan.requested_pilot_subject_count
+            == self.reference_pilot_subject_count_spin.value()
+            and plan.smallest_relevant_feature == self._current_reference_feature_scale()
+        )
+
+    def _invalidate_reference_calibration_plan(
+        self,
+        message: str = "Calibration inputs changed; rebuild the staged pilot plan.",
+        *,
+        sync: bool = True,
+    ) -> None:
+        had_plan = self._reference_calibration_plan is not None
+        self._reference_calibration_plan = None
+        self._reference_calibration_export = None
+        if had_plan:
+            self.reference_calibration_status.setObjectName("statusWarning")
+            self.reference_calibration_status.setStyleSheet("")
+            self.reference_calibration_status.setText(message)
+        elif self._reference_recommendation is None:
+            self.reference_calibration_status.setObjectName("status")
+            self.reference_calibration_status.setStyleSheet("")
+            self.reference_calibration_status.setText(
+                "Analyze the aligned meshes before building a calibration plan."
+            )
+        self._update_reference_guidance_controls()
+        if sync:
+            self._sync_ready_state()
+
+    @Slot()
+    def _reference_calibration_inputs_changed(self) -> None:
+        self._invalidate_reference_calibration_plan()
+
     def _update_reference_guidance_controls(self) -> None:
         reference = self.engine_combo.currentData() == DesktopEngine.DEFORMETRICA_REFERENCE
         uses_diffeoforge_gpa = bool(
@@ -2694,6 +2850,156 @@ class DiffeoForgeWindow(QMainWindow):
             self.analyze_reference_parameters_button.setText(
                 "Analyze aligned meshes & suggest parameters"
             )
+        recommendation_ready = bool(
+            reference
+            and self._reference_recommendation is not None
+            and self._reference_recommendation_matches_current_inputs()
+            and self._worker is None
+        )
+        self.measure_reference_feature_button.setEnabled(recommendation_ready)
+        self.reference_feature_scale_spin.setEnabled(recommendation_ready)
+        self.reference_pilot_subject_count_spin.setEnabled(recommendation_ready)
+        self.build_reference_calibration_button.setEnabled(recommendation_ready)
+        self.export_reference_calibration_button.setEnabled(
+            recommendation_ready
+            and self._reference_calibration_plan_matches_current_inputs()
+        )
+
+    @Slot()
+    def _measure_reference_feature(self) -> None:
+        if (
+            self._reference_recommendation is None
+            or self._reference_recommendation_paths is None
+            or not self._reference_recommendation_matches_current_inputs()
+        ):
+            self._invalidate_reference_calibration_plan(
+                "Analyze the current aligned meshes before measuring a feature."
+            )
+            return
+        try:
+            model = load_mesh_preview(self._reference_recommendation_paths[0])
+        except (MeshPreviewError, OSError, RuntimeError, TypeError, ValueError) as error:
+            self.reference_calibration_status.setObjectName("statusError")
+            self.reference_calibration_status.setStyleSheet("")
+            self.reference_calibration_status.setText(
+                f"The 3D feature ruler could not load the template: {error}"
+            )
+            return
+        dialog = FeatureScaleRulerDialog(
+            model,
+            coordinate_unit=str(self.units_combo.currentData() or "unitless"),
+            parent=self,
+        )
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        distance = dialog.measured_distance
+        if distance is not None:
+            self.reference_feature_scale_spin.setValue(distance)
+
+    @Slot()
+    def _build_reference_calibration_plan(self) -> None:
+        recommendation = self._reference_recommendation
+        if (
+            recommendation is None
+            or not self._reference_recommendation_matches_current_inputs()
+        ):
+            self._invalidate_reference_calibration_plan(
+                "Analyze the current aligned meshes before building a calibration plan."
+            )
+            return
+        try:
+            plan = build_reference_calibration_plan(
+                recommendation,
+                coordinate_unit=str(self.units_combo.currentData() or "unitless"),
+                requested_pilot_subject_count=(
+                    self.reference_pilot_subject_count_spin.value()
+                ),
+                smallest_relevant_feature=self._current_reference_feature_scale(),
+            )
+        except (OSError, RuntimeError, TypeError, ValueError) as error:
+            self._reference_calibration_plan = None
+            self._reference_calibration_export = None
+            self.reference_calibration_status.setObjectName("statusError")
+            self.reference_calibration_status.setStyleSheet("")
+            self.reference_calibration_status.setText(
+                f"Calibration plan could not be built: {error}"
+            )
+            self._update_reference_guidance_controls()
+            return
+        self._reference_calibration_plan = plan
+        self._reference_calibration_export = None
+        self.reference_calibration_status.setObjectName("statusSuccess")
+        self.reference_calibration_status.setStyleSheet("")
+        self.reference_calibration_status.setText(plan.summary_text())
+        self._update_reference_guidance_controls()
+        self._sync_ready_state()
+
+    @Slot()
+    def _export_reference_calibration_plan(self) -> None:
+        plan = self._reference_calibration_plan
+        if plan is None or not self._reference_calibration_plan_matches_current_inputs():
+            self._invalidate_reference_calibration_plan()
+            return
+        project_text = self.project_edit.text().strip()
+        initial_directory = (
+            Path(project_text).expanduser() if project_text else Path.cwd()
+        )
+        selected = QFileDialog.getExistingDirectory(
+            self,
+            "Select calibration-report folder",
+            str(initial_directory),
+        )
+        if not selected:
+            return
+        destination = Path(selected).expanduser().resolve()
+        targets = (
+            destination / "parameter-calibration-plan.json",
+            destination / "parameter-calibration-plan.html",
+            destination / "parameter-calibration-plan.sha256",
+            destination / "aligned-mesh-recommendation.json",
+        )
+        overwrite = False
+        if any(path.exists() for path in targets):
+            answer = QMessageBox.question(
+                self,
+                "Replace calibration-plan export?",
+                "One or more calibration-plan files already exist in this folder. "
+                "Replace the complete JSON, HTML, and SHA-256 bundle?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                self.reference_calibration_status.setObjectName("statusWarning")
+                self.reference_calibration_status.setStyleSheet("")
+                self.reference_calibration_status.setText(
+                    "Calibration-plan export cancelled; existing files are unchanged."
+                )
+                return
+            overwrite = True
+        try:
+            result = export_reference_calibration_plan(
+                plan,
+                destination,
+                recommendation=self._reference_recommendation,
+                overwrite=overwrite,
+            )
+        except (OSError, RuntimeError, TypeError, ValueError) as error:
+            self.reference_calibration_status.setObjectName("statusError")
+            self.reference_calibration_status.setStyleSheet("")
+            self.reference_calibration_status.setText(
+                f"Calibration-plan export failed: {error}"
+            )
+            return
+        self._reference_calibration_export = result
+        self.reference_calibration_status.setObjectName("statusSuccess")
+        self.reference_calibration_status.setStyleSheet("")
+        self.reference_calibration_status.setText(
+            f"{plan.summary_text()}\n"
+            "Exported JSON, HTML, SHA-256 sidecar, and full aligned-mesh "
+            f"evidence to: {result.directory}\n"
+            f"JSON SHA-256: {result.json_sha256}"
+        )
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(result.html_path)))
 
     @Slot()
     def _analyze_reference_parameters(self) -> None:
@@ -2718,6 +3024,8 @@ class DiffeoForgeWindow(QMainWindow):
         self._worker = worker
         self._reference_recommendation = None
         self._reference_recommendation_paths = None
+        self._reference_calibration_plan = None
+        self._reference_calibration_export = None
         self.reference_guidance_status_label.setObjectName("status")
         self.reference_guidance_status_label.setStyleSheet("")
         self.reference_guidance_status_label.setText(
@@ -2782,6 +3090,18 @@ class DiffeoForgeWindow(QMainWindow):
             else self.units_combo.currentText()
         )
         warning_lines = "\n".join(f"• {warning}" for warning in recommendation.warnings)
+        _coordinate_description, feature_suffix = self._reference_coordinate_labels()
+        self.reference_feature_scale_spin.setSuffix(feature_suffix)
+        self.reference_feature_scale_spin.setSingleStep(
+            max(recommendation.template_diagonal / 1000.0, 0.00000001)
+        )
+        self.reference_calibration_status.setObjectName("status")
+        self.reference_calibration_status.setStyleSheet("")
+        self.reference_calibration_status.setText(
+            "Aligned-mesh evidence is ready. Optionally measure the smallest relevant "
+            "feature on the 3D template, choose a pilot size, and build the staged "
+            "calibration plan. No Deformetrica process starts at this step."
+        )
         self.reference_guidance_status_label.setObjectName("statusSuccess")
         self.reference_guidance_status_label.setStyleSheet("")
         self.reference_guidance_status_label.setText(
@@ -2815,6 +3135,8 @@ class DiffeoForgeWindow(QMainWindow):
         self._worker = None
         self._reference_recommendation = None
         self._reference_recommendation_paths = None
+        self._reference_calibration_plan = None
+        self._reference_calibration_export = None
         self.reference_guidance_status_label.setObjectName("statusError")
         self.reference_guidance_status_label.setStyleSheet("")
         self.reference_guidance_status_label.setText(
@@ -4076,6 +4398,19 @@ class DiffeoForgeWindow(QMainWindow):
                 ),
                 "noise_std": self.reference_noise_ratio_spin.value(),
             }
+        recommendation_provenance: dict[str, object] | None = None
+        if (
+            data_assisted_recommendation_is_current
+            and self._reference_recommendation is not None
+        ):
+            recommendation_provenance = dict(
+                self._reference_recommendation.provenance
+            )
+            if self._reference_calibration_plan_matches_current_inputs():
+                assert self._reference_calibration_plan is not None
+                recommendation_provenance["calibration_plan"] = (
+                    self._reference_calibration_plan.provenance
+                )
         return ProjectSetupRequest(
             mesh_directory=Path(self.mesh_edit.text().strip()),
             project_directory=Path(self.project_edit.text().strip()),
@@ -4091,12 +4426,7 @@ class DiffeoForgeWindow(QMainWindow):
             max_cycles=int(self.optimization_effort_combo.currentData()),
             reference_parameter_profile=reference_profile,
             reference_parameter_ratios=reference_ratios,
-            reference_parameter_recommendation=(
-                self._reference_recommendation.provenance
-                if data_assisted_recommendation_is_current
-                and self._reference_recommendation is not None
-                else None
-            ),
+            reference_parameter_recommendation=recommendation_provenance,
             reference_max_iterations=self.reference_max_iterations_spin.value(),
             reference_initial_step_size=self.reference_step_size_spin.value(),
             reference_convergence_tolerance=self.reference_tolerance_spin.value(),

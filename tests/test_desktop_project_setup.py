@@ -4,6 +4,7 @@ import csv
 import importlib.util
 import json
 import shutil
+from copy import deepcopy
 from pathlib import Path
 
 import pytest
@@ -19,6 +20,7 @@ from diffeoforge.desktop.project_setup import (
 )
 from diffeoforge.mesh import read_vtk_polydata, sha256_file
 from diffeoforge.preprocessing import preview_landmark_alignment
+from diffeoforge.reference_calibration import build_reference_calibration_plan
 from diffeoforge.reference_recommendation import recommend_reference_parameters
 from diffeoforge.reference_runtime import ReferenceGpuProbe
 
@@ -240,6 +242,44 @@ def test_reference_project_setup_persists_data_assisted_provenance(
     assert provenance["profile"] == "data_assisted"
     assert provenance["ratios"] == recommendation.parameter_ratios
     assert provenance["recommendation"] == recommendation.provenance
+
+
+def test_reference_project_setup_rejects_tampered_calibration_plan(
+    tmp_path: Path,
+) -> None:
+    cohort = (
+        MESH_DIRECTORY / "template.vtk",
+        *sorted(MESH_DIRECTORY.glob("subject-*.vtk")),
+    )
+    recommendation = recommend_reference_parameters(
+        cohort,
+        alignment_basis="declared_gpa",
+        surface_detail_intent="fine",
+        deformation_scale_intent="local",
+    )
+    plan = build_reference_calibration_plan(
+        recommendation,
+        coordinate_unit="unitless",
+        requested_pilot_subject_count=4,
+    )
+    provenance = deepcopy(recommendation.provenance)
+    provenance["calibration_plan"] = deepcopy(plan.provenance)
+    provenance["calibration_plan"]["stages"][0]["candidates"][0][
+        "parameter_values"
+    ]["attachment_kernel_width"] *= 2
+
+    with pytest.raises(ConfigurationError, match="fingerprint"):
+        create_project(
+            ProjectSetupRequest(
+                mesh_directory=MESH_DIRECTORY,
+                project_directory=tmp_path / "tampered-calibration",
+                units="unitless",
+                engine=DesktopEngine.DEFORMETRICA_REFERENCE,
+                reference_parameter_profile="data_assisted",
+                reference_parameter_ratios=recommendation.parameter_ratios,
+                reference_parameter_recommendation=provenance,
+            )
+        )
 
 
 def test_project_setup_handles_spaces_and_non_ascii_paths(tmp_path: Path) -> None:

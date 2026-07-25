@@ -164,6 +164,12 @@ This repository currently provides:
   locality, and records the recommendation fingerprint, automatic inferences,
   user decisions, and pilot-validation requirements in YAML; advanced manual
   and expert controls remain available;
+- a hash-bound transparent pilot-calibration planner with direct 3D
+  anatomical-feature measurement, deterministic geometry-diverse subject
+  selection, sequential attachment/deformation/noise/integration candidates,
+  explicit evidence and rejection rules, tamper detection, and a
+  publication-oriented JSON/HTML/SHA-256 export; the plan is labelled
+  non-executed and never presented as automatic scientific approval;
 - a self-contained HTML input-validation and parameter-scale report;
 - a self-contained HTML convergence, lifecycle, and result report;
 - terminal interruption capture, explicit unclean-stop recovery, and
@@ -530,6 +536,8 @@ and workflow for another mesh directory.
 - [Centered Gaussian matrix evaluation](docs/CENTERED_GAUSSIAN_MATRIX.md)
 - [Bounded-memory blockwise Gaussian primitives](docs/BLOCKWISE_GAUSSIAN.md)
 - [Landmark-based Procrustes alignment](docs/PROCRUSTES_ALIGNMENT.md)
+- [Data-assisted Deformetrica parameter guidance](docs/DATA_ASSISTED_PARAMETERS.md)
+- [Transparent Deformetrica parameter calibration](docs/PARAMETER_CALIBRATION.md)
 - [PCA of atlas-derived subject features](docs/ATLAS_PCA.md)
 - [Verified PCA of Deformetrica momenta](docs/REFERENCE_PCA.md)
 - [Desktop executable and installer architecture](docs/DESKTOP_DISTRIBUTION.md)

@@ -205,6 +205,262 @@
                   "type": "array",
                   "minItems": 1,
                   "items": {"type": "string", "minLength": 1}
+                },
+                "calibration_plan": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "version",
+                    "fingerprint",
+                    "status",
+                    "recommendation_fingerprint",
+                    "template_filename",
+                    "template_sha256",
+                    "coordinate_unit",
+                    "subject_count",
+                    "requested_pilot_subject_count",
+                    "pilot_subject_count",
+                    "selected_pilot_subjects",
+                    "smallest_relevant_feature",
+                    "attachment_center_source",
+                    "baseline_parameter_ratios",
+                    "baseline_effective_values",
+                    "stages",
+                    "final_confirmation_required",
+                    "limitations"
+                  ],
+                  "properties": {
+                    "version": {"const": "0.1"},
+                    "fingerprint": {
+                      "type": "string",
+                      "pattern": "^[0-9a-f]{64}$"
+                    },
+                    "status": {"const": "planned_not_executed"},
+                    "recommendation_fingerprint": {
+                      "type": "string",
+                      "pattern": "^[0-9a-f]{64}$"
+                    },
+                    "template_filename": {"type": "string", "minLength": 1},
+                    "template_sha256": {
+                      "type": "string",
+                      "pattern": "^[0-9a-f]{64}$"
+                    },
+                    "coordinate_unit": {
+                      "enum": [
+                        "unitless",
+                        "micrometer",
+                        "millimeter",
+                        "centimeter",
+                        "meter"
+                      ]
+                    },
+                    "subject_count": {"type": "integer", "minimum": 2},
+                    "requested_pilot_subject_count": {
+                      "type": "integer",
+                      "minimum": 2,
+                      "maximum": 20
+                    },
+                    "pilot_subject_count": {"type": "integer", "minimum": 2},
+                    "selected_pilot_subjects": {
+                      "type": "array",
+                      "minItems": 2,
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "filename",
+                          "sha256",
+                          "source_subject_index",
+                          "selection_order",
+                          "selection_role",
+                          "descriptor_distance"
+                        ],
+                        "properties": {
+                          "filename": {"type": "string", "minLength": 1},
+                          "sha256": {
+                            "type": "string",
+                            "pattern": "^[0-9a-f]{64}$"
+                          },
+                          "source_subject_index": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "selection_order": {
+                            "type": "integer",
+                            "minimum": 1
+                          },
+                          "selection_role": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "descriptor_distance": {
+                            "type": "number",
+                            "minimum": 0
+                          }
+                        }
+                      }
+                    },
+                    "smallest_relevant_feature": {
+                      "type": ["number", "null"],
+                      "exclusiveMinimum": 0
+                    },
+                    "attachment_center_source": {
+                      "enum": [
+                        "declared_surface_detail_intent",
+                        "researcher_measured_feature_with_mesh_sampling_floor"
+                      ]
+                    },
+                    "baseline_parameter_ratios": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "attachment_kernel_width",
+                        "deformation_kernel_width",
+                        "initial_control_point_spacing",
+                        "noise_std"
+                      ],
+                      "properties": {
+                        "attachment_kernel_width": {
+                          "type": "number",
+                          "exclusiveMinimum": 0
+                        },
+                        "deformation_kernel_width": {
+                          "type": "number",
+                          "exclusiveMinimum": 0
+                        },
+                        "initial_control_point_spacing": {
+                          "type": "number",
+                          "exclusiveMinimum": 0
+                        },
+                        "noise_std": {
+                          "type": "number",
+                          "exclusiveMinimum": 0
+                        }
+                      }
+                    },
+                    "baseline_effective_values": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "attachment_kernel_width",
+                        "deformation_kernel_width",
+                        "initial_control_point_spacing",
+                        "noise_std"
+                      ],
+                      "properties": {
+                        "attachment_kernel_width": {
+                          "type": "number",
+                          "exclusiveMinimum": 0
+                        },
+                        "deformation_kernel_width": {
+                          "type": "number",
+                          "exclusiveMinimum": 0
+                        },
+                        "initial_control_point_spacing": {
+                          "type": "number",
+                          "exclusiveMinimum": 0
+                        },
+                        "noise_std": {
+                          "type": "number",
+                          "exclusiveMinimum": 0
+                        }
+                      }
+                    },
+                    "stages": {
+                      "type": "array",
+                      "minItems": 4,
+                      "maxItems": 4,
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "stage_id",
+                          "order",
+                          "kind",
+                          "title",
+                          "candidates",
+                          "locked_from_previous_stages",
+                          "evidence_required",
+                          "reject_when",
+                          "decision_rule"
+                        ],
+                        "properties": {
+                          "stage_id": {"type": "string", "minLength": 1},
+                          "order": {"type": "integer", "minimum": 1},
+                          "kind": {
+                            "enum": [
+                              "attachment_width",
+                              "deformation_width",
+                              "noise_weight",
+                              "integration_accuracy"
+                            ]
+                          },
+                          "title": {"type": "string", "minLength": 1},
+                          "candidates": {
+                            "type": "array",
+                            "minItems": 2,
+                            "items": {
+                              "type": "object",
+                              "additionalProperties": false,
+                              "required": [
+                                "candidate_id",
+                                "label",
+                                "parameter_values",
+                                "rationale"
+                              ],
+                              "properties": {
+                                "candidate_id": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "label": {"type": "string", "minLength": 1},
+                                "parameter_values": {
+                                  "type": "object",
+                                  "minProperties": 1,
+                                  "additionalProperties": {
+                                    "type": "number",
+                                    "exclusiveMinimum": 0
+                                  }
+                                },
+                                "rationale": {
+                                  "type": "string",
+                                  "minLength": 1
+                                }
+                              }
+                            }
+                          },
+                          "locked_from_previous_stages": {
+                            "type": "array",
+                            "items": {"type": "string", "minLength": 1}
+                          },
+                          "evidence_required": {
+                            "type": "array",
+                            "minItems": 1,
+                            "items": {"type": "string", "minLength": 1}
+                          },
+                          "reject_when": {
+                            "type": "array",
+                            "minItems": 1,
+                            "items": {"type": "string", "minLength": 1}
+                          },
+                          "decision_rule": {
+                            "type": "string",
+                            "minLength": 1
+                          }
+                        }
+                      }
+                    },
+                    "final_confirmation_required": {
+                      "type": "array",
+                      "minItems": 1,
+                      "items": {"type": "string", "minLength": 1}
+                    },
+                    "limitations": {
+                      "type": "array",
+                      "minItems": 1,
+                      "items": {"type": "string", "minLength": 1}
+                    }
+                  }
                 }
               }
             }
