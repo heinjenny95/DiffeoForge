@@ -243,10 +243,14 @@ def _write_pca_score_view(
         x = _map(float(x_value), x_low, x_high, _LEFT, _PLOT_WIDTH)
         y = _TOP + _PLOT_HEIGHT - _map(float(y_value), y_low, y_high, 0.0, _PLOT_HEIGHT)
         escaped_label = html.escape(label, quote=True)
+        x_component = f"PC{x_index + 1}"
+        y_component = "" if y_index is None else f"PC{y_index + 1}"
         body.extend(
             [
                 f'  <circle cx="{_number(x)}" cy="{_number(y)}" r="4.5" '
-                f'class="point" data-subject-label="{escaped_label}">',
+                f'class="point" data-subject-label="{escaped_label}" '
+                f'data-x-axis="{x_component}" data-x-score="{_number(float(x_value))}" '
+                f'data-y-axis="{y_component}" data-y-score="{_number(float(y_value))}">',
                 f"    <title>{html.escape(label)}</title>",
                 "  </circle>",
             ]

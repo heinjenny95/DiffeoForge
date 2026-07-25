@@ -1621,7 +1621,8 @@ class DiffeoForgeWindow(QMainWindow):
         pca_plots_title.setObjectName("sectionTitle")
         pca_plots_hint = QLabel(
             "All views are loaded directly from independently verified, script-free SVG "
-            "artifacts. Axis labels report explained variance; PCA signs remain conventional."
+            "artifacts. Hover over a score point to see its specimen name and PC values. "
+            "Axis labels report explained variance; PCA signs remain conventional."
         )
         pca_plots_hint.setObjectName("hint")
         pca_plots_hint.setWordWrap(True)
@@ -5526,7 +5527,8 @@ class DiffeoForgeWindow(QMainWindow):
         self.result_pc1_pc2_plot_status.setObjectName("statusSuccess")
         self.result_pc1_pc2_plot_status.setStyleSheet("")
         self.result_pc1_pc2_plot_status.setText(
-            "Verified PC1-versus-PC2 scores from the bound result bundle."
+            "Verified PC1-versus-PC2 scores from the bound result bundle. "
+            "Hover over a point to identify the specimen."
         )
 
         try:
@@ -5549,7 +5551,8 @@ class DiffeoForgeWindow(QMainWindow):
         self.result_pc2_pc3_plot_status.setObjectName("statusSuccess")
         self.result_pc2_pc3_plot_status.setStyleSheet("")
         self.result_pc2_pc3_plot_status.setText(
-            "Verified PC2-versus-PC3 scores from the same score matrix and subject order."
+            "Verified PC2-versus-PC3 scores from the same score matrix and subject order. "
+            "Hover over a point to identify the specimen."
         )
 
     @Slot(str)

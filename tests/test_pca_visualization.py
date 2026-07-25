@@ -107,6 +107,16 @@ def test_declared_pc2_pc3_plot_has_exact_axes_subject_order_and_variance_labels(
         "four",
         "five",
     ]
+    for circle, expected_label in zip(
+        root.findall(f".//{SVG}circle"),
+        ("one", "two", "three", "four", "five"),
+        strict=True,
+    ):
+        assert circle.attrib["data-subject-label"] == expected_label
+        assert circle.attrib["data-x-axis"] == "PC2"
+        assert circle.attrib["data-y-axis"] == "PC3"
+        assert np.isfinite(float(circle.attrib["data-x-score"]))
+        assert np.isfinite(float(circle.attrib["data-y-score"]))
 
 
 def test_score_plot_tick_labels_are_compact_for_embedded_desktop_rendering(
