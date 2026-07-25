@@ -7,7 +7,7 @@ import uuid
 from dataclasses import replace
 from pathlib import Path
 
-from PySide6.QtCore import QObject, QRunnable, Qt, QThreadPool, QUrl, Signal, Slot
+from PySide6.QtCore import QEvent, QObject, QRunnable, Qt, QThreadPool, QTimer, QUrl, Signal, Slot
 from PySide6.QtGui import QCloseEvent, QDesktopServices
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -117,7 +117,6 @@ from diffeoforge.preprocessing import (
     LandmarkAlignmentPreview,
     preview_landmark_alignment,
 )
-from diffeoforge.reference_parameters import reference_parameter_profile
 from diffeoforge.reference_recommendation import (
     ReferenceParameterRecommendation,
     recommend_reference_parameters,
@@ -690,6 +689,38 @@ def _path_row(edit: QLineEdit, button: QPushButton) -> QWidget:
     return row
 
 
+class _FormControlWheelGuard(QObject):
+    """Route wheel input over value controls to their containing page."""
+
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:
+        if event.type() != QEvent.Type.Wheel:
+            return super().eventFilter(watched, event)
+        if isinstance(watched, QComboBox) and watched.view().isVisible():
+            return super().eventFilter(watched, event)
+
+        ancestor = watched.parent()
+        while ancestor is not None and not isinstance(ancestor, QScrollArea):
+            ancestor = ancestor.parent()
+        if not isinstance(ancestor, QScrollArea):
+            return super().eventFilter(watched, event)
+
+        pixel_delta = event.pixelDelta().y()
+        if pixel_delta:
+            distance = pixel_delta
+        else:
+            angle_delta = event.angleDelta().y()
+            distance = round(
+                (angle_delta / 120.0)
+                * max(ancestor.verticalScrollBar().singleStep(), 20)
+                * 3
+            )
+        if distance:
+            bar = ancestor.verticalScrollBar()
+            bar.setValue(bar.value() - distance)
+        event.accept()
+        return True
+
+
 class DiffeoForgeWindow(QMainWindow):
     """Project creation window backed by the Qt-independent setup service."""
 
@@ -725,6 +756,8 @@ class DiffeoForgeWindow(QMainWindow):
         self._procrustes_visual_reviewed_fingerprint: str | None = None
         self._reference_recommendation: ReferenceParameterRecommendation | None = None
         self._reference_recommendation_paths: tuple[Path, ...] | None = None
+        self._template_preview_worker: _TemplatePreviewWorker | None = None
+        self._template_preview_scroll_value: int | None = None
         self._reference_readiness: DesktopReferenceReadiness | None = None
         self._reference_preparation_status: DesktopReferencePreparationStatus | None = None
         self._saved_reference_preparation_status_verification: (
@@ -741,6 +774,10 @@ class DiffeoForgeWindow(QMainWindow):
         self.reference_parameter_help_panels: dict[str, _ExpandableParameterHelp] = {}
         self._reference_parameter_field_pairs: list[tuple[QWidget, QWidget]] = []
         self._build_ui()
+        self._form_control_wheel_guard = _FormControlWheelGuard(self)
+        for control_type in (QComboBox, QSpinBox, QDoubleSpinBox):
+            for control in self.findChildren(control_type):
+                control.installEventFilter(self._form_control_wheel_guard)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setFocus(Qt.FocusReason.OtherFocusReason)
         self._update_engine_explanation()
@@ -813,6 +850,7 @@ class DiffeoForgeWindow(QMainWindow):
 
     def _build_setup_content(self) -> QWidget:
         scroll = QScrollArea()
+        self.setup_scroll = scroll
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
@@ -988,6 +1026,7 @@ class DiffeoForgeWindow(QMainWindow):
 
     def _build_review_content(self) -> QWidget:
         scroll = QScrollArea()
+        self.review_scroll = scroll
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
@@ -1875,25 +1914,18 @@ class DiffeoForgeWindow(QMainWindow):
         self.reference_parameter_form = QFormLayout()
         self.reference_parameter_form.setHorizontalSpacing(18)
         self.reference_parameter_form.setVerticalSpacing(7)
-        self.reference_attachment_ratio_spin = self._ratio_spin_box(
-            "Attachment width as a fraction of the template bounding-box diagonal."
+        self.reference_attachment_ratio_spin = self._length_spin_box(
+            "Absolute attachment-kernel width in the current mesh coordinate system."
         )
-        self.reference_deformation_ratio_spin = self._ratio_spin_box(
-            "Deformation width as a fraction of the template bounding-box diagonal."
+        self.reference_deformation_ratio_spin = self._length_spin_box(
+            "Absolute deformation-kernel width in the current mesh coordinate system."
         )
-        self.reference_control_spacing_ratio_spin = self._ratio_spin_box(
-            "Initial control-point spacing as a fraction of the template diagonal."
+        self.reference_control_spacing_ratio_spin = self._length_spin_box(
+            "Absolute initial control-point spacing in the current mesh coordinate system."
         )
-        self.reference_noise_ratio_spin = self._ratio_spin_box(
-            "Noise standard deviation as a fraction of the template diagonal."
+        self.reference_noise_ratio_spin = self._length_spin_box(
+            "Absolute noise standard deviation in the current mesh coordinate system."
         )
-        for spin in (
-            self.reference_attachment_ratio_spin,
-            self.reference_deformation_ratio_spin,
-            self.reference_control_spacing_ratio_spin,
-            self.reference_noise_ratio_spin,
-        ):
-            spin.setSuffix(" x template diagonal")
         self.reference_max_iterations_spin = QSpinBox()
         self.reference_max_iterations_spin.setRange(1, 100000)
         self.reference_max_iterations_spin.setSingleStep(10)
@@ -1907,21 +1939,21 @@ class DiffeoForgeWindow(QMainWindow):
         self.reference_tolerance_spin.setSingleStep(0.0001)
         for label, widget, key in (
             (
-                "Attachment kernel width (KW) / template diagonal",
+                "Attachment kernel width (surface-matching detail)",
                 self.reference_attachment_ratio_spin,
                 "attachment_ratio",
             ),
             (
-                "Deformation kernel width (KW) / template diagonal",
+                "Deformation kernel width (deformation smoothness)",
                 self.reference_deformation_ratio_spin,
                 "deformation_ratio",
             ),
             (
-                "Control spacing / diagonal",
+                "Initial control-point spacing",
                 self.reference_control_spacing_ratio_spin,
                 "control_spacing_ratio",
             ),
-            ("Noise SD / diagonal", self.reference_noise_ratio_spin, "noise_ratio"),
+            ("Noise standard deviation", self.reference_noise_ratio_spin, "noise_ratio"),
             (
                 "Maximum iterations",
                 self.reference_max_iterations_spin,
@@ -2607,7 +2639,10 @@ class DiffeoForgeWindow(QMainWindow):
         had_recommendation = self._reference_recommendation is not None
         self._reference_recommendation = None
         self._reference_recommendation_paths = None
-        if self.reference_parameter_profile_combo.currentData() == "data_assisted":
+        if self.reference_parameter_profile_combo.currentData() in {
+            "data_assisted",
+            "advanced",
+        }:
             self.reference_parameter_profile_combo.blockSignals(True)
             self.reference_parameter_profile_combo.setCurrentIndex(
                 self.reference_parameter_profile_combo.findData("pending")
@@ -2615,8 +2650,8 @@ class DiffeoForgeWindow(QMainWindow):
             self.reference_parameter_profile_combo.blockSignals(False)
             self._set_reference_parameter_fields_visible(False)
             self.reference_parameter_hint.setText(
-                "No parameter values are active. Analyze the aligned meshes again or "
-                "choose Advanced manual control."
+                "No parameter values are active. Analyze the aligned meshes again before "
+                "reviewing or editing absolute kernel widths."
             )
         if had_recommendation:
             self.reference_guidance_status_label.setObjectName("statusWarning")
@@ -2757,15 +2792,17 @@ class DiffeoForgeWindow(QMainWindow):
             f"{recommendation.median_edge_to_diagonal_ratio:.4g}; "
             f"centroid dispersion / diagonal: "
             f"{recommendation.normalized_centroid_dispersion:.4g}.\n"
-            f"Suggested attachment: {recommendation.attachment_kernel_width_ratio:.5g} × "
-            f"template diagonal = {effective['attachment_kernel_width']:.6g}; "
-            f"deformation: {recommendation.deformation_kernel_width_ratio:.5g} × "
-            f"diagonal = {effective['deformation_kernel_width']:.6g}; "
-            f"control spacing: {recommendation.control_point_spacing_ratio:.5g} × "
-            f"diagonal = {effective['initial_control_point_spacing']:.6g} "
-            f"({coordinate_label}).\n"
-            f"Provisional noise SD: {recommendation.provisional_noise_std_ratio:.5g} × "
-            f"diagonal = {effective['noise_std']:.6g}; this is not inferable from "
+            f"Suggested absolute attachment KW: "
+            f"{effective['attachment_kernel_width']:.6g}; deformation KW: "
+            f"{effective['deformation_kernel_width']:.6g}; control spacing: "
+            f"{effective['initial_control_point_spacing']:.6g} "
+            f"({coordinate_label}). The corresponding proportions of the template "
+            f"diagonal are {recommendation.attachment_kernel_width_ratio:.3%}, "
+            f"{recommendation.deformation_kernel_width_ratio:.3%}, and "
+            f"{recommendation.control_point_spacing_ratio:.3%}.\n"
+            f"Provisional absolute noise SD: {effective['noise_std']:.6g} "
+            f"({recommendation.provisional_noise_std_ratio:.3%} of the diagonal); "
+            "this is not inferable from "
             "geometry and must be calibrated in pilot registrations.\n"
             f"Recommendation fingerprint: {recommendation.fingerprint}\n"
             f"{warning_lines}"
@@ -3462,11 +3499,12 @@ class DiffeoForgeWindow(QMainWindow):
             self.pattern_edit.setText(f"*{template.suffix.casefold()}")
 
     @staticmethod
-    def _ratio_spin_box(tooltip: str) -> QDoubleSpinBox:
+    def _length_spin_box(tooltip: str) -> QDoubleSpinBox:
         spin = QDoubleSpinBox()
-        spin.setDecimals(5)
-        spin.setRange(0.00001, 2.0)
+        spin.setDecimals(8)
+        spin.setRange(0.00000001, 1_000_000_000.0)
         spin.setSingleStep(0.01)
+        spin.setSuffix(" coordinate units")
         spin.setToolTip(tooltip)
         return spin
 
@@ -3527,26 +3565,59 @@ class DiffeoForgeWindow(QMainWindow):
                 label.setVisible(visible)
         self.reference_effective_widths_label.setVisible(visible)
 
+    def _reference_coordinate_labels(self) -> tuple[str, str]:
+        recommendation = self._reference_recommendation
+        if (
+            recommendation is not None
+            and recommendation.alignment_basis == "diffeoforge_gpa"
+            and self._procrustes_preview is not None
+            and self._procrustes_preview.scale_to_unit_centroid_size
+        ):
+            return "normalized unit-centroid-size coordinates", " normalized units"
+        unit = str(self.units_combo.currentData() or "unitless")
+        labels = {
+            "unitless": ("mesh coordinate units", " coordinate units"),
+            "micrometer": ("micrometers", " micrometers"),
+            "millimeter": ("millimeters", " mm"),
+            "centimeter": ("centimeters", " cm"),
+            "meter": ("meters", " m"),
+        }
+        return labels.get(unit, ("mesh coordinate units", " coordinate units"))
+
     @Slot()
     def _update_reference_effective_widths(self) -> None:
         recommendation = self._reference_recommendation
         if recommendation is None:
             self.reference_effective_widths_label.setText(
                 "There is no single KW: attachment KW controls matching detail; "
-                "deformation KW controls deformation smoothness. Effective absolute "
-                "values will appear here after the aligned meshes are analyzed."
+                "deformation KW controls deformation smoothness. Analyze the aligned "
+                "meshes before choosing absolute values."
             )
             return
         diagonal = recommendation.template_diagonal
-        attachment = self.reference_attachment_ratio_spin.value() * diagonal
-        deformation = self.reference_deformation_ratio_spin.value() * diagonal
-        control_spacing = self.reference_control_spacing_ratio_spin.value() * diagonal
-        noise = self.reference_noise_ratio_spin.value() * diagonal
+        coordinate_label, suffix = self._reference_coordinate_labels()
+        length_spins = (
+            self.reference_attachment_ratio_spin,
+            self.reference_deformation_ratio_spin,
+            self.reference_control_spacing_ratio_spin,
+            self.reference_noise_ratio_spin,
+        )
+        for spin in length_spins:
+            spin.setSuffix(suffix)
+            spin.setSingleStep(max(diagonal / 1000.0, 0.00000001))
+        attachment = self.reference_attachment_ratio_spin.value()
+        deformation = self.reference_deformation_ratio_spin.value()
+        control_spacing = self.reference_control_spacing_ratio_spin.value()
+        noise = self.reference_noise_ratio_spin.value()
         self.reference_effective_widths_label.setText(
-            f"Two distinct KWs at template diagonal {diagonal:.6g}: "
-            f"attachment KW (matching detail) {attachment:.6g} | "
-            f"deformation KW (smoothness) {deformation:.6g} | "
-            f"control-point spacing {control_spacing:.6g} | noise SD {noise:.6g}"
+            f"Absolute values in {coordinate_label}; template diagonal {diagonal:.6g}. "
+            f"Attachment KW {attachment:.6g} "
+            f"({100.0 * attachment / diagonal:.3g}% of diagonal) | "
+            f"deformation KW {deformation:.6g} "
+            f"({100.0 * deformation / diagonal:.3g}%) | "
+            f"control-point spacing {control_spacing:.6g} "
+            f"({100.0 * control_spacing / diagonal:.3g}%) | "
+            f"noise SD {noise:.6g} ({100.0 * noise / diagonal:.3g}%)"
         )
 
     @Slot()
@@ -3573,22 +3644,23 @@ class DiffeoForgeWindow(QMainWindow):
                 self._update_reference_effective_widths()
                 self._sync_ready_state()
                 return
+            effective = recommendation.effective_values
             values = (
                 (
                     self.reference_attachment_ratio_spin,
-                    recommendation.attachment_kernel_width_ratio,
+                    effective["attachment_kernel_width"],
                 ),
                 (
                     self.reference_deformation_ratio_spin,
-                    recommendation.deformation_kernel_width_ratio,
+                    effective["deformation_kernel_width"],
                 ),
                 (
                     self.reference_control_spacing_ratio_spin,
-                    recommendation.control_point_spacing_ratio,
+                    effective["initial_control_point_spacing"],
                 ),
                 (
                     self.reference_noise_ratio_spin,
-                    recommendation.provisional_noise_std_ratio,
+                    effective["noise_std"],
                 ),
                 (self.reference_max_iterations_spin, recommendation.max_iterations),
                 (self.reference_step_size_spin, recommendation.initial_step_size),
@@ -3610,30 +3682,24 @@ class DiffeoForgeWindow(QMainWindow):
             self._sync_ready_state()
             return
 
-        profile = reference_parameter_profile("recommended")
-        if self._reference_recommendation is None:
-            values = (
-                (self.reference_attachment_ratio_spin, profile.attachment_ratio),
-                (self.reference_deformation_ratio_spin, profile.deformation_ratio),
-                (
-                    self.reference_control_spacing_ratio_spin,
-                    profile.control_point_spacing_ratio,
-                ),
-                (self.reference_noise_ratio_spin, profile.noise_ratio),
-                (self.reference_max_iterations_spin, profile.max_iterations),
-                (self.reference_step_size_spin, profile.initial_step_size),
-                (self.reference_tolerance_spin, profile.convergence_tolerance),
+        if recommendation is None:
+            self._set_reference_parameter_fields_visible(False)
+            self.reference_parameter_hint.setText(
+                "Analyze the aligned meshes first. DiffeoForge needs their measured "
+                "coordinate scale before manual kernel widths can be entered in intuitive "
+                "absolute units."
             )
-            for widget, value in values:
-                widget.setValue(value)
+            self._update_reference_effective_widths()
+            self._sync_ready_state()
+            return
         self._set_reference_parameter_fields_visible(True)
         for widget in self._reference_parameter_widgets():
             widget.setEnabled(True)
         if key == "advanced":
             self.reference_parameter_hint.setText(
-                "Advanced values are editable. Length parameters are dimensionless fractions "
-                "of the template bounding-box diagonal; DiffeoForge converts them to the "
-                "declared coordinate unit and records both ratios and effective values."
+                "Advanced values are editable in the mesh coordinate system. DiffeoForge "
+                "also records each value as a percentage of the measured template diagonal "
+                "for reproducibility."
             )
         self._update_reference_effective_widths()
         self._sync_ready_state()
@@ -3782,7 +3848,8 @@ class DiffeoForgeWindow(QMainWindow):
                 and (
                     self.reference_parameter_profile_combo.currentData() == "pending"
                     or (
-                        self.reference_parameter_profile_combo.currentData() == "data_assisted"
+                        self.reference_parameter_profile_combo.currentData()
+                        in {"data_assisted", "advanced"}
                         and not self._reference_recommendation_matches_current_inputs()
                     )
                 )
@@ -3799,7 +3866,7 @@ class DiffeoForgeWindow(QMainWindow):
                 alignment_action
                 if approval_required
                 else (
-                    "Analyze aligned meshes or choose manual parameters"
+                    "Analyze aligned meshes before setting parameters"
                     if parameter_guidance_required
                     else "Validate data & create project"
                 )
@@ -3851,9 +3918,8 @@ class DiffeoForgeWindow(QMainWindow):
         reference_profile = self.reference_parameter_profile_combo.currentData()
         reference_parameters_ready = bool(
             self.engine_combo.currentData() != DesktopEngine.DEFORMETRICA_REFERENCE
-            or reference_profile == "advanced"
             or (
-                reference_profile == "data_assisted"
+                reference_profile in {"data_assisted", "advanced"}
                 and self._reference_recommendation_matches_current_inputs()
             )
         )
@@ -3971,20 +4037,38 @@ class DiffeoForgeWindow(QMainWindow):
             and self.pairwise_combo.currentData() == "blockwise_256"
         )
         reference_profile = str(self.reference_parameter_profile_combo.currentData())
-        recommendation_is_current = bool(
-            reference_profile == "data_assisted"
+        recommendation_inputs_are_current = bool(
+            reference_profile in {"data_assisted", "advanced"}
             and self._reference_recommendation is not None
             and self._reference_recommendation_matches_current_inputs()
+        )
+        data_assisted_recommendation_is_current = bool(
+            reference_profile == "data_assisted" and recommendation_inputs_are_current
         )
         if (
             self.engine_combo.currentData() == DesktopEngine.MODERN_CPU
             and reference_profile == "pending"
         ):
             reference_profile = "recommended"
-        reference_ratios = (
-            self._reference_recommendation.parameter_ratios
-            if recommendation_is_current and self._reference_recommendation is not None
-            else {
+        if recommendation_inputs_are_current and self._reference_recommendation is not None:
+            if reference_profile == "data_assisted":
+                reference_ratios = self._reference_recommendation.parameter_ratios
+            else:
+                diagonal = self._reference_recommendation.template_diagonal
+                reference_ratios = {
+                    "attachment_kernel_width": (
+                        self.reference_attachment_ratio_spin.value() / diagonal
+                    ),
+                    "deformation_kernel_width": (
+                        self.reference_deformation_ratio_spin.value() / diagonal
+                    ),
+                    "initial_control_point_spacing": (
+                        self.reference_control_spacing_ratio_spin.value() / diagonal
+                    ),
+                    "noise_std": self.reference_noise_ratio_spin.value() / diagonal,
+                }
+        else:
+            reference_ratios = {
                 "attachment_kernel_width": self.reference_attachment_ratio_spin.value(),
                 "deformation_kernel_width": self.reference_deformation_ratio_spin.value(),
                 "initial_control_point_spacing": (
@@ -3992,7 +4076,6 @@ class DiffeoForgeWindow(QMainWindow):
                 ),
                 "noise_std": self.reference_noise_ratio_spin.value(),
             }
-        )
         return ProjectSetupRequest(
             mesh_directory=Path(self.mesh_edit.text().strip()),
             project_directory=Path(self.project_edit.text().strip()),
@@ -4010,7 +4093,8 @@ class DiffeoForgeWindow(QMainWindow):
             reference_parameter_ratios=reference_ratios,
             reference_parameter_recommendation=(
                 self._reference_recommendation.provenance
-                if recommendation_is_current and self._reference_recommendation is not None
+                if data_assisted_recommendation_is_current
+                and self._reference_recommendation is not None
                 else None
             ),
             reference_max_iterations=self.reference_max_iterations_spin.value(),
@@ -4275,13 +4359,17 @@ class DiffeoForgeWindow(QMainWindow):
             self._result is None
             or self._review is None
             or self._result.config_path.resolve() != self._review.config_path.resolve()
-            or self._worker is not None
+            or self._template_preview_worker is not None
         ):
             return
         worker = _TemplatePreviewWorker(self._result.template_path.resolve())
         worker.signals.succeeded.connect(self._template_preview_succeeded)
         worker.signals.failed.connect(self._template_preview_failed)
-        self._worker = worker
+        self._template_preview_worker = worker
+        self._template_preview_scroll_value = (
+            self.review_scroll.verticalScrollBar().value()
+        )
+        self.refresh_template_preview_button.clearFocus()
         self._template_preview = None
         self.template_preview_canvas.set_model(None)
         self.template_preview_plane_combo.setEnabled(False)
@@ -4300,7 +4388,7 @@ class DiffeoForgeWindow(QMainWindow):
 
     @Slot(object)
     def _template_preview_succeeded(self, model: MeshPreviewModel) -> None:
-        self._worker = None
+        self._template_preview_worker = None
         if self._result is None or model.path.resolve() != self._result.template_path.resolve():
             self._template_preview_failed(
                 "The loaded preview model does not belong to the current template"
@@ -4310,6 +4398,7 @@ class DiffeoForgeWindow(QMainWindow):
         self.template_preview_plane_combo.setEnabled(True)
         self.refresh_template_preview_button.setEnabled(True)
         self._update_template_preview_plane(self.template_preview_plane_combo.currentIndex())
+        self._restore_template_preview_scroll()
         self._sync_ready_state()
 
     @Slot(int)
@@ -4356,7 +4445,7 @@ class DiffeoForgeWindow(QMainWindow):
 
     @Slot(str)
     def _template_preview_failed(self, message: str) -> None:
-        self._worker = None
+        self._template_preview_worker = None
         self._template_preview = None
         self.template_preview_canvas.set_model(None)
         self.template_preview_plane_combo.setEnabled(False)
@@ -4369,7 +4458,18 @@ class DiffeoForgeWindow(QMainWindow):
         self.template_preview_detail_label.setText(
             "No preview released; the template file was not modified."
         )
+        self._restore_template_preview_scroll()
         self._sync_ready_state()
+
+    def _restore_template_preview_scroll(self) -> None:
+        value = self._template_preview_scroll_value
+        self._template_preview_scroll_value = None
+        if value is None:
+            return
+        QTimer.singleShot(
+            0,
+            lambda saved=value: self.review_scroll.verticalScrollBar().setValue(saved),
+        )
 
     @Slot()
     def _check_reference_readiness(self) -> None:

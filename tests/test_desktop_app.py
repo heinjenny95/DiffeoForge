@@ -400,14 +400,12 @@ def test_desktop_window_exposes_required_project_controls(monkeypatch) -> None:
     attachment_label = window.reference_parameter_form.labelForField(attachment_field)
     assert attachment_label is not None
     assert "Attachment kernel width" in attachment_label.text()
-    assert "template diagonal" in window.reference_attachment_ratio_spin.suffix()
-    window.reference_attachment_ratio_spin.setValue(0.035)
+    assert "coordinate units" in window.reference_attachment_ratio_spin.suffix()
+    assert window.reference_attachment_ratio_spin.isHidden() is True
+    assert "Analyze the aligned meshes first" in window.reference_parameter_hint.text()
     window.reference_max_iterations_spin.setValue(345)
     advanced_request = window._request()
     assert advanced_request.reference_parameter_profile == "advanced"
-    assert advanced_request.reference_parameter_ratios["attachment_kernel_width"] == pytest.approx(
-        0.035
-    )
     assert advanced_request.reference_max_iterations == 345
     assert window.reference_expert_box.isHidden() is True
     window.reference_expert_toggle.setChecked(True)
@@ -430,6 +428,54 @@ def test_desktop_window_exposes_required_project_controls(monkeypatch) -> None:
     assert expert_request.reference_threads == 8
     assert expert_request.reference_random_seed == 123
     assert window._request().pairwise_mode == "dense"
+    window.close()
+    application.processEvents()
+
+
+def test_desktop_wheel_over_value_controls_scrolls_page_without_changing_values(
+    monkeypatch,
+) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtCore import QCoreApplication, QPoint, QPointF, Qt
+    from PySide6.QtGui import QWheelEvent
+    from PySide6.QtWidgets import QApplication
+
+    from diffeoforge.desktop.widgets import DiffeoForgeWindow
+
+    application = QApplication.instance() or QApplication(["diffeoforge-wheel-guard-test"])
+    window = DiffeoForgeWindow()
+    window.show()
+    window.resize(900, 650)
+    application.processEvents()
+    bar = window.setup_scroll.verticalScrollBar()
+    assert bar.maximum() > 0
+
+    def wheel_down(control) -> None:
+        event = QWheelEvent(
+            QPointF(5.0, 5.0),
+            QPointF(5.0, 5.0),
+            QPoint(0, 0),
+            QPoint(0, -120),
+            Qt.MouseButton.NoButton,
+            Qt.KeyboardModifier.NoModifier,
+            Qt.ScrollPhase.ScrollUpdate,
+            False,
+        )
+        QCoreApplication.sendEvent(control, event)
+        application.processEvents()
+
+    original_engine = window.engine_combo.currentIndex()
+    bar.setValue(0)
+    wheel_down(window.engine_combo)
+    assert window.engine_combo.currentIndex() == original_engine
+    assert bar.value() > 0
+
+    original_count = window.landmark_count_spin.value()
+    bar.setValue(0)
+    wheel_down(window.landmark_count_spin)
+    assert window.landmark_count_spin.value() == original_count
+    assert bar.value() > 0
     window.close()
     application.processEvents()
 
@@ -594,7 +640,7 @@ def test_desktop_requires_exact_procrustes_preview_approval_and_rejects_drift(
     approved = window._request().approved_procrustes_fingerprint
     assert approved == window._procrustes_preview.fingerprint
     assert window.create_button.isEnabled() is False
-    assert window.create_button.text() == "Analyze aligned meshes or choose manual parameters"
+    assert window.create_button.text() == "Analyze aligned meshes before setting parameters"
     assert window.analyze_reference_parameters_button.isEnabled() is True
     window.analyze_reference_parameters_button.click()
     assert len(queued) == 3
@@ -606,12 +652,18 @@ def test_desktop_requires_exact_procrustes_preview_approval_and_rejects_drift(
     assert window.reference_parameter_profile_combo.currentData() == "data_assisted"
     assert "Analyzed 6 aligned meshes" in window.reference_guidance_status_label.text()
     assert "not inferable from geometry" in window.reference_guidance_status_label.text()
-    assert "attachment KW (matching detail)" in (window.reference_effective_widths_label.text())
+    assert "Attachment KW" in window.reference_effective_widths_label.text()
+    assert "normalized unit-centroid-size coordinates" in (
+        window.reference_effective_widths_label.text()
+    )
     original_effective_text = window.reference_effective_widths_label.text()
     window.reference_parameter_profile_combo.setCurrentIndex(
         window.reference_parameter_profile_combo.findData("advanced")
     )
     window.reference_attachment_ratio_spin.setValue(0.075)
+    assert window._request().reference_parameter_ratios[
+        "attachment_kernel_width"
+    ] == pytest.approx(0.075 / window._reference_recommendation.template_diagonal)
     assert window.reference_effective_widths_label.text() != original_effective_text
     assert window.create_button.isEnabled() is True
     assert window.create_button.text() == "Validate data & create project"
@@ -696,6 +748,14 @@ def test_desktop_analyzes_user_declared_gpa_meshes_before_project_creation(
     assert recommendation.alignment_basis == "declared_gpa"
     assert recommendation.surface_detail_intent == "fine"
     assert recommendation.deformation_scale_intent == "local"
+    assert window.reference_attachment_ratio_spin.value() == pytest.approx(
+        recommendation.effective_values["attachment_kernel_width"]
+    )
+    assert "coordinate units" in window.reference_attachment_ratio_spin.suffix()
+    assert "Absolute values" in window.reference_effective_widths_label.text()
+    assert window._request().reference_parameter_ratios == pytest.approx(
+        recommendation.parameter_ratios
+    )
     assert window._request().reference_parameter_recommendation == (recommendation.provenance)
     assert window.create_button.isEnabled() is True
     assert "cannot prove homologous alignment" in (window.reference_guidance_status_label.text())
@@ -1446,14 +1506,26 @@ def test_desktop_loads_native_template_preview_without_modifying_source(
 
     assert window.template_preview_card.isHidden() is False
     assert window.template_preview_plane_combo.isEnabled() is False
+    window.show()
+    window.resize(900, 650)
+    application.processEvents()
+    scroll_bar = window.review_scroll.verticalScrollBar()
+    assert scroll_bar.maximum() > 0
+    scroll_bar.setValue(min(120, scroll_bar.maximum()))
+    original_scroll = scroll_bar.value()
+    shared_background_worker = object()
+    window._worker = shared_background_worker  # type: ignore[assignment]
     window.refresh_template_preview_button.click()
     assert len(queued) == 1
     assert isinstance(queued[0], _TemplatePreviewWorker)
+    assert window._worker is shared_background_worker
     assert window.refresh_template_preview_button.isEnabled() is False
     queued[0].run()
     application.processEvents()
 
     assert template.read_bytes() == before
+    assert window._worker is shared_background_worker
+    assert scroll_bar.value() == original_scroll
     assert window.template_preview_plane_combo.isEnabled() is True
     assert "XY wireframe" in window.template_preview_status_label.text()
     assert "4 points · 4 triangles · 6 unique edges" in (
@@ -1465,6 +1537,7 @@ def test_desktop_loads_native_template_preview_without_modifying_source(
     application.processEvents()
     assert "XZ wireframe" in window.template_preview_status_label.text()
     assert window.show_run_button.isEnabled() is True
+    window._worker = None
     window.close()
     application.processEvents()
 

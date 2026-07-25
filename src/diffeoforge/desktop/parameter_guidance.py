@@ -44,8 +44,9 @@ DEFORMETRICA_PARAMETER_GUIDANCE: dict[str, ParameterGuidance] = {
             ),
             (
                 "Advanced manual control",
-                "Makes the values editable. If an analysis exists, its values remain the "
-                "starting point; otherwise DiffeoForge loads an exploratory profile.",
+                "Makes the measured recommendations editable in absolute mesh coordinate "
+                "units. An aligned-mesh analysis is required first so those units are "
+                "unambiguous.",
             ),
             (
                 "Example",
@@ -104,9 +105,10 @@ DEFORMETRICA_PARAMETER_GUIDANCE: dict[str, ParameterGuidance] = {
     ),
     "attachment_ratio": ParameterGuidance(
         summary=(
-            "The attachment-kernel width divided by the template bounding-box diagonal. "
-            "For current or varifold matching, it sets the spatial resolution at which "
-            "surface discrepancies are compared."
+            "The attachment-kernel width in your mesh coordinate units. For current or "
+            "varifold matching, it sets the spatial resolution at which surface "
+            "discrepancies are compared. DiffeoForge records its percentage of the "
+            "template diagonal as secondary reproducibility evidence."
         ),
         sections=(
             (
@@ -122,15 +124,16 @@ DEFORMETRICA_PARAMETER_GUIDANCE: dict[str, ParameterGuidance] = {
             ),
             (
                 "Example",
-                "For a diagonal of 100 units, 0.05 means a width of 5 units; 0.02 targets "
-                "features around 2 units. Smaller is not automatically more accurate.",
+                "For a template diagonal of 100 units, entering 5 targets a scale of "
+                "5 units (5% of the diagonal). Smaller is not automatically more accurate.",
             ),
         ),
     ),
     "deformation_ratio": ParameterGuidance(
         summary=(
-            "The Gaussian deformation-kernel width divided by the template diagonal. It "
-            "sets the spatial correlation length and smoothness of the velocity field."
+            "The Gaussian deformation-kernel width in your mesh coordinate units. It sets "
+            "the spatial correlation length and smoothness of the velocity field. Its "
+            "percentage of the template diagonal is recorded automatically."
         ),
         sections=(
             (
@@ -145,15 +148,15 @@ DEFORMETRICA_PARAMETER_GUIDANCE: dict[str, ParameterGuidance] = {
             ),
             (
                 "Example",
-                "For a diagonal of 100, ratios 0.20, 0.10, and 0.05 correspond to widths "
-                "20, 10, and 5—from broad to increasingly local deformation.",
+                "For a diagonal of 100, widths 20, 10, and 5 produce broad to increasingly "
+                "local deformation.",
             ),
         ),
     ),
     "control_spacing_ratio": ParameterGuidance(
         summary=(
-            "The initial spacing of the control-point grid divided by the template "
-            "diagonal. Control points parameterize the deformation."
+            "The initial spacing of the control-point grid in your mesh coordinate units. "
+            "Control points parameterize the deformation."
         ),
         sections=(
             (
@@ -175,9 +178,9 @@ DEFORMETRICA_PARAMETER_GUIDANCE: dict[str, ParameterGuidance] = {
     ),
     "noise_ratio": ParameterGuidance(
         summary=(
-            "The deterministic-atlas noise standard deviation divided by the template "
-            "diagonal. It weights attachment relative to deformation regularization; it "
-            "is not simply scanner or measurement noise."
+            "The deterministic-atlas noise standard deviation in your mesh coordinate "
+            "units. It weights attachment relative to deformation regularization; it is "
+            "not simply scanner or measurement noise."
         ),
         sections=(
             (
