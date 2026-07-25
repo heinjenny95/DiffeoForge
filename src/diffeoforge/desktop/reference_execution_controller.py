@@ -288,9 +288,22 @@ class ReferenceExecutionController:
                     exit_code=process.poll(),
                     stderr="",
                 )
-            process.stdin.write(json.dumps(self.request.as_dict(), sort_keys=True) + "\n")
-            process.stdin.flush()
             with self._lock:
+                # If cancellation was requested before the worker became writable,
+                # publish request and command in one pipe write.  The worker's
+                # unbuffered line reader can then retain the command behind the
+                # request line before its command thread starts.  Two separately
+                # flushed writes leave a race in which fast preflight/preparation
+                # can outrun an already queued cancellation.
+                initial_payload = json.dumps(self.request.as_dict(), sort_keys=True) + "\n"
+                if self._cancel_pending:
+                    command = DesktopReferenceWorkerCommand(self.request.request_id)
+                    initial_payload += json.dumps(command.as_dict(), sort_keys=True) + "\n"
+                    self._cancel_pending = False
+                    self._cancel_sent = True
+                    self._state = "cancelling"
+                process.stdin.write(initial_payload)
+                process.stdin.flush()
                 self._request_written = True
                 if self._cancel_pending:
                     self._cancel_pending = False

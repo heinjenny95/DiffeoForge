@@ -287,6 +287,50 @@ def test_reference_execution_cancel_can_be_queued_before_run(tmp_path: Path) -> 
     assert not request.destination.exists()
 
 
+def test_reference_execution_prequeued_cancel_is_in_initial_pipe_write(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    request = _request(tmp_path)
+    writes: list[str] = []
+    real_popen = subprocess.Popen
+
+    class ObservedInput:
+        def __init__(self, stream):
+            self._stream = stream
+
+        @property
+        def closed(self):
+            return self._stream.closed
+
+        def write(self, value):
+            writes.append(value)
+            return self._stream.write(value)
+
+        def flush(self):
+            return self._stream.flush()
+
+        def close(self):
+            return self._stream.close()
+
+    def observed_popen(*args, **kwargs):
+        process = real_popen(*args, **kwargs)
+        process.stdin = ObservedInput(process.stdin)
+        return process
+
+    monkeypatch.setattr(controller_module.subprocess, "Popen", observed_popen)
+    controller = ReferenceExecutionController(request, cwd=ROOT)
+    assert controller.request_cancel() is True
+
+    result = controller.run()
+
+    assert result.outcome == "stopped_before_prepare"
+    assert len(writes) == 1
+    assert len(writes[0].splitlines()) == 2
+    assert '"command": "cancel"' in writes[0]
+    assert not request.destination.exists()
+
+
 def test_reference_execution_controller_is_single_use(tmp_path: Path) -> None:
     request = _request(tmp_path)
     controller = ReferenceExecutionController(
