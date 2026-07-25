@@ -768,6 +768,98 @@ def verify_reference_calibration_plan_provenance(
     return fingerprint
 
 
+def reference_calibration_plan_from_provenance(
+    provenance: Mapping[str, object],
+) -> ReferenceCalibrationPlan:
+    """Reconstruct and verify a calibration plan stored in project provenance."""
+
+    verify_reference_calibration_plan_provenance(provenance)
+    try:
+        selected = tuple(
+            RepresentativePilotSubject(
+                filename=str(item["filename"]),
+                sha256=str(item["sha256"]),
+                source_subject_index=int(item["source_subject_index"]),
+                selection_order=int(item["selection_order"]),
+                selection_role=str(item["selection_role"]),
+                descriptor_distance=float(item["descriptor_distance"]),
+            )
+            for item in provenance["selected_pilot_subjects"]  # type: ignore[index]
+        )
+        stages = tuple(
+            CalibrationStage(
+                stage_id=str(stage["stage_id"]),
+                order=int(stage["order"]),
+                kind=str(stage["kind"]),  # type: ignore[arg-type]
+                title=str(stage["title"]),
+                candidates=tuple(
+                    CalibrationCandidate(
+                        candidate_id=str(candidate["candidate_id"]),
+                        label=str(candidate["label"]),
+                        parameter_values=tuple(
+                            (str(name), float(value))
+                            for name, value in candidate[
+                                "parameter_values"
+                            ].items()
+                        ),
+                        rationale=str(candidate["rationale"]),
+                    )
+                    for candidate in stage["candidates"]
+                ),
+                locked_from_previous_stages=tuple(
+                    str(value) for value in stage["locked_from_previous_stages"]
+                ),
+                evidence_required=tuple(
+                    str(value) for value in stage["evidence_required"]
+                ),
+                reject_when=tuple(str(value) for value in stage["reject_when"]),
+                decision_rule=str(stage["decision_rule"]),
+            )
+            for stage in provenance["stages"]  # type: ignore[index]
+        )
+        feature = provenance["smallest_relevant_feature"]
+        return ReferenceCalibrationPlan(
+            version=str(provenance["version"]),
+            fingerprint=str(provenance["fingerprint"]),
+            recommendation_fingerprint=str(
+                provenance["recommendation_fingerprint"]
+            ),
+            template_filename=str(provenance["template_filename"]),
+            template_sha256=str(provenance["template_sha256"]),
+            coordinate_unit=str(provenance["coordinate_unit"]),
+            subject_count=int(provenance["subject_count"]),
+            requested_pilot_subject_count=int(
+                provenance["requested_pilot_subject_count"]
+            ),
+            selected_pilot_subjects=selected,
+            smallest_relevant_feature=(
+                None if feature is None else float(feature)
+            ),
+            attachment_center_source=str(provenance["attachment_center_source"]),
+            baseline_parameter_ratios=tuple(
+                (str(name), float(value))
+                for name, value in provenance[
+                    "baseline_parameter_ratios"
+                ].items()  # type: ignore[union-attr]
+            ),
+            baseline_effective_values=tuple(
+                (str(name), float(value))
+                for name, value in provenance[
+                    "baseline_effective_values"
+                ].items()  # type: ignore[union-attr]
+            ),
+            stages=stages,
+            final_confirmation_required=tuple(
+                str(value) for value in provenance["final_confirmation_required"]
+            ),
+            limitations=tuple(str(value) for value in provenance["limitations"]),
+        )
+    except (KeyError, TypeError, ValueError) as error:
+        raise ConfigurationError(
+            "Calibration-plan provenance could not be reconstructed"
+        ) from error
+
+
 @dataclass(frozen=True)
 class CalibrationCandidateEvidence:
     """Normalized run evidence supplied after one declared candidate finishes.

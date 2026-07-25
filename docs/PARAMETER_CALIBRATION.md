@@ -1,7 +1,8 @@
 # Transparent Deformetrica parameter calibration
 
-Status: **implemented deterministic planning and fail-closed evidence
-assessment; candidate execution is not yet automated.**
+Status: **implemented deterministic planning, automatic sequential candidate
+execution, verified QC evidence extraction, and researcher-gated stage
+selection. Scientific validation is still prospective.**
 
 ## Why this workflow exists
 
@@ -34,6 +35,19 @@ therefore keeps three sources of information separate:
 6. Review or export the self-contained methods report.
 7. Create the project. The recommendation and calibration-plan fingerprints
    are embedded in `atlas.yaml`.
+8. After the automatic Deformetrica setup check passes, open **Automatic
+   Deformetrica pilot calibration**.
+9. Start the current stage once. DiffeoForge runs all pending candidates
+   sequentially and retains already completed candidates if execution is
+   continued later.
+10. Open each completed candidate and rotate through its final atlas and all
+    pilot-subject reconstructions. Mark only anatomically acceptable candidates
+    as visually approved.
+11. Select one eligible candidate. DiffeoForge records the explicit researcher
+    decision and only then prepares the next stage with earlier values locked.
+12. After stage four, switch the main workflow to
+    `selected/atlas-calibrated.yaml` and review it before the required
+    full-cohort confirmation run.
 
 Changing meshes, template, GPA evidence, units, research intent, feature
 measurement, or pilot count invalidates the current plan.
@@ -108,7 +122,8 @@ Before manuscript use:
 
 ## Reproducible command line
 
-The same non-executing plan can be generated without Qt:
+The same plan and execution state machine can be used without Qt. First create
+or embed the plan, then initialize a study from the resulting project YAML:
 
 ```powershell
 diffeoforge reference-calibration-plan "C:\aligned-meshes" `
@@ -135,11 +150,52 @@ Outputs:
 
 An existing export is never replaced unless `--force` is supplied.
 
+```powershell
+diffeoforge reference-calibration-study-init "C:\project\atlas.yaml" `
+  --output "C:\project\calibration\pilot" `
+  --pilot-max-iterations 150
+
+diffeoforge reference-calibration-study-run `
+  "C:\project\calibration\pilot"
+
+diffeoforge reference-calibration-study-status `
+  "C:\project\calibration\pilot"
+
+diffeoforge reference-calibration-study-review `
+  "C:\project\calibration\pilot" `
+  --approve attachment-01 `
+  --approve attachment-02 `
+  --select attachment-02
+```
+
+`study.json` and its SHA-256 bind the plan, copied pilot inputs, source
+configuration, launcher, and pilot iteration cap. `events.jsonl` is an
+append-only hash chain containing candidate attempts, verified metrics, visual
+approvals, and selections. Cancellation never overwrites a run: completed
+candidates remain complete, and continuing creates a new immutable attempt for
+the interrupted candidate.
+
+Automatic evidence currently includes:
+
+- an explicitly labelled symmetric nearest-vertex surface-distance QC proxy,
+  using deterministic bounded sampling; this is not Deformetrica's Current or
+  Varifold attachment objective;
+- resampling-sensitivity of that geometric proxy;
+- final logged attachment and regularity magnitudes;
+- final-atlas triangle validity and p95 absolute log area distortion relative
+  to the starting template;
+- explicit Deformetrica optimizer stop-signal classification and runtime;
+- neighboring-atlas RMS and relative objective/residual differences for the
+  integration stage.
+
 ## Scientific and implementation boundary
 
-The current release builds, embeds, exports, and verifies the plan. It also
-contains a deterministic fail-closed stage-assessment core for future result
-ingestion. It does not yet schedule the candidate runs or extract every
-registration/distortion metric automatically. The status remains
-`planned_not_executed` until that separate execution workflow exists and is
-validated.
+The workflow automates computation and evidence collection, not anatomical
+judgment. The balanced multi-metric score is shown only as a navigation aid.
+It cannot approve a candidate, and missing convergence evidence, invalid
+faces, missing metrics, or missing visual approval make a candidate
+ineligible. The original plan remains an immutable `planned_not_executed`
+declaration; the selected full-cohort configuration additionally carries a
+separate completed calibration result bound to the final researcher-decision
+event. No safe-preset or biological-validity claim exists until prospective
+full-cohort and external validation are complete.

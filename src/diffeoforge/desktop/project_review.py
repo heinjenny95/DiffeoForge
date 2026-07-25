@@ -247,6 +247,7 @@ def _reference_review(config_path: Path, config_sha256: str) -> ProjectReviewRes
     if recommendation is not None:
         measurements = recommendation["measurements"]
         calibration_plan = recommendation.get("calibration_plan")
+        calibration_result = recommendation.get("calibration_result")
         alignment_basis = str(recommendation["alignment_basis"])
         alignment_value = (
             "DiffeoForge GPA evidence"
@@ -290,13 +291,22 @@ def _reference_review(config_path: Path, config_sha256: str) -> ProjectReviewRes
                 "scale finer than the observed mesh sampling.",
             ),
             ReviewItem(
-                "Pilot calibration",
+                (
+                    "Pilot calibration result"
+                    if calibration_result is not None
+                    else "Pilot calibration"
+                ),
                 (
                     "predeclared · not executed · "
                     f"{calibration_plan['pilot_subject_count']} selected subjects · "
                     f"fingerprint {str(calibration_plan['fingerprint'])[:12]}…"
-                    if calibration_plan is not None
-                    else "required"
+                    if calibration_result is None and calibration_plan is not None
+                    else (
+                        "completed / researcher-selected staged pilot / "
+                        f"decision {str(calibration_result['decision_event_hash'])[:12]}..."
+                        if calibration_result is not None
+                        else "required"
+                    )
                 ),
                 (
                     "The bound plan records a deterministic pilot cohort, neighboring "
@@ -309,10 +319,37 @@ def _reference_review(config_path: Path, config_sha256: str) -> ProjectReviewRes
                 ),
             ),
         )
+        if calibration_result is not None:
+            recommendation_items = tuple(
+                (
+                    ReviewItem(
+                        "Pilot calibration result",
+                        (
+                            "completed / researcher-selected staged pilot / "
+                            f"decision "
+                            f"{str(calibration_result['decision_event_hash'])[:12]}..."
+                        ),
+                        (
+                            "The selected values are bound to a completed staged pilot "
+                            "and an explicit researcher decision. They still require a "
+                            "separate full-cohort confirmation."
+                        ),
+                    )
+                    if item.label == "Pilot calibration result"
+                    else item
+                )
+                for item in recommendation_items
+            )
         recommendation_warnings = tuple(
             str(warning) for warning in recommendation["warnings"]
         )
-        if calibration_plan is not None:
+        if calibration_result is not None:
+            recommendation_warnings = (
+                *recommendation_warnings,
+                "The staged calibration has an explicit researcher selection, but the "
+                "selected settings still require a full-cohort confirmation run.",
+            )
+        elif calibration_plan is not None:
             recommendation_warnings = (
                 *recommendation_warnings,
                 "The stored calibration plan has status planned-not-executed; no "

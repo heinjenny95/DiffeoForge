@@ -21,6 +21,12 @@ from diffeoforge.reference import compare_reference_run
 from diffeoforge.reference_approved_preparation import prepare_approved_reference_run
 from diffeoforge.reference_calibration import build_reference_calibration_plan
 from diffeoforge.reference_calibration_report import export_reference_calibration_plan
+from diffeoforge.reference_calibration_study import (
+    ReferenceCalibrationStudyRunner,
+    create_reference_calibration_study,
+    load_reference_calibration_study,
+    record_reference_calibration_stage_review,
+)
 from diffeoforge.reference_preparation_approval import (
     create_reference_preparation_approval,
     serialize_reference_preparation_approval_verification,
@@ -672,6 +678,69 @@ def build_parser() -> argparse.ArgumentParser:
         "--force",
         action="store_true",
         help="Explicitly replace an existing DiffeoForge calibration-plan export.",
+    )
+
+    calibration_study_init = subparsers.add_parser(
+        "reference-calibration-study-init",
+        help=(
+            "Create a hash-bound staged pilot study from a project containing a "
+            "transparent calibration plan."
+        ),
+    )
+    calibration_study_init.add_argument(
+        "config",
+        type=Path,
+        help="Reviewed Deformetrica atlas.yaml containing the calibration plan.",
+    )
+    calibration_study_init.add_argument(
+        "--output",
+        required=True,
+        type=Path,
+        help="New calibration-study directory; it is never overwritten.",
+    )
+    calibration_study_init.add_argument(
+        "--pilot-max-iterations",
+        type=int,
+        default=150,
+        help="Iteration cap applied to every pilot candidate (default: 150).",
+    )
+
+    calibration_study_run = subparsers.add_parser(
+        "reference-calibration-study-run",
+        help=(
+            "Automatically run every pending candidate in the current stage and "
+            "then pause for researcher review."
+        ),
+    )
+    calibration_study_run.add_argument("study_directory", type=Path)
+
+    calibration_study_status = subparsers.add_parser(
+        "reference-calibration-study-status",
+        help="Verify and show the current state of a calibration study.",
+    )
+    calibration_study_status.add_argument("study_directory", type=Path)
+    calibration_study_status.add_argument("--json", action="store_true")
+
+    calibration_study_review = subparsers.add_parser(
+        "reference-calibration-study-review",
+        help=(
+            "Record visual QC approvals, select one eligible candidate, and prepare "
+            "the next stage."
+        ),
+    )
+    calibration_study_review.add_argument("study_directory", type=Path)
+    calibration_study_review.add_argument(
+        "--approve",
+        action="append",
+        default=[],
+        metavar="CANDIDATE_ID",
+        help="Candidate whose atlas and reconstructions passed visual QC; repeatable.",
+    )
+    calibration_study_review.add_argument(
+        "--select",
+        required=True,
+        metavar="CANDIDATE_ID",
+        help="Explicit researcher selection from the visually approved candidates.",
     )
 
     validate_parser = subparsers.add_parser(
@@ -1985,6 +2054,210 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"       {error}", file=sys.stderr)
             return 2
         except (ConfigurationError, RuntimeError, ValueError, TypeError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
+
+    if args.command == "reference-calibration-study-init":
+        try:
+            snapshot = create_reference_calibration_study(
+                args.config,
+                args.output,
+                pilot_max_iterations=args.pilot_max_iterations,
+            )
+            assert snapshot.current_stage is not None
+            print(f"Calibration study created: {snapshot.study_directory}")
+            print(
+                f"Pilot cohort: {snapshot.plan.pilot_subject_count} subjects; "
+                f"plan {snapshot.plan.fingerprint}"
+            )
+            print(
+                f"Current stage: {snapshot.current_stage.order}/"
+                f"{len(snapshot.plan.stages)} — {snapshot.current_stage.title}"
+            )
+            print(
+                f"Prepared candidates: {len(snapshot.candidates)}; no atlas run started."
+            )
+        except (ConfigurationError, OSError, TypeError, ValueError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
+
+    if args.command == "reference-calibration-study-status":
+        try:
+            snapshot = load_reference_calibration_study(args.study_directory)
+            value = {
+                "study_directory": str(snapshot.study_directory),
+                "study_id": snapshot.study_id,
+                "status": snapshot.status,
+                "plan_fingerprint": snapshot.plan.fingerprint,
+                "current_stage": (
+                    None
+                    if snapshot.current_stage is None
+                    else {
+                        "stage_id": snapshot.current_stage.stage_id,
+                        "order": snapshot.current_stage.order,
+                        "title": snapshot.current_stage.title,
+                    }
+                ),
+                "candidates": [
+                    {
+                        "candidate_id": candidate.candidate_id,
+                        "label": candidate.label,
+                        "status": candidate.status,
+                        "attempts": candidate.attempts,
+                        "config_path": str(candidate.config_path),
+                        "run_directory": (
+                            None
+                            if candidate.run_directory is None
+                            else str(candidate.run_directory)
+                        ),
+                        "metrics": candidate.metrics,
+                        "error": candidate.error,
+                    }
+                    for candidate in snapshot.candidates
+                ],
+                "selected_values": dict(snapshot.selected_values),
+                "selected_candidate_ids": dict(snapshot.selected_candidate_ids),
+                "event_count": snapshot.event_count,
+                "final_config_path": (
+                    None
+                    if snapshot.final_config_path is None
+                    else str(snapshot.final_config_path)
+                ),
+            }
+            if args.json:
+                print(json.dumps(value, indent=2, ensure_ascii=False, sort_keys=True))
+            else:
+                print(f"Calibration study: {snapshot.study_directory}")
+                print(f"Status: {snapshot.status}")
+                if snapshot.current_stage is not None:
+                    print(
+                        f"Stage {snapshot.current_stage.order}/"
+                        f"{len(snapshot.plan.stages)}: "
+                        f"{snapshot.current_stage.title}"
+                    )
+                    for candidate in snapshot.candidates:
+                        detail = ""
+                        if candidate.metrics is not None:
+                            detail = (
+                                f"; residual p95 "
+                                f"{float(candidate.metrics['residual_p95']):.6g}; "
+                                f"runtime "
+                                f"{float(candidate.metrics['runtime_seconds']):.1f} s"
+                            )
+                        print(
+                            f"  {candidate.candidate_id}: {candidate.status}"
+                            f" (attempts {candidate.attempts}){detail}"
+                        )
+                if snapshot.final_config_path is not None:
+                    print(f"Selected full-cohort config: {snapshot.final_config_path}")
+                print(f"Verified event records: {snapshot.event_count}")
+        except (ConfigurationError, OSError, TypeError, ValueError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
+
+    if args.command == "reference-calibration-study-run":
+        try:
+            before = load_reference_calibration_study(args.study_directory)
+            if before.current_stage is None:
+                raise ConfigurationError("Calibration study is already complete")
+            candidate_order = {
+                candidate.candidate_id: index
+                for index, candidate in enumerate(before.candidates, start=1)
+            }
+
+            def show_calibration_event(event) -> None:
+                kind = str(event["event"])
+                candidate_id = str(event.get("candidate_id", ""))
+                prefix = (
+                    f"[candidate {candidate_order.get(candidate_id, '?')}/"
+                    f"{len(before.candidates)} {candidate_id}]"
+                )
+                if kind == "candidate_worker_event":
+                    worker = event["worker_event"]
+                    worker_kind = worker["kind"]
+                    payload = worker["payload"]
+                    if worker_kind == "phase":
+                        print(f"{prefix} {payload['message']}", flush=True)
+                    elif worker_kind == "progress":
+                        print(
+                            f"{prefix} iteration {payload['iteration']}/"
+                            f"{payload['maximum_iterations']}",
+                            flush=True,
+                        )
+                    elif worker_kind == "activity":
+                        print(
+                            f"{prefix} active for "
+                            f"{float(payload['elapsed_seconds']):.0f} s",
+                            flush=True,
+                        )
+                elif kind == "candidate_started":
+                    print(f"{prefix} started", flush=True)
+                elif kind == "candidate_completed":
+                    metrics = event["metrics"]
+                    print(
+                        f"{prefix} completed in "
+                        f"{float(metrics['runtime_seconds']):.1f} s; "
+                        f"surface-distance QC p95 "
+                        f"{float(metrics['residual_p95']):.6g}",
+                        flush=True,
+                    )
+                elif kind in {"candidate_failed", "candidate_interrupted"}:
+                    print(f"{prefix} {kind}: {event['error']}", flush=True)
+                elif kind == "stage_awaiting_review":
+                    print("All candidate attempts finished; visual review is required.")
+
+            runner = ReferenceCalibrationStudyRunner(args.study_directory)
+            result = runner.run_current_stage(event_callback=show_calibration_event)
+            print(f"Calibration stage status: {result.status}")
+            if result.status == "awaiting_review":
+                print(
+                    "No next stage was prepared automatically. Inspect every completed "
+                    "candidate, then record explicit visual approvals and one selection."
+                )
+        except KeyboardInterrupt:
+            print(
+                "Calibration interrupted. Completed candidate runs remain immutable; "
+                "run this command again to continue with a new attempt.",
+                file=sys.stderr,
+            )
+            return 130
+        except (ConfigurationError, OSError, RuntimeError, TypeError, ValueError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
+
+    if args.command == "reference-calibration-study-review":
+        try:
+            before = load_reference_calibration_study(args.study_directory)
+            approvals = {
+                candidate.candidate_id: candidate.candidate_id in set(args.approve)
+                for candidate in before.candidates
+            }
+            result, assessment = record_reference_calibration_stage_review(
+                args.study_directory,
+                visual_approvals=approvals,
+                selected_candidate_id=args.select,
+            )
+            print(f"Recorded assessment: {assessment.fingerprint}")
+            print(f"Researcher selected: {args.select}")
+            if result.current_stage is None:
+                print(f"Calibration complete: {result.final_config_path}")
+                print(
+                    "The selected configuration still requires a full-cohort "
+                    "confirmation run."
+                )
+            else:
+                print(
+                    f"Prepared stage {result.current_stage.order}/"
+                    f"{len(result.plan.stages)}: {result.current_stage.title}"
+                )
+                print(
+                    f"Pending candidate runs: {len(result.candidates)}"
+                )
+        except (ConfigurationError, OSError, TypeError, ValueError) as error:
             print(f"ERROR: {error}", file=sys.stderr)
             return 2
         return 0

@@ -33,6 +33,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from diffeoforge.config import load_config
 from diffeoforge.desktop.aspect_svg_widget import AspectRatioSvgWidget
 from diffeoforge.desktop.completed_results import (
     CompletedResultDiscoveryError,
@@ -64,6 +65,9 @@ from diffeoforge.desktop.project_setup import (
     ProjectSetupRequest,
     ProjectSetupResult,
     create_project,
+)
+from diffeoforge.desktop.reference_calibration_dialog import (
+    ReferenceCalibrationDialog,
 )
 from diffeoforge.desktop.reference_execution_controller import (
     ReferenceExecutionController,
@@ -121,10 +125,15 @@ from diffeoforge.preprocessing import (
 from diffeoforge.reference_calibration import (
     ReferenceCalibrationPlan,
     build_reference_calibration_plan,
+    reference_calibration_plan_from_provenance,
 )
 from diffeoforge.reference_calibration_report import (
     CalibrationPlanExport,
     export_reference_calibration_plan,
+)
+from diffeoforge.reference_calibration_study import (
+    create_reference_calibration_study,
+    load_reference_calibration_study,
 )
 from diffeoforge.reference_recommendation import (
     ReferenceParameterRecommendation,
@@ -767,6 +776,7 @@ class DiffeoForgeWindow(QMainWindow):
         self._reference_recommendation_paths: tuple[Path, ...] | None = None
         self._reference_calibration_plan: ReferenceCalibrationPlan | None = None
         self._reference_calibration_export: CalibrationPlanExport | None = None
+        self._reference_calibration_study_directory: Path | None = None
         self._template_preview_worker: _TemplatePreviewWorker | None = None
         self._template_preview_scroll_value: int | None = None
         self._reference_readiness: DesktopReferenceReadiness | None = None
@@ -1136,6 +1146,46 @@ class DiffeoForgeWindow(QMainWindow):
         layout.addWidget(self._build_review_card("Effective parameters", "parameterReview"))
         self.workload_card = self._build_review_card("Workload evidence", "workloadReview")
         layout.addWidget(self.workload_card)
+
+        calibration = QFrame()
+        calibration.setObjectName("card")
+        calibration_layout = QVBoxLayout(calibration)
+        calibration_layout.setContentsMargins(24, 22, 24, 24)
+        calibration_layout.setSpacing(10)
+        calibration_title = QLabel("Automatic Deformetrica pilot calibration")
+        calibration_title.setObjectName("sectionTitle")
+        self.reference_calibration_execution_status = QLabel(
+            "No executable calibration plan is bound to this project."
+        )
+        self.reference_calibration_execution_status.setObjectName("status")
+        self.reference_calibration_execution_status.setWordWrap(True)
+        calibration_detail = QLabel(
+            "DiffeoForge runs every predeclared candidate in one parameter stage, "
+            "measures verified QC evidence, and then pauses. You inspect the atlas and "
+            "all pilot reconstructions and explicitly choose the candidate before the "
+            "next stage is prepared."
+        )
+        calibration_detail.setObjectName("reviewDetail")
+        calibration_detail.setWordWrap(True)
+        self.open_reference_calibration_button = QPushButton(
+            "Open automatic pilot calibration…"
+        )
+        self.open_reference_calibration_button.setObjectName("primary")
+        self.open_reference_calibration_button.clicked.connect(
+            self._open_reference_calibration
+        )
+        self.open_reference_calibration_button.setEnabled(False)
+        calibration_layout.addWidget(calibration_title)
+        calibration_layout.addWidget(self.reference_calibration_execution_status)
+        calibration_layout.addWidget(calibration_detail)
+        calibration_layout.addWidget(
+            self.open_reference_calibration_button,
+            0,
+            Qt.AlignmentFlag.AlignLeft,
+        )
+        self.reference_calibration_execution_card = calibration
+        self.reference_calibration_execution_card.hide()
+        layout.addWidget(self.reference_calibration_execution_card)
 
         reference_readiness = QFrame()
         reference_readiness.setObjectName("card")
@@ -4522,6 +4572,7 @@ class DiffeoForgeWindow(QMainWindow):
         self._reference_run_request = None
         self._run_result = None
         self._result_review = None
+        self._reference_calibration_study_directory = None
         self.template_preview_card.hide()
         self.reference_preparation_status_card.hide()
         self.reference_preparation_approval_edit.clear()
@@ -4679,6 +4730,7 @@ class DiffeoForgeWindow(QMainWindow):
             )
             self.show_run_button.setText("Checking Deformetrica setup automatically…")
             self.show_run_button.setEnabled(False)
+        self._refresh_reference_calibration_execution_card()
         self._set_active_step(1)
         self.page_stack.setCurrentIndex(1)
         self._sync_ready_state()
@@ -4801,6 +4853,151 @@ class DiffeoForgeWindow(QMainWindow):
             lambda saved=value: self.review_scroll.verticalScrollBar().setValue(saved),
         )
 
+    def _reference_calibration_context(
+        self,
+    ) -> tuple[ReferenceCalibrationPlan, Path] | None:
+        review = self._review
+        if (
+            review is None
+            or review.engine is not DesktopEngine.DEFORMETRICA_REFERENCE
+        ):
+            return None
+        try:
+            config = load_config(review.config_path)
+            stored = config["project"]["parameter_provenance"]["recommendation"][
+                "calibration_plan"
+            ]
+            plan = reference_calibration_plan_from_provenance(stored)
+        except (KeyError, OSError, RuntimeError, TypeError, ValueError):
+            return None
+        directory = self._reference_calibration_study_directory
+        if directory is None:
+            directory = (
+                review.config_path.parent
+                / "calibration"
+                / f"reference-pilot-{plan.fingerprint[:12]}"
+            ).resolve()
+            self._reference_calibration_study_directory = directory
+        return plan, directory
+
+    def _refresh_reference_calibration_execution_card(self) -> None:
+        context = self._reference_calibration_context()
+        if context is None:
+            self.reference_calibration_execution_card.hide()
+            self.open_reference_calibration_button.setEnabled(False)
+            return
+        plan, directory = context
+        self.reference_calibration_execution_card.show()
+        ready = bool(
+            self._reference_readiness is not None
+            and self._reference_readiness.ready
+            and self._worker is None
+        )
+        self.open_reference_calibration_button.setEnabled(ready)
+        if not directory.exists():
+            self.reference_calibration_execution_status.setObjectName("status")
+            self.reference_calibration_execution_status.setStyleSheet("")
+            self.reference_calibration_execution_status.setText(
+                f"Planned, not started · {plan.pilot_subject_count} pilot subjects · "
+                f"{sum(len(stage.candidates) for stage in plan.stages)} candidate "
+                "atlases across four sequential stages. The Deformetrica setup check "
+                "must pass before execution."
+            )
+            return
+        try:
+            snapshot = load_reference_calibration_study(directory)
+        except (OSError, RuntimeError, TypeError, ValueError) as error:
+            self.reference_calibration_execution_status.setObjectName("statusError")
+            self.reference_calibration_execution_status.setStyleSheet("")
+            self.reference_calibration_execution_status.setText(
+                f"Existing calibration study did not verify: {error}"
+            )
+            self.open_reference_calibration_button.setEnabled(False)
+            return
+        self.reference_calibration_execution_status.setObjectName(
+            "statusSuccess" if snapshot.status == "completed" else "status"
+        )
+        self.reference_calibration_execution_status.setStyleSheet("")
+        if snapshot.status == "completed":
+            message = (
+                "Calibration complete · selected full-cohort configuration: "
+                f"{snapshot.final_config_path}"
+            )
+        else:
+            assert snapshot.current_stage is not None
+            complete = sum(
+                candidate.status == "completed"
+                for candidate in snapshot.candidates
+            )
+            message = (
+                f"Stage {snapshot.current_stage.order}/"
+                f"{len(snapshot.plan.stages)} · {snapshot.current_stage.title} · "
+                f"{complete}/{len(snapshot.candidates)} candidates complete · "
+                f"status {snapshot.status.replace('_', ' ')}"
+            )
+        self.reference_calibration_execution_status.setText(message)
+
+    @Slot()
+    def _open_reference_calibration(self) -> None:
+        context = self._reference_calibration_context()
+        if context is None or self._review is None:
+            return
+        if self._reference_readiness is None or not self._reference_readiness.ready:
+            QMessageBox.warning(
+                self,
+                "Deformetrica setup not ready",
+                "Wait for the automatic Deformetrica installation and system check "
+                "to pass before starting pilot calibration.",
+            )
+            return
+        _plan, directory = context
+        try:
+            if not directory.exists():
+                create_reference_calibration_study(
+                    self._review.config_path,
+                    directory,
+                    pilot_max_iterations=150,
+                )
+            dialog = ReferenceCalibrationDialog(directory, self)
+            dialog.exec()
+            snapshot = load_reference_calibration_study(directory)
+        except (OSError, RuntimeError, TypeError, ValueError) as error:
+            QMessageBox.warning(
+                self,
+                "Pilot calibration unavailable",
+                str(error),
+            )
+            self._refresh_reference_calibration_execution_card()
+            return
+        self._refresh_reference_calibration_execution_card()
+        if (
+            snapshot.status != "completed"
+            or snapshot.final_config_path is None
+            or self._result is None
+            or self._result.config_path.resolve()
+            == snapshot.final_config_path.resolve()
+        ):
+            return
+        answer = QMessageBox.question(
+            self,
+            "Use calibrated parameters for the full cohort?",
+            "All pilot stages are complete. Switch the main workflow to the selected "
+            "calibrated configuration and review it before the full-cohort atlas run?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.Yes,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        self._result = replace(
+            self._result,
+            config_path=snapshot.final_config_path,
+            report_path=None,
+        )
+        self._review = None
+        self._reference_readiness = None
+        self._reference_run_request = None
+        self._review_project()
+
     @Slot()
     def _check_reference_readiness(self) -> None:
         if (
@@ -4814,6 +5011,7 @@ class DiffeoForgeWindow(QMainWindow):
         worker.signals.failed.connect(self._reference_readiness_failed)
         self._worker = worker
         self._reference_readiness = None
+        self._refresh_reference_calibration_execution_card()
         self.refresh_reference_readiness_button.setEnabled(False)
         self.reference_readiness_status_label.setObjectName("status")
         self.reference_readiness_status_label.setStyleSheet("")
@@ -4881,6 +5079,7 @@ class DiffeoForgeWindow(QMainWindow):
         if readiness.ready:
             self.show_run_button.setText("Continue to supervised Deformetrica execution")
             self.show_run_button.setEnabled(True)
+        self._refresh_reference_calibration_execution_card()
         self._sync_ready_state()
 
     @Slot(str)
@@ -4902,6 +5101,7 @@ class DiffeoForgeWindow(QMainWindow):
         )
         self.show_run_button.setText("Setup check failed – check again")
         self.show_run_button.setEnabled(False)
+        self._refresh_reference_calibration_execution_card()
         self._sync_ready_state()
 
     def _reference_preparation_worker_matches_inputs(

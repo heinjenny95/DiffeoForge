@@ -164,12 +164,14 @@ This repository currently provides:
   locality, and records the recommendation fingerprint, automatic inferences,
   user decisions, and pilot-validation requirements in YAML; advanced manual
   and expert controls remain available;
-- a hash-bound transparent pilot-calibration planner with direct 3D
+- a hash-bound transparent pilot-calibration workflow with direct 3D
   anatomical-feature measurement, deterministic geometry-diverse subject
   selection, sequential attachment/deformation/noise/integration candidates,
-  explicit evidence and rejection rules, tamper detection, and a
-  publication-oriented JSON/HTML/SHA-256 export; the plan is labelled
-  non-executed and never presented as automatic scientific approval;
+  automatic immutable candidate execution, resumable stage orchestration,
+  verified geometric-distance/distortion/convergence/runtime evidence,
+  mandatory visual review and explicit researcher selection, tamper detection,
+  and publication-oriented JSON/HTML/SHA-256 provenance; no balanced-score
+  suggestion is presented as automatic scientific approval;
 - a self-contained HTML input-validation and parameter-scale report;
 - a self-contained HTML convergence, lifecycle, and result report;
 - terminal interruption capture, explicit unclean-stop recovery, and

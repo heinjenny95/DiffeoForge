@@ -136,7 +136,7 @@ This roadmap describes evidence gates rather than promised dates.
 - [x] Add hash-bound, non-executing dataset-specific calibration planning with
   3D feature-scale measurement, deterministic geometry-diverse pilot selection,
   staged candidates, explicit decision rules, and publication-oriented export
-- [ ] Automate approval-bound calibration candidate execution and verified
+- [x] Automate approval-bound calibration candidate execution and verified
   residual/distortion/runtime evidence ingestion
 - [ ] Prospectively validate dataset-specific settings before any safe-preset claim
 - [x] Pre-compute configured all-pairs and known-payload workload report

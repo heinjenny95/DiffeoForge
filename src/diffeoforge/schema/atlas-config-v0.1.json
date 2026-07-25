@@ -461,6 +461,88 @@
                       "items": {"type": "string", "minLength": 1}
                     }
                   }
+                },
+                "calibration_result": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "version",
+                    "status",
+                    "study_id",
+                    "plan_fingerprint",
+                    "study_manifest_sha256",
+                    "decision_event_hash",
+                    "selected_candidate_ids",
+                    "selected_values",
+                    "full_cohort_confirmation_required"
+                  ],
+                  "properties": {
+                    "version": {"const": "0.1"},
+                    "status": {"const": "completed"},
+                    "study_id": {"type": "string", "minLength": 1},
+                    "plan_fingerprint": {
+                      "type": "string",
+                      "pattern": "^[0-9a-f]{64}$"
+                    },
+                    "study_manifest_sha256": {
+                      "type": "string",
+                      "pattern": "^[0-9a-f]{64}$"
+                    },
+                    "decision_event_hash": {
+                      "type": "string",
+                      "pattern": "^[0-9a-f]{64}$"
+                    },
+                    "selected_candidate_ids": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "attachment",
+                        "deformation",
+                        "noise",
+                        "timepoints"
+                      ],
+                      "properties": {
+                        "attachment": {"type": "string", "minLength": 1},
+                        "deformation": {"type": "string", "minLength": 1},
+                        "noise": {"type": "string", "minLength": 1},
+                        "timepoints": {"type": "string", "minLength": 1}
+                      }
+                    },
+                    "selected_values": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "attachment_kernel_width",
+                        "deformation_kernel_width",
+                        "initial_control_point_spacing",
+                        "noise_std",
+                        "timepoints"
+                      ],
+                      "properties": {
+                        "attachment_kernel_width": {
+                          "type": "number",
+                          "exclusiveMinimum": 0
+                        },
+                        "deformation_kernel_width": {
+                          "type": "number",
+                          "exclusiveMinimum": 0
+                        },
+                        "initial_control_point_spacing": {
+                          "type": "number",
+                          "exclusiveMinimum": 0
+                        },
+                        "noise_std": {
+                          "type": "number",
+                          "exclusiveMinimum": 0
+                        },
+                        "timepoints": {
+                          "type": "integer",
+                          "minimum": 2
+                        }
+                      }
+                    },
+                    "full_cohort_confirmation_required": {"const": true}
+                  }
                 }
               }
             }
