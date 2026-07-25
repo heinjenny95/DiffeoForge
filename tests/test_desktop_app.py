@@ -2044,6 +2044,7 @@ def test_desktop_window_verifies_and_renders_step_four_before_artifact_handoff(
     optimizer_plot_path = bundle / "optimizer-convergence.svg"
     primary_plot_path = bundle / "pca-scores.svg"
     secondary_plot_path = bundle / "pca-scores-pc2-pc3.svg"
+    atlas_path = bundle / "estimated-template.vtk"
     workflow_manifest.write_text("workflow\n", encoding="utf-8")
     bundle_manifest.write_text("bundle\n", encoding="utf-8")
     svg = '<svg xmlns="http://www.w3.org/2000/svg" width="900" height="600"></svg>\n'
@@ -2051,6 +2052,9 @@ def test_desktop_window_verifies_and_renders_step_four_before_artifact_handoff(
     optimizer_plot_path.write_text(svg, encoding="utf-8")
     primary_plot_path.write_text(svg, encoding="utf-8")
     secondary_plot_path.write_text(svg, encoding="utf-8")
+    atlas_path.write_bytes(
+        (ROOT / "examples" / "synthetic" / "meshes" / "template.vtk").read_bytes()
+    )
     item = ResultReviewItem("Projekt", "Käfer-Atlas", "Manifestierter Wert.")
     artifact = ModernResultArtifact(
         key="pca-scree",
@@ -2088,6 +2092,15 @@ def test_desktop_window_verifies_and_renders_step_four_before_artifact_handoff(
         sha256=sha256_file(secondary_plot_path),
         description="Verified second score plot.",
     )
+    atlas_artifact = ModernResultArtifact(
+        key="estimated-template",
+        label="Estimated atlas template",
+        path=atlas_path,
+        kind="vtk",
+        bytes=atlas_path.stat().st_size,
+        sha256=sha256_file(atlas_path),
+        description="Verified internal atlas viewer input.",
+    )
     review = ModernResultReview(
         run_directory=run,
         bundle_directory=bundle,
@@ -2111,7 +2124,13 @@ def test_desktop_window_verifies_and_renders_step_four_before_artifact_handoff(
         ),
         pca=(ResultReviewItem("PC1", "75%", "Vorzeichen ist konventionell."),),
         quality=(ResultReviewItem("Output-QC", "9 Meshes", "Recomputet."),),
-        artifacts=(artifact, optimizer_plot, primary_plot, secondary_plot),
+        artifacts=(
+            atlas_artifact,
+            artifact,
+            optimizer_plot,
+            primary_plot,
+            secondary_plot,
+        ),
         scientific_boundaries=("No biological validity claim is made.",),
     )
     terminal = DesktopWorkerEvent(
@@ -2167,6 +2186,12 @@ def test_desktop_window_verifies_and_renders_step_four_before_artifact_handoff(
     assert result_pca is not None
     assert "PC1" in result_pca.findChildren(QLabel)[0].text()
     assert len(window.result_artifact_buttons) == 4
+    assert window.result_atlas_mesh_combo.count() == 1
+    assert window.result_atlas_mesh_combo.currentData() == "estimated-template"
+    assert window.result_atlas_canvas.isHidden() is False
+    assert window.result_atlas_canvas.picking_enabled is False
+    assert "Verified and loaded internally" in window.result_atlas_status_label.text()
+    assert "triangles" in window.result_atlas_status_label.text()
     assert window.result_optimizer_convergence_plot.isHidden() is False
     assert "Verified objective components" in window.result_optimizer_convergence_plot_status.text()
     assert window.result_pca_scree_plot.isHidden() is False

@@ -136,10 +136,15 @@ class InteractiveMeshCanvas3D(QWidget):
         self._drag_button: Qt.MouseButton | None = None
         self._drag_distance = 0.0
         self._interacting = False
+        self._picking_enabled = True
         self.setMinimumHeight(500)
         self.setMouseTracking(True)
         self.setCursor(Qt.CursorShape.CrossCursor)
         self.setObjectName("interactiveLandmarkCanvas3D")
+
+    @property
+    def picking_enabled(self) -> bool:
+        return self._picking_enabled
 
     @property
     def yaw(self) -> float:
@@ -172,6 +177,17 @@ class InteractiveMeshCanvas3D(QWidget):
 
     def set_markers(self, markers: dict[str, tuple[float, float, float]]) -> None:
         self._markers = dict(markers)
+        self.update()
+
+    def set_picking_enabled(self, enabled: bool) -> None:
+        """Switch between landmark placement and neutral mesh viewing."""
+
+        self._picking_enabled = bool(enabled)
+        self.setCursor(
+            Qt.CursorShape.CrossCursor
+            if self._picking_enabled
+            else Qt.CursorShape.OpenHandCursor
+        )
         self.update()
 
     def reset_view(self) -> None:
@@ -256,7 +272,8 @@ class InteractiveMeshCanvas3D(QWidget):
             super().mouseReleaseEvent(event)
             return
         should_pick = (
-            event.button() == Qt.MouseButton.LeftButton
+            self._picking_enabled
+            and event.button() == Qt.MouseButton.LeftButton
             and self._drag_distance <= 5.0
             and self._press_position is not None
         )
@@ -264,7 +281,11 @@ class InteractiveMeshCanvas3D(QWidget):
         self._last_position = None
         self._drag_button = None
         self._interacting = False
-        self.setCursor(Qt.CursorShape.CrossCursor)
+        self.setCursor(
+            Qt.CursorShape.CrossCursor
+            if self._picking_enabled
+            else Qt.CursorShape.OpenHandCursor
+        )
         # Mouse-move paints may use the bounded interactive triangle preview.
         # Always schedule a new paint after release so that preview can never
         # remain as the apparent final surface.
@@ -357,7 +378,12 @@ class InteractiveMeshCanvas3D(QWidget):
         painter.drawText(
             self.rect().adjusted(14, 10, -14, -10),
             Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignBottom,
-            "Click: place/replace landmark  ·  Drag: rotate (full surface on release)  "
-            "·  Right-drag: pan  ·  Wheel: zoom  ·  Double-click: reset view",
+            (
+                "Click: place/replace landmark  ·  "
+                if self._picking_enabled
+                else ""
+            )
+            + "Drag: rotate (full surface on release)  ·  Right-drag: pan  "
+            "·  Wheel: zoom  ·  Double-click: reset view",
         )
         painter.end()

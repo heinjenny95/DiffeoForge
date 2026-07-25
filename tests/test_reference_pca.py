@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import json
+import shutil
 from pathlib import Path
 
 import numpy as np
@@ -49,13 +50,23 @@ def _completed_reference_run(tmp_path: Path) -> Path:
     )
     controls_path = output / "DeterministicAtlas__EstimatedParameters__ControlPoints.txt"
     controls_path.write_text("0 0 0\n1 0.5 -0.25\n", encoding="utf-8")
+    surface_source = (
+        Path(__file__).parents[1] / "examples" / "synthetic" / "meshes" / "template.vtk"
+    )
+    atlas_path = output / "DeterministicAtlas__EstimatedParameters__Template_surface.vtk"
+    reconstruction_path = (
+        output
+        / "DeterministicAtlas__Reconstruction__surface__subject_subject-01.vtk.vtk"
+    )
+    shutil.copyfile(surface_source, atlas_path)
+    shutil.copyfile(surface_source, reconstruction_path)
     records = [
         {
             "path": path.relative_to(output).as_posix(),
             "bytes": path.stat().st_size,
             "sha256": sha256_file(path),
         }
-        for path in (controls_path, momenta_path)
+        for path in (atlas_path, controls_path, momenta_path, reconstruction_path)
     ]
     inventory_path = run / "output-inventory.json"
     inventory_path.write_text(
@@ -283,6 +294,7 @@ def test_desktop_reference_review_creates_and_exposes_verified_pca(tmp_path: Pat
     assert review.optimizer_converged is None
     assert review.project_name == "minimal-example"
     assert {artifact.key for artifact in review.artifacts} >= {
+        "estimated-template",
         "reference-momenta",
         "reference-control-points",
         "pca-summary",
@@ -291,8 +303,10 @@ def test_desktop_reference_review_creates_and_exposes_verified_pca(tmp_path: Pat
         "pca-score-plot",
         "optimizer-convergence-plot",
         "reference-convergence",
+        "subject-reconstruction-1",
     }
     assert verify_result_artifact(review, "pca-score-plot").is_file()
+    assert verify_result_artifact(review, "estimated-template").is_file()
     assert review.execution_duration_seconds == 60.0
     assert review.optimizer_termination_reason == "tolerance_threshold"
 
@@ -304,6 +318,20 @@ def test_desktop_reference_review_rechecks_artifact_before_open(tmp_path: Path) 
 
     with pytest.raises(ModernResultReviewError, match="changed after result review"):
         verify_result_artifact(review, "pca-scores")
+
+
+def test_desktop_reference_review_rechecks_output_atlas_before_internal_render(
+    tmp_path: Path,
+) -> None:
+    run = _completed_reference_run(tmp_path)
+    review = review_reference_result(run)
+    atlas = review.artifact("estimated-template")
+
+    assert verify_result_artifact(review, atlas.key) == atlas.path
+    atlas.path.write_bytes(atlas.path.read_bytes() + b"\n")
+
+    with pytest.raises(ModernResultReviewError, match="changed after result review"):
+        verify_result_artifact(review, atlas.key)
 
 
 def test_reference_pca_cli_creates_and_strictly_verifies_bundle(

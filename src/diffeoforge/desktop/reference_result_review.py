@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from collections.abc import Mapping
+from pathlib import Path, PurePosixPath
+from typing import Any
 
 from diffeoforge.desktop.result_review import (
     ModernResultArtifact,
@@ -22,6 +24,8 @@ from diffeoforge.reference_pca import (
 from diffeoforge.result_report import collect_run_report
 
 _PCA_DISPLAY_LIMIT = 10
+_ESTIMATED_TEMPLATE_MARKER = "__EstimatedParameters__Template_"
+_RECONSTRUCTION_MARKER = "__Reconstruction__"
 
 
 def _format_bytes(value: int) -> str:
@@ -148,6 +152,88 @@ def review_reference_result(
             raise ModernResultReviewError(f"Displayed artifact changed: {value}")
         artifacts.append(
             ModernResultArtifact(key, label, path, kind, size, digest, description)
+        )
+
+    output_directory = run / "output"
+
+    def add_output_vtk_artifact(
+        key: str,
+        label: str,
+        record: Mapping[str, Any],
+        description: str,
+    ) -> None:
+        value = str(record["path"])
+        relative = PurePosixPath(value)
+        if (
+            relative.is_absolute()
+            or ".." in relative.parts
+            or "." in relative.parts
+            or not relative.parts
+        ):
+            raise ModernResultReviewError(
+                f"Displayed Deformetrica VTK has an unsafe inventory path: {value!r}"
+            )
+        path = output_directory.joinpath(*relative.parts)
+        cursor = output_directory
+        symbolic = cursor.is_symlink()
+        for part in relative.parts:
+            cursor = cursor / part
+            symbolic = symbolic or cursor.is_symlink()
+        if symbolic or not path.is_file():
+            raise ModernResultReviewError(
+                f"Displayed Deformetrica VTK is missing or symbolic: {value}"
+            )
+        size = int(record["bytes"])
+        digest = str(record["sha256"])
+        if path.stat().st_size != size or sha256_file(path) != digest:
+            raise ModernResultReviewError(f"Displayed Deformetrica VTK changed: {value}")
+        artifacts.append(
+            ModernResultArtifact(key, label, path.resolve(), "vtk", size, digest, description)
+        )
+
+    def readable_output_name(value: str, marker: str) -> str:
+        name = PurePosixPath(value).name.split(marker, 1)[-1]
+        while name.lower().endswith(".vtk"):
+            name = name[:-4]
+        return name.replace("_", " ")
+
+    estimated_templates = sorted(
+        (
+            record
+            for record in report.inventory
+            if str(record["path"]).lower().endswith(".vtk")
+            and _ESTIMATED_TEMPLATE_MARKER in PurePosixPath(str(record["path"])).name
+        ),
+        key=lambda record: str(record["path"]),
+    )
+    for index, record in enumerate(estimated_templates):
+        object_name = readable_output_name(
+            str(record["path"]),
+            _ESTIMATED_TEMPLATE_MARKER,
+        )
+        add_output_vtk_artifact(
+            "estimated-template" if index == 0 else f"estimated-template-{index + 1}",
+            f"Estimated atlas template: {object_name}",
+            record,
+            "Final Deformetrica atlas template from the immutable output inventory.",
+        )
+
+    reconstructions = sorted(
+        (
+            record
+            for record in report.inventory
+            if str(record["path"]).lower().endswith(".vtk")
+            and _RECONSTRUCTION_MARKER in PurePosixPath(str(record["path"])).name
+        ),
+        key=lambda record: str(record["path"]),
+    )
+    for index, record in enumerate(reconstructions, start=1):
+        subject_name = readable_output_name(str(record["path"]), "__subject_")
+        add_output_vtk_artifact(
+            f"subject-reconstruction-{index}",
+            f"Subject reconstruction: {subject_name}",
+            record,
+            "Final subject-specific reconstruction for visual registration quality control.",
         )
 
     inputs = manifest["inputs"]
@@ -364,4 +450,5 @@ def review_reference_result(
         engine_route="deformetrica_reference",
         execution_duration_seconds=duration_seconds,
         optimizer_stop_interpretation=str(optimization_evidence["stop_interpretation"]),
+        additional_artifact_roots=(output_directory.resolve(),),
     )

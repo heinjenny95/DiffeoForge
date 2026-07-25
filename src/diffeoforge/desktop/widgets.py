@@ -44,6 +44,7 @@ from diffeoforge.desktop.gpa_visualization import (
     GpaAlignmentVisual,
     build_gpa_alignment_visual,
 )
+from diffeoforge.desktop.landmark_3d_widget import InteractiveMeshCanvas3D
 from diffeoforge.desktop.landmark_editor import LandmarkEditorDialog
 from diffeoforge.desktop.mesh_preview import (
     DEFAULT_EDGE_BUDGET,
@@ -1501,6 +1502,74 @@ class DiffeoForgeWindow(QMainWindow):
         summary_layout.addWidget(self.result_summary_label)
         layout.addWidget(summary)
 
+        atlas_viewer = QFrame()
+        atlas_viewer.setObjectName("card")
+        atlas_viewer_layout = QVBoxLayout(atlas_viewer)
+        atlas_viewer_layout.setContentsMargins(24, 22, 24, 24)
+        atlas_viewer_layout.setSpacing(12)
+        atlas_viewer_title = QLabel("Atlas & registration QC viewer")
+        atlas_viewer_title.setObjectName("sectionTitle")
+        atlas_viewer_hint = QLabel(
+            "The selected VTK is rechecked against the verified result inventory before "
+            "DiffeoForge renders it internally. Drag to rotate, right-drag to pan, use the "
+            "mouse wheel to zoom, and double-click to reset."
+        )
+        atlas_viewer_hint.setObjectName("hint")
+        atlas_viewer_hint.setWordWrap(True)
+        atlas_mesh_controls = QHBoxLayout()
+        atlas_mesh_controls.setSpacing(10)
+        atlas_mesh_controls.addWidget(QLabel("Mesh"))
+        self.result_atlas_mesh_combo = QComboBox()
+        self.result_atlas_mesh_combo.setObjectName("resultAtlasMeshCombo")
+        self.result_atlas_mesh_combo.currentIndexChanged.connect(
+            self._load_selected_atlas_mesh
+        )
+        atlas_mesh_controls.addWidget(self.result_atlas_mesh_combo, 1)
+        atlas_view_controls = QHBoxLayout()
+        atlas_view_controls.setSpacing(10)
+        atlas_view_controls.addWidget(QLabel("View"))
+        self.result_atlas_view_combo = QComboBox()
+        self.result_atlas_view_combo.setObjectName("resultAtlasViewCombo")
+        for label, value in (
+            ("Three-quarter", "three-quarter"),
+            ("Front", "front"),
+            ("Back", "back"),
+            ("Left", "left"),
+            ("Right", "right"),
+            ("Top", "top"),
+            ("Bottom", "bottom"),
+        ):
+            self.result_atlas_view_combo.addItem(label, value)
+        self.result_atlas_view_combo.currentIndexChanged.connect(
+            self._set_atlas_view_preset
+        )
+        atlas_view_controls.addWidget(self.result_atlas_view_combo)
+        reset_atlas_view_button = QPushButton("Reset view")
+        reset_atlas_view_button.setObjectName("secondary")
+        reset_atlas_view_button.clicked.connect(self._reset_atlas_view)
+        atlas_view_controls.addWidget(reset_atlas_view_button)
+        atlas_view_controls.addStretch()
+        self.result_atlas_status_label = QLabel(
+            "Awaiting a verified atlas or reconstruction."
+        )
+        self.result_atlas_status_label.setObjectName("status")
+        self.result_atlas_status_label.setWordWrap(True)
+        self.result_atlas_canvas = InteractiveMeshCanvas3D()
+        self.result_atlas_canvas.setObjectName("resultAtlasViewer3D")
+        self.result_atlas_canvas.setAccessibleName(
+            "Interactive verified atlas and registration quality-control viewer"
+        )
+        self.result_atlas_canvas.set_picking_enabled(False)
+        self.result_atlas_canvas.setMinimumHeight(620)
+        self.result_atlas_canvas.hide()
+        atlas_viewer_layout.addWidget(atlas_viewer_title)
+        atlas_viewer_layout.addWidget(atlas_viewer_hint)
+        atlas_viewer_layout.addLayout(atlas_mesh_controls)
+        atlas_viewer_layout.addLayout(atlas_view_controls)
+        atlas_viewer_layout.addWidget(self.result_atlas_status_label)
+        atlas_viewer_layout.addWidget(self.result_atlas_canvas)
+        layout.addWidget(atlas_viewer)
+
         overview_card, self.result_overview_layout = self._build_result_items_card(
             "Atlas and dataset", "resultOverview"
         )
@@ -1592,8 +1661,9 @@ class DiffeoForgeWindow(QMainWindow):
         artifacts_title = QLabel("Verified open artifacts")
         artifacts_title.setObjectName("sectionTitle")
         artifacts_hint = QLabel(
-            "DiffeoForge does not yet render VTK internally. VTK, CSV, JSON, and static SVG "
-            "files are handed to the locally associated application."
+            "Atlas and reconstruction VTK files are rendered in the internal viewer above. "
+            "Tables, JSON, text, and static SVG files are handed to the locally associated "
+            "application only after another size and SHA-256 check."
         )
         artifacts_hint.setObjectName("hint")
         artifacts_hint.setWordWrap(True)
@@ -5234,6 +5304,7 @@ class DiffeoForgeWindow(QMainWindow):
         except ModernResultReviewError as error:
             self._result_review_failed(f"Verified result plots could not be displayed: {error}")
             return
+        self._populate_atlas_viewer(review)
         self.result_boundary_label.setText(
             "\n".join(f"• {boundary}" for boundary in review.scientific_boundaries)
         )
@@ -5326,6 +5397,84 @@ class DiffeoForgeWindow(QMainWindow):
             f"Completed run could not be opened because full verification failed: {message}"
         )
         self._sync_ready_state()
+
+    def _populate_atlas_viewer(self, review: ModernResultReview) -> None:
+        vtk_artifacts = sorted(
+            (artifact for artifact in review.artifacts if artifact.kind == "vtk"),
+            key=lambda artifact: (
+                0 if artifact.key == "estimated-template" else 1,
+                0 if artifact.key.startswith("subject-reconstruction-") else 1,
+                artifact.label.casefold(),
+            ),
+        )
+        self.result_atlas_mesh_combo.blockSignals(True)
+        self.result_atlas_mesh_combo.clear()
+        for artifact in vtk_artifacts:
+            self.result_atlas_mesh_combo.addItem(artifact.label, artifact.key)
+        self.result_atlas_mesh_combo.blockSignals(False)
+        if not vtk_artifacts:
+            self.result_atlas_canvas.set_model(None)
+            self.result_atlas_canvas.hide()
+            self.result_atlas_mesh_combo.setEnabled(False)
+            self.result_atlas_status_label.setObjectName("statusWarning")
+            self.result_atlas_status_label.setStyleSheet("")
+            self.result_atlas_status_label.setText(
+                "No verified VTK atlas or reconstruction is available in this result."
+            )
+            return
+        self.result_atlas_mesh_combo.setEnabled(True)
+        self.result_atlas_mesh_combo.setCurrentIndex(0)
+        self._load_selected_atlas_mesh(0)
+
+    @Slot(int)
+    def _load_selected_atlas_mesh(self, _index: int) -> None:
+        if self._result_review is None:
+            return
+        key = self.result_atlas_mesh_combo.currentData()
+        if not isinstance(key, str):
+            return
+        try:
+            artifact = self._result_review.artifact(key)
+            path = verify_result_artifact(self._result_review, key)
+            model = load_mesh_preview(path)
+            if model.sha256 != artifact.sha256:
+                raise ModernResultReviewError(
+                    "The internally loaded VTK differs from the verified artifact"
+                )
+        except (KeyError, MeshPreviewError, ModernResultReviewError, OSError) as error:
+            self.result_atlas_canvas.set_model(None)
+            self.result_atlas_canvas.hide()
+            self.result_atlas_status_label.setObjectName("statusError")
+            self.result_atlas_status_label.setStyleSheet("")
+            self.result_atlas_status_label.setText(
+                f"Internal atlas viewer locked because verification or loading failed: {error}"
+            )
+            return
+        self.result_atlas_canvas.set_model(model)
+        preset = self.result_atlas_view_combo.currentData()
+        if isinstance(preset, str):
+            self.result_atlas_canvas.set_view_preset(preset)
+        else:
+            self.result_atlas_canvas.reset_view()
+        self.result_atlas_canvas.show()
+        self.result_atlas_status_label.setObjectName("statusSuccess")
+        self.result_atlas_status_label.setStyleSheet("")
+        self.result_atlas_status_label.setText(
+            f"Verified and loaded internally: {artifact.label} | "
+            f"{model.point_count} points | {model.triangle_count} triangles | "
+            f"SHA-256 {artifact.sha256}"
+        )
+
+    @Slot(int)
+    def _set_atlas_view_preset(self, _index: int) -> None:
+        preset = self.result_atlas_view_combo.currentData()
+        if isinstance(preset, str):
+            self.result_atlas_canvas.set_view_preset(preset)
+
+    @Slot()
+    def _reset_atlas_view(self) -> None:
+        self.result_atlas_view_combo.setCurrentIndex(0)
+        self.result_atlas_canvas.reset_view()
 
     def _load_verified_optimizer_plot(self, review: ModernResultReview) -> None:
         try:
@@ -5426,6 +5575,8 @@ class DiffeoForgeWindow(QMainWindow):
                 widget.deleteLater()
         self.result_artifact_buttons.clear()
         for artifact in review.artifacts:
+            if artifact.kind == "vtk":
+                continue
             row = QWidget()
             row_layout = QHBoxLayout(row)
             row_layout.setContentsMargins(0, 0, 0, 0)

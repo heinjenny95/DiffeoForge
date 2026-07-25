@@ -176,6 +176,44 @@ def test_3d_canvas_release_requests_full_surface_repaint_after_rotation(
     application.processEvents()
 
 
+def test_3d_canvas_neutral_viewer_mode_rotates_without_picking(
+    monkeypatch,
+) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtCore import QPoint, Qt
+    from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QApplication
+
+    from diffeoforge.desktop.landmark_3d_widget import InteractiveMeshCanvas3D
+    from diffeoforge.desktop.mesh_preview import load_mesh_preview
+
+    application = QApplication.instance() or QApplication(
+        ["neutral-mesh-viewer-test"]
+    )
+    canvas = InteractiveMeshCanvas3D()
+    canvas.resize(400, 400)
+    canvas.set_model(load_mesh_preview(MESHES / "template.vtk"))
+    canvas.set_picking_enabled(False)
+    picked: list[tuple[float, float, float]] = []
+    canvas.surfacePointPicked.connect(picked.append)
+    canvas.show()
+    application.processEvents()
+
+    center = QPoint(canvas.width() // 2, canvas.height() // 2)
+    QTest.mouseClick(canvas, Qt.MouseButton.LeftButton, pos=center)
+    initial_yaw = canvas.yaw
+    QTest.mousePress(canvas, Qt.MouseButton.LeftButton, pos=QPoint(150, 180))
+    QTest.mouseMove(canvas, QPoint(220, 180))
+    QTest.mouseRelease(canvas, Qt.MouseButton.LeftButton, pos=QPoint(220, 180))
+
+    assert canvas.picking_enabled is False
+    assert picked == []
+    assert canvas.yaw != initial_yaw
+    canvas.close()
+    application.processEvents()
+
+
 def test_landmark_editor_undo_restores_replaced_surface_point(
     monkeypatch, tmp_path: Path
 ) -> None:

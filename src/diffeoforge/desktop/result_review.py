@@ -79,6 +79,7 @@ class ModernResultReview:
     engine_route: Literal["modern", "deformetrica_reference"] = "modern"
     execution_duration_seconds: float | None = None
     optimizer_stop_interpretation: str | None = None
+    additional_artifact_roots: tuple[Path, ...] = ()
 
     def artifact(self, key: str) -> ModernResultArtifact:
         for artifact in self.artifacts:
@@ -632,12 +633,30 @@ def verify_result_artifact(review: ModernResultReview, key: str) -> Path:
     except KeyError as error:
         raise ModernResultReviewError(f"Unknown result artifact key: {key!r}") from error
     path = artifact.path
+    roots = (review.bundle_directory, *review.additional_artifact_roots)
+    resolved = path.resolve()
+    matched_root: Path | None = None
+    for root in roots:
+        try:
+            resolved.relative_to(root.resolve())
+        except ValueError:
+            continue
+        matched_root = root
+        break
+    if matched_root is None:
+        raise ModernResultReviewError("Selected artifact escapes the reviewed artifact roots")
+    cursor = matched_root
+    symbolic = cursor.is_symlink()
     try:
-        resolved = path.resolve()
-        resolved.relative_to(review.bundle_directory.resolve())
+        relative = path.relative_to(matched_root)
     except ValueError as error:
-        raise ModernResultReviewError("Selected artifact escapes the reviewed bundle") from error
-    if path.is_symlink() or not path.is_file():
+        raise ModernResultReviewError(
+            "Selected artifact path differs from its reviewed root"
+        ) from error
+    for part in relative.parts:
+        cursor = cursor / part
+        symbolic = symbolic or cursor.is_symlink()
+    if symbolic or not path.is_file():
         raise ModernResultReviewError("Selected result artifact is missing or symbolic")
     try:
         matches = path.stat().st_size == artifact.bytes and sha256_file(path) == artifact.sha256
