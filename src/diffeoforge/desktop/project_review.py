@@ -382,10 +382,16 @@ def _reference_review(config_path: Path, config_sha256: str) -> ProjectReviewRes
         ReviewItem(
             "Reproducibility",
             (
-                f"Seed {runtime['random_seed']} · {runtime['threads']} Threads · "
-                f"{runtime['precision']}"
+                (
+                    "NVIDIA KeOps GPU kernels"
+                    if runtime["device"] == "cuda"
+                    else "CPU only"
+                )
+                + f" · Seed {runtime['random_seed']} · {runtime['threads']} CPU Threads · "
+                + f"{runtime['precision']}"
             ),
-            "Explicit engine-execution settings for the external reference route.",
+            "Explicit acceleration and engine-execution settings for the external "
+            "reference route.",
         ),
         *_reference_alignment_items(preflight),
     )
@@ -434,8 +440,9 @@ def _reference_review(config_path: Path, config_sha256: str) -> ProjectReviewRes
                 f"{_duration(runtime_estimate.upper_seconds)} broad range)"
             ),
             "Low-confidence engineering planning estimate from mesh faces, cohort size, "
-            "time points, control spacing, threads, and the iteration cap. It is not a "
-            "convergence prediction and is replaced by observed timing during the run.",
+            "time points, control spacing, acceleration, threads, and an expected early-stop "
+            "window. It is not a convergence prediction and is replaced by observed timing "
+            "during the run.",
         ),
     )
     warnings = (
@@ -446,7 +453,7 @@ def _reference_review(config_path: Path, config_sha256: str) -> ProjectReviewRes
         ),
         *preflight.notices,
         "The computation-time range is an uncalibrated planning heuristic. Actual runtime "
-        "depends on hardware, line search, stopping behavior, and numerical workload.",
+        "depends on GPU/CPU hardware, line search, stopping behavior, and numerical workload.",
     )
     return ProjectReviewResult(
         engine=DesktopEngine.DEFORMETRICA_REFERENCE,

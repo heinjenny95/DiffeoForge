@@ -198,6 +198,7 @@ def initialize_project(
     sobolev_kernel_width_ratio: float = 1.0,
     freeze_template: bool = False,
     freeze_control_points: bool = False,
+    device: str = "cpu",
     threads: int | None = None,
     random_seed: int = 20260715,
     image: str = DEFAULT_CONTAINER_IMAGE,
@@ -209,6 +210,9 @@ def initialize_project(
     directory = Path(mesh_directory).expanduser().resolve()
     if not directory.is_dir():
         raise ConfigurationError(f"Mesh directory does not exist: {directory}")
+    normalized_device = str(device).strip().lower()
+    if normalized_device not in {"cpu", "cuda"}:
+        raise ConfigurationError("Reference device must be 'cpu' or 'cuda'")
 
     destination = ensure_generated_configuration_replaceable(
         config_path,
@@ -237,6 +241,10 @@ def initialize_project(
         if launcher is None
         else deepcopy(dict(launcher))
     )
+    if normalized_device == "cuda" and resolved_launcher.get("type") != "wsl":
+        raise ConfigurationError(
+            "Deformetrica KeOps GPU kernels currently require a verified WSL launcher"
+        )
     profile = reference_parameter_profile(
         "recommended"
         if parameter_profile in {"advanced", "data_assisted"}
@@ -335,7 +343,7 @@ def initialize_project(
         },
         "runtime": {
             "backend": "deformetrica_reference",
-            "device": "cpu",
+            "device": normalized_device,
             "threads": (threads if threads is not None else max(1, min(4, os.cpu_count() or 1))),
             "processes": 1,
             "precision": "float32",

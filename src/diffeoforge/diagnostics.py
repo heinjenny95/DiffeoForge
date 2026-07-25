@@ -17,6 +17,7 @@ from typing import Any
 from diffeoforge.reference_runtime import (
     EXPECTED_DEFORMETRICA_VERSION,
     launcher_identity,
+    probe_reference_gpu,
     probe_wsl_launcher,
 )
 from diffeoforge.subprocess_policy import hidden_windows_process_kwargs
@@ -474,10 +475,14 @@ def run_reference_doctor(
     workspace: Path | str,
     *,
     launcher: Mapping[str, str],
+    device: str = "cpu",
 ) -> DoctorReport:
     """Inspect the exact configured launcher without installing or repairing it."""
 
     identity = launcher_identity(launcher)
+    normalized_device = str(device).strip().lower()
+    if normalized_device not in {"cpu", "cuda"}:
+        raise ValueError("Reference doctor device must be 'cpu' or 'cuda'")
     launcher_type = identity["type"]
     if launcher_type == "container":
         return run_doctor(
@@ -511,6 +516,26 @@ def run_reference_doctor(
                 probe.guidance,
             )
         )
+        if normalized_device == "cuda":
+            gpu = probe_reference_gpu(identity)
+            checks.append(
+                DoctorCheck(
+                    "reference_gpu",
+                    "Deformetrica KeOps GPU kernels",
+                    "pass" if gpu.available else "fail",
+                    gpu.summary,
+                    gpu.guidance,
+                )
+            )
+        else:
+            checks.append(
+                DoctorCheck(
+                    "reference_acceleration",
+                    "Deformetrica acceleration",
+                    "pass",
+                    "CPU-only execution selected explicitly.",
+                )
+            )
         descriptor = f"{identity['distribution']}:{identity['executable']}"
     else:
         executable = identity["executable"]

@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from diffeoforge.report import PreflightResult
 
 _REFERENCE_PAIR_EVALUATIONS_PER_SECOND = 200_000_000.0
+_KEOPS_GPU_KERNEL_TIME_FACTOR = 0.12
 
 
 @dataclass(frozen=True)
@@ -93,18 +94,24 @@ def estimate_reference_runtime(
         * control_factor
         * thread_factor
     )
+    gpu_kernels = runtime["device"] == "cuda"
+    if gpu_kernels:
+        seconds_per_iteration *= _KEOPS_GPU_KERNEL_TIME_FACTOR
 
     maximum_iterations = int(optimization["max_iterations"])
     lower_iterations = min(
         maximum_iterations,
-        max(3, round(maximum_iterations * 0.15)),
+        max(3, round(maximum_iterations * 0.03)),
     )
     typical_iterations = min(
         maximum_iterations,
-        max(8, round(maximum_iterations * 0.40)),
+        max(8, round(maximum_iterations * 0.08)),
     )
     total_faces = template_faces + sum(subject_faces)
     setup_seconds = 25.0 + total_faces / 20_000.0
+    if gpu_kernels:
+        # A cold PyKeOps cache may compile formula-specific CUDA kernels once.
+        setup_seconds += 90.0
     lower_seconds = setup_seconds + seconds_per_iteration * lower_iterations * 0.35
     typical_seconds = setup_seconds + seconds_per_iteration * typical_iterations
     upper_seconds = setup_seconds + seconds_per_iteration * maximum_iterations * 2.0

@@ -521,6 +521,37 @@ DEFORMETRICA_PARAMETER_GUIDANCE: dict[str, ParameterGuidance] = {
             ),
         ),
     ),
+    "compute_acceleration": ParameterGuidance(
+        summary=(
+            "Selects where Deformetrica evaluates its expensive KeOps kernel reductions. "
+            "It changes runtime hardware, not the requested atlas model."
+        ),
+        sections=(
+            (
+                "Automatic",
+                "Checks the selected WSL runtime, NVIDIA visibility, PyTorch/KeOps GPU "
+                "discovery, and the CUDA compiler. Compatible GPU kernels are preferred; "
+                "otherwise the project records a CPU fallback.",
+            ),
+            (
+                "Require GPU",
+                "Blocks project creation unless KeOps GPU-kernel prerequisites verify. "
+                "This reproduces the acceleration mode used by many legacy Deformetrica "
+                "installations, including GpuMode.KERNEL.",
+            ),
+            (
+                "CPU only",
+                "Disables CUDA explicitly. It is portable and conservative but can be much "
+                "slower for high-resolution cohorts.",
+            ),
+            (
+                "Example",
+                "The resolved mode, controlled environment, GPU identity, and Deformetrica "
+                "XML are recorded. CPU and GPU outputs can differ slightly because of "
+                "floating-point reduction order.",
+            ),
+        ),
+    ),
     "cpu_threads": ParameterGuidance(
         summary=(
             "Sets the CPU thread limit for the Deformetrica process. It is a resource "

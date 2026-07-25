@@ -130,7 +130,7 @@ def test_reference_readiness_supports_native_route(
     )
     monkeypatch.setattr(
         "diffeoforge.desktop.reference_readiness.run_reference_doctor",
-        lambda workspace, *, launcher: report,
+        lambda workspace, *, launcher, device="cpu": report,
     )
 
     readiness = check_reference_environment(_review(config))

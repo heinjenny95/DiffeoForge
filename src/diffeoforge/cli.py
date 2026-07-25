@@ -173,6 +173,15 @@ def build_parser() -> argparse.ArgumentParser:
     )
     init_parser.add_argument("--threads", type=int, help="CPU threads (default: at most 4).")
     init_parser.add_argument(
+        "--device",
+        choices=("cpu", "cuda"),
+        default="cpu",
+        help=(
+            "Reference execution mode: CPU only or Deformetrica KeOps CUDA kernels "
+            "(default: cpu)."
+        ),
+    )
+    init_parser.add_argument(
         "--random-seed",
         type=int,
         default=20260715,
@@ -941,6 +950,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 deformation_kernel_width=args.deformation_kernel_width,
                 initial_control_point_spacing=args.control_point_spacing,
                 noise_std=args.noise_std,
+                device=args.device,
                 threads=args.threads,
                 random_seed=args.random_seed,
                 image=args.image,

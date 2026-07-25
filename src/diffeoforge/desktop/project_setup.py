@@ -19,6 +19,7 @@ from diffeoforge.reference_parameters import REFERENCE_PARAMETER_PROFILES
 from diffeoforge.reference_runtime import (
     MANAGED_WSL_DISTRIBUTION,
     launcher_label,
+    probe_reference_gpu,
     select_preferred_reference_launcher,
 )
 from diffeoforge.report import (
@@ -69,6 +70,7 @@ class ProjectSetupRequest:
     reference_sobolev_kernel_width_ratio: float = 1.0
     reference_freeze_template: bool = False
     reference_freeze_control_points: bool = False
+    reference_acceleration: str = "cpu"
     reference_threads: int | None = None
     reference_random_seed: int = 20260715
     procrustes_scale_to_unit_centroid_size: bool = True
@@ -215,6 +217,11 @@ def _normalize_request(request: ProjectSetupRequest) -> ProjectSetupRequest:
         or request.reference_threads < 1
     ):
         raise ConfigurationError("reference_threads must be null or a positive integer")
+    acceleration = str(request.reference_acceleration).strip().lower()
+    if acceleration not in {"auto", "gpu", "cpu"}:
+        raise ConfigurationError(
+            "reference_acceleration must be 'auto', 'gpu', or 'cpu'"
+        )
     for label, value in (
         ("reference_use_rk2", request.reference_use_rk2),
         ("reference_scale_initial_step_size", request.reference_scale_initial_step_size),
@@ -292,6 +299,7 @@ def _normalize_request(request: ProjectSetupRequest) -> ProjectSetupRequest:
         ),
         reference_freeze_template=request.reference_freeze_template,
         reference_freeze_control_points=request.reference_freeze_control_points,
+        reference_acceleration=acceleration,
         reference_threads=request.reference_threads,
         reference_random_seed=request.reference_random_seed,
         procrustes_scale_to_unit_centroid_size=(
@@ -358,6 +366,25 @@ def _create_reference_project(request: ProjectSetupRequest) -> ProjectSetupResul
             )
             effective_project_name = f"{name_source}-atlas"
     launcher = select_preferred_reference_launcher()
+    gpu_probe = None
+    if request.reference_acceleration in {"auto", "gpu"}:
+        gpu_probe = probe_reference_gpu(launcher)
+    if request.reference_acceleration == "gpu" and (
+        gpu_probe is None or not gpu_probe.available
+    ):
+        guidance = gpu_probe.guidance if gpu_probe is not None else None
+        raise ConfigurationError(
+            "Deformetrica GPU kernels were requested but are unavailable: "
+            f"{gpu_probe.summary if gpu_probe is not None else 'probe unavailable'}"
+            + (f" {guidance}" if guidance else "")
+        )
+    reference_device = (
+        "cuda"
+        if request.reference_acceleration in {"auto", "gpu"}
+        and gpu_probe is not None
+        and gpu_probe.available
+        else "cpu"
+    )
     initialized = initialize_project(
         input_directory,
         units=request.units,
@@ -383,6 +410,7 @@ def _create_reference_project(request: ProjectSetupRequest) -> ProjectSetupResul
         sobolev_kernel_width_ratio=request.reference_sobolev_kernel_width_ratio,
         freeze_template=request.reference_freeze_template,
         freeze_control_points=request.reference_freeze_control_points,
+        device=reference_device,
         threads=request.reference_threads,
         random_seed=request.reference_random_seed,
         overwrite=request.overwrite_existing_configuration,
@@ -393,6 +421,22 @@ def _create_reference_project(request: ProjectSetupRequest) -> ProjectSetupResul
         overwrite=request.overwrite_existing_configuration,
     )
     notices = list(initialized.preflight.notices)
+    if reference_device == "cuda":
+        assert gpu_probe is not None
+        notices.insert(
+            0,
+            "Deformetrica KeOps GPU kernels selected and verified: "
+            f"{gpu_probe.device_name or gpu_probe.summary}. Model tensors remain on CPU; "
+            "the run manifest records gpu-mode=kernel and the controlled CUDA environment.",
+        )
+    elif request.reference_acceleration == "auto" and gpu_probe is not None:
+        notices.insert(
+            0,
+            "Automatic acceleration selected CPU because GPU kernels were unavailable: "
+            f"{gpu_probe.summary}",
+        )
+    else:
+        notices.insert(0, "Deformetrica CPU-only execution selected explicitly.")
     notices.insert(0, f"Deformetrica installation: {launcher_label(launcher)}.")
     if (
         launcher.get("type") == "wsl"

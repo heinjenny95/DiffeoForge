@@ -30,6 +30,7 @@ EXPECTED_GUIDANCE_KEYS = {
     "sobolev_width_ratio",
     "template_update",
     "control_point_update",
+    "compute_acceleration",
     "cpu_threads",
     "random_seed",
 }
@@ -63,6 +64,7 @@ def test_each_deformetrica_control_has_an_expandable_english_guide(
     window = DiffeoForgeWindow()
 
     assert set(window.reference_parameter_help_panels) == EXPECTED_GUIDANCE_KEYS
+    assert window.reference_acceleration_combo.currentData() == "auto"
     for key, help_panel in window.reference_parameter_help_panels.items():
         assert help_panel.panel.isHidden() is True, key
         assert help_panel.toggle_button.text() == "+ Parameter guide", key

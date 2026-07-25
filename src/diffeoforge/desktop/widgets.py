@@ -2000,6 +2000,17 @@ class DiffeoForgeWindow(QMainWindow):
         self.reference_sobolev_ratio_spin.setValue(1.0)
         self.reference_freeze_template_check = QCheckBox("Freeze template")
         self.reference_freeze_control_points_check = QCheckBox("Freeze control points")
+        self.reference_acceleration_combo = QComboBox()
+        self.reference_acceleration_combo.setObjectName("referenceAccelerationCombo")
+        self.reference_acceleration_combo.addItem(
+            "Automatic — use GPU kernels when available (recommended)",
+            "auto",
+        )
+        self.reference_acceleration_combo.addItem(
+            "Require NVIDIA GPU kernels",
+            "gpu",
+        )
+        self.reference_acceleration_combo.addItem("CPU only", "cpu")
         self.reference_threads_spin = QSpinBox()
         self.reference_threads_spin.setRange(1, 256)
         self.reference_threads_spin.setValue(4)
@@ -2041,6 +2052,11 @@ class DiffeoForgeWindow(QMainWindow):
                 "Control-point update",
                 self.reference_freeze_control_points_check,
                 "control_point_update",
+            ),
+            (
+                "Compute acceleration",
+                self.reference_acceleration_combo,
+                "compute_acceleration",
             ),
             ("CPU threads", self.reference_threads_spin, "cpu_threads"),
             ("Random seed", self.reference_random_seed_spin, "random_seed"),
@@ -4013,6 +4029,7 @@ class DiffeoForgeWindow(QMainWindow):
             reference_freeze_control_points=(
                 self.reference_freeze_control_points_check.isChecked()
             ),
+            reference_acceleration=self.reference_acceleration_combo.currentData(),
             reference_threads=self.reference_threads_spin.value(),
             reference_random_seed=self.reference_random_seed_spin.value(),
             procrustes_scale_to_unit_centroid_size=self.procrustes_scale_check.isChecked(),
@@ -4371,8 +4388,8 @@ class DiffeoForgeWindow(QMainWindow):
         self.reference_readiness_status_label.setObjectName("status")
         self.reference_readiness_status_label.setStyleSheet("")
         self.reference_readiness_status_label.setText(
-            "Deformetrica 4.3, available memory, and the project folder are being checked "
-            "automatically…"
+            "Deformetrica 4.3, the selected CPU/GPU acceleration, available memory, and "
+            "the project folder are being checked automatically…"
         )
         self.reference_readiness_detail_label.setText(
             "This safety check does not start an atlas. Estimated computation time is shown "
@@ -4392,6 +4409,11 @@ class DiffeoForgeWindow(QMainWindow):
             f"Bound SHA-256: {readiness.config_sha256}",
             f"Project folder: {self._wrappable_path(readiness.workspace)}",
             f"Deformetrica installation: {launcher_label(readiness.launcher)}",
+            (
+                "Acceleration: NVIDIA KeOps GPU kernels"
+                if readiness.device == "cuda"
+                else "Acceleration: CPU only"
+            ),
             "Observed checks:",
         ]
         for check in readiness.report.checks:

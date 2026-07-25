@@ -20,6 +20,7 @@ from diffeoforge.desktop.project_setup import (
 from diffeoforge.mesh import read_vtk_polydata, sha256_file
 from diffeoforge.preprocessing import preview_landmark_alignment
 from diffeoforge.reference_recommendation import recommend_reference_parameters
+from diffeoforge.reference_runtime import ReferenceGpuProbe
 
 ROOT = Path(__file__).parents[1]
 MESH_DIRECTORY = ROOT / "examples" / "synthetic" / "meshes"
@@ -121,6 +122,86 @@ def test_reference_project_setup_persists_visible_parameter_selection(tmp_path: 
     assert "<use-rk2>On</use-rk2>" in optimization_xml
     assert "<freeze-template>On</freeze-template>" in optimization_xml
     assert "<freeze-control-points>On</freeze-control-points>" in optimization_xml
+
+
+def test_reference_project_setup_auto_selects_verified_gpu_kernels(
+    monkeypatch, tmp_path: Path
+) -> None:
+    launcher = {
+        "type": "wsl",
+        "distribution": "Ubuntu",
+        "executable": "/home/researcher/deformetrica/bin/deformetrica",
+    }
+    monkeypatch.setattr(
+        "diffeoforge.desktop.project_setup.select_preferred_reference_launcher",
+        lambda: launcher,
+    )
+    monkeypatch.setattr(
+        "diffeoforge.desktop.project_setup.probe_reference_gpu",
+        lambda observed: ReferenceGpuProbe(
+            observed,
+            True,
+            "KeOps GPU kernels available",
+            device_name="NVIDIA GeForce RTX 4080",
+            compute_capability="8.9",
+            cuda_compiler="/usr/bin/nvcc",
+        ),
+    )
+
+    result = create_project(
+        ProjectSetupRequest(
+            mesh_directory=MESH_DIRECTORY,
+            project_directory=tmp_path / "gpu-reference",
+            units="unitless",
+            engine=DesktopEngine.DEFORMETRICA_REFERENCE,
+            reference_acceleration="auto",
+        )
+    )
+
+    config = load_config(result.config_path)
+    assert config["runtime"]["device"] == "cuda"
+    rendered = render_engine_file_bytes(
+        config,
+        Path("input/template.vtk"),
+        (Path("input/subject.vtk"),),
+    )
+    optimization_xml = rendered["optimization_parameters.xml"].decode("utf-8")
+    assert "<gpu-mode>kernel</gpu-mode>" in optimization_xml
+    assert any("RTX 4080" in notice for notice in result.notices)
+
+
+def test_reference_project_setup_blocks_required_unavailable_gpu(
+    monkeypatch, tmp_path: Path
+) -> None:
+    launcher = {
+        "type": "wsl",
+        "distribution": "Ubuntu",
+        "executable": "/home/researcher/deformetrica/bin/deformetrica",
+    }
+    monkeypatch.setattr(
+        "diffeoforge.desktop.project_setup.select_preferred_reference_launcher",
+        lambda: launcher,
+    )
+    monkeypatch.setattr(
+        "diffeoforge.desktop.project_setup.probe_reference_gpu",
+        lambda observed: ReferenceGpuProbe(
+            observed,
+            False,
+            "CUDA compiler missing.",
+            guidance="Use CPU execution.",
+        ),
+    )
+
+    with pytest.raises(ConfigurationError, match="GPU kernels were requested"):
+        create_project(
+            ProjectSetupRequest(
+                mesh_directory=MESH_DIRECTORY,
+                project_directory=tmp_path / "gpu-required",
+                units="unitless",
+                engine=DesktopEngine.DEFORMETRICA_REFERENCE,
+                reference_acceleration="gpu",
+            )
+        )
 
 
 def test_reference_project_setup_persists_data_assisted_provenance(

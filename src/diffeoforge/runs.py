@@ -46,6 +46,7 @@ from diffeoforge.config import (
     validate_input_paths,
 )
 from diffeoforge.mesh import MeshMetadata, inspect_inputs, sha256_file
+from diffeoforge.reference_runtime import probe_reference_gpu
 from diffeoforge.subprocess_policy import hidden_windows_process_kwargs
 
 RUN_MANIFEST_VERSION = "0.1"
@@ -673,17 +674,39 @@ def verify_prepared_run_against_plan(
 
 def _probe_backend_environment(config: Mapping[str, Any]) -> Mapping[str, Any]:
     launcher = config["runtime"]["launcher"]
+    runtime_device = str(config["runtime"]["device"])
+    gpu_probe = None
+    if runtime_device == "cuda" and launcher["type"] == "wsl":
+        gpu_probe = probe_reference_gpu(launcher)
+        if not gpu_probe.available:
+            raise ConfigurationError(
+                "The reviewed run requires Deformetrica KeOps GPU kernels, but "
+                f"the executable kernel check failed: {gpu_probe.summary}"
+            )
     packages = ("deformetrica", "torch", "pykeops", "numpy", "scipy")
     script = (
-        "import importlib.metadata as m, json, platform, sys\n"
+        "import importlib.metadata as m, json, platform, shutil, sys\n"
         f"names={packages!r}\n"
+        f"runtime_device={runtime_device!r}\n"
         "versions={}\n"
         "for name in names:\n"
         "    try: versions[name]=m.version(name)\n"
         "    except m.PackageNotFoundError: versions[name]=None\n"
-        "print(json.dumps({'python':sys.version.replace('\\n',' '),"
+        "value={'python':sys.version.replace('\\n',' '),"
         "'python_executable':sys.executable,'platform':platform.platform(),"
-        "'packages':versions}, sort_keys=True))\n"
+        "'packages':versions,'acceleration':{'mode':runtime_device,"
+        "'gpu_mode':'kernel' if runtime_device=='cuda' else 'none'}}\n"
+        "if runtime_device=='cuda':\n"
+        "    import torch, pykeops\n"
+        "    import pykeops.torch\n"
+        "    available=bool(torch.cuda.is_available() and pykeops.gpu_available)\n"
+        "    count=int(torch.cuda.device_count()) if available else 0\n"
+        "    value['acceleration'].update({'available':available,'device_count':count,"
+        "'device_name':torch.cuda.get_device_name(0) if count else None,"
+        "'compute_capability':'.'.join(str(v) for v in "
+        "torch.cuda.get_device_capability(0)) if count else None,"
+        "'cuda_compiler':shutil.which('nvcc')})\n"
+        "print(json.dumps(value, sort_keys=True))\n"
     )
 
     container_identity: Mapping[str, Any] | None = None
@@ -694,6 +717,19 @@ def _probe_backend_environment(config: Mapping[str, Any]) -> Mapping[str, Any]:
             "-d",
             launcher["distribution"],
             "--",
+            *(
+                (
+                    "env",
+                    "-u",
+                    "USE_CUDA",
+                    "CUDA_VISIBLE_DEVICES=0",
+                    "CC=/usr/bin/gcc-12",
+                    "CXX=/usr/bin/g++-12",
+                    "CUDAHOSTCXX=/usr/bin/g++-12",
+                )
+                if runtime_device == "cuda"
+                else ()
+            ),
             python_executable,
             "-c",
             script,
@@ -779,6 +815,22 @@ def _probe_backend_environment(config: Mapping[str, Any]) -> Mapping[str, Any]:
             f"Reference execution requires Deformetrica {REFERENCE_DEFORMETRICA_VERSION}, got "
             f"{value.get('packages', {}).get('deformetrica')!r}."
         )
+    if runtime_device == "cuda":
+        acceleration = value.get("acceleration", {})
+        if not acceleration.get("available") or not acceleration.get("cuda_compiler"):
+            raise ConfigurationError(
+                "The reviewed run requires Deformetrica KeOps GPU kernels, but the "
+                "execution environment did not verify GPU discovery and a CUDA compiler."
+            )
+        if gpu_probe is not None:
+            acceleration.update(
+                {
+                    "kernel_smoke_verified": True,
+                    "kernel_smoke_summary": gpu_probe.summary,
+                    "host_c_compiler": gpu_probe.host_c_compiler,
+                    "host_cpp_compiler": gpu_probe.host_cpp_compiler,
+                }
+            )
     if container_identity is not None:
         value["container"] = container_identity
     return {"probe_status": "verified", **value}

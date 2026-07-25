@@ -64,3 +64,20 @@ def test_reference_runtime_estimate_accounts_for_configured_threads() -> None:
     sixteen_threads = estimate_reference_runtime(replace(preflight, config=config))
 
     assert sixteen_threads.typical_seconds < four_threads.typical_seconds
+
+
+def test_reference_runtime_estimate_accounts_for_gpu_kernels() -> None:
+    preflight = collect_preflight(ROOT / "examples" / "minimal-atlas-container.yaml")
+    config = deepcopy(preflight.config)
+    config["runtime"]["device"] = "cuda"
+    config["runtime"]["launcher"] = {
+        "type": "wsl",
+        "distribution": "Ubuntu",
+        "executable": "/home/researcher/deformetrica/bin/deformetrica",
+    }
+
+    cpu = estimate_reference_runtime(preflight)
+    gpu = estimate_reference_runtime(replace(preflight, config=config))
+
+    assert gpu.seconds_per_iteration < cpu.seconds_per_iteration * 0.2
+    assert gpu.typical_iterations == cpu.typical_iterations

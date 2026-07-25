@@ -1,6 +1,6 @@
 # Deformetrica reference backend
 
-Status: **experimental contract 0.1**
+Status: **experimental contract 0.2**
 
 The reference backend makes the existing numerical path inspectable before a
 modern replacement is attempted. It is an adapter around an external
@@ -14,6 +14,9 @@ pipeline.
 - Current or Varifold attachment;
 - Gradient Ascent optimization;
 - CPU execution with explicit KeOps or Torch kernels;
+- opt-in Deformetrica `GpuMode.KERNEL` execution in a verified NVIDIA/WSL
+  runtime, keeping model tensors on CPU while dispatching KeOps reductions to
+  CUDA;
 - one native executable or a Windows-to-WSL launcher;
 - one offline, read-only Docker launcher using the frozen CPU image;
 - Deformetrica version exactly 4.3.0;
@@ -24,8 +27,9 @@ pipeline.
 - terminal interruption capture and immutable successor resume from an
   inventoried Deformetrica state file.
 
-GPU execution, LBFGS, cross-version checkpoint portability, automatic Docker
-installation, and scientific production claims are outside contract 0.1.
+Full-model CUDA execution, LBFGS, cross-version checkpoint portability,
+automatic Docker installation, and scientific production claims are outside
+contract 0.2.
 
 ## Separation of responsibilities
 
@@ -42,6 +46,13 @@ absolute Linux path to the executable. A container launcher names Docker and a
 locally available image. DiffeoForge probes the backend environment and refuses
 execution unless it reports Deformetrica 4.3.0. Container runs additionally
 record the resolved image ID and repository digests.
+
+For the NVIDIA/WSL route, DiffeoForge additionally executes a small real
+Deformetrica KeOps reduction before accepting the runtime. The verified CUDA 12
+toolchain is scoped to GCC/G++ 12 for that child process because CUDA 12 rejects
+Ubuntu 24.04's default GCC 13 host compiler. The exact GPU, compute capability,
+CUDA compiler, host compilers, smoke-test result, and `gpu-mode=kernel` choice
+are retained in run provenance. No system-wide compiler default is changed.
 
 ## Lifecycle
 
@@ -97,6 +108,15 @@ criterion. Versioned numerical tolerances must be defined independently.
 
 The private meshes are not public reference data and are not part of this
 repository.
+
+On 25 July 2026, contract 0.2 executed a complete synthetic Windows-to-WSL
+Deformetrica run with `gpu-mode=kernel` on an NVIDIA GeForce RTX 4080 (compute
+capability 8.9). DiffeoForge verified CUDA, GCC/G++ 12, and an executable KeOps
+kernel before launch; the one-iteration atlas completed with return code 0 and
+published a verified result. The first run compiled several KeOps formulas and
+therefore took 1 minute 56 seconds; those formula-specific binaries are cached
+by PyKeOps for subsequent runs. This is engineering execution evidence, not
+CPU/GPU scientific-equivalence evidence.
 
 ## Public synthetic reference evidence
 
@@ -158,6 +178,10 @@ These runs validate the engineering lifecycle, not scientific equivalence.
   not change the successful return code but is preserved in the log.
 - Resume is restricted to the identical protected model/configuration and
   Deformetrica 4.3.0 contract; checkpoint portability is not claimed.
+- The first GPU run for a new set of KeOps formulas incurs a one-time CUDA
+  compilation delay. DiffeoForge reports GPU acceleration only after a real
+  kernel has executed, but the atlas-specific formulas may still compile during
+  the initial optimization.
 - Gradient Ascent checkpoints restore parameters and iteration but not gradient,
   objective baseline, or line-search step sizes; exact trajectory continuity is
   therefore not guaranteed.

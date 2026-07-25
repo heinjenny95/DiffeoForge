@@ -4,8 +4,9 @@
 > **Pre-alpha research software.** DiffeoForge is not yet validated for
 > scientific production use. Its reference backend can invoke exact
 > Deformetrica 4.3.0 CPU runtimes through native, WSL, or developer-container
-> launchers, but scientific equivalence, public redistribution, and
-> production-scale use are not yet validated.
+> launchers and an experimentally verified NVIDIA KeOps-kernel route through
+> WSL, but scientific equivalence, public redistribution, and production-scale
+> use are not yet validated.
 
 DiffeoForge is the working title for an open-source, reproducible workflow for
 diffeomorphic atlas construction from 3D surface meshes. The project aims to
@@ -112,6 +113,9 @@ This repository currently provides:
   request bytes, exact-matches private staging, never replaces an appearing
   destination, and verifies pristine `prepared` state without engine launch;
 - explicit Deformetrica XML generation and native or Windows-to-WSL launchers;
+- automatic or explicit NVIDIA KeOps-kernel acceleration for the WSL
+  Deformetrica route, guarded by a real kernel smoke test and process-scoped
+  CUDA-compatible host compiler selection;
 - exact command, environment, lifecycle, convergence, result, and output
   inventories;
 - an engine-independent architecture decision;

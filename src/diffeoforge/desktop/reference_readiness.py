@@ -36,6 +36,7 @@ class DesktopReferenceReadiness:
     launcher_type: str = "container"
     launcher_distribution: str | None = None
     launcher_executable: str | None = None
+    device: str = "cpu"
 
     def __post_init__(self) -> None:
         if Path(self.report.workspace).resolve() != self.workspace.resolve():
@@ -135,7 +136,11 @@ def check_reference_environment(
         distribution = None
         executable = None
     else:
-        report = run_reference_doctor(workspace, launcher=identity)
+        report = run_reference_doctor(
+            workspace,
+            launcher=identity,
+            device=str(config["runtime"]["device"]),
+        )
         engine = launcher_type
         distribution = identity.get("distribution")
         executable = identity["executable"]
@@ -166,4 +171,5 @@ def check_reference_environment(
         launcher_type=launcher_type,
         launcher_distribution=distribution,
         launcher_executable=executable,
+        device=str(config["runtime"]["device"]),
     )

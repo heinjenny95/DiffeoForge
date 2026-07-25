@@ -88,6 +88,18 @@ def test_container_launcher_is_accepted(valid_config: dict) -> None:
     validate_schema(config)
 
 
+def test_cuda_reference_device_is_schema_valid(valid_config: dict) -> None:
+    config = deepcopy(valid_config)
+    config["runtime"]["device"] = "cuda"
+    config["runtime"]["launcher"] = {
+        "type": "wsl",
+        "distribution": "Ubuntu",
+        "executable": "/home/researcher/deformetrica/bin/deformetrica",
+    }
+
+    validate_schema(config)
+
+
 def test_non_positive_kernel_width_is_rejected(valid_config: dict) -> None:
     invalid = deepcopy(valid_config)
     invalid["model"]["deformation"]["kernel_width"] = 0

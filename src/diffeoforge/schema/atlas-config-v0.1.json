@@ -395,7 +395,7 @@
           "const": "deformetrica_reference"
         },
         "device": {
-          "const": "cpu"
+          "enum": ["cpu", "cuda"]
         },
         "threads": {
           "type": "integer",

@@ -51,7 +51,7 @@
       "required": ["id", "contract_version", "engine_constants"],
       "properties": {
         "id": { "const": "deformetrica_reference" },
-        "contract_version": { "const": "0.1" },
+        "contract_version": { "enum": ["0.1", "0.2"] },
         "engine_constants": {
           "type": "object",
           "additionalProperties": false,
