@@ -200,7 +200,7 @@ def test_staged_calibration_highlights_one_next_action_at_a_time(
     from types import SimpleNamespace
 
     from PySide6.QtCore import Qt
-    from PySide6.QtWidgets import QApplication
+    from PySide6.QtWidgets import QApplication, QLabel
 
     import diffeoforge.desktop.reference_calibration_dialog as dialog_module
     from diffeoforge.desktop.reference_calibration_dialog import (
@@ -305,6 +305,18 @@ def test_staged_calibration_highlights_one_next_action_at_a_time(
     assert dialog.review_next_button.text() == "Review next option"
     assert dialog.selection_combo.isHidden() is True
     assert dialog.advance_button.isHidden() is True
+    favorable = dialog.findChildren(QLabel, "tradeoffFavorable")
+    caution = dialog.findChildren(QLabel, "tradeoffCaution")
+    unfavorable = dialog.findChildren(QLabel, "tradeoffUnfavorable")
+    legends = dialog.findChildren(QLabel, "tradeoffLegend")
+    assert len(favorable) == 4
+    assert len(caution) == 1
+    assert len(unfavorable) == 3
+    assert len(legends) == 1
+    assert any("Fastest pilot run" in label.text() for label in favorable)
+    assert any("Highest deformation cost" in label.text() for label in caution)
+    assert any("Largest measured mismatch" in label.text() for label in unfavorable)
+    assert all("do not select" in label.text() for label in legends)
     assert dialog.scroll.horizontalScrollBarPolicy() == (
         Qt.ScrollBarPolicy.ScrollBarAlwaysOff
     )

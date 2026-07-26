@@ -30,9 +30,10 @@ from diffeoforge.desktop.calibration_comparison_widget import (
 )
 from diffeoforge.desktop.mesh_preview import load_mesh_preview
 from diffeoforge.desktop.reference_calibration_presentation import (
+    CalibrationTradeoffAssessment,
     automatic_check_summary,
     candidate_parameter_summary,
-    candidate_tradeoff_labels,
+    candidate_tradeoff_assessments,
     stage_guidance,
     technical_metric_text,
 )
@@ -630,6 +631,16 @@ class ReferenceCalibrationDialog(QDialog):
         caution.setWordWrap(True)
         task_layout.addWidget(caution)
         self.content_layout.addWidget(task)
+        if any(candidate.metrics is not None for candidate in self._snapshot.candidates):
+            comparison_legend = QLabel(
+                "How to read candidate colors: Green = favorable automatic signal · "
+                "Yellow = trade-off requiring inspection · Red = unfavorable relative "
+                "signal. Colors describe one measurement at a time; they do not select "
+                "the anatomically best option."
+            )
+            comparison_legend.setObjectName("tradeoffLegend")
+            comparison_legend.setWordWrap(True)
+            self.content_layout.addWidget(comparison_legend)
         completed = sum(candidate.status == "completed" for candidate in self._snapshot.candidates)
         self.progress.setRange(0, len(self._snapshot.candidates))
         self.progress.setValue(completed)
@@ -637,7 +648,7 @@ class ReferenceCalibrationDialog(QDialog):
             f"{completed} of {len(self._snapshot.candidates)} candidates completed"
         )
         planned_by_id = {candidate.candidate_id: candidate for candidate in stage.candidates}
-        tradeoffs = candidate_tradeoff_labels(self._snapshot.candidates)
+        tradeoffs = candidate_tradeoff_assessments(self._snapshot.candidates)
         completed_candidate_ids = tuple(
             candidate.candidate_id
             for candidate in self._snapshot.candidates
@@ -719,7 +730,7 @@ class ReferenceCalibrationDialog(QDialog):
         planned: CalibrationCandidate,
         *,
         option_index: int,
-        tradeoffs: tuple[str, ...],
+        tradeoffs: tuple[CalibrationTradeoffAssessment, ...],
         emphasize_review: bool,
     ) -> QWidget:
         card = QFrame()
@@ -753,13 +764,28 @@ class ReferenceCalibrationDialog(QDialog):
             comparison_title = QLabel("How this option compares with the other completed options")
             comparison_title.setObjectName("sectionTitle")
             layout.addWidget(comparison_title)
-            comparison = QLabel(
-                "\n".join(f"• {label}" for label in tradeoffs)
-                if tradeoffs
-                else "No relative comparison is available yet."
-            )
-            comparison.setWordWrap(True)
-            layout.addWidget(comparison)
+            if tradeoffs:
+                for tradeoff in tradeoffs:
+                    comparison = QLabel(
+                        self._tradeoff_assessment_html(tradeoff)
+                    )
+                    comparison.setObjectName(
+                        {
+                            "favorable": "tradeoffFavorable",
+                            "caution": "tradeoffCaution",
+                            "unfavorable": "tradeoffUnfavorable",
+                        }[tradeoff.tone]
+                    )
+                    comparison.setTextFormat(Qt.TextFormat.RichText)
+                    comparison.setWordWrap(True)
+                    layout.addWidget(comparison)
+            else:
+                comparison = QLabel(
+                    "No relative comparison is available yet."
+                )
+                comparison.setObjectName("status")
+                comparison.setWordWrap(True)
+                layout.addWidget(comparison)
             technical_button = QPushButton("Show technical measurements")
             technical_button.setCheckable(True)
             technical_button.setSizePolicy(
@@ -833,6 +859,20 @@ class ReferenceCalibrationDialog(QDialog):
             detail.setWordWrap(True)
             layout.addWidget(detail)
         return card
+
+    @staticmethod
+    def _tradeoff_assessment_html(
+        assessment: CalibrationTradeoffAssessment,
+    ) -> str:
+        prefix = {
+            "favorable": "✓ Favorable signal",
+            "caution": "↔ Trade-off — inspect",
+            "unfavorable": "⚠ Unfavorable signal",
+        }[assessment.tone]
+        return (
+            f"<b>{prefix}: {assessment.label}</b><br>"
+            f"{assessment.interpretation}"
+        )
 
     @Slot()
     def _update_stage_review_action(self) -> None:

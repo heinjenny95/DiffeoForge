@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from typing import Literal
 
 from diffeoforge.reference_calibration import CalibrationStage
 from diffeoforge.reference_calibration_study import CalibrationStudyCandidateState
@@ -18,6 +19,15 @@ class CalibrationStageGuidance:
     explanation: str
     action: str
     caution: str
+
+
+@dataclass(frozen=True)
+class CalibrationTradeoffAssessment:
+    """One relative pilot observation with cautious beginner-facing meaning."""
+
+    label: str
+    tone: Literal["favorable", "caution", "unfavorable"]
+    interpretation: str
 
 
 _GUIDANCE: dict[str, CalibrationStageGuidance] = {
@@ -135,23 +145,106 @@ def candidate_parameter_summary(
     raise ValueError(f"Unsupported calibration stage kind: {stage.kind!r}")
 
 
-def candidate_tradeoff_labels(
+def candidate_tradeoff_assessments(
     candidates: Sequence[CalibrationStudyCandidateState],
-) -> dict[str, tuple[str, ...]]:
-    """Describe relative automatic observations without choosing a candidate."""
+) -> dict[str, tuple[CalibrationTradeoffAssessment, ...]]:
+    """Explain relative automatic observations without choosing a candidate."""
 
     complete = tuple(candidate for candidate in candidates if candidate.metrics is not None)
-    labels: dict[str, list[str]] = {candidate.candidate_id: [] for candidate in candidates}
+    assessments: dict[str, list[CalibrationTradeoffAssessment]] = {
+        candidate.candidate_id: [] for candidate in candidates
+    }
     if not complete:
-        return {candidate_id: tuple(items) for candidate_id, items in labels.items()}
+        return {
+            candidate_id: tuple(items)
+            for candidate_id, items in assessments.items()
+        }
 
     comparisons = (
-        ("residual_p95", "Closest automatic surface match", "Largest measured mismatch"),
-        ("distortion_p95", "Least atlas area change", "Most atlas area change"),
-        ("deformation_energy", "Lowest deformation cost", "Highest deformation cost"),
-        ("runtime_seconds", "Fastest pilot run", "Slowest pilot run"),
+        (
+            "residual_p95",
+            CalibrationTradeoffAssessment(
+                label="Closest automatic surface match",
+                tone="favorable",
+                interpretation=(
+                    "This option has the lowest measured surface mismatch. That is "
+                    "promising for fit, but an extremely close match can still follow "
+                    "mesh noise or overfit anatomy."
+                ),
+            ),
+            CalibrationTradeoffAssessment(
+                label="Largest measured mismatch",
+                tone="unfavorable",
+                interpretation=(
+                    "This option leaves the most measured surface mismatch. It may "
+                    "underfit relevant anatomy unless the remaining differences are "
+                    "biologically unimportant."
+                ),
+            ),
+        ),
+        (
+            "distortion_p95",
+            CalibrationTradeoffAssessment(
+                label="Least atlas area change",
+                tone="favorable",
+                interpretation=(
+                    "This option changes local surface area the least, which is a "
+                    "favorable stability signal and reduces concern about stretching "
+                    "or collapse."
+                ),
+            ),
+            CalibrationTradeoffAssessment(
+                label="Most atlas area change",
+                tone="unfavorable",
+                interpretation=(
+                    "This option changes local surface area the most. Inspect the "
+                    "reconstructions carefully for implausible stretching, compression, "
+                    "or collapse."
+                ),
+            ),
+        ),
+        (
+            "deformation_energy",
+            CalibrationTradeoffAssessment(
+                label="Lowest deformation cost",
+                tone="favorable",
+                interpretation=(
+                    "This option reaches its result with the least deformation cost, "
+                    "suggesting a smoother or easier transformation. It can still "
+                    "underfit local anatomy."
+                ),
+            ),
+            CalibrationTradeoffAssessment(
+                label="Highest deformation cost",
+                tone="caution",
+                interpretation=(
+                    "This option needs the strongest deformation. That may capture real "
+                    "local variation or indicate excessive flexibility, so anatomical "
+                    "inspection decides whether it is acceptable."
+                ),
+            ),
+        ),
+        (
+            "runtime_seconds",
+            CalibrationTradeoffAssessment(
+                label="Fastest pilot run",
+                tone="favorable",
+                interpretation=(
+                    "This option used the least computation time. That is favorable for "
+                    "efficiency, but speed does not establish registration quality."
+                ),
+            ),
+            CalibrationTradeoffAssessment(
+                label="Slowest pilot run",
+                tone="unfavorable",
+                interpretation=(
+                    "This option used the most computation time. That is unfavorable "
+                    "for efficiency only and does not make its anatomy worse."
+                ),
+            ),
+        ),
     )
-    for key, minimum_label, maximum_label in comparisons:
+    for key, minimum_assessment, maximum_assessment in comparisons:
         values = {
             candidate.candidate_id: float(candidate.metrics[key])
             for candidate in complete
@@ -164,13 +257,29 @@ def candidate_tradeoff_labels(
         maximum = max(values.values())
         for candidate_id, value in values.items():
             if math.isclose(value, minimum, rel_tol=1e-12, abs_tol=1e-15):
-                labels[candidate_id].append(minimum_label)
+                assessments[candidate_id].append(minimum_assessment)
             if (
                 not math.isclose(maximum, minimum, rel_tol=1e-12, abs_tol=1e-15)
                 and math.isclose(value, maximum, rel_tol=1e-12, abs_tol=1e-15)
             ):
-                labels[candidate_id].append(maximum_label)
-    return {candidate_id: tuple(items) for candidate_id, items in labels.items()}
+                assessments[candidate_id].append(maximum_assessment)
+    return {
+        candidate_id: tuple(items)
+        for candidate_id, items in assessments.items()
+    }
+
+
+def candidate_tradeoff_labels(
+    candidates: Sequence[CalibrationStudyCandidateState],
+) -> dict[str, tuple[str, ...]]:
+    """Retain the stable plain-label projection for reports and callers."""
+
+    return {
+        candidate_id: tuple(assessment.label for assessment in assessments)
+        for candidate_id, assessments in candidate_tradeoff_assessments(
+            candidates
+        ).items()
+    }
 
 
 def automatic_check_summary(metrics: Mapping[str, object]) -> tuple[bool, str]:

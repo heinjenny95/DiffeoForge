@@ -43,7 +43,11 @@ therefore keeps three sources of information separate:
 10. Read the plain-language question, parameter value, and direction-of-change
     explanation on each candidate card. Relative automatic observations such
     as closest surface match, least atlas area change, lowest deformation cost,
-    and fastest pilot run describe trade-offs; none is an automatic winner.
+    and fastest pilot run are displayed as explained color-coded rows. Green
+    marks a favorable automatic signal, yellow marks a trade-off that needs
+    anatomical inspection, and red marks an unfavorable relative signal. Each
+    row explains the interpretation limit; colors describe one measurement at
+    a time and never identify an automatic winner.
 11. Select the green **Review next option** action. Blue
     wireframes show the exact bound original pilot meshes and orange surfaces
     show their Deformetrica reconstructions in the same rotatable camera.

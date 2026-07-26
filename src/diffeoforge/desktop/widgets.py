@@ -219,6 +219,22 @@ QLabel#statusWarning, QPlainTextEdit#statusWarning {
 QLabel#statusError, QPlainTextEdit#statusError {
     background: #fff0ed; border-radius: 7px; color: #a13a2d; padding: 10px;
 }
+QLabel#tradeoffLegend {
+    background: #eef3f4; border-radius: 7px; color: #526b70; padding: 8px;
+    font-size: 12px;
+}
+QLabel#tradeoffFavorable {
+    background: #e5f5ed; border: 1px solid #b7dcca; border-radius: 7px;
+    color: #176345; padding: 9px;
+}
+QLabel#tradeoffCaution {
+    background: #fff7df; border: 1px solid #e8cf86; border-radius: 7px;
+    color: #765500; padding: 9px;
+}
+QLabel#tradeoffUnfavorable {
+    background: #fff0ed; border: 1px solid #e2aaa1; border-radius: 7px;
+    color: #91382e; padding: 9px;
+}
 QPlainTextEdit#status, QPlainTextEdit#statusSuccess,
 QPlainTextEdit#statusWarning, QPlainTextEdit#statusError {
     border: 0; font-family: "Segoe UI"; font-size: 13px;

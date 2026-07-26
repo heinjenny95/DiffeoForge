@@ -3,6 +3,7 @@ from pathlib import Path
 from diffeoforge.desktop.reference_calibration_presentation import (
     automatic_check_summary,
     candidate_parameter_summary,
+    candidate_tradeoff_assessments,
     candidate_tradeoff_labels,
     stage_guidance,
     technical_metric_text,
@@ -113,6 +114,26 @@ def test_tradeoff_labels_state_both_sides_without_declaring_a_winner() -> None:
         for values in labels.values()
         for label in values
     )
+
+    assessments = candidate_tradeoff_assessments(
+        (close_but_costly, smooth_and_fast)
+    )
+    assert tuple(item.tone for item in assessments["attachment-01"]) == (
+        "favorable",
+        "unfavorable",
+        "caution",
+        "unfavorable",
+    )
+    assert tuple(item.tone for item in assessments["attachment-02"]) == (
+        "unfavorable",
+        "favorable",
+        "favorable",
+        "favorable",
+    )
+    fastest = assessments["attachment-02"][-1]
+    assert fastest.label == "Fastest pilot run"
+    assert "efficiency" in fastest.interpretation
+    assert "does not establish registration quality" in fastest.interpretation
 
 
 def test_machine_checks_and_technical_details_keep_interpretation_limits() -> None:
