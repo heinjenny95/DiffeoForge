@@ -27,8 +27,9 @@ class ParameterGuidance:
 DEFORMETRICA_PARAMETER_GUIDANCE: dict[str, ParameterGuidance] = {
     "recommendation_mode": ParameterGuidance(
         summary=(
-            "Selects how DiffeoForge obtains the starting values. This choice does not "
-            "run an atlas."
+            "Selects how DiffeoForge obtains the provisional center of the pilot "
+            "comparisons and whether pilot calibration is required before the final "
+            "parameter review."
         ),
         sections=(
             (
@@ -37,22 +38,22 @@ DEFORMETRICA_PARAMETER_GUIDANCE: dict[str, ParameterGuidance] = {
                 "measured. Use this when no current recommendation exists.",
             ),
             (
-                "Data-assisted recommendation",
-                "Uses measured mesh scale and sampling plus your detail choices. The "
-                "proposed values are locked, recorded, and intended as pilot starting "
-                "values—not as scientifically validated defaults.",
+                "Guided pilot calibration",
+                "Uses measured mesh scale and sampling plus your biological-detail "
+                "choices to center several candidate runs. You visually compare those "
+                "runs; the candidates you approve become the final parameter values.",
             ),
             (
-                "Advanced manual control",
+                "Advanced manual parameters",
                 "Makes the measured recommendations editable in absolute mesh coordinate "
-                "units. An aligned-mesh analysis is required first so those units are "
-                "unambiguous.",
+                "units and explicitly skips the guided pilot requirement. An aligned-mesh "
+                "analysis is still required so those units are unambiguous.",
             ),
             (
                 "Example",
-                "Analyze a newly GPA-aligned cohort, review the proposed effective widths, "
-                "then switch to manual control only when a documented pilot justifies a "
-                "change.",
+                "Analyze a newly GPA-aligned cohort, run the guided candidate comparisons, "
+                "visually choose the anatomically acceptable option at each stage, and "
+                "then review the automatically applied final values.",
             ),
         ),
     ),

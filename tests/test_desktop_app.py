@@ -11,6 +11,7 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
+import yaml
 
 from diffeoforge.analysis.landmarks import LANDMARK_COLUMNS
 from diffeoforge.desktop.app import build_parser
@@ -450,6 +451,9 @@ def test_desktop_window_separates_data_parameters_review_run_and_results(
     assert window.page_stack.widget(1).isAncestorOf(window.reference_guidance_box)
     assert window.page_stack.widget(1).isAncestorOf(window.reference_parameter_box)
     assert window.page_stack.widget(1).isAncestorOf(window.reference_calibration_execution_card)
+    assert window.reference_guidance_box.isAncestorOf(
+        window.reference_calibration_execution_card
+    )
     assert window.page_stack.widget(2).isAncestorOf(window.review_summary_label)
     assert window.page_stack.widget(3).isAncestorOf(window.run_state_label)
     assert window.page_stack.widget(4).isAncestorOf(window.result_summary_label)
@@ -674,8 +678,8 @@ def test_desktop_requires_exact_procrustes_preview_approval_and_rejects_drift(
 
     approved = window._request().approved_procrustes_fingerprint
     assert approved == window._procrustes_preview.fingerprint
-    assert window.create_button.isEnabled() is False
-    assert window.create_button.text() == "Analyze aligned meshes before setting parameters"
+    assert window.create_button.isEnabled() is True
+    assert window.create_button.text() == "Analyze aligned meshes"
     assert window.analyze_reference_parameters_button.isEnabled() is True
     window.analyze_reference_parameters_button.click()
     assert len(queued) == 3
@@ -765,7 +769,8 @@ def test_desktop_analyzes_user_declared_gpa_meshes_before_project_creation(
     application.processEvents()
 
     assert window.analyze_reference_parameters_button.isEnabled() is True
-    assert window.create_button.isEnabled() is False
+    assert window.create_button.isEnabled() is True
+    assert window.create_button.text() == "Analyze aligned meshes"
     window.reference_surface_detail_combo.setCurrentIndex(
         window.reference_surface_detail_combo.findData("fine")
     )
@@ -793,6 +798,29 @@ def test_desktop_analyzes_user_declared_gpa_meshes_before_project_creation(
     )
     assert window._request().reference_parameter_recommendation == (recommendation.provenance)
     assert window.create_button.isEnabled() is True
+    assert window.create_button.text() == "Build pilot calibration plan"
+    assert window.analyze_reference_parameters_button.objectName() == "secondary"
+    assert window.build_reference_calibration_button.objectName() == "primary"
+    assert "Provisional starting values" in window.reference_parameter_section_label.text()
+    window.create_button.click()
+    application.processEvents()
+    assert window._reference_calibration_plan is not None
+    assert window.create_button.text() == "Prepare & start pilot calibration"
+    assert window.open_reference_calibration_button.isEnabled() is True
+    assert window.open_reference_calibration_button.objectName() == "primary"
+    guidance_row, _guidance_role = window.parameter_input_form.getWidgetPosition(
+        window.reference_guidance_box
+    )
+    parameter_row, _parameter_role = window.parameter_input_form.getWidgetPosition(
+        window.reference_parameter_box
+    )
+    assert guidance_row < parameter_row
+    prepare_calls: list[bool] = []
+    monkeypatch.setattr(window, "_create_project", lambda: prepare_calls.append(True))
+    window.open_reference_calibration_button.click()
+    assert prepare_calls == [True]
+    assert window._guided_reference_calibration_requested is True
+    window._guided_reference_calibration_requested = False
     assert "cannot prove homologous alignment" in (window.reference_guidance_status_label.text())
     window.reference_deformation_scale_combo.setCurrentIndex(
         window.reference_deformation_scale_combo.findData("global")
@@ -800,7 +828,80 @@ def test_desktop_analyzes_user_declared_gpa_meshes_before_project_creation(
     application.processEvents()
     assert window._reference_recommendation is None
     assert window.reference_parameter_profile_combo.currentData() == "pending"
-    assert window.create_button.isEnabled() is False
+    assert window.create_button.isEnabled() is True
+    assert window.create_button.text() == "Analyze aligned meshes"
+    window.close()
+    application.processEvents()
+
+
+def test_desktop_applies_pilot_selected_values_as_locked_final_parameters(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from diffeoforge.desktop.project_setup import (
+        DesktopEngine,
+        create_project,
+    )
+    from diffeoforge.desktop.widgets import (
+        DiffeoForgeWindow,
+        _ReferenceParameterWorker,
+    )
+
+    application = QApplication.instance() or QApplication(
+        ["diffeoforge-calibrated-parameter-application-test"]
+    )
+    queued = []
+
+    class FakePool:
+        def start(self, worker) -> None:
+            queued.append(worker)
+
+    window = DiffeoForgeWindow()
+    window._thread_pool = FakePool()  # type: ignore[assignment]
+    window.engine_combo.setCurrentIndex(
+        window.engine_combo.findData(DesktopEngine.DEFORMETRICA_REFERENCE)
+    )
+    window.mesh_edit.setText(str(ROOT / "examples" / "synthetic" / "meshes"))
+    window.project_edit.setText(str(tmp_path / "project"))
+    window.units_combo.setCurrentIndex(window.units_combo.findData("unitless"))
+    window.already_gpa_check.setChecked(True)
+    window.analyze_reference_parameters_button.click()
+    assert isinstance(queued[0], _ReferenceParameterWorker)
+    queued[0].run()
+    application.processEvents()
+    assert window._reference_recommendation is not None
+
+    provisional = create_project(window._request())
+    config = yaml.safe_load(provisional.config_path.read_text(encoding="utf-8"))
+    config["model"]["attachment"]["kernel_width"] = 0.123
+    config["model"]["deformation"]["kernel_width"] = 0.234
+    config["model"]["deformation"]["initial_control_point_spacing"] = 0.345
+    config["model"]["deformation"]["timepoints"] = 23
+    config["model"]["noise_std"] = 0.045
+    calibrated = tmp_path / "atlas-calibrated.yaml"
+    calibrated.write_text(
+        yaml.safe_dump(config, sort_keys=False),
+        encoding="utf-8",
+    )
+
+    window._apply_reference_calibrated_configuration(calibrated)
+
+    assert window._reference_calibration_completed() is True
+    assert window.reference_parameter_profile_combo.currentText() == (
+        "Pilot-calibrated selection (read-only)"
+    )
+    assert window.reference_attachment_ratio_spin.value() == pytest.approx(0.123)
+    assert window.reference_deformation_ratio_spin.value() == pytest.approx(0.234)
+    assert window.reference_control_spacing_ratio_spin.value() == pytest.approx(0.345)
+    assert window.reference_noise_ratio_spin.value() == pytest.approx(0.045)
+    assert window.reference_timepoints_spin.value() == 23
+    assert window.reference_attachment_ratio_spin.isEnabled() is False
+    assert window.reference_timepoints_spin.isEnabled() is False
+    assert "Final pilot-calibrated" in window.reference_parameter_section_label.text()
     window.close()
     application.processEvents()
 

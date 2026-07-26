@@ -29,6 +29,7 @@ from PySide6.QtWidgets import (
     QScrollArea,
     QSpinBox,
     QStackedWidget,
+    QTextBrowser,
     QVBoxLayout,
     QWidget,
 )
@@ -193,7 +194,10 @@ QPushButton#parameterHelpButton:hover { color: #0f5f52; text-decoration: underli
 QFrame#parameterHelpPanel {
     background: #f2f8f6; border: 1px solid #cee3dd; border-radius: 7px;
 }
-QLabel#parameterHelpText { color: #405d61; font-size: 12px; }
+QTextBrowser#parameterHelpText {
+    background: transparent; border: 0; color: #405d61; font-size: 12px;
+    padding: 0;
+}
 QPushButton#primary { background: #167c6b; border: 1px solid #167c6b; color: #ffffff;
                       min-height: 42px; padding: 2px 20px; }
 QPushButton#primary:hover { background: #116858; }
@@ -287,16 +291,25 @@ class _ExpandableParameterHelp(QWidget):
         self.panel.setObjectName("parameterHelpPanel")
         panel_layout = QVBoxLayout(self.panel)
         panel_layout.setContentsMargins(10, 7, 10, 7)
-        self.text_label = QLabel(guidance.to_html())
-        self.text_label.setObjectName("parameterHelpText")
-        self.text_label.setTextFormat(Qt.TextFormat.RichText)
-        self.text_label.setWordWrap(True)
-        self.text_label.setTextInteractionFlags(
-            Qt.TextInteractionFlag.TextSelectableByMouse
-            | Qt.TextInteractionFlag.TextSelectableByKeyboard
+        self.text_browser = QTextBrowser()
+        self.text_browser.setObjectName("parameterHelpText")
+        self.text_browser.setHtml(guidance.to_html())
+        self.text_browser.setOpenExternalLinks(False)
+        self.text_browser.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
         )
-        self.text_label.setAccessibleName(f"{parameter_name} parameter guidance")
-        panel_layout.addWidget(self.text_label)
+        self.text_browser.setVerticalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAsNeeded
+        )
+        self.text_browser.setMinimumHeight(145)
+        self.text_browser.setMaximumHeight(210)
+        self.text_browser.setAccessibleName(f"{parameter_name} parameter guidance")
+        self.text_browser.setToolTip(
+            "Scroll inside this panel to read the complete parameter explanation."
+        )
+        # Compatibility alias used by existing callers and tests.
+        self.text_label = self.text_browser
+        panel_layout.addWidget(self.text_browser)
         self.panel.hide()
         layout.addWidget(self.panel)
 
@@ -775,6 +788,8 @@ class DiffeoForgeWindow(QMainWindow):
         self._reference_calibration_plan: ReferenceCalibrationPlan | None = None
         self._reference_calibration_export: CalibrationPlanExport | None = None
         self._reference_calibration_study_directory: Path | None = None
+        self._reference_calibrated_config_path: Path | None = None
+        self._guided_reference_calibration_requested = False
         self._template_preview_worker: _TemplatePreviewWorker | None = None
         self._template_preview_scroll_value: int | None = None
         self._reference_readiness: DesktopReferenceReadiness | None = None
@@ -980,15 +995,15 @@ class DiffeoForgeWindow(QMainWindow):
         boundary_layout = QHBoxLayout(boundary)
         boundary_layout.setContentsMargins(13, 9, 13, 9)
         boundary_text = QLabel(
-            "For Deformetrica, parameter suggestions and the staged pilot calibration "
-            "now live on this page. No full-cohort atlas starts here."
+            "For Deformetrica, follow the green action: analyze the aligned meshes, "
+            "build the pilot plan, run and visually review its candidates, then inspect "
+            "the selected final parameters. No full-cohort atlas starts here."
         )
         boundary_text.setObjectName("boundaryText")
         boundary_text.setWordWrap(True)
         boundary_layout.addWidget(boundary_text)
         layout.addWidget(boundary)
         layout.addWidget(parameter_form_card)
-        layout.addWidget(self._build_reference_calibration_execution_card())
 
         self.result_card = self._build_result_card()
         self.result_card.hide()
@@ -1029,23 +1044,29 @@ class DiffeoForgeWindow(QMainWindow):
         calibration_layout = QVBoxLayout(calibration)
         calibration_layout.setContentsMargins(24, 22, 24, 24)
         calibration_layout.setSpacing(10)
-        calibration_title = QLabel("Run the automatic Deformetrica pilot calibration")
+        calibration_title = QLabel("3. Run and review the automatic pilot calibration")
         calibration_title.setObjectName("sectionTitle")
         self.reference_calibration_execution_status = QLabel(
-            "Create and review the project configuration to make the planned pilot runs executable."
+            "Complete the aligned-mesh analysis and build the calibration plan first."
         )
         self.reference_calibration_execution_status.setObjectName("status")
         self.reference_calibration_execution_status.setWordWrap(True)
         calibration_detail = QLabel(
-            "DiffeoForge runs every candidate in the current parameter stage, then "
-            "pauses. A guided viewer takes you through every pilot specimen before "
-            "you can approve and select an option."
+            "DiffeoForge creates a provisional starting configuration automatically, "
+            "checks the managed Deformetrica installation, and runs every candidate in "
+            "the current stage. The guided viewer then takes you through every pilot "
+            "specimen before you can approve and select an option. The selected values "
+            "become the final read-only parameter set shown below."
         )
         calibration_detail.setObjectName("reviewDetail")
         calibration_detail.setWordWrap(True)
-        self.open_reference_calibration_button = QPushButton("Open automatic pilot calibration…")
-        self.open_reference_calibration_button.setObjectName("primary")
-        self.open_reference_calibration_button.clicked.connect(self._open_reference_calibration)
+        self.open_reference_calibration_button = QPushButton(
+            "Prepare & start pilot calibration…"
+        )
+        self.open_reference_calibration_button.setObjectName("secondary")
+        self.open_reference_calibration_button.clicked.connect(
+            self._prepare_or_open_reference_calibration
+        )
         self.open_reference_calibration_button.setEnabled(False)
         calibration_layout.addWidget(calibration_title)
         calibration_layout.addWidget(self.reference_calibration_execution_status)
@@ -1942,7 +1963,7 @@ class DiffeoForgeWindow(QMainWindow):
         parameter_card_layout = QVBoxLayout(parameter_card)
         parameter_card_layout.setContentsMargins(24, 22, 24, 24)
         parameter_card_layout.setSpacing(15)
-        parameter_section = QLabel("Engine parameters and pilot design")
+        parameter_section = QLabel("Guided parameter calibration")
         parameter_section.setObjectName("sectionTitle")
         parameter_card_layout.addWidget(parameter_section)
 
@@ -2029,12 +2050,20 @@ class DiffeoForgeWindow(QMainWindow):
         self.reference_parameter_profile_combo.setObjectName("referenceParameterProfileCombo")
         self.reference_parameter_profile_combo.addItem("Analyze aligned meshes first", "pending")
         self.reference_parameter_profile_combo.addItem(
-            "Data-assisted recommendation", "data_assisted"
+            "Guided pilot calibration (recommended)", "data_assisted"
         )
-        self.reference_parameter_profile_combo.addItem("Advanced manual control", "advanced")
+        self.reference_parameter_profile_combo.addItem(
+            "Advanced manual parameters (skip pilot calibration)", "advanced"
+        )
         self.reference_parameter_profile_combo.currentIndexChanged.connect(
             self._update_reference_parameter_profile
         )
+        self.reference_parameter_section_label = QLabel(
+            "Final parameter values — complete the pilot calibration first"
+        )
+        self.reference_parameter_section_label.setObjectName("sectionTitle")
+        self.reference_parameter_section_label.setWordWrap(True)
+        reference_parameter_layout.addWidget(self.reference_parameter_section_label)
         reference_parameter_layout.addWidget(self.reference_parameter_profile_combo)
         reference_parameter_layout.addWidget(
             self._parameter_help(
@@ -2234,6 +2263,22 @@ class DiffeoForgeWindow(QMainWindow):
                 ),
             )
         reference_parameter_layout.addWidget(self.reference_expert_box)
+        self._reference_expert_widgets = (
+            self.reference_attachment_type_combo,
+            self.reference_timepoints_spin,
+            self.reference_rk2_check,
+            self.reference_line_search_spin,
+            self.reference_save_every_spin,
+            self.reference_print_every_spin,
+            self.reference_scale_step_check,
+            self.reference_sobolev_check,
+            self.reference_sobolev_ratio_spin,
+            self.reference_freeze_template_check,
+            self.reference_freeze_control_points_check,
+            self.reference_acceleration_combo,
+            self.reference_threads_spin,
+            self.reference_random_seed_spin,
+        )
         self.reference_expert_box.hide()
         self.reference_parameter_hint = QLabel(
             "No values are active until aligned meshes are analyzed or Advanced manual "
@@ -2435,6 +2480,17 @@ class DiffeoForgeWindow(QMainWindow):
         guidance_layout = QVBoxLayout(self.reference_guidance_box)
         guidance_layout.setContentsMargins(0, 0, 0, 0)
         guidance_layout.setSpacing(7)
+        guidance_title = QLabel("1. Analyze the aligned cohort")
+        guidance_title.setObjectName("sectionTitle")
+        guidance_layout.addWidget(guidance_title)
+        guidance_intro = QLabel(
+            "Choose the biological scales that matter, then let DiffeoForge measure "
+            "the aligned geometry. The resulting numbers are provisional centers for "
+            "the pilot comparisons, not final atlas parameters."
+        )
+        guidance_intro.setObjectName("hint")
+        guidance_intro.setWordWrap(True)
+        guidance_layout.addWidget(guidance_intro)
         self.reference_surface_detail_combo = QComboBox()
         self.reference_surface_detail_combo.setObjectName("referenceSurfaceDetailCombo")
         self.reference_surface_detail_combo.addItem("Fine anatomical detail", "fine")
@@ -2508,7 +2564,7 @@ class DiffeoForgeWindow(QMainWindow):
         calibration_layout = QVBoxLayout(calibration_box)
         calibration_layout.setContentsMargins(0, 10, 0, 0)
         calibration_layout.setSpacing(8)
-        calibration_title = QLabel("Transparent pilot calibration")
+        calibration_title = QLabel("2. Design the pilot comparison")
         calibration_title.setObjectName("sectionTitle")
         calibration_layout.addWidget(calibration_title)
         calibration_intro = QLabel(
@@ -2586,9 +2642,10 @@ class DiffeoForgeWindow(QMainWindow):
         )
         self.reference_calibration_status.setAccessibleName("Parameter calibration plan summary")
         calibration_layout.addWidget(self.reference_calibration_status)
+        calibration_layout.addWidget(self._build_reference_calibration_execution_card())
         guidance_layout.addWidget(calibration_box)
-        parameter_form.addRow("Parameter guidance", self.reference_guidance_box)
-        parameter_form.addRow("Deformetrica parameters", self.reference_parameter_box)
+        parameter_form.addRow("Guided calibration", self.reference_guidance_box)
+        parameter_form.addRow("Final parameter values", self.reference_parameter_box)
 
         data_card_layout.addLayout(data_form)
         parameter_card_layout.addLayout(parameter_form)
@@ -2766,6 +2823,25 @@ class DiffeoForgeWindow(QMainWindow):
             and self._procrustes_visual_reviewed_fingerprint == self._procrustes_preview.fingerprint
             and self._worker is None
         )
+        self._set_action_emphasis(
+            self.preview_procrustes_button,
+            bool(
+                self.preview_procrustes_button.isEnabled()
+                and self._procrustes_preview is None
+            ),
+        )
+        self._set_action_emphasis(
+            self.review_procrustes_visual_button,
+            bool(
+                self.review_procrustes_visual_button.isEnabled()
+                and self._procrustes_visual_reviewed_fingerprint
+                != (
+                    self._procrustes_preview.fingerprint
+                    if self._procrustes_preview is not None
+                    else None
+                )
+            ),
+        )
 
     def _current_surface_cohort(self) -> tuple[Path, ...]:
         directory = Path(self.mesh_edit.text().strip()).expanduser().resolve()
@@ -2855,6 +2931,18 @@ class DiffeoForgeWindow(QMainWindow):
         *,
         sync: bool = True,
     ) -> None:
+        self._reference_calibrated_config_path = None
+        self.reference_parameter_profile_combo.setEnabled(True)
+        self.reference_expert_toggle.setEnabled(True)
+        for expert_widget in self._reference_expert_widgets:
+            expert_widget.setEnabled(True)
+        self._update_reference_expert_dependencies()
+        calibrated_index = self.reference_parameter_profile_combo.findData("data_assisted")
+        if calibrated_index >= 0:
+            self.reference_parameter_profile_combo.setItemText(
+                calibrated_index,
+                "Guided pilot calibration (recommended)",
+            )
         self._invalidate_reference_calibration_plan(
             "Aligned-mesh inputs changed; rebuild the calibration plan after analysis.",
             sync=False,
@@ -2939,6 +3027,22 @@ class DiffeoForgeWindow(QMainWindow):
     def _reference_calibration_inputs_changed(self) -> None:
         self._invalidate_reference_calibration_plan()
 
+    @staticmethod
+    def _set_action_emphasis(button: QPushButton, emphasized: bool) -> None:
+        """Make only the contextually recommended action visually primary."""
+
+        desired = "primary" if emphasized else "secondary"
+        if button.objectName() == desired:
+            return
+        button.setObjectName(desired)
+        button.style().unpolish(button)
+        button.style().polish(button)
+        button.update()
+
+    def _reference_calibration_completed(self) -> bool:
+        path = self._reference_calibrated_config_path
+        return bool(path is not None and path.is_file())
+
     def _update_reference_guidance_controls(self) -> None:
         reference = self.engine_combo.currentData() == DesktopEngine.DEFORMETRICA_REFERENCE
         uses_diffeoforge_gpa = bool(
@@ -2967,13 +3071,39 @@ class DiffeoForgeWindow(QMainWindow):
             and self._reference_recommendation_matches_current_inputs()
             and self._worker is None
         )
-        self.measure_reference_feature_button.setEnabled(recommendation_ready)
-        self.reference_feature_scale_spin.setEnabled(recommendation_ready)
-        self.reference_pilot_subject_count_spin.setEnabled(recommendation_ready)
-        self.build_reference_calibration_button.setEnabled(recommendation_ready)
-        self.export_reference_calibration_button.setEnabled(
-            recommendation_ready and self._reference_calibration_plan_matches_current_inputs()
+        guided_mode = (
+            self.reference_parameter_profile_combo.currentData() == "data_assisted"
         )
+        pilot_design_ready = bool(recommendation_ready and guided_mode)
+        self.measure_reference_feature_button.setEnabled(pilot_design_ready)
+        self.reference_feature_scale_spin.setEnabled(pilot_design_ready)
+        self.reference_pilot_subject_count_spin.setEnabled(pilot_design_ready)
+        self.build_reference_calibration_button.setEnabled(pilot_design_ready)
+        self.export_reference_calibration_button.setEnabled(
+            pilot_design_ready and self._reference_calibration_plan_matches_current_inputs()
+        )
+        plan_ready = bool(
+            recommendation_ready
+            and self._reference_calibration_plan_matches_current_inputs()
+        )
+        calibration_complete = self._reference_calibration_completed()
+        self._set_action_emphasis(
+            self.analyze_reference_parameters_button,
+            bool(reference and alignment_ready and not recommendation_ready),
+        )
+        self._set_action_emphasis(
+            self.build_reference_calibration_button,
+            bool(guided_mode and recommendation_ready and not plan_ready),
+        )
+        self._set_action_emphasis(
+            self.open_reference_calibration_button,
+            bool(
+                plan_ready
+                and guided_mode
+                and not calibration_complete
+            ),
+        )
+        self._refresh_reference_calibration_execution_card()
 
     @Slot()
     def _measure_reference_feature(self) -> None:
@@ -3172,6 +3302,7 @@ class DiffeoForgeWindow(QMainWindow):
             )
             return
 
+        self._reference_calibrated_config_path = None
         self._reference_recommendation = recommendation
         self._reference_recommendation_paths = current_paths
         self.reference_parameter_profile_combo.blockSignals(True)
@@ -3199,9 +3330,10 @@ class DiffeoForgeWindow(QMainWindow):
         self.reference_calibration_status.setObjectName("status")
         self.reference_calibration_status.setStyleSheet("")
         self.reference_calibration_status.setText(
-            "Aligned-mesh evidence is ready. Optionally measure the smallest relevant "
-            "feature on the 3D template, choose a pilot size, and build the staged "
-            "calibration plan. No Deformetrica process starts at this step."
+            "Aligned-mesh evidence is ready. The values shown below are provisional "
+            "centers, not final atlas parameters. Optionally measure the smallest "
+            "relevant feature, choose a pilot size, and build the staged comparison plan. "
+            "No Deformetrica process starts at this step."
         )
         self.reference_guidance_status_label.setObjectName("statusSuccess")
         self.reference_guidance_status_label.setStyleSheet("")
@@ -4046,8 +4178,18 @@ class DiffeoForgeWindow(QMainWindow):
     @Slot()
     def _update_reference_parameter_profile(self) -> None:
         key = str(self.reference_parameter_profile_combo.currentData())
+        calibrated = self._reference_calibration_completed()
+        self.reference_parameter_profile_combo.setEnabled(not calibrated)
+        self.reference_expert_toggle.setEnabled(not calibrated)
+        for expert_widget in self._reference_expert_widgets:
+            expert_widget.setEnabled(not calibrated)
+        if not calibrated:
+            self._update_reference_expert_dependencies()
         if key == "pending":
             self._set_reference_parameter_fields_visible(False)
+            self.reference_parameter_section_label.setText(
+                "Final parameter values — complete the pilot calibration first"
+            )
             self.reference_parameter_hint.setText(
                 "No parameter values are active. Confirm existing GPA alignment or complete "
                 "the DiffeoForge landmark-GPA preview, then analyze the aligned meshes."
@@ -4060,6 +4202,9 @@ class DiffeoForgeWindow(QMainWindow):
         if key == "data_assisted":
             if recommendation is None:
                 self._set_reference_parameter_fields_visible(False)
+                self.reference_parameter_section_label.setText(
+                    "Final parameter values — aligned-mesh analysis required"
+                )
                 self.reference_parameter_hint.setText(
                     "No current aligned-mesh recommendation is available. Run the geometry "
                     "analysis again or choose Advanced manual control."
@@ -4093,20 +4238,41 @@ class DiffeoForgeWindow(QMainWindow):
                 ),
             )
             self._set_reference_parameter_fields_visible(True)
-            for widget, value in values:
-                widget.setValue(value)
+            if not calibrated:
+                for widget, value in values:
+                    widget.setValue(value)
+            for widget, _value in values:
                 widget.setEnabled(False)
-            self.reference_parameter_hint.setText(
-                "Geometry-derived scale and sampling constraints plus your stated detail "
-                "and deformation-scale choices. Noise and optimizer settings remain "
-                "provisional and require pilot validation."
-            )
+            if calibrated:
+                for expert_widget in self._reference_expert_widgets:
+                    expert_widget.setEnabled(False)
+            if calibrated:
+                self.reference_parameter_section_label.setText(
+                    "Final pilot-calibrated parameter values"
+                )
+                self.reference_parameter_hint.setText(
+                    "These read-only values are the candidate selections you approved "
+                    "during the staged pilot calibration. They are the values sent to "
+                    "Step 3 for final full-cohort review."
+                )
+            else:
+                self.reference_parameter_section_label.setText(
+                    "Provisional starting values — pilot calibration still required"
+                )
+                self.reference_parameter_hint.setText(
+                    "These geometry-derived values only center the pilot comparisons. "
+                    "They are deliberately locked and are not yet the final atlas "
+                    "parameters. Complete Steps 2 and 3 above."
+                )
             self._update_reference_effective_widths()
             self._sync_ready_state()
             return
 
         if recommendation is None:
             self._set_reference_parameter_fields_visible(False)
+            self.reference_parameter_section_label.setText(
+                "Advanced manual parameters — aligned-mesh analysis required"
+            )
             self.reference_parameter_hint.setText(
                 "Analyze the aligned meshes first. DiffeoForge needs their measured "
                 "coordinate scale before manual kernel widths can be entered in intuitive "
@@ -4119,10 +4285,14 @@ class DiffeoForgeWindow(QMainWindow):
         for widget in self._reference_parameter_widgets():
             widget.setEnabled(True)
         if key == "advanced":
+            self.reference_parameter_section_label.setText(
+                "Advanced manual parameters — pilot calibration will be skipped"
+            )
             self.reference_parameter_hint.setText(
                 "Advanced values are editable in the mesh coordinate system. DiffeoForge "
                 "also records each value as a percentage of the measured template diagonal "
-                "for reproducibility."
+                "for reproducibility. This explicitly bypasses the guided pilot-calibration "
+                "requirement; the full-cohort result still requires scientific validation."
             )
         self._update_reference_effective_widths()
         self._sync_ready_state()
@@ -4301,6 +4471,12 @@ class DiffeoForgeWindow(QMainWindow):
                     )
                 )
             )
+            guided_reference = bool(
+                self.engine_combo.currentData() == DesktopEngine.DEFORMETRICA_REFERENCE
+                and self.reference_parameter_profile_combo.currentData() == "data_assisted"
+                and self._reference_recommendation_matches_current_inputs()
+                and not self._reference_calibration_completed()
+            )
             if self._procrustes_preview is None:
                 alignment_action = "Preview & approve alignment first"
             elif (
@@ -4309,16 +4485,33 @@ class DiffeoForgeWindow(QMainWindow):
                 alignment_action = "Complete visual GPA review first"
             else:
                 alignment_action = "Approve reviewed alignment first"
-            self.create_button.setText(
-                alignment_action
-                if approval_required
-                else (
-                    "Analyze aligned meshes before setting parameters"
-                    if parameter_guidance_required
-                    else "Validate data & create project"
+            if approval_required:
+                self.create_button.setText(alignment_action)
+                self.create_button.setEnabled(False)
+            elif parameter_guidance_required:
+                self.create_button.setText("Analyze aligned meshes")
+                self.create_button.setEnabled(
+                    self.analyze_reference_parameters_button.isEnabled()
                 )
-            )
-            self.create_button.setEnabled(form_ready and self._worker is None)
+            elif guided_reference:
+                plan_ready = self._reference_calibration_plan_matches_current_inputs()
+                self.create_button.setText(
+                    "Prepare & start pilot calibration"
+                    if plan_ready
+                    else "Build pilot calibration plan"
+                )
+                self.create_button.setEnabled(
+                    bool(
+                        self._worker is None
+                        and (
+                            plan_ready
+                            or self._reference_recommendation_matches_current_inputs()
+                        )
+                    )
+                )
+            else:
+                self.create_button.setText("Validate data & create project")
+                self.create_button.setEnabled(form_ready and self._worker is None)
 
     def _sync_run_primary_action(self) -> None:
         if isinstance(self._worker, (_AtlasWorker, _ReferenceAtlasWorker)):
@@ -4472,7 +4665,24 @@ class DiffeoForgeWindow(QMainWindow):
         elif self._result is not None:
             self._review_project()
         else:
-            self._create_project()
+            reference = (
+                self.engine_combo.currentData() == DesktopEngine.DEFORMETRICA_REFERENCE
+            )
+            profile = self.reference_parameter_profile_combo.currentData()
+            if reference and profile == "pending":
+                self._analyze_reference_parameters()
+            elif (
+                reference
+                and profile == "data_assisted"
+                and self._reference_recommendation_matches_current_inputs()
+                and not self._reference_calibration_completed()
+            ):
+                if self._reference_calibration_plan_matches_current_inputs():
+                    self._prepare_or_open_reference_calibration()
+                else:
+                    self._build_reference_calibration_plan()
+            else:
+                self._create_project()
 
     @Slot()
     def _run_primary_action(self) -> None:
@@ -4635,6 +4845,7 @@ class DiffeoForgeWindow(QMainWindow):
         config_path = self._configuration_path(request)
         if config_path.exists():
             if not self._confirm_configuration_overwrite(config_path):
+                self._guided_reference_calibration_requested = False
                 self.status_label.setObjectName("status")
                 self.status_label.setStyleSheet("")
                 self.status_label.setText(
@@ -4695,10 +4906,13 @@ class DiffeoForgeWindow(QMainWindow):
         )
         self.result_card.show()
         self._sync_ready_state()
+        if self._guided_reference_calibration_requested:
+            QTimer.singleShot(0, self._review_project)
 
     @Slot(str)
     def _project_failed(self, message: str) -> None:
         self._worker = None
+        self._guided_reference_calibration_requested = False
         if self._approved_procrustes_fingerprint() is not None:
             self._invalidate_procrustes_preview()
         self.status_label.setObjectName("statusError")
@@ -4968,19 +5182,80 @@ class DiffeoForgeWindow(QMainWindow):
         return snapshot.status != "completed"
 
     def _refresh_reference_calibration_execution_card(self) -> None:
-        context = self._reference_calibration_context()
-        if context is None:
+        reference = self.engine_combo.currentData() == DesktopEngine.DEFORMETRICA_REFERENCE
+        if not reference:
             self.reference_calibration_execution_card.hide()
             self.open_reference_calibration_button.setEnabled(False)
             return
-        plan, directory = context
         self.reference_calibration_execution_card.show()
+        if self.reference_parameter_profile_combo.currentData() == "advanced":
+            self.reference_calibration_execution_status.setObjectName("statusWarning")
+            self.reference_calibration_execution_status.setStyleSheet("")
+            self.reference_calibration_execution_status.setText(
+                "Advanced manual parameters are selected, so the guided pilot requirement "
+                "is being skipped. Switch back to Guided pilot calibration if you want "
+                "DiffeoForge to test and apply parameter candidates."
+            )
+            self.open_reference_calibration_button.setText(
+                "Guided pilot calibration skipped"
+            )
+            self.open_reference_calibration_button.setEnabled(False)
+            return
+        plan_is_current = self._reference_calibration_plan_matches_current_inputs()
+        if not plan_is_current:
+            self.reference_calibration_execution_status.setObjectName("status")
+            self.reference_calibration_execution_status.setStyleSheet("")
+            self.reference_calibration_execution_status.setText(
+                "Complete Step 1 above, then build the staged comparison plan in Step 2. "
+                "No pilot can start before those inputs are fixed."
+            )
+            self.open_reference_calibration_button.setText(
+                "Prepare & start pilot calibration…"
+            )
+            self.open_reference_calibration_button.setEnabled(False)
+            return
+        if self._reference_calibration_completed():
+            assert self._reference_calibrated_config_path is not None
+            self.reference_calibration_execution_status.setObjectName("statusSuccess")
+            self.reference_calibration_execution_status.setStyleSheet("")
+            self.reference_calibration_execution_status.setText(
+                "Pilot calibration complete. Your visually approved candidate selections "
+                "have been applied to the final read-only parameters below.\n"
+                f"Selected configuration: {self._reference_calibrated_config_path}"
+            )
+            self.open_reference_calibration_button.setText(
+                "Pilot calibration completed"
+            )
+            self.open_reference_calibration_button.setEnabled(False)
+            return
+        context = self._reference_calibration_context()
+        if context is None:
+            assert self._reference_calibration_plan is not None
+            plan = self._reference_calibration_plan
+            self.reference_calibration_execution_status.setObjectName("statusSuccess")
+            self.reference_calibration_execution_status.setStyleSheet("")
+            self.reference_calibration_execution_status.setText(
+                f"Plan ready · {plan.pilot_subject_count} pilot subjects · "
+                f"{sum(len(stage.candidates) for stage in plan.stages)} candidate "
+                "atlases across four sequential stages. Starting here automatically "
+                "creates the provisional pilot configuration and runs the Deformetrica "
+                "setup check before opening the calibration."
+            )
+            self.open_reference_calibration_button.setText(
+                "Prepare & start pilot calibration…"
+            )
+            self.open_reference_calibration_button.setEnabled(self._worker is None)
+            return
+        plan, directory = context
         ready = bool(
             self._reference_readiness is not None
             and self._reference_readiness.ready
             and self._worker is None
         )
         self.open_reference_calibration_button.setEnabled(ready)
+        self.open_reference_calibration_button.setText(
+            "Run or continue pilot calibration…"
+        )
         if not directory.exists():
             self.reference_calibration_execution_status.setObjectName("status")
             self.reference_calibration_execution_status.setStyleSheet("")
@@ -4988,7 +5263,7 @@ class DiffeoForgeWindow(QMainWindow):
                 f"Planned, not started · {plan.pilot_subject_count} pilot subjects · "
                 f"{sum(len(stage.candidates) for stage in plan.stages)} candidate "
                 "atlases across four sequential stages. The Deformetrica setup check "
-                "must pass before execution."
+                "is running or must pass before execution."
             )
             return
         try:
@@ -5020,6 +5295,136 @@ class DiffeoForgeWindow(QMainWindow):
                 f"status {snapshot.status.replace('_', ' ')}"
             )
         self.reference_calibration_execution_status.setText(message)
+
+    @Slot()
+    def _prepare_or_open_reference_calibration(self) -> None:
+        """Advance the complete guided pre-pilot chain from one explicit action."""
+
+        if self._worker is not None:
+            return
+        if not self._reference_calibration_plan_matches_current_inputs():
+            self.reference_calibration_execution_status.setObjectName("statusWarning")
+            self.reference_calibration_execution_status.setStyleSheet("")
+            self.reference_calibration_execution_status.setText(
+                "Analyze the aligned meshes and build the current staged comparison "
+                "plan before starting pilot calibration."
+            )
+            self._sync_ready_state()
+            return
+        if self._reference_calibration_completed():
+            return
+        context = self._reference_calibration_context()
+        if context is not None and self._reference_readiness is not None:
+            if self._reference_readiness.ready:
+                self._guided_reference_calibration_requested = False
+                self._open_reference_calibration()
+            else:
+                self._guided_reference_calibration_requested = True
+                self._check_reference_readiness()
+            return
+
+        self._guided_reference_calibration_requested = True
+        self.reference_calibration_execution_status.setObjectName("status")
+        self.reference_calibration_execution_status.setStyleSheet("")
+        if self._result is None:
+            self.reference_calibration_execution_status.setText(
+                "Creating and validating the provisional pilot configuration…"
+            )
+            self._create_project()
+            return
+        if self._review is None:
+            self.reference_calibration_execution_status.setText(
+                "Reviewing the provisional pilot configuration…"
+            )
+            self._review_project()
+            return
+        self.reference_calibration_execution_status.setText(
+            "Checking the managed Deformetrica installation before pilot execution…"
+        )
+        self._check_reference_readiness()
+
+    def _apply_reference_calibrated_configuration(self, config_path: Path) -> None:
+        """Reflect one immutable pilot-selected configuration in the Step 2 editor."""
+
+        resolved = config_path.expanduser().resolve()
+        config = load_config(resolved)
+        model = config["model"]
+        deformation = model["deformation"]
+        optimization = config["optimization"]
+        runtime = config["runtime"]
+        values = (
+            (self.reference_attachment_ratio_spin, model["attachment"]["kernel_width"]),
+            (self.reference_deformation_ratio_spin, deformation["kernel_width"]),
+            (
+                self.reference_control_spacing_ratio_spin,
+                deformation["initial_control_point_spacing"],
+            ),
+            (self.reference_noise_ratio_spin, model["noise_std"]),
+            (self.reference_max_iterations_spin, optimization["max_iterations"]),
+            (self.reference_step_size_spin, optimization["initial_step_size"]),
+            (
+                self.reference_tolerance_spin,
+                optimization["convergence_tolerance"],
+            ),
+            (self.reference_timepoints_spin, deformation["timepoints"]),
+            (
+                self.reference_line_search_spin,
+                optimization["max_line_search_iterations"],
+            ),
+            (
+                self.reference_save_every_spin,
+                optimization["save_every_n_iterations"],
+            ),
+            (
+                self.reference_print_every_spin,
+                optimization["print_every_n_iterations"],
+            ),
+            (
+                self.reference_sobolev_ratio_spin,
+                optimization["sobolev_kernel_width_ratio"],
+            ),
+            (self.reference_threads_spin, runtime["threads"]),
+            (self.reference_random_seed_spin, runtime["random_seed"]),
+        )
+        for widget, value in values:
+            widget.setValue(value)
+        attachment_index = self.reference_attachment_type_combo.findData(
+            model["attachment"]["type"]
+        )
+        if attachment_index >= 0:
+            self.reference_attachment_type_combo.setCurrentIndex(attachment_index)
+        self.reference_rk2_check.setChecked(bool(deformation["use_rk2"]))
+        self.reference_scale_step_check.setChecked(
+            bool(optimization["scale_initial_step_size"])
+        )
+        self.reference_sobolev_check.setChecked(
+            bool(optimization["use_sobolev_gradient"])
+        )
+        self.reference_freeze_template_check.setChecked(
+            bool(optimization["freeze_template"])
+        )
+        self.reference_freeze_control_points_check.setChecked(
+            bool(optimization["freeze_control_points"])
+        )
+        acceleration = {
+            "cuda": "gpu",
+            "gpu": "gpu",
+            "cpu": "cpu",
+        }.get(str(runtime["device"]).lower(), "auto")
+        acceleration_index = self.reference_acceleration_combo.findData(acceleration)
+        if acceleration_index >= 0:
+            self.reference_acceleration_combo.setCurrentIndex(acceleration_index)
+
+        self._reference_calibrated_config_path = resolved
+        profile_index = self.reference_parameter_profile_combo.findData("data_assisted")
+        self.reference_parameter_profile_combo.blockSignals(True)
+        self.reference_parameter_profile_combo.setCurrentIndex(profile_index)
+        self.reference_parameter_profile_combo.setItemText(
+            profile_index,
+            "Pilot-calibrated selection (read-only)",
+        )
+        self.reference_parameter_profile_combo.blockSignals(False)
+        self._update_reference_parameter_profile()
 
     @Slot()
     def _open_reference_calibration(self) -> None:
@@ -5061,24 +5466,22 @@ class DiffeoForgeWindow(QMainWindow):
             or self._result.config_path.resolve() == snapshot.final_config_path.resolve()
         ):
             return
-        answer = QMessageBox.question(
-            self,
-            "Use calibrated parameters for the full cohort?",
-            "All pilot stages are complete. Switch the main workflow to the selected "
-            "calibrated configuration and review it before the full-cohort atlas run?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.Yes,
-        )
-        if answer != QMessageBox.StandardButton.Yes:
-            return
+        self._apply_reference_calibrated_configuration(snapshot.final_config_path)
         self._result = replace(
             self._result,
             config_path=snapshot.final_config_path,
             report_path=None,
         )
+        self.status_label.setObjectName("statusSuccess")
+        self.status_label.setStyleSheet("")
+        self.status_label.setText(
+            "Pilot calibration complete. The visually selected parameter values were "
+            "applied automatically and are being prepared for Step 3 review."
+        )
         self._review = None
         self._reference_readiness = None
         self._reference_run_request = None
+        self._refresh_reference_calibration_execution_card()
         self._review_project()
 
     @Slot()
@@ -5164,10 +5567,17 @@ class DiffeoForgeWindow(QMainWindow):
             self.show_run_button.setEnabled(True)
         self._refresh_reference_calibration_execution_card()
         self._sync_ready_state()
+        if self._guided_reference_calibration_requested:
+            if readiness.ready:
+                self._guided_reference_calibration_requested = False
+                QTimer.singleShot(0, self._open_reference_calibration)
+            else:
+                self._guided_reference_calibration_requested = False
 
     @Slot(str)
     def _reference_readiness_failed(self, message: str) -> None:
         self._worker = None
+        self._guided_reference_calibration_requested = False
         self._reference_readiness = None
         self._reference_run_request = None
         self.reference_readiness_status_label.setObjectName("statusError")
@@ -6442,6 +6852,7 @@ class DiffeoForgeWindow(QMainWindow):
     @Slot(str)
     def _review_failed(self, message: str) -> None:
         self._worker = None
+        self._guided_reference_calibration_requested = False
         self.status_label.setObjectName("statusError")
         self.status_label.setStyleSheet("")
         self.status_label.setText(f"Parameter review failed: {message}")

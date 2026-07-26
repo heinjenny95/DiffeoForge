@@ -54,14 +54,23 @@ def test_each_deformetrica_control_has_an_expandable_english_guide(
 ) -> None:
     pytest.importorskip("PySide6")
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtCore import Qt
     from PySide6.QtWidgets import QApplication
 
+    from diffeoforge.desktop.project_setup import DesktopEngine
     from diffeoforge.desktop.widgets import DiffeoForgeWindow
 
     application = QApplication.instance() or QApplication(
         ["diffeoforge-parameter-guide-test"]
     )
     window = DiffeoForgeWindow()
+    window.engine_combo.setCurrentIndex(
+        window.engine_combo.findData(DesktopEngine.DEFORMETRICA_REFERENCE)
+    )
+    window.page_stack.setCurrentIndex(1)
+    window.show()
+    window.resize(900, 650)
+    application.processEvents()
 
     assert set(window.reference_parameter_help_panels) == EXPECTED_GUIDANCE_KEYS
     assert window.reference_acceleration_combo.currentData() == "auto"
@@ -69,15 +78,23 @@ def test_each_deformetrica_control_has_an_expandable_english_guide(
         assert help_panel.panel.isHidden() is True, key
         assert help_panel.toggle_button.text() == "+ Parameter guide", key
         assert help_panel.toggle_button.accessibleName().startswith("Explain "), key
-        assert "Example:" in help_panel.text_label.text(), key
+        assert "Example:" in help_panel.text_browser.toPlainText(), key
 
-    attachment_help = window.reference_parameter_help_panels["attachment_ratio"]
+    attachment_help = window.reference_parameter_help_panels["surface_detail"]
     attachment_help.toggle_button.click()
     application.processEvents()
     assert attachment_help.panel.isHidden() is False
     assert attachment_help.toggle_button.text() == "- Hide parameter guide"
-    assert "Increase:" in attachment_help.text_label.text()
-    assert "Decrease:" in attachment_help.text_label.text()
+    assert "Fine:" in attachment_help.text_browser.toPlainText()
+    assert "Coarse / global:" in attachment_help.text_browser.toPlainText()
+    assert (
+        attachment_help.text_browser.verticalScrollBarPolicy()
+        == Qt.ScrollBarPolicy.ScrollBarAsNeeded
+    )
+    attachment_help.text_browser.setFixedHeight(60)
+    attachment_help.text_browser.resize(320, 60)
+    application.processEvents()
+    assert attachment_help.text_browser.verticalScrollBar().maximum() > 0
 
     attachment_help.toggle_button.click()
     application.processEvents()

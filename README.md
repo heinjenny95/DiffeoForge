@@ -162,16 +162,19 @@ This repository currently provides:
   scale, centroid dispersion, and mesh sampling, combines those observations
   with explicit researcher choices for anatomical detail and deformation
   locality, and records the recommendation fingerprint, automatic inferences,
-  user decisions, and pilot-validation requirements in YAML; advanced manual
-  and expert controls remain available;
+  user decisions, and pilot-validation requirements in YAML; geometry-derived
+  values are explicitly presented only as provisional pilot centers, while
+  advanced manual controls remain an explicit calibration opt-out;
 - a hash-bound transparent pilot-calibration workflow with direct 3D
   anatomical-feature measurement, deterministic geometry-diverse subject
   selection, sequential attachment/deformation/noise/integration candidates,
   automatic immutable candidate execution, resumable stage orchestration,
   verified geometric-distance/distortion/convergence/runtime evidence,
   mandatory visual review and explicit researcher selection, tamper detection,
-  and publication-oriented JSON/HTML/SHA-256 provenance; no balanced-score
-  suggestion is presented as automatic scientific approval;
+  automatic application of the selected read-only final parameters, and
+  publication-oriented JSON/HTML/SHA-256 provenance; the graphical workflow
+  highlights the next required action and no balanced-score suggestion is
+  presented as automatic scientific approval;
 - a self-contained HTML input-validation and parameter-scale report;
 - a self-contained HTML convergence, lifecycle, and result report;
 - terminal interruption capture, explicit unclean-stop recovery, and

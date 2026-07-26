@@ -59,13 +59,15 @@ terminal:
 9. validate schemas, paths, mesh geometry, and the engine-specific setup
    contract through the same application services used by the CLI;
 10. continue from the data-and-engine screen to a dedicated parameter-setting
-   screen that keeps aligned-mesh analysis, parameter controls, staged pilot
-   planning, automatic candidate execution, and the fixed project-creation
-   action together;
-11. create a starter configuration, requiring a destructive confirmation before
-   atomically replacing only a recognized DiffeoForge-generated configuration,
-   and review a visible result summary;
-12. continue to a third screen that reads the effective values back from the
+    screen whose guided Deformetrica order is aligned-mesh analysis, staged
+    pilot planning, automatic candidate execution and visual selection, then
+    the final selected parameter values;
+11. follow one context-sensitive green action through that order; DiffeoForge
+    creates and reviews the provisional pilot configuration and performs the
+    managed-engine readiness check automatically, then applies the visually
+    approved candidate selections as a read-only final parameter set;
+12. explicitly choose advanced manual parameters only to bypass the guided
+    pilot requirement, or continue to a third screen that reads the effective values back from the
    validated configuration, explains their role, and verifies any
    content-addressed Procrustes evidence and aligned-mesh hashes;
 13. optionally load the exact selected template outside the event loop and view
@@ -98,17 +100,24 @@ The left workflow rail is state-aware navigation rather than a passive progress
 legend. A completed or otherwise available step can be opened directly; future
 steps and all navigation during an active worker remain disabled. The fixed
 bottom-right primary action also advances with the workflow: data selection
-continues to parameter setting, project creation becomes pilot calibration or
-parameter review as applicable, atlas launch becomes verified Results & PCA
-review, and a completed review can be reopened without exposing duplicate
-primary actions inside result cards.
+continues to parameter setting, aligned-mesh analysis becomes pilot planning,
+pilot planning becomes automatic calibration, and the selected parameters
+become parameter review. The same green emphasis is applied to the matching
+in-page action, while other available controls remain visually secondary.
+Atlas launch becomes verified Results & PCA review, and a completed review can
+be reopened without exposing duplicate primary actions inside result cards.
 
 The reference path creates `atlas.yaml` and `atlas.preflight.html`. Its setup
 screen does not expose a static “recommended” profile. Parameter values remain
-inactive until an aligned-mesh analysis is complete or the researcher selects
-advanced manual control. The data-assisted route records geometry measurements,
+inactive until an aligned-mesh analysis is complete. The guided route labels
+geometry-derived values as provisional pilot centers, places candidate execution
+before the final-value display, and locks the automatically applied
+pilot-selected values. Advanced manual parameters explicitly skip the guided
+pilot requirement. The guided route records geometry measurements,
 researcher-selected surface detail and deformation scale, a recommendation
-fingerprint, and explicit pilot-validation requirements. The expert panel
+fingerprint, and explicit pilot-validation requirements. Every expandable
+parameter guide uses its own bounded vertical scroll area, so its complete
+explanation and example remain available at any window height. The expert panel
 retains attachment type, deformation time discretization, RK2, line search,
 checkpoint/log cadence, step scaling, Sobolev gradient controls, freeze flags,
 CPU threads, and random seed. Values are rendered into the validated
