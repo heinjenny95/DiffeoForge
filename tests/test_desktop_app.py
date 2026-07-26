@@ -344,7 +344,7 @@ def test_desktop_window_exposes_required_project_controls(monkeypatch) -> None:
     assert all(isinstance(step, QPushButton) for step in window.rail_steps)
     assert window.rail_steps[0].isEnabled() is True
     assert all(step.isEnabled() is False for step in window.rail_steps[1:])
-    assert window.rail_steps[3].accessibleName() == "Go to step 4: Results & PCA"
+    assert window.rail_steps[4].accessibleName() == "Go to step 5: Results & PCA"
     assert "CPU/float64" in window.engine_hint.text()
     assert window.landmarks_edit.isEnabled() is True
     assert window.procrustes_box.isHidden() is True
@@ -428,6 +428,41 @@ def test_desktop_window_exposes_required_project_controls(monkeypatch) -> None:
     assert expert_request.reference_threads == 8
     assert expert_request.reference_random_seed == 123
     assert window._request().pairwise_mode == "dense"
+    window.close()
+    application.processEvents()
+
+
+def test_desktop_window_separates_data_parameters_review_run_and_results(
+    monkeypatch,
+) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from diffeoforge.desktop.widgets import DiffeoForgeWindow
+
+    application = QApplication.instance() or QApplication(["diffeoforge-five-step-test"])
+    window = DiffeoForgeWindow()
+
+    assert window.page_stack.count() == 5
+    assert window.page_stack.widget(0).isAncestorOf(window.engine_combo)
+    assert window.page_stack.widget(0).isAncestorOf(window.mesh_edit)
+    assert window.page_stack.widget(1).isAncestorOf(window.reference_guidance_box)
+    assert window.page_stack.widget(1).isAncestorOf(window.reference_parameter_box)
+    assert window.page_stack.widget(1).isAncestorOf(window.reference_calibration_execution_card)
+    assert window.page_stack.widget(2).isAncestorOf(window.review_summary_label)
+    assert window.page_stack.widget(3).isAncestorOf(window.run_state_label)
+    assert window.page_stack.widget(4).isAncestorOf(window.result_summary_label)
+
+    window.mesh_edit.setText("C:/example/meshes")
+    window.project_edit.setText("C:/example/project")
+    window.units_combo.setCurrentIndex(window.units_combo.findData("millimeter"))
+    application.processEvents()
+
+    assert window.continue_parameter_button.isEnabled() is True
+    window.continue_parameter_button.click()
+    assert window.page_stack.currentIndex() == 1
+    assert window.rail_steps[1].objectName() == "stepActive"
     window.close()
     application.processEvents()
 
@@ -661,9 +696,9 @@ def test_desktop_requires_exact_procrustes_preview_approval_and_rejects_drift(
         window.reference_parameter_profile_combo.findData("advanced")
     )
     window.reference_attachment_ratio_spin.setValue(0.075)
-    assert window._request().reference_parameter_ratios[
-        "attachment_kernel_width"
-    ] == pytest.approx(0.075 / window._reference_recommendation.template_diagonal)
+    assert window._request().reference_parameter_ratios["attachment_kernel_width"] == pytest.approx(
+        0.075 / window._reference_recommendation.template_diagonal
+    )
     assert window.reference_effective_widths_label.text() != original_effective_text
     assert window.create_button.isEnabled() is True
     assert window.create_button.text() == "Validate data & create project"
@@ -818,7 +853,7 @@ def test_desktop_project_overwrite_requires_explicit_confirmation(monkeypatch, t
     application.processEvents()
 
 
-def test_desktop_window_renders_parameter_review_as_second_step(monkeypatch, tmp_path) -> None:
+def test_desktop_window_renders_parameter_review_as_third_step(monkeypatch, tmp_path) -> None:
     pytest.importorskip("PySide6")
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication, QLabel, QWidget
@@ -883,8 +918,14 @@ def test_desktop_window_renders_parameter_review_as_second_step(monkeypatch, tmp
     assert "unbekannt" in workload_rows.findChildren(QLabel)[0].text()
     assert "Produktionsskalierung" in window.review_warnings_label.text()
     assert window.show_run_button.isEnabled() is True
-    assert window.create_button.text() == "Continue to parameter review"
-    assert [step.isEnabled() for step in window.rail_steps] == [True, True, True, False]
+    assert window.create_button.text() == "Continue to review parameters"
+    assert [step.isEnabled() for step in window.rail_steps] == [
+        True,
+        True,
+        True,
+        True,
+        False,
+    ]
     window.rail_steps[0].click()
     assert window.page_stack.currentIndex() == 0
     window.rail_steps[1].click()
@@ -892,6 +933,9 @@ def test_desktop_window_renders_parameter_review_as_second_step(monkeypatch, tmp
     window.rail_steps[2].click()
     assert window.page_stack.currentIndex() == 2
     assert window.rail_steps[2].objectName() == "stepActive"
+    window.rail_steps[3].click()
+    assert window.page_stack.currentIndex() == 3
+    assert window.rail_steps[3].objectName() == "stepActive"
     assert window.run_technical_details.isHidden() is True
     window.run_technical_toggle.click()
     assert window.run_technical_details.isHidden() is False
@@ -900,7 +944,7 @@ def test_desktop_window_renders_parameter_review_as_second_step(monkeypatch, tmp
     assert "a" * 64 in window.run_summary_label.text()
     assert window.start_atlas_button.isEnabled() is True
     window._show_review_page()
-    assert window.page_stack.currentIndex() == 1
+    assert window.page_stack.currentIndex() == 2
     window._show_setup_page()
     assert window.page_stack.currentIndex() == 0
     window.close()
@@ -1500,9 +1544,9 @@ def test_desktop_loads_native_template_preview_without_modifying_source(
     window = DiffeoForgeWindow()
     window._thread_pool = FakePool()  # type: ignore[assignment]
     window._project_succeeded(result)
-    assert window.create_button.text() == "Review parameters & workload"
+    assert window.create_button.text() == "Generate parameter review"
     window._review_succeeded(review)
-    assert window.create_button.text() == "Continue to parameter review"
+    assert window.create_button.text() == "Continue to review parameters"
 
     assert window.template_preview_card.isHidden() is False
     assert window.template_preview_plane_combo.isEnabled() is False
@@ -2087,7 +2131,7 @@ def test_desktop_window_blocks_private_candidate_before_worker_launch(
     application.processEvents()
 
 
-def test_desktop_window_verifies_and_renders_step_four_before_artifact_handoff(
+def test_desktop_window_verifies_and_renders_step_five_before_artifact_handoff(
     monkeypatch, tmp_path
 ) -> None:
     pytest.importorskip("PySide6")
@@ -2246,10 +2290,16 @@ def test_desktop_window_verifies_and_renders_step_four_before_artifact_handoff(
     window._result_review_succeeded(review)
     application.processEvents()
 
-    assert window.page_stack.currentIndex() == 3
-    assert window.rail_steps[3].objectName() == "stepActive"
-    assert [step.isEnabled() for step in window.rail_steps] == [True, False, True, True]
-    assert window.rail_steps[3].toolTip() == "Open Results & PCA."
+    assert window.page_stack.currentIndex() == 4
+    assert window.rail_steps[4].objectName() == "stepActive"
+    assert [step.isEnabled() for step in window.rail_steps] == [
+        True,
+        True,
+        False,
+        True,
+        True,
+    ]
+    assert window.rail_steps[4].toolTip() == "Open Results & PCA."
     assert window.start_atlas_button.text() == "Open Results & PCA"
     assert "Käfer-Atlas" in window.result_summary_label.text()
     assert "did not converge" in window.result_completion_label.text()
@@ -2335,9 +2385,9 @@ def test_desktop_window_verifies_and_renders_step_four_before_artifact_handoff(
     assert "last visible logged iteration" in window.result_completion_label.text()
     assert "not proof" in window.result_completion_label.text()
     window._show_run_page_from_results()
-    assert window.page_stack.currentIndex() == 2
-    window.start_atlas_button.click()
     assert window.page_stack.currentIndex() == 3
+    window.start_atlas_button.click()
+    assert window.page_stack.currentIndex() == 4
     window.close()
     application.processEvents()
 

@@ -222,13 +222,13 @@ can now create and review a starter project through the GUI preview, bind the
 launch to the reviewed configuration hash, show exact workflow/optimizer
 events, request cooperative cancellation, and expose a detailed result view
 only after the workflow, nested bundle, inventories, hashes, mesh QC, and SVG
-safety checks pass again. Before worker launch, step 3 now shows the exact
+safety checks pass again. Before worker launch, step 4 now shows the exact
 destination, existing-result state, and any private candidate status/path/reason;
 it checks again immediately before launch and never mutates recovery state.
 Each selected result artifact is rechecked by size
 and SHA-256 immediately before it is opened by a local application. The
 Deformetrica route can run a read-only, configuration-hash-bound diagnostic of
-its exact native, WSL, or developer-container launcher from review step 2.
+its exact native, WSL, or developer-container launcher from review step 3.
 Normal Windows projects prefer the installer-owned WSL identity and the private
 alpha can reuse an existing exact Deformetrica 4.3.0 WSL environment read-only.
 When the check passes, the source desktop binds one immutable launch request and supervises
@@ -350,7 +350,7 @@ fail closed and require explicit review. It never deletes, renames, resumes, or
 publishes. See the [private-run discovery contract](docs/PRIVATE_RUN_DISCOVERY.md).
 
 For high-face-count Modern experiments, the desktop can write an explicit exact
-`256 × 256` blockwise plan and Step 2 reports the supplied face counts, complete
+`256 × 256` blockwise plan and Step 3 reports the supplied face counts, complete
 logical all-pairs dimensions, and largest execution tile. Ordinary Gaussian
 evaluation uses centered rank-2 matrix arithmetic rather than rank-3 XYZ
 difference tensors. Its analytical backward reconstructs kernels instead of

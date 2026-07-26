@@ -1,6 +1,6 @@
 # Desktop setup, review, and Modern compute preview
 
-Status: **four graphical steps with verified Modern CPU execution and result review;
+Status: **five graphical steps with verified Modern CPU execution and result review;
 same-owner private-alpha installer available**
 
 Tracked by [engineering issue #75](https://github.com/heinjenny95/DiffeoForge/issues/75)
@@ -58,33 +58,37 @@ terminal:
    the recommendation fingerprint;
 9. validate schemas, paths, mesh geometry, and the engine-specific setup
    contract through the same application services used by the CLI;
-10. create a starter configuration, requiring a destructive confirmation before
+10. continue from the data-and-engine screen to a dedicated parameter-setting
+   screen that keeps aligned-mesh analysis, parameter controls, staged pilot
+   planning, automatic candidate execution, and the fixed project-creation
+   action together;
+11. create a starter configuration, requiring a destructive confirmation before
    atomically replacing only a recognized DiffeoForge-generated configuration,
    and review a visible result summary;
-11. continue to a second screen that reads the effective values back from the
+12. continue to a third screen that reads the effective values back from the
    validated configuration, explains their role, and verifies any
    content-addressed Procrustes evidence and aligned-mesh hashes;
-12. optionally load the exact selected template outside the event loop and view
+13. optionally load the exact selected template outside the event loop and view
    native aspect-preserving XY, XZ, or YZ wireframe projections with source
    hash and displayed/total edge counts;
-13. for the modern route, generate and render the existing exact-count
+14. for the modern route, generate and render the existing exact-count
    `modern-plan` JSON/HTML evidence; or, for the reference route, render the
    existing preflight parameter ratios and external-engine boundary, then
    optionally diagnose the exact configured container engine and image without
    changing or starting either one, then inspect one externally hash-bound
    preparation approval and its exact destination/private-stage state through
    the shared read-only reconciliation core;
-14. for a reviewed Modern project, continue to a third screen that binds the
+15. for a reviewed Modern project, continue to a fourth screen that binds the
    exact reviewed configuration SHA-256, displays and refreshes the read-only
    destination/private-state evidence, checks it again immediately before
    starting the separate worker, shows real workflow stages and committed
    optimizer decisions, and offers one cooperative cancel action; and
-15. expose the result directory only after the parent controller independently
+16. expose the result directory only after the parent controller independently
     verifies the published workflow, manifest hash, subject count, and bundle;
-16. automatically continue to a fourth screen only after a fresh full
+17. automatically continue to a fifth screen only after a fresh full
     verification of the workflow, nested bundle, exact inventories, hashes,
     mesh QC, and static SVG safety checks; and
-17. inspect bounded Atlas, optimizer, momenta-PCA, and QC summaries together
+18. inspect bounded Atlas, optimizer, momenta-PCA, and QC summaries together
     with an embedded verified objective/gradient convergence plot plus verified
     PC1/PC2 and PC2/PC3 score plots, then open only
     inventoried VTK/CSV/JSON/SVG artifacts whose manifest bindings, size, and
@@ -93,10 +97,11 @@ terminal:
 The left workflow rail is state-aware navigation rather than a passive progress
 legend. A completed or otherwise available step can be opened directly; future
 steps and all navigation during an active worker remain disabled. The fixed
-bottom-right primary action also advances with the workflow: project creation
-becomes parameter review, atlas launch becomes verified Results & PCA review,
-and a completed review can be reopened without exposing duplicate primary
-actions inside result cards.
+bottom-right primary action also advances with the workflow: data selection
+continues to parameter setting, project creation becomes pilot calibration or
+parameter review as applicable, atlas launch becomes verified Results & PCA
+review, and a completed review can be reopened without exposing duplicate
+primary actions inside result cards.
 
 The reference path creates `atlas.yaml` and `atlas.preflight.html`. Its setup
 screen does not expose a static “recommended” profile. Parameter values remain
@@ -111,7 +116,7 @@ configuration and exact Deformetrica XML; the fixed float32 reference precision
 is not shown as editable. The modern
 path creates `modern-atlas.yaml` after its stronger mesh-quality,
 initialization, optional Procrustes, and PCA-dimension checks pass. Its second
-screen publishes `modern-atlas.workload/workload.json` and `workload.html`.
+review screen publishes `modern-atlas.workload/workload.json` and `workload.html`.
 Both paths label geometry-scaled values as exploratory. The Deformetrica route
 can continue through contained supervised execution, observed optimizer events,
 elapsed time and a bounded estimate to the configured iteration limit, followed
@@ -216,12 +221,12 @@ reference PC deformation meshes and native registration renderings remain open.
 Source-level Deformetrica supervision is connected and its dedicated execution
 worker is now in the prospective v0.4 Windows freeze contract. A clean-runner
 v0.4 observation and rebuilt installer remain pending. The projection preview is
-not mesh QC or registration evidence. Step 4 is a detailed read-only evidence and
+not mesh QC or registration evidence. Step 5 is a detailed read-only evidence and
 artifact-handoff view, not an interactive 3D renderer or a scientific
-interpretation system. A developer-machine PyInstaller one-directory evidence
-freeze exists, but it is not a redistributable release and is not wrapped in an
-Inno Setup installer. Those capabilities require their own tests and release
-gates.
+interpretation system. An unsigned same-owner private-alpha Inno Setup installer
+exists, but it is not a redistributable release. Public distribution, signing,
+clean-machine validation, and the remaining scientific release gates remain
+separate work.
 
 ## Preliminary Qt licensing boundary
 

@@ -728,9 +728,7 @@ class _FormControlWheelGuard(QObject):
         else:
             angle_delta = event.angleDelta().y()
             distance = round(
-                (angle_delta / 120.0)
-                * max(ancestor.verticalScrollBar().singleStep(), 20)
-                * 3
+                (angle_delta / 120.0) * max(ancestor.verticalScrollBar().singleStep(), 20) * 3
             )
         if distance:
             bar = ancestor.verticalScrollBar()
@@ -810,9 +808,11 @@ class DiffeoForgeWindow(QMainWindow):
         root_layout.setContentsMargins(0, 0, 0, 0)
         root_layout.setSpacing(0)
         root_layout.addWidget(self._build_rail())
+        data_form_card, parameter_form_card = self._build_form_cards()
         self.page_stack = QStackedWidget()
         self.page_stack.setObjectName("pageStack")
-        self.page_stack.addWidget(self._build_setup_content())
+        self.page_stack.addWidget(self._build_setup_content(data_form_card))
+        self.page_stack.addWidget(self._build_parameter_content(parameter_form_card))
         self.page_stack.addWidget(self._build_review_content())
         self.page_stack.addWidget(self._build_run_content())
         self.page_stack.addWidget(self._build_results_content())
@@ -847,9 +847,10 @@ class DiffeoForgeWindow(QMainWindow):
 
         steps = (
             "1  Data & engine",
-            "2  Review parameters",
-            "3  Compute atlas",
-            "4  Results & PCA",
+            "2  Parameter setting",
+            "3  Review parameters",
+            "4  Compute atlas",
+            "5  Results & PCA",
         )
         self.rail_steps: list[QPushButton] = []
         for index, text in enumerate(steps):
@@ -869,7 +870,7 @@ class DiffeoForgeWindow(QMainWindow):
         layout.addWidget(boundary)
         return rail
 
-    def _build_setup_content(self) -> QWidget:
+    def _build_setup_content(self, data_form_card: QWidget) -> QWidget:
         scroll = QScrollArea()
         self.setup_scroll = scroll
         scroll.setWidgetResizable(True)
@@ -881,12 +882,12 @@ class DiffeoForgeWindow(QMainWindow):
         layout.setContentsMargins(52, 40, 52, 24)
         layout.setSpacing(15)
 
-        eyebrow = QLabel("STEP 1 OF 4")
+        eyebrow = QLabel("STEP 1 OF 5")
         eyebrow.setObjectName("eyebrow")
         title = QLabel("New atlas project")
         title.setObjectName("title")
         subtitle = QLabel(
-            "Select your meshes and create a transparent, verified starter configuration."
+            "Select the engine, meshes, coordinate unit, and optional alignment inputs."
         )
         subtitle.setObjectName("subtitle")
         subtitle.setWordWrap(True)
@@ -899,8 +900,8 @@ class DiffeoForgeWindow(QMainWindow):
         boundary_layout = QHBoxLayout(boundary)
         boundary_layout.setContentsMargins(13, 9, 13, 9)
         boundary_text = QLabel(
-            "This first desktop step validates data and creates a configuration. "
-            "It does not start atlas computation."
+            "This step identifies the data and alignment workflow. Parameter analysis, "
+            "pilot calibration, and project creation happen together in Step 2."
         )
         boundary_text.setObjectName("boundaryText")
         boundary_text.setWordWrap(True)
@@ -922,7 +923,72 @@ class DiffeoForgeWindow(QMainWindow):
         resume_layout.addWidget(self.open_completed_run_button)
         resume_layout.addStretch()
         layout.addWidget(resume_row)
-        layout.addWidget(self._build_form_card())
+        layout.addWidget(data_form_card)
+        layout.addStretch()
+        scroll.setWidget(container)
+
+        footer = QFrame()
+        footer.setObjectName("footer")
+        footer_layout = QHBoxLayout(footer)
+        footer_layout.setContentsMargins(28, 14, 28, 14)
+        footer_layout.setSpacing(18)
+        self.data_status_label = QLabel("Enter a mesh folder, project folder, and coordinate unit.")
+        self.data_status_label.setObjectName("status")
+        self.data_status_label.setWordWrap(True)
+        footer_layout.addWidget(self.data_status_label, 1)
+        self.continue_parameter_button = QPushButton("Continue to parameter setting")
+        self.continue_parameter_button.setObjectName("primary")
+        self.continue_parameter_button.clicked.connect(lambda: self._navigate_to_step(1))
+        footer_layout.addWidget(self.continue_parameter_button)
+
+        content = QWidget()
+        content_layout = QVBoxLayout(content)
+        content_layout.setContentsMargins(0, 0, 0, 0)
+        content_layout.setSpacing(0)
+        content_layout.addWidget(scroll, 1)
+        content_layout.addWidget(footer)
+        return content
+
+    def _build_parameter_content(self, parameter_form_card: QWidget) -> QWidget:
+        scroll = QScrollArea()
+        self.parameter_scroll = scroll
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        container = QWidget()
+        container.setObjectName("content")
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(52, 40, 52, 24)
+        layout.setSpacing(15)
+
+        eyebrow = QLabel("STEP 2 OF 5")
+        eyebrow.setObjectName("eyebrow")
+        title = QLabel("Parameter setting")
+        title.setObjectName("title")
+        subtitle = QLabel(
+            "Analyze the aligned meshes, choose or calibrate engine parameters, "
+            "and create the reproducible project configuration."
+        )
+        subtitle.setObjectName("subtitle")
+        subtitle.setWordWrap(True)
+        layout.addWidget(eyebrow)
+        layout.addWidget(title)
+        layout.addWidget(subtitle)
+
+        boundary = QFrame()
+        boundary.setObjectName("boundary")
+        boundary_layout = QHBoxLayout(boundary)
+        boundary_layout.setContentsMargins(13, 9, 13, 9)
+        boundary_text = QLabel(
+            "For Deformetrica, parameter suggestions and the staged pilot calibration "
+            "now live on this page. No full-cohort atlas starts here."
+        )
+        boundary_text.setObjectName("boundaryText")
+        boundary_text.setWordWrap(True)
+        boundary_layout.addWidget(boundary_text)
+        layout.addWidget(boundary)
+        layout.addWidget(parameter_form_card)
+        layout.addWidget(self._build_reference_calibration_execution_card())
 
         self.result_card = self._build_result_card()
         self.result_card.hide()
@@ -935,8 +1001,12 @@ class DiffeoForgeWindow(QMainWindow):
         footer.setObjectName("footer")
         footer_layout = QHBoxLayout(footer)
         footer_layout.setContentsMargins(28, 14, 28, 14)
-        footer_layout.setSpacing(18)
-        self.status_label = QLabel("Enter a mesh folder, project folder, and coordinate unit.")
+        footer_layout.setSpacing(12)
+        back = QPushButton("Back to data & engine")
+        back.setObjectName("secondary")
+        back.clicked.connect(self._show_setup_page)
+        footer_layout.addWidget(back)
+        self.status_label = QLabel("Analyze the aligned meshes before creating the project.")
         self.status_label.setObjectName("status")
         self.status_label.setWordWrap(True)
         footer_layout.addWidget(self.status_label, 1)
@@ -945,13 +1015,49 @@ class DiffeoForgeWindow(QMainWindow):
         self.create_button.clicked.connect(self._setup_primary_action)
         footer_layout.addWidget(self.create_button)
 
-        content = QWidget()
-        content_layout = QVBoxLayout(content)
-        content_layout.setContentsMargins(0, 0, 0, 0)
-        content_layout.setSpacing(0)
-        content_layout.addWidget(scroll, 1)
-        content_layout.addWidget(footer)
-        return content
+        page = QWidget()
+        page_layout = QVBoxLayout(page)
+        page_layout.setContentsMargins(0, 0, 0, 0)
+        page_layout.setSpacing(0)
+        page_layout.addWidget(scroll, 1)
+        page_layout.addWidget(footer)
+        return page
+
+    def _build_reference_calibration_execution_card(self) -> QWidget:
+        calibration = QFrame()
+        calibration.setObjectName("card")
+        calibration_layout = QVBoxLayout(calibration)
+        calibration_layout.setContentsMargins(24, 22, 24, 24)
+        calibration_layout.setSpacing(10)
+        calibration_title = QLabel("Run the automatic Deformetrica pilot calibration")
+        calibration_title.setObjectName("sectionTitle")
+        self.reference_calibration_execution_status = QLabel(
+            "Create and review the project configuration to make the planned pilot runs executable."
+        )
+        self.reference_calibration_execution_status.setObjectName("status")
+        self.reference_calibration_execution_status.setWordWrap(True)
+        calibration_detail = QLabel(
+            "DiffeoForge runs every candidate in the current parameter stage, then "
+            "pauses. A guided viewer takes you through every pilot specimen before "
+            "you can approve and select an option."
+        )
+        calibration_detail.setObjectName("reviewDetail")
+        calibration_detail.setWordWrap(True)
+        self.open_reference_calibration_button = QPushButton("Open automatic pilot calibration…")
+        self.open_reference_calibration_button.setObjectName("primary")
+        self.open_reference_calibration_button.clicked.connect(self._open_reference_calibration)
+        self.open_reference_calibration_button.setEnabled(False)
+        calibration_layout.addWidget(calibration_title)
+        calibration_layout.addWidget(self.reference_calibration_execution_status)
+        calibration_layout.addWidget(calibration_detail)
+        calibration_layout.addWidget(
+            self.open_reference_calibration_button,
+            0,
+            Qt.AlignmentFlag.AlignLeft,
+        )
+        self.reference_calibration_execution_card = calibration
+        self.reference_calibration_execution_card.hide()
+        return calibration
 
     def _build_saved_reference_preparation_status_card(self) -> QWidget:
         card = QFrame()
@@ -1056,7 +1162,7 @@ class DiffeoForgeWindow(QMainWindow):
         layout.setContentsMargins(52, 40, 52, 24)
         layout.setSpacing(15)
 
-        eyebrow = QLabel("STEP 2 OF 4")
+        eyebrow = QLabel("STEP 3 OF 5")
         eyebrow.setObjectName("eyebrow")
         title = QLabel("Review parameters and workload")
         title.setObjectName("title")
@@ -1146,46 +1252,6 @@ class DiffeoForgeWindow(QMainWindow):
         layout.addWidget(self._build_review_card("Effective parameters", "parameterReview"))
         self.workload_card = self._build_review_card("Workload evidence", "workloadReview")
         layout.addWidget(self.workload_card)
-
-        calibration = QFrame()
-        calibration.setObjectName("card")
-        calibration_layout = QVBoxLayout(calibration)
-        calibration_layout.setContentsMargins(24, 22, 24, 24)
-        calibration_layout.setSpacing(10)
-        calibration_title = QLabel("Automatic Deformetrica pilot calibration")
-        calibration_title.setObjectName("sectionTitle")
-        self.reference_calibration_execution_status = QLabel(
-            "No executable calibration plan is bound to this project."
-        )
-        self.reference_calibration_execution_status.setObjectName("status")
-        self.reference_calibration_execution_status.setWordWrap(True)
-        calibration_detail = QLabel(
-            "DiffeoForge runs every predeclared candidate in one parameter stage, "
-            "measures verified QC evidence, and then pauses. You inspect the atlas and "
-            "all pilot reconstructions and explicitly choose the candidate before the "
-            "next stage is prepared."
-        )
-        calibration_detail.setObjectName("reviewDetail")
-        calibration_detail.setWordWrap(True)
-        self.open_reference_calibration_button = QPushButton(
-            "Open automatic pilot calibration…"
-        )
-        self.open_reference_calibration_button.setObjectName("primary")
-        self.open_reference_calibration_button.clicked.connect(
-            self._open_reference_calibration
-        )
-        self.open_reference_calibration_button.setEnabled(False)
-        calibration_layout.addWidget(calibration_title)
-        calibration_layout.addWidget(self.reference_calibration_execution_status)
-        calibration_layout.addWidget(calibration_detail)
-        calibration_layout.addWidget(
-            self.open_reference_calibration_button,
-            0,
-            Qt.AlignmentFlag.AlignLeft,
-        )
-        self.reference_calibration_execution_card = calibration
-        self.reference_calibration_execution_card.hide()
-        layout.addWidget(self.reference_calibration_execution_card)
 
         reference_readiness = QFrame()
         reference_readiness.setObjectName("card")
@@ -1345,16 +1411,16 @@ class DiffeoForgeWindow(QMainWindow):
         footer_layout = QHBoxLayout(footer)
         footer_layout.setContentsMargins(28, 14, 28, 14)
         footer_layout.setSpacing(12)
-        back = QPushButton("Back to data & engine")
+        back = QPushButton("Back to parameter setting")
         back.setObjectName("secondary")
-        back.clicked.connect(self._show_setup_page)
+        back.clicked.connect(lambda: self._navigate_to_step(1))
         footer_layout.addWidget(back)
         self.open_review_report_button = QPushButton("Open review report")
         self.open_review_report_button.setObjectName("secondary")
         self.open_review_report_button.clicked.connect(self._open_review_report)
         footer_layout.addWidget(self.open_review_report_button)
         footer_layout.addStretch()
-        self.show_run_button = QPushButton("Atlas execution continues in Step 3")
+        self.show_run_button = QPushButton("Atlas execution continues in Step 4")
         self.show_run_button.setObjectName("primary")
         self.show_run_button.clicked.connect(self._show_run_page)
         self.show_run_button.setEnabled(False)
@@ -1378,7 +1444,7 @@ class DiffeoForgeWindow(QMainWindow):
         layout.setContentsMargins(52, 40, 52, 24)
         layout.setSpacing(15)
 
-        eyebrow = QLabel("STEP 3 OF 4")
+        eyebrow = QLabel("STEP 4 OF 5")
         eyebrow.setObjectName("eyebrow")
         self.run_title_label = QLabel("Compute atlas")
         self.run_title_label.setObjectName("title")
@@ -1556,7 +1622,7 @@ class DiffeoForgeWindow(QMainWindow):
         layout.setContentsMargins(52, 40, 52, 24)
         layout.setSpacing(15)
 
-        eyebrow = QLabel("STEP 4 OF 4")
+        eyebrow = QLabel("STEP 5 OF 5")
         eyebrow.setObjectName("eyebrow")
         title = QLabel("Verified results & PCA")
         title.setObjectName("title")
@@ -1621,9 +1687,7 @@ class DiffeoForgeWindow(QMainWindow):
         atlas_mesh_controls.addWidget(QLabel("Mesh"))
         self.result_atlas_mesh_combo = QComboBox()
         self.result_atlas_mesh_combo.setObjectName("resultAtlasMeshCombo")
-        self.result_atlas_mesh_combo.currentIndexChanged.connect(
-            self._load_selected_atlas_mesh
-        )
+        self.result_atlas_mesh_combo.currentIndexChanged.connect(self._load_selected_atlas_mesh)
         atlas_mesh_controls.addWidget(self.result_atlas_mesh_combo, 1)
         atlas_view_controls = QHBoxLayout()
         atlas_view_controls.setSpacing(10)
@@ -1640,18 +1704,14 @@ class DiffeoForgeWindow(QMainWindow):
             ("Bottom", "bottom"),
         ):
             self.result_atlas_view_combo.addItem(label, value)
-        self.result_atlas_view_combo.currentIndexChanged.connect(
-            self._set_atlas_view_preset
-        )
+        self.result_atlas_view_combo.currentIndexChanged.connect(self._set_atlas_view_preset)
         atlas_view_controls.addWidget(self.result_atlas_view_combo)
         reset_atlas_view_button = QPushButton("Reset view")
         reset_atlas_view_button.setObjectName("secondary")
         reset_atlas_view_button.clicked.connect(self._reset_atlas_view)
         atlas_view_controls.addWidget(reset_atlas_view_button)
         atlas_view_controls.addStretch()
-        self.result_atlas_status_label = QLabel(
-            "Awaiting a verified atlas or reconstruction."
-        )
+        self.result_atlas_status_label = QLabel("Awaiting a verified atlas or reconstruction.")
         self.result_atlas_status_label.setObjectName("status")
         self.result_atlas_status_label.setWordWrap(True)
         self.result_atlas_canvas = InteractiveMeshCanvas3D()
@@ -1867,20 +1927,31 @@ class DiffeoForgeWindow(QMainWindow):
             self.workload_review_layout = rows_layout
         return card
 
-    def _build_form_card(self) -> QWidget:
-        card = QFrame()
-        card.setObjectName("card")
-        card_layout = QVBoxLayout(card)
-        card_layout.setContentsMargins(24, 22, 24, 24)
-        card_layout.setSpacing(15)
-        section = QLabel("Project and inputs")
-        section.setObjectName("sectionTitle")
-        card_layout.addWidget(section)
+    def _build_form_cards(self) -> tuple[QWidget, QWidget]:
+        data_card = QFrame()
+        data_card.setObjectName("card")
+        data_card_layout = QVBoxLayout(data_card)
+        data_card_layout.setContentsMargins(24, 22, 24, 24)
+        data_card_layout.setSpacing(15)
+        data_section = QLabel("Project and inputs")
+        data_section.setObjectName("sectionTitle")
+        data_card_layout.addWidget(data_section)
 
-        form = QFormLayout()
-        form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-        form.setHorizontalSpacing(22)
-        form.setVerticalSpacing(12)
+        parameter_card = QFrame()
+        parameter_card.setObjectName("card")
+        parameter_card_layout = QVBoxLayout(parameter_card)
+        parameter_card_layout.setContentsMargins(24, 22, 24, 24)
+        parameter_card_layout.setSpacing(15)
+        parameter_section = QLabel("Engine parameters and pilot design")
+        parameter_section.setObjectName("sectionTitle")
+        parameter_card_layout.addWidget(parameter_section)
+
+        data_form = QFormLayout()
+        parameter_form = QFormLayout()
+        for form in (data_form, parameter_form):
+            form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+            form.setHorizontalSpacing(22)
+            form.setVerticalSpacing(12)
 
         self.engine_combo = QComboBox()
         self.engine_combo.setObjectName("engineCombo")
@@ -1899,7 +1970,7 @@ class DiffeoForgeWindow(QMainWindow):
         self.engine_hint.setObjectName("hint")
         self.engine_hint.setWordWrap(True)
         engine_layout.addWidget(self.engine_hint)
-        form.addRow("Engine", engine_box)
+        data_form.addRow("Engine", engine_box)
 
         self.pairwise_combo = QComboBox()
         self.pairwise_combo.setObjectName("pairwiseEvaluationCombo")
@@ -1922,7 +1993,7 @@ class DiffeoForgeWindow(QMainWindow):
         self.pairwise_hint.setObjectName("hint")
         self.pairwise_hint.setWordWrap(True)
         pairwise_layout.addWidget(self.pairwise_hint)
-        form.addRow("Pairwise evaluation", pairwise_box)
+        parameter_form.addRow("Pairwise evaluation", pairwise_box)
 
         self.optimization_effort_combo = QComboBox()
         self.optimization_effort_combo.setObjectName("optimizationEffortCombo")
@@ -1947,7 +2018,7 @@ class DiffeoForgeWindow(QMainWindow):
         self.optimization_effort_hint.setObjectName("hint")
         self.optimization_effort_hint.setWordWrap(True)
         optimization_effort_layout.addWidget(self.optimization_effort_hint)
-        form.addRow("Optimization effort", optimization_effort_box)
+        parameter_form.addRow("Optimization effort", optimization_effort_box)
 
         self.reference_parameter_box = QFrame()
         self.reference_parameter_box.setObjectName("parameterEditor")
@@ -2166,12 +2237,13 @@ class DiffeoForgeWindow(QMainWindow):
         self.reference_expert_box.hide()
         self.reference_parameter_hint = QLabel(
             "No values are active until aligned meshes are analyzed or Advanced manual "
-            "control is selected. Every effective value will be shown again in Step 2."
+            "control is selected. Every effective value will be shown again in Step 3."
         )
         self.reference_parameter_hint.setObjectName("hint")
         self.reference_parameter_hint.setWordWrap(True)
         reference_parameter_layout.addWidget(self.reference_parameter_hint)
-        self.project_input_form = form
+        self.parameter_input_form = parameter_form
+        self.data_input_form = data_form
 
         self.mesh_edit = QLineEdit()
         self.mesh_edit.setObjectName("meshDirectoryEdit")
@@ -2182,7 +2254,7 @@ class DiffeoForgeWindow(QMainWindow):
         mesh_button = QPushButton("Browse…")
         mesh_button.setObjectName("secondary")
         mesh_button.clicked.connect(self._choose_mesh_directory)
-        form.addRow("Mesh folder", _path_row(self.mesh_edit, mesh_button))
+        data_form.addRow("Mesh folder", _path_row(self.mesh_edit, mesh_button))
 
         self.template_edit = QLineEdit()
         self.template_edit.setObjectName("templateEdit")
@@ -2191,7 +2263,7 @@ class DiffeoForgeWindow(QMainWindow):
         template_button = QPushButton("Browse…")
         template_button.setObjectName("secondary")
         template_button.clicked.connect(self._choose_template)
-        form.addRow("Template", _path_row(self.template_edit, template_button))
+        data_form.addRow("Template", _path_row(self.template_edit, template_button))
 
         self.pattern_edit = QLineEdit("*.vtk")
         self.pattern_edit.setObjectName("subjectPatternEdit")
@@ -2201,7 +2273,7 @@ class DiffeoForgeWindow(QMainWindow):
             "then converted to canonical VTK copies."
         )
         self.pattern_edit.textChanged.connect(self._invalidate_procrustes_preview)
-        form.addRow("File pattern", self.pattern_edit)
+        data_form.addRow("File pattern", self.pattern_edit)
 
         self.project_edit = QLineEdit()
         self.project_edit.setObjectName("projectDirectoryEdit")
@@ -2210,12 +2282,12 @@ class DiffeoForgeWindow(QMainWindow):
         project_button = QPushButton("Browse…")
         project_button.setObjectName("secondary")
         project_button.clicked.connect(self._choose_project_directory)
-        form.addRow("Project folder", _path_row(self.project_edit, project_button))
+        data_form.addRow("Project folder", _path_row(self.project_edit, project_button))
 
         self.name_edit = QLineEdit()
         self.name_edit.setObjectName("projectNameEdit")
         self.name_edit.setPlaceholderText("optional; otherwise derived from the folder name")
-        form.addRow("Project name", self.name_edit)
+        data_form.addRow("Project name", self.name_edit)
 
         self.units_combo = QComboBox()
         self.units_combo.setObjectName("unitsCombo")
@@ -2231,7 +2303,7 @@ class DiffeoForgeWindow(QMainWindow):
             self.units_combo.addItem(labels[unit], unit)
         self.units_combo.currentIndexChanged.connect(self._sync_ready_state)
         self.units_combo.currentIndexChanged.connect(self._reference_recommendation_inputs_changed)
-        form.addRow("Coordinate unit", self.units_combo)
+        data_form.addRow("Coordinate unit", self.units_combo)
 
         self.landmarks_edit = QLineEdit()
         self.landmarks_edit.setObjectName("landmarksEdit")
@@ -2250,7 +2322,7 @@ class DiffeoForgeWindow(QMainWindow):
         landmarks_row.addWidget(self.landmarks_edit, 1)
         landmarks_row.addWidget(landmarks_button)
         landmarks_row.addWidget(self.place_landmarks_button)
-        form.addRow("Landmarks", landmarks_row)
+        data_form.addRow("Landmarks", landmarks_row)
 
         self.landmark_count_spin = QSpinBox()
         self.landmark_count_spin.setObjectName("landmarkCountSpin")
@@ -2270,7 +2342,7 @@ class DiffeoForgeWindow(QMainWindow):
         landmark_plan.setSpacing(12)
         landmark_plan.addWidget(self.landmark_count_spin)
         landmark_plan.addWidget(self.landmark_auto_advance_check, 1)
-        form.addRow("Planned landmarks", landmark_plan)
+        data_form.addRow("Planned landmarks", landmark_plan)
 
         self.procrustes_box = QWidget()
         procrustes_layout = QVBoxLayout(self.procrustes_box)
@@ -2345,7 +2417,7 @@ class DiffeoForgeWindow(QMainWindow):
             self.procrustes_iterations_spin,
         )
         self.procrustes_box.hide()
-        form.addRow("Alignment", self.procrustes_box)
+        data_form.addRow("Alignment", self.procrustes_box)
 
         self.already_gpa_check = QCheckBox(
             "I confirm that these mesh coordinates are already GPA aligned"
@@ -2357,7 +2429,7 @@ class DiffeoForgeWindow(QMainWindow):
             "flag suspicious dispersion but cannot prove homologous alignment."
         )
         self.already_gpa_check.toggled.connect(self._reference_recommendation_inputs_changed)
-        form.addRow("Existing alignment", self.already_gpa_check)
+        data_form.addRow("Existing alignment", self.already_gpa_check)
 
         self.reference_guidance_box = QWidget()
         guidance_layout = QVBoxLayout(self.reference_guidance_box)
@@ -2465,13 +2537,9 @@ class DiffeoForgeWindow(QMainWindow):
         self.reference_feature_scale_spin.valueChanged.connect(
             self._reference_calibration_inputs_changed
         )
-        self.measure_reference_feature_button = QPushButton(
-            "Measure on 3D template…"
-        )
+        self.measure_reference_feature_button = QPushButton("Measure on 3D template…")
         self.measure_reference_feature_button.setObjectName("secondary")
-        self.measure_reference_feature_button.clicked.connect(
-            self._measure_reference_feature
-        )
+        self.measure_reference_feature_button.clicked.connect(self._measure_reference_feature)
         feature_row = QWidget()
         feature_row_layout = QHBoxLayout(feature_row)
         feature_row_layout.setContentsMargins(0, 0, 0, 0)
@@ -2481,9 +2549,7 @@ class DiffeoForgeWindow(QMainWindow):
         calibration_form.addRow("Smallest relevant feature", feature_row)
 
         self.reference_pilot_subject_count_spin = QSpinBox()
-        self.reference_pilot_subject_count_spin.setObjectName(
-            "referencePilotSubjectCountSpin"
-        )
+        self.reference_pilot_subject_count_spin.setObjectName("referencePilotSubjectCountSpin")
         self.reference_pilot_subject_count_spin.setRange(2, 20)
         self.reference_pilot_subject_count_spin.setValue(8)
         self.reference_pilot_subject_count_spin.setToolTip(
@@ -2501,16 +2567,12 @@ class DiffeoForgeWindow(QMainWindow):
         calibration_layout.addLayout(calibration_form)
 
         calibration_actions = QHBoxLayout()
-        self.build_reference_calibration_button = QPushButton(
-            "Build staged calibration plan"
-        )
+        self.build_reference_calibration_button = QPushButton("Build staged calibration plan")
         self.build_reference_calibration_button.setObjectName("secondary")
         self.build_reference_calibration_button.clicked.connect(
             self._build_reference_calibration_plan
         )
-        self.export_reference_calibration_button = QPushButton(
-            "Export plan & methods report…"
-        )
+        self.export_reference_calibration_button = QPushButton("Export plan & methods report…")
         self.export_reference_calibration_button.setObjectName("secondary")
         self.export_reference_calibration_button.clicked.connect(
             self._export_reference_calibration_plan
@@ -2522,16 +2584,15 @@ class DiffeoForgeWindow(QMainWindow):
         self.reference_calibration_status = _ReadOnlyStatusText(
             "Analyze the aligned meshes before building a calibration plan."
         )
-        self.reference_calibration_status.setAccessibleName(
-            "Parameter calibration plan summary"
-        )
+        self.reference_calibration_status.setAccessibleName("Parameter calibration plan summary")
         calibration_layout.addWidget(self.reference_calibration_status)
         guidance_layout.addWidget(calibration_box)
-        form.addRow("Parameter guidance", self.reference_guidance_box)
-        form.addRow("Deformetrica parameters", self.reference_parameter_box)
+        parameter_form.addRow("Parameter guidance", self.reference_guidance_box)
+        parameter_form.addRow("Deformetrica parameters", self.reference_parameter_box)
 
-        card_layout.addLayout(form)
-        return card
+        data_card_layout.addLayout(data_form)
+        parameter_card_layout.addLayout(parameter_form)
+        return data_card, parameter_card
 
     def _build_result_card(self) -> QWidget:
         card = QFrame()
@@ -2911,8 +2972,7 @@ class DiffeoForgeWindow(QMainWindow):
         self.reference_pilot_subject_count_spin.setEnabled(recommendation_ready)
         self.build_reference_calibration_button.setEnabled(recommendation_ready)
         self.export_reference_calibration_button.setEnabled(
-            recommendation_ready
-            and self._reference_calibration_plan_matches_current_inputs()
+            recommendation_ready and self._reference_calibration_plan_matches_current_inputs()
         )
 
     @Slot()
@@ -2949,10 +3009,7 @@ class DiffeoForgeWindow(QMainWindow):
     @Slot()
     def _build_reference_calibration_plan(self) -> None:
         recommendation = self._reference_recommendation
-        if (
-            recommendation is None
-            or not self._reference_recommendation_matches_current_inputs()
-        ):
+        if recommendation is None or not self._reference_recommendation_matches_current_inputs():
             self._invalidate_reference_calibration_plan(
                 "Analyze the current aligned meshes before building a calibration plan."
             )
@@ -2961,9 +3018,7 @@ class DiffeoForgeWindow(QMainWindow):
             plan = build_reference_calibration_plan(
                 recommendation,
                 coordinate_unit=str(self.units_combo.currentData() or "unitless"),
-                requested_pilot_subject_count=(
-                    self.reference_pilot_subject_count_spin.value()
-                ),
+                requested_pilot_subject_count=(self.reference_pilot_subject_count_spin.value()),
                 smallest_relevant_feature=self._current_reference_feature_scale(),
             )
         except (OSError, RuntimeError, TypeError, ValueError) as error:
@@ -2991,9 +3046,7 @@ class DiffeoForgeWindow(QMainWindow):
             self._invalidate_reference_calibration_plan()
             return
         project_text = self.project_edit.text().strip()
-        initial_directory = (
-            Path(project_text).expanduser() if project_text else Path.cwd()
-        )
+        initial_directory = Path(project_text).expanduser() if project_text else Path.cwd()
         selected = QFileDialog.getExistingDirectory(
             self,
             "Select calibration-report folder",
@@ -3036,9 +3089,7 @@ class DiffeoForgeWindow(QMainWindow):
         except (OSError, RuntimeError, TypeError, ValueError) as error:
             self.reference_calibration_status.setObjectName("statusError")
             self.reference_calibration_status.setStyleSheet("")
-            self.reference_calibration_status.setText(
-                f"Calibration-plan export failed: {error}"
-            )
+            self.reference_calibration_status.setText(f"Calibration-plan export failed: {error}")
             return
         self._reference_calibration_export = result
         self.reference_calibration_status.setObjectName("statusSuccess")
@@ -4089,11 +4140,11 @@ class DiffeoForgeWindow(QMainWindow):
         modern = self.engine_combo.currentData() == DesktopEngine.MODERN_CPU
         self.landmarks_edit.setEnabled(True)
         self.landmarks_button.setEnabled(True)
-        self.project_input_form.setRowVisible(self.pairwise_box, modern)
-        self.project_input_form.setRowVisible(self.optimization_effort_box, modern)
-        self.project_input_form.setRowVisible(self.already_gpa_check, not modern)
-        self.project_input_form.setRowVisible(self.reference_guidance_box, not modern)
-        self.project_input_form.setRowVisible(self.reference_parameter_box, not modern)
+        self.parameter_input_form.setRowVisible(self.pairwise_box, modern)
+        self.parameter_input_form.setRowVisible(self.optimization_effort_box, modern)
+        self.data_input_form.setRowVisible(self.already_gpa_check, not modern)
+        self.parameter_input_form.setRowVisible(self.reference_guidance_box, not modern)
+        self.parameter_input_form.setRowVisible(self.reference_parameter_box, not modern)
         if modern:
             self.engine_hint.setText(
                 "Current CPU/float64 engine; PCA is part of the later result bundle."
@@ -4153,8 +4204,16 @@ class DiffeoForgeWindow(QMainWindow):
         if step == 0:
             return True
         if step == 1:
-            return self._review is not None
+            return bool(
+                self._data_inputs_ready()
+                or self._result is not None
+                or self._review is not None
+                or self._run_result is not None
+                or self._result_review is not None
+            )
         if step == 2:
+            return self._review is not None
+        if step == 3:
             if self._run_result is not None or self._result_review is not None:
                 return True
             if self._review is None:
@@ -4162,14 +4221,15 @@ class DiffeoForgeWindow(QMainWindow):
             if self._review.engine is DesktopEngine.MODERN_CPU:
                 return True
             return bool(self._reference_readiness is not None and self._reference_readiness.ready)
-        if step == 3:
+        if step == 4:
             return self._result_review is not None
         return False
 
     def _sync_navigation_state(self) -> None:
         locked_reasons = (
-            "Complete Step 1 before opening parameter review.",
-            "Complete parameter review before opening atlas computation.",
+            "Select the required data and coordinate unit in Step 1 first.",
+            "Create and verify the parameterized project in Step 2 first.",
+            "Complete parameter review in Step 3 before atlas computation.",
             "Complete and verify an atlas run before opening Results & PCA.",
         )
         for index, button in enumerate(self.rail_steps):
@@ -4196,6 +4256,13 @@ class DiffeoForgeWindow(QMainWindow):
                 button.setToolTip("")
             button.setStyleSheet("")
 
+    def _data_inputs_ready(self) -> bool:
+        return bool(
+            self.mesh_edit.text().strip()
+            and self.project_edit.text().strip()
+            and self.units_combo.currentData() is not None
+        )
+
     def _sync_setup_primary_action(self, *, form_ready: bool) -> None:
         if isinstance(self._worker, _ProjectWorker):
             self.create_button.setText("Validating data…")
@@ -4204,10 +4271,18 @@ class DiffeoForgeWindow(QMainWindow):
             self.create_button.setText("Reviewing parameters…")
             self.create_button.setEnabled(False)
         elif self._review is not None:
-            self.create_button.setText("Continue to parameter review")
-            self.create_button.setEnabled(self._worker is None)
+            if self._reference_calibration_pending():
+                self.create_button.setText("Run or continue pilot calibration")
+                self.create_button.setEnabled(
+                    self._worker is None
+                    and self._reference_readiness is not None
+                    and self._reference_readiness.ready
+                )
+            else:
+                self.create_button.setText("Continue to review parameters")
+                self.create_button.setEnabled(self._worker is None)
         elif self._result is not None:
-            self.create_button.setText("Review parameters & workload")
+            self.create_button.setText("Generate parameter review")
             self.create_button.setEnabled(self._worker is None)
         else:
             approval_required = bool(
@@ -4295,13 +4370,21 @@ class DiffeoForgeWindow(QMainWindow):
                 and self._reference_recommendation_matches_current_inputs()
             )
         )
-        ready = bool(
-            self.mesh_edit.text().strip()
-            and self.project_edit.text().strip()
-            and self.units_combo.currentData() is not None
-            and alignment_ready
-            and reference_parameters_ready
-        )
+        ready = bool(self._data_inputs_ready() and alignment_ready and reference_parameters_ready)
+        data_ready = self._data_inputs_ready()
+        self.continue_parameter_button.setEnabled(data_ready and self._worker is None)
+        if data_ready:
+            self.data_status_label.setObjectName("statusSuccess")
+            self.data_status_label.setText(
+                "Required data locations and coordinate unit are present. "
+                "Continue to parameter setting."
+            )
+        else:
+            self.data_status_label.setObjectName("status")
+            self.data_status_label.setText(
+                "Enter a mesh folder, project folder, and coordinate unit."
+            )
+        self.data_status_label.setStyleSheet("")
         self._update_procrustes_controls()
         self._update_reference_guidance_controls()
         self._sync_setup_primary_action(form_ready=ready)
@@ -4382,7 +4465,10 @@ class DiffeoForgeWindow(QMainWindow):
         if self._worker is not None:
             return
         if self._review is not None:
-            self._navigate_to_step(1)
+            if self._reference_calibration_pending():
+                self._open_reference_calibration()
+            else:
+                self._navigate_to_step(2)
         elif self._result is not None:
             self._review_project()
         else:
@@ -4393,7 +4479,7 @@ class DiffeoForgeWindow(QMainWindow):
         if self._worker is not None:
             return
         if self._result_review is not None:
-            self._navigate_to_step(3)
+            self._navigate_to_step(4)
         elif self._run_result is not None:
             if self._run_result.completed:
                 self._review_run_result()
@@ -4449,13 +4535,8 @@ class DiffeoForgeWindow(QMainWindow):
                 "noise_std": self.reference_noise_ratio_spin.value(),
             }
         recommendation_provenance: dict[str, object] | None = None
-        if (
-            data_assisted_recommendation_is_current
-            and self._reference_recommendation is not None
-        ):
-            recommendation_provenance = dict(
-                self._reference_recommendation.provenance
-            )
+        if data_assisted_recommendation_is_current and self._reference_recommendation is not None:
+            recommendation_provenance = dict(self._reference_recommendation.provenance)
             if self._reference_calibration_plan_matches_current_inputs():
                 assert self._reference_calibration_plan is not None
                 recommendation_provenance["calibration_plan"] = (
@@ -4522,7 +4603,7 @@ class DiffeoForgeWindow(QMainWindow):
         )
         dialog.setInformativeText(
             "Only a recognized DiffeoForge-generated configuration can be replaced. "
-            "Generated workload evidence will be refreshed during Step 2. Source meshes, "
+            "Generated workload evidence will be refreshed during Step 3. Source meshes, "
             "landmarks, and completed run directories will not be overwritten or removed."
         )
         cancel_button = dialog.addButton("Cancel", QMessageBox.ButtonRole.RejectRole)
@@ -4748,9 +4829,7 @@ class DiffeoForgeWindow(QMainWindow):
         worker.signals.succeeded.connect(self._template_preview_succeeded)
         worker.signals.failed.connect(self._template_preview_failed)
         self._template_preview_worker = worker
-        self._template_preview_scroll_value = (
-            self.review_scroll.verticalScrollBar().value()
-        )
+        self._template_preview_scroll_value = self.review_scroll.verticalScrollBar().value()
         self.refresh_template_preview_button.clearFocus()
         self._template_preview = None
         self.template_preview_canvas.set_model(None)
@@ -4857,16 +4936,11 @@ class DiffeoForgeWindow(QMainWindow):
         self,
     ) -> tuple[ReferenceCalibrationPlan, Path] | None:
         review = self._review
-        if (
-            review is None
-            or review.engine is not DesktopEngine.DEFORMETRICA_REFERENCE
-        ):
+        if review is None or review.engine is not DesktopEngine.DEFORMETRICA_REFERENCE:
             return None
         try:
             config = load_config(review.config_path)
-            stored = config["project"]["parameter_provenance"]["recommendation"][
-                "calibration_plan"
-            ]
+            stored = config["project"]["parameter_provenance"]["recommendation"]["calibration_plan"]
             plan = reference_calibration_plan_from_provenance(stored)
         except (KeyError, OSError, RuntimeError, TypeError, ValueError):
             return None
@@ -4879,6 +4953,19 @@ class DiffeoForgeWindow(QMainWindow):
             ).resolve()
             self._reference_calibration_study_directory = directory
         return plan, directory
+
+    def _reference_calibration_pending(self) -> bool:
+        context = self._reference_calibration_context()
+        if context is None:
+            return False
+        _plan, directory = context
+        if not directory.exists():
+            return True
+        try:
+            snapshot = load_reference_calibration_study(directory)
+        except (OSError, RuntimeError, TypeError, ValueError):
+            return True
+        return snapshot.status != "completed"
 
     def _refresh_reference_calibration_execution_card(self) -> None:
         context = self._reference_calibration_context()
@@ -4925,10 +5012,7 @@ class DiffeoForgeWindow(QMainWindow):
             )
         else:
             assert snapshot.current_stage is not None
-            complete = sum(
-                candidate.status == "completed"
-                for candidate in snapshot.candidates
-            )
+            complete = sum(candidate.status == "completed" for candidate in snapshot.candidates)
             message = (
                 f"Stage {snapshot.current_stage.order}/"
                 f"{len(snapshot.plan.stages)} · {snapshot.current_stage.title} · "
@@ -4974,8 +5058,7 @@ class DiffeoForgeWindow(QMainWindow):
             snapshot.status != "completed"
             or snapshot.final_config_path is None
             or self._result is None
-            or self._result.config_path.resolve()
-            == snapshot.final_config_path.resolve()
+            or self._result.config_path.resolve() == snapshot.final_config_path.resolve()
         ):
             return
         answer = QMessageBox.question(
@@ -5021,7 +5104,7 @@ class DiffeoForgeWindow(QMainWindow):
         )
         self.reference_readiness_detail_label.setText(
             "This safety check does not start an atlas. Estimated computation time is shown "
-            "separately in Step 3 after several optimizer iterations have been observed."
+            "separately in Step 4 after several optimizer iterations have been observed."
         )
         self.show_run_button.setText("Checking Deformetrica setup automatically…")
         self.show_run_button.setEnabled(False)
@@ -5329,7 +5412,7 @@ class DiffeoForgeWindow(QMainWindow):
 
     @Slot()
     def _show_run_page(self) -> None:
-        self._navigate_to_step(2)
+        self._navigate_to_step(3)
 
     @Slot()
     def _refresh_run_readiness(
@@ -5529,7 +5612,7 @@ class DiffeoForgeWindow(QMainWindow):
 
     @Slot()
     def _show_review_page(self) -> None:
-        self._navigate_to_step(1)
+        self._navigate_to_step(2)
 
     @Slot(bool)
     def _set_run_technical_details_expanded(self, expanded: bool) -> None:
@@ -6034,8 +6117,8 @@ class DiffeoForgeWindow(QMainWindow):
         )
         self.run_back_button.setEnabled(True)
         self._sync_ready_state()
-        self._set_active_step(3)
-        self.page_stack.setCurrentIndex(3)
+        self._set_active_step(4)
+        self.page_stack.setCurrentIndex(4)
         if self._close_after_worker:
             self._close_after_worker = False
             self.close()
@@ -6309,7 +6392,7 @@ class DiffeoForgeWindow(QMainWindow):
 
     @Slot()
     def _show_run_page_from_results(self) -> None:
-        self._navigate_to_step(2 if self._run_result is not None else 0)
+        self._navigate_to_step(3 if self._run_result is not None else 0)
 
     @staticmethod
     def _wrappable_path(path: Path) -> str:
@@ -6396,7 +6479,7 @@ class DiffeoForgeWindow(QMainWindow):
         if not self._step_is_unlocked(step):
             self._sync_navigation_state()
             return
-        if step == 2 and self._run_result is None:
+        if step == 3 and self._run_result is None:
             self._refresh_run_readiness()
         self._set_active_step(step)
         self.page_stack.setCurrentIndex(step)

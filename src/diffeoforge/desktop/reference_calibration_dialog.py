@@ -71,9 +71,7 @@ def collect_calibration_qc_pairs(
     if not subjects_directory.is_dir() or not template_directory.is_dir():
         raise ValueError("Calibration study inputs are incomplete")
     subject_paths = {
-        path.name: path.resolve()
-        for path in subjects_directory.iterdir()
-        if path.is_file()
+        path.name: path.resolve() for path in subjects_directory.iterdir() if path.is_file()
     }
     template_paths = tuple(
         sorted(
@@ -161,9 +159,7 @@ class _CalibrationStageWorker(QRunnable):
     @Slot()
     def run(self) -> None:
         try:
-            result = self.runner.run_current_stage(
-                event_callback=self.signals.event.emit
-            )
+            result = self.runner.run_current_stage(event_callback=self.signals.event.emit)
         except (OSError, RuntimeError, TypeError, ValueError) as error:
             self.signals.failed.emit(str(error))
         else:
@@ -187,9 +183,10 @@ class CalibrationCandidateViewerDialog(QDialog):
             raise ValueError("Candidate has no completed run directory")
         self._pairs = collect_calibration_qc_pairs(study_directory, candidate)
         self._reviewed_pair_ids: set[str] = set()
-        self._required_pair_ids = {
-            pair.pair_id for pair in self._pairs if pair.required
-        }
+        self._required_pair_ids = {pair.pair_id for pair in self._pairs if pair.required}
+        self._required_pair_indexes = tuple(
+            index for index, pair in enumerate(self._pairs) if pair.required
+        )
         self.setWindowTitle(f"Visual registration check — {candidate.candidate_id}")
         self.resize(1080, 900)
         layout = QVBoxLayout(self)
@@ -214,11 +211,26 @@ class CalibrationCandidateViewerDialog(QDialog):
         instructions.setObjectName("card")
         layout.addWidget(instructions)
         self.mesh_combo = QComboBox()
-        self.mesh_combo.addItem("Choose a comparison…", None)
         for index, pair in enumerate(self._pairs):
-            self.mesh_combo.addItem(pair.label, index)
+            if pair.required:
+                specimen_number = self._required_pair_indexes.index(index) + 1
+                label = (
+                    f"Specimen {specimen_number} of {len(self._required_pair_indexes)} "
+                    f"— {pair.label}"
+                )
+            else:
+                label = f"Optional overview — {pair.label}"
+            self.mesh_combo.addItem(label, index)
         self.mesh_combo.currentIndexChanged.connect(self._load_selected)
-        layout.addWidget(self.mesh_combo)
+        specimen_navigation = QHBoxLayout()
+        self.previous_specimen_button = QPushButton("← Previous specimen")
+        self.previous_specimen_button.clicked.connect(lambda: self._navigate_required_specimen(-1))
+        self.next_specimen_button = QPushButton("Next specimen →")
+        self.next_specimen_button.clicked.connect(lambda: self._navigate_required_specimen(1))
+        specimen_navigation.addWidget(self.previous_specimen_button)
+        specimen_navigation.addWidget(self.mesh_combo, 1)
+        specimen_navigation.addWidget(self.next_specimen_button)
+        layout.addLayout(specimen_navigation)
         toggles = QHBoxLayout()
         self.show_original = QCheckBox("Show original (blue lines)")
         self.show_original.setChecked(True)
@@ -233,18 +245,20 @@ class CalibrationCandidateViewerDialog(QDialog):
         layout.addWidget(self.status)
         self.canvas = CalibrationComparisonCanvas3D()
         self.show_original.toggled.connect(self.canvas.set_show_original)
-        self.show_reconstruction.toggled.connect(
-            self.canvas.set_show_reconstruction
-        )
+        self.show_reconstruction.toggled.connect(self.canvas.set_show_reconstruction)
         layout.addWidget(self.canvas, 1)
         self.review_progress = QLabel()
         self.review_progress.setWordWrap(True)
         layout.addWidget(self.review_progress)
+        self.review_gate = QLabel()
+        self.review_gate.setObjectName("status")
+        self.review_gate.setWordWrap(True)
+        layout.addWidget(self.review_gate)
         self.pass_check = QCheckBox(
             "Visual QC passed: I checked every pilot specimen, the important anatomy "
             "is preserved, and I see no implausible warping."
         )
-        self.pass_check.setEnabled(False)
+        self.pass_check.hide()
         self.pass_check.toggled.connect(self._update_complete_button)
         layout.addWidget(self.pass_check)
         controls = QHBoxLayout()
@@ -260,6 +274,13 @@ class CalibrationCandidateViewerDialog(QDialog):
         controls.addWidget(close)
         controls.addWidget(self.complete_button)
         layout.addLayout(controls)
+        if self._required_pair_indexes:
+            first_required = self._required_pair_indexes[0]
+            combo_index = self.mesh_combo.findData(first_required)
+            if self.mesh_combo.currentIndex() == combo_index:
+                self._load_selected(combo_index)
+            else:
+                self.mesh_combo.setCurrentIndex(combo_index)
         self._update_review_progress()
 
     @property
@@ -292,18 +313,53 @@ class CalibrationCandidateViewerDialog(QDialog):
         )
         self._update_review_progress()
 
+    @Slot()
+    def _navigate_required_specimen(self, direction: int) -> None:
+        if not self._required_pair_indexes:
+            return
+        pair_index = self.mesh_combo.currentData()
+        try:
+            current_position = self._required_pair_indexes.index(int(pair_index))
+        except (TypeError, ValueError):
+            current_position = 0 if direction >= 0 else len(self._required_pair_indexes) - 1
+        target_position = max(
+            0,
+            min(
+                len(self._required_pair_indexes) - 1,
+                current_position + direction,
+            ),
+        )
+        target_pair_index = self._required_pair_indexes[target_position]
+        self.mesh_combo.setCurrentIndex(self.mesh_combo.findData(target_pair_index))
+
     def _update_review_progress(self) -> None:
         reviewed = len(self._reviewed_pair_ids & self._required_pair_ids)
         total = len(self._required_pair_ids)
         complete = reviewed == total and total > 0
+        pair_index = self.mesh_combo.currentData()
+        try:
+            current_position = self._required_pair_indexes.index(int(pair_index))
+        except (TypeError, ValueError):
+            current_position = -1
+        self.previous_specimen_button.setEnabled(current_position > 0)
+        self.next_specimen_button.setEnabled(
+            0 <= current_position < len(self._required_pair_indexes) - 1
+        )
         self.review_progress.setText(
-            f"Required specimen comparisons opened: {reviewed} of {total}. "
-            + (
-                "You can now record your visual decision."
-                if complete
-                else "Open every pilot specimen before recording a pass."
+            f"Visual review progress: {reviewed} of {total} pilot specimens opened."
+        )
+        self.review_gate.setText(
+            "All required specimens have been opened. You can now record your "
+            "visual-anatomy decision below."
+            if complete
+            else (
+                f"Continue with Next specimen. {total - reviewed} required "
+                f"comparison{'s' if total - reviewed != 1 else ''} remain."
             )
         )
+        self.review_gate.setObjectName("statusSuccess" if complete else "status")
+        self.review_gate.setStyleSheet("")
+        self.pass_check.setVisible(complete)
         self.pass_check.setEnabled(complete)
         if not complete:
             self.pass_check.setChecked(False)
@@ -311,9 +367,7 @@ class CalibrationCandidateViewerDialog(QDialog):
 
     @Slot()
     def _update_complete_button(self) -> None:
-        self.complete_button.setEnabled(
-            self.pass_check.isEnabled() and self.pass_check.isChecked()
-        )
+        self.complete_button.setEnabled(self.pass_check.isEnabled() and self.pass_check.isChecked())
 
 
 class ReferenceCalibrationDialog(QDialog):
@@ -403,8 +457,7 @@ class ReferenceCalibrationDialog(QDialog):
             )
             path = self._snapshot.final_config_path
             label = QLabel(
-                "Selected configuration:\n"
-                + (str(path) if path is not None else "unavailable")
+                "Selected configuration:\n" + (str(path) if path is not None else "unavailable")
             )
             label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
             label.setWordWrap(True)
@@ -451,18 +504,13 @@ class ReferenceCalibrationDialog(QDialog):
         caution.setWordWrap(True)
         task_layout.addWidget(caution)
         self.content_layout.addWidget(task)
-        completed = sum(
-            candidate.status == "completed"
-            for candidate in self._snapshot.candidates
-        )
+        completed = sum(candidate.status == "completed" for candidate in self._snapshot.candidates)
         self.progress.setRange(0, len(self._snapshot.candidates))
         self.progress.setValue(completed)
         self.progress.setFormat(
             f"{completed} of {len(self._snapshot.candidates)} candidates completed"
         )
-        planned_by_id = {
-            candidate.candidate_id: candidate for candidate in stage.candidates
-        }
+        planned_by_id = {candidate.candidate_id: candidate for candidate in stage.candidates}
         tradeoffs = candidate_tradeoff_labels(self._snapshot.candidates)
         for index, candidate in enumerate(self._snapshot.candidates, start=1):
             self.content_layout.addWidget(
@@ -556,9 +604,7 @@ class ReferenceCalibrationDialog(QDialog):
             check = QLabel(("✓ " if passed else "⚠ ") + check_text)
             check.setWordWrap(True)
             layout.addWidget(check)
-            comparison_title = QLabel(
-                "How this option compares with the other completed options"
-            )
+            comparison_title = QLabel("How this option compares with the other completed options")
             comparison_title.setObjectName("sectionTitle")
             layout.addWidget(comparison_title)
             comparison = QLabel(
@@ -572,16 +618,12 @@ class ReferenceCalibrationDialog(QDialog):
             technical_button.setCheckable(True)
             technical = QLabel(technical_metric_text(metrics))
             technical.setWordWrap(True)
-            technical.setTextInteractionFlags(
-                Qt.TextInteractionFlag.TextSelectableByMouse
-            )
+            technical.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
             technical.setVisible(False)
             technical_button.toggled.connect(technical.setVisible)
             technical_button.toggled.connect(
                 lambda visible, button=technical_button: button.setText(
-                    "Hide technical measurements"
-                    if visible
-                    else "Show technical measurements"
+                    "Hide technical measurements" if visible else "Show technical measurements"
                 )
             )
             layout.addWidget(technical_button)
@@ -591,23 +633,25 @@ class ReferenceCalibrationDialog(QDialog):
             viewer.clicked.connect(
                 lambda _checked=False, value=candidate: self._open_candidate(value)
             )
-            approval = QCheckBox(
-                "Visual anatomy check passed"
-            )
-            visually_reviewed = (
-                candidate.candidate_id in self._visually_reviewed_candidates
-            )
-            approval.setEnabled(visually_reviewed)
+            approval = QCheckBox("Visual QC passed — clear to revoke")
+            visually_reviewed = candidate.candidate_id in self._visually_reviewed_candidates
+            approval.setVisible(visually_reviewed)
             approval.setChecked(visually_reviewed)
-            approval.setToolTip(
-                "Open the comparison viewer and complete every required specimen "
-                "comparison before this option can pass visual QC."
-                if not visually_reviewed
-                else "Clear this check to revoke the visual QC pass."
+            approval.setToolTip("Clear this check to revoke the visual QC pass.")
+            visual_status = QLabel(
+                "Visual QC recorded. This option can now be selected."
+                if visually_reviewed
+                else (
+                    "Visual QC not recorded. Open the guided comparison and inspect "
+                    "every pilot specimen."
+                )
             )
+            visual_status.setObjectName("statusSuccess" if visually_reviewed else "status")
+            visual_status.setWordWrap(True)
             self._approval_checks[candidate.candidate_id] = approval
             row.addWidget(viewer)
-            row.addWidget(approval, 1)
+            row.addWidget(visual_status, 1)
+            row.addWidget(approval)
             layout.addLayout(row)
         elif candidate.error:
             error = QLabel(candidate.error)
@@ -663,9 +707,7 @@ class ReferenceCalibrationDialog(QDialog):
                     f"{float(payload['elapsed_seconds']):.0f} seconds."
                 )
         elif kind == "candidate_completed":
-            self.status.setText(
-                f"{candidate_id} completed; automatic QC metrics were verified."
-            )
+            self.status.setText(f"{candidate_id} completed; automatic QC metrics were verified.")
         elif kind in {"candidate_failed", "candidate_interrupted"}:
             self.status.setText(f"{candidate_id}: {event['error']}")
 
@@ -702,8 +744,7 @@ class ReferenceCalibrationDialog(QDialog):
             )
             return
         approvals = {
-            candidate_id: check.isChecked()
-            for candidate_id, check in self._approval_checks.items()
+            candidate_id: check.isChecked() for candidate_id, check in self._approval_checks.items()
         }
         try:
             _snapshot, assessment = record_reference_calibration_stage_review(

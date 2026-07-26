@@ -110,15 +110,17 @@ def test_visual_qc_pass_is_locked_until_every_subject_pair_was_opened(
     application.processEvents()
 
     assert dialog.pass_check.isEnabled() is False
-    dialog.mesh_combo.setCurrentIndex(2)
-    application.processEvents()
-    assert dialog.pass_check.isEnabled() is False
     assert "1 of 2" in dialog.review_progress.text()
+    assert dialog.pass_check.isHidden() is True
+    assert dialog.previous_specimen_button.isEnabled() is False
+    assert dialog.next_specimen_button.isEnabled() is True
 
-    dialog.mesh_combo.setCurrentIndex(3)
+    dialog.next_specimen_button.click()
     application.processEvents()
     assert dialog.pass_check.isEnabled() is True
+    assert dialog.pass_check.isHidden() is False
     assert "2 of 2" in dialog.review_progress.text()
+    assert dialog.next_specimen_button.isEnabled() is False
     assert dialog.complete_button.isEnabled() is False
 
     dialog.pass_check.setChecked(True)
