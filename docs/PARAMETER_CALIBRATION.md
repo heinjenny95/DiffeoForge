@@ -37,23 +37,29 @@ therefore keeps three sources of information separate:
    are embedded in `atlas.yaml`.
 8. After the automatic Deformetrica setup check passes, open **Automatic
    Deformetrica pilot calibration**.
-9. Start the current stage once. DiffeoForge runs all pending candidates
-   sequentially and retains already completed candidates if execution is
-   continued later.
+9. Follow the single green next action. Start the current stage once.
+   DiffeoForge runs all pending candidates sequentially and retains already
+   completed candidates if execution is continued later.
 10. Read the plain-language question, parameter value, and direction-of-change
     explanation on each candidate card. Relative automatic observations such
     as closest surface match, least atlas area change, lowest deformation cost,
     and fastest pilot run describe trade-offs; none is an automatic winner.
-11. Open **Compare originals & reconstructions** for each candidate. Blue
+11. Select the green **Review next option** action. Blue
     wireframes show the exact bound original pilot meshes and orange surfaces
     show their Deformetrica reconstructions in the same rotatable camera.
     Original and reconstruction can be toggled independently.
 12. Open every pilot-specimen pair and inspect the anatomy relevant to the
-    study. Visual approval remains locked until every required pair has been
-    opened. Record a pass only when relevant features are preserved and there
-    is no implausible stretching, collapse, or warping.
-13. Select one eligible candidate. DiffeoForge records the explicit researcher
-    decision and only then prepares the next stage with earlier values locked.
+    study. **Next** is the green action until every required pair has been
+    opened. The fixed decision panel then exposes an explicit green pass action
+    and a separate failure action, so the next decision never depends on a
+    hidden checkbox or an off-screen control. Record a pass only when relevant
+    features are preserved and there is no implausible stretching, collapse,
+    or warping.
+13. Repeat the guided review for every candidate. Then select one eligible
+    candidate in the green menu and use the green advance action. DiffeoForge
+    records the explicit researcher decision and only then prepares the next
+    stage with earlier values locked. Technical measurements remain optional
+    secondary information throughout this sequence.
 14. After stage four, switch the main workflow to
     `selected/atlas-calibrated.yaml` and review it before the required
     full-cohort confirmation run.

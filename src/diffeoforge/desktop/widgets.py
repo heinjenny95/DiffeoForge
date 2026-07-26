@@ -184,6 +184,10 @@ QLabel#hint { color: #64777c; font-size: 12px; }
 QLineEdit, QComboBox { background: #ffffff; border: 1px solid #bdcbce; border-radius: 6px;
                       min-height: 34px; padding: 2px 9px; }
 QLineEdit:focus, QComboBox:focus { border: 2px solid #268f7a; }
+QComboBox#primaryChoice {
+    background: #e5f5ed; border: 2px solid #167c6b; color: #123b3a;
+    font-weight: 700;
+}
 QPushButton { border-radius: 6px; min-height: 34px; padding: 2px 13px; font-weight: 600; }
 QPushButton#secondary { background: #eef3f4; border: 1px solid #c8d5d7; color: #24474b; }
 QPushButton#parameterHelpButton {

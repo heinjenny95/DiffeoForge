@@ -46,7 +46,7 @@ class CalibrationComparisonCanvas3D(QWidget):
         self._last_position: QPointF | None = None
         self._drag_button: Qt.MouseButton | None = None
         self._interacting = False
-        self.setMinimumHeight(560)
+        self.setMinimumHeight(420)
         self.setMouseTracking(True)
         self.setCursor(Qt.CursorShape.OpenHandCursor)
         self.setObjectName("calibrationComparisonCanvas3D")
@@ -231,11 +231,4 @@ class CalibrationComparisonCanvas3D(QWidget):
             return
         self._draw_reconstruction(painter)
         self._draw_original(painter)
-        painter.setPen(QColor("#52666b"))
-        painter.drawText(
-            self.rect().adjusted(14, 10, -14, -10),
-            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignBottom,
-            "Drag: rotate  |  Right-drag: pan  |  Wheel: zoom  |  "
-            "Double-click: reset view",
-        )
         painter.end()

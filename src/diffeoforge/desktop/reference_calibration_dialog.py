@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
     QProgressBar,
     QPushButton,
     QScrollArea,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -44,6 +45,26 @@ from diffeoforge.reference_calibration_study import (
     record_reference_calibration_stage_review,
 )
 from diffeoforge.result_report import collect_run_report
+
+
+def _set_action_emphasis(button: QPushButton, emphasized: bool) -> None:
+    """Apply the shared primary/secondary action role immediately."""
+
+    button.setObjectName("primary" if emphasized else "secondary")
+    style = button.style()
+    style.unpolish(button)
+    style.polish(button)
+    button.update()
+
+
+def _set_choice_emphasis(combo: QComboBox, emphasized: bool) -> None:
+    """Highlight the next required selection control."""
+
+    combo.setObjectName("primaryChoice" if emphasized else "")
+    style = combo.style()
+    style.unpolish(combo)
+    style.polish(combo)
+    combo.update()
 
 
 @dataclass(frozen=True)
@@ -187,9 +208,25 @@ class CalibrationCandidateViewerDialog(QDialog):
         self._required_pair_indexes = tuple(
             index for index, pair in enumerate(self._pairs) if pair.required
         )
+        self._review_decision: bool | None = None
         self.setWindowTitle(f"Visual registration check — {candidate.candidate_id}")
         self.resize(1080, 900)
-        layout = QVBoxLayout(self)
+        self.setMinimumSize(760, 640)
+        root = QVBoxLayout(self)
+        self.body_scroll = QScrollArea()
+        self.body_scroll.setWidgetResizable(True)
+        self.body_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self.body_scroll.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
+        body = QWidget()
+        body.setSizePolicy(
+            QSizePolicy.Policy.Ignored,
+            QSizePolicy.Policy.Preferred,
+        )
+        layout = QVBoxLayout(body)
+        self.body_scroll.setWidget(body)
+        root.addWidget(self.body_scroll, 1)
         title = QLabel("Does the reconstruction preserve the original anatomy?")
         title.setObjectName("title")
         layout.addWidget(title)
@@ -223,10 +260,11 @@ class CalibrationCandidateViewerDialog(QDialog):
             self.mesh_combo.addItem(label, index)
         self.mesh_combo.currentIndexChanged.connect(self._load_selected)
         specimen_navigation = QHBoxLayout()
-        self.previous_specimen_button = QPushButton("← Previous specimen")
+        self.previous_specimen_button = QPushButton("← Previous")
         self.previous_specimen_button.clicked.connect(lambda: self._navigate_required_specimen(-1))
-        self.next_specimen_button = QPushButton("Next specimen →")
+        self.next_specimen_button = QPushButton("Next →")
         self.next_specimen_button.clicked.connect(lambda: self._navigate_required_specimen(1))
+        _set_action_emphasis(self.previous_specimen_button, False)
         specimen_navigation.addWidget(self.previous_specimen_button)
         specimen_navigation.addWidget(self.mesh_combo, 1)
         specimen_navigation.addWidget(self.next_specimen_button)
@@ -239,41 +277,60 @@ class CalibrationCandidateViewerDialog(QDialog):
         toggles.addWidget(self.show_original)
         toggles.addWidget(self.show_reconstruction)
         toggles.addStretch()
+        reset = QPushButton("Reset view")
+        reset.clicked.connect(lambda: self.canvas.reset_view())
+        _set_action_emphasis(reset, False)
+        toggles.addWidget(reset)
         layout.addLayout(toggles)
         self.status = QLabel()
+        self.status.setObjectName("statusSuccess")
         self.status.setWordWrap(True)
         layout.addWidget(self.status)
         self.canvas = CalibrationComparisonCanvas3D()
         self.show_original.toggled.connect(self.canvas.set_show_original)
         self.show_reconstruction.toggled.connect(self.canvas.set_show_reconstruction)
         layout.addWidget(self.canvas, 1)
+        canvas_help = QLabel(
+            "Controls: drag to rotate; right-drag to pan; use the mouse wheel to "
+            "zoom; double-click to reset the view."
+        )
+        canvas_help.setObjectName("hint")
+        canvas_help.setWordWrap(True)
+        layout.addWidget(canvas_help)
+
+        self.decision_panel = QFrame()
+        self.decision_panel.setObjectName("card")
+        decision_layout = QVBoxLayout(self.decision_panel)
         self.review_progress = QLabel()
         self.review_progress.setWordWrap(True)
-        layout.addWidget(self.review_progress)
+        decision_layout.addWidget(self.review_progress)
         self.review_gate = QLabel()
         self.review_gate.setObjectName("status")
         self.review_gate.setWordWrap(True)
-        layout.addWidget(self.review_gate)
+        decision_layout.addWidget(self.review_gate)
         self.pass_check = QCheckBox(
             "Visual QC passed: I checked every pilot specimen, the important anatomy "
             "is preserved, and I see no implausible warping."
         )
+        # The explicit decision button is the visible confirmation. This private
+        # check remains the immutable completion predicate.
         self.pass_check.hide()
-        self.pass_check.toggled.connect(self._update_complete_button)
-        layout.addWidget(self.pass_check)
         controls = QHBoxLayout()
-        reset = QPushButton("Reset view")
-        reset.clicked.connect(self.canvas.reset_view)
-        close = QPushButton("Close without passing")
-        close.clicked.connect(self.reject)
-        self.complete_button = QPushButton("Record visual QC pass")
+        self.close_button = QPushButton("Close without recording")
+        self.close_button.clicked.connect(self.reject)
+        _set_action_emphasis(self.close_button, False)
+        self.fail_button = QPushButton("Record: QC does not pass")
+        self.fail_button.setObjectName("danger")
+        self.fail_button.clicked.connect(self._record_visual_qc_fail)
+        self.complete_button = QPushButton("Record: QC passes")
         self.complete_button.setEnabled(False)
-        self.complete_button.clicked.connect(self.accept)
-        controls.addWidget(reset)
+        self.complete_button.clicked.connect(self._record_visual_qc_pass)
         controls.addStretch()
-        controls.addWidget(close)
+        controls.addWidget(self.close_button)
+        controls.addWidget(self.fail_button)
         controls.addWidget(self.complete_button)
-        layout.addLayout(controls)
+        decision_layout.addLayout(controls)
+        root.addWidget(self.decision_panel)
         if self._required_pair_indexes:
             first_required = self._required_pair_indexes[0]
             combo_index = self.mesh_combo.findData(first_required)
@@ -286,10 +343,18 @@ class CalibrationCandidateViewerDialog(QDialog):
     @property
     def review_complete(self) -> bool:
         return (
-            self.result() == QDialog.DialogCode.Accepted
+            self._review_decision is True
             and self.pass_check.isChecked()
             and self._required_pair_ids <= self._reviewed_pair_ids
         )
+
+    @property
+    def review_recorded(self) -> bool:
+        return self._review_decision is not None
+
+    @property
+    def review_passed(self) -> bool:
+        return self._review_decision is True
 
     @Slot(int)
     def _load_selected(self, _index: int) -> None:
@@ -318,6 +383,27 @@ class CalibrationCandidateViewerDialog(QDialog):
         if not self._required_pair_indexes:
             return
         pair_index = self.mesh_combo.currentData()
+        if direction > 0:
+            try:
+                current_pair_index = int(pair_index)
+            except (TypeError, ValueError):
+                current_pair_index = self._required_pair_indexes[0]
+            unreviewed_indexes = tuple(
+                index
+                for index in self._required_pair_indexes
+                if self._pairs[index].pair_id not in self._reviewed_pair_ids
+            )
+            if unreviewed_indexes:
+                later_indexes = tuple(
+                    index for index in unreviewed_indexes if index > current_pair_index
+                )
+                target_pair_index = (
+                    later_indexes[0] if later_indexes else unreviewed_indexes[0]
+                )
+                self.mesh_combo.setCurrentIndex(
+                    self.mesh_combo.findData(target_pair_index)
+                )
+                return
         try:
             current_position = self._required_pair_indexes.index(int(pair_index))
         except (TypeError, ValueError):
@@ -342,32 +428,40 @@ class CalibrationCandidateViewerDialog(QDialog):
         except (TypeError, ValueError):
             current_position = -1
         self.previous_specimen_button.setEnabled(current_position > 0)
-        self.next_specimen_button.setEnabled(
-            0 <= current_position < len(self._required_pair_indexes) - 1
-        )
+        self.next_specimen_button.setEnabled(not complete)
         self.review_progress.setText(
             f"Visual review progress: {reviewed} of {total} pilot specimens opened."
         )
         self.review_gate.setText(
-            "All required specimens have been opened. You can now record your "
-            "visual-anatomy decision below."
+            "Next: record your decision. Click the green button if the important "
+            "anatomy is preserved, or record that this option does not pass."
             if complete
             else (
-                f"Continue with Next specimen. {total - reviewed} required "
+                f"Next: click the green Next → button. {total - reviewed} required "
                 f"comparison{'s' if total - reviewed != 1 else ''} remain."
             )
         )
         self.review_gate.setObjectName("statusSuccess" if complete else "status")
         self.review_gate.setStyleSheet("")
-        self.pass_check.setVisible(complete)
-        self.pass_check.setEnabled(complete)
-        if not complete:
-            self.pass_check.setChecked(False)
-        self._update_complete_button()
+        self.fail_button.setVisible(complete)
+        self.fail_button.setEnabled(complete)
+        self.complete_button.setEnabled(complete)
+        _set_action_emphasis(self.next_specimen_button, not complete)
+        _set_action_emphasis(self.complete_button, complete)
 
     @Slot()
-    def _update_complete_button(self) -> None:
-        self.complete_button.setEnabled(self.pass_check.isEnabled() and self.pass_check.isChecked())
+    def _record_visual_qc_pass(self) -> None:
+        if self._required_pair_ids <= self._reviewed_pair_ids:
+            self._review_decision = True
+            self.pass_check.setChecked(True)
+            self.accept()
+
+    @Slot()
+    def _record_visual_qc_fail(self) -> None:
+        if self._required_pair_ids <= self._reviewed_pair_ids:
+            self._review_decision = False
+            self.pass_check.setChecked(False)
+            self.reject()
 
 
 class ReferenceCalibrationDialog(QDialog):
@@ -384,7 +478,9 @@ class ReferenceCalibrationDialog(QDialog):
         self._worker: _CalibrationStageWorker | None = None
         self._thread_pool = QThreadPool.globalInstance()
         self._approval_checks: dict[str, QCheckBox] = {}
+        self._review_buttons: dict[str, QPushButton] = {}
         self._visually_reviewed_candidates: set[str] = set()
+        self._visually_approved_candidates: set[str] = set()
         self.setWindowTitle("Automatic Deformetrica pilot calibration")
         self.resize(1040, 820)
         self.setMinimumSize(850, 650)
@@ -406,28 +502,54 @@ class ReferenceCalibrationDialog(QDialog):
         self.progress.setFormat("Ready")
         root.addWidget(self.progress)
         self.status = QLabel()
+        self.status.setObjectName("statusSuccess")
         self.status.setWordWrap(True)
         root.addWidget(self.status)
 
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
         self.scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self.scroll.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
         self.content = QWidget()
+        self.content.setSizePolicy(
+            QSizePolicy.Policy.Ignored,
+            QSizePolicy.Policy.Preferred,
+        )
         self.content_layout = QVBoxLayout(self.content)
         self.scroll.setWidget(self.content)
         root.addWidget(self.scroll, 1)
 
         footer = QHBoxLayout()
+        self.footer = footer
         self.cancel_button = QPushButton("Cancel safely")
         self.cancel_button.clicked.connect(self._cancel)
+        self.review_next_button = QPushButton("Review next option")
+        self.review_next_button.clicked.connect(self._open_next_review)
+        self.review_next_button.hide()
+        self.selection_combo = QComboBox()
+        self.selection_combo.setMaximumWidth(360)
+        self.selection_combo.currentIndexChanged.connect(
+            self._update_stage_review_action
+        )
+        self.selection_combo.hide()
         self.start_button = QPushButton("Run all candidates in this stage")
         self.start_button.clicked.connect(self._start)
         self.advance_button = QPushButton("Approve selection & prepare next stage")
         self.advance_button.clicked.connect(self._advance)
         close = QPushButton("Close")
         close.clicked.connect(self.reject)
+        self.close_button = close
+        _set_action_emphasis(self.cancel_button, False)
+        _set_action_emphasis(self.review_next_button, False)
+        _set_action_emphasis(self.start_button, True)
+        _set_action_emphasis(self.advance_button, False)
+        _set_action_emphasis(self.close_button, False)
         footer.addWidget(self.cancel_button)
         footer.addStretch()
+        footer.addWidget(self.review_next_button)
+        footer.addWidget(self.selection_combo)
         footer.addWidget(self.start_button)
         footer.addWidget(self.advance_button)
         footer.addWidget(close)
@@ -445,6 +567,7 @@ class ReferenceCalibrationDialog(QDialog):
             if widget is not None:
                 widget.deleteLater()
         self._approval_checks = {}
+        self._review_buttons = {}
 
     def _render(self) -> None:
         self._snapshot = load_reference_calibration_study(self.study_directory)
@@ -464,6 +587,7 @@ class ReferenceCalibrationDialog(QDialog):
             self.content_layout.addWidget(label)
             if path is not None:
                 open_button = QPushButton("Open selected configuration")
+                _set_action_emphasis(open_button, True)
                 open_button.clicked.connect(
                     lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
                 )
@@ -473,7 +597,9 @@ class ReferenceCalibrationDialog(QDialog):
             self.progress.setFormat("Calibration complete")
             self.start_button.hide()
             self.advance_button.hide()
-            self.cancel_button.setEnabled(False)
+            self.review_next_button.hide()
+            self.selection_combo.hide()
+            self.cancel_button.hide()
             self.content_layout.addStretch()
             return
         stage = self._snapshot.current_stage
@@ -512,6 +638,19 @@ class ReferenceCalibrationDialog(QDialog):
         )
         planned_by_id = {candidate.candidate_id: candidate for candidate in stage.candidates}
         tradeoffs = candidate_tradeoff_labels(self._snapshot.candidates)
+        completed_candidate_ids = tuple(
+            candidate.candidate_id
+            for candidate in self._snapshot.candidates
+            if candidate.status == "completed"
+        )
+        next_review_id = next(
+            (
+                candidate_id
+                for candidate_id in completed_candidate_ids
+                if candidate_id not in self._visually_reviewed_candidates
+            ),
+            None,
+        )
         for index, candidate in enumerate(self._snapshot.candidates, start=1):
             self.content_layout.addWidget(
                 self._candidate_card(
@@ -519,6 +658,7 @@ class ReferenceCalibrationDialog(QDialog):
                     planned_by_id[candidate.candidate_id],
                     option_index=index,
                     tradeoffs=tradeoffs[candidate.candidate_id],
+                    emphasize_review=candidate.candidate_id == next_review_id,
                 )
             )
         self.content_layout.addStretch()
@@ -535,37 +675,42 @@ class ReferenceCalibrationDialog(QDialog):
         self.start_button.setVisible(not awaiting or retryable)
         self.start_button.setEnabled(not running)
         self.cancel_button.setEnabled(running)
-        self.advance_button.setVisible(awaiting)
-        self.advance_button.setEnabled(awaiting and not running)
-        self.status.setText(
-            "Candidate execution is ready. Already completed candidates are "
-            "retained when you continue."
-            if not awaiting
-            else (
-                "The calculations are complete. Compare original meshes with their "
-                "reconstructions, mark every anatomically acceptable option, then "
-                "select one acceptable option."
-            )
-        )
+        self.cancel_button.setVisible(running)
+        self.review_next_button.hide()
+        _set_action_emphasis(self.review_next_button, False)
+        self.selection_combo.hide()
+        _set_choice_emphasis(self.selection_combo, False)
+        self.advance_button.hide()
+        self.advance_button.setEnabled(False)
+        _set_action_emphasis(self.start_button, not awaiting or retryable)
+        _set_action_emphasis(self.advance_button, False)
         if awaiting:
-            self.selection_combo = QComboBox()
+            self.selection_combo.blockSignals(True)
+            self.selection_combo.clear()
             self.selection_combo.addItem(
-                "After visual QC, choose one acceptable option…",
+                "Choose one option that passed visual QC…",
                 None,
             )
             for index, candidate in enumerate(
                 self._snapshot.candidates,
                 start=1,
             ):
-                if candidate.status == "completed":
+                if candidate.candidate_id in self._visually_approved_candidates:
                     option_letter = chr(ord("A") + index - 1)
                     self.selection_combo.addItem(
                         f"Option {option_letter} — {candidate.label}",
                         candidate.candidate_id,
                     )
-            self.content_layout.insertWidget(
-                max(0, self.content_layout.count() - 1),
-                self.selection_combo,
+            self.selection_combo.blockSignals(False)
+            self._update_stage_review_action()
+        elif running:
+            self.status.setText(
+                "Running the declared candidates. You can cancel safely; no review "
+                "action is required until all calculations finish."
+            )
+        else:
+            self.status.setText(
+                "Next: click the green Run all candidates in this stage button."
             )
 
     def _candidate_card(
@@ -575,6 +720,7 @@ class ReferenceCalibrationDialog(QDialog):
         *,
         option_index: int,
         tradeoffs: tuple[str, ...],
+        emphasize_review: bool,
     ) -> QWidget:
         card = QFrame()
         card.setObjectName("card")
@@ -616,6 +762,11 @@ class ReferenceCalibrationDialog(QDialog):
             layout.addWidget(comparison)
             technical_button = QPushButton("Show technical measurements")
             technical_button.setCheckable(True)
+            technical_button.setSizePolicy(
+                QSizePolicy.Policy.Maximum,
+                QSizePolicy.Policy.Fixed,
+            )
+            _set_action_emphasis(technical_button, False)
             technical = QLabel(technical_metric_text(metrics))
             technical.setWordWrap(True)
             technical.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
@@ -626,33 +777,49 @@ class ReferenceCalibrationDialog(QDialog):
                     "Hide technical measurements" if visible else "Show technical measurements"
                 )
             )
-            layout.addWidget(technical_button)
+            technical_row = QHBoxLayout()
+            technical_row.addWidget(technical_button)
+            technical_row.addStretch()
+            layout.addLayout(technical_row)
             layout.addWidget(technical)
-            row = QHBoxLayout()
-            viewer = QPushButton("Compare originals & reconstructions…")
+            reviewed = candidate.candidate_id in self._visually_reviewed_candidates
+            approved = candidate.candidate_id in self._visually_approved_candidates
+            viewer = QPushButton(
+                "Review again…"
+                if reviewed
+                else "Review originals & reconstructions…"
+            )
             viewer.clicked.connect(
                 lambda _checked=False, value=candidate: self._open_candidate(value)
             )
-            approval = QCheckBox("Visual QC passed — clear to revoke")
-            visually_reviewed = candidate.candidate_id in self._visually_reviewed_candidates
-            approval.setVisible(visually_reviewed)
-            approval.setChecked(visually_reviewed)
-            approval.setToolTip("Clear this check to revoke the visual QC pass.")
+            _set_action_emphasis(viewer, emphasize_review)
+            self._review_buttons[candidate.candidate_id] = viewer
+            approval = QCheckBox("Visual QC passed")
+            approval.setVisible(approved)
+            approval.setChecked(approved)
+            approval.setEnabled(False)
+            approval.setToolTip("Review this option again to change the recorded decision.")
             visual_status = QLabel(
-                "Visual QC recorded. This option can now be selected."
-                if visually_reviewed
+                "Visual QC passed. This option can be selected."
+                if approved
                 else (
-                    "Visual QC not recorded. Open the guided comparison and inspect "
-                    "every pilot specimen."
+                    "Visual QC recorded: this option does not pass."
+                    if reviewed
+                    else (
+                        "Next: open the green guided comparison and inspect every "
+                        "pilot specimen."
+                    )
                 )
             )
-            visual_status.setObjectName("statusSuccess" if visually_reviewed else "status")
+            visual_status.setObjectName("statusSuccess" if approved else "status")
             visual_status.setWordWrap(True)
             self._approval_checks[candidate.candidate_id] = approval
-            row.addWidget(viewer)
-            row.addWidget(visual_status, 1)
-            row.addWidget(approval)
-            layout.addLayout(row)
+            review_controls = QHBoxLayout()
+            review_controls.addWidget(viewer)
+            review_controls.addWidget(approval)
+            review_controls.addStretch()
+            layout.addLayout(review_controls)
+            layout.addWidget(visual_status)
         elif candidate.error:
             error = QLabel(candidate.error)
             error.setWordWrap(True)
@@ -668,6 +835,100 @@ class ReferenceCalibrationDialog(QDialog):
         return card
 
     @Slot()
+    def _update_stage_review_action(self) -> None:
+        if self._snapshot.status != "awaiting_review":
+            return
+        completed_ids = {
+            candidate.candidate_id
+            for candidate in self._snapshot.candidates
+            if candidate.status == "completed"
+        }
+        retryable = any(
+            candidate.status in {"failed", "interrupted", "orphaned"}
+            for candidate in self._snapshot.candidates
+        )
+        all_reviewed = bool(completed_ids) and (
+            completed_ids <= self._visually_reviewed_candidates
+        )
+        selected = self.selection_combo.currentData()
+        selected_is_approved = selected in self._visually_approved_candidates
+        ready = all_reviewed and selected_is_approved and not retryable
+        self.advance_button.setEnabled(ready)
+        _set_action_emphasis(self.advance_button, ready)
+        self.review_next_button.hide()
+        _set_action_emphasis(self.review_next_button, False)
+        self.selection_combo.hide()
+        self.advance_button.hide()
+        if retryable:
+            _set_choice_emphasis(self.selection_combo, False)
+            self.status.setText(
+                "Next: click the green Retry failed candidates button."
+            )
+            return
+        if not all_reviewed:
+            remaining = len(completed_ids - self._visually_reviewed_candidates)
+            self.review_next_button.setText("Review next option")
+            self.review_next_button.show()
+            _set_action_emphasis(self.review_next_button, True)
+            _set_choice_emphasis(self.selection_combo, False)
+            self.status.setText(
+                f"Next: click the green Review next option button. Record a visual decision "
+                f"for {remaining} remaining option{'s' if remaining != 1 else ''}."
+            )
+            return
+        if not self._visually_approved_candidates:
+            self.review_next_button.setText("Review an option again")
+            self.review_next_button.show()
+            _set_action_emphasis(self.review_next_button, True)
+            if completed_ids:
+                first_candidate_id = next(
+                    candidate.candidate_id
+                    for candidate in self._snapshot.candidates
+                    if candidate.candidate_id in completed_ids
+                )
+                _set_action_emphasis(
+                    self._review_buttons[first_candidate_id],
+                    True,
+                )
+            _set_choice_emphasis(self.selection_combo, False)
+            self.status.setText(
+                "No option passed visual QC. Click the green Review an option again "
+                "button or revise the pilot plan; the stage cannot advance."
+            )
+            return
+        if not selected_is_approved:
+            self.selection_combo.show()
+            _set_choice_emphasis(self.selection_combo, True)
+            self.status.setText(
+                "Next: choose one option from the green highlighted menu."
+            )
+            return
+        self.selection_combo.show()
+        self.advance_button.show()
+        _set_choice_emphasis(self.selection_combo, False)
+        self.status.setText(
+            "Next: click the green Approve selection & prepare next stage button."
+        )
+
+    @Slot()
+    def _open_next_review(self) -> None:
+        completed = tuple(
+            candidate
+            for candidate in self._snapshot.candidates
+            if candidate.status == "completed"
+        )
+        candidate = next(
+            (
+                item
+                for item in completed
+                if item.candidate_id not in self._visually_reviewed_candidates
+            ),
+            completed[0] if completed else None,
+        )
+        if candidate is not None:
+            self._open_candidate(candidate)
+
+    @Slot()
     def _start(self) -> None:
         if self._worker is not None:
             return
@@ -678,7 +939,12 @@ class ReferenceCalibrationDialog(QDialog):
         worker.signals.failed.connect(self._failed)
         self._worker = worker
         self.start_button.setEnabled(False)
+        _set_action_emphasis(self.start_button, False)
         self.cancel_button.setEnabled(True)
+        self.cancel_button.setVisible(True)
+        self.cancel_button.setObjectName("danger")
+        self.cancel_button.style().unpolish(self.cancel_button)
+        self.cancel_button.style().polish(self.cancel_button)
         self.status.setText(
             "DiffeoForge is running the stage candidates sequentially. Closing is "
             "disabled until the current candidate reaches a terminal state."
@@ -771,13 +1037,13 @@ class ReferenceCalibrationDialog(QDialog):
                 self,
             )
             dialog.exec()
-            if dialog.review_complete:
+            if dialog.review_recorded:
                 self._visually_reviewed_candidates.add(candidate.candidate_id)
+                if dialog.review_passed:
+                    self._visually_approved_candidates.add(candidate.candidate_id)
+                else:
+                    self._visually_approved_candidates.discard(candidate.candidate_id)
                 self._render()
-                self.status.setText(
-                    f"{candidate.candidate_id}: visual anatomy check passed. "
-                    "You may still compare other options or revoke this pass."
-                )
         except (OSError, RuntimeError, TypeError, ValueError) as error:
             QMessageBox.warning(self, "Candidate viewer unavailable", str(error))
 
