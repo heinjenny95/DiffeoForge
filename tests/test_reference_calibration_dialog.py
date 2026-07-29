@@ -191,7 +191,7 @@ def test_visual_qc_can_record_an_explicit_failure_after_every_pair_was_opened(
     application.processEvents()
 
 
-def test_staged_calibration_highlights_one_next_action_at_a_time(
+def test_staged_calibration_allows_selection_without_visual_qc(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
@@ -297,13 +297,18 @@ def test_staged_calibration_highlights_one_next_action_at_a_time(
     review_buttons = list(dialog._review_buttons.values())
     assert len(review_buttons) == 2
     assert [button.objectName() for button in review_buttons] == [
-        "primary",
+        "secondary",
         "secondary",
     ]
-    assert dialog.review_next_button.isVisible() is True
-    assert dialog.review_next_button.objectName() == "primary"
-    assert dialog.review_next_button.text() == "Review next option"
-    assert dialog.selection_combo.isHidden() is True
+    assert all(
+        button.text().startswith("Optional visual QC")
+        for button in review_buttons
+    )
+    assert dialog.review_next_button.isHidden() is True
+    assert dialog.selection_combo.isVisible() is True
+    assert dialog.selection_combo.count() == 3
+    assert "evidence and trade-offs" in dialog.selection_combo.itemText(0)
+    assert "not performed" in dialog.selection_combo.itemText(1)
     assert dialog.advance_button.isHidden() is True
     favorable = dialog.findChildren(QLabel, "tradeoffFavorable")
     caution = dialog.findChildren(QLabel, "tradeoffCaution")
@@ -317,20 +322,12 @@ def test_staged_calibration_highlights_one_next_action_at_a_time(
     assert any("Highest deformation cost" in label.text() for label in caution)
     assert any("Largest measured mismatch" in label.text() for label in unfavorable)
     assert all("do not select" in label.text() for label in legends)
+    assert all("requiring inspection" not in label.text() for label in legends)
     assert dialog.scroll.horizontalScrollBarPolicy() == (
         Qt.ScrollBarPolicy.ScrollBarAlwaysOff
     )
     assert dialog.advance_button.isEnabled() is False
 
-    dialog._visually_reviewed_candidates.add("attachment-01")
-    dialog._visually_approved_candidates.add("attachment-01")
-    dialog._render()
-    application.processEvents()
-    assert dialog._review_buttons["attachment-02"].objectName() == "primary"
-
-    dialog._visually_reviewed_candidates.add("attachment-02")
-    dialog._render()
-    application.processEvents()
     assert dialog.selection_combo.objectName() == "primaryChoice"
     assert dialog.selection_combo.isVisible() is True
     assert dialog.review_next_button.isHidden() is True
@@ -341,6 +338,26 @@ def test_staged_calibration_highlights_one_next_action_at_a_time(
     assert dialog.advance_button.isEnabled() is True
     assert dialog.advance_button.isVisible() is True
     assert dialog.advance_button.objectName() == "primary"
-    assert "click the green Approve selection" in dialog.status.text()
+    assert "click the green Select option" in dialog.status.text()
+    assert "Optional visual QC status" in dialog.status.text()
+
+    dialog._visually_reviewed_candidates.add("attachment-01")
+    dialog._render()
+    application.processEvents()
+    assert dialog.selection_combo.count() == 2
+    assert dialog.selection_combo.findData("attachment-01") == -1
+    failed_statuses = [
+        label
+        for label in dialog.findChildren(QLabel, "statusError")
+        if "Optional visual QC failed" in label.text()
+    ]
+    assert len(failed_statuses) == 1
+
+    dialog._visually_approved_candidates.add("attachment-01")
+    dialog._render()
+    application.processEvents()
+    approved_index = dialog.selection_combo.findData("attachment-01")
+    assert approved_index >= 1
+    assert "visual QC passed" in dialog.selection_combo.itemText(approved_index)
     dialog.close()
     application.processEvents()

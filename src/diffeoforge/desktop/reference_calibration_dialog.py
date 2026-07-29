@@ -466,7 +466,7 @@ class CalibrationCandidateViewerDialog(QDialog):
 
 
 class ReferenceCalibrationDialog(QDialog):
-    """Execute one stage at a time and require explicit candidate review."""
+    """Execute one stage at a time with explicit researcher selection."""
 
     def __init__(
         self,
@@ -492,8 +492,9 @@ class ReferenceCalibrationDialog(QDialog):
         root.addWidget(title)
         boundary = QLabel(
             "DiffeoForge runs every predeclared candidate automatically. It never "
-            "chooses anatomical correctness automatically: each stage pauses for your "
-            "visual QC and explicit selection."
+            "chooses a candidate automatically: each stage pauses for your explicit "
+            "selection. You can decide from the explained evidence and trade-offs; "
+            "visual reconstruction QC remains available as an optional additional check."
         )
         boundary.setWordWrap(True)
         root.addWidget(boundary)
@@ -537,7 +538,7 @@ class ReferenceCalibrationDialog(QDialog):
         self.selection_combo.hide()
         self.start_button = QPushButton("Run all candidates in this stage")
         self.start_button.clicked.connect(self._start)
-        self.advance_button = QPushButton("Approve selection & prepare next stage")
+        self.advance_button = QPushButton("Select option & prepare next stage")
         self.advance_button.clicked.connect(self._advance)
         close = QPushButton("Close")
         close.clicked.connect(self.reject)
@@ -634,7 +635,7 @@ class ReferenceCalibrationDialog(QDialog):
         if any(candidate.metrics is not None for candidate in self._snapshot.candidates):
             comparison_legend = QLabel(
                 "How to read candidate colors: Green = favorable automatic signal · "
-                "Yellow = trade-off requiring inspection · Red = unfavorable relative "
+                "Yellow = context-dependent trade-off · Red = unfavorable relative "
                 "signal. Colors describe one measurement at a time; they do not select "
                 "the anatomically best option."
             )
@@ -649,19 +650,6 @@ class ReferenceCalibrationDialog(QDialog):
         )
         planned_by_id = {candidate.candidate_id: candidate for candidate in stage.candidates}
         tradeoffs = candidate_tradeoff_assessments(self._snapshot.candidates)
-        completed_candidate_ids = tuple(
-            candidate.candidate_id
-            for candidate in self._snapshot.candidates
-            if candidate.status == "completed"
-        )
-        next_review_id = next(
-            (
-                candidate_id
-                for candidate_id in completed_candidate_ids
-                if candidate_id not in self._visually_reviewed_candidates
-            ),
-            None,
-        )
         for index, candidate in enumerate(self._snapshot.candidates, start=1):
             self.content_layout.addWidget(
                 self._candidate_card(
@@ -669,7 +657,6 @@ class ReferenceCalibrationDialog(QDialog):
                     planned_by_id[candidate.candidate_id],
                     option_index=index,
                     tradeoffs=tradeoffs[candidate.candidate_id],
-                    emphasize_review=candidate.candidate_id == next_review_id,
                 )
             )
         self.content_layout.addStretch()
@@ -696,22 +683,32 @@ class ReferenceCalibrationDialog(QDialog):
         _set_action_emphasis(self.start_button, not awaiting or retryable)
         _set_action_emphasis(self.advance_button, False)
         if awaiting:
+            previous_selection = self.selection_combo.currentData()
             self.selection_combo.blockSignals(True)
             self.selection_combo.clear()
             self.selection_combo.addItem(
-                "Choose one option that passed visual QC…",
+                "Choose an option from the evidence and trade-offs…",
                 None,
             )
             for index, candidate in enumerate(
                 self._snapshot.candidates,
                 start=1,
             ):
-                if candidate.candidate_id in self._visually_approved_candidates:
+                if candidate.candidate_id in self._selectable_candidate_ids():
                     option_letter = chr(ord("A") + index - 1)
+                    review_suffix = (
+                        " · visual QC passed"
+                        if candidate.candidate_id
+                        in self._visually_approved_candidates
+                        else " · visual QC optional / not performed"
+                    )
                     self.selection_combo.addItem(
-                        f"Option {option_letter} — {candidate.label}",
+                        f"Option {option_letter} — {candidate.label}{review_suffix}",
                         candidate.candidate_id,
                     )
+            previous_index = self.selection_combo.findData(previous_selection)
+            if previous_index >= 0:
+                self.selection_combo.setCurrentIndex(previous_index)
             self.selection_combo.blockSignals(False)
             self._update_stage_review_action()
         elif running:
@@ -731,7 +728,6 @@ class ReferenceCalibrationDialog(QDialog):
         *,
         option_index: int,
         tradeoffs: tuple[CalibrationTradeoffAssessment, ...],
-        emphasize_review: bool,
     ) -> QWidget:
         card = QFrame()
         card.setObjectName("card")
@@ -811,14 +807,14 @@ class ReferenceCalibrationDialog(QDialog):
             reviewed = candidate.candidate_id in self._visually_reviewed_candidates
             approved = candidate.candidate_id in self._visually_approved_candidates
             viewer = QPushButton(
-                "Review again…"
+                "Optional visual QC: review again…"
                 if reviewed
-                else "Review originals & reconstructions…"
+                else "Optional visual QC: inspect originals & reconstructions…"
             )
             viewer.clicked.connect(
                 lambda _checked=False, value=candidate: self._open_candidate(value)
             )
-            _set_action_emphasis(viewer, emphasize_review)
+            _set_action_emphasis(viewer, False)
             self._review_buttons[candidate.candidate_id] = viewer
             approval = QCheckBox("Visual QC passed")
             approval.setVisible(approved)
@@ -826,18 +822,23 @@ class ReferenceCalibrationDialog(QDialog):
             approval.setEnabled(False)
             approval.setToolTip("Review this option again to change the recorded decision.")
             visual_status = QLabel(
-                "Visual QC passed. This option can be selected."
+                "Optional visual QC passed. This option can be selected."
                 if approved
                 else (
-                    "Visual QC recorded: this option does not pass."
+                    "Optional visual QC failed. This option is excluded unless you "
+                    "review it again and record a pass."
                     if reviewed
                     else (
-                        "Next: open the green guided comparison and inspect every "
-                        "pilot specimen."
+                        "Optional visual QC was not performed. You may still select "
+                        "this option from its automatic checks and explained trade-offs."
                     )
                 )
             )
-            visual_status.setObjectName("statusSuccess" if approved else "status")
+            visual_status.setObjectName(
+                "statusSuccess"
+                if approved
+                else ("statusError" if reviewed else "status")
+            )
             visual_status.setWordWrap(True)
             self._approval_checks[candidate.candidate_id] = approval
             review_controls = QHBoxLayout()
@@ -866,7 +867,7 @@ class ReferenceCalibrationDialog(QDialog):
     ) -> str:
         prefix = {
             "favorable": "✓ Favorable signal",
-            "caution": "↔ Trade-off — inspect",
+            "caution": "↔ Context-dependent trade-off",
             "unfavorable": "⚠ Unfavorable signal",
         }[assessment.tone]
         return (
@@ -874,25 +875,36 @@ class ReferenceCalibrationDialog(QDialog):
             f"{assessment.interpretation}"
         )
 
+    def _selectable_candidate_ids(self) -> set[str]:
+        explicitly_failed = (
+            self._visually_reviewed_candidates
+            - self._visually_approved_candidates
+        )
+        selectable: set[str] = set()
+        for candidate in self._snapshot.candidates:
+            if (
+                candidate.status != "completed"
+                or candidate.metrics is None
+                or candidate.candidate_id in explicitly_failed
+            ):
+                continue
+            passed, _summary = automatic_check_summary(candidate.metrics)
+            if passed:
+                selectable.add(candidate.candidate_id)
+        return selectable
+
     @Slot()
     def _update_stage_review_action(self) -> None:
         if self._snapshot.status != "awaiting_review":
             return
-        completed_ids = {
-            candidate.candidate_id
-            for candidate in self._snapshot.candidates
-            if candidate.status == "completed"
-        }
         retryable = any(
             candidate.status in {"failed", "interrupted", "orphaned"}
             for candidate in self._snapshot.candidates
         )
-        all_reviewed = bool(completed_ids) and (
-            completed_ids <= self._visually_reviewed_candidates
-        )
+        selectable_ids = self._selectable_candidate_ids()
         selected = self.selection_combo.currentData()
-        selected_is_approved = selected in self._visually_approved_candidates
-        ready = all_reviewed and selected_is_approved and not retryable
+        selected_is_selectable = selected in selectable_ids
+        ready = selected_is_selectable and not retryable
         self.advance_button.setEnabled(ready)
         _set_action_emphasis(self.advance_button, ready)
         self.review_next_button.hide()
@@ -905,49 +917,26 @@ class ReferenceCalibrationDialog(QDialog):
                 "Next: click the green Retry failed candidates button."
             )
             return
-        if not all_reviewed:
-            remaining = len(completed_ids - self._visually_reviewed_candidates)
-            self.review_next_button.setText("Review next option")
-            self.review_next_button.show()
-            _set_action_emphasis(self.review_next_button, True)
-            _set_choice_emphasis(self.selection_combo, False)
+        if not selectable_ids:
             self.status.setText(
-                f"Next: click the green Review next option button. Record a visual decision "
-                f"for {remaining} remaining option{'s' if remaining != 1 else ''}."
-            )
-            return
-        if not self._visually_approved_candidates:
-            self.review_next_button.setText("Review an option again")
-            self.review_next_button.show()
-            _set_action_emphasis(self.review_next_button, True)
-            if completed_ids:
-                first_candidate_id = next(
-                    candidate.candidate_id
-                    for candidate in self._snapshot.candidates
-                    if candidate.candidate_id in completed_ids
-                )
-                _set_action_emphasis(
-                    self._review_buttons[first_candidate_id],
-                    True,
-                )
-            _set_choice_emphasis(self.selection_combo, False)
-            self.status.setText(
-                "No option passed visual QC. Click the green Review an option again "
-                "button or revise the pilot plan; the stage cannot advance."
-            )
-            return
-        if not selected_is_approved:
-            self.selection_combo.show()
-            _set_choice_emphasis(self.selection_combo, True)
-            self.status.setText(
-                "Next: choose one option from the green highlighted menu."
+                "No option is currently selectable. Automatic validity checks failed, "
+                "or every option was explicitly rejected by optional visual QC. Review "
+                "the evidence or repeat visual QC for a rejected option."
             )
             return
         self.selection_combo.show()
+        if not selected_is_selectable:
+            _set_choice_emphasis(self.selection_combo, True)
+            self.status.setText(
+                "Next: compare the explained pros and cons, then choose one option from "
+                "the green menu. Opening the reconstruction viewer is optional."
+            )
+            return
         self.advance_button.show()
         _set_choice_emphasis(self.selection_combo, False)
         self.status.setText(
-            "Next: click the green Approve selection & prepare next stage button."
+            "Next: click the green Select option & prepare next stage button. "
+            "Optional visual QC status will be recorded in the provenance."
         )
 
     @Slot()
@@ -1046,11 +1035,12 @@ class ReferenceCalibrationDialog(QDialog):
             QMessageBox.warning(
                 self,
                 "Select a candidate",
-                "Choose one visually approved candidate before continuing.",
+                "Choose one automatically valid candidate before continuing.",
             )
             return
         approvals = {
-            candidate_id: check.isChecked() for candidate_id, check in self._approval_checks.items()
+            candidate_id: candidate_id in self._visually_approved_candidates
+            for candidate_id in self._visually_reviewed_candidates
         }
         try:
             _snapshot, assessment = record_reference_calibration_stage_review(
@@ -1063,9 +1053,19 @@ class ReferenceCalibrationDialog(QDialog):
             return
         self._render()
         balanced = assessment.balanced_candidate_id
+        visual_status = (
+            "passed"
+            if selected in self._visually_approved_candidates
+            else (
+                "failed"
+                if selected in self._visually_reviewed_candidates
+                else "not performed"
+            )
+        )
         self.status.setText(
             f"Researcher selection recorded: {selected}. "
             f"Transparent balanced-score suggestion was: {balanced or 'none'}. "
+            f"Optional visual QC for the selected option: {visual_status}. "
             "The suggestion did not make the decision."
         )
 

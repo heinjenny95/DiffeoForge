@@ -1,8 +1,8 @@
 # Transparent Deformetrica parameter calibration
 
 Status: **implemented deterministic planning, automatic sequential candidate
-execution, verified QC evidence extraction, and researcher-gated stage
-selection. Scientific validation is still prospective.**
+execution, verified automatic QC evidence extraction, optional visual QC, and
+researcher-gated stage selection. Scientific validation is still prospective.**
 
 ## Why this workflow exists
 
@@ -20,7 +20,7 @@ therefore keeps three sources of information separate:
 | --- | --- | --- |
 | Aligned meshes | physical scale, sampling floor, geometric diversity | biological relevance or correspondence quality |
 | Researcher intent | feature scale and local/global deformation question | registration success |
-| Pilot evidence | residuals, deformation cost, distortion, runtime, visual review | generalization until full-cohort confirmation |
+| Pilot evidence | residuals, deformation cost, distortion, runtime, optional visual review | generalization until full-cohort confirmation |
 
 ## Desktop workflow
 
@@ -37,33 +37,31 @@ therefore keeps three sources of information separate:
    are embedded in `atlas.yaml`.
 8. After the automatic Deformetrica setup check passes, open **Automatic
    Deformetrica pilot calibration**.
-9. Follow the single green next action. Start the current stage once.
-   DiffeoForge runs all pending candidates sequentially and retains already
-   completed candidates if execution is continued later.
+9. Start the current stage once. DiffeoForge runs all pending candidates
+   sequentially and retains already completed candidates if execution is
+   continued later.
 10. Read the plain-language question, parameter value, and direction-of-change
     explanation on each candidate card. Relative automatic observations such
     as closest surface match, least atlas area change, lowest deformation cost,
     and fastest pilot run are displayed as explained color-coded rows. Green
-    marks a favorable automatic signal, yellow marks a trade-off that needs
-    anatomical inspection, and red marks an unfavorable relative signal. Each
-    row explains the interpretation limit; colors describe one measurement at
-    a time and never identify an automatic winner.
-11. Select the green **Review next option** action. Blue
-    wireframes show the exact bound original pilot meshes and orange surfaces
-    show their Deformetrica reconstructions in the same rotatable camera.
-    Original and reconstruction can be toggled independently.
-12. Open every pilot-specimen pair and inspect the anatomy relevant to the
-    study. **Next** is the green action until every required pair has been
-    opened. The fixed decision panel then exposes an explicit green pass action
-    and a separate failure action, so the next decision never depends on a
-    hidden checkbox or an off-screen control. Record a pass only when relevant
-    features are preserved and there is no implausible stretching, collapse,
-    or warping.
-13. Repeat the guided review for every candidate. Then select one eligible
-    candidate in the green menu and use the green advance action. DiffeoForge
-    records the explicit researcher decision and only then prepares the next
-    stage with earlier values locked. Technical measurements remain optional
-    secondary information throughout this sequence.
+    marks a favorable automatic signal, yellow marks a context-dependent
+    trade-off, and red marks an unfavorable relative signal. Each row explains
+    the interpretation limit; colors describe one measurement at a time and
+    never identify an automatic winner.
+11. Select one automatically valid candidate from the green menu using the
+    explained evidence and the needs of the study. DiffeoForge records this
+    explicit researcher selection and only then prepares the next stage with
+    earlier values locked. Technical measurements remain optional secondary
+    information.
+12. Optionally open **Visual QC** for any candidate when a reconstruction
+    comparison would help. Blue wireframes show the exact bound original pilot
+    meshes and orange surfaces show their Deformetrica reconstructions in the
+    same rotatable camera. A recorded visual pass keeps the candidate eligible;
+    a recorded visual failure excludes it. Not performing visual QC does not
+    prevent selection.
+13. When visual QC is performed, open every required pilot-specimen pair before
+    recording a pass or failure. DiffeoForge stores `passed`, `failed`, or
+    `not_performed` for every option in the append-only stage provenance.
 14. After stage four, switch the main workflow to
     `selected/atlas-calibrated.yaml` and review it before the required
     full-cohort confirmation run.
@@ -118,9 +116,10 @@ Candidate evidence is evaluated as a Pareto problem using residual,
 deformation-energy, distortion, and runtime metrics.
 
 DiffeoForge exposes all Pareto candidates. Its weighted balanced score is a
-navigation aid with recorded weights, never an automatic scientific approval.
-A candidate is ineligible if execution, convergence, mesh validity, required
-metrics, or visual approval is missing.
+navigation aid with recorded weights, never an automatic scientific selection.
+A candidate is ineligible if execution, convergence, mesh validity, or required
+metrics fail. Visual QC is optional, but an explicitly recorded visual failure
+also makes that candidate ineligible.
 
 ### 4. Numerical integration accuracy
 
@@ -182,15 +181,17 @@ diffeoforge reference-calibration-study-status `
 
 diffeoforge reference-calibration-study-review `
   "C:\project\calibration\pilot" `
-  --approve attachment-01 `
-  --approve attachment-02 `
   --select attachment-02
 ```
 
+Use repeatable `--approve CANDIDATE_ID` or `--reject CANDIDATE_ID` arguments
+only when optional visual QC was actually performed. Omitting both records the
+visual-review status as `not_performed`.
+
 `study.json` and its SHA-256 bind the plan, copied pilot inputs, source
 configuration, launcher, and pilot iteration cap. `events.jsonl` is an
-append-only hash chain containing candidate attempts, verified metrics, visual
-approvals, and selections. Cancellation never overwrites a run: completed
+append-only hash chain containing candidate attempts, verified metrics,
+optional visual-QC status, and selections. Cancellation never overwrites a run: completed
 candidates remain complete, and continuing creates a new immutable attempt for
 the interrupted candidate.
 
@@ -217,9 +218,10 @@ selectable for methods reporting.
 
 The workflow automates computation and evidence collection, not anatomical
 judgment. The balanced multi-metric score is shown only as a navigation aid.
-It cannot approve a candidate, and missing convergence evidence, invalid
-faces, missing metrics, or missing visual approval make a candidate
-ineligible. The original plan remains an immutable `planned_not_executed`
+It cannot select a candidate, and missing convergence evidence, invalid
+faces, missing metrics, or an explicitly failed optional visual review make a
+candidate ineligible. A visual review that was not performed is recorded as
+such and does not by itself make a candidate ineligible. The original plan remains an immutable `planned_not_executed`
 declaration; the selected full-cohort configuration additionally carries a
 separate completed calibration result bound to the final researcher-decision
 event. No safe-preset or biological-validity claim exists until prospective

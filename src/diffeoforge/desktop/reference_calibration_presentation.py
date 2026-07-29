@@ -39,10 +39,10 @@ _GUIDANCE: dict[str, CalibrationStageGuidance] = {
             "A larger width emphasizes broader shape and is usually smoother."
         ),
         action=(
-            "Open every option, select the same pilot specimen, and compare its blue "
-            "original outline with the orange reconstruction. Choose the largest "
-            "width that still preserves the smallest anatomical feature relevant to "
-            "your study."
+            "Compare the explained fit, distortion, deformation-cost, and runtime "
+            "trade-offs. Choose the largest width that is consistent with the smallest "
+            "anatomical feature relevant to your study. Open the reconstruction viewer "
+            "only if visual comparison would help your decision."
         ),
         caution=(
             "The closest numerical fit is not automatically the best biological fit. "
@@ -57,12 +57,14 @@ _GUIDANCE: dict[str, CalibrationStageGuidance] = {
             "values favor broader, smoother changes."
         ),
         action=(
-            "Compare the same anatomical regions in every option. Prefer the smoothest "
-            "deformation that still reconstructs the biological differences you need."
+            "Use the explained trade-offs to prefer the smoothest deformation that "
+            "still represents the biological differences you need. Optional visual QC "
+            "can compare the same anatomical regions when the evidence is ambiguous."
         ),
         caution=(
             "A more flexible model can reduce mismatch by creating implausible local "
-            "warping. Visual anatomy remains the deciding evidence."
+            "warping. A visual reconstruction check can add evidence but is not required "
+            "to continue."
         ),
     ),
     "noise_weight": CalibrationStageGuidance(
@@ -73,8 +75,9 @@ _GUIDANCE: dict[str, CalibrationStageGuidance] = {
             "in exchange for smoother, less costly deformation."
         ),
         action=(
-            "Look for the point where a closer reconstruction stops providing a useful "
-            "anatomical improvement and starts adding distortion or irregular warping."
+            "Compare closer fit against deformation cost and distortion. Choose the "
+            "balance appropriate to your study; optionally inspect reconstructions if "
+            "the automatic signals do not make the trade-off clear."
         ),
         caution=(
             "This is a fit-versus-regularity trade-off, not a measurement of specimen "
@@ -89,7 +92,8 @@ _GUIDANCE: dict[str, CalibrationStageGuidance] = {
         ),
         action=(
             "Choose the smallest time-point count whose atlas and reconstructions are "
-            "visually indistinguishable from the next finer option."
+            "numerically stable relative to the next finer option. Optional visual QC "
+            "can be used when the numerical differences need anatomical context."
         ),
         caution=(
             "This stage checks numerical stability. It should not be used to improve "
@@ -197,9 +201,9 @@ def candidate_tradeoff_assessments(
                 label="Most atlas area change",
                 tone="unfavorable",
                 interpretation=(
-                    "This option changes local surface area the most. Inspect the "
-                    "reconstructions carefully for implausible stretching, compression, "
-                    "or collapse."
+                    "This option changes local surface area the most, which raises concern "
+                    "about stretching, compression, or collapse. The optional viewer can "
+                    "show where those changes occur."
                 ),
             ),
         ),
@@ -219,8 +223,9 @@ def candidate_tradeoff_assessments(
                 tone="caution",
                 interpretation=(
                     "This option needs the strongest deformation. That may capture real "
-                    "local variation or indicate excessive flexibility, so anatomical "
-                    "inspection decides whether it is acceptable."
+                    "local variation or indicate excessive flexibility. Your biological "
+                    "question determines whether that trade-off is acceptable; visual QC "
+                    "is available if needed."
                 ),
             ),
         ),

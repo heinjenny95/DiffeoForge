@@ -553,7 +553,8 @@ def build_reference_calibration_plan(
         "the optimizer fails or produces non-finite values",
         "the atlas or any reconstruction contains invalid or flipped faces",
         "registration residuals contain unexplained extreme failures",
-        "the visual registration overlay shows anatomically implausible correspondence",
+        "an optional visual registration review explicitly records implausible "
+        "correspondence",
     )
     stages = (
         CalibrationStage(
@@ -565,7 +566,8 @@ def build_reference_calibration_plan(
             locked_from_previous_stages=(),
             evidence_required=(
                 "raw per-subject registration residual median and 95th percentile",
-                "registration overlay and residual-location inspection",
+                "bound original and reconstructed surfaces retained for optional "
+                "visual inspection",
                 "sensitivity to deterministic mesh resampling",
                 "runtime and peak-memory observation",
             ),
@@ -880,7 +882,7 @@ class CalibrationCandidateEvidence:
     numerical_atlas_rms: float | None = None
     objective_relative_difference: float | None = None
     residual_relative_difference: float | None = None
-    review_approved: bool = False
+    review_approved: bool | None = None
     notes: tuple[str, ...] = ()
 
     def as_manifest(self) -> dict[str, object]:
@@ -954,7 +956,7 @@ class CalibrationStageAssessment:
         }
 
 
-_ASSESSMENT_VERSION = "0.1"
+_ASSESSMENT_VERSION = "0.2"
 _STAGE_METRICS: dict[
     CalibrationStageKind,
     tuple[tuple[str, float], ...],
@@ -1018,8 +1020,9 @@ def assess_calibration_stage(
     """Assess one executed stage without hiding missing data or hard failures.
 
     The balanced score is an explicitly weighted min-max summary for navigation,
-    not an automatic scientific approval.  Only visually approved candidates
-    can be eligible, and every Pareto candidate remains visible.
+    not an automatic scientific approval.  Visual QC is optional; an explicit
+    visual failure makes a candidate ineligible, while an unreviewed candidate
+    remains eligible when its automatic evidence is valid.
     """
 
     matching_stages = [stage for stage in plan.stages if stage.stage_id == stage_id]
@@ -1059,8 +1062,8 @@ def assess_calibration_stage(
             reasons.append("invalid-face count is not a non-negative integer")
         elif item.invalid_face_count:
             reasons.append(f"atlas contains {item.invalid_face_count} invalid faces")
-        if not item.review_approved:
-            reasons.append("visual registration review was not approved")
+        if item.review_approved is False:
+            reasons.append("optional visual registration review explicitly failed")
         row: list[float] = []
         for metric, _weight in metric_weights:
             value = _evidence_metric(item, metric)
@@ -1112,16 +1115,14 @@ def assess_calibration_stage(
         )
         for candidate_id in candidate_ids
     )
-    status = (
-        "review_required"
-        if eligible_ids
-        else "no_eligible_candidate"
-    )
+    status = "selection_required" if eligible_ids else "no_eligible_candidate"
     cautions = (
-        "The balanced candidate is a transparent navigation aid, not an automatic approval.",
+        "The balanced candidate is a transparent navigation aid, not an automatic selection.",
         "All Pareto-optimal candidates and raw evidence must remain available to the researcher.",
-        "A stage decision becomes valid only after explicit researcher approval and "
-        "full-resolution confirmation.",
+        "Visual reconstruction review is optional and its performed, passed, failed, or "
+        "not-performed status must remain explicit.",
+        "A stage decision becomes valid only after explicit researcher selection and "
+        "later full-cohort confirmation.",
     )
     payload = {
         "version": _ASSESSMENT_VERSION,

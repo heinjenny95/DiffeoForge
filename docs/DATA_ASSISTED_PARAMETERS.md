@@ -119,7 +119,8 @@ Noise standard deviation is not inferred from mesh geometry. The current
 configuration seed is explicitly labelled provisional and is set to one
 quarter of the proposed attachment ratio only so that a complete pilot
 configuration can be produced. It must be calibrated from registration
-residuals, visual correspondence, and sensitivity runs.
+residuals and sensitivity runs; optional pilot visual correspondence can add
+context when the automatic trade-off is unclear.
 
 Maximum iterations (`150`), initial step size (`0.01`), and convergence
 tolerance (`0.0001`) are also pilot settings rather than geometry-derived
@@ -178,11 +179,14 @@ dataset-specific parameter justification. The plan requires:
 
 - objective and component histories;
 - registration residual distributions;
-- visual and mesh-quality inspection;
+- automatic mesh-quality inspection and optional pilot visual QC;
 - deformation smoothness and plausibility;
 - runtime, memory, and control-point count;
 - stability of the atlas and PCA under neighboring settings;
 - a final full-resolution, full-cohort confirmation.
+
+Skipping pilot visual QC does not waive the manuscript-stage full-cohort
+inspection and confirmation requirements.
 
 Automated candidate execution and result ingestion remain a separate
 implementation and validation step. Until that exists, the exported plan is a

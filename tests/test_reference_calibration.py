@@ -232,7 +232,7 @@ def test_stage_assessment_retains_pareto_candidates_and_exposes_weights() -> Non
     )
 
     assert first == second
-    assert first.status == "review_required"
+    assert first.status == "selection_required"
     assert first.balanced_candidate_id in first.pareto_candidate_ids
     assert set(first.weights) == {
         "residual_p95",
@@ -242,11 +242,11 @@ def test_stage_assessment_retains_pareto_candidates_and_exposes_weights() -> Non
     }
     assert sum(first.weights.values()) == pytest.approx(1.0)
     assert all(candidate.eligible for candidate in first.candidates)
-    assert "not an automatic approval" in " ".join(first.cautions)
+    assert "not an automatic selection" in " ".join(first.cautions)
     assert len(first.fingerprint) == 64
 
 
-def test_stage_assessment_fails_closed_on_missing_review_or_metrics() -> None:
+def test_stage_assessment_fails_closed_on_missing_metrics_without_requiring_review() -> None:
     plan = build_reference_calibration_plan(
         _recommendation(),
         coordinate_unit="unitless",
@@ -264,7 +264,7 @@ def test_stage_assessment_fails_closed_on_missing_review_or_metrics() -> None:
             distortion_p95=0.3,
             runtime_seconds=10.0,
             resampling_sensitivity=None,
-            review_approved=False,
+            review_approved=None,
         )
         for candidate in stage.candidates
     )
@@ -280,14 +280,51 @@ def test_stage_assessment_fails_closed_on_missing_review_or_metrics() -> None:
     assert assessment.pareto_candidate_ids == ()
     assert all(not candidate.eligible for candidate in assessment.candidates)
     assert all(
-        any(
-            "visual registration review" in reason
+        all(
+            "visual registration review" not in reason
             for reason in candidate.rejection_reasons
         )
         for candidate in assessment.candidates
     )
     assert all(
         any("resampling_sensitivity" in reason for reason in candidate.rejection_reasons)
+        for candidate in assessment.candidates
+    )
+
+
+def test_stage_assessment_rejects_an_explicit_visual_qc_failure() -> None:
+    plan = build_reference_calibration_plan(
+        _recommendation(),
+        coordinate_unit="unitless",
+        requested_pilot_subject_count=3,
+    )
+    stage = next(stage for stage in plan.stages if stage.stage_id == "noise")
+    evidence = tuple(
+        CalibrationCandidateEvidence(
+            candidate_id=candidate.candidate_id,
+            completed=True,
+            converged=True,
+            invalid_face_count=0,
+            residual_p95=0.1,
+            deformation_energy=0.2,
+            distortion_p95=0.3,
+            runtime_seconds=10.0,
+            review_approved=False,
+        )
+        for candidate in stage.candidates
+    )
+
+    assessment = assess_calibration_stage(
+        plan,
+        stage_id="noise",
+        evidence=evidence,
+    )
+
+    assert assessment.status == "no_eligible_candidate"
+    assert all(not candidate.eligible for candidate in assessment.candidates)
+    assert all(
+        candidate.rejection_reasons
+        == ("optional visual registration review explicitly failed",)
         for candidate in assessment.candidates
     )
 

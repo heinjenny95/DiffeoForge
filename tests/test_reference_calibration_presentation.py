@@ -74,6 +74,7 @@ def test_attachment_guidance_explains_the_decision_without_jargon() -> None:
 
     assert guidance.question == "How much surface detail should matching follow?"
     assert "largest width" in guidance.action
+    assert "only if visual comparison would help" in guidance.action
     assert "overfitting" in guidance.caution
     assert parameter == "Surface-detail width: 0.219907 mm"
     assert direction == "Smaller follows finer detail; larger emphasizes broader shape."

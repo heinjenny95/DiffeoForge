@@ -1020,8 +1020,9 @@ class DiffeoForgeWindow(QMainWindow):
         boundary_layout.setContentsMargins(13, 9, 13, 9)
         boundary_text = QLabel(
             "For Deformetrica, follow the green action: analyze the aligned meshes, "
-            "build the pilot plan, run and visually review its candidates, then inspect "
-            "the selected final parameters. No full-cohort atlas starts here."
+            "build the pilot plan, run its candidates, compare the explained trade-offs, "
+            "and select an option. Visual reconstruction QC is optional. No full-cohort "
+            "atlas starts here."
         )
         boundary_text.setObjectName("boundaryText")
         boundary_text.setWordWrap(True)
@@ -1078,9 +1079,10 @@ class DiffeoForgeWindow(QMainWindow):
         calibration_detail = QLabel(
             "DiffeoForge creates a provisional starting configuration automatically, "
             "checks the managed Deformetrica installation, and runs every candidate in "
-            "the current stage. The guided viewer then takes you through every pilot "
-            "specimen before you can approve and select an option. The selected values "
-            "become the final read-only parameter set shown below."
+            "the current stage. You can select from the explained pros and cons without "
+            "opening every reconstruction. The guided viewer remains available as "
+            "optional visual QC, and its status is recorded. The selected values become "
+            "the final read-only parameter set shown below."
         )
         calibration_detail.setObjectName("reviewDetail")
         calibration_detail.setWordWrap(True)
@@ -5271,8 +5273,9 @@ class DiffeoForgeWindow(QMainWindow):
             self.reference_calibration_execution_status.setObjectName("statusSuccess")
             self.reference_calibration_execution_status.setStyleSheet("")
             self.reference_calibration_execution_status.setText(
-                "Pilot calibration complete. Your visually approved candidate selections "
-                "have been applied to the final read-only parameters below.\n"
+                "Pilot calibration complete. Your explicit candidate selections have "
+                "been applied to the final read-only parameters below; optional visual "
+                "QC status remains in the calibration provenance.\n"
                 f"Selected configuration: {self._reference_calibrated_config_path}"
             )
             self.open_reference_calibration_button.setText(

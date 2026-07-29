@@ -987,9 +987,7 @@ def _stage_evidence(
                 residual_relative_difference=(
                     comparison[2] if comparison is not None else None
                 ),
-                review_approved=bool(
-                    visual_approvals.get(candidate.candidate_id, False)
-                ),
+                review_approved=visual_approvals.get(candidate.candidate_id),
                 notes=((candidate.error,) if candidate.error else ()),
             )
         )
@@ -1066,13 +1064,26 @@ def record_reference_calibration_stage_review(
     visual_approvals: Mapping[str, bool],
     selected_candidate_id: str,
 ) -> tuple[ReferenceCalibrationStudySnapshot, CalibrationStageAssessment]:
-    """Record explicit visual approvals and advance one reviewed stage."""
+    """Record optional visual QC and advance one researcher-selected stage."""
 
     root = Path(study_directory).expanduser().resolve()
     snapshot = load_reference_calibration_study(root)
     if snapshot.status != "awaiting_review" or snapshot.current_stage is None:
         raise ReferenceCalibrationStudyError(
             "The current calibration stage is not awaiting review"
+        )
+    candidate_ids = {
+        candidate.candidate_id for candidate in snapshot.candidates
+    }
+    unexpected_review_ids = set(visual_approvals) - candidate_ids
+    if unexpected_review_ids:
+        raise ReferenceCalibrationStudyError(
+            "Optional visual-QC decisions contain unknown candidates: "
+            + ", ".join(sorted(unexpected_review_ids))
+        )
+    if any(not isinstance(value, bool) for value in visual_approvals.values()):
+        raise ReferenceCalibrationStudyError(
+            "Optional visual-QC decisions must be true or false when recorded"
         )
     evidence = _stage_evidence(snapshot, visual_approvals)
     assessment = assess_calibration_stage(
@@ -1110,6 +1121,19 @@ def record_reference_calibration_stage_review(
             "candidate_id": selected_candidate_id,
             "parameter_values": selected.values,
             "visual_approvals": dict(visual_approvals),
+            "visual_review_policy": "optional",
+            "visual_review_status": {
+                candidate.candidate_id: (
+                    "passed"
+                    if visual_approvals.get(candidate.candidate_id) is True
+                    else (
+                        "failed"
+                        if visual_approvals.get(candidate.candidate_id) is False
+                        else "not_performed"
+                    )
+                )
+                for candidate in snapshot.candidates
+            },
             "assessment": assessment.as_manifest(),
             "researcher_decision": True,
         },

@@ -724,7 +724,7 @@ def build_parser() -> argparse.ArgumentParser:
     calibration_study_review = subparsers.add_parser(
         "reference-calibration-study-review",
         help=(
-            "Record visual QC approvals, select one eligible candidate, and prepare "
+            "Select one eligible candidate, optionally record visual QC, and prepare "
             "the next stage."
         ),
     )
@@ -734,13 +734,26 @@ def build_parser() -> argparse.ArgumentParser:
         action="append",
         default=[],
         metavar="CANDIDATE_ID",
-        help="Candidate whose atlas and reconstructions passed visual QC; repeatable.",
+        help=(
+            "Candidate whose atlas and reconstructions passed optional visual QC; "
+            "repeatable."
+        ),
+    )
+    calibration_study_review.add_argument(
+        "--reject",
+        action="append",
+        default=[],
+        metavar="CANDIDATE_ID",
+        help=(
+            "Candidate whose atlas and reconstructions failed optional visual QC; "
+            "repeatable."
+        ),
     )
     calibration_study_review.add_argument(
         "--select",
         required=True,
         metavar="CANDIDATE_ID",
-        help="Explicit researcher selection from the visually approved candidates.",
+        help="Explicit researcher selection from the automatically valid candidates.",
     )
 
     validate_parser = subparsers.add_parser(
@@ -2207,15 +2220,18 @@ def main(argv: Sequence[str] | None = None) -> int:
                 elif kind in {"candidate_failed", "candidate_interrupted"}:
                     print(f"{prefix} {kind}: {event['error']}", flush=True)
                 elif kind == "stage_awaiting_review":
-                    print("All candidate attempts finished; visual review is required.")
+                    print(
+                        "All candidate attempts finished; researcher selection is required."
+                    )
 
             runner = ReferenceCalibrationStudyRunner(args.study_directory)
             result = runner.run_current_stage(event_callback=show_calibration_event)
             print(f"Calibration stage status: {result.status}")
             if result.status == "awaiting_review":
                 print(
-                    "No next stage was prepared automatically. Inspect every completed "
-                    "candidate, then record explicit visual approvals and one selection."
+                    "No next stage was prepared automatically. Compare the completed "
+                    "candidate evidence and record one explicit selection. Visual QC "
+                    "is optional."
                 )
         except KeyboardInterrupt:
             print(
@@ -2231,10 +2247,18 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if args.command == "reference-calibration-study-review":
         try:
-            before = load_reference_calibration_study(args.study_directory)
+            approved = set(args.approve)
+            rejected = set(args.reject)
+            overlap = approved & rejected
+            if overlap:
+                raise ValueError(
+                    "The same candidate cannot pass and fail optional visual QC: "
+                    + ", ".join(sorted(overlap))
+                )
             approvals = {
-                candidate.candidate_id: candidate.candidate_id in set(args.approve)
-                for candidate in before.candidates
+                candidate_id: True for candidate_id in approved
+            } | {
+                candidate_id: False for candidate_id in rejected
             }
             result, assessment = record_reference_calibration_stage_review(
                 args.study_directory,

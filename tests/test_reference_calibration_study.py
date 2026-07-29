@@ -312,7 +312,54 @@ def test_failed_candidate_can_be_retried_without_rerunning_completed_candidates(
     } == completed_attempts
 
 
-def test_review_rejects_candidate_without_visual_approval(
+def test_stage_selection_allows_candidate_without_optional_visual_qc(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    snapshot = create_reference_calibration_study(
+        _project(tmp_path),
+        tmp_path / "study",
+        pilot_max_iterations=50,
+    )
+
+    def collect(run: Path):
+        atlas = run / "atlas.vtk"
+        atlas.parent.mkdir(parents=True, exist_ok=True)
+        atlas.write_text("placeholder", encoding="utf-8")
+        return _metrics(atlas)
+
+    monkeypatch.setattr(
+        study_module,
+        "collect_reference_calibration_run_metrics",
+        collect,
+    )
+    completed = ReferenceCalibrationStudyRunner(
+        snapshot.study_directory,
+        controller_factory=_CompletedController,
+    ).run_current_stage()
+    selected = completed.candidates[0].candidate_id
+
+    advanced, assessment = record_reference_calibration_stage_review(
+        completed.study_directory,
+        visual_approvals={},
+        selected_candidate_id=selected,
+    )
+
+    assert assessment.status == "selection_required"
+    assert advanced.current_stage is not None
+    assert advanced.current_stage.stage_id == "deformation"
+    selection_event = [
+        event
+        for event in study_module._load_events(completed.study_directory)
+        if event["event"] == "stage_selected"
+    ][-1]
+    assert selection_event["visual_review_policy"] == "optional"
+    assert selection_event["visual_review_status"][selected] == (
+        "not_performed"
+    )
+
+
+def test_stage_selection_rejects_candidate_that_failed_optional_visual_qc(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
