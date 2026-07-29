@@ -59,48 +59,51 @@ DEFORMETRICA_PARAMETER_GUIDANCE: dict[str, ParameterGuidance] = {
     ),
     "surface_detail": ParameterGuidance(
         summary=(
-            "States the smallest surface detail that the attachment term should try to "
-            "distinguish. It helps choose attachment width; geometry still enforces a "
-            "mesh-sampling lower bound."
+            "Controls the measuring lens used to judge how closely two surfaces match: "
+            "should the fit notice small ridges and pits, or mainly the broad outline? "
+            "It does not control how far a deformation spreads."
         ),
         sections=(
             (
-                "Fine",
-                "Requests a smaller comparison scale. This can preserve small anatomical "
-                "features but is more sensitive to sampling, roughness, holes, and noise.",
+                "Fine matching",
+                "Counts smaller surface features when judging fit. This can preserve "
+                "small anatomy but is more sensitive to sampling, roughness, holes, and "
+                "noise.",
             ),
             (
-                "Coarse / global",
-                "Requests a larger comparison scale. This favors robust broad agreement "
-                "but may merge or underfit small features.",
+                "Coarse matching",
+                "Judges fit mainly from broader surface form. This is more robust to "
+                "texture and roughness but may merge or underfit small features.",
             ),
             (
                 "Example",
-                "Choose Fine for a consistently sampled ridge that is part of the "
-                "hypothesis; choose Coarse when only overall proportions are relevant.",
+                "If a small, consistently sampled spur is biologically important, choose "
+                "fine matching. You may still pair it with a broad, smooth deformation.",
             ),
         ),
     ),
     "deformation_scale": ParameterGuidance(
         summary=(
-            "States whether biologically meaningful differences are expected to be local "
-            "or spatially broad. It helps choose deformation width."
+            "Controls the reach of each modeled movement: should an adjustment stay "
+            "confined to one small region, or should neighboring regions move together? "
+            "It does not control which surface details are noticed during matching."
         ),
         sections=(
             (
-                "Local",
-                "Uses a smaller nominal deformation scale, allowing more localized and "
-                "flexible changes but increasing model complexity and overfit risk.",
+                "Local movement",
+                "Lets one small region change more independently of the rest. This can "
+                "capture localized anatomy but increases model complexity and overfit risk.",
             ),
             (
-                "Global",
-                "Uses a larger nominal scale, favoring smooth coherent changes and "
-                "stability but potentially missing localized anatomy.",
+                "Broad movement",
+                "Makes wider neighborhoods move together, favoring smooth coherent "
+                "change and stability but potentially missing localized variation.",
             ),
             (
                 "Example",
-                "A localized process or spur may motivate Local; coordinated widening of "
-                "an entire structure may motivate Global.",
+                "A process that varies independently may motivate local movement. "
+                "Coordinated widening of an entire structure may motivate broad movement, "
+                "regardless of how finely its surface fit is measured.",
             ),
         ),
     ),

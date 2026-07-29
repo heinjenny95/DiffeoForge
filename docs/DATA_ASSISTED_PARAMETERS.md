@@ -69,15 +69,17 @@ analysis fails the operation.
 All ratios below are relative to the aligned template bounding-box diagonal
 `D`.
 
-### Attachment width
+### Matching resolution (attachment width)
 
-The researcher states the surface detail to preserve:
+The researcher first states what the surface-fit measurement should notice.
+This controls the matching resolution; it does not control how far a modeled
+deformation spreads.
 
 | Intent | Nominal attachment width |
 | --- | ---: |
-| Fine anatomical detail | `0.025 D` |
-| Balanced anatomical detail | `0.05 D` |
-| Coarse/global surface detail | `0.10 D` |
+| Notice small ridges, pits, and edges (fine) | `0.025 D` |
+| Balance small features and overall form | `0.05 D` |
+| Judge mainly broad overall form (coarse) | `0.10 D` |
 
 The mesh-sampling floor is:
 
@@ -90,15 +92,21 @@ this floor. This does not discover the correct anatomical scale. It prevents a
 requested spatial resolution from silently falling below an explicit,
 reproducible sampling diagnostic.
 
-### Deformation width and control points
+### Deformation reach and control points
 
-The researcher states the scale of biological variation:
+The researcher separately states how far a modeled movement should spread
+through neighboring regions. This controls deformation reach; it does not
+control which surface details contribute to the fit measurement.
 
 | Intent | Proposed deformation width |
 | --- | ---: |
-| Local differences | `0.05 D` |
-| Balanced local/global differences | `0.10 D` |
-| Global differences | `0.20 D` |
+| Keep changes confined to small regions (local) | `0.05 D` |
+| Mix local changes and broad coordinated movement | `0.10 D` |
+| Make wider regions move together (broad) | `0.20 D` |
+
+The two decisions are independent. A study can, for example, ask matching to
+notice a small spur while still requiring the surrounding structure to deform
+smoothly as a broad coordinated region.
 
 Initial control-point spacing is set equal to the deformation width. This
 matches the documented Deformetrica initialization convention and keeps the

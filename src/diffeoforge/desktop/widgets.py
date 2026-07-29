@@ -181,6 +181,10 @@ QFrame#resultPlotPanel { background: #f7f9f9; border: 1px solid #dbe4e6; border-
 QFrame#footer { background: #ffffff; border-top: 1px solid #dbe4e6; }
 QLabel#sectionTitle { color: #123b3a; font-size: 17px; font-weight: 700; }
 QLabel#hint { color: #64777c; font-size: 12px; }
+QLabel#conceptDifference {
+    background: #eaf7f4; border: 1px solid #9bd5c8; border-radius: 8px;
+    color: #123b3a; padding: 12px;
+}
 QLineEdit, QComboBox { background: #ffffff; border: 1px solid #bdcbce; border-radius: 6px;
                       min-height: 34px; padding: 2px 9px; }
 QLineEdit:focus, QComboBox:focus { border: 2px solid #268f7a; }
@@ -2511,11 +2515,34 @@ class DiffeoForgeWindow(QMainWindow):
         guidance_intro.setObjectName("hint")
         guidance_intro.setWordWrap(True)
         guidance_layout.addWidget(guidance_intro)
+        self.reference_scale_difference_label = QLabel(
+            "<b>These are two independent questions:</b><br>"
+            "<b>1 · Matching resolution — What should DiffeoForge notice?</b> "
+            "This is the measuring lens used to score surface fit.<br>"
+            "<b>2 · Deformation reach — How far should one adjustment spread?</b> "
+            "This controls whether a region can move locally or must move smoothly with "
+            "its neighbors.<br><br>"
+            "<b>They do not have to match.</b> For example, DiffeoForge can notice a "
+            "small spur during matching while still requiring the surrounding structure "
+            "to deform smoothly as one broad region."
+        )
+        self.reference_scale_difference_label.setObjectName("conceptDifference")
+        self.reference_scale_difference_label.setAccessibleName(
+            "Difference between matching resolution and deformation reach"
+        )
+        self.reference_scale_difference_label.setWordWrap(True)
+        guidance_layout.addWidget(self.reference_scale_difference_label)
         self.reference_surface_detail_combo = QComboBox()
         self.reference_surface_detail_combo.setObjectName("referenceSurfaceDetailCombo")
-        self.reference_surface_detail_combo.addItem("Fine anatomical detail", "fine")
-        self.reference_surface_detail_combo.addItem("Balanced anatomical detail", "balanced")
-        self.reference_surface_detail_combo.addItem("Coarse / global surface detail", "coarse")
+        self.reference_surface_detail_combo.addItem(
+            "Notice small ridges, pits, and edges (fine)", "fine"
+        )
+        self.reference_surface_detail_combo.addItem(
+            "Balance small features and overall form", "balanced"
+        )
+        self.reference_surface_detail_combo.addItem(
+            "Judge mainly broad overall form (coarse)", "coarse"
+        )
         self.reference_surface_detail_combo.setCurrentIndex(
             self.reference_surface_detail_combo.findData("balanced")
         )
@@ -2524,11 +2551,15 @@ class DiffeoForgeWindow(QMainWindow):
         )
         self.reference_deformation_scale_combo = QComboBox()
         self.reference_deformation_scale_combo.setObjectName("referenceDeformationScaleCombo")
-        self.reference_deformation_scale_combo.addItem("Local shape differences", "local")
         self.reference_deformation_scale_combo.addItem(
-            "Balanced local and global differences", "balanced"
+            "Keep changes confined to small regions (local)", "local"
         )
-        self.reference_deformation_scale_combo.addItem("Global shape differences", "global")
+        self.reference_deformation_scale_combo.addItem(
+            "Mix local changes and broad coordinated movement", "balanced"
+        )
+        self.reference_deformation_scale_combo.addItem(
+            "Make wider regions move together (broad)", "global"
+        )
         self.reference_deformation_scale_combo.setCurrentIndex(
             self.reference_deformation_scale_combo.findData("balanced")
         )
@@ -2540,25 +2571,26 @@ class DiffeoForgeWindow(QMainWindow):
         guidance_form.setHorizontalSpacing(18)
         guidance_form.setVerticalSpacing(7)
         guidance_form.addRow(
-            "Surface detail to preserve",
+            "1 · Detail used to judge the match",
             self._parameter_field_with_help(
                 self.reference_surface_detail_combo,
                 key="surface_detail",
-                parameter_name="Surface detail to preserve",
+                parameter_name="Matching resolution",
             ),
         )
         guidance_form.addRow(
-            "Scale of biological variation",
+            "2 · How far deformation spreads",
             self._parameter_field_with_help(
                 self.reference_deformation_scale_combo,
                 key="deformation_scale",
-                parameter_name="Scale of biological variation",
+                parameter_name="Deformation reach",
             ),
         )
         guidance_layout.addLayout(guidance_form)
         guidance_hint = QLabel(
-            "DiffeoForge derives scale and a mesh-sampling lower bound. You decide which "
-            "anatomical detail and deformation scale are scientifically relevant."
+            "DiffeoForge measures the mesh-sampling limit and turns these two independent "
+            "choices into pilot candidates. The pilot then shows whether the combination "
+            "preserves the anatomy you care about."
         )
         guidance_hint.setObjectName("hint")
         guidance_hint.setWordWrap(True)
