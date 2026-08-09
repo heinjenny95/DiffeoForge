@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
 from diffeoforge.desktop.calibration_comparison_widget import (
     CalibrationComparisonCanvas3D,
 )
+from diffeoforge.desktop.info_disclosure import InfoDisclosure
 from diffeoforge.desktop.mesh_preview import load_mesh_preview
 from diffeoforge.desktop.reference_calibration_presentation import (
     CalibrationTradeoffAssessment,
@@ -497,7 +498,13 @@ class ReferenceCalibrationDialog(QDialog):
             "visual reconstruction QC remains available as an optional additional check."
         )
         boundary.setWordWrap(True)
-        root.addWidget(boundary)
+        root.addWidget(
+            InfoDisclosure(
+                "How pilot calibration works",
+                boundary,
+                accessible_name="Information about automatic pilot calibration",
+            )
+        )
         self.progress = QProgressBar()
         self.progress.setRange(0, 1)
         self.progress.setValue(0)
@@ -616,22 +623,28 @@ class ReferenceCalibrationDialog(QDialog):
         question.setObjectName("title")
         question.setWordWrap(True)
         self.content_layout.addWidget(question)
+        stage_help = QWidget()
+        stage_help_layout = QVBoxLayout(stage_help)
+        stage_help_layout.setContentsMargins(0, 0, 0, 0)
         explanation = QLabel(guidance.explanation)
         explanation.setWordWrap(True)
-        self.content_layout.addWidget(explanation)
-        task = QFrame()
-        task.setObjectName("card")
-        task_layout = QVBoxLayout(task)
+        stage_help_layout.addWidget(explanation)
         task_title = QLabel("What you need to do")
         task_title.setObjectName("sectionTitle")
-        task_layout.addWidget(task_title)
+        stage_help_layout.addWidget(task_title)
         task_text = QLabel(guidance.action)
         task_text.setWordWrap(True)
-        task_layout.addWidget(task_text)
+        stage_help_layout.addWidget(task_text)
         caution = QLabel("Important: " + guidance.caution)
         caution.setWordWrap(True)
-        task_layout.addWidget(caution)
-        self.content_layout.addWidget(task)
+        stage_help_layout.addWidget(caution)
+        self.content_layout.addWidget(
+            InfoDisclosure(
+                "Decision guidance for this stage",
+                stage_help,
+                accessible_name=f"Information about {stage.title}",
+            )
+        )
         if any(candidate.metrics is not None for candidate in self._snapshot.candidates):
             comparison_legend = QLabel(
                 "How to read candidate colors: Green = favorable automatic signal · "
@@ -641,7 +654,12 @@ class ReferenceCalibrationDialog(QDialog):
             )
             comparison_legend.setObjectName("tradeoffLegend")
             comparison_legend.setWordWrap(True)
-            self.content_layout.addWidget(comparison_legend)
+            self.content_layout.addWidget(
+                InfoDisclosure(
+                    "How to interpret the comparison colors",
+                    comparison_legend,
+                )
+            )
         completed = sum(candidate.status == "completed" for candidate in self._snapshot.candidates)
         self.progress.setRange(0, len(self._snapshot.candidates))
         self.progress.setValue(completed)
@@ -745,25 +763,40 @@ class ReferenceCalibrationDialog(QDialog):
         parameter_label.setObjectName("sectionTitle")
         parameter_label.setWordWrap(True)
         layout.addWidget(parameter_label)
+        option_help = QWidget()
+        option_help_layout = QVBoxLayout(option_help)
+        option_help_layout.setContentsMargins(0, 0, 0, 0)
         meaning_label = QLabel(meaning)
         meaning_label.setWordWrap(True)
-        layout.addWidget(meaning_label)
+        option_help_layout.addWidget(meaning_label)
         rationale = QLabel("Why this option exists: " + planned.rationale)
         rationale.setWordWrap(True)
-        layout.addWidget(rationale)
+        option_help_layout.addWidget(rationale)
+        layout.addWidget(
+            InfoDisclosure(
+                "About this option",
+                option_help,
+                accessible_name=f"Information about option {option_letter}",
+            )
+        )
         if candidate.metrics is not None:
             metrics = candidate.metrics
             passed, check_text = automatic_check_summary(metrics)
             check = QLabel(("✓ " if passed else "⚠ ") + check_text)
             check.setWordWrap(True)
             layout.addWidget(check)
-            comparison_title = QLabel("How this option compares with the other completed options")
+            comparison_title = QLabel("Pros and cons compared with the other options")
             comparison_title.setObjectName("sectionTitle")
             layout.addWidget(comparison_title)
             if tradeoffs:
+                comparison_details_title = QLabel(
+                    "How to interpret the automatic comparison signals"
+                )
+                comparison_details_title.setObjectName("sectionTitle")
+                option_help_layout.addWidget(comparison_details_title)
                 for tradeoff in tradeoffs:
                     comparison = QLabel(
-                        self._tradeoff_assessment_html(tradeoff)
+                        self._tradeoff_assessment_summary_html(tradeoff)
                     )
                     comparison.setObjectName(
                         {
@@ -775,6 +808,12 @@ class ReferenceCalibrationDialog(QDialog):
                     comparison.setTextFormat(Qt.TextFormat.RichText)
                     comparison.setWordWrap(True)
                     layout.addWidget(comparison)
+                    comparison_detail = QLabel(
+                        self._tradeoff_assessment_html(tradeoff)
+                    )
+                    comparison_detail.setTextFormat(Qt.TextFormat.RichText)
+                    comparison_detail.setWordWrap(True)
+                    option_help_layout.addWidget(comparison_detail)
             else:
                 comparison = QLabel(
                     "No relative comparison is available yet."
@@ -782,7 +821,7 @@ class ReferenceCalibrationDialog(QDialog):
                 comparison.setObjectName("status")
                 comparison.setWordWrap(True)
                 layout.addWidget(comparison)
-            technical_button = QPushButton("Show technical measurements")
+            technical_button = QPushButton("ⓘ Technical measurements")
             technical_button.setCheckable(True)
             technical_button.setSizePolicy(
                 QSizePolicy.Policy.Maximum,
@@ -796,7 +835,9 @@ class ReferenceCalibrationDialog(QDialog):
             technical_button.toggled.connect(technical.setVisible)
             technical_button.toggled.connect(
                 lambda visible, button=technical_button: button.setText(
-                    "Hide technical measurements" if visible else "Show technical measurements"
+                    "ⓘ Hide technical measurements"
+                    if visible
+                    else "ⓘ Technical measurements"
                 )
             )
             technical_row = QHBoxLayout()
@@ -822,16 +863,12 @@ class ReferenceCalibrationDialog(QDialog):
             approval.setEnabled(False)
             approval.setToolTip("Review this option again to change the recorded decision.")
             visual_status = QLabel(
-                "Optional visual QC passed. This option can be selected."
+                "Visual QC: passed (optional)."
                 if approved
                 else (
-                    "Optional visual QC failed. This option is excluded unless you "
-                    "review it again and record a pass."
+                    "Visual QC: failed. This option is currently excluded."
                     if reviewed
-                    else (
-                        "Optional visual QC was not performed. You may still select "
-                        "this option from its automatic checks and explained trade-offs."
-                    )
+                    else "Visual QC: not performed (optional)."
                 )
             )
             visual_status.setObjectName(
@@ -853,9 +890,9 @@ class ReferenceCalibrationDialog(QDialog):
             layout.addWidget(error)
         else:
             detail = QLabel(
-                "No process has started for this candidate."
+                "Ready to run."
                 if candidate.status == "pending"
-                else "A new immutable attempt will be created when the stage continues."
+                else "Ready for a new attempt."
             )
             detail.setWordWrap(True)
             layout.addWidget(detail)
@@ -874,6 +911,17 @@ class ReferenceCalibrationDialog(QDialog):
             f"<b>{prefix}: {assessment.label}</b><br>"
             f"{assessment.interpretation}"
         )
+
+    @staticmethod
+    def _tradeoff_assessment_summary_html(
+        assessment: CalibrationTradeoffAssessment,
+    ) -> str:
+        prefix = {
+            "favorable": "✓ Favorable",
+            "caution": "↔ Trade-off",
+            "unfavorable": "⚠ Unfavorable",
+        }[assessment.tone]
+        return f"<b>{prefix}:</b> {assessment.label}"
 
     def _selectable_candidate_ids(self) -> set[str]:
         explicitly_failed = (
@@ -1043,7 +1091,7 @@ class ReferenceCalibrationDialog(QDialog):
             for candidate_id in self._visually_reviewed_candidates
         }
         try:
-            _snapshot, assessment = record_reference_calibration_stage_review(
+            _snapshot, _assessment = record_reference_calibration_stage_review(
                 self.study_directory,
                 visual_approvals=approvals,
                 selected_candidate_id=str(selected),
@@ -1052,7 +1100,6 @@ class ReferenceCalibrationDialog(QDialog):
             QMessageBox.warning(self, "Stage selection rejected", str(error))
             return
         self._render()
-        balanced = assessment.balanced_candidate_id
         visual_status = (
             "passed"
             if selected in self._visually_approved_candidates
@@ -1063,10 +1110,8 @@ class ReferenceCalibrationDialog(QDialog):
             )
         )
         self.status.setText(
-            f"Researcher selection recorded: {selected}. "
-            f"Transparent balanced-score suggestion was: {balanced or 'none'}. "
-            f"Optional visual QC for the selected option: {visual_status}. "
-            "The suggestion did not make the decision."
+            f"Selection recorded: {selected}. The next calibration stage is ready. "
+            f"Optional visual QC: {visual_status}."
         )
 
     def _open_candidate(self, candidate: CalibrationStudyCandidateState) -> None:

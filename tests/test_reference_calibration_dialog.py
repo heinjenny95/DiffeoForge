@@ -294,6 +294,16 @@ def test_staged_calibration_allows_selection_without_visual_qc(
     dialog.show()
     application.processEvents()
 
+    from diffeoforge.desktop.info_disclosure import InfoDisclosure
+
+    disclosures = dialog.findChildren(InfoDisclosure)
+    disclosure_titles = [item.title for item in disclosures]
+    assert "How pilot calibration works" in disclosure_titles
+    assert "Decision guidance for this stage" in disclosure_titles
+    assert "How to interpret the comparison colors" in disclosure_titles
+    assert disclosure_titles.count("About this option") == 2
+    assert all(item.panel.isHidden() for item in disclosures)
+
     review_buttons = list(dialog._review_buttons.values())
     assert len(review_buttons) == 2
     assert [button.objectName() for button in review_buttons] == [
@@ -349,7 +359,7 @@ def test_staged_calibration_allows_selection_without_visual_qc(
     failed_statuses = [
         label
         for label in dialog.findChildren(QLabel, "statusError")
-        if "Optional visual QC failed" in label.text()
+        if "Visual QC: failed" in label.text()
     ]
     assert len(failed_statuses) == 1
 

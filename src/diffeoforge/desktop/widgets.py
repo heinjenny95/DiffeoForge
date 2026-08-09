@@ -47,6 +47,7 @@ from diffeoforge.desktop.gpa_visualization import (
     GpaAlignmentVisual,
     build_gpa_alignment_visual,
 )
+from diffeoforge.desktop.info_disclosure import InfoDisclosure
 from diffeoforge.desktop.landmark_3d_widget import InteractiveMeshCanvas3D
 from diffeoforge.desktop.landmark_editor import LandmarkEditorDialog
 from diffeoforge.desktop.mesh_preview import (
@@ -199,6 +200,15 @@ QPushButton#parameterHelpButton {
     padding: 2px 1px; text-align: left; font-size: 12px; font-weight: 650;
 }
 QPushButton#parameterHelpButton:hover { color: #0f5f52; text-decoration: underline; }
+QPushButton#infoDisclosureButton {
+    background: transparent; border: 0; color: #167c6b; min-height: 25px;
+    padding: 2px 1px; text-align: left; font-size: 12px; font-weight: 700;
+}
+QPushButton#infoDisclosureButton:hover { color: #0f5f52; text-decoration: underline; }
+QFrame#infoDisclosurePanel {
+    background: #f2f8f6; border: 1px solid #cee3dd; border-radius: 7px;
+}
+QLabel#infoDisclosureText { color: #405d61; font-size: 12px; }
 QFrame#parameterHelpPanel {
     background: #f2f8f6; border: 1px solid #cee3dd; border-radius: 7px;
 }
@@ -302,7 +312,7 @@ class _ExpandableParameterHelp(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(4)
 
-        self.toggle_button = QPushButton("+ Parameter guide")
+        self.toggle_button = QPushButton("ⓘ Parameter info")
         self.toggle_button.setObjectName("parameterHelpButton")
         self.toggle_button.setCheckable(True)
         self.toggle_button.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -340,7 +350,9 @@ class _ExpandableParameterHelp(QWidget):
     @Slot(bool)
     def _set_expanded(self, expanded: bool) -> None:
         self.panel.setVisible(expanded)
-        self.toggle_button.setText("- Hide parameter guide" if expanded else "+ Parameter guide")
+        self.toggle_button.setText(
+            "ⓘ Hide parameter info" if expanded else "ⓘ Parameter info"
+        )
 
 
 class _WorkerSignals(QObject):
@@ -1016,17 +1028,23 @@ class DiffeoForgeWindow(QMainWindow):
 
         boundary = QFrame()
         boundary.setObjectName("boundary")
-        boundary_layout = QHBoxLayout(boundary)
+        boundary_layout = QVBoxLayout(boundary)
         boundary_layout.setContentsMargins(13, 9, 13, 9)
         boundary_text = QLabel(
-            "For Deformetrica, follow the green action: analyze the aligned meshes, "
-            "build the pilot plan, run its candidates, compare the explained trade-offs, "
-            "and select an option. Visual reconstruction QC is optional. No full-cohort "
-            "atlas starts here."
+            "Follow the green action. This page prepares parameters; it does not start "
+            "the full-cohort atlas."
         )
         boundary_text.setObjectName("boundaryText")
         boundary_text.setWordWrap(True)
         boundary_layout.addWidget(boundary_text)
+        boundary_layout.addWidget(
+            InfoDisclosure(
+                "Workflow details",
+                "Analyze the aligned meshes, build the pilot plan, run its candidates, "
+                "compare the explained trade-offs, and select an option. Visual "
+                "reconstruction QC remains available but is optional.",
+            )
+        )
         layout.addWidget(boundary)
         layout.addWidget(parameter_form_card)
 
@@ -1096,7 +1114,9 @@ class DiffeoForgeWindow(QMainWindow):
         self.open_reference_calibration_button.setEnabled(False)
         calibration_layout.addWidget(calibration_title)
         calibration_layout.addWidget(self.reference_calibration_execution_status)
-        calibration_layout.addWidget(calibration_detail)
+        calibration_layout.addWidget(
+            InfoDisclosure("What happens during calibration", calibration_detail)
+        )
         calibration_layout.addWidget(
             self.open_reference_calibration_button,
             0,
@@ -2516,7 +2536,11 @@ class DiffeoForgeWindow(QMainWindow):
         )
         guidance_intro.setObjectName("hint")
         guidance_intro.setWordWrap(True)
-        guidance_layout.addWidget(guidance_intro)
+        guidance_background = QWidget()
+        guidance_background_layout = QVBoxLayout(guidance_background)
+        guidance_background_layout.setContentsMargins(0, 0, 0, 0)
+        guidance_background_layout.setSpacing(8)
+        guidance_background_layout.addWidget(guidance_intro)
         self.reference_scale_difference_label = QLabel(
             "<b>These are two independent questions:</b><br>"
             "<b>1 · Matching resolution — What should DiffeoForge notice?</b> "
@@ -2533,7 +2557,7 @@ class DiffeoForgeWindow(QMainWindow):
             "Difference between matching resolution and deformation reach"
         )
         self.reference_scale_difference_label.setWordWrap(True)
-        guidance_layout.addWidget(self.reference_scale_difference_label)
+        guidance_background_layout.addWidget(self.reference_scale_difference_label)
         self.reference_surface_detail_combo = QComboBox()
         self.reference_surface_detail_combo.setObjectName("referenceSurfaceDetailCombo")
         self.reference_surface_detail_combo.addItem(
@@ -2596,13 +2620,28 @@ class DiffeoForgeWindow(QMainWindow):
         )
         guidance_hint.setObjectName("hint")
         guidance_hint.setWordWrap(True)
-        guidance_layout.addWidget(guidance_hint)
+        guidance_background_layout.addWidget(guidance_hint)
+        guidance_layout.addWidget(
+            InfoDisclosure(
+                "How these two choices work",
+                guidance_background,
+                accessible_name=(
+                    "Information about matching resolution and deformation reach"
+                ),
+            )
+        )
         self.analyze_reference_parameters_button = QPushButton(
             "Analyze aligned meshes & suggest parameters"
         )
         self.analyze_reference_parameters_button.setObjectName("secondary")
         self.analyze_reference_parameters_button.clicked.connect(self._analyze_reference_parameters)
         guidance_layout.addWidget(self.analyze_reference_parameters_button)
+        self.reference_guidance_summary_label = QLabel(
+            "No aligned-mesh analysis has been completed."
+        )
+        self.reference_guidance_summary_label.setObjectName("status")
+        self.reference_guidance_summary_label.setWordWrap(True)
+        guidance_layout.addWidget(self.reference_guidance_summary_label)
         self.reference_guidance_status_label = QLabel(
             "No aligned-mesh analysis has been completed."
         )
@@ -2611,7 +2650,13 @@ class DiffeoForgeWindow(QMainWindow):
         self.reference_guidance_status_label.setTextInteractionFlags(
             Qt.TextInteractionFlag.TextSelectableByMouse
         )
-        guidance_layout.addWidget(self.reference_guidance_status_label)
+        guidance_layout.addWidget(
+            InfoDisclosure(
+                "Analysis details",
+                self.reference_guidance_status_label,
+                accessible_name="Detailed aligned-mesh analysis",
+            )
+        )
 
         calibration_box = QFrame()
         calibration_box.setObjectName("parameterEditor")
@@ -2691,11 +2736,23 @@ class DiffeoForgeWindow(QMainWindow):
         calibration_actions.addWidget(self.export_reference_calibration_button)
         calibration_actions.addStretch()
         calibration_layout.addLayout(calibration_actions)
+        self.reference_calibration_summary_label = QLabel(
+            "No pilot plan has been built."
+        )
+        self.reference_calibration_summary_label.setObjectName("status")
+        self.reference_calibration_summary_label.setWordWrap(True)
+        calibration_layout.addWidget(self.reference_calibration_summary_label)
         self.reference_calibration_status = _ReadOnlyStatusText(
             "Analyze the aligned meshes before building a calibration plan."
         )
         self.reference_calibration_status.setAccessibleName("Parameter calibration plan summary")
-        calibration_layout.addWidget(self.reference_calibration_status)
+        calibration_layout.addWidget(
+            InfoDisclosure(
+                "Pilot plan details",
+                self.reference_calibration_status,
+                accessible_name="Detailed pilot calibration plan",
+            )
+        )
         calibration_layout.addWidget(self._build_reference_calibration_execution_card())
         guidance_layout.addWidget(calibration_box)
         parameter_form.addRow("Guided calibration", self.reference_guidance_box)
@@ -3019,10 +3076,20 @@ class DiffeoForgeWindow(QMainWindow):
                 "reviewing or editing absolute kernel widths."
             )
         if had_recommendation:
+            self.reference_guidance_summary_label.setObjectName("statusWarning")
+            self.reference_guidance_summary_label.setStyleSheet("")
+            self.reference_guidance_summary_label.setText(
+                "Inputs changed. Analyze the aligned meshes again."
+            )
             self.reference_guidance_status_label.setObjectName("statusWarning")
             self.reference_guidance_status_label.setStyleSheet("")
             self.reference_guidance_status_label.setText(message)
         elif not isinstance(self._worker, _ReferenceParameterWorker):
+            self.reference_guidance_summary_label.setObjectName("status")
+            self.reference_guidance_summary_label.setStyleSheet("")
+            self.reference_guidance_summary_label.setText(
+                "No aligned-mesh analysis has been completed."
+            )
             self.reference_guidance_status_label.setObjectName("status")
             self.reference_guidance_status_label.setStyleSheet("")
             self.reference_guidance_status_label.setText(
@@ -3064,10 +3131,20 @@ class DiffeoForgeWindow(QMainWindow):
         self._reference_calibration_plan = None
         self._reference_calibration_export = None
         if had_plan:
+            self.reference_calibration_summary_label.setObjectName("statusWarning")
+            self.reference_calibration_summary_label.setStyleSheet("")
+            self.reference_calibration_summary_label.setText(
+                "Pilot inputs changed. Rebuild the plan."
+            )
             self.reference_calibration_status.setObjectName("statusWarning")
             self.reference_calibration_status.setStyleSheet("")
             self.reference_calibration_status.setText(message)
         elif self._reference_recommendation is None:
+            self.reference_calibration_summary_label.setObjectName("status")
+            self.reference_calibration_summary_label.setStyleSheet("")
+            self.reference_calibration_summary_label.setText(
+                "No pilot plan has been built."
+            )
             self.reference_calibration_status.setObjectName("status")
             self.reference_calibration_status.setStyleSheet("")
             self.reference_calibration_status.setText(
@@ -3208,6 +3285,11 @@ class DiffeoForgeWindow(QMainWindow):
         except (OSError, RuntimeError, TypeError, ValueError) as error:
             self._reference_calibration_plan = None
             self._reference_calibration_export = None
+            self.reference_calibration_summary_label.setObjectName("statusError")
+            self.reference_calibration_summary_label.setStyleSheet("")
+            self.reference_calibration_summary_label.setText(
+                "Pilot plan could not be built. Open the info below for details."
+            )
             self.reference_calibration_status.setObjectName("statusError")
             self.reference_calibration_status.setStyleSheet("")
             self.reference_calibration_status.setText(
@@ -3217,6 +3299,13 @@ class DiffeoForgeWindow(QMainWindow):
             return
         self._reference_calibration_plan = plan
         self._reference_calibration_export = None
+        candidate_count = sum(len(stage.candidates) for stage in plan.stages)
+        self.reference_calibration_summary_label.setObjectName("statusSuccess")
+        self.reference_calibration_summary_label.setStyleSheet("")
+        self.reference_calibration_summary_label.setText(
+            f"Pilot plan ready: {plan.pilot_subject_count} representative subjects, "
+            f"{candidate_count} candidate atlases. No process has started."
+        )
         self.reference_calibration_status.setObjectName("statusSuccess")
         self.reference_calibration_status.setStyleSheet("")
         self.reference_calibration_status.setText(plan.summary_text())
@@ -3317,6 +3406,9 @@ class DiffeoForgeWindow(QMainWindow):
             "Reading the aligned coordinates and measuring cohort scale, centroid "
             "dispersion, and mesh sampling. No mesh is being changed."
         )
+        self.reference_guidance_summary_label.setObjectName("status")
+        self.reference_guidance_summary_label.setStyleSheet("")
+        self.reference_guidance_summary_label.setText("Analyzing aligned meshes…")
         self._update_reference_guidance_controls()
         self._sync_ready_state()
         self._thread_pool.start(worker)
@@ -3389,6 +3481,17 @@ class DiffeoForgeWindow(QMainWindow):
             "relevant feature, choose a pilot size, and build the staged comparison plan. "
             "No Deformetrica process starts at this step."
         )
+        self.reference_calibration_summary_label.setObjectName("status")
+        self.reference_calibration_summary_label.setStyleSheet("")
+        self.reference_calibration_summary_label.setText(
+            "Analysis ready. Choose the pilot size and build the comparison plan."
+        )
+        self.reference_guidance_summary_label.setObjectName("statusSuccess")
+        self.reference_guidance_summary_label.setStyleSheet("")
+        self.reference_guidance_summary_label.setText(
+            f"Analysis ready: {recommendation.subject_count} subjects plus template. "
+            "Suggested starting values are shown below."
+        )
         self.reference_guidance_status_label.setObjectName("statusSuccess")
         self.reference_guidance_status_label.setStyleSheet("")
         self.reference_guidance_status_label.setText(
@@ -3424,6 +3527,11 @@ class DiffeoForgeWindow(QMainWindow):
         self._reference_recommendation_paths = None
         self._reference_calibration_plan = None
         self._reference_calibration_export = None
+        self.reference_guidance_summary_label.setObjectName("statusError")
+        self.reference_guidance_summary_label.setStyleSheet("")
+        self.reference_guidance_summary_label.setText(
+            "Aligned-mesh analysis failed. Open the info below for details."
+        )
         self.reference_guidance_status_label.setObjectName("statusError")
         self.reference_guidance_status_label.setStyleSheet("")
         self.reference_guidance_status_label.setText(

@@ -57,6 +57,7 @@ def test_each_deformetrica_control_has_an_expandable_english_guide(
     from PySide6.QtCore import Qt
     from PySide6.QtWidgets import QApplication
 
+    from diffeoforge.desktop.info_disclosure import InfoDisclosure
     from diffeoforge.desktop.project_setup import DesktopEngine
     from diffeoforge.desktop.widgets import DiffeoForgeWindow
 
@@ -76,7 +77,7 @@ def test_each_deformetrica_control_has_an_expandable_english_guide(
     assert window.reference_acceleration_combo.currentData() == "auto"
     for key, help_panel in window.reference_parameter_help_panels.items():
         assert help_panel.panel.isHidden() is True, key
-        assert help_panel.toggle_button.text() == "+ Parameter guide", key
+        assert help_panel.toggle_button.text() == "ⓘ Parameter info", key
         assert help_panel.toggle_button.accessibleName().startswith("Explain "), key
         assert "Example:" in help_panel.text_browser.toPlainText(), key
 
@@ -84,7 +85,7 @@ def test_each_deformetrica_control_has_an_expandable_english_guide(
     attachment_help.toggle_button.click()
     application.processEvents()
     assert attachment_help.panel.isHidden() is False
-    assert attachment_help.toggle_button.text() == "- Hide parameter guide"
+    assert attachment_help.toggle_button.text() == "ⓘ Hide parameter info"
     assert "Fine matching:" in attachment_help.text_browser.toPlainText()
     assert "Coarse matching:" in attachment_help.text_browser.toPlainText()
     assert "does not control how far a deformation spreads" in (
@@ -105,6 +106,7 @@ def test_each_deformetrica_control_has_an_expandable_english_guide(
 
     distinction = window.reference_scale_difference_label
     assert distinction.objectName() == "conceptDifference"
+    assert distinction.isVisible() is False
     assert "two independent questions" in distinction.text()
     assert "What should DiffeoForge notice?" in distinction.text()
     assert "How far should one adjustment spread?" in distinction.text()
@@ -115,6 +117,24 @@ def test_each_deformetrica_control_has_an_expandable_english_guide(
     assert window.reference_deformation_scale_combo.itemText(0) == (
         "Keep changes confined to small regions (local)"
     )
+    disclosures = window.findChildren(InfoDisclosure)
+    disclosure_by_title = {item.title: item for item in disclosures}
+    for title in {
+        "Workflow details",
+        "How these two choices work",
+        "Analysis details",
+        "Pilot plan details",
+        "What happens during calibration",
+    }:
+        assert title in disclosure_by_title
+        assert disclosure_by_title[title].panel.isHidden() is True
+        assert disclosure_by_title[title].toggle_button.text().startswith("ⓘ ")
+
+    concept_help = disclosure_by_title["How these two choices work"]
+    concept_help.toggle_button.click()
+    application.processEvents()
+    assert distinction.isVisible() is True
+    assert concept_help.toggle_button.text() == "ⓘ Hide how these two choices work"
 
     deformation_help = window.reference_parameter_help_panels["deformation_scale"]
     deformation_help.toggle_button.click()
