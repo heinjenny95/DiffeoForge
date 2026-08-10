@@ -8,8 +8,8 @@ is dataset- and objective-specific:
 
 > Within the predeclared search domain and validation criteria, DiffeoForge
 > identified a Pareto-optimal parameter set whose preference was robust to
-> reasonable metric priorities and pilot-subject resampling, and whose atlas
-> and downstream statistics passed full-cohort sensitivity confirmation.
+> reasonable metric priorities and predeclared cohort resampling. Untouched
+> heldout and anatomy-specific evidence are reported as separate gates.
 
 ## Evidence levels
 
@@ -22,17 +22,20 @@ is dataset- and objective-specific:
    score margin of at least 0.05, wins at least 75% of weight scenarios, agrees
    with weighted ranks, and wins at least 70% of subject bootstraps when those
    data are available.
-5. **Full-cohort confirmed** — selected parameters and retained neighbors are
-   compared on the complete cohort; registration outliers, atlas geometry,
-   convergence, and PCA subspace stability pass predeclared tolerances.
+5. **Validation-Lab robust** — frozen selected and neighboring finalists are
+   compared on identical non-heldout cohorts with a parameter-independent
+   vertex-to-triangle surface metric; the same finalist wins at least 80% of
+   the predeclared full-training and resampling comparisons.
 6. **Externally validated** — independent homologous landmarks, synthetic known
    deformations, replicated cohorts, or another task-relevant ground truth
    corroborates the chosen correspondence scale.
 
-Only levels 5–6 support strong scientific parameter-selection language. Level
-4 permits automatic continuation but remains a pilot result.
+Level 5 supports only the explicitly scoped phrase "robust within the tested
+finalist search space." Strong biological parameter-selection language
+requires level 6. Level 4 permits automatic continuation but remains a pilot
+result.
 
-## Current automatic metrics
+## Current pilot metrics
 
 - symmetric sampled nearest-vertex residual p95, both pooled and per subject;
 - deterministic resampling sensitivity;
@@ -51,7 +54,7 @@ correspondence.
 
 ## Remaining qualification work
 
-- automate full-cohort selected-versus-neighbor confirmation;
+- complete fixed-template registration of the untouched Validation Lab holdout;
 - add PCA subspace and subject-score stability with sign/rotation-invariant
   comparisons;
 - support predeclared biological strata in pilot selection;
@@ -81,3 +84,7 @@ These sources establish what the Deformetrica parameters mean. They do not
 provide universal dataset-independent optimal values; the DiffeoForge search
 and evidence thresholds therefore remain explicit methods that require
 prospective validation.
+
+The implemented post-pilot protocol, confidence states, external metric, and
+analytic known-correspondence generator are specified in
+[DiffeoForge Validation Lab](VALIDATION_LAB.md).

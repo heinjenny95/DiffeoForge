@@ -54,6 +54,15 @@ from diffeoforge.reference_preparation_verification import (
     write_reference_preparation_plan_verification,
 )
 from diffeoforge.reference_recommendation import recommend_reference_parameters
+from diffeoforge.reference_validation_study import (
+    ReferenceValidationStudyRunner,
+    create_reference_validation_study,
+    load_reference_validation_study,
+)
+from diffeoforge.reference_validation_synthetic import (
+    evaluate_synthetic_correspondence_error,
+    write_synthetic_validation_benchmark,
+)
 from diffeoforge.report import (
     collect_preflight,
     default_preflight_report_path,
@@ -763,6 +772,81 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="CANDIDATE_ID",
         help="Explicit researcher selection from the automatically valid candidates.",
     )
+
+    validation_study_init = subparsers.add_parser(
+        "reference-validation-study-init",
+        help=(
+            "Create a frozen post-pilot finalist validation and resampling study "
+            "without starting a process."
+        ),
+    )
+    validation_study_init.add_argument(
+        "config",
+        type=Path,
+        help="Completed pilot-calibrated Deformetrica atlas configuration.",
+    )
+    validation_study_init.add_argument(
+        "--output",
+        required=True,
+        type=Path,
+        help="New Validation Lab directory; it is never overwritten.",
+    )
+    validation_study_init.add_argument(
+        "--holdout-fraction",
+        type=float,
+        default=0.20,
+        help="Untouched subject fraction reserved before validation (default: 0.20).",
+    )
+    validation_study_init.add_argument(
+        "--resamples",
+        type=int,
+        default=5,
+        help="Predeclared training-cohort resamples (default: 5).",
+    )
+    validation_study_init.add_argument(
+        "--resample-fraction",
+        type=float,
+        default=0.80,
+        help="Training subjects per resample (default: 0.80).",
+    )
+    validation_study_init.add_argument(
+        "--max-iterations",
+        type=int,
+        help="Optional validation override; default is the calibrated config value.",
+    )
+
+    validation_study_status = subparsers.add_parser(
+        "reference-validation-study-status",
+        help="Verify and show one Validation Lab study and report status.",
+    )
+    validation_study_status.add_argument("study_directory", type=Path)
+    validation_study_status.add_argument("--json", action="store_true")
+
+    validation_study_run = subparsers.add_parser(
+        "reference-validation-study-run",
+        help="Run or resume every frozen Validation Lab comparison.",
+    )
+    validation_study_run.add_argument("study_directory", type=Path)
+
+    validation_synthetic_create = subparsers.add_parser(
+        "reference-validation-synthetic-create",
+        help="Create independent analytic local/global/mixed ground-truth meshes.",
+    )
+    validation_synthetic_create.add_argument("template", type=Path)
+    validation_synthetic_create.add_argument("--output", required=True, type=Path)
+    validation_synthetic_create.add_argument(
+        "--subjects-per-family",
+        type=int,
+        default=6,
+        help="Known-correspondence subjects per deformation family (default: 6).",
+    )
+
+    validation_synthetic_evaluate = subparsers.add_parser(
+        "reference-validation-synthetic-evaluate",
+        help="Compare one recovered mesh with ordered synthetic ground truth.",
+    )
+    validation_synthetic_evaluate.add_argument("recovered", type=Path)
+    validation_synthetic_evaluate.add_argument("truth", type=Path)
 
     validate_parser = subparsers.add_parser(
         "validate",
@@ -2075,6 +2159,179 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"       {error}", file=sys.stderr)
             return 2
         except (ConfigurationError, RuntimeError, ValueError, TypeError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
+
+    if args.command == "reference-validation-synthetic-create":
+        try:
+            manifest = write_synthetic_validation_benchmark(
+                args.template,
+                args.output,
+                subjects_per_family=args.subjects_per_family,
+            )
+            print(f"Synthetic validation benchmark created: {manifest.parent}")
+            print(f"Ground-truth manifest: {manifest}")
+            print(
+                "Ordered vertex correspondence is known; analytic anatomy is not a "
+                "substitute for independent biological validation."
+            )
+        except (ConfigurationError, OSError, RuntimeError, TypeError, ValueError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
+
+    if args.command == "reference-validation-synthetic-evaluate":
+        try:
+            result = evaluate_synthetic_correspondence_error(
+                args.recovered, args.truth
+            )
+            print(f"Known-correspondence vertices: {result.vertex_count}")
+            print(f"Vertex RMSE: {result.vertex_rmse:.9g}")
+            print(f"Vertex error p95: {result.vertex_p95:.9g}")
+            print(f"Vertex error maximum: {result.vertex_maximum:.9g}")
+        except (ConfigurationError, OSError, RuntimeError, TypeError, ValueError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
+
+    if args.command == "reference-validation-study-init":
+        try:
+            snapshot = create_reference_validation_study(
+                args.config,
+                args.output,
+                holdout_fraction=args.holdout_fraction,
+                resample_count=args.resamples,
+                resample_fraction=args.resample_fraction,
+                maximum_iterations=args.max_iterations,
+            )
+            print(f"Validation Lab study created: {snapshot.study_directory}")
+            print(
+                f"Frozen design: {len(snapshot.plan.finalists)} finalists; "
+                f"{len(snapshot.plan.training_subjects)} training subjects; "
+                f"{len(snapshot.plan.heldout_subjects)} untouched heldout subjects; "
+                f"{len(snapshot.runs)} atlas runs."
+            )
+            print(f"Plan fingerprint: {snapshot.plan.fingerprint}")
+            print("No process was started.")
+        except (ConfigurationError, OSError, RuntimeError, TypeError, ValueError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
+
+    if args.command == "reference-validation-study-status":
+        try:
+            snapshot = load_reference_validation_study(args.study_directory)
+            value = {
+                "study_directory": str(snapshot.study_directory),
+                "study_id": snapshot.study_id,
+                "status": snapshot.status,
+                "plan_fingerprint": snapshot.plan.fingerprint,
+                "completed_run_count": snapshot.completed_run_count,
+                "run_count": len(snapshot.runs),
+                "runs": [
+                    {
+                        "run_id": run.run_id,
+                        "finalist_id": run.finalist_id,
+                        "cohort_id": run.cohort_id,
+                        "status": run.status,
+                        "attempts": run.attempts,
+                        "error": run.error,
+                    }
+                    for run in snapshot.runs
+                ],
+                "assessment": (
+                    None
+                    if snapshot.assessment is None
+                    else snapshot.assessment.as_manifest()
+                ),
+                "report_json_path": (
+                    None
+                    if snapshot.report_json_path is None
+                    else str(snapshot.report_json_path)
+                ),
+                "report_html_path": (
+                    None
+                    if snapshot.report_html_path is None
+                    else str(snapshot.report_html_path)
+                ),
+            }
+            if args.json:
+                print(json.dumps(value, indent=2, ensure_ascii=False, sort_keys=True))
+            else:
+                print(f"Validation Lab: {snapshot.study_directory}")
+                print(f"Status: {snapshot.status}")
+                print(
+                    f"Runs: {snapshot.completed_run_count}/{len(snapshot.runs)} complete"
+                )
+                if snapshot.assessment is not None:
+                    print(f"Evidence: {snapshot.assessment.confidence}")
+                    print(
+                        "Preferred finalist: "
+                        f"{snapshot.assessment.recommended_finalist_id or 'none'}"
+                    )
+                if snapshot.report_html_path is not None:
+                    print(f"Report: {snapshot.report_html_path}")
+        except (ConfigurationError, OSError, RuntimeError, TypeError, ValueError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
+
+    if args.command == "reference-validation-study-run":
+        try:
+            before = load_reference_validation_study(args.study_directory)
+            run_order = {
+                run.run_id: index for index, run in enumerate(before.runs, start=1)
+            }
+
+            def show_validation_event(event) -> None:
+                kind = str(event["event"])
+                run_id = str(event.get("run_id", ""))
+                prefix = (
+                    f"[run {run_order.get(run_id, '?')}/{len(before.runs)} {run_id}]"
+                )
+                if kind == "worker_event":
+                    worker = event["worker_event"]
+                    if worker["kind"] == "phase":
+                        print(f"{prefix} {worker['payload']['message']}", flush=True)
+                elif kind == "run_started":
+                    print(f"{prefix} started", flush=True)
+                elif kind == "run_completed":
+                    evidence = event["evidence"]
+                    print(
+                        f"{prefix} completed; external surface p95 "
+                        f"{float(evidence['external_residual_p95']):.6g}",
+                        flush=True,
+                    )
+                elif kind in {"run_failed", "run_interrupted"}:
+                    print(f"{prefix} {kind}: {event['error']}", flush=True)
+
+            result = ReferenceValidationStudyRunner(args.study_directory).run_all(
+                event_callback=show_validation_event
+            )
+            print(
+                f"Validation status: {result.status}; "
+                f"{result.completed_run_count}/{len(result.runs)} runs complete"
+            )
+            if result.assessment is not None:
+                print(f"Evidence: {result.assessment.confidence}")
+                print(
+                    "Preferred finalist: "
+                    f"{result.assessment.recommended_finalist_id or 'none'}"
+                )
+                print(f"Report: {result.report_html_path}")
+                print(
+                    "Claim scope: robustness within the frozen finalist search space; "
+                    "heldout and biological validation gates remain."
+                )
+        except KeyboardInterrupt:
+            print(
+                "Validation interrupted. Completed runs remain immutable; run this "
+                "command again to continue.",
+                file=sys.stderr,
+            )
+            return 130
+        except (ConfigurationError, OSError, RuntimeError, TypeError, ValueError) as error:
             print(f"ERROR: {error}", file=sys.stderr)
             return 2
         return 0

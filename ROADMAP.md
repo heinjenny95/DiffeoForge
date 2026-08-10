@@ -171,7 +171,11 @@ This roadmap describes evidence gates rather than promised dates.
 
 ## Milestone 4: Scientific release
 
-- [ ] Frozen validation protocol and tolerances
+- [x] Frozen post-pilot finalist/resampling protocol, external surface metric,
+  resumable Validation Lab execution, scoped report, and analytic
+  known-correspondence generator
+- [ ] Fixed-template registration of untouched Validation Lab holdout subjects
+- [ ] Independent biological landmark validation and PCA subspace stability
 - [ ] Multi-platform benchmark study
 - [ ] External usability evaluation
 - [ ] Complete user and methods documentation

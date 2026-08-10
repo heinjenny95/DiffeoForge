@@ -101,6 +101,7 @@ from diffeoforge.desktop.reference_readiness import (
     check_reference_environment,
 )
 from diffeoforge.desktop.reference_result_review import review_reference_result
+from diffeoforge.desktop.reference_validation_dialog import ReferenceValidationDialog
 from diffeoforge.desktop.reference_worker_protocol import DesktopReferenceWorkerEvent
 from diffeoforge.desktop.result_review import (
     ModernResultReview,
@@ -120,6 +121,7 @@ from diffeoforge.desktop.worker_controller import (
 )
 from diffeoforge.desktop.worker_protocol import DesktopWorkerEvent
 from diffeoforge.initialization import SUPPORTED_UNITS, detect_template
+from diffeoforge.mesh import sha256_file
 from diffeoforge.preprocessing import (
     LandmarkAlignmentPreview,
     preview_landmark_alignment,
@@ -142,6 +144,11 @@ from diffeoforge.reference_recommendation import (
     recommend_reference_parameters,
 )
 from diffeoforge.reference_runtime import launcher_label
+from diffeoforge.reference_validation_study import (
+    create_reference_validation_study,
+    load_reference_validation_study,
+)
+from diffeoforge.result_report import collect_run_report
 from diffeoforge.surface_io import (
     SUPPORTED_SURFACE_EXTENSIONS,
     is_supported_surface_path,
@@ -1881,6 +1888,43 @@ class DiffeoForgeWindow(QMainWindow):
         pca_plots_layout.addWidget(pc2_pc3_panel)
         layout.addWidget(pca_plots)
         layout.addWidget(quality_card)
+
+        validation_lab = QFrame()
+        validation_lab.setObjectName("card")
+        validation_layout = QVBoxLayout(validation_lab)
+        validation_layout.setContentsMargins(24, 22, 24, 24)
+        validation_layout.setSpacing(10)
+        validation_title = QLabel("DiffeoForge Validation Lab")
+        validation_title.setObjectName("sectionTitle")
+        validation_summary = QLabel(
+            "After pilot calibration, test the frozen finalist parameters across a "
+            "predeclared training comparison and deterministic cohort resamples. The "
+            "result is an uncertainty-aware robustness report, not an automatic claim "
+            "of universal biological optimality."
+        )
+        validation_summary.setWordWrap(True)
+        self.open_validation_lab_button = QPushButton("Open Validation Lab…")
+        self.open_validation_lab_button.setObjectName("primary")
+        self.open_validation_lab_button.clicked.connect(self._open_validation_lab)
+        self.open_validation_lab_button.setEnabled(False)
+        validation_layout.addWidget(validation_title)
+        validation_layout.addWidget(validation_summary)
+        validation_layout.addWidget(
+            InfoDisclosure(
+                "What additional evidence it creates",
+                (
+                    "The lab reserves an untouched holdout, freezes the pilot-selected "
+                    "parameter set and its nearest tested neighbors, runs every finalist "
+                    "on identical predeclared cohorts, and compares external surface "
+                    "error, deformation distortion, geometric validity, and stability. "
+                    "Fixed-template heldout registration and independent biological "
+                    "landmarks remain explicitly separate future gates."
+                ),
+                parent=validation_lab,
+            )
+        )
+        validation_layout.addWidget(self.open_validation_lab_button)
+        layout.addWidget(validation_lab)
 
         artifacts = QFrame()
         artifacts.setObjectName("card")
@@ -4795,6 +4839,97 @@ class DiffeoForgeWindow(QMainWindow):
             result = results[labels.index(chosen)]
         self._open_completed_result(result)
 
+    @Slot()
+    def _open_validation_lab(self) -> None:
+        review = self._result_review
+        if review is None or review.engine_route != "deformetrica_reference":
+            QMessageBox.information(
+                self,
+                "Validation Lab unavailable",
+                "Load a completed Deformetrica result first.",
+            )
+            return
+        candidates: list[Path] = []
+        if self._reference_calibrated_config_path is not None:
+            candidates.append(self._reference_calibrated_config_path)
+        try:
+            report = collect_run_report(review.run_directory)
+            candidates.extend(
+                (
+                    Path(str(report.manifest["source_config"]["path"])),
+                    review.run_directory / "config" / "source-config.yaml",
+                )
+            )
+            expected_sha256 = str(report.manifest["source_config"]["sha256"])
+        except (KeyError, OSError, RuntimeError, TypeError, ValueError):
+            expected_sha256 = ""
+
+        def calibrated_candidate(path: Path) -> bool:
+            candidate = path.expanduser()
+            if not candidate.is_file():
+                return False
+            try:
+                if expected_sha256 and sha256_file(candidate) != expected_sha256:
+                    return False
+                config = load_config(candidate)
+                result = (
+                    config.get("project", {})
+                    .get("parameter_provenance", {})
+                    .get("recommendation", {})
+                    .get("calibration_result", {})
+                )
+            except (OSError, RuntimeError, TypeError, ValueError):
+                return False
+            return result.get("status") == "completed"
+
+        config_path = next(
+            (
+                path.expanduser().resolve()
+                for path in candidates
+                if calibrated_candidate(path)
+            ),
+            None,
+        )
+        if config_path is None:
+            selected, _filter = QFileDialog.getOpenFileName(
+                self,
+                "Select the pilot-calibrated atlas configuration",
+                str(review.run_directory),
+                "DiffeoForge atlas configuration (atlas*.yaml *.yml)",
+            )
+            if not selected:
+                return
+            config_path = Path(selected).expanduser().resolve()
+        digest = sha256_file(config_path)
+        validation_root = config_path.parent
+        if config_path.is_relative_to(review.run_directory):
+            validation_root = review.run_directory.parent.parent
+        study_directory = validation_root / "diffeoforge-validation-lab"
+        if study_directory.exists():
+            try:
+                existing = load_reference_validation_study(study_directory)
+            except (OSError, RuntimeError, TypeError, ValueError):
+                study_directory = validation_root / (
+                    f"diffeoforge-validation-lab-{digest[:10]}"
+                )
+            else:
+                if existing.plan.source_config_sha256 != digest:
+                    study_directory = validation_root / (
+                        f"diffeoforge-validation-lab-{digest[:10]}"
+                    )
+        try:
+            if not study_directory.exists():
+                create_reference_validation_study(config_path, study_directory)
+            dialog = ReferenceValidationDialog(study_directory, self)
+        except (OSError, RuntimeError, TypeError, ValueError) as error:
+            QMessageBox.critical(
+                self,
+                "Validation Lab could not be opened",
+                str(error),
+            )
+            return
+        dialog.exec()
+
     def _open_completed_result(self, result: CompletedResultRun) -> None:
         if self._worker is not None:
             return
@@ -6682,6 +6817,9 @@ class DiffeoForgeWindow(QMainWindow):
                 "evidence, not proof of adequate registration or scientific convergence."
             )
         self._populate_result_artifacts(review)
+        self.open_validation_lab_button.setEnabled(
+            review.engine_route == "deformetrica_reference"
+        )
         self.result_status_label.setObjectName("statusSuccess")
         self.result_status_label.setStyleSheet("")
         self.result_status_label.setText(
@@ -6700,6 +6838,7 @@ class DiffeoForgeWindow(QMainWindow):
     def _completed_result_review_failed(self, message: str) -> None:
         self._worker = None
         self._result_review = None
+        self.open_validation_lab_button.setEnabled(False)
         self.status_label.setObjectName("statusError")
         self.status_label.setStyleSheet("")
         self.status_label.setText(
@@ -6867,6 +7006,7 @@ class DiffeoForgeWindow(QMainWindow):
     def _result_review_failed(self, message: str) -> None:
         self._worker = None
         self._result_review = None
+        self.open_validation_lab_button.setEnabled(False)
         self.run_back_button.setEnabled(True)
         self.run_state_label.setObjectName("statusError")
         self.run_state_label.setStyleSheet("")
