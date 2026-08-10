@@ -37,7 +37,8 @@ def test_data_assisted_reference_recommendation_is_deterministic() -> None:
     assert first.template_diagonal > 0
     assert first.cohort_median_diagonal > 0
     assert first.median_edge_to_diagonal_ratio > 0
-    assert first.attachment_kernel_width_ratio >= first.sampling_floor_ratio
+    assert first.attachment_kernel_width_ratio == pytest.approx(0.025)
+    assert first.sampling_floor_ratio > 0
     assert first.deformation_kernel_width_ratio == pytest.approx(0.05)
     assert first.control_point_spacing_ratio == pytest.approx(0.05)
     assert first.provisional_noise_std_ratio == pytest.approx(
@@ -53,6 +54,7 @@ def test_data_assisted_reference_recommendation_is_deterministic() -> None:
     assert first.provenance["parameter_ratios"] == first.parameter_ratios
     assert first.provenance["alignment_basis"] == "declared_gpa"
     assert "cannot prove homologous alignment" in " ".join(first.warnings)
+    assert "remains an allowed pilot candidate" in " ".join(first.warnings)
 
 
 def test_user_intent_changes_only_the_corresponding_nominal_scales() -> None:

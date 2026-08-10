@@ -1,10 +1,10 @@
 # Transparent Deformetrica parameter calibration
 
-Status: **implemented deterministic planning, automatic sequential candidate
-execution, verified automatic QC evidence extraction, optional visual QC, and
-one-operation provisional recommendation reporting. Optional manual
-stage-by-stage selection remains available. Scientific validation is still
-prospective.**
+Status: **implemented deterministic planning, broad joint kernel screening,
+automatic candidate execution, subject-level and reconstruction-wide QC,
+weight-sensitivity and subject-bootstrap robustness gates, optional visual QC,
+and one-operation uncertainty-qualified reporting. Full-cohort and external
+biological validation remain required before a manuscript claim.**
 
 ## Why this workflow exists
 
@@ -39,17 +39,21 @@ therefore keeps three sources of information separate:
    are embedded in `atlas.yaml`.
 8. After the automatic Deformetrica setup check passes, open **Automatic
    Deformetrica pilot calibration**.
-9. Select **Run complete four-stage pilot** once. DiffeoForge runs all remaining
-   candidates and stages sequentially. Candidate sets are centered on the
-   biological priorities declared in step 2. Earlier stage recommendations are
-   locked before the next parameter family is tested. Already completed
-   candidates are retained if execution is continued later.
+9. Select **Run complete four-stage pilot** once. DiffeoForge first screens
+   attachment and deformation scales jointly, then refines deformation, noise,
+   and time points. The search is logarithmically spaced around the biological
+   priorities declared in step 2 and crosses the conservative mesh-sampling
+   diagnostic. Already completed candidates are retained if execution is
+   continued later.
 10. At each stage, DiffeoForge rejects candidates with failed execution,
-    missing convergence evidence, invalid faces, or incomplete metrics. Among
-    the eligible Pareto candidates it records the lowest explicitly weighted
-    balanced score as an **automatic provisional recommendation**. The score,
-    weights, alternatives, and selection mode remain in the event ledger; the
-    software does not label this anatomical approval.
+    missing convergence evidence, invalid atlas or reconstruction faces, or
+    incomplete metrics. It computes the Pareto front but does not trust one
+    hand-set weighting. The same decision is repeated across predeclared weight
+    perturbations, an independent weighted-rank aggregation, and deterministic
+    pilot-subject bootstraps. Automatic selection is permitted only after the
+    robust gate passes. Otherwise the stage is explicitly `sensitive` or
+    `ambiguous` and requires additional evidence or a recorded researcher
+    decision.
 11. After stage four, read the concise recommended values and open the complete
     HTML report. It explains what every parameter changes, how each stage was
     evaluated, all tested alternatives and scores, limitations, and the required
@@ -94,21 +98,29 @@ stratified representation.
 Only one parameter block changes in each stage. Values selected in earlier
 stages remain locked.
 
-### 1. Surface-matching detail
+### 1. Joint surface-detail and deformation-scale screen
 
-The center is the measured smallest relevant feature, bounded below by the
-mesh-sampling floor. If no feature is measured, the declared fine/balanced/
-coarse starting intent supplies the center. Neighboring candidates test a
-detail-first, center, and smoother setting.
+The attachment center is the measured smallest relevant feature. If no feature
+is measured, the declared fine/balanced/coarse intent supplies the center. It
+is not silently raised to the four-edge sampling diagnostic. Six
+logarithmically spaced attachment scales span the declared center, the median
+mesh edge, and the conservative four-edge scale. Each is paired with local,
+center, and global deformation screens, producing 18 joint candidates.
+Together with five deformation refinements, five noise candidates, and three
+time-point candidates, the standard strict pilot contains 31 resumable atlas
+runs. This is intentionally a scientific calibration workload rather than a
+quick preset picker.
 
-Retain the largest attachment width that still preserves the predeclared
-feature without systematic residual structure. A value below the sampling
-floor is never proposed.
+The joint screen prevents a superficially attractive attachment width from
+being evaluated under only one arbitrary deformation width. Finer-than-four-
+edge candidates remain allowed, but their sampling sensitivity is measured and
+reported.
 
 ### 2. Deformation locality and control density
 
-Candidates are centered on the declared local/balanced/global deformation
-intent. Deformation width and initial control-point spacing move together.
+Five logarithmically spaced candidates refine the declared
+local/balanced/global deformation range after the joint screen. Deformation
+width and initial control-point spacing move together.
 
 The automatic route compares the declared-intent-centered candidates using the
 published multi-metric assessment. Any move toward a smaller, more local model
@@ -121,9 +133,10 @@ Noise candidates test fit-first, center, and regularity-first weights.
 Candidate evidence is evaluated as a Pareto problem using residual,
 deformation-energy, distortion, and runtime metrics.
 
-DiffeoForge exposes all Pareto candidates. Its weighted balanced score has
-recorded weights and may drive the standard route's automatic **provisional**
-recommendation; it is never represented as automatic scientific validation.
+DiffeoForge exposes all Pareto candidates. The base balanced score has recorded
+weights, but automatic selection additionally requires stability under weight
+perturbation, independent rank aggregation, and pilot-subject bootstrap. A
+single score is never represented as automatic scientific validation.
 A candidate is ineligible if execution, convergence, mesh validity, or required
 metrics fail. Visual QC is optional, but an explicitly recorded visual failure
 also makes that candidate ineligible.
@@ -144,6 +157,12 @@ Before manuscript use:
 3. document convergence or the iteration cap;
 4. compare atlas geometry and PCA subspaces with neighboring retained settings;
 5. record final researcher approval separately from the pilot plan.
+
+Passing the pilot robustness gate means that the winner is stable **within the
+tested pilot design**. It does not prove universal optimality. A strong methods
+claim must report the tested search domain, QC metrics, robustness thresholds,
+ambiguous stages, full-cohort confirmation, and any independent anatomical
+landmarks or biological group labels used for external validation.
 
 ## Reproducible command line
 

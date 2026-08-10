@@ -18,7 +18,7 @@ from diffeoforge.config import ConfigurationError
 from diffeoforge.mesh import sha256_file
 from diffeoforge.surface_io import load_surface_mesh
 
-RECOMMENDATION_VERSION = "0.1"
+RECOMMENDATION_VERSION = "0.2"
 SurfaceDetailIntent = Literal["fine", "balanced", "coarse"]
 DeformationScaleIntent = Literal["local", "balanced", "global"]
 AlignmentBasis = Literal["declared_gpa", "diffeoforge_gpa"]
@@ -289,9 +289,14 @@ def recommend_reference_parameters(
     cohort_diagonal = float(median(diagonals))
     template_diagonal = diagonals[0]
     edge_to_diagonal = float(median(edge_medians)) / cohort_diagonal
+    # Four median edge lengths are retained as an explicit sampling diagnostic,
+    # not a hard scientific boundary.  The previous v0.1 implementation silently
+    # raised the requested attachment width to this value.  That could exclude a
+    # biologically useful scale before Deformetrica had tested it, even though no
+    # universal multiple of mesh-edge length is established by the model.
     sampling_floor = min(0.5, max(0.005, 4.0 * edge_to_diagonal))
     attachment_nominal = _ATTACHMENT_NOMINAL_RATIOS[surface_detail_intent]
-    attachment_ratio = min(0.5, max(attachment_nominal, sampling_floor))
+    attachment_ratio = attachment_nominal
     deformation_ratio = _DEFORMATION_NOMINAL_RATIOS[deformation_scale_intent]
     control_spacing_ratio = deformation_ratio
 
@@ -325,8 +330,9 @@ def recommend_reference_parameters(
         )
     if sampling_floor > attachment_nominal:
         warnings.append(
-            "The requested attachment detail was finer than the observed mesh sampling; "
-            "the proposed attachment width was raised to the sampling-aware lower bound."
+            "The requested attachment scale is below the conservative four-edge sampling "
+            "diagnostic. It remains an allowed pilot candidate; DiffeoForge must compare "
+            "it with sampling-anchored alternatives instead of silently replacing it."
         )
 
     evidence = {
@@ -374,7 +380,8 @@ def recommend_reference_parameters(
         observations=tuple(observations),
         automatic_inferences=(
             "Template and cohort scale from the analyzed aligned coordinates",
-            "A lower bound for attachment resolution from sampled triangle-edge lengths",
+            "A conservative attachment-resolution diagnostic from sampled triangle-edge "
+            "lengths; it is not enforced as a hard lower bound",
             "Centroid and size-dispersion diagnostics that can warn about alignment",
         ),
         user_decisions=(

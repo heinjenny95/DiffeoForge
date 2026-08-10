@@ -276,7 +276,11 @@ def test_staged_calibration_allows_selection_without_visual_qc(
     snapshot = SimpleNamespace(
         study_directory=tmp_path,
         study_id="guided-test",
-        plan=SimpleNamespace(stages=(stage,), coordinate_unit="unitless"),
+        plan=SimpleNamespace(
+            stages=(stage,),
+            coordinate_unit="unitless",
+            fingerprint="a" * 64,
+        ),
         status="awaiting_review",
         current_stage=stage,
         candidates=candidates,
@@ -294,14 +298,12 @@ def test_staged_calibration_allows_selection_without_visual_qc(
     dialog.show()
     application.processEvents()
 
-    assert dialog.advanced_mode.isChecked() is False
-    assert dialog.start_button.isVisible() is True
-    assert dialog.start_button.text() == "Continue complete four-stage pilot"
-    assert dialog.start_button.objectName() == "primary"
-    assert dialog.selection_combo.isHidden() is True
-    assert "continue automatically" in dialog.status.text()
+    assert dialog.advanced_mode.isChecked() is True
+    assert dialog.start_button.isHidden() is True
+    assert dialog.selection_combo.isVisible() is True
+    warning_labels = dialog.findChildren(QLabel, "statusWarning")
+    assert any("Evidence grade:" in label.text() for label in warning_labels)
 
-    dialog.advanced_mode.setChecked(True)
     application.processEvents()
     application.sendPostedEvents(None, QEvent.Type.DeferredDelete)
     application.processEvents()

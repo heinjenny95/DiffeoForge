@@ -95,7 +95,7 @@
                 "warnings"
               ],
               "properties": {
-                "version": {"const": "0.1"},
+                "version": {"enum": ["0.1", "0.2"]},
                 "fingerprint": {
                   "type": "string",
                   "pattern": "^[0-9a-f]{64}$"
@@ -230,7 +230,7 @@
                     "limitations"
                   ],
                   "properties": {
-                    "version": {"const": "0.1"},
+                    "version": {"enum": ["0.1", "0.2"]},
                     "fingerprint": {
                       "type": "string",
                       "pattern": "^[0-9a-f]{64}$"
@@ -307,7 +307,8 @@
                     "attachment_center_source": {
                       "enum": [
                         "declared_surface_detail_intent",
-                        "researcher_measured_feature_with_mesh_sampling_floor"
+                        "researcher_measured_feature_with_mesh_sampling_floor",
+                        "researcher_measured_feature"
                       ]
                     },
                     "baseline_parameter_ratios": {

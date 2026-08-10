@@ -52,6 +52,7 @@ class ReferenceCalibrationRunMetrics:
     subject_reconstruction_count: int
     atlas_path: str
     notes: tuple[str, ...]
+    subject_residual_p95: tuple[tuple[str, float], ...] = ()
 
     def as_manifest(self) -> dict[str, object]:
         return {
@@ -72,6 +73,7 @@ class ReferenceCalibrationRunMetrics:
             "runtime_seconds": self.runtime_seconds,
             "subject_reconstruction_count": self.subject_reconstruction_count,
             "atlas_path": self.atlas_path,
+            "subject_residual_p95": dict(self.subject_residual_p95),
             "notes": list(self.notes),
             "metric_definitions": {
                 "residual_p95": (
@@ -88,8 +90,13 @@ class ReferenceCalibrationRunMetrics:
                     "an optimizer comparison proxy, not physical energy."
                 ),
                 "distortion_p95": (
-                    "P95 absolute log triangle-area ratio between the initial template "
-                    "and final atlas with identical ordered connectivity."
+                    "P95 absolute log triangle-area ratio pooled across the final atlas "
+                    "and every subject reconstruction relative to the initial template "
+                    "with identical ordered connectivity."
+                ),
+                "subject_residual_p95": (
+                    "Symmetric nearest-vertex distance p95 reported separately for "
+                    "every immutable pilot subject, used for stability resampling."
                 ),
             },
         }
@@ -174,28 +181,25 @@ def _triangle_areas(mesh: TriangleMesh) -> np.ndarray:
     return 0.5 * np.linalg.norm(np.cross(first, second), axis=1)
 
 
-def _atlas_distortion(reference: TriangleMesh, atlas: TriangleMesh) -> float:
-    if reference.triangles != atlas.triangles or len(reference.vertices) != len(
-        atlas.vertices
+def _surface_log_area_distortion(
+    reference: TriangleMesh,
+    deformed: TriangleMesh,
+) -> np.ndarray:
+    if reference.triangles != deformed.triangles or len(reference.vertices) != len(
+        deformed.vertices
     ):
         raise ConfigurationError(
-            "Final atlas connectivity differs from the initial template; "
+            "Atlas or reconstruction connectivity differs from the initial template; "
             "triangle-area distortion is undefined"
         )
     reference_area = _triangle_areas(reference)
-    atlas_area = _triangle_areas(atlas)
-    valid = (reference_area > 0.0) & (atlas_area > 0.0)
+    deformed_area = _triangle_areas(deformed)
+    valid = (reference_area > 0.0) & (deformed_area > 0.0)
     if not np.all(valid):
         raise ConfigurationError(
-            "Initial template or final atlas contains zero-area triangles"
+            "Initial template, atlas, or reconstruction contains zero-area triangles"
         )
-    return float(
-        np.quantile(
-            np.abs(np.log(atlas_area / reference_area)),
-            0.95,
-            method="linear",
-        )
-    )
+    return np.abs(np.log(deformed_area / reference_area))
 
 
 def _subject_from_reconstruction_name(name: str) -> str:
@@ -265,11 +269,20 @@ def collect_reference_calibration_run_metrics(
         )
 
     distance_parts: list[np.ndarray] = []
+    subject_residuals: list[tuple[str, float]] = []
+    reconstruction_meshes: dict[str, TriangleMesh] = {}
     for subject in sorted(subjects):
-        distance_parts.append(
-            symmetric_nearest_vertex_distances(
-                read_vtk_polydata(subjects[subject]),
-                read_vtk_polydata(by_subject[subject]),
+        reconstruction = read_vtk_polydata(by_subject[subject])
+        reconstruction_meshes[subject] = reconstruction
+        subject_distances = symmetric_nearest_vertex_distances(
+            read_vtk_polydata(subjects[subject]),
+            reconstruction,
+        )
+        distance_parts.append(subject_distances)
+        subject_residuals.append(
+            (
+                subject,
+                float(np.quantile(subject_distances, 0.95, method="linear")),
             )
         )
     distances = np.concatenate(distance_parts)
@@ -282,13 +295,27 @@ def collect_reference_calibration_run_metrics(
 
     atlas_path = templates[0][1]
     atlas = read_vtk_polydata(atlas_path)
-    quality = assess_triangle_mesh(atlas.vertices, atlas.triangles)
-    invalid_faces = (
-        quality.zero_area_faces
-        + quality.zero_length_edge_faces
-        + quality.undefined_angle_faces
+    initial_template = read_vtk_polydata(template_path)
+    evaluated_surfaces = (atlas, *reconstruction_meshes.values())
+    invalid_faces = 0
+    distortion_parts: list[np.ndarray] = []
+    for surface in evaluated_surfaces:
+        quality = assess_triangle_mesh(surface.vertices, surface.triangles)
+        invalid_faces += (
+            quality.zero_area_faces
+            + quality.zero_length_edge_faces
+            + quality.undefined_angle_faces
+        )
+        distortion_parts.append(
+            _surface_log_area_distortion(initial_template, surface)
+        )
+    distortion = float(
+        np.quantile(
+            np.concatenate(distortion_parts),
+            0.95,
+            method="linear",
+        )
     )
-    distortion = _atlas_distortion(read_vtk_polydata(template_path), atlas)
     if not report.convergence:
         raise ConfigurationError(
             "Calibration run has no verified optimization history"
@@ -315,7 +342,7 @@ def collect_reference_calibration_run_metrics(
         "and are not Deformetrica's configured attachment metric.",
     )
     return ReferenceCalibrationRunMetrics(
-        metric_version="0.1",
+        metric_version="0.2",
         completed=True,
         converged=converged,
         optimizer_stop_signal=stop.signal,
@@ -333,6 +360,7 @@ def collect_reference_calibration_run_metrics(
         subject_reconstruction_count=len(reconstructions),
         atlas_path=str(atlas_path),
         notes=notes,
+        subject_residual_p95=tuple(subject_residuals),
     )
 
 

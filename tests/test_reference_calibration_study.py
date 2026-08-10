@@ -116,7 +116,7 @@ def test_study_creation_binds_inputs_and_prepares_only_first_stage(
     assert snapshot.status == "ready"
     assert snapshot.current_stage is not None
     assert snapshot.current_stage.stage_id == "attachment"
-    assert 2 <= len(snapshot.candidates) <= 3
+    assert len(snapshot.candidates) == 18
     assert {candidate.status for candidate in snapshot.candidates} == {"pending"}
     assert not (snapshot.study_directory / "stages" / "02-deformation").exists()
     for candidate in snapshot.candidates:

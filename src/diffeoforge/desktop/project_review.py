@@ -285,10 +285,10 @@ def _reference_review(config_path: Path, config_sha256: str) -> ProjectReviewRes
                 "These biological scale choices are not inferred from mesh geometry.",
             ),
             ReviewItem(
-                "Sampling constraint",
-                f"attachment-width floor {measurements['sampling_floor_ratio']:.3%}",
-                "Derived from sampled triangle-edge lengths to avoid proposing a surface "
-                "scale finer than the observed mesh sampling.",
+                "Sampling diagnostic",
+                f"conservative four-edge scale {measurements['sampling_floor_ratio']:.3%}",
+                "Derived from sampled triangle-edge lengths. It expands the pilot search "
+                "but no longer excludes finer attachment widths before they are tested.",
             ),
             ReviewItem(
                 (

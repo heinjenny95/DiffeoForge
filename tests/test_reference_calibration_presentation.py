@@ -72,9 +72,9 @@ def test_attachment_guidance_explains_the_decision_without_jargon() -> None:
         coordinate_unit="mm",
     )
 
-    assert guidance.question == "How much surface detail should matching follow?"
-    assert "largest width" in guidance.action
-    assert "only if visual comparison would help" in guidance.action
+    assert "matching-detail and deformation-scale" in guidance.question
+    assert "stable across metric priorities" in guidance.action
+    assert "collect more evidence" in guidance.action
     assert "overfitting" in guidance.caution
     assert parameter == "Surface-detail width: 0.219907 mm"
     assert direction == "Smaller follows finer detail; larger emphasizes broader shape."
@@ -100,13 +100,13 @@ def test_tradeoff_labels_state_both_sides_without_declaring_a_winner() -> None:
 
     assert labels["attachment-01"] == (
         "Closest automatic surface match",
-        "Most atlas area change",
+        "Most atlas/reconstruction area change",
         "Highest deformation cost",
         "Slowest pilot run",
     )
     assert labels["attachment-02"] == (
         "Largest measured mismatch",
-        "Least atlas area change",
+        "Least atlas/reconstruction area change",
         "Lowest deformation cost",
         "Fastest pilot run",
     )

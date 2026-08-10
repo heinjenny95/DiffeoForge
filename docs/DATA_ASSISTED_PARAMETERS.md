@@ -81,16 +81,19 @@ deformation spreads.
 | Balance small features and overall form | `0.05 D` |
 | Judge mainly broad overall form (coarse) | `0.10 D` |
 
-The mesh-sampling floor is:
+The conservative four-edge sampling diagnostic is:
 
 ```text
 min(0.5, max(0.005, 4 × cohort median sampled edge length / cohort median diagonal))
 ```
 
-The proposed attachment ratio is the larger of the stated nominal ratio and
-this floor. This does not discover the correct anatomical scale. It prevents a
-requested spatial resolution from silently falling below an explicit,
-reproducible sampling diagnostic.
+This value is **not a hard lower bound**. Recommendation version 0.1 used it to
+raise the proposed attachment width automatically. Version 0.2 retains the
+researcher's declared or measured anatomical scale and uses the edge-based
+value to broaden the pilot search. The automatic pilot therefore tests values
+on both sides whenever possible. This prevents mesh sampling from being ignored
+without pretending that one universal multiple of edge length determines the
+scientifically correct varifold/current kernel.
 
 ### Deformation reach and control points
 
@@ -150,13 +153,24 @@ relevant feature directly on the 3D template. DiffeoForge then:
 
 1. selects a deterministic geometry-descriptor medoid and farthest-first
    extremes from the subjects;
-2. proposes neighboring attachment-width candidates, respecting the measured
-   mesh-sampling floor;
-3. proposes neighboring deformation-width/control-spacing candidates;
-4. proposes neighboring noise-weight candidates;
-5. proposes 10/20/30-time-point numerical-accuracy checks;
-6. records the evidence, rejection criteria, and decision rule required at
-   every stage.
+2. performs a logarithmically spaced **joint screen** of attachment width and
+   deformation width/control spacing, spanning both the declared anatomical
+   center and mesh-sampling diagnostics;
+3. refines deformation width/control spacing after the joint screen;
+4. tests a wider logarithmic noise-weight range;
+5. tests 10/20/30 time points for numerical accuracy;
+6. records subject-level residuals, reconstruction-wide validity and area
+   distortion, convergence, regularity, runtime, and raw alternatives;
+7. perturbs all metric weights, independently aggregates metric ranks, and
+   deterministically bootstraps pilot subjects before allowing an automatic
+   selection.
+
+An automatic stage choice is allowed only when the same Pareto candidate has a
+clear score margin, wins at least 75% of the predeclared weight scenarios,
+agrees with the independent rank aggregation, and—when subject-level evidence
+is available—wins at least 70% of the deterministic subject bootstraps. If
+these criteria are not met, DiffeoForge reports `sensitive` or `ambiguous` and
+refuses to invent a unique winner.
 
 The pilot-subject heuristic covers geometric diversity only. It cannot infer
 biological strata that are absent from mesh coordinates. A manuscript study
@@ -183,6 +197,7 @@ dataset-specific parameter justification. The plan requires:
 - deformation smoothness and plausibility;
 - runtime, memory, and control-point count;
 - stability of the atlas and PCA under neighboring settings;
+- robustness of the winner to metric priorities and pilot-subject resampling;
 - a final full-resolution, full-cohort confirmation.
 
 Skipping pilot visual QC does not waive the manuscript-stage full-cohort

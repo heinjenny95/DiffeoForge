@@ -43,6 +43,7 @@ from diffeoforge.reference_calibration_study import (
     CalibrationStudyCandidateState,
     ReferenceCalibrationStudyRunner,
     ReferenceCalibrationStudySnapshot,
+    assess_reference_calibration_snapshot,
     load_reference_calibration_report,
     load_reference_calibration_study,
     record_reference_calibration_stage_review,
@@ -656,10 +657,12 @@ class ReferenceCalibrationDialog(QDialog):
                     )
                 )
                 method = QLabel(
-                    "The candidates were centered on your previously declared priorities. "
-                    "At each stage DiffeoForge retained the valid Pareto option with the "
-                    "lowest published weighted comparison score. The complete report "
-                    "preserves every alternative and limitation."
+                    "DiffeoForge first screened attachment and deformation scales "
+                    "jointly, then refined deformation, regularization, and numerical "
+                    "accuracy. Automatic choices had to remain stable under metric-weight "
+                    "changes, an independent rank analysis, and pilot-subject resampling "
+                    "when available. The complete report preserves every alternative, "
+                    "evidence grade, sensitivity warning, and limitation."
                 )
                 method.setWordWrap(True)
                 recommendation_layout.addWidget(
@@ -761,6 +764,37 @@ class ReferenceCalibrationDialog(QDialog):
                     comparison_legend,
                 )
             )
+        if self._snapshot.status == "awaiting_review":
+            assessment = assess_reference_calibration_snapshot(self._snapshot)
+            weight_support = (
+                "not available"
+                if assessment.weight_stability is None
+                else f"{assessment.weight_stability:.1%}"
+            )
+            subject_support = (
+                "not available"
+                if assessment.subject_bootstrap_stability is None
+                else f"{assessment.subject_bootstrap_stability:.1%}"
+            )
+            flags = (
+                "<br>".join(f"• {flag}" for flag in assessment.sensitivity_flags)
+                if assessment.sensitivity_flags
+                else "No material sensitivity warning was triggered."
+            )
+            confidence = QLabel(
+                f"<b>Evidence grade: {assessment.recommendation_confidence.upper()}</b><br>"
+                f"Winner support across metric priorities: {weight_support}<br>"
+                f"Winner support across pilot-subject resampling: {subject_support}<br>"
+                f"{flags}"
+            )
+            confidence.setTextFormat(Qt.TextFormat.RichText)
+            confidence.setWordWrap(True)
+            confidence.setObjectName(
+                "statusSuccess"
+                if assessment.automatic_selection_allowed
+                else "statusWarning"
+            )
+            self.content_layout.addWidget(confidence)
         completed = sum(candidate.status == "completed" for candidate in self._snapshot.candidates)
         if automatic_mode:
             completed_before = sum(
@@ -786,8 +820,11 @@ class ReferenceCalibrationDialog(QDialog):
             )
         planned_by_id = {candidate.candidate_id: candidate for candidate in stage.candidates}
         tradeoffs = candidate_tradeoff_assessments(self._snapshot.candidates)
+        candidate_container = QWidget()
+        candidate_layout = QVBoxLayout(candidate_container)
+        candidate_layout.setContentsMargins(0, 0, 0, 0)
         for index, candidate in enumerate(self._snapshot.candidates, start=1):
-            self.content_layout.addWidget(
+            candidate_layout.addWidget(
                 self._candidate_card(
                     candidate,
                     planned_by_id[candidate.candidate_id],
@@ -795,6 +832,16 @@ class ReferenceCalibrationDialog(QDialog):
                     tradeoffs=tradeoffs[candidate.candidate_id],
                 )
             )
+        if automatic_mode:
+            self.content_layout.addWidget(
+                InfoDisclosure(
+                    f"See all {len(self._snapshot.candidates)} pilot candidates",
+                    candidate_container,
+                    accessible_name="Detailed pilot candidate list",
+                )
+            )
+        else:
+            self.content_layout.addWidget(candidate_container)
         self.content_layout.addStretch()
         awaiting = self._snapshot.status == "awaiting_review"
         retryable = any(
@@ -837,11 +884,21 @@ class ReferenceCalibrationDialog(QDialog):
                     "the end. You can cancel safely."
                 )
             elif awaiting:
-                self.status.setText(
-                    "This stage has finished. Next: click the green Continue complete "
-                    "four-stage pilot button; DiffeoForge will make the transparent "
-                    "provisional selection and continue automatically."
-                )
+                assessment = assess_reference_calibration_snapshot(self._snapshot)
+                if assessment.automatic_selection_allowed:
+                    self.status.setText(
+                        "This stage has a robust winner. Next: click the green Continue "
+                        "complete four-stage pilot button; DiffeoForge will record the "
+                        "uncertainty-qualified choice and continue automatically."
+                    )
+                else:
+                    self.advanced_mode.setChecked(True)
+                    self.status.setText(
+                        "DiffeoForge found no robust unique winner and refused to guess. "
+                        "Advanced review is now open. Compare the Pareto alternatives, "
+                        "add optional visual QC, or expand the pilot evidence."
+                    )
+                    return
             else:
                 self.status.setText(
                     "Next: click the green Run complete four-stage pilot button. You "
@@ -1225,6 +1282,8 @@ class ReferenceCalibrationDialog(QDialog):
     @Slot(str)
     def _failed(self, message: str) -> None:
         self._worker = None
+        if "refused to invent a unique winner" in message:
+            self.advanced_mode.setChecked(True)
         self._render()
         self.status.setText(f"Calibration stage could not continue: {message}")
 

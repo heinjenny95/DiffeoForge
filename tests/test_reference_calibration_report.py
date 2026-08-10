@@ -42,7 +42,7 @@ def test_calibration_html_is_self_contained_and_explicitly_non_approving() -> No
     assert plan.recommendation_fingerprint in html
     assert "PLANNED — NOT EXECUTED" in html
     assert "Deterministic pilot cohort" in html
-    assert "Surface-matching detail" in html
+    assert "Joint surface-detail and deformation-scale screening" in html
     assert "Data-fit versus regularity weight" in html
     assert "Full-cohort confirmation required" in html
     assert "<script" not in html

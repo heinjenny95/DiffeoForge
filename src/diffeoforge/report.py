@@ -266,7 +266,7 @@ def _parameter_provenance_html(config: Mapping[str, Any]) -> str:
         <strong>{measurements["cohort_diagonal_cv"]:.3%}</strong></div>
       <div class="card"><span>Centroid dispersion / diagonal</span>
         <strong>{measurements["normalized_centroid_dispersion"]:.3%}</strong></div>
-      <div class="card"><span>Sampling-aware attachment floor</span>
+      <div class="card"><span>Conservative four-edge sampling diagnostic</span>
         <strong>{measurements["sampling_floor_ratio"]:.3%}</strong></div>
     </div>
     <table>

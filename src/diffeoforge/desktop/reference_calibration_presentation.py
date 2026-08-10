@@ -32,17 +32,18 @@ class CalibrationTradeoffAssessment:
 
 _GUIDANCE: dict[str, CalibrationStageGuidance] = {
     "attachment_width": CalibrationStageGuidance(
-        question="How much surface detail should matching follow?",
+        question="Which matching-detail and deformation-scale combination is defensible?",
         explanation=(
-            "This stage changes the surface-matching kernel width only. A smaller "
-            "width follows finer detail, but can also follow mesh texture or noise. "
-            "A larger width emphasizes broader shape and is usually smoother."
+            "This first screen changes surface-matching width and deformation width "
+            "together. That exposes interactions which a one-parameter-at-a-time "
+            "screen can miss. Finer matching can follow anatomy or mesh texture; more "
+            "local deformation can represent real variation or implausible warping."
         ),
         action=(
-            "Compare the explained fit, distortion, deformation-cost, and runtime "
-            "trade-offs. Choose the largest width that is consistent with the smallest "
-            "anatomical feature relevant to your study. Open the reconstruction viewer "
-            "only if visual comparison would help your decision."
+            "Let DiffeoForge complete the joint grid. An automatic choice is allowed "
+            "only when one Pareto candidate remains stable across metric priorities, "
+            "subject resampling, and an independent rank analysis. Otherwise review "
+            "the alternatives or collect more evidence."
         ),
         caution=(
             "The closest numerical fit is not automatically the best biological fit. "
@@ -122,10 +123,18 @@ def candidate_parameter_summary(
 
     unit = coordinate_unit.strip() or "coordinate units"
     if stage.kind == "attachment_width":
-        value = float(values["attachment_kernel_width"])
+        attachment = float(values["attachment_kernel_width"])
+        if "deformation_kernel_width" not in values:
+            return (
+                f"Surface-detail width: {attachment:.6g} {unit}",
+                "Smaller follows finer detail; larger emphasizes broader shape.",
+            )
+        deformation = float(values["deformation_kernel_width"])
         return (
-            f"Surface-detail width: {value:.6g} {unit}",
-            "Smaller follows finer detail; larger emphasizes broader shape.",
+            "Surface-detail / deformation width: "
+            f"{attachment:.6g} / {deformation:.6g} {unit}",
+            "The first value controls matching detail; the second controls how far "
+            "correlated deformation spreads.",
         )
     if stage.kind == "deformation_width":
         width = float(values["deformation_kernel_width"])
@@ -189,7 +198,7 @@ def candidate_tradeoff_assessments(
         (
             "distortion_p95",
             CalibrationTradeoffAssessment(
-                label="Least atlas area change",
+                label="Least atlas/reconstruction area change",
                 tone="favorable",
                 interpretation=(
                     "This option changes local surface area the least, which is a "
@@ -198,7 +207,7 @@ def candidate_tradeoff_assessments(
                 ),
             ),
             CalibrationTradeoffAssessment(
-                label="Most atlas area change",
+                label="Most atlas/reconstruction area change",
                 tone="unfavorable",
                 interpretation=(
                     "This option changes local surface area the most, which raises concern "
@@ -314,7 +323,7 @@ def technical_metric_text(metrics: Mapping[str, object]) -> str:
         f"{float(metrics['residual_p95']):.6g}\n"
         "Surface-distance QC, median: "
         f"{float(metrics['residual_median']):.6g}\n"
-        "Atlas area-change QC, 95th percentile: "
+        "Atlas/reconstruction area-change QC, 95th percentile: "
         f"{float(metrics['distortion_p95']):.6g}\n"
         "Final regularity-term magnitude: "
         f"{float(metrics['deformation_energy']):.6g}\n"

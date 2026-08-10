@@ -87,21 +87,28 @@ def test_calibration_plan_is_deterministic_staged_and_hash_bound() -> None:
     assert first.recommendation_fingerprint == recommendation.fingerprint
     assert first.pilot_subject_count == 4
     assert first.smallest_relevant_feature == pytest.approx(0.2)
-    assert first.attachment_center_source == (
-        "researcher_measured_feature_with_mesh_sampling_floor"
-    )
+    assert first.attachment_center_source == "researcher_measured_feature"
     assert [stage.stage_id for stage in first.stages] == [
         "attachment",
         "deformation",
         "noise",
         "timepoints",
     ]
-    assert 2 <= len(first.stages[0].candidates) <= 3
-    assert all(len(stage.candidates) == 3 for stage in first.stages[1:])
-    assert first.stages[1].candidates[1].values[
+    assert len(first.stages[0].candidates) == 18
+    assert [len(stage.candidates) for stage in first.stages[1:]] == [5, 5, 3]
+    assert all(
+        {
+            "attachment_kernel_width",
+            "deformation_kernel_width",
+            "initial_control_point_spacing",
+        }
+        == set(candidate.values)
+        for candidate in first.stages[0].candidates
+    )
+    assert first.stages[1].candidates[2].values[
         "initial_control_point_spacing"
     ] == pytest.approx(
-        first.stages[1].candidates[1].values["deformation_kernel_width"]
+        first.stages[1].candidates[2].values["deformation_kernel_width"]
     )
     assert first.provenance["status"] == "planned_not_executed"
     assert first.provenance["fingerprint"] == first.fingerprint
@@ -209,14 +216,16 @@ def test_stage_assessment_retains_pareto_candidates_and_exposes_weights() -> Non
         requested_pilot_subject_count=3,
     )
     stage = next(stage for stage in plan.stages if stage.stage_id == "noise")
-    assert len(stage.candidates) == 3
+    assert len(stage.candidates) == 5
     evidence = _stage_evidence(
         plan,
         "noise",
         (
+            (0.08, 1.10, 0.65, 14.0),
             (0.10, 0.90, 0.50, 10.0),
             (0.15, 0.45, 0.20, 12.0),
             (0.30, 0.30, 0.15, 9.0),
+            (0.42, 0.25, 0.12, 8.0),
         ),
     )
 
@@ -243,9 +252,59 @@ def test_stage_assessment_retains_pareto_candidates_and_exposes_weights() -> Non
     assert sum(first.weights.values()) == pytest.approx(1.0)
     assert all(candidate.eligible for candidate in first.candidates)
     cautions = " ".join(first.cautions)
-    assert "provisional recommendation" in cautions
-    assert "not as automatic anatomical approval" in cautions
+    assert "robust recommendation" in cautions
+    assert first.weight_scenario_count > 1
+    assert first.recommendation_confidence == "ambiguous"
+    assert first.automatic_selection_allowed is False
+    assert first.sensitivity_flags
     assert len(first.fingerprint) == 64
+
+
+def test_stage_assessment_requires_stable_evidence_before_automatic_selection() -> None:
+    plan = build_reference_calibration_plan(
+        _recommendation(),
+        coordinate_unit="unitless",
+        requested_pilot_subject_count=3,
+    )
+    stage = next(stage for stage in plan.stages if stage.stage_id == "noise")
+    evidence = tuple(
+        CalibrationCandidateEvidence(
+            candidate_id=candidate.candidate_id,
+            completed=True,
+            converged=True,
+            invalid_face_count=0,
+            residual_p95=0.1 + index,
+            deformation_energy=0.2 + index,
+            distortion_p95=0.3 + index,
+            runtime_seconds=10.0 + index,
+            review_approved=None,
+            subject_residual_p95=(
+                ("subject-a.vtk", 0.10 + index),
+                ("subject-b.vtk", 0.11 + index),
+                ("subject-c.vtk", 0.09 + index),
+            ),
+        )
+        for index, candidate in enumerate(stage.candidates)
+    )
+
+    assessment = assess_calibration_stage(
+        plan,
+        stage_id="noise",
+        evidence=evidence,
+    )
+
+    assert assessment.recommendation_confidence == "robust"
+    assert assessment.automatic_selection_allowed is True
+    assert assessment.weight_stability == pytest.approx(1.0)
+    assert assessment.subject_bootstrap_stability == pytest.approx(1.0)
+    assert assessment.subject_bootstrap_iterations == 256
+    selected = next(
+        candidate
+        for candidate in assessment.candidates
+        if candidate.candidate_id == assessment.balanced_candidate_id
+    )
+    assert selected.weight_win_fraction == pytest.approx(1.0)
+    assert selected.subject_bootstrap_win_fraction == pytest.approx(1.0)
 
 
 def test_stage_assessment_fails_closed_on_missing_metrics_without_requiring_review() -> None:

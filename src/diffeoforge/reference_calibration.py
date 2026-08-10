@@ -31,7 +31,7 @@ from diffeoforge.reference_recommendation import (
     ReferenceParameterRecommendation,
 )
 
-CALIBRATION_PLAN_VERSION = "0.1"
+CALIBRATION_PLAN_VERSION = "0.2"
 CalibrationStageKind = Literal[
     "attachment_width",
     "deformation_width",
@@ -68,6 +68,43 @@ def _unique_positive(values: tuple[float, ...]) -> tuple[float, ...]:
         ):
             result.append(normalized)
     return tuple(result)
+
+
+def _geometric_candidates(
+    lower: float,
+    upper: float,
+    *,
+    count: int,
+    include: tuple[float, ...] = (),
+) -> tuple[float, ...]:
+    """Return a deterministic, scale-balanced positive candidate sequence."""
+
+    low = _positive_finite("candidate lower bound", lower)
+    high = _positive_finite("candidate upper bound", upper)
+    if high < low:
+        low, high = high, low
+    if count < 2:
+        raise ValueError("geometric candidate count must be at least two")
+    if math.isclose(low, high, rel_tol=1e-12, abs_tol=1e-15):
+        values = [low]
+    else:
+        ratio = (high / low) ** (1.0 / (count - 1))
+        values = [low * ratio**index for index in range(count)]
+    for requested in include:
+        requested = _positive_finite("included candidate", requested)
+        if requested < low or requested > high:
+            continue
+        if any(
+            math.isclose(requested, existing, rel_tol=1e-12, abs_tol=1e-15)
+            for existing in values
+        ):
+            continue
+        closest = min(
+            range(len(values)),
+            key=lambda index: abs(math.log(values[index] / requested)),
+        )
+        values[closest] = requested
+    return tuple(sorted(_unique_positive(tuple(values))))
 
 
 @dataclass(frozen=True)
@@ -229,6 +266,27 @@ class ReferenceCalibrationPlan:
                 "(researcher measurement)."
             )
         for stage in self.stages:
+            if stage.stage_id == "attachment":
+                attachment_values = sorted(
+                    {
+                        candidate.values["attachment_kernel_width"]
+                        for candidate in stage.candidates
+                    }
+                )
+                deformation_values = sorted(
+                    {
+                        candidate.values["deformation_kernel_width"]
+                        for candidate in stage.candidates
+                    }
+                )
+                lines.append(
+                    f"{stage.order}. {stage.title}: {len(stage.candidates)} joint "
+                    f"candidates; attachment {attachment_values[0]:.6g}–"
+                    f"{attachment_values[-1]:.6g}{unit_suffix}; deformation "
+                    f"{deformation_values[0]:.6g}–{deformation_values[-1]:.6g}"
+                    f"{unit_suffix}."
+                )
+                continue
             rendered: list[str] = []
             for candidate in stage.candidates:
                 values = candidate.values
@@ -240,6 +298,8 @@ class ReferenceCalibrationPlan:
             lines.append(f"{stage.order}. {stage.title}: " + " / ".join(rendered))
         lines.extend(
             (
+                "Total planned pilot atlases: "
+                f"{sum(len(stage.candidates) for stage in self.stages)}.",
                 "Status: planned, not executed. No candidate is scientifically approved.",
                 f"Plan fingerprint: {self.fingerprint}",
             )
@@ -423,35 +483,48 @@ def build_reference_calibration_plan(
         requested_count=requested_pilot_subject_count,
     )
     diagonal = recommendation.template_diagonal
-    sampling_floor = recommendation.sampling_floor_ratio * diagonal
+    sampling_diagnostic = recommendation.sampling_floor_ratio * diagonal
+    median_edge = recommendation.median_edge_to_diagonal_ratio * diagonal
     if smallest_relevant_feature is None:
         attachment_center = recommendation.effective_values["attachment_kernel_width"]
         attachment_center_source = "declared_surface_detail_intent"
     else:
-        attachment_center = max(smallest_relevant_feature, sampling_floor)
-        attachment_center_source = (
-            "researcher_measured_feature_with_mesh_sampling_floor"
-        )
-    attachment_values = _unique_positive(
-        (
-            max(sampling_floor, 0.75 * attachment_center),
-            attachment_center,
-            1.5 * attachment_center,
-        )
+        attachment_center = smallest_relevant_feature
+        attachment_center_source = "researcher_measured_feature"
+    # Search on a logarithmic scale and deliberately cross the conservative
+    # four-edge sampling diagnostic.  Mesh sampling constrains interpretation,
+    # but it is not a proven hard lower bound for the varifold/current kernel.
+    attachment_lower = max(0.005 * diagonal, min(0.5 * attachment_center, median_edge))
+    attachment_upper = min(
+        0.5 * diagonal,
+        max(2.0 * attachment_center, sampling_diagnostic),
+    )
+    attachment_values = _geometric_candidates(
+        attachment_lower,
+        attachment_upper,
+        count=6,
+        include=(attachment_center,),
     )
     deformation_center = recommendation.effective_values[
         "deformation_kernel_width"
     ]
-    deformation_values = _unique_positive(
-        (
-            0.75 * deformation_center,
-            deformation_center,
-            1.5 * deformation_center,
-        )
+    deformation_values = _geometric_candidates(
+        0.5 * deformation_center,
+        2.0 * deformation_center,
+        count=5,
+        include=(deformation_center,),
+    )
+    deformation_screen_values = (
+        0.5 * deformation_center,
+        deformation_center,
+        2.0 * deformation_center,
     )
     noise_center = 0.25 * attachment_center
-    noise_values = _unique_positive(
-        (0.5 * noise_center, noise_center, 2.0 * noise_center)
+    noise_values = _geometric_candidates(
+        0.25 * noise_center,
+        4.0 * noise_center,
+        count=5,
+        include=(noise_center,),
     )
     baseline_effective = {
         "attachment_kernel_width": attachment_center,
@@ -464,32 +537,54 @@ def build_reference_calibration_plan(
     }
 
     attachment_candidates_list: list[CalibrationCandidate] = []
-    for index, value in enumerate(attachment_values, start=1):
-        if math.isclose(value, attachment_center, rel_tol=1e-12, abs_tol=1e-15):
-            label = "center"
-            rationale = (
-                "Tests the researcher-declared or measured anatomical detail scale."
+    candidate_index = 0
+    for attachment_value in attachment_values:
+        for deformation_value in deformation_screen_values:
+            candidate_index += 1
+            attachment_relation = (
+                "finer"
+                if attachment_value < attachment_center
+                else (
+                    "declared center"
+                    if math.isclose(
+                        attachment_value,
+                        attachment_center,
+                        rel_tol=1e-12,
+                        abs_tol=1e-15,
+                    )
+                    else "smoother"
+                )
             )
-        elif value < attachment_center:
-            label = "detail-first"
-            rationale = (
-                "Tests finer surface matching without crossing the measured "
-                "mesh-sampling floor."
+            deformation_relation = (
+                "more local"
+                if deformation_value < deformation_center
+                else (
+                    "declared center"
+                    if math.isclose(
+                        deformation_value,
+                        deformation_center,
+                        rel_tol=1e-12,
+                        abs_tol=1e-15,
+                    )
+                    else "more global"
+                )
             )
-        else:
-            label = "smoother comparison"
-            rationale = (
-                "Tests whether a smoother surface metric is more stable to mesh texture."
+            attachment_candidates_list.append(
+                _candidate(
+                    "attachment",
+                    candidate_index,
+                    f"{attachment_relation} surface / {deformation_relation} deformation",
+                    {
+                        "attachment_kernel_width": attachment_value,
+                        "deformation_kernel_width": deformation_value,
+                        "initial_control_point_spacing": deformation_value,
+                    },
+                    (
+                        "Jointly screens surface-matching resolution and deformation "
+                        "reach so their interaction is observed before either is locked."
+                    ),
+                )
             )
-        attachment_candidates_list.append(
-            _candidate(
-                "attachment",
-                index,
-                label,
-                {"attachment_kernel_width": value},
-                rationale,
-            )
-        )
     attachment_candidates = tuple(attachment_candidates_list)
     deformation_candidates = tuple(
         _candidate(
@@ -502,18 +597,25 @@ def build_reference_calibration_plan(
             },
             rationale,
         )
-        for index, (label, value, rationale) in enumerate(
-            zip(
-                ("more local", "center", "more global"),
-                deformation_values,
+        for index, value in enumerate(deformation_values, start=1)
+        for label, rationale in (
+            (
                 (
-                    "Tests more localized correlated motion with a denser control grid.",
-                    "Tests the declared biological deformation scale.",
-                    "Tests smoother, more global motion with fewer initial control points.",
+                    "more local"
+                    if value < deformation_center
+                    else (
+                        "declared center"
+                        if math.isclose(
+                            value,
+                            deformation_center,
+                            rel_tol=1e-12,
+                            abs_tol=1e-15,
+                        )
+                        else "more global"
+                    )
                 ),
-                strict=True,
+                "Refines deformation reach after the joint kernel interaction screen.",
             ),
-            start=1,
         )
     )
     noise_candidates = tuple(
@@ -524,19 +626,26 @@ def build_reference_calibration_plan(
             {"noise_std": value},
             rationale,
         )
-        for index, (label, value, rationale) in enumerate(
-            zip(
-                ("fit-first", "center", "regularity-first"),
-                noise_values,
+        for index, value in enumerate(noise_values, start=1)
+        for label, rationale in (
+            (
                 (
-                    "Gives the attachment term more weight and tests for over-fitting "
-                    "or distortion.",
-                    "Tests the provisional center only; it is not geometry-derived evidence.",
-                    "Gives deformation regularity more relative weight and tests under-fitting.",
+                    "fit-first"
+                    if value < noise_center
+                    else (
+                        "provisional center"
+                        if math.isclose(
+                            value,
+                            noise_center,
+                            rel_tol=1e-12,
+                            abs_tol=1e-15,
+                        )
+                        else "regularity-first"
+                    )
                 ),
-                strict=True,
+                "Tests a logarithmically spaced fit-versus-regularity trade-off; the "
+                "center is only a computational seed, not geometry-derived evidence.",
             ),
-            start=1,
         )
     )
     integration_candidates = tuple(
@@ -551,7 +660,7 @@ def build_reference_calibration_plan(
     )
     common_rejections = (
         "the optimizer fails or produces non-finite values",
-        "the atlas or any reconstruction contains invalid or flipped faces",
+        "the atlas or any reconstruction contains invalid faces or changed connectivity",
         "registration residuals contain unexplained extreme failures",
         "an optional visual registration review explicitly records implausible "
         "correspondence",
@@ -561,7 +670,7 @@ def build_reference_calibration_plan(
             stage_id="attachment",
             order=1,
             kind="attachment_width",
-            title="Surface-matching detail",
+            title="Joint surface-detail and deformation-scale screening",
             candidates=attachment_candidates,
             locked_from_previous_stages=(),
             evidence_required=(
@@ -569,13 +678,15 @@ def build_reference_calibration_plan(
                 "bound original and reconstructed surfaces retained for optional "
                 "visual inspection",
                 "sensitivity to deterministic mesh resampling",
+                "deformation regularity and reconstructed-surface distortion",
                 "runtime and peak-memory observation",
             ),
             reject_when=common_rejections,
             decision_rule=(
-                "Retain the largest width that preserves the predeclared anatomical "
-                "feature without systematic residual structure; do not select a width "
-                "below the sampling floor."
+                "Screen attachment and deformation widths jointly. Retain a Pareto "
+                "candidate only when its advantage remains stable across subjects and "
+                "reasonable metric weightings. The four-edge sampling value is a "
+                "diagnostic, not an exclusion boundary."
             ),
         ),
         CalibrationStage(
@@ -662,6 +773,8 @@ def build_reference_calibration_plan(
         "Geometry descriptors do not establish biological group representativeness.",
         "A measured feature scale records researcher intent; it is not an automatically "
         "discovered anatomical truth.",
+        "The conservative four-edge sampling diagnostic is not a universal scientific "
+        "lower bound and therefore expands, but does not truncate, the search.",
         "The plan contains candidate values and decision rules but no execution results.",
         "Residual improvement alone cannot distinguish meaningful fit from over-fitting.",
         "Pilot simplification can change the attachment metric and must be followed by a "
@@ -884,6 +997,7 @@ class CalibrationCandidateEvidence:
     residual_relative_difference: float | None = None
     review_approved: bool | None = None
     notes: tuple[str, ...] = ()
+    subject_residual_p95: tuple[tuple[str, float], ...] = ()
 
     def as_manifest(self) -> dict[str, object]:
         return {
@@ -901,6 +1015,7 @@ class CalibrationCandidateEvidence:
             "residual_relative_difference": self.residual_relative_difference,
             "review_approved": self.review_approved,
             "notes": list(self.notes),
+            "subject_residual_p95": dict(self.subject_residual_p95),
         }
 
 
@@ -910,6 +1025,9 @@ class CalibrationCandidateAssessment:
     eligible: bool
     pareto_optimal: bool
     balanced_score: float | None
+    weight_win_fraction: float | None
+    subject_bootstrap_win_fraction: float | None
+    score_range: tuple[float, float] | None
     rejection_reasons: tuple[str, ...]
 
     def as_manifest(self) -> dict[str, object]:
@@ -918,6 +1036,11 @@ class CalibrationCandidateAssessment:
             "eligible": self.eligible,
             "pareto_optimal": self.pareto_optimal,
             "balanced_score": self.balanced_score,
+            "weight_win_fraction": self.weight_win_fraction,
+            "subject_bootstrap_win_fraction": self.subject_bootstrap_win_fraction,
+            "score_range": (
+                None if self.score_range is None else list(self.score_range)
+            ),
             "rejection_reasons": list(self.rejection_reasons),
         }
 
@@ -932,6 +1055,15 @@ class CalibrationStageAssessment:
     stage_id: str
     status: str
     balanced_candidate_id: str | None
+    recommendation_confidence: str
+    automatic_selection_allowed: bool
+    weight_stability: float | None
+    subject_bootstrap_stability: float | None
+    score_margin: float | None
+    independent_rank_candidate_id: str | None
+    weight_scenario_count: int
+    subject_bootstrap_iterations: int
+    sensitivity_flags: tuple[str, ...]
     pareto_candidate_ids: tuple[str, ...]
     metric_weights: tuple[tuple[str, float], ...]
     candidates: tuple[CalibrationCandidateAssessment, ...]
@@ -949,6 +1081,15 @@ class CalibrationStageAssessment:
             "stage_id": self.stage_id,
             "status": self.status,
             "balanced_candidate_id": self.balanced_candidate_id,
+            "recommendation_confidence": self.recommendation_confidence,
+            "automatic_selection_allowed": self.automatic_selection_allowed,
+            "weight_stability": self.weight_stability,
+            "subject_bootstrap_stability": self.subject_bootstrap_stability,
+            "score_margin": self.score_margin,
+            "independent_rank_candidate_id": self.independent_rank_candidate_id,
+            "weight_scenario_count": self.weight_scenario_count,
+            "subject_bootstrap_iterations": self.subject_bootstrap_iterations,
+            "sensitivity_flags": list(self.sensitivity_flags),
             "pareto_candidate_ids": list(self.pareto_candidate_ids),
             "metric_weights": self.weights,
             "candidates": [candidate.as_manifest() for candidate in self.candidates],
@@ -956,15 +1097,16 @@ class CalibrationStageAssessment:
         }
 
 
-_ASSESSMENT_VERSION = "0.2"
+_ASSESSMENT_VERSION = "0.3"
 _STAGE_METRICS: dict[
     CalibrationStageKind,
     tuple[tuple[str, float], ...],
 ] = {
     "attachment_width": (
-        ("residual_p95", 0.45),
-        ("resampling_sensitivity", 0.30),
-        ("distortion_p95", 0.20),
+        ("residual_p95", 0.35),
+        ("resampling_sensitivity", 0.20),
+        ("deformation_energy", 0.15),
+        ("distortion_p95", 0.25),
         ("runtime_seconds", 0.05),
     ),
     "deformation_width": (
@@ -1009,6 +1151,141 @@ def _is_dominated(
         if np.all(other <= candidate) and np.any(other < candidate):
             return True
     return False
+
+
+def _normalize_metric_rows(values: np.ndarray) -> np.ndarray:
+    minimum = np.min(values, axis=0)
+    span = np.max(values, axis=0) - minimum
+    return np.divide(
+        values - minimum,
+        span,
+        out=np.zeros_like(values),
+        where=span > 0,
+    )
+
+
+def _weight_scenarios(base: np.ndarray) -> tuple[np.ndarray, ...]:
+    """Exercise reasonable priorities instead of trusting one hand-set weighting."""
+
+    raw: list[np.ndarray] = [base.copy(), np.ones_like(base)]
+    for index in range(len(base)):
+        for multiplier in (0.5, 2.0):
+            changed = base.copy()
+            changed[index] *= multiplier
+            raw.append(changed)
+        if len(base) > 1:
+            omitted = base.copy()
+            omitted[index] = 0.0
+            raw.append(omitted)
+    unique: list[np.ndarray] = []
+    signatures: set[tuple[float, ...]] = set()
+    for values in raw:
+        normalized = values / np.sum(values)
+        signature = tuple(round(float(value), 12) for value in normalized)
+        if signature not in signatures:
+            signatures.add(signature)
+            unique.append(normalized)
+    return tuple(unique)
+
+
+def _weighted_rank_winner(
+    values: np.ndarray,
+    weights: np.ndarray,
+    candidate_ids: list[str],
+    allowed_ids: tuple[str, ...],
+) -> str:
+    ranks = np.zeros_like(values)
+    for metric_index in range(values.shape[1]):
+        column = values[:, metric_index]
+        for candidate_index, value in enumerate(column):
+            lower = float(np.sum(column < value))
+            equal = float(np.sum(column == value))
+            ranks[candidate_index, metric_index] = lower + 0.5 * (equal - 1.0)
+    aggregate = ranks @ weights
+    index_by_id = {candidate_id: index for index, candidate_id in enumerate(candidate_ids)}
+    return min(
+        allowed_ids,
+        key=lambda candidate_id: (
+            float(aggregate[index_by_id[candidate_id]]),
+            candidate_id,
+        ),
+    )
+
+
+def _subject_bootstrap_wins(
+    *,
+    plan_fingerprint: str,
+    stage_id: str,
+    eligible_ids: list[str],
+    by_id: Mapping[str, CalibrationCandidateEvidence],
+    values: np.ndarray,
+    metric_names: tuple[str, ...],
+    weights: np.ndarray,
+    iterations: int = 256,
+) -> tuple[dict[str, float], int]:
+    if "residual_p95" not in metric_names or len(eligible_ids) < 2:
+        return {}, 0
+    subject_maps = {
+        candidate_id: dict(by_id[candidate_id].subject_residual_p95)
+        for candidate_id in eligible_ids
+    }
+    names = tuple(sorted(next(iter(subject_maps.values()), {})))
+    mismatched_subjects = any(
+        tuple(sorted(values_by_subject)) != names
+        for values_by_subject in subject_maps.values()
+    )
+    if len(names) < 3 or mismatched_subjects:
+        return {}, 0
+    if any(
+        not math.isfinite(float(subject_maps[candidate_id][name]))
+        or float(subject_maps[candidate_id][name]) < 0
+        for candidate_id in eligible_ids
+        for name in names
+    ):
+        return {}, 0
+    residual_index = metric_names.index("residual_p95")
+    residuals = np.asarray(
+        [
+            [float(subject_maps[candidate_id][name]) for name in names]
+            for candidate_id in eligible_ids
+        ],
+        dtype=np.float64,
+    )
+    seed_material = f"{plan_fingerprint}:{stage_id}:subject-bootstrap-v0.1"
+    seed = int(hashlib.sha256(seed_material.encode("ascii")).hexdigest()[:16], 16)
+    rng = np.random.default_rng(seed)
+    wins = {candidate_id: 0 for candidate_id in eligible_ids}
+    for _ in range(iterations):
+        sample = rng.integers(0, len(names), size=len(names))
+        bootstrap_values = values.copy()
+        bootstrap_values[:, residual_index] = np.median(residuals[:, sample], axis=1)
+        pareto = tuple(
+            candidate_id
+            for index, candidate_id in enumerate(eligible_ids)
+            if not _is_dominated(
+                bootstrap_values[index],
+                np.delete(bootstrap_values, index, axis=0),
+            )
+        )
+        scores = _normalize_metric_rows(bootstrap_values) @ weights
+        index_by_id = {
+            candidate_id: index for index, candidate_id in enumerate(eligible_ids)
+        }
+        winner = min(
+            pareto,
+            key=lambda candidate_id: (
+                float(scores[index_by_id[candidate_id]]),
+                candidate_id,
+            ),
+        )
+        wins[winner] += 1
+    return (
+        {
+            candidate_id: count / iterations
+            for candidate_id, count in wins.items()
+        },
+        iterations,
+    )
 
 
 def assess_calibration_stage(
@@ -1063,7 +1340,10 @@ def assess_calibration_stage(
         ):
             reasons.append("invalid-face count is not a non-negative integer")
         elif item.invalid_face_count:
-            reasons.append(f"atlas contains {item.invalid_face_count} invalid faces")
+            reasons.append(
+                "atlas or reconstructions contain "
+                f"{item.invalid_face_count} invalid faces"
+            )
         if item.review_approved is False:
             reasons.append("optional visual registration review explicitly failed")
         row: list[float] = []
@@ -1079,8 +1359,20 @@ def assess_calibration_stage(
             metric_rows.append(row)
 
     scores: dict[str, float] = {}
+    score_ranges: dict[str, tuple[float, float]] = {}
+    weight_win_fractions: dict[str, float] = {}
+    bootstrap_win_fractions: dict[str, float] = {}
     pareto_ids: tuple[str, ...] = ()
     balanced_id: str | None = None
+    rank_id: str | None = None
+    weight_stability: float | None = None
+    bootstrap_stability: float | None = None
+    score_margin: float | None = None
+    weight_scenario_count = 0
+    bootstrap_iterations = 0
+    confidence = "none"
+    automatic_selection_allowed = False
+    sensitivity_flags: list[str] = []
     if eligible_ids:
         values = np.asarray(metric_rows, dtype=np.float64)
         pareto_ids = tuple(
@@ -1088,14 +1380,7 @@ def assess_calibration_stage(
             for index, candidate_id in enumerate(eligible_ids)
             if not _is_dominated(values[index], np.delete(values, index, axis=0))
         )
-        minimum = np.min(values, axis=0)
-        span = np.max(values, axis=0) - minimum
-        normalized = np.divide(
-            values - minimum,
-            span,
-            out=np.zeros_like(values),
-            where=span > 0,
-        )
+        normalized = _normalize_metric_rows(values)
         weights = np.asarray([weight for _metric, weight in metric_weights])
         weighted = normalized @ weights
         scores = {
@@ -1107,20 +1392,131 @@ def assess_calibration_stage(
             key=lambda candidate_id: (scores[candidate_id], candidate_id),
         )
 
+        scenarios = _weight_scenarios(weights)
+        weight_scenario_count = len(scenarios)
+        index_by_id = {
+            candidate_id: index for index, candidate_id in enumerate(eligible_ids)
+        }
+        scenario_scores = np.stack(
+            [normalized @ scenario for scenario in scenarios],
+            axis=1,
+        )
+        scenario_wins = {candidate_id: 0 for candidate_id in eligible_ids}
+        for scenario_index in range(len(scenarios)):
+            winner = min(
+                pareto_ids,
+                key=lambda candidate_id: (
+                    float(scenario_scores[index_by_id[candidate_id], scenario_index]),
+                    candidate_id,
+                ),
+            )
+            scenario_wins[winner] += 1
+        weight_win_fractions = {
+            candidate_id: count / len(scenarios)
+            for candidate_id, count in scenario_wins.items()
+        }
+        score_ranges = {
+            candidate_id: (
+                float(np.min(scenario_scores[index_by_id[candidate_id]])),
+                float(np.max(scenario_scores[index_by_id[candidate_id]])),
+            )
+            for candidate_id in eligible_ids
+        }
+        weight_stability = weight_win_fractions[balanced_id]
+        ranked = sorted(
+            pareto_ids,
+            key=lambda candidate_id: (scores[candidate_id], candidate_id),
+        )
+        score_margin = (
+            1.0
+            if len(ranked) == 1
+            else max(0.0, scores[ranked[1]] - scores[ranked[0]])
+        )
+        rank_id = _weighted_rank_winner(
+            values,
+            np.ones_like(weights) / len(weights),
+            eligible_ids,
+            pareto_ids,
+        )
+        metric_names = tuple(metric for metric, _weight in metric_weights)
+        bootstrap_win_fractions, bootstrap_iterations = _subject_bootstrap_wins(
+            plan_fingerprint=plan.fingerprint,
+            stage_id=stage_id,
+            eligible_ids=eligible_ids,
+            by_id=by_id,
+            values=values,
+            metric_names=metric_names,
+            weights=weights,
+        )
+        if bootstrap_iterations:
+            bootstrap_stability = bootstrap_win_fractions.get(balanced_id, 0.0)
+
+        rank_agrees = rank_id == balanced_id
+        subject_stable = bootstrap_stability is None or bootstrap_stability >= 0.70
+        if (
+            len(eligible_ids) >= 3
+            and weight_stability >= 0.75
+            and subject_stable
+            and rank_agrees
+            and score_margin >= 0.05
+        ):
+            confidence = "robust"
+            automatic_selection_allowed = True
+        elif (
+            len(eligible_ids) >= 2
+            and weight_stability >= 0.55
+            and (bootstrap_stability is None or bootstrap_stability >= 0.55)
+            and rank_agrees
+            and score_margin >= 0.02
+        ):
+            confidence = "sensitive"
+        else:
+            confidence = "ambiguous"
+
+        if not rank_agrees:
+            sensitivity_flags.append(
+                "The weighted-value winner differs from the independent weighted-rank winner."
+            )
+        if weight_stability < 0.75:
+            sensitivity_flags.append(
+                "The preferred candidate changes under reasonable metric-weight variations."
+            )
+        if bootstrap_stability is None and stage.kind != "integration_accuracy":
+            sensitivity_flags.append(
+                "Subject-level residual evidence is absent; cohort-resampling stability "
+                "could not be estimated."
+            )
+        elif bootstrap_stability is not None and bootstrap_stability < 0.70:
+            sensitivity_flags.append(
+                "The preferred candidate changes when pilot subjects are resampled."
+            )
+        if score_margin < 0.05:
+            sensitivity_flags.append(
+                "The two leading candidates have little separation on the base score."
+            )
+        if len(pareto_ids) > max(2, len(eligible_ids) // 2):
+            sensitivity_flags.append(
+                "Many candidates remain Pareto-optimal; the evidence contains a broad trade-off."
+            )
+
     assessments = tuple(
         CalibrationCandidateAssessment(
             candidate_id=candidate_id,
             eligible=candidate_id in eligible_ids,
             pareto_optimal=candidate_id in pareto_ids,
             balanced_score=scores.get(candidate_id),
+            weight_win_fraction=weight_win_fractions.get(candidate_id),
+            subject_bootstrap_win_fraction=bootstrap_win_fractions.get(candidate_id),
+            score_range=score_ranges.get(candidate_id),
             rejection_reasons=rejection_reasons[candidate_id],
         )
         for candidate_id in candidate_ids
     )
     status = "selection_required" if eligible_ids else "no_eligible_candidate"
     cautions = (
-        "The balanced candidate may be retained as a transparent provisional "
-        "recommendation, not as automatic anatomical approval.",
+        "Automatic selection is allowed only for a robust recommendation that remains "
+        "stable across reasonable weight changes, subject resampling when available, "
+        "and an independent rank aggregation.",
         "All Pareto-optimal candidates and raw evidence must remain available to the researcher.",
         "Visual reconstruction review is optional and its performed, passed, failed, or "
         "not-performed status must remain explicit.",
@@ -1133,6 +1529,15 @@ def assess_calibration_stage(
         "stage_id": stage_id,
         "status": status,
         "balanced_candidate_id": balanced_id,
+        "recommendation_confidence": confidence,
+        "automatic_selection_allowed": automatic_selection_allowed,
+        "weight_stability": weight_stability,
+        "subject_bootstrap_stability": bootstrap_stability,
+        "score_margin": score_margin,
+        "independent_rank_candidate_id": rank_id,
+        "weight_scenario_count": weight_scenario_count,
+        "subject_bootstrap_iterations": bootstrap_iterations,
+        "sensitivity_flags": sensitivity_flags,
         "pareto_candidate_ids": list(pareto_ids),
         "metric_weights": dict(metric_weights),
         "evidence": [by_id[candidate_id].as_manifest() for candidate_id in candidate_ids],
@@ -1146,6 +1551,15 @@ def assess_calibration_stage(
         stage_id=stage_id,
         status=status,
         balanced_candidate_id=balanced_id,
+        recommendation_confidence=confidence,
+        automatic_selection_allowed=automatic_selection_allowed,
+        weight_stability=weight_stability,
+        subject_bootstrap_stability=bootstrap_stability,
+        score_margin=score_margin,
+        independent_rank_candidate_id=rank_id,
+        weight_scenario_count=weight_scenario_count,
+        subject_bootstrap_iterations=bootstrap_iterations,
+        sensitivity_flags=tuple(sensitivity_flags),
         pareto_candidate_ids=pareto_ids,
         metric_weights=metric_weights,
         candidates=assessments,

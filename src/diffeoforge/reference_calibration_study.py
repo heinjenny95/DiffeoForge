@@ -1,10 +1,10 @@
 """Resumable execution of transparent Deformetrica pilot calibration.
 
-The scientific design remains sequential because each selected parameter family
-is locked before the next family is varied.  The standard runner can execute all
-four stages in one operation and make explicitly provisional, reproducible
-recommendations from the declared priorities and automatic evidence.  A manual
-stage-by-stage review route remains available.
+The scientific design begins with a joint attachment/deformation screen and
+then refines the remaining parameter families sequentially.  The standard
+runner can execute all four stages in one operation and make explicitly
+uncertainty-qualified, reproducible recommendations from declared priorities
+and automatic evidence.  A manual stage-by-stage review route remains available.
 """
 
 from __future__ import annotations
@@ -1040,6 +1040,19 @@ def _stage_evidence(
     for candidate in snapshot.candidates:
         metrics = candidate.metrics
         comparison = numerical.get(candidate.candidate_id)
+        raw_subject_residuals = (
+            metrics.get("subject_residual_p95", {}) if metrics else {}
+        )
+        subject_residuals = (
+            tuple(
+                sorted(
+                    (str(name), float(value))
+                    for name, value in raw_subject_residuals.items()
+                )
+            )
+            if isinstance(raw_subject_residuals, Mapping)
+            else ()
+        )
         evidence.append(
             CalibrationCandidateEvidence(
                 candidate_id=candidate.candidate_id,
@@ -1074,9 +1087,41 @@ def _stage_evidence(
                 ),
                 review_approved=visual_approvals.get(candidate.candidate_id),
                 notes=((candidate.error,) if candidate.error else ()),
+                subject_residual_p95=subject_residuals,
             )
         )
     return tuple(evidence)
+
+
+def assess_reference_calibration_snapshot(
+    snapshot: ReferenceCalibrationStudySnapshot,
+    *,
+    visual_approvals: Mapping[str, bool] | None = None,
+) -> CalibrationStageAssessment:
+    """Return a non-mutating assessment of one already verified study snapshot."""
+
+    if snapshot.status != "awaiting_review" or snapshot.current_stage is None:
+        raise ReferenceCalibrationStudyError(
+            "The current calibration stage has not completed all candidates"
+        )
+    return assess_calibration_stage(
+        snapshot.plan,
+        stage_id=snapshot.current_stage.stage_id,
+        evidence=_stage_evidence(snapshot, visual_approvals or {}),
+    )
+
+
+def assess_reference_calibration_current_stage(
+    study_directory: Path | str,
+    *,
+    visual_approvals: Mapping[str, bool] | None = None,
+) -> CalibrationStageAssessment:
+    """Load and assess the completed current stage without mutating the study."""
+
+    return assess_reference_calibration_snapshot(
+        load_reference_calibration_study(study_directory),
+        visual_approvals=visual_approvals,
+    )
 
 
 def _final_configuration(
@@ -1185,10 +1230,23 @@ def _selection_reason(
     )
     score = selected.balanced_score
     score_text = "not available" if score is None else f"{score:.6g}"
+    weight_stability = assessment.weight_stability
+    subject_stability = assessment.subject_bootstrap_stability
+    stability_text = (
+        "not assessed"
+        if weight_stability is None
+        else f"{weight_stability:.1%} across metric-weight scenarios"
+    )
+    subject_text = (
+        "subject resampling not available"
+        if subject_stability is None
+        else f"{subject_stability:.1%} across deterministic subject bootstraps"
+    )
     return (
-        "Automatically retained the eligible Pareto candidate with the lowest "
-        f"published weighted comparison score ({score_text}). The tested candidates "
-        "were centered on the researcher's previously declared biological priorities."
+        "Automatically retained the robust eligible Pareto candidate with the lowest "
+        f"published weighted comparison score ({score_text}); support was "
+        f"{stability_text} and {subject_text}. An independent rank aggregation agreed. "
+        "The tested search was centered on the researcher's declared biological priorities."
     )
 
 
@@ -1246,6 +1304,13 @@ def _calibration_report_payload(
                     "eligible": candidate_assessment.get("eligible"),
                     "pareto_optimal": candidate_assessment.get("pareto_optimal"),
                     "balanced_score": candidate_assessment.get("balanced_score"),
+                    "weight_win_fraction": candidate_assessment.get(
+                        "weight_win_fraction"
+                    ),
+                    "subject_bootstrap_win_fraction": candidate_assessment.get(
+                        "subject_bootstrap_win_fraction"
+                    ),
+                    "score_range": candidate_assessment.get("score_range"),
                     "rejection_reasons": candidate_assessment.get(
                         "rejection_reasons", []
                     ),
@@ -1265,6 +1330,21 @@ def _calibration_report_payload(
                     "The researcher explicitly selected this candidate.",
                 ),
                 "balanced_candidate_id": assessment.get("balanced_candidate_id"),
+                "recommendation_confidence": assessment.get(
+                    "recommendation_confidence", "not_assessed"
+                ),
+                "automatic_selection_allowed": assessment.get(
+                    "automatic_selection_allowed", False
+                ),
+                "weight_stability": assessment.get("weight_stability"),
+                "subject_bootstrap_stability": assessment.get(
+                    "subject_bootstrap_stability"
+                ),
+                "score_margin": assessment.get("score_margin"),
+                "independent_rank_candidate_id": assessment.get(
+                    "independent_rank_candidate_id"
+                ),
+                "sensitivity_flags": assessment.get("sensitivity_flags", []),
                 "metric_weights": assessment.get("metric_weights", {}),
                 "alternatives": alternatives,
             }
@@ -1289,14 +1369,14 @@ def _calibration_report_payload(
             }
         )
     return {
-        "report_version": "0.1",
+        "report_version": "0.2",
         "study_id": manifest["study_id"],
         "plan_fingerprint": plan.fingerprint,
         "status": "provisional_pilot_recommendation",
         "summary": (
-            "All four staged pilot comparisons completed. The reported parameter set "
-            "is an automatic provisional recommendation, not a claim of anatomical "
-            "correctness or final scientific validation."
+            "All four staged pilot comparisons completed. Every automatic choice met "
+            "the predeclared robustness gate; any non-robust choice required an explicit "
+            "researcher decision. Full-cohort confirmation remains required."
         ),
         "coordinate_unit": plan.coordinate_unit,
         "pilot_subjects": [
@@ -1342,27 +1422,78 @@ def _calibration_report_html(report: Mapping[str, object]) -> str:
             )
             score = candidate["balanced_score"]
             score_text = "not available" if score is None else f"{float(score):.6g}"
+            weight_support = candidate["weight_win_fraction"]
+            weight_text = (
+                "not available"
+                if weight_support is None
+                else f"{float(weight_support):.1%}"
+            )
+            subject_support = candidate["subject_bootstrap_win_fraction"]
+            subject_text = (
+                "not available"
+                if subject_support is None
+                else f"{float(subject_support):.1%}"
+            )
             alternative_rows.append(
                 "<tr>"
                 f"<td>{html.escape(str(candidate['label']))}</td>"
                 f"<td>{html.escape(values)}</td>"
                 f"<td>{'yes' if candidate['eligible'] else 'no'}</td>"
                 f"<td>{score_text}</td>"
+                f"<td>{weight_text}</td>"
+                f"<td>{subject_text}</td>"
                 "</tr>"
             )
         alternatives = "".join(alternative_rows)
+        weight_stability = item["weight_stability"]
+        subject_stability = item["subject_bootstrap_stability"]
+        score_margin = item["score_margin"]
+        stability_summary = (
+            "Metric-weight support: "
+            + (
+                "not available"
+                if weight_stability is None
+                else f"{float(weight_stability):.1%}"
+            )
+            + " · Subject-resampling support: "
+            + (
+                "not available"
+                if subject_stability is None
+                else f"{float(subject_stability):.1%}"
+            )
+            + " · Score separation: "
+            + (
+                "not available"
+                if score_margin is None
+                else f"{float(score_margin):.4f}"
+            )
+        )
+        flags = "".join(
+            f"<li>{html.escape(str(flag))}</li>"
+            for flag in item["sensitivity_flags"]
+        )
+        flag_html = (
+            "<p><strong>No material sensitivity warning was triggered.</strong></p>"
+            if not flags
+            else f"<p><strong>Sensitivity warnings:</strong></p><ul>{flags}</ul>"
+        )
         rendered_stages.append(
             "<section class='card'>"
             f"<h3>{html.escape(str(item['title']))}</h3>"
+            f"<p class='confidence'><strong>Evidence grade: "
+            f"{html.escape(str(item['recommendation_confidence']).upper())}</strong><br>"
+            f"{html.escape(stability_summary)}</p>"
             f"<p><strong>Recommended option:</strong> "
             f"{html.escape(str(item['selected_label']))} "
             f"(<code>{html.escape(str(item['selected_candidate_id']))}</code>)</p>"
             f"<p>{html.escape(str(item['selection_reason']))}</p>"
+            f"{flag_html}"
             "<details><summary>See all tested alternatives and scores</summary>"
             "<p>The balanced score is only comparable within this stage; lower is "
             "favored by the published weighting.</p>"
             "<table><thead><tr><th>Option</th><th>Values</th><th>Passed automatic "
-            "checks</th><th>Balanced score</th></tr></thead>"
+            "checks</th><th>Balanced score</th><th>Weight-scenario wins</th>"
+            "<th>Subject-bootstrap wins</th></tr></thead>"
             f"<tbody>{alternatives}</tbody></table></details>"
             "</section>"
         )
@@ -1381,6 +1512,7 @@ body{{font-family:Segoe UI,Arial,sans-serif;max-width:1100px;margin:36px auto;
 padding:0 24px;color:#103b3b;line-height:1.45}}
 h1,h2,h3{{color:#073c3b}}
 .notice{{background:#e3f6ef;border-left:5px solid #13856f;padding:14px 18px}}
+.confidence{{background:#eef5f4;border-radius:6px;padding:10px 12px}}
 table{{border-collapse:collapse;width:100%}}
 th,td{{border:1px solid #c8d9d7;padding:10px;text-align:left;vertical-align:top}}
 th{{background:#eef5f4}}
@@ -1398,10 +1530,12 @@ Deformation scale: <strong>{html.escape(str(priorities['deformation_scale_intent
 <table><thead><tr><th>Parameter</th><th>Recommended value</th><th>What it changes</th></tr></thead>
 <tbody>{parameter_rows}</tbody></table>
 <h2>How DiffeoForge reached this recommendation</h2>
-<p>Each candidate set was centered on your declared priorities. Among candidates
-that passed the automatic validity checks, DiffeoForge retained the Pareto option
-with the lowest published weighted comparison score. No automatic score proves
-anatomical correctness.</p>
+<p>The first stage jointly screened matching resolution and deformation reach;
+later stages refined deformation, fit regularization, and numerical integration.
+DiffeoForge allowed an automatic choice only when the same candidate remained
+preferred under reasonable metric-weight changes, an independent rank analysis,
+and subject resampling whenever subject-level evidence was available. Ambiguous
+evidence required a recorded researcher decision.</p>
 {stage_rows}
 <h2>Required next steps</h2><ol>{next_steps}</ol>
 <h2>Limitations</h2><ul>{limitations}</ul>
@@ -1641,6 +1775,16 @@ def select_reference_calibration_stage_automatically(
             "Automatic pilot calibration found no eligible candidate in stage "
             f"{snapshot.current_stage.stage_id!r}: "
             + "; ".join(dict.fromkeys(reasons))
+        )
+    if not assessment.automatic_selection_allowed:
+        details = "; ".join(assessment.sensitivity_flags) or (
+            "the evidence did not meet the predeclared robustness thresholds"
+        )
+        raise ReferenceCalibrationStudyError(
+            "Automatic pilot calibration refused to invent a unique winner for stage "
+            f"{snapshot.current_stage.stage_id!r}. Confidence is "
+            f"{assessment.recommendation_confidence!r}: {details}. Review the Pareto "
+            "candidates or expand the pilot evidence."
         )
     return _record_reference_calibration_stage_selection(
         root,
