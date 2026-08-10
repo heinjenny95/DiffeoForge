@@ -2,7 +2,9 @@
 
 Status: **implemented deterministic planning, automatic sequential candidate
 execution, verified automatic QC evidence extraction, optional visual QC, and
-researcher-gated stage selection. Scientific validation is still prospective.**
+one-operation provisional recommendation reporting. Optional manual
+stage-by-stage selection remains available. Scientific validation is still
+prospective.**
 
 ## Why this workflow exists
 
@@ -37,32 +39,35 @@ therefore keeps three sources of information separate:
    are embedded in `atlas.yaml`.
 8. After the automatic Deformetrica setup check passes, open **Automatic
    Deformetrica pilot calibration**.
-9. Start the current stage once. DiffeoForge runs all pending candidates
-   sequentially and retains already completed candidates if execution is
-   continued later.
-10. Read the plain-language question, parameter value, and direction-of-change
-    explanation on each candidate card. Relative automatic observations such
-    as closest surface match, least atlas area change, lowest deformation cost,
-    and fastest pilot run are displayed as explained color-coded rows. Green
-    marks a favorable automatic signal, yellow marks a context-dependent
-    trade-off, and red marks an unfavorable relative signal. Each row explains
-    the interpretation limit; colors describe one measurement at a time and
-    never identify an automatic winner.
-11. Select one automatically valid candidate from the green menu using the
-    explained evidence and the needs of the study. DiffeoForge records this
-    explicit researcher selection and only then prepares the next stage with
-    earlier values locked. Technical measurements remain optional secondary
-    information.
-12. Optionally open **Visual QC** for any candidate when a reconstruction
+9. Select **Run complete four-stage pilot** once. DiffeoForge runs all remaining
+   candidates and stages sequentially. Candidate sets are centered on the
+   biological priorities declared in step 2. Earlier stage recommendations are
+   locked before the next parameter family is tested. Already completed
+   candidates are retained if execution is continued later.
+10. At each stage, DiffeoForge rejects candidates with failed execution,
+    missing convergence evidence, invalid faces, or incomplete metrics. Among
+    the eligible Pareto candidates it records the lowest explicitly weighted
+    balanced score as an **automatic provisional recommendation**. The score,
+    weights, alternatives, and selection mode remain in the event ledger; the
+    software does not label this anatomical approval.
+11. After stage four, read the concise recommended values and open the complete
+    HTML report. It explains what every parameter changes, how each stage was
+    evaluated, all tested alternatives and scores, limitations, and the required
+    full-cohort confirmation. A deterministic JSON version is stored beside it.
+12. Optionally enable **Advanced mode** before starting to pause after each
+    stage and select every candidate manually. Relative automatic observations
+    such as closest surface match, least atlas area change, lowest deformation
+    cost, and fastest pilot run then appear as explained color-coded rows.
+13. Optionally open **Visual QC** for any candidate when a reconstruction
     comparison would help. Blue wireframes show the exact bound original pilot
     meshes and orange surfaces show their Deformetrica reconstructions in the
     same rotatable camera. A recorded visual pass keeps the candidate eligible;
     a recorded visual failure excludes it. Not performing visual QC does not
     prevent selection.
-13. When visual QC is performed, open every required pilot-specimen pair before
+14. When visual QC is performed, open every required pilot-specimen pair before
     recording a pass or failure. DiffeoForge stores `passed`, `failed`, or
     `not_performed` for every option in the append-only stage provenance.
-14. After stage four, switch the main workflow to
+15. After stage four, switch the main workflow to
     `selected/atlas-calibrated.yaml` and review it before the required
     full-cohort confirmation run.
 
@@ -105,9 +110,10 @@ floor is never proposed.
 Candidates are centered on the declared local/balanced/global deformation
 intent. Deformation width and initial control-point spacing move together.
 
-Choose the smoothest deformation whose residual map does not retain relevant
-structure. A move to a smaller, more local model is an explicit researcher
-decision, not an automatic conclusion.
+The automatic route compares the declared-intent-centered candidates using the
+published multi-metric assessment. Any move toward a smaller, more local model
+is explicitly reported as a provisional evidence-based recommendation, not an
+automatically discovered biological truth.
 
 ### 3. Data fit versus regularity
 
@@ -115,8 +121,9 @@ Noise candidates test fit-first, center, and regularity-first weights.
 Candidate evidence is evaluated as a Pareto problem using residual,
 deformation-energy, distortion, and runtime metrics.
 
-DiffeoForge exposes all Pareto candidates. Its weighted balanced score is a
-navigation aid with recorded weights, never an automatic scientific selection.
+DiffeoForge exposes all Pareto candidates. Its weighted balanced score has
+recorded weights and may drive the standard route's automatic **provisional**
+recommendation; it is never represented as automatic scientific validation.
 A candidate is ineligible if execution, convergence, mesh validity, or required
 metrics fail. Visual QC is optional, but an explicitly recorded visual failure
 also makes that candidate ineligible.
@@ -174,7 +181,8 @@ diffeoforge reference-calibration-study-init "C:\project\atlas.yaml" `
   --pilot-max-iterations 150
 
 diffeoforge reference-calibration-study-run `
-  "C:\project\calibration\pilot"
+  "C:\project\calibration\pilot" `
+  --complete
 
 diffeoforge reference-calibration-study-status `
   "C:\project\calibration\pilot"
@@ -184,6 +192,10 @@ diffeoforge reference-calibration-study-review `
   --select attachment-02
 ```
 
+`--complete` is the standard one-operation route. Omit it to run only the
+current stage, then use `reference-calibration-study-review` for the advanced
+manual route.
+
 Use repeatable `--approve CANDIDATE_ID` or `--reject CANDIDATE_ID` arguments
 only when optional visual QC was actually performed. Omitting both records the
 visual-review status as `not_performed`.
@@ -191,9 +203,11 @@ visual-review status as `not_performed`.
 `study.json` and its SHA-256 bind the plan, copied pilot inputs, source
 configuration, launcher, and pilot iteration cap. `events.jsonl` is an
 append-only hash chain containing candidate attempts, verified metrics,
-optional visual-QC status, and selections. Cancellation never overwrites a run: completed
-candidates remain complete, and continuing creates a new immutable attempt for
-the interrupted candidate.
+optional visual-QC status, automatic or manual selection mode, and selections.
+The completed study adds `selected/pilot-calibration-report.json` and
+`selected/pilot-calibration-report.html`, both hash-bound by the terminal event.
+Cancellation never overwrites a run: completed candidates remain complete, and
+continuing creates a new immutable attempt for the interrupted candidate.
 
 Automatic evidence currently includes:
 
@@ -216,13 +230,16 @@ selectable for methods reporting.
 
 ## Scientific and implementation boundary
 
-The workflow automates computation and evidence collection, not anatomical
-judgment. The balanced multi-metric score is shown only as a navigation aid.
-It cannot select a candidate, and missing convergence evidence, invalid
-faces, missing metrics, or an explicitly failed optional visual review make a
-candidate ineligible. A visual review that was not performed is recorded as
-such and does not by itself make a candidate ineligible. The original plan remains an immutable `planned_not_executed`
-declaration; the selected full-cohort configuration additionally carries a
-separate completed calibration result bound to the final researcher-decision
-event. No safe-preset or biological-validity claim exists until prospective
-full-cohort and external validation are complete.
+The workflow automates computation and a transparent provisional parameter
+recommendation, not anatomical judgment. The balanced multi-metric score can
+select an eligible candidate in the standard route because the candidate set is
+already centered on the researcher's declared priorities. Its weights and
+selection mode are preserved, and the report explicitly states that this is not
+biological validation. Missing convergence evidence, invalid faces, missing
+metrics, or an explicitly failed optional visual review make a candidate
+ineligible. A visual review that was not performed is recorded as such and does
+not by itself make a candidate ineligible. The original plan remains an
+immutable `planned_not_executed` declaration; the selected full-cohort
+configuration carries a separate completed calibration result bound to the final
+selection event. No safe-preset or biological-validity claim exists until
+prospective full-cohort and external validation are complete.

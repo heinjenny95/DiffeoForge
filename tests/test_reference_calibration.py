@@ -242,7 +242,9 @@ def test_stage_assessment_retains_pareto_candidates_and_exposes_weights() -> Non
     }
     assert sum(first.weights.values()) == pytest.approx(1.0)
     assert all(candidate.eligible for candidate in first.candidates)
-    assert "not an automatic selection" in " ".join(first.cautions)
+    cautions = " ".join(first.cautions)
+    assert "provisional recommendation" in cautions
+    assert "not as automatic anatomical approval" in cautions
     assert len(first.fingerprint) == 64
 
 

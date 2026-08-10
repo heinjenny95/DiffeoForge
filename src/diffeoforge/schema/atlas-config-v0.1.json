@@ -508,6 +508,42 @@
                         "timepoints": {"type": "string", "minLength": 1}
                       }
                     },
+                    "selection_modes": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "attachment",
+                        "deformation",
+                        "noise",
+                        "timepoints"
+                      ],
+                      "properties": {
+                        "attachment": {
+                          "enum": [
+                            "researcher_manual",
+                            "automatic_provisional_balanced_score"
+                          ]
+                        },
+                        "deformation": {
+                          "enum": [
+                            "researcher_manual",
+                            "automatic_provisional_balanced_score"
+                          ]
+                        },
+                        "noise": {
+                          "enum": [
+                            "researcher_manual",
+                            "automatic_provisional_balanced_score"
+                          ]
+                        },
+                        "timepoints": {
+                          "enum": [
+                            "researcher_manual",
+                            "automatic_provisional_balanced_score"
+                          ]
+                        }
+                      }
+                    },
                     "selected_values": {
                       "type": "object",
                       "additionalProperties": false,

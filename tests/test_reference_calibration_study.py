@@ -457,3 +457,78 @@ def test_all_four_stages_publish_selected_full_cohort_configuration(
         "max_iterations"
     ]
     load_reference_calibration_study(snapshot.study_directory)
+
+
+def test_complete_automatic_pilot_runs_all_stages_and_writes_explainable_report(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    snapshot = create_reference_calibration_study(
+        _project(tmp_path),
+        tmp_path / "automatic-study",
+        pilot_max_iterations=50,
+    )
+    call = 0
+
+    def collect(run: Path):
+        nonlocal call
+        call += 1
+        atlas = run / "atlas.vtk"
+        atlas.parent.mkdir(parents=True, exist_ok=True)
+        atlas.write_text("placeholder", encoding="utf-8")
+        return _metrics(atlas, call / 1000)
+
+    monkeypatch.setattr(
+        study_module,
+        "collect_reference_calibration_run_metrics",
+        collect,
+    )
+    monkeypatch.setattr(study_module, "atlas_rms_distance", lambda *_args: 0.001)
+    observed: list[dict[str, object]] = []
+
+    completed = ReferenceCalibrationStudyRunner(
+        snapshot.study_directory,
+        controller_factory=_CompletedController,
+    ).run_complete_automatic_pilot(event_callback=observed.append)
+
+    assert completed.status == "completed"
+    assert set(completed.selected_candidate_ids) == {
+        "attachment",
+        "deformation",
+        "noise",
+        "timepoints",
+    }
+    assert completed.report_json_path is not None
+    assert completed.report_html_path is not None
+    final_config = yaml.safe_load(
+        completed.final_config_path.read_text(encoding="utf-8")
+    )
+    calibration_result = final_config["project"]["parameter_provenance"][
+        "recommendation"
+    ]["calibration_result"]
+    assert set(calibration_result["selection_modes"].values()) == {
+        "automatic_provisional_balanced_score"
+    }
+    report = study_module.load_reference_calibration_report(
+        completed.study_directory
+    )
+    assert report["status"] == "provisional_pilot_recommendation"
+    assert len(report["stage_decisions"]) == 4
+    assert len(report["recommended_parameters"]) == 5
+    assert report["full_cohort_confirmation_required"] is True
+    assert {
+        decision["selection_mode"] for decision in report["stage_decisions"]
+    } == {"automatic_provisional_balanced_score"}
+    selection_events = [
+        event
+        for event in study_module._load_events(completed.study_directory)
+        if event["event"] == "stage_selected"
+    ]
+    assert len(selection_events) == 4
+    assert all(event["researcher_decision"] is False for event in selection_events)
+    assert sum(
+        event["event"] == "automatic_stage_selected" for event in observed
+    ) == 4
+    assert "What it changes" in completed.report_html_path.read_text(
+        encoding="utf-8"
+    )

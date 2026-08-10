@@ -43,6 +43,7 @@ from diffeoforge.reference_calibration_study import (
     CalibrationStudyCandidateState,
     ReferenceCalibrationStudyRunner,
     ReferenceCalibrationStudySnapshot,
+    load_reference_calibration_report,
     load_reference_calibration_study,
     record_reference_calibration_stage_review,
 )
@@ -166,9 +167,15 @@ class _CalibrationSignals(QObject):
 
 
 class _CalibrationStageWorker(QRunnable):
-    def __init__(self, runner: ReferenceCalibrationStudyRunner) -> None:
+    def __init__(
+        self,
+        runner: ReferenceCalibrationStudyRunner,
+        *,
+        complete_automatic_pilot: bool = False,
+    ) -> None:
         super().__init__()
         self.runner = runner
+        self.complete_automatic_pilot = complete_automatic_pilot
         self.signals = _CalibrationSignals()
         self._lock = threading.Lock()
         self._finished = False
@@ -182,7 +189,14 @@ class _CalibrationStageWorker(QRunnable):
     @Slot()
     def run(self) -> None:
         try:
-            result = self.runner.run_current_stage(event_callback=self.signals.event.emit)
+            if self.complete_automatic_pilot:
+                result = self.runner.run_complete_automatic_pilot(
+                    event_callback=self.signals.event.emit
+                )
+            else:
+                result = self.runner.run_current_stage(
+                    event_callback=self.signals.event.emit
+                )
         except (OSError, RuntimeError, TypeError, ValueError) as error:
             self.signals.failed.emit(str(error))
         else:
@@ -467,7 +481,7 @@ class CalibrationCandidateViewerDialog(QDialog):
 
 
 class ReferenceCalibrationDialog(QDialog):
-    """Execute one stage at a time with explicit researcher selection."""
+    """Execute a complete automatic pilot or use optional stage-by-stage control."""
 
     def __init__(
         self,
@@ -492,10 +506,12 @@ class ReferenceCalibrationDialog(QDialog):
         title.setObjectName("title")
         root.addWidget(title)
         boundary = QLabel(
-            "DiffeoForge runs every predeclared candidate automatically. It never "
-            "chooses a candidate automatically: each stage pauses for your explicit "
-            "selection. You can decide from the explained evidence and trade-offs; "
-            "visual reconstruction QC remains available as an optional additional check."
+            "Standard mode runs all four parameter comparisons in one operation. "
+            "Candidate sets are centered on the biological priorities you already "
+            "declared. DiffeoForge then records a transparent provisional recommendation "
+            "from the automatic evidence and creates a final report. This is not an "
+            "automatic claim of anatomical correctness; optional visual QC and a manual "
+            "stage-by-stage mode remain available."
         )
         boundary.setWordWrap(True)
         root.addWidget(
@@ -505,6 +521,15 @@ class ReferenceCalibrationDialog(QDialog):
                 accessible_name="Information about automatic pilot calibration",
             )
         )
+        self.advanced_mode = QCheckBox(
+            "Advanced mode: pause after each stage and select every option manually"
+        )
+        self.advanced_mode.setToolTip(
+            "Use this only when you want to override the transparent provisional "
+            "recommendation after each parameter family."
+        )
+        self.advanced_mode.toggled.connect(lambda _checked: self._render())
+        root.addWidget(self.advanced_mode)
         self.progress = QProgressBar()
         self.progress.setRange(0, 1)
         self.progress.setValue(0)
@@ -584,23 +609,96 @@ class ReferenceCalibrationDialog(QDialog):
         running = self._worker is not None
         if self._snapshot.status == "completed":
             self.status.setText(
-                "All four stages are complete. The selected configuration is ready "
-                "for a separate full-cohort confirmation run."
+                "All four pilot stages are complete. DiffeoForge created a provisional "
+                "parameter recommendation and a report. A full-cohort confirmation is "
+                "still required before scientific use."
             )
             path = self._snapshot.final_config_path
-            label = QLabel(
-                "Selected configuration:\n" + (str(path) if path is not None else "unavailable")
-            )
-            label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-            label.setWordWrap(True)
-            self.content_layout.addWidget(label)
+            report = None
+            if self._snapshot.report_json_path is not None:
+                report = load_reference_calibration_report(self.study_directory)
+            recommendation = QFrame()
+            recommendation.setObjectName("card")
+            recommendation_layout = QVBoxLayout(recommendation)
+            recommendation_title = QLabel("Recommended parameter set")
+            recommendation_title.setObjectName("title")
+            recommendation_layout.addWidget(recommendation_title)
+            if report is not None:
+                unit = str(report["coordinate_unit"])
+                for parameter in report["recommended_parameters"]:
+                    value = parameter["value"]
+                    rendered = (
+                        str(value)
+                        if parameter["unit"] is None
+                        else f"{float(value):.8g} {unit}"
+                    )
+                    line = QLabel(
+                        f"<b>{parameter['title']}:</b> {rendered}"
+                    )
+                    line.setTextFormat(Qt.TextFormat.RichText)
+                    line.setWordWrap(True)
+                    recommendation_layout.addWidget(line)
+                meaning = QWidget()
+                meaning_layout = QVBoxLayout(meaning)
+                meaning_layout.setContentsMargins(0, 0, 0, 0)
+                for parameter in report["recommended_parameters"]:
+                    explanation = QLabel(
+                        f"<b>{parameter['title']}</b><br>{parameter['meaning']}"
+                    )
+                    explanation.setTextFormat(Qt.TextFormat.RichText)
+                    explanation.setWordWrap(True)
+                    meaning_layout.addWidget(explanation)
+                recommendation_layout.addWidget(
+                    InfoDisclosure(
+                        "What these parameters mean",
+                        meaning,
+                        accessible_name="Explanation of recommended parameters",
+                    )
+                )
+                method = QLabel(
+                    "The candidates were centered on your previously declared priorities. "
+                    "At each stage DiffeoForge retained the valid Pareto option with the "
+                    "lowest published weighted comparison score. The complete report "
+                    "preserves every alternative and limitation."
+                )
+                method.setWordWrap(True)
+                recommendation_layout.addWidget(
+                    InfoDisclosure(
+                        "How this recommendation was calculated",
+                        method,
+                    )
+                )
+            else:
+                legacy = QLabel(
+                    "This study predates the integrated recommendation report. Its "
+                    "selected configuration remains available below."
+                )
+                legacy.setWordWrap(True)
+                recommendation_layout.addWidget(legacy)
+            self.content_layout.addWidget(recommendation)
+
+            actions = QHBoxLayout()
+            if self._snapshot.report_html_path is not None:
+                report_button = QPushButton("Open full recommendation report")
+                _set_action_emphasis(report_button, True)
+                report_button.clicked.connect(
+                    lambda: QDesktopServices.openUrl(
+                        QUrl.fromLocalFile(str(self._snapshot.report_html_path))
+                    )
+                )
+                actions.addWidget(report_button)
             if path is not None:
-                open_button = QPushButton("Open selected configuration")
-                _set_action_emphasis(open_button, True)
+                open_button = QPushButton("Open recommended atlas configuration")
+                _set_action_emphasis(
+                    open_button,
+                    self._snapshot.report_html_path is None,
+                )
                 open_button.clicked.connect(
                     lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
                 )
-                self.content_layout.addWidget(open_button)
+                actions.addWidget(open_button)
+            actions.addStretch()
+            self.content_layout.addLayout(actions)
             self.progress.setRange(0, 1)
             self.progress.setValue(1)
             self.progress.setFormat("Calibration complete")
@@ -609,10 +707,13 @@ class ReferenceCalibrationDialog(QDialog):
             self.review_next_button.hide()
             self.selection_combo.hide()
             self.cancel_button.hide()
+            self.advanced_mode.setEnabled(True)
             self.content_layout.addStretch()
             return
         stage = self._snapshot.current_stage
         assert stage is not None
+        automatic_mode = not self.advanced_mode.isChecked()
+        self.advanced_mode.setEnabled(not running)
         heading = QLabel(
             f"Stage {stage.order} of {len(self._snapshot.plan.stages)} — {stage.title}"
         )
@@ -661,11 +762,28 @@ class ReferenceCalibrationDialog(QDialog):
                 )
             )
         completed = sum(candidate.status == "completed" for candidate in self._snapshot.candidates)
-        self.progress.setRange(0, len(self._snapshot.candidates))
-        self.progress.setValue(completed)
-        self.progress.setFormat(
-            f"{completed} of {len(self._snapshot.candidates)} candidates completed"
-        )
+        if automatic_mode:
+            completed_before = sum(
+                len(planned_stage.candidates)
+                for planned_stage in self._snapshot.plan.stages
+                if planned_stage.stage_id in self._snapshot.selected_candidate_ids
+            )
+            total_candidates = sum(
+                len(planned_stage.candidates)
+                for planned_stage in self._snapshot.plan.stages
+            )
+            total_completed = completed_before + completed
+            self.progress.setRange(0, total_candidates)
+            self.progress.setValue(total_completed)
+            self.progress.setFormat(
+                f"{total_completed} of {total_candidates} pilot runs completed"
+            )
+        else:
+            self.progress.setRange(0, len(self._snapshot.candidates))
+            self.progress.setValue(completed)
+            self.progress.setFormat(
+                f"{completed} of {len(self._snapshot.candidates)} candidates completed"
+            )
         planned_by_id = {candidate.candidate_id: candidate for candidate in stage.candidates}
         tradeoffs = candidate_tradeoff_assessments(self._snapshot.candidates)
         for index, candidate in enumerate(self._snapshot.candidates, start=1):
@@ -683,12 +801,20 @@ class ReferenceCalibrationDialog(QDialog):
             candidate.status in {"failed", "interrupted", "orphaned"}
             for candidate in self._snapshot.candidates
         )
-        self.start_button.setText(
-            "Retry failed candidates"
-            if awaiting and retryable
-            else "Run all candidates in this stage"
-        )
-        self.start_button.setVisible(not awaiting or retryable)
+        if automatic_mode:
+            self.start_button.setText(
+                "Continue complete four-stage pilot"
+                if self._snapshot.selected_candidate_ids or awaiting
+                else "Run complete four-stage pilot"
+            )
+            self.start_button.setVisible(True)
+        else:
+            self.start_button.setText(
+                "Retry failed candidates"
+                if awaiting and retryable
+                else "Run all candidates in this stage"
+            )
+            self.start_button.setVisible(not awaiting or retryable)
         self.start_button.setEnabled(not running)
         self.cancel_button.setEnabled(running)
         self.cancel_button.setVisible(running)
@@ -698,9 +824,30 @@ class ReferenceCalibrationDialog(QDialog):
         _set_choice_emphasis(self.selection_combo, False)
         self.advance_button.hide()
         self.advance_button.setEnabled(False)
-        _set_action_emphasis(self.start_button, not awaiting or retryable)
+        _set_action_emphasis(
+            self.start_button,
+            automatic_mode or not awaiting or retryable,
+        )
         _set_action_emphasis(self.advance_button, False)
-        if awaiting:
+        if automatic_mode:
+            if running:
+                self.status.setText(
+                    "DiffeoForge is running the complete four-stage pilot. It will "
+                    "continue automatically and present one recommendation report at "
+                    "the end. You can cancel safely."
+                )
+            elif awaiting:
+                self.status.setText(
+                    "This stage has finished. Next: click the green Continue complete "
+                    "four-stage pilot button; DiffeoForge will make the transparent "
+                    "provisional selection and continue automatically."
+                )
+            else:
+                self.status.setText(
+                    "Next: click the green Run complete four-stage pilot button. You "
+                    "will receive one recommendation report after all four stages."
+                )
+        elif awaiting:
             previous_selection = self.selection_combo.currentData()
             self.selection_combo.blockSignals(True)
             self.selection_combo.clear()
@@ -1009,12 +1156,17 @@ class ReferenceCalibrationDialog(QDialog):
     def _start(self) -> None:
         if self._worker is not None:
             return
+        automatic_mode = not self.advanced_mode.isChecked()
         runner = ReferenceCalibrationStudyRunner(self.study_directory)
-        worker = _CalibrationStageWorker(runner)
+        worker = _CalibrationStageWorker(
+            runner,
+            complete_automatic_pilot=automatic_mode,
+        )
         worker.signals.event.connect(self._event)
         worker.signals.succeeded.connect(self._succeeded)
         worker.signals.failed.connect(self._failed)
         self._worker = worker
+        self.advanced_mode.setEnabled(False)
         self.start_button.setEnabled(False)
         _set_action_emphasis(self.start_button, False)
         self.cancel_button.setEnabled(True)
@@ -1023,8 +1175,13 @@ class ReferenceCalibrationDialog(QDialog):
         self.cancel_button.style().unpolish(self.cancel_button)
         self.cancel_button.style().polish(self.cancel_button)
         self.status.setText(
-            "DiffeoForge is running the stage candidates sequentially. Closing is "
-            "disabled until the current candidate reaches a terminal state."
+            (
+                "DiffeoForge is running all remaining pilot stages sequentially and "
+                "will create one final recommendation report. "
+                if automatic_mode
+                else "DiffeoForge is running this stage sequentially. "
+            )
+            + "Closing is disabled until the current candidate reaches a terminal state."
         )
         self._thread_pool.start(worker)
 
@@ -1051,6 +1208,12 @@ class ReferenceCalibrationDialog(QDialog):
                 )
         elif kind == "candidate_completed":
             self.status.setText(f"{candidate_id} completed; automatic QC metrics were verified.")
+        elif kind == "automatic_stage_selected":
+            self.status.setText(
+                f"Stage {event['completed_stage_count']} of {event['stage_count']} "
+                f"completed. Provisional selection: {candidate_id}. Continuing "
+                "automatically with the next parameter family."
+            )
         elif kind in {"candidate_failed", "candidate_interrupted"}:
             self.status.setText(f"{candidate_id}: {event['error']}")
 

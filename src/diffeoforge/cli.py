@@ -708,11 +708,19 @@ def build_parser() -> argparse.ArgumentParser:
     calibration_study_run = subparsers.add_parser(
         "reference-calibration-study-run",
         help=(
-            "Automatically run every pending candidate in the current stage and "
-            "then pause for researcher review."
+            "Run calibration candidates, optionally completing all four stages with "
+            "a transparent provisional recommendation."
         ),
     )
     calibration_study_run.add_argument("study_directory", type=Path)
+    calibration_study_run.add_argument(
+        "--complete",
+        action="store_true",
+        help=(
+            "Run all remaining stages, record transparent provisional automatic "
+            "selections, and create the final recommendation report."
+        ),
+    )
 
     calibration_study_status = subparsers.add_parser(
         "reference-calibration-study-status",
@@ -2138,6 +2146,16 @@ def main(argv: Sequence[str] | None = None) -> int:
                     if snapshot.final_config_path is None
                     else str(snapshot.final_config_path)
                 ),
+                "report_json_path": (
+                    None
+                    if snapshot.report_json_path is None
+                    else str(snapshot.report_json_path)
+                ),
+                "report_html_path": (
+                    None
+                    if snapshot.report_html_path is None
+                    else str(snapshot.report_html_path)
+                ),
             }
             if args.json:
                 print(json.dumps(value, indent=2, ensure_ascii=False, sort_keys=True))
@@ -2165,6 +2183,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                         )
                 if snapshot.final_config_path is not None:
                     print(f"Selected full-cohort config: {snapshot.final_config_path}")
+                if snapshot.report_html_path is not None:
+                    print(f"Pilot recommendation report: {snapshot.report_html_path}")
                 print(f"Verified event records: {snapshot.event_count}")
         except (ConfigurationError, OSError, TypeError, ValueError) as error:
             print(f"ERROR: {error}", file=sys.stderr)
@@ -2220,14 +2240,38 @@ def main(argv: Sequence[str] | None = None) -> int:
                 elif kind in {"candidate_failed", "candidate_interrupted"}:
                     print(f"{prefix} {kind}: {event['error']}", flush=True)
                 elif kind == "stage_awaiting_review":
+                    if not args.complete:
+                        print(
+                            "All candidate attempts finished; researcher selection "
+                            "is required."
+                        )
+                elif kind == "automatic_stage_selected":
                     print(
-                        "All candidate attempts finished; researcher selection is required."
+                        f"[stage {event['completed_stage_count']}/"
+                        f"{event['stage_count']}] provisional automatic selection: "
+                        f"{candidate_id}",
+                        flush=True,
                     )
 
             runner = ReferenceCalibrationStudyRunner(args.study_directory)
-            result = runner.run_current_stage(event_callback=show_calibration_event)
-            print(f"Calibration stage status: {result.status}")
-            if result.status == "awaiting_review":
+            result = (
+                runner.run_complete_automatic_pilot(
+                    event_callback=show_calibration_event
+                )
+                if args.complete
+                else runner.run_current_stage(
+                    event_callback=show_calibration_event
+                )
+            )
+            print(f"Calibration status: {result.status}")
+            if result.status == "completed":
+                print(f"Recommended full-cohort config: {result.final_config_path}")
+                print(f"Recommendation report: {result.report_html_path}")
+                print(
+                    "This is a provisional pilot recommendation; full-cohort "
+                    "confirmation remains required."
+                )
+            elif result.status == "awaiting_review":
                 print(
                     "No next stage was prepared automatically. Compare the completed "
                     "candidate evidence and record one explicit selection. Visual QC "

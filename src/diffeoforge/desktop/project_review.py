@@ -320,20 +320,35 @@ def _reference_review(config_path: Path, config_sha256: str) -> ProjectReviewRes
             ),
         )
         if calibration_result is not None:
+            selection_modes = calibration_result.get("selection_modes", {})
+            automatic_calibration = bool(selection_modes) and any(
+                str(mode).startswith("automatic_provisional")
+                for mode in selection_modes.values()
+            )
+            calibration_label = (
+                "completed / automatic provisional staged pilot"
+                if automatic_calibration
+                else "completed / researcher-selected staged pilot"
+            )
+            calibration_explanation = (
+                "The selected values are bound to a completed staged pilot and a "
+                "transparent automatic provisional recommendation. They still require "
+                "researcher review and a separate full-cohort confirmation."
+                if automatic_calibration
+                else "The selected values are bound to a completed staged pilot and "
+                "an explicit researcher decision. They still require a separate "
+                "full-cohort confirmation."
+            )
             recommendation_items = tuple(
                 (
                     ReviewItem(
                         "Pilot calibration result",
                         (
-                            "completed / researcher-selected staged pilot / "
+                            f"{calibration_label} / "
                             f"decision "
                             f"{str(calibration_result['decision_event_hash'])[:12]}..."
                         ),
-                        (
-                            "The selected values are bound to a completed staged pilot "
-                            "and an explicit researcher decision. They still require a "
-                            "separate full-cohort confirmation."
-                        ),
+                        calibration_explanation,
                     )
                     if item.label == "Pilot calibration result"
                     else item
@@ -346,8 +361,15 @@ def _reference_review(config_path: Path, config_sha256: str) -> ProjectReviewRes
         if calibration_result is not None:
             recommendation_warnings = (
                 *recommendation_warnings,
-                "The staged calibration has an explicit researcher selection, but the "
-                "selected settings still require a full-cohort confirmation run.",
+                (
+                    "The staged calibration contains an automatic provisional "
+                    "recommendation, but the selected settings still require researcher "
+                    "review and a full-cohort confirmation run."
+                    if automatic_calibration
+                    else "The staged calibration has an explicit researcher selection, "
+                    "but the selected settings still require a full-cohort confirmation "
+                    "run."
+                ),
             )
         elif calibration_plan is not None:
             recommendation_warnings = (

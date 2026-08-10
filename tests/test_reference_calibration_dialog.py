@@ -199,7 +199,7 @@ def test_staged_calibration_allows_selection_without_visual_qc(
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from types import SimpleNamespace
 
-    from PySide6.QtCore import Qt
+    from PySide6.QtCore import QEvent, Qt
     from PySide6.QtWidgets import QApplication, QLabel
 
     import diffeoforge.desktop.reference_calibration_dialog as dialog_module
@@ -292,6 +292,18 @@ def test_staged_calibration_allows_selection_without_visual_qc(
 
     dialog = ReferenceCalibrationDialog(tmp_path)
     dialog.show()
+    application.processEvents()
+
+    assert dialog.advanced_mode.isChecked() is False
+    assert dialog.start_button.isVisible() is True
+    assert dialog.start_button.text() == "Continue complete four-stage pilot"
+    assert dialog.start_button.objectName() == "primary"
+    assert dialog.selection_combo.isHidden() is True
+    assert "continue automatically" in dialog.status.text()
+
+    dialog.advanced_mode.setChecked(True)
+    application.processEvents()
+    application.sendPostedEvents(None, QEvent.Type.DeferredDelete)
     application.processEvents()
 
     from diffeoforge.desktop.info_disclosure import InfoDisclosure

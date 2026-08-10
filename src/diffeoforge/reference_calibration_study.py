@@ -1,14 +1,17 @@
-"""Resumable staged execution of transparent Deformetrica pilot calibration.
+"""Resumable execution of transparent Deformetrica pilot calibration.
 
-The study is deliberately sequential.  Every candidate in one stage is run
-automatically, then execution pauses for explicit anatomical review and a
-researcher selection before the next parameter family is varied.
+The scientific design remains sequential because each selected parameter family
+is locked before the next family is varied.  The standard runner can execute all
+four stages in one operation and make explicitly provisional, reproducible
+recommendations from the declared priorities and automatic evidence.  A manual
+stage-by-stage review route remains available.
 """
 
 from __future__ import annotations
 
 import copy
 import hashlib
+import html
 import json
 import math
 import os
@@ -55,6 +58,8 @@ EVENT_VERSION = "0.1"
 STUDY_MANIFEST = "study.json"
 STUDY_DIGEST = "study.sha256"
 STUDY_EVENTS = "events.jsonl"
+CALIBRATION_REPORT_JSON = "selected/pilot-calibration-report.json"
+CALIBRATION_REPORT_HTML = "selected/pilot-calibration-report.html"
 StudyEventCallback = Callable[[Mapping[str, object]], None]
 
 
@@ -184,6 +189,8 @@ class ReferenceCalibrationStudySnapshot:
     selected_candidate_ids: Mapping[str, str]
     event_count: int
     final_config_path: Path | None
+    report_json_path: Path | None
+    report_html_path: Path | None
 
 
 def _load_events(root: Path) -> tuple[dict[str, Any], ...]:
@@ -472,8 +479,9 @@ def create_reference_calibration_study(
                 },
             },
             "scientific_boundary": (
-                "DiffeoForge executes and measures predeclared candidates, but never "
-                "turns its balanced score into automatic anatomical approval."
+                "DiffeoForge may use its published balanced score for an automatic "
+                "provisional recommendation, but never represents that score as "
+                "automatic anatomical approval or final scientific validation."
             ),
         }
         _write_json(root / STUDY_MANIFEST, manifest, overwrite=False)
@@ -603,14 +611,33 @@ def load_reference_calibration_study(
     selected_values, selected_candidates = _selected_state(events)
     final_events = [event for event in events if event["event"] == "study_completed"]
     if final_events:
-        final_config = _safe_study_path(root, final_events[-1]["final_config"])
+        final_event = final_events[-1]
+        final_config = _safe_study_path(root, final_event["final_config"])
         if (
             not final_config.is_file()
-            or sha256_file(final_config) != final_events[-1]["final_config_sha256"]
+            or sha256_file(final_config) != final_event["final_config_sha256"]
         ):
             raise ReferenceCalibrationStudyError(
                 "Final calibrated configuration changed or is absent"
             )
+        report_json: Path | None = None
+        report_html: Path | None = None
+        for key, digest_key, label in (
+            ("report_json", "report_json_sha256", "JSON calibration report"),
+            ("report_html", "report_html_sha256", "HTML calibration report"),
+        ):
+            if key not in final_event:
+                continue
+            report_path = _safe_study_path(root, final_event[key])
+            if (
+                not report_path.is_file()
+                or sha256_file(report_path) != final_event.get(digest_key)
+            ):
+                raise ReferenceCalibrationStudyError(f"{label} changed or is absent")
+            if key == "report_json":
+                report_json = report_path
+            else:
+                report_html = report_path
         return ReferenceCalibrationStudySnapshot(
             study_directory=root,
             study_id=str(manifest["study_id"]),
@@ -622,6 +649,8 @@ def load_reference_calibration_study(
             selected_candidate_ids=selected_candidates,
             event_count=len(events),
             final_config_path=final_config,
+            report_json_path=report_json,
+            report_html_path=report_html,
         )
     stage = plan.stages[len(selected_candidates)]
     prepared = _prepared_candidates(root, events, stage.stage_id)
@@ -713,6 +742,8 @@ def load_reference_calibration_study(
         selected_candidate_ids=selected_candidates,
         event_count=len(events),
         final_config_path=None,
+        report_json_path=None,
+        report_html_path=None,
     )
 
 
@@ -907,6 +938,60 @@ class ReferenceCalibrationStudyRunner:
                     event_callback(review)
         return load_reference_calibration_study(self.study_directory)
 
+    def run_complete_automatic_pilot(
+        self,
+        *,
+        event_callback: StudyEventCallback | None = None,
+    ) -> ReferenceCalibrationStudySnapshot:
+        """Run every remaining stage and record provisional automatic selections.
+
+        Candidate generation is already centered on the researcher's declared
+        surface-detail and deformation-scale priorities.  At each stage this route
+        selects the eligible Pareto candidate with the lowest published weighted
+        comparison score.  The event ledger records that this was an automatic,
+        provisional recommendation rather than a researcher anatomy approval.
+        """
+
+        while True:
+            snapshot = load_reference_calibration_study(self.study_directory)
+            if snapshot.status == "completed" or self._cancel_requested:
+                return snapshot
+            if snapshot.status != "awaiting_review":
+                snapshot = self.run_current_stage(event_callback=event_callback)
+                if self._cancel_requested:
+                    return snapshot
+            if snapshot.status != "awaiting_review":
+                continue
+            incomplete = [
+                candidate.candidate_id
+                for candidate in snapshot.candidates
+                if candidate.status != "completed"
+            ]
+            if incomplete:
+                raise ReferenceCalibrationStudyError(
+                    "Automatic pilot calibration paused because not every candidate "
+                    "completed successfully. Retry the pilot after reviewing: "
+                    + ", ".join(incomplete)
+                )
+            stage_id = snapshot.current_stage.stage_id if snapshot.current_stage else ""
+            updated, assessment = select_reference_calibration_stage_automatically(
+                self.study_directory
+            )
+            selected_id = updated.selected_candidate_ids.get(stage_id, "")
+            if event_callback is not None:
+                event_callback(
+                    {
+                        "event": "automatic_stage_selected",
+                        "stage_id": stage_id,
+                        "candidate_id": selected_id,
+                        "balanced_candidate_id": assessment.balanced_candidate_id,
+                        "completed_stage_count": len(updated.selected_candidate_ids),
+                        "stage_count": len(updated.plan.stages),
+                    }
+                )
+            if updated.status == "completed":
+                return updated
+
 
 def _relative_difference(first: float, second: float) -> float:
     return abs(first - second) / max(abs(first), abs(second), 1e-15)
@@ -999,6 +1084,7 @@ def _final_configuration(
     manifest: Mapping[str, Any],
     selected_values: Mapping[str, float],
     selected_candidate_ids: Mapping[str, str],
+    selection_modes: Mapping[str, str],
     decision_event_hash: str,
 ) -> Path:
     source = load_config(_safe_study_path(root, manifest["source_config"]["copy"]))
@@ -1045,6 +1131,7 @@ def _final_configuration(
         "study_manifest_sha256": sha256_file(root / STUDY_MANIFEST),
         "decision_event_hash": decision_event_hash,
         "selected_candidate_ids": dict(selected_candidate_ids),
+        "selection_modes": dict(selection_modes),
         "selected_values": {
             name: int(value) if name == "timepoints" else float(value)
             for name, value in selected_values.items()
@@ -1058,13 +1145,322 @@ def _final_configuration(
     return final_path
 
 
-def record_reference_calibration_stage_review(
+_PARAMETER_REPORT_GUIDANCE: dict[str, tuple[str, str]] = {
+    "attachment_kernel_width": (
+        "Surface-matching detail width",
+        "Smaller values follow finer surface detail but can follow mesh texture or "
+        "noise. Larger values emphasize broader, smoother shape agreement.",
+    ),
+    "deformation_kernel_width": (
+        "Deformation spread",
+        "Smaller values allow changes to remain more local and flexible. Larger "
+        "values spread motion more smoothly and globally.",
+    ),
+    "initial_control_point_spacing": (
+        "Initial control-point spacing",
+        "Smaller spacing creates a denser, more flexible and more expensive control "
+        "grid. Larger spacing creates a sparser, smoother grid.",
+    ),
+    "noise_std": (
+        "Fit-versus-regularity weight",
+        "Smaller values push harder toward the observed surfaces. Larger values "
+        "permit more mismatch in exchange for smoother deformation.",
+    ),
+    "timepoints": (
+        "Numerical time points",
+        "More points calculate the deformation path more finely but usually increase "
+        "runtime. This controls numerical accuracy, not anatomical flexibility.",
+    ),
+}
+
+
+def _selection_reason(
+    assessment: CalibrationStageAssessment,
+    selected_candidate_id: str,
+) -> str:
+    selected = next(
+        candidate
+        for candidate in assessment.candidates
+        if candidate.candidate_id == selected_candidate_id
+    )
+    score = selected.balanced_score
+    score_text = "not available" if score is None else f"{score:.6g}"
+    return (
+        "Automatically retained the eligible Pareto candidate with the lowest "
+        f"published weighted comparison score ({score_text}). The tested candidates "
+        "were centered on the researcher's previously declared biological priorities."
+    )
+
+
+def _calibration_report_payload(
+    root: Path,
+    manifest: Mapping[str, Any],
+    plan: ReferenceCalibrationPlan,
+    events: tuple[dict[str, Any], ...],
+    selected_values: Mapping[str, float],
+    selected_candidate_ids: Mapping[str, str],
+    final_config: Path,
+) -> dict[str, object]:
+    source = load_config(_safe_study_path(root, manifest["source_config"]["copy"]))
+    recommendation = (
+        source.get("project", {})
+        .get("parameter_provenance", {})
+        .get("recommendation", {})
+    )
+    declared_priorities = {
+        "surface_detail_intent": recommendation.get(
+            "surface_detail_intent", "not recorded"
+        ),
+        "deformation_scale_intent": recommendation.get(
+            "deformation_scale_intent", "not recorded"
+        ),
+        "smallest_relevant_feature": plan.smallest_relevant_feature,
+    }
+    selection_events = {
+        str(event["stage_id"]): event
+        for event in events
+        if event["event"] == "stage_selected"
+    }
+    stages: list[dict[str, object]] = []
+    for stage in plan.stages:
+        selected_id = selected_candidate_ids[stage.stage_id]
+        selected = next(
+            candidate
+            for candidate in stage.candidates
+            if candidate.candidate_id == selected_id
+        )
+        event = selection_events[stage.stage_id]
+        assessment = event.get("assessment", {})
+        assessment_candidates = {
+            str(candidate["candidate_id"]): candidate
+            for candidate in assessment.get("candidates", [])
+        }
+        alternatives = []
+        for candidate in stage.candidates:
+            candidate_assessment = assessment_candidates.get(candidate.candidate_id, {})
+            alternatives.append(
+                {
+                    "candidate_id": candidate.candidate_id,
+                    "label": candidate.label,
+                    "parameter_values": candidate.values,
+                    "eligible": candidate_assessment.get("eligible"),
+                    "pareto_optimal": candidate_assessment.get("pareto_optimal"),
+                    "balanced_score": candidate_assessment.get("balanced_score"),
+                    "rejection_reasons": candidate_assessment.get(
+                        "rejection_reasons", []
+                    ),
+                    "selected": candidate.candidate_id == selected_id,
+                }
+            )
+        stages.append(
+            {
+                "stage_id": stage.stage_id,
+                "title": stage.title,
+                "selected_candidate_id": selected_id,
+                "selected_label": selected.label,
+                "selected_parameter_values": selected.values,
+                "selection_mode": event.get("selection_mode", "researcher_manual"),
+                "selection_reason": event.get(
+                    "selection_reason",
+                    "The researcher explicitly selected this candidate.",
+                ),
+                "balanced_candidate_id": assessment.get("balanced_candidate_id"),
+                "metric_weights": assessment.get("metric_weights", {}),
+                "alternatives": alternatives,
+            }
+        )
+    parameters = []
+    for name in (
+        "attachment_kernel_width",
+        "deformation_kernel_width",
+        "initial_control_point_spacing",
+        "noise_std",
+        "timepoints",
+    ):
+        title, meaning = _PARAMETER_REPORT_GUIDANCE[name]
+        value = selected_values[name]
+        parameters.append(
+            {
+                "name": name,
+                "title": title,
+                "value": int(value) if name == "timepoints" else float(value),
+                "unit": None if name == "timepoints" else plan.coordinate_unit,
+                "meaning": meaning,
+            }
+        )
+    return {
+        "report_version": "0.1",
+        "study_id": manifest["study_id"],
+        "plan_fingerprint": plan.fingerprint,
+        "status": "provisional_pilot_recommendation",
+        "summary": (
+            "All four staged pilot comparisons completed. The reported parameter set "
+            "is an automatic provisional recommendation, not a claim of anatomical "
+            "correctness or final scientific validation."
+        ),
+        "coordinate_unit": plan.coordinate_unit,
+        "pilot_subjects": [
+            subject.filename for subject in plan.selected_pilot_subjects
+        ],
+        "declared_priorities": declared_priorities,
+        "recommended_parameters": parameters,
+        "stage_decisions": stages,
+        "final_configuration": _relative_path(root, final_config),
+        "full_cohort_confirmation_required": True,
+        "next_steps": list(plan.final_confirmation_required),
+        "limitations": list(plan.limitations),
+    }
+
+
+def _format_report_value(value: object, unit: object) -> str:
+    if isinstance(value, int):
+        rendered = str(value)
+    else:
+        rendered = f"{float(value):.8g}"
+    return rendered if not unit else f"{rendered} {unit}"
+
+
+def _calibration_report_html(report: Mapping[str, object]) -> str:
+    parameters = report["recommended_parameters"]
+    stages = report["stage_decisions"]
+    priorities = report["declared_priorities"]
+    parameter_rows = "".join(
+        "<tr>"
+        f"<td><strong>{html.escape(str(item['title']))}</strong></td>"
+        f"<td>{html.escape(_format_report_value(item['value'], item['unit']))}</td>"
+        f"<td>{html.escape(str(item['meaning']))}</td>"
+        "</tr>"
+        for item in parameters
+    )
+    rendered_stages: list[str] = []
+    for item in stages:
+        alternative_rows: list[str] = []
+        for candidate in item["alternatives"]:
+            values = ", ".join(
+                f"{name}={float(value):.8g}"
+                for name, value in candidate["parameter_values"].items()
+            )
+            score = candidate["balanced_score"]
+            score_text = "not available" if score is None else f"{float(score):.6g}"
+            alternative_rows.append(
+                "<tr>"
+                f"<td>{html.escape(str(candidate['label']))}</td>"
+                f"<td>{html.escape(values)}</td>"
+                f"<td>{'yes' if candidate['eligible'] else 'no'}</td>"
+                f"<td>{score_text}</td>"
+                "</tr>"
+            )
+        alternatives = "".join(alternative_rows)
+        rendered_stages.append(
+            "<section class='card'>"
+            f"<h3>{html.escape(str(item['title']))}</h3>"
+            f"<p><strong>Recommended option:</strong> "
+            f"{html.escape(str(item['selected_label']))} "
+            f"(<code>{html.escape(str(item['selected_candidate_id']))}</code>)</p>"
+            f"<p>{html.escape(str(item['selection_reason']))}</p>"
+            "<details><summary>See all tested alternatives and scores</summary>"
+            "<p>The balanced score is only comparable within this stage; lower is "
+            "favored by the published weighting.</p>"
+            "<table><thead><tr><th>Option</th><th>Values</th><th>Passed automatic "
+            "checks</th><th>Balanced score</th></tr></thead>"
+            f"<tbody>{alternatives}</tbody></table></details>"
+            "</section>"
+        )
+    stage_rows = "".join(rendered_stages)
+    next_steps = "".join(
+        f"<li>{html.escape(str(item))}</li>" for item in report["next_steps"]
+    )
+    limitations = "".join(
+        f"<li>{html.escape(str(item))}</li>" for item in report["limitations"]
+    )
+    return f"""<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<title>DiffeoForge pilot calibration report</title>
+<style>
+body{{font-family:Segoe UI,Arial,sans-serif;max-width:1100px;margin:36px auto;
+padding:0 24px;color:#103b3b;line-height:1.45}}
+h1,h2,h3{{color:#073c3b}}
+.notice{{background:#e3f6ef;border-left:5px solid #13856f;padding:14px 18px}}
+table{{border-collapse:collapse;width:100%}}
+th,td{{border:1px solid #c8d9d7;padding:10px;text-align:left;vertical-align:top}}
+th{{background:#eef5f4}}
+.card{{border:1px solid #c8d9d7;border-radius:8px;padding:10px 16px;margin:12px 0}}
+code{{background:#eef5f4;padding:2px 5px}}
+.footer{{color:#526c6a;font-size:.9em;margin-top:30px}}
+</style></head><body>
+<h1>DiffeoForge pilot calibration report</h1>
+<p class="notice"><strong>Provisional recommendation.</strong>
+{html.escape(str(report['summary']))}</p>
+<h2>Your declared priorities</h2>
+<p>Surface detail: <strong>{html.escape(str(priorities['surface_detail_intent']))}</strong><br>
+Deformation scale: <strong>{html.escape(str(priorities['deformation_scale_intent']))}</strong></p>
+<h2>Recommended parameters</h2>
+<table><thead><tr><th>Parameter</th><th>Recommended value</th><th>What it changes</th></tr></thead>
+<tbody>{parameter_rows}</tbody></table>
+<h2>How DiffeoForge reached this recommendation</h2>
+<p>Each candidate set was centered on your declared priorities. Among candidates
+that passed the automatic validity checks, DiffeoForge retained the Pareto option
+with the lowest published weighted comparison score. No automatic score proves
+anatomical correctness.</p>
+{stage_rows}
+<h2>Required next steps</h2><ol>{next_steps}</ol>
+<h2>Limitations</h2><ul>{limitations}</ul>
+<p class="footer">Study ID: {html.escape(str(report['study_id']))}<br>
+Plan fingerprint: <code>{html.escape(str(report['plan_fingerprint']))}</code></p>
+</body></html>"""
+
+
+def _write_calibration_report(
+    root: Path,
+    manifest: Mapping[str, Any],
+    plan: ReferenceCalibrationPlan,
+    events: tuple[dict[str, Any], ...],
+    selected_values: Mapping[str, float],
+    selected_candidate_ids: Mapping[str, str],
+    final_config: Path,
+) -> tuple[Path, Path]:
+    report = _calibration_report_payload(
+        root,
+        manifest,
+        plan,
+        events,
+        selected_values,
+        selected_candidate_ids,
+        final_config,
+    )
+    json_path = root / CALIBRATION_REPORT_JSON
+    html_path = root / CALIBRATION_REPORT_HTML
+    _write_json(json_path, report, overwrite=False)
+    write_text_safely(
+        html_path,
+        _calibration_report_html(report),
+        overwrite=False,
+    )
+    return json_path, html_path
+
+
+def load_reference_calibration_report(
+    study_directory: Path | str,
+) -> dict[str, Any]:
+    """Load the verified machine-readable final pilot report."""
+
+    snapshot = load_reference_calibration_study(study_directory)
+    if snapshot.status != "completed" or snapshot.report_json_path is None:
+        raise ReferenceCalibrationStudyError(
+            "The calibration study has no completed recommendation report"
+        )
+    return _read_json(snapshot.report_json_path, "pilot calibration report")
+
+
+def _record_reference_calibration_stage_selection(
     study_directory: Path | str,
     *,
     visual_approvals: Mapping[str, bool],
     selected_candidate_id: str,
+    selection_mode: str,
+    selection_reason: str,
 ) -> tuple[ReferenceCalibrationStudySnapshot, CalibrationStageAssessment]:
-    """Record optional visual QC and advance one researcher-selected stage."""
+    """Record one verified stage selection and advance the immutable study."""
 
     root = Path(study_directory).expanduser().resolve()
     snapshot = load_reference_calibration_study(root)
@@ -1135,7 +1531,9 @@ def record_reference_calibration_stage_review(
                 for candidate in snapshot.candidates
             },
             "assessment": assessment.as_manifest(),
-            "researcher_decision": True,
+            "selection_mode": selection_mode,
+            "selection_reason": selection_reason,
+            "researcher_decision": selection_mode == "researcher_manual",
         },
     )
     manifest = _verify_manifest(root)
@@ -1150,13 +1548,31 @@ def record_reference_calibration_stage_review(
             selected_values,
         )
     else:
-        decision_event_hash = str(_load_events(root)[-1]["event_hash"])
+        events = _load_events(root)
+        decision_event_hash = str(events[-1]["event_hash"])
+        selection_modes = {
+            str(event["stage_id"]): str(
+                event.get("selection_mode", "researcher_manual")
+            )
+            for event in events
+            if event["event"] == "stage_selected"
+        }
         final_path = _final_configuration(
             root,
             manifest,
             selected_values,
             selected_candidates,
+            selection_modes,
             decision_event_hash,
+        )
+        report_json, report_html = _write_calibration_report(
+            root,
+            manifest,
+            snapshot.plan,
+            events,
+            selected_values,
+            selected_candidates,
+            final_path,
         )
         _append_event(
             root,
@@ -1166,7 +1582,70 @@ def record_reference_calibration_stage_review(
                 "selected_values": selected_values,
                 "final_config": _relative_path(root, final_path),
                 "final_config_sha256": sha256_file(final_path),
+                "report_json": _relative_path(root, report_json),
+                "report_json_sha256": sha256_file(report_json),
+                "report_html": _relative_path(root, report_html),
+                "report_html_sha256": sha256_file(report_html),
                 "full_cohort_confirmation_required": True,
             },
         )
     return load_reference_calibration_study(root), assessment
+
+
+def record_reference_calibration_stage_review(
+    study_directory: Path | str,
+    *,
+    visual_approvals: Mapping[str, bool],
+    selected_candidate_id: str,
+) -> tuple[ReferenceCalibrationStudySnapshot, CalibrationStageAssessment]:
+    """Record optional visual QC and advance one researcher-selected stage."""
+
+    return _record_reference_calibration_stage_selection(
+        study_directory,
+        visual_approvals=visual_approvals,
+        selected_candidate_id=selected_candidate_id,
+        selection_mode="researcher_manual",
+        selection_reason=(
+            "The researcher explicitly selected this candidate after reviewing the "
+            "available automatic evidence and optional visual QC."
+        ),
+    )
+
+
+def select_reference_calibration_stage_automatically(
+    study_directory: Path | str,
+) -> tuple[ReferenceCalibrationStudySnapshot, CalibrationStageAssessment]:
+    """Advance one stage using the transparent provisional balanced recommendation."""
+
+    root = Path(study_directory).expanduser().resolve()
+    snapshot = load_reference_calibration_study(root)
+    if snapshot.status != "awaiting_review" or snapshot.current_stage is None:
+        raise ReferenceCalibrationStudyError(
+            "The current calibration stage is not ready for automatic selection"
+        )
+    if any(candidate.status != "completed" for candidate in snapshot.candidates):
+        raise ReferenceCalibrationStudyError(
+            "Automatic selection requires every declared candidate to complete"
+        )
+    assessment = assess_calibration_stage(
+        snapshot.plan,
+        stage_id=snapshot.current_stage.stage_id,
+        evidence=_stage_evidence(snapshot, {}),
+    )
+    selected_candidate_id = assessment.balanced_candidate_id
+    if selected_candidate_id is None:
+        reasons = []
+        for candidate in assessment.candidates:
+            reasons.extend(candidate.rejection_reasons)
+        raise ReferenceCalibrationStudyError(
+            "Automatic pilot calibration found no eligible candidate in stage "
+            f"{snapshot.current_stage.stage_id!r}: "
+            + "; ".join(dict.fromkeys(reasons))
+        )
+    return _record_reference_calibration_stage_selection(
+        root,
+        visual_approvals={},
+        selected_candidate_id=selected_candidate_id,
+        selection_mode="automatic_provisional_balanced_score",
+        selection_reason=_selection_reason(assessment, selected_candidate_id),
+    )

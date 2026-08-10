@@ -1019,10 +1019,12 @@ def assess_calibration_stage(
 ) -> CalibrationStageAssessment:
     """Assess one executed stage without hiding missing data or hard failures.
 
-    The balanced score is an explicitly weighted min-max summary for navigation,
-    not an automatic scientific approval.  Visual QC is optional; an explicit
-    visual failure makes a candidate ineligible, while an unreviewed candidate
-    remains eligible when its automatic evidence is valid.
+    The balanced score is an explicitly weighted min-max summary.  It may drive
+    a provisional automatic recommendation among the predeclared candidates,
+    but never constitutes automatic anatomical approval or final scientific
+    validation.  Visual QC is optional; an explicit visual failure makes a
+    candidate ineligible, while an unreviewed candidate remains eligible when
+    its automatic evidence is valid.
     """
 
     matching_stages = [stage for stage in plan.stages if stage.stage_id == stage_id]
@@ -1117,12 +1119,13 @@ def assess_calibration_stage(
     )
     status = "selection_required" if eligible_ids else "no_eligible_candidate"
     cautions = (
-        "The balanced candidate is a transparent navigation aid, not an automatic selection.",
+        "The balanced candidate may be retained as a transparent provisional "
+        "recommendation, not as automatic anatomical approval.",
         "All Pareto-optimal candidates and raw evidence must remain available to the researcher.",
         "Visual reconstruction review is optional and its performed, passed, failed, or "
         "not-performed status must remain explicit.",
-        "A stage decision becomes valid only after explicit researcher selection and "
-        "later full-cohort confirmation.",
+        "A provisional stage recommendation becomes scientifically usable only after "
+        "later full-cohort confirmation and researcher review.",
     )
     payload = {
         "version": _ASSESSMENT_VERSION,
