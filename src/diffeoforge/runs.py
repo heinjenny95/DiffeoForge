@@ -81,6 +81,20 @@ class ResumeSourceEvidence:
     checkpoint_sha256: str
 
 
+@dataclass(frozen=True)
+class AbandonedRunEvidence:
+    """Fully verified read-only evidence for one nonterminal started run."""
+
+    run_directory: Path
+    manifest: Mapping[str, Any]
+    started_event: Mapping[str, Any]
+    checkpoint_path: Path | None
+    checkpoint_bytes: int | None
+    checkpoint_sha256: str | None
+    output_inventory_present: bool
+    terminal_result: Mapping[str, Any] | None
+
+
 def utc_now() -> str:
     return datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
 
@@ -103,11 +117,33 @@ def _write_json_exclusive(path: Path, value: object) -> None:
     with path.open("x", encoding="utf-8", newline="\n") as handle:
         json.dump(value, handle, indent=2, ensure_ascii=False, sort_keys=True)
         handle.write("\n")
+        handle.flush()
+        os.fsync(handle.fileno())
+
+
+def _write_json_atomic_exclusive(path: Path, value: object) -> None:
+    """Publish complete JSON bytes in one same-directory rename without reuse."""
+
+    if path.exists() or path.is_symlink():
+        raise FileExistsError(f"Terminal artifact already exists: {path}")
+    temporary = path.with_name(f".{path.name}.tmp-{uuid4().hex}")
+    try:
+        _write_json_exclusive(temporary, value)
+        if path.exists() or path.is_symlink():
+            raise FileExistsError(f"Terminal artifact already exists: {path}")
+        temporary.rename(path)
+    finally:
+        try:
+            temporary.unlink()
+        except FileNotFoundError:
+            pass
 
 
 def _write_text_exclusive(path: Path, value: str) -> None:
     with path.open("x", encoding="utf-8", newline="\n") as handle:
         handle.write(value)
+        handle.flush()
+        os.fsync(handle.fileno())
 
 
 def _append_event(path: Path, event: Mapping[str, Any]) -> None:
@@ -115,6 +151,8 @@ def _append_event(path: Path, event: Mapping[str, Any]) -> None:
     with path.open("a", encoding="utf-8", newline="\n") as handle:
         handle.write(json.dumps(record, ensure_ascii=False, sort_keys=True))
         handle.write("\n")
+        handle.flush()
+        os.fsync(handle.fileno())
 
 
 def _read_events(path: Path) -> list[Mapping[str, Any]]:
@@ -852,7 +890,7 @@ def _probe_backend_environment(config: Mapping[str, Any]) -> Mapping[str, Any]:
     return {"probe_status": "verified", **value}
 
 
-def parse_convergence(log_path: Path, csv_path: Path) -> int:
+def _convergence_rows(log_path: Path) -> list[list[float | int]]:
     rows: list[list[float | int]] = []
     seen_rows: set[tuple[int, float, float, float]] = set()
     current_iteration: int | None = None
@@ -876,26 +914,129 @@ def parse_convergence(log_path: Path, csv_path: Path) -> int:
                     continue
                 seen_rows.add(row)
                 rows.append(list(row))
-    with csv_path.open("x", encoding="utf-8", newline="") as handle:
-        writer = csv.writer(handle)
-        writer.writerow(["iteration", "log_likelihood", "attachment", "regularity"])
-        writer.writerows(rows)
+    return rows
+
+
+def parse_convergence(log_path: Path, csv_path: Path) -> int:
+    rows = _convergence_rows(log_path)
+    if csv_path.exists() or csv_path.is_symlink():
+        raise FileExistsError(f"Convergence artifact already exists: {csv_path}")
+    temporary = csv_path.with_name(f".{csv_path.name}.tmp-{uuid4().hex}")
+    try:
+        with temporary.open("x", encoding="utf-8", newline="") as handle:
+            writer = csv.writer(handle)
+            writer.writerow(["iteration", "log_likelihood", "attachment", "regularity"])
+            writer.writerows(rows)
+            handle.flush()
+            os.fsync(handle.fileno())
+        if csv_path.exists() or csv_path.is_symlink():
+            raise FileExistsError(f"Convergence artifact already exists: {csv_path}")
+        temporary.rename(csv_path)
+    finally:
+        try:
+            temporary.unlink()
+        except FileNotFoundError:
+            pass
     return len(rows)
 
 
-def _inventory_outputs(run_directory: Path) -> Mapping[str, Any]:
+def _verify_existing_convergence(log_path: Path, csv_path: Path) -> int:
+    expected = _convergence_rows(log_path)
+    try:
+        with csv_path.open("r", encoding="utf-8", newline="") as handle:
+            reader = csv.reader(handle)
+            header = next(reader)
+            observed = [
+                [int(row[0]), float(row[1]), float(row[2]), float(row[3])]
+                for row in reader
+            ]
+    except (OSError, UnicodeError, ValueError, IndexError, StopIteration) as error:
+        raise ConfigurationError(
+            f"Partial convergence CSV is not readable in the expected format: {csv_path}"
+        ) from error
+    if header != ["iteration", "log_likelihood", "attachment", "regularity"]:
+        raise ConfigurationError(
+            f"Partial convergence CSV has an unexpected header: {csv_path}"
+        )
+    if observed != expected:
+        raise ConfigurationError(
+            "The partial convergence CSV differs from the retained Deformetrica log; "
+            "recovery will not replace it."
+        )
+    return len(expected)
+
+
+def _recover_convergence(log_path: Path, csv_path: Path) -> int:
+    if not log_path.is_file():
+        if csv_path.exists() or csv_path.is_symlink():
+            raise ConfigurationError(
+                "A partial convergence CSV exists without its Deformetrica log; "
+                f"recovery will not reuse it: {csv_path}"
+            )
+        return 0
+    if not csv_path.exists() and not csv_path.is_symlink():
+        return parse_convergence(log_path, csv_path)
+    if csv_path.is_symlink() or not csv_path.is_file():
+        raise ConfigurationError(
+            f"Partial convergence artifact is not a regular file: {csv_path}"
+        )
+    return _verify_existing_convergence(log_path, csv_path)
+
+
+def _collect_stable_output_records(run_directory: Path) -> list[dict[str, object]]:
     output_directory = run_directory / "output"
-    files = sorted(path for path in output_directory.rglob("*") if path.is_file())
-    records = [
-        {
-            "path": path.relative_to(output_directory).as_posix(),
-            "bytes": path.stat().st_size,
-            "sha256": sha256_file(path),
-        }
-        for path in files
-    ]
+    observed = sorted(output_directory.rglob("*"))
+    symbolic = next((path for path in observed if path.is_symlink()), None)
+    if symbolic is not None:
+        raise ConfigurationError(
+            f"Run output contains a symbolic link and cannot be inventoried: {symbolic}"
+        )
+    files = [path for path in observed if path.is_file()]
+    records: list[dict[str, object]] = []
+    for path in files:
+        before = path.stat()
+        digest = sha256_file(path)
+        after = path.stat()
+        if (
+            before.st_size != after.st_size
+            or before.st_mtime_ns != after.st_mtime_ns
+        ):
+            raise ConfigurationError(
+                "Run output changed while its terminal inventory was being created. "
+                f"Confirm the backend process is stopped before recovery: {path}"
+            )
+        records.append(
+            {
+                "path": path.relative_to(output_directory).as_posix(),
+                "bytes": after.st_size,
+                "sha256": digest,
+            }
+        )
+    final_observed = sorted(output_directory.rglob("*"))
+    if observed != final_observed:
+        raise ConfigurationError(
+            "Run output file membership changed while its terminal inventory was being "
+            "created. Confirm the backend process is stopped before recovery."
+        )
+    return records
+
+
+def _output_summary(
+    inventory_path: Path,
+    records: list[dict[str, object]],
+) -> Mapping[str, Any]:
+    return {
+        "file_count": len(records),
+        "total_bytes": sum(int(record["bytes"]) for record in records),
+        "inventory_path": "output-inventory.json",
+        "inventory_sha256": sha256_file(inventory_path),
+    }
+
+
+def _inventory_outputs(run_directory: Path) -> Mapping[str, Any]:
+    records = _collect_stable_output_records(run_directory)
     inventory_path = run_directory / "output-inventory.json"
-    _write_json_exclusive(
+    _write_json_atomic_exclusive(
         inventory_path,
         {
             "inventory_version": "0.1",
@@ -903,12 +1044,79 @@ def _inventory_outputs(run_directory: Path) -> Mapping[str, Any]:
             "files": records,
         },
     )
-    return {
-        "file_count": len(records),
-        "total_bytes": sum(record["bytes"] for record in records),
-        "inventory_path": "output-inventory.json",
-        "inventory_sha256": sha256_file(inventory_path),
-    }
+    return _output_summary(inventory_path, records)
+
+
+def _verify_existing_output_inventory(run_directory: Path) -> Mapping[str, Any]:
+    inventory_path = run_directory / "output-inventory.json"
+    inventory = _read_json_object(inventory_path, "Partial terminal output inventory")
+    if inventory.get("inventory_version") != "0.1" or not isinstance(
+        inventory.get("files"), list
+    ):
+        raise ConfigurationError(
+            f"Partial terminal output inventory has an unsupported structure: {inventory_path}"
+        )
+    current_records = _collect_stable_output_records(run_directory)
+    if inventory["files"] != current_records:
+        raise ConfigurationError(
+            "Retained outputs differ from the existing partial terminal inventory; "
+            "recovery stopped without replacing either artifact."
+        )
+    return _output_summary(inventory_path, current_records)
+
+
+def _verify_orphan_terminal_result(
+    run_directory: Path,
+    manifest: Mapping[str, Any],
+    started_event: Mapping[str, Any],
+    output_summary: Mapping[str, Any],
+) -> Mapping[str, Any]:
+    result_path = run_directory / "result.json"
+    result = _read_json_object(result_path, "Partial terminal result")
+    status = result.get("status")
+    if (
+        result.get("result_version") != "0.1"
+        or result.get("run_id") != manifest["run_id"]
+        or status not in {"completed", "failed", "interrupted"}
+        or result.get("started_at") != started_event.get("timestamp")
+        or result.get("command") != started_event.get("command")
+        or result.get("backend_environment") != started_event.get("backend_environment")
+        or result.get("outputs") != output_summary
+        or result.get("checkpoint") != _checkpoint_summary(run_directory)
+    ):
+        raise ConfigurationError(
+            "Partial terminal result does not match the protected run, started event, "
+            "current output inventory, or checkpoint."
+        )
+    log_path = run_directory / "logs" / "deformetrica.log"
+    convergence_path = run_directory / "logs" / "convergence.csv"
+    if log_path.is_file():
+        if convergence_path.is_symlink() or not convergence_path.is_file():
+            raise ConfigurationError(
+                "Partial terminal result is missing its regular convergence CSV."
+            )
+        convergence_rows = _verify_existing_convergence(log_path, convergence_path)
+    else:
+        if convergence_path.exists() or convergence_path.is_symlink():
+            raise ConfigurationError(
+                "Partial terminal result has a convergence CSV without a backend log."
+            )
+        convergence_rows = 0
+    if result.get("convergence_rows") != convergence_rows:
+        raise ConfigurationError(
+            "Partial terminal result convergence count differs from retained log evidence."
+        )
+    return_code = result.get("return_code")
+    execution_error = result.get("execution_error")
+    if status == "completed" and (return_code != 0 or execution_error is not None):
+        raise ConfigurationError(
+            "Partial completed result has inconsistent return-code or error evidence."
+        )
+    if status == "failed" and return_code == 0 and execution_error is None:
+        raise ConfigurationError(
+            "Partial failed result has no failure return-code or error evidence."
+        )
+    return result
 
 
 def _checkpoint_summary(run_directory: Path) -> Mapping[str, Any]:
@@ -1215,7 +1423,7 @@ def execute_run(
     }
     if resume_provenance is not None:
         result["resume"] = resume_provenance
-    _write_json_exclusive(run_path / "result.json", result)
+    _write_json_atomic_exclusive(run_path / "result.json", result)
     _append_event(
         event_path,
         {
@@ -1247,32 +1455,37 @@ def recover_run(
     if not normalized_reason:
         raise ConfigurationError("Recovery requires a non-empty reason.")
 
-    run_path = Path(run_directory).expanduser().resolve()
-    manifest = _read_manifest(run_path)
-    _verify_protected_artifacts(run_path, manifest)
-    events = _read_events(run_path / "events.jsonl")
-    if events[-1]["event"] != "started":
-        raise ConfigurationError(
-            "Only an abandoned run whose latest event is 'started' can be recovered; "
-            f"latest event is {events[-1]['event']!r}."
+    evidence = inspect_abandoned_run(run_directory)
+    run_path = evidence.run_directory
+    manifest = evidence.manifest
+    if evidence.terminal_result is not None:
+        result = evidence.terminal_result
+        _append_event(
+            run_path / "events.jsonl",
+            {
+                "event": result["status"],
+                "return_code": result["return_code"],
+                "duration_seconds": result["duration_seconds"],
+                "checkpoint": result["checkpoint"],
+                "reconciliation_reason": normalized_reason,
+                "process_stopped_confirmed": True,
+            },
         )
-    for forbidden in (run_path / "result.json", run_path / "output-inventory.json"):
-        if forbidden.exists():
-            raise ConfigurationError(
-                f"Recovery will not replace an existing terminal artifact: {forbidden}"
-            )
+        return result
 
     log_path = run_path / "logs" / "deformetrica.log"
-    convergence_rows = 0
-    if log_path.is_file():
-        convergence_rows = parse_convergence(
-            log_path,
-            run_path / "logs" / "convergence.csv",
-        )
-    output_summary = _inventory_outputs(run_path)
+    convergence_rows = _recover_convergence(
+        log_path,
+        run_path / "logs" / "convergence.csv",
+    )
+    output_summary = (
+        _verify_existing_output_inventory(run_path)
+        if evidence.output_inventory_present
+        else _inventory_outputs(run_path)
+    )
     checkpoint_summary = _checkpoint_summary(run_path)
     ended_at = utc_now()
-    started_event = events[-1]
+    started_event = evidence.started_event
     execution_error = f"Manual recovery after an unclean stop: {normalized_reason}"
     result = {
         "result_version": "0.1",
@@ -1294,7 +1507,7 @@ def recover_run(
             "process_stopped_confirmed": True,
         },
     }
-    _write_json_exclusive(run_path / "result.json", result)
+    _write_json_atomic_exclusive(run_path / "result.json", result)
     _append_event(
         run_path / "events.jsonl",
         {
@@ -1306,6 +1519,112 @@ def recover_run(
         },
     )
     return result
+
+
+def inspect_abandoned_run(run_directory: Path | str) -> AbandonedRunEvidence:
+    """Verify an unfinalized started run without changing any run artifact."""
+
+    candidate = Path(run_directory).expanduser()
+    if candidate.is_symlink() or not candidate.is_dir():
+        raise ConfigurationError(
+            f"Abandoned run must be an existing real directory: {candidate}"
+        )
+    try:
+        run_path = candidate.resolve(strict=True)
+    except OSError as error:
+        raise ConfigurationError(
+            f"Abandoned run directory could not be resolved: {candidate}"
+        ) from error
+    manifest = _read_manifest(run_path)
+    if manifest.get("run_id") != run_path.name:
+        raise ConfigurationError(
+            "Abandoned run directory name does not match its manifest run_id: "
+            f"{run_path}"
+        )
+    _verify_protected_artifacts(run_path, manifest)
+    events = _read_events(run_path / "events.jsonl")
+    started_event = events[-1]
+    if started_event["event"] != "started":
+        raise ConfigurationError(
+            "Only an abandoned run whose latest event is 'started' can be recovered; "
+            f"latest event is {started_event['event']!r}."
+        )
+    output_directory = run_path / "output"
+    if output_directory.is_symlink() or not output_directory.is_dir():
+        raise ConfigurationError(
+            f"Abandoned run output must be an existing real directory: {output_directory}"
+        )
+    output_inventory_path = run_path / "output-inventory.json"
+    output_inventory_present = bool(
+        output_inventory_path.exists() or output_inventory_path.is_symlink()
+    )
+    output_summary: Mapping[str, Any] | None = None
+    if output_inventory_present:
+        if output_inventory_path.is_symlink() or not output_inventory_path.is_file():
+            raise ConfigurationError(
+                "Partial terminal output inventory is not a regular file: "
+                f"{output_inventory_path}"
+            )
+        output_summary = _verify_existing_output_inventory(run_path)
+    result_path = run_path / "result.json"
+    terminal_result: Mapping[str, Any] | None = None
+    if result_path.exists() or result_path.is_symlink():
+        if result_path.is_symlink() or not result_path.is_file():
+            raise ConfigurationError(
+                f"Partial terminal result is not a regular file: {result_path}"
+            )
+        if output_summary is None:
+            raise ConfigurationError(
+                "A partial terminal result exists without a verified output inventory."
+            )
+        terminal_result = _verify_orphan_terminal_result(
+            run_path,
+            manifest,
+            started_event,
+            output_summary,
+        )
+
+    checkpoint_path = run_path / EXECUTION_CHECKPOINT_PATH
+    if checkpoint_path.is_symlink():
+        raise ConfigurationError(
+            f"Abandoned run checkpoint must not be symbolic: {checkpoint_path}"
+        )
+    checkpoint_bytes: int | None = None
+    checkpoint_sha256: str | None = None
+    retained_checkpoint: Path | None = None
+    if checkpoint_path.exists():
+        if not checkpoint_path.is_file():
+            raise ConfigurationError(
+                f"Abandoned run checkpoint is not a regular file: {checkpoint_path}"
+            )
+        before = checkpoint_path.stat()
+        if before.st_size < 1:
+            raise ConfigurationError(
+                f"Abandoned run checkpoint is empty: {checkpoint_path}"
+            )
+        checkpoint_sha256 = sha256_file(checkpoint_path)
+        after = checkpoint_path.stat()
+        if (
+            before.st_size != after.st_size
+            or before.st_mtime_ns != after.st_mtime_ns
+        ):
+            raise ConfigurationError(
+                "Abandoned run checkpoint changed during inspection. Confirm that the "
+                f"Deformetrica process is stopped before trying again: {checkpoint_path}"
+            )
+        retained_checkpoint = checkpoint_path
+        checkpoint_bytes = after.st_size
+
+    return AbandonedRunEvidence(
+        run_directory=run_path,
+        manifest=manifest,
+        started_event=started_event,
+        checkpoint_path=retained_checkpoint,
+        checkpoint_bytes=checkpoint_bytes,
+        checkpoint_sha256=checkpoint_sha256,
+        output_inventory_present=output_inventory_present,
+        terminal_result=terminal_result,
+    )
 
 
 def inspect_resume_source(source_run_directory: Path | str) -> ResumeSourceEvidence:

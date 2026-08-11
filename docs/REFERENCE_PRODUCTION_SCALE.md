@@ -46,6 +46,13 @@ path. Deformetrica restores parameters and iteration from its checkpoint, but
 version 4.3 reinitializes objective, gradient, and line-search state; the continued
 optimizer trajectory therefore need not be identical to an uninterrupted one.
 
+The desktop's **Recover after crashâ€¦** action covers power loss and hard parent
+termination that leave the latest lifecycle event at `started`. It requires an
+explicit stopped-process confirmation, rehashes protected inputs and retained
+output, rejects changing files and symbolic output links, and publishes or
+reconciles terminal artifacts without restarting Deformetrica. A verified
+checkpoint then enters the same immutable-successor path above.
+
 ## Evidence already available
 
 - A nine-subject, approximately 10,000-face CPU Coxa atlas completed in

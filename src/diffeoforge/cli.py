@@ -2919,14 +2919,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         except ConfigurationError as error:
             print(f"ERROR: {error}", file=sys.stderr)
             return 2
+        status = str(result["status"])
         checkpoint = result["checkpoint"]
-        print(f"Recovered run as interrupted: {args.run_directory.resolve()}")
-        if checkpoint["available"]:
+        if status == "completed":
+            print(f"Reconciled completed terminal run: {args.run_directory.resolve()}")
+        else:
+            print(f"Recovered run as {status}: {args.run_directory.resolve()}")
+        if status in {"failed", "interrupted"} and checkpoint["available"]:
             print(
                 "Checkpoint integrity matches the output inventory. Resume with: "
                 f'diffeoforge resume "{args.run_directory.resolve()}"'
             )
-        else:
+        elif status in {"failed", "interrupted"}:
             print("No checkpoint is available; this run cannot be resumed.")
         return 0
 

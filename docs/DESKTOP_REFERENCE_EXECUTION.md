@@ -18,6 +18,16 @@ run is never reopened or modified. Deformetrica 4.3 restores parameters and the
 iteration number but reinitializes the objective baseline, gradient, and
 line-search state, so recovery is not an exact optimizer-trajectory continuation.
 
+For a power loss or hard process termination that leaves the latest event at
+`started`, **Recover after crashâ€¦** performs a separate guarded flow. It fully
+verifies protected inputs and any checkpoint, requires explicit confirmation that
+no DiffeoForge, Deformetrica, WSL, or container process is still writing, and hashes
+the retained output outside the GUI thread. It never restarts the old directory.
+Complete inventory or result files left by an interrupted finalization are
+reconciled only when they still match the log, checkpoint, output bytes, and started
+event; contradictions fail closed. A resumable terminal outcome then opens the same
+immutable-successor screen.
+
 For combined production-scale cohorts (at least 250 subjects and at least 8,000
 faces), launch additionally fails closed unless checkpoint cadence is at most five
 iterations and measured free disk covers the inputs, projected generated meshes,
@@ -108,9 +118,9 @@ keeps the window open until the parent reconciles a terminal outcome.
   hard-parent-death containment and a real queued-cancellation smoke before it
   can write evidence. A fresh clean-runner v0.4 observation and rebuilt
   installer are still pending; the currently installed preview is unchanged.
-- Terminal interrupted/failed-run discovery and immutable checkpoint resume are
-  guided desktop actions. An abandoned nonterminal run still requires explicit
-  recovery outside the GUI after its numerical process is confirmed stopped.
+- Terminal interrupted/failed-run resume and explicitly confirmed abandoned-run
+  recovery are guided desktop actions. Neither path can prove biological validity or
+  exact optimizer-trajectory continuity.
 - Verified Deformetrica momenta and control points are imported into the shared
   PCA/result screen. Reference mean/positive/negative PC deformation meshes and
   registration renderings are not yet generated.

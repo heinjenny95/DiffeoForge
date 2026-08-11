@@ -65,6 +65,9 @@ diffeoforge run atlas.yaml --run-id experiment-002
 
 # If a terminal failed/interrupted run has an inventoried checkpoint:
 diffeoforge resume runs/experiment-001 --run-id experiment-001-resume-01
+
+# If a confirmed-stopped crash left the latest lifecycle event at started:
+diffeoforge recover runs/experiment-001 --reason "workstation lost power" --confirm-process-stopped
 ```
 
 If the Python Scripts directory is not available on `PATH`, the packaged
@@ -241,10 +244,13 @@ process. A Qt-independent parent independently reconciles terminal filesystem,
 result-report, and hash evidence before the GUI accepts the outcome. This real
 execution child now has a dedicated PyInstaller sibling, cancel-before-prepare
 smoke, and hard-parent-death gate in the next freeze contract; a fresh clean-runner
-v0.4 observation and rebuilt installer have not yet been produced. The desktop can
+v0.4 observation remains a release gate. The desktop can
 discover a terminal interrupted/failed reference run, reverify its complete evidence,
-and bind an immutable checkpoint successor without changing the source. Recovery of
-an abandoned nonterminal run and reference PC deformation rendering remain open. The verified
+and bind an immutable checkpoint successor without changing the source. It can also
+discover a nonterminal `started` run after a hard crash, require explicit confirmation
+that every writer has stopped, rehash retained evidence, reconcile complete partial
+terminal publication, and route a verified checkpoint into the same immutable-successor
+workflow. Reference PC deformation rendering remains open. The verified
 source-level momenta PCA handoff is connected. The older preparation-only child
 remains a separate narrow sibling in the
 evidence-only freeze and cannot authorize engine execution. The Modern path does not

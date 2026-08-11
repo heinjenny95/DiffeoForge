@@ -111,9 +111,13 @@ from diffeoforge.desktop.result_review import (
     verify_result_artifact,
 )
 from diffeoforge.desktop.resumable_results import (
+    AbandonedReferenceRun,
+    RecoveredReferenceRun,
     ResumableReferenceRun,
     ResumableResultDiscoveryError,
+    discover_abandoned_reference_runs,
     discover_resumable_reference_runs,
+    recover_abandoned_reference_run,
 )
 from diffeoforge.desktop.reviewed_run import (
     DesktopReviewedRunError,
@@ -635,6 +639,30 @@ class _ResultReviewWorker(QRunnable):
         self.signals.succeeded.emit(review)
 
 
+class _AbandonedReferenceRecoveryWorker(QRunnable):
+    """Finalize one user-confirmed unclean stop outside the GUI thread."""
+
+    def __init__(self, abandoned: AbandonedReferenceRun) -> None:
+        super().__init__()
+        self.abandoned = abandoned
+        self.signals = _WorkerSignals()
+
+    @Slot()
+    def run(self) -> None:
+        try:
+            recovered = recover_abandoned_reference_run(
+                self.abandoned,
+                reason=(
+                    "Desktop recovery after an unclean stop; the user explicitly "
+                    "confirmed that no Deformetrica process is still writing to the run."
+                ),
+            )
+        except (OSError, RuntimeError, TypeError, ValueError) as error:
+            self.signals.failed.emit(str(error))
+            return
+        self.signals.succeeded.emit(recovered)
+
+
 class _ArtifactWorker(QRunnable):
     """Recheck one reviewed artifact immediately before handing it to the OS."""
 
@@ -821,6 +849,7 @@ class DiffeoForgeWindow(QMainWindow):
             | _ReferencePreparationStatusWorker
             | _SavedReferencePreparationStatusVerificationWorker
             | _ResultReviewWorker
+            | _AbandonedReferenceRecoveryWorker
             | _ArtifactWorker
             | _AtlasWorker
             | _ReferenceAtlasWorker
@@ -989,9 +1018,17 @@ class DiffeoForgeWindow(QMainWindow):
             "Select an interrupted Deformetrica run with a verified checkpoint."
         )
         self.resume_interrupted_run_button.clicked.connect(self._select_interrupted_run)
+        self.recover_abandoned_run_button = QPushButton("Recover after crashâ€¦")
+        self.recover_abandoned_run_button.setObjectName("secondary")
+        self.recover_abandoned_run_button.setToolTip(
+            "Finalize a run left nonterminal by a power loss or hard process stop, then "
+            "continue a verified checkpoint as a new run."
+        )
+        self.recover_abandoned_run_button.clicked.connect(self._select_abandoned_run)
         resume_layout.addWidget(resume_label)
         resume_layout.addWidget(self.open_completed_run_button)
         resume_layout.addWidget(self.resume_interrupted_run_button)
+        resume_layout.addWidget(self.recover_abandoned_run_button)
         resume_layout.addStretch()
         layout.addWidget(resume_row)
         layout.addWidget(data_form_card)
@@ -4822,6 +4859,7 @@ class DiffeoForgeWindow(QMainWindow):
         self._sync_saved_reference_status_verification_controls()
         self.open_completed_run_button.setEnabled(self._worker is None)
         self.resume_interrupted_run_button.setEnabled(self._worker is None)
+        self.recover_abandoned_run_button.setEnabled(self._worker is None)
 
     @Slot()
     def _select_completed_run(self) -> None:
@@ -4917,6 +4955,139 @@ class DiffeoForgeWindow(QMainWindow):
                 return
             result = results[labels.index(chosen)]
         self._prepare_reference_resume(result)
+
+    @Slot()
+    def _select_abandoned_run(self) -> None:
+        if self._worker is not None:
+            return
+        initial = self.project_edit.text().strip() or self.mesh_edit.text().strip()
+        selected = QFileDialog.getExistingDirectory(
+            self,
+            "Select a crashed Deformetrica run or project folder",
+            initial,
+        )
+        if not selected:
+            return
+        try:
+            results = discover_abandoned_reference_runs(selected)
+        except ResumableResultDiscoveryError as error:
+            self.status_label.setObjectName("statusError")
+            self.status_label.setStyleSheet("")
+            self.status_label.setText(f"Crashed runs could not be inspected: {error}")
+            return
+        if not results:
+            self.status_label.setObjectName("statusError")
+            self.status_label.setStyleSheet("")
+            self.status_label.setText(
+                "No fully verified Deformetrica run left in the nonterminal 'started' "
+                "state was found there."
+            )
+            return
+        result = results[0]
+        if len(results) > 1:
+            labels = [
+                (
+                    f"{candidate.run_directory.name} â€” started {candidate.started_at} â€” "
+                    + (
+                        f"retained {candidate.retained_terminal_status} result"
+                        if candidate.retained_terminal_status is not None
+                        else (
+                            f"{candidate.checkpoint_bytes:,} checkpoint bytes"
+                            if candidate.checkpoint_bytes is not None
+                            else "no checkpoint"
+                        )
+                    )
+                )
+                for candidate in results
+            ]
+            chosen, accepted = QInputDialog.getItem(
+                self,
+                "Choose crashed run",
+                "More than one nonterminal run was found:",
+                labels,
+                0,
+                False,
+            )
+            if not accepted:
+                return
+            result = results[labels.index(chosen)]
+
+        if result.retained_terminal_status is not None:
+            checkpoint_detail = (
+                f"A complete {result.retained_terminal_status} result is already present; "
+                "recovery will verify it and reconcile only its missing lifecycle event."
+            )
+        elif result.checkpoint_bytes is not None:
+            checkpoint_detail = (
+                f"A {result.checkpoint_bytes:,}-byte checkpoint was verified."
+            )
+        else:
+            checkpoint_detail = (
+                "No checkpoint was found, so this run cannot be continued afterward."
+            )
+        choice = QMessageBox.warning(
+            self,
+            "Confirm Deformetrica is stopped",
+            "Use crash recovery only after a power loss or hard process stop. Confirm "
+            "that no DiffeoForge, Deformetrica, WSL, or container process is still "
+            f"writing to this run:\n\n{result.run_directory}\n\n{checkpoint_detail}\n\n"
+            "Recovery does not restart or overwrite output. It hashes the retained "
+            "artifacts, reconciles any complete terminal result already present, or "
+            "otherwise appends an interrupted terminal record.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.Cancel,
+        )
+        if choice != QMessageBox.StandardButton.Yes:
+            return
+
+        worker = _AbandonedReferenceRecoveryWorker(result)
+        worker.signals.succeeded.connect(self._abandoned_recovery_succeeded)
+        worker.signals.failed.connect(self._abandoned_recovery_failed)
+        self._worker = worker
+        self.status_label.setObjectName("status")
+        self.status_label.setStyleSheet("")
+        self.status_label.setText(
+            "Finalizing the stopped run and hashing retained output. Nothing is being "
+            "restarted or overwrittenâ€¦"
+        )
+        self._sync_ready_state()
+        self._thread_pool.start(worker)
+
+    @Slot(object)
+    def _abandoned_recovery_succeeded(self, recovered: RecoveredReferenceRun) -> None:
+        self._worker = None
+        if recovered.terminal_status == "completed":
+            self.status_label.setObjectName("statusSuccess")
+            self.status_label.setStyleSheet("")
+            self.status_label.setText(
+                "The complete terminal result was already present and has now been "
+                "reconciled with the lifecycle log. Reverification is starting."
+            )
+            self._open_completed_result(
+                CompletedResultRun(recovered.run_directory, reference=True)
+            )
+            return
+        if recovered.resumable is None:
+            self.status_label.setObjectName("statusWarning")
+            self.status_label.setStyleSheet("")
+            self.status_label.setText(
+                "The stopped run is now recorded as interrupted, but no checkpoint was "
+                "available. Its retained artifacts remain unchanged and it cannot be "
+                "continued."
+            )
+            self._sync_ready_state()
+            return
+        self._prepare_reference_resume(recovered.resumable)
+
+    @Slot(str)
+    def _abandoned_recovery_failed(self, message: str) -> None:
+        self._worker = None
+        self.status_label.setObjectName("statusError")
+        self.status_label.setStyleSheet("")
+        self.status_label.setText(
+            "Crash recovery stopped without declaring the run terminal: " + message
+        )
+        self._sync_ready_state()
 
     def _prepare_reference_resume(self, result: ResumableReferenceRun) -> None:
         run_id = f"{result.run_directory.name[:100]}-resume-{uuid.uuid4().hex[:8]}"

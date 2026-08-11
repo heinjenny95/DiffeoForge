@@ -133,7 +133,8 @@ This roadmap describes evidence gates rather than promised dates.
     queued-cancel and hard-parent-death gates
   - [ ] Record fresh clean-runner v0.4 freeze evidence and rebuild the installer
   - [x] Guided terminal reference-run discovery and immutable checkpoint resume
-  - [ ] Abandoned nonterminal reference-run recovery and native registration rendering
+  - [x] Guarded desktop recovery for abandoned nonterminal reference runs
+  - [ ] Native registration rendering
 - [x] Parameter explanations and provenance-labelled exploratory starter profiles
 - [x] Add hash-bound, non-executing dataset-specific calibration planning with
   3D feature-scale measurement, deterministic geometry-diverse pilot selection,

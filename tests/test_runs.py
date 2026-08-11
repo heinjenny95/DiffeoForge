@@ -8,12 +8,14 @@ from pathlib import Path
 import pytest
 import yaml
 
+import diffeoforge.runs as runs
 from diffeoforge.backends import CommandSpec
 from diffeoforge.config import ConfigurationError
 from diffeoforge.mesh import sha256_file
 from diffeoforge.runs import (
     REFERENCE_ACTIVITY_INTERVAL_SECONDS,
     execute_run,
+    inspect_abandoned_run,
     inspect_resume_source,
     parse_convergence,
     prepare_resume_run,
@@ -332,6 +334,193 @@ def test_recover_requires_confirmation_and_records_partial_evidence(tmp_path: Pa
         (run_directory / "output-inventory.json").read_text(encoding="utf-8")
     )
     assert inventory["files"][0]["path"] == "deformetrica-state.p"
+
+
+def test_inspect_abandoned_run_is_read_only_and_hashes_checkpoint(tmp_path: Path) -> None:
+    run_directory = prepare_run(write_run_config(tmp_path), run_id="abandoned")
+    checkpoint = b"opaque-checkpoint-bytes"
+    abandon_prepared_run(run_directory, checkpoint=checkpoint)
+    before = {
+        path.relative_to(run_directory): path.read_bytes()
+        for path in run_directory.rglob("*")
+        if path.is_file()
+    }
+
+    evidence = inspect_abandoned_run(run_directory)
+
+    assert evidence.run_directory == run_directory
+    assert evidence.started_event["event"] == "started"
+    assert evidence.checkpoint_path == run_directory / "output" / "deformetrica-state.p"
+    assert evidence.checkpoint_bytes == len(checkpoint)
+    assert evidence.checkpoint_sha256 == sha256_file(evidence.checkpoint_path)
+    assert {
+        path.relative_to(run_directory): path.read_bytes()
+        for path in run_directory.rglob("*")
+        if path.is_file()
+    } == before
+
+
+def test_inspect_abandoned_run_rejects_tampered_protected_input(tmp_path: Path) -> None:
+    run_directory = prepare_run(write_run_config(tmp_path), run_id="abandoned")
+    abandon_prepared_run(run_directory, checkpoint=b"checkpoint")
+    manifest = json.loads((run_directory / "manifest.json").read_text(encoding="utf-8"))
+    protected = run_directory.joinpath(*Path(manifest["inputs"][0]["staged_path"]).parts)
+    protected.write_bytes(protected.read_bytes() + b"tampered")
+
+    with pytest.raises(ConfigurationError, match="Protected artifact checksum mismatch"):
+        inspect_abandoned_run(run_directory)
+
+
+def test_inspect_abandoned_run_rejects_partial_terminal_artifact(tmp_path: Path) -> None:
+    run_directory = prepare_run(write_run_config(tmp_path), run_id="abandoned")
+    abandon_prepared_run(run_directory, checkpoint=b"checkpoint")
+    (run_directory / "output-inventory.json").write_text("{}\n", encoding="utf-8")
+
+    with pytest.raises(ConfigurationError, match="unsupported structure"):
+        inspect_abandoned_run(run_directory)
+
+
+def test_recover_reuses_verified_inventory_after_interrupted_finalization(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run_directory = prepare_run(write_run_config(tmp_path), run_id="abandoned")
+    abandon_prepared_run(run_directory, checkpoint=b"checkpoint")
+    original_write = runs._write_json_atomic_exclusive
+
+    def stop_before_result(path: Path, value: object) -> None:
+        if path.name == "result.json":
+            raise OSError("simulated power loss before result publication")
+        original_write(path, value)
+
+    monkeypatch.setattr(runs, "_write_json_atomic_exclusive", stop_before_result)
+    with pytest.raises(OSError, match="simulated power loss"):
+        recover_run(
+            run_directory,
+            reason="power loss",
+            confirm_process_stopped=True,
+        )
+    assert (run_directory / "logs" / "convergence.csv").is_file()
+    assert (run_directory / "output-inventory.json").is_file()
+    assert not (run_directory / "result.json").exists()
+
+    monkeypatch.setattr(runs, "_write_json_atomic_exclusive", original_write)
+    result = recover_run(
+        run_directory,
+        reason="power loss retry",
+        confirm_process_stopped=True,
+    )
+
+    assert result["status"] == "interrupted"
+    assert result["checkpoint"]["available"] is True
+    assert run_status(run_directory)["status"] == "interrupted"
+
+
+def test_recover_reconciles_verified_result_after_interrupted_event_append(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run_directory = prepare_run(write_run_config(tmp_path), run_id="abandoned")
+    abandon_prepared_run(run_directory, checkpoint=b"checkpoint")
+    original_append = runs._append_event
+
+    def stop_before_terminal_event(path: Path, event) -> None:
+        if event.get("event") == "interrupted":
+            raise OSError("simulated power loss before terminal event")
+        original_append(path, event)
+
+    monkeypatch.setattr(runs, "_append_event", stop_before_terminal_event)
+    with pytest.raises(OSError, match="simulated power loss"):
+        recover_run(
+            run_directory,
+            reason="power loss",
+            confirm_process_stopped=True,
+        )
+    retained_result = (run_directory / "result.json").read_bytes()
+    assert run_status(run_directory)["status"] == "started"
+
+    monkeypatch.setattr(runs, "_append_event", original_append)
+    result = recover_run(
+        run_directory,
+        reason="reconcile verified terminal result",
+        confirm_process_stopped=True,
+    )
+
+    assert result["status"] == "interrupted"
+    assert (run_directory / "result.json").read_bytes() == retained_result
+    snapshot = run_status(run_directory)
+    assert snapshot["status"] == "interrupted"
+    assert snapshot["event_count"] == 3
+
+
+def test_inspect_abandoned_rejects_tampered_orphan_terminal_result(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run_directory = prepare_run(write_run_config(tmp_path), run_id="abandoned")
+    abandon_prepared_run(run_directory, checkpoint=b"checkpoint")
+    original_append = runs._append_event
+    monkeypatch.setattr(
+        runs,
+        "_append_event",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("stop")),
+    )
+    with pytest.raises(OSError, match="stop"):
+        recover_run(
+            run_directory,
+            reason="power loss",
+            confirm_process_stopped=True,
+        )
+    monkeypatch.setattr(runs, "_append_event", original_append)
+    result_path = run_directory / "result.json"
+    result = json.loads(result_path.read_text(encoding="utf-8"))
+    result["checkpoint"]["sha256"] = "0" * 64
+    result_path.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
+
+    with pytest.raises(ConfigurationError, match="Partial terminal result does not match"):
+        inspect_abandoned_run(run_directory)
+
+
+def test_recover_reconciles_completed_result_after_terminal_event_power_loss(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run_directory = prepare_run(write_run_config(tmp_path), run_id="completed-orphan")
+    monkeypatch.setattr("diffeoforge.runs.ensure_launcher_available", lambda config: None)
+    monkeypatch.setattr(
+        "diffeoforge.runs._probe_backend_environment",
+        lambda config: {"probe_status": "verified"},
+    )
+    monkeypatch.setattr(
+        "diffeoforge.runs.build_command",
+        lambda config, run_path: CommandSpec(
+            argv=(sys.executable, "-c", "print('completed')"),
+            working_directory=str(run_path),
+            environment={},
+        ),
+    )
+    original_append = runs._append_event
+
+    def stop_before_completed_event(path: Path, event) -> None:
+        if event.get("event") == "completed":
+            raise OSError("simulated power loss before completed event")
+        original_append(path, event)
+
+    monkeypatch.setattr(runs, "_append_event", stop_before_completed_event)
+    with pytest.raises(OSError, match="simulated power loss"):
+        execute_run(run_directory)
+    assert run_status(run_directory)["status"] == "started"
+
+    monkeypatch.setattr(runs, "_append_event", original_append)
+    result = recover_run(
+        run_directory,
+        reason="reconcile complete terminal result",
+        confirm_process_stopped=True,
+    )
+
+    assert result["status"] == "completed"
+    assert result["return_code"] == 0
+    assert run_status(run_directory)["status"] == "completed"
 
 
 def test_prepare_resume_creates_immutable_successor(tmp_path: Path) -> None:

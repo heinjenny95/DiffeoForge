@@ -2609,3 +2609,67 @@ def test_desktop_can_bind_interrupted_run_to_immutable_resume_successor(
     assert str(request.destination) in window.run_summary_label.text().replace("\u200b", "")
     window.close()
     application.processEvents()
+
+
+def test_desktop_requires_explicit_confirmation_before_crash_recovery(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QFileDialog, QMessageBox
+
+    from diffeoforge.desktop.resumable_results import AbandonedReferenceRun
+    from diffeoforge.desktop.widgets import (
+        DiffeoForgeWindow,
+        _AbandonedReferenceRecoveryWorker,
+    )
+
+    application = QApplication.instance() or QApplication(["diffeoforge-crash-recovery-test"])
+    source = (tmp_path / "runs" / "unclean-001").resolve()
+    source.mkdir(parents=True)
+    abandoned = AbandonedReferenceRun(
+        run_directory=source,
+        project_name="Production atlas",
+        subject_count=300,
+        started_at="2026-08-11T12:00:00Z",
+        checkpoint_bytes=456_789,
+    )
+    queued = []
+
+    class FakePool:
+        def start(self, worker) -> None:
+            queued.append(worker)
+
+    monkeypatch.setattr(
+        QFileDialog,
+        "getExistingDirectory",
+        lambda *_args, **_kwargs: str(source),
+    )
+    monkeypatch.setattr(
+        "diffeoforge.desktop.widgets.discover_abandoned_reference_runs",
+        lambda _path: (abandoned,),
+    )
+    monkeypatch.setattr(
+        QMessageBox,
+        "warning",
+        lambda *_args, **_kwargs: QMessageBox.StandardButton.Yes,
+    )
+
+    window = DiffeoForgeWindow()
+    window._thread_pool = FakePool()  # type: ignore[assignment]
+    assert window.recover_abandoned_run_button.text() == "Recover after crashâ€¦"
+
+    window.recover_abandoned_run_button.click()
+    application.processEvents()
+
+    assert isinstance(window._worker, _AbandonedReferenceRecoveryWorker)
+    assert queued == [window._worker]
+    assert window._worker.abandoned == abandoned
+    assert "Nothing is being restarted or overwritten" in window.status_label.text()
+    assert window.recover_abandoned_run_button.isEnabled() is False
+    window._abandoned_recovery_failed("test stop")
+    assert window.recover_abandoned_run_button.isEnabled() is True
+    assert "without declaring the run terminal" in window.status_label.text()
+    window.close()
+    application.processEvents()
