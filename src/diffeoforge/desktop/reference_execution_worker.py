@@ -12,6 +12,9 @@ from typing import Protocol, TextIO
 
 from diffeoforge.config import load_config
 from diffeoforge.desktop.reference_prelaunch import DesktopReferenceLaunchRequest
+from diffeoforge.desktop.reference_production_readiness import (
+    assess_reference_production_readiness,
+)
 from diffeoforge.desktop.reference_progress import ReferenceProgressTracker
 from diffeoforge.desktop.reference_worker_protocol import (
     DesktopReferenceWorkerCommand,
@@ -20,7 +23,7 @@ from diffeoforge.desktop.reference_worker_protocol import (
 from diffeoforge.desktop.worker_protocol import parse_json_object, sha256_file
 from diffeoforge.report import collect_preflight
 from diffeoforge.result_report import collect_run_report
-from diffeoforge.runs import execute_run, prepare_run
+from diffeoforge.runs import execute_run, prepare_resume_run, prepare_run
 
 
 class _LineInput(Protocol):
@@ -181,10 +184,24 @@ def run_reference_execution_worker(
             "phase",
             {
                 "phase": "preflight",
-                "message": "Revalidating meshes and effective Deformetrica parameters.",
+                "message": (
+                    "Revalidating meshes and effective Deformetrica parameters."
+                    if request.resume_source is None
+                    else (
+                        "Reverifying interrupted source evidence, protected inputs, "
+                        "terminal inventory, and checkpoint."
+                    )
+                ),
             },
         )
-        collect_preflight(request.config_path)
+        if request.resume_source is None:
+            preflight = collect_preflight(request.config_path)
+            production_readiness = assess_reference_production_readiness(preflight)
+            if production_readiness.production_scale and not production_readiness.ready:
+                raise RuntimeError(
+                    "Production-scale readiness failed: "
+                    + " ".join(production_readiness.blockers)
+                )
         config = load_config(request.config_path)
         maximum_iterations = int(config["optimization"]["max_iterations"])
         if cancel_event.is_set():
@@ -196,10 +213,18 @@ def run_reference_execution_worker(
             "phase",
             {
                 "phase": "prepare",
-                "message": "Creating the immutable reviewed Deformetrica run.",
+                "message": (
+                    "Creating the immutable reviewed Deformetrica run."
+                    if request.resume_source is None
+                    else "Creating a new immutable Deformetrica resume successor."
+                ),
             },
         )
-        run_directory = prepare_run(request.config_path, run_id=request.run_id)
+        run_directory = (
+            prepare_run(request.config_path, run_id=request.run_id)
+            if request.resume_source is None
+            else prepare_resume_run(request.resume_source, run_id=request.run_id)
+        )
         if run_directory.resolve() != request.destination:
             raise RuntimeError("Prepared reference destination differs from the reviewed request")
         if cancel_event.is_set():
@@ -214,7 +239,14 @@ def run_reference_execution_worker(
             "phase",
             {
                 "phase": "execute",
-                "message": "Deformetrica is running in the verified DiffeoForge runtime.",
+                "message": (
+                    "Deformetrica is running in the verified DiffeoForge runtime."
+                    if request.resume_source is None
+                    else (
+                        "Deformetrica is continuing from the verified checkpoint in the "
+                        "new successor."
+                    )
+                ),
             },
         )
         tracker = ReferenceProgressTracker(maximum_iterations)

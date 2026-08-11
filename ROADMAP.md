@@ -88,7 +88,8 @@ This roadmap describes evidence gates rather than promised dates.
 - [x] Expose explicit Procrustes application/settings and verify aligned-mesh evidence
   in desktop review
 - [x] Connect supervised Deformetrica preparation, execution, and cancellation
-- [ ] Connect interrupted-run discovery and resume to the guided desktop workflow
+- [x] Connect terminal interrupted/failed-run discovery and immutable checkpoint
+  resume to the guided desktop workflow
 - [x] Display observed progress and explicitly labelled ETA-to-iteration-cap
 - [x] Import verified Deformetrica momenta into the shared PCA/result pipeline
 - [ ] Add verified reference PC deformation meshes and registration-quality rendering
@@ -131,7 +132,8 @@ This roadmap describes evidence gates rather than promised dates.
   - [x] Add the reference execution sibling to the v0.4 freeze contract with
     queued-cancel and hard-parent-death gates
   - [ ] Record fresh clean-runner v0.4 freeze evidence and rebuild the installer
-  - [ ] Guided reference recovery/resume and native registration rendering
+  - [x] Guided terminal reference-run discovery and immutable checkpoint resume
+  - [ ] Abandoned nonterminal reference-run recovery and native registration rendering
 - [x] Parameter explanations and provenance-labelled exploratory starter profiles
 - [x] Add hash-bound, non-executing dataset-specific calibration planning with
   3D feature-scale measurement, deterministic geometry-diverse pilot selection,

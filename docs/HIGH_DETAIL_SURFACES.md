@@ -3,6 +3,12 @@
 Status: **explicit 10,000-face pre-compute contract implemented; production
 performance and multiresolution optimization not yet validated**
 
+This document primarily describes the experimental Modern CPU engine. The
+Deformetrica reference route has a separate production-scale storage/recovery
+gate and qualification protocol in
+[REFERENCE_PRODUCTION_SCALE.md](REFERENCE_PRODUCTION_SCALE.md); neither route may
+borrow performance or scientific-validity claims from the other.
+
 Tracked by [engineering issue #177](https://github.com/heinjenny95/DiffeoForge/issues/177).
 
 ## What is implemented

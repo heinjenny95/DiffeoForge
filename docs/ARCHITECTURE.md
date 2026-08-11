@@ -185,10 +185,14 @@ outcome with process exit, and independently verifies the resulting filesystem
 and `result.json` hash. Desktop step 3 exposes this controller through a Qt task,
 supports phase-dependent cancellation, and defers window close until the outcome
 is reconciled. A completed reference run then enters a separately verified,
-source-bound momenta-PCA bundle and the shared Results & PCA view. The v0.4
+source-bound momenta-PCA bundle and the shared Results & PCA view. Terminal
+interrupted/failed reference runs can be discovered read-only from the desktop;
+the complete source evidence is reverified before the GUI binds a new immutable
+checkpoint successor. The v0.4
 freeze contract adds a dedicated execution sibling with nonmutating queued-cancel
 and hard-parent-death gates; fresh clean-runner evidence remains pending. The
-path does not yet expose recovery/resume or reference PC deformation meshes. See
+path does not yet recover an abandoned nonterminal run or expose reference PC
+deformation meshes. See
 [supervised desktop Deformetrica execution](DESKTOP_REFERENCE_EXECUTION.md).
 
 The Windows one-directory build freezes that same harness as a third sibling

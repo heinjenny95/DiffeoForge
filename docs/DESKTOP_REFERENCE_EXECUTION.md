@@ -10,6 +10,21 @@ ID, and absent immutable destination are bound into one versioned launch
 request. Refreshing or starting that request retains the same run ID, so the
 destination shown to the user cannot silently change at launch.
 
+For a terminal interrupted or failed reference run, **Resume interrupted run…**
+performs bounded discovery and verifies the source manifest, protected inputs,
+terminal evidence, complete output inventory, and checkpoint before presenting a
+successor. Starting it creates a new immutable run beside the source; the source
+run is never reopened or modified. Deformetrica 4.3 restores parameters and the
+iteration number but reinitializes the objective baseline, gradient, and
+line-search state, so recovery is not an exact optimizer-trajectory continuation.
+
+For combined production-scale cohorts (at least 250 subjects and at least 8,000
+faces), launch additionally fails closed unless checkpoint cadence is at most five
+iterations and measured free disk covers the inputs, projected generated meshes,
+one complete immutable resume successor, and a fixed safety reserve. This is an
+engineering recovery/storage gate, not evidence of biological validity or measured
+300-subject performance.
+
 ## Process and evidence boundary
 
 The Qt window never runs Deformetrica in its own process. A Qt task starts a
@@ -93,8 +108,9 @@ keeps the window open until the parent reconciles a terminal outcome.
   hard-parent-death containment and a real queued-cancellation smoke before it
   can write evidence. A fresh clean-runner v0.4 observation and rebuilt
   installer are still pending; the currently installed preview is unchanged.
-- Interrupted-run discovery and resume exist in the shared CLI services but are
-  not yet exposed as guided desktop actions.
+- Terminal interrupted/failed-run discovery and immutable checkpoint resume are
+  guided desktop actions. An abandoned nonterminal run still requires explicit
+  recovery outside the GUI after its numerical process is confirmed stopped.
 - Verified Deformetrica momenta and control points are imported into the shared
   PCA/result screen. Reference mean/positive/negative PC deformation meshes and
   registration renderings are not yet generated.

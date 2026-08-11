@@ -2541,3 +2541,71 @@ def test_desktop_can_select_a_saved_completed_run(monkeypatch, tmp_path) -> None
     assert "full verification failed" in window.status_label.text()
     window.close()
     application.processEvents()
+
+
+def test_desktop_can_bind_interrupted_run_to_immutable_resume_successor(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QFileDialog
+
+    from diffeoforge.desktop.reference_prelaunch import DesktopReferenceLaunchRequest
+    from diffeoforge.desktop.resumable_results import ResumableReferenceRun
+    from diffeoforge.desktop.widgets import DiffeoForgeWindow
+
+    application = QApplication.instance() or QApplication(["diffeoforge-resume-run-test"])
+    source = (tmp_path / "runs" / "interrupted-001").resolve()
+    source_config = source / "config" / "source-config.yaml"
+    source_config.parent.mkdir(parents=True)
+    source_config.write_text("reviewed\n", encoding="utf-8")
+    resumable = ResumableReferenceRun(
+        run_directory=source,
+        project_name="Production atlas",
+        subject_count=300,
+        terminal_status="interrupted",
+        checkpoint_bytes=456_789,
+        source_config_path=source_config,
+        source_config_sha256="a" * 64,
+    )
+    request = DesktopReferenceLaunchRequest(
+        request_id="reference-resume-ui-test",
+        config_path=source_config,
+        destination=(source.parent / "resume-001").resolve(),
+        run_id="resume-001",
+        expected_config_sha256="a" * 64,
+        launcher_engine="docker",
+        launcher_image="reference:image",
+        resume_source=source,
+    )
+    monkeypatch.setattr(
+        QFileDialog,
+        "getExistingDirectory",
+        lambda *_args, **_kwargs: str(source),
+    )
+    monkeypatch.setattr(
+        "diffeoforge.desktop.widgets.discover_resumable_reference_runs",
+        lambda _path: (resumable,),
+    )
+    monkeypatch.setattr(
+        "diffeoforge.desktop.widgets.build_reference_resume_launch_request",
+        lambda *_args, **_kwargs: request,
+    )
+
+    window = DiffeoForgeWindow()
+    assert window.resume_interrupted_run_button.text() == "Resume interrupted run…"
+
+    window.resume_interrupted_run_button.click()
+    application.processEvents()
+
+    assert window.page_stack.currentIndex() == 3
+    assert window._reference_run_request == request
+    assert window._review is not None
+    assert window._review.subject_count == 300
+    assert window.start_atlas_button.text() == "Resume interrupted Deformetrica run"
+    assert window.start_atlas_button.isEnabled() is True
+    assert "Source manifest" in window.run_readiness_status_label.text()
+    assert str(request.destination) in window.run_summary_label.text().replace("\u200b", "")
+    window.close()
+    application.processEvents()

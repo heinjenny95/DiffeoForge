@@ -57,7 +57,7 @@ def test_reference_review_uses_effective_preflight_parameters(tmp_path: Path) ->
     assert values["Attachment"].startswith("current · width ")
     assert "line search 10" in values["Optimizer safeguards"]
     assert "Sobolev yes" in values["Regularization and updates"]
-    assert values["Output cadence"].startswith("save every 100")
+    assert values["Output cadence"].startswith("save every 5")
     assert evidence["Attachment / template scale"] == "10.000%"
     assert evidence["Deformation / template scale"] == "15.000%"
     assert evidence["Compute cost"].startswith("roughly ")

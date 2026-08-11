@@ -14,6 +14,7 @@ from diffeoforge.mesh import sha256_file
 from diffeoforge.runs import (
     REFERENCE_ACTIVITY_INTERVAL_SECONDS,
     execute_run,
+    inspect_resume_source,
     parse_convergence,
     prepare_resume_run,
     prepare_run,
@@ -338,6 +339,23 @@ def test_prepare_resume_creates_immutable_successor(tmp_path: Path) -> None:
     checkpoint = b"opaque-checkpoint-bytes"
     abandon_prepared_run(source, checkpoint=checkpoint)
     recover_run(source, reason="power loss", confirm_process_stopped=True)
+    before = {
+        path.relative_to(source): path.read_bytes()
+        for path in source.rglob("*")
+        if path.is_file()
+    }
+
+    evidence = inspect_resume_source(source)
+
+    assert evidence.source_run == source
+    assert evidence.terminal_status == "interrupted"
+    assert evidence.checkpoint_bytes == len(checkpoint)
+    assert evidence.checkpoint_path.read_bytes() == checkpoint
+    assert {
+        path.relative_to(source): path.read_bytes()
+        for path in source.rglob("*")
+        if path.is_file()
+    } == before
 
     successor = prepare_resume_run(source, run_id="successor")
     manifest = verify_prepared_run(successor)

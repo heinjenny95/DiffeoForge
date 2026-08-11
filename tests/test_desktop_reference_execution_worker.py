@@ -86,6 +86,15 @@ def test_reference_execution_worker_runs_full_lifecycle_and_emits_eta_progress(
 ) -> None:
     request = _request(tmp_path)
     monkeypatch.setattr(execution_worker, "collect_preflight", lambda _path: object())
+    monkeypatch.setattr(
+        execution_worker,
+        "assess_reference_production_readiness",
+        lambda _preflight: SimpleNamespace(
+            production_scale=False,
+            ready=True,
+            blockers=(),
+        ),
+    )
 
     def prepare(_config, *, run_id):
         assert run_id == request.run_id
@@ -207,3 +216,56 @@ def test_reference_execution_worker_reports_launch_validation_failure(
     assert events[-1].payload["outcome"] == "failed"
     assert "changed after" in events[-1].payload["message"]
     assert not request.destination.exists()
+
+
+def test_reference_execution_worker_prepares_resume_successor_without_source_preflight(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    base = _request(tmp_path)
+    source = (tmp_path / "runs" / "interrupted-001").resolve()
+    request = DesktopReferenceLaunchRequest(
+        **{
+            **base.__dict__,
+            "destination": (tmp_path / "runs" / "resume-001").resolve(),
+            "run_id": "resume-001",
+            "resume_source": source,
+        }
+    )
+    monkeypatch.setattr(
+        DesktopReferenceLaunchRequest,
+        "verify_launch_inputs",
+        lambda _self: None,
+    )
+    monkeypatch.setattr(
+        execution_worker,
+        "collect_preflight",
+        lambda _path: (_ for _ in ()).throw(AssertionError("resume must not re-read inputs")),
+    )
+    prepared = []
+
+    def prepare(source_run, *, run_id):
+        prepared.append((source_run, run_id))
+        request.destination.mkdir(parents=True)
+        return request.destination
+
+    def execute(run_directory, **_kwargs):
+        assert run_directory == request.destination
+        (request.destination / "result.json").write_text(
+            '{"status":"completed"}\n', encoding="utf-8"
+        )
+        return 0
+
+    monkeypatch.setattr(execution_worker, "prepare_resume_run", prepare)
+    monkeypatch.setattr(execution_worker, "execute_run", execute)
+    monkeypatch.setattr(
+        execution_worker,
+        "collect_run_report",
+        lambda _path: SimpleNamespace(checks=(), result={"status": "completed"}),
+    )
+
+    code, events, _stderr = _run(request)
+
+    assert code == 0
+    assert prepared == [(source, "resume-001")]
+    assert events[-1].payload["outcome"] == "completed"

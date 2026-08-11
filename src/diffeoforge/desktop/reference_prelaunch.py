@@ -15,6 +15,9 @@ import jsonschema
 from diffeoforge.config import ConfigurationError, resolve_output_directory
 from diffeoforge.desktop.project_review import ProjectReviewResult
 from diffeoforge.desktop.project_setup import DesktopEngine
+from diffeoforge.desktop.reference_production_readiness import (
+    assess_reference_resume_production_readiness,
+)
 from diffeoforge.desktop.reference_readiness import (
     DesktopReferenceReadiness,
     DesktopReferenceReadinessError,
@@ -22,8 +25,9 @@ from diffeoforge.desktop.reference_readiness import (
 )
 from diffeoforge.desktop.worker_protocol import sha256_file
 from diffeoforge.reference_runtime import launcher_identity
+from diffeoforge.runs import inspect_resume_source
 
-REFERENCE_LAUNCH_REQUEST_VERSION = "0.1"
+REFERENCE_LAUNCH_REQUEST_VERSION = "0.2"
 
 
 class DesktopReferencePrelaunchError(RuntimeError):
@@ -32,7 +36,7 @@ class DesktopReferencePrelaunchError(RuntimeError):
 
 def _schema() -> dict[str, Any]:
     resource = files("diffeoforge.schema").joinpath(
-        "desktop-reference-launch-request-v0.1.json"
+        "desktop-reference-launch-request-v0.2.json"
     )
     return json.loads(resource.read_text(encoding="utf-8"))
 
@@ -111,6 +115,7 @@ class DesktopReferenceLaunchRequest:
     launcher_type: str = "container"
     launcher_distribution: str | None = None
     launcher_executable: str | None = None
+    resume_source: Path | None = None
 
     @property
     def engine(self) -> str:
@@ -126,6 +131,9 @@ class DesktopReferenceLaunchRequest:
             "expected_config_sha256": self.expected_config_sha256,
             "run_id": self.run_id,
             "destination": str(self.destination),
+            "resume_source": (
+                None if self.resume_source is None else str(self.resume_source)
+            ),
             "launcher": launcher,
         }
 
@@ -158,7 +166,11 @@ class DesktopReferenceLaunchRequest:
         }
 
     def __post_init__(self) -> None:
-        if not self.config_path.is_absolute() or not self.destination.is_absolute():
+        if (
+            not self.config_path.is_absolute()
+            or not self.destination.is_absolute()
+            or (self.resume_source is not None and not self.resume_source.is_absolute())
+        ):
             raise DesktopReferencePrelaunchError(
                 "Reference launch request paths must be absolute"
             )
@@ -200,6 +212,11 @@ class DesktopReferenceLaunchRequest:
                 if launcher_type in {"wsl", "native"}
                 else None
             ),
+            resume_source=(
+                None
+                if value["resume_source"] is None
+                else Path(value["resume_source"]).expanduser().resolve()
+            ),
         )
 
     def verify_launch_inputs(self) -> None:
@@ -210,12 +227,42 @@ class DesktopReferenceLaunchRequest:
             raise DesktopReferencePrelaunchError(
                 "Configured reference launcher changed after the prelaunch request was bound"
             )
-        try:
-            output_root = resolve_output_directory(config, self.config_path)
-        except (OSError, ConfigurationError, TypeError, ValueError) as error:
-            raise DesktopReferencePrelaunchError(
-                f"Reference output directory cannot be resolved: {error}"
-            ) from error
+        if self.resume_source is not None:
+            try:
+                evidence = inspect_resume_source(self.resume_source)
+            except (OSError, ConfigurationError, TypeError, ValueError) as error:
+                raise DesktopReferencePrelaunchError(
+                    f"Reference resume source is not eligible: {error}"
+                ) from error
+            source_config = evidence.source_run / "config" / "source-config.yaml"
+            if source_config.resolve() != self.config_path:
+                raise DesktopReferencePrelaunchError(
+                    "Reference resume request is bound to a different protected source "
+                    "configuration"
+                )
+            manifest_config = evidence.manifest["source_config"]
+            if manifest_config["sha256"] != self.expected_config_sha256:
+                raise DesktopReferencePrelaunchError(
+                    "Reference resume configuration hash differs from the source manifest"
+                )
+            if _configured_launcher(evidence.manifest["effective_config"]) != self.launcher:
+                raise DesktopReferencePrelaunchError(
+                    "Reference resume launcher differs from the protected effective runtime"
+                )
+            production_readiness = assess_reference_resume_production_readiness(evidence)
+            if production_readiness.production_scale and not production_readiness.ready:
+                raise DesktopReferencePrelaunchError(
+                    "Reference production-scale resume is not safe: "
+                    + " ".join(production_readiness.blockers)
+                )
+            output_root = evidence.source_run.parent
+        else:
+            try:
+                output_root = resolve_output_directory(config, self.config_path)
+            except (OSError, ConfigurationError, TypeError, ValueError) as error:
+                raise DesktopReferencePrelaunchError(
+                    f"Reference output directory cannot be resolved: {error}"
+                ) from error
         expected_destination = (output_root / self.run_id).resolve()
         if expected_destination != self.destination:
             raise DesktopReferencePrelaunchError(
@@ -286,6 +333,44 @@ def build_reference_launch_request(
         launcher_type=configured_launcher["type"],
         launcher_distribution=configured_launcher.get("distribution"),
         launcher_executable=configured_launcher.get("executable"),
+    )
+    request.verify_launch_inputs()
+    return request
+
+
+def build_reference_resume_launch_request(
+    source_run_directory: Path | str,
+    *,
+    request_id: str,
+    run_id: str,
+) -> DesktopReferenceLaunchRequest:
+    """Bind one verified interrupted run to a new immutable desktop successor."""
+
+    try:
+        evidence = inspect_resume_source(source_run_directory)
+        source_config = evidence.source_run / "config" / "source-config.yaml"
+        source_config_record = next(
+            artifact
+            for artifact in evidence.manifest["protected_artifacts"]
+            if artifact["path"] == "config/source-config.yaml"
+        )
+        configured_launcher = _configured_launcher(evidence.manifest["effective_config"])
+    except (KeyError, OSError, StopIteration, ConfigurationError, TypeError, ValueError) as error:
+        raise DesktopReferencePrelaunchError(
+            f"Reference resume source could not be bound: {error}"
+        ) from error
+    request = DesktopReferenceLaunchRequest(
+        request_id=request_id,
+        config_path=source_config.resolve(),
+        destination=(evidence.source_run.parent / run_id).resolve(),
+        run_id=run_id,
+        expected_config_sha256=str(source_config_record["sha256"]),
+        launcher_engine=configured_launcher.get("engine"),
+        launcher_image=configured_launcher.get("image"),
+        launcher_type=configured_launcher["type"],
+        launcher_distribution=configured_launcher.get("distribution"),
+        launcher_executable=configured_launcher.get("executable"),
+        resume_source=evidence.source_run,
     )
     request.verify_launch_inputs()
     return request

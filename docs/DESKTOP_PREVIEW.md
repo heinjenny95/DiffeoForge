@@ -195,10 +195,13 @@ python -m diffeoforge.desktop --smoke
   parent controllers; Qt receives only validated events through queued signals.
 - The launch must match the SHA-256 captured by the completed review. An edited
   configuration is refused until it is reviewed again.
-- Before launch, the compute page shows the exact destination, whether it
+- Before a fresh launch, the compute page shows the exact destination, whether it
   exists, and every exact-name private candidate's raw status, path, and reason.
   Refresh and the mandatory immediate pre-launch recheck are read-only; the GUI
-  exposes no delete, rename, resume, or publish action for private state.
+  exposes no delete, rename, or publish action for private state. Separately,
+  **Resume interrupted run…** discovers only terminal interrupted/failed
+  Deformetrica runs, reverifies their complete evidence and checkpoint, and binds
+  a new immutable successor without modifying the source.
 - The Modern compute page shows exact completed stages and optimizer decisions
   without an ETA, runtime estimate, peak-memory claim, or invented percentage.
   The Deformetrica page shows observed iterations and objective components. Its
@@ -222,7 +225,8 @@ python -m diffeoforge.desktop --smoke
 
 ## Current limitations
 
-The GUI does not yet resume an interrupted atlas or reconcile an already dead
+The GUI resumes a fully evidenced terminal interrupted/failed Deformetrica atlas,
+but does not yet reconcile an abandoned nonterminal run after an already dead
 parent application. Its 3D landmark editor does not provide semilandmark sliding,
 automated homology, uncertainty estimates, symmetry constraints, or missing-data
 imputation. Verified Deformetrica momenta enter the shared PCA screen;

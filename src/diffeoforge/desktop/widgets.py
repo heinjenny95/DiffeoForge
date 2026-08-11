@@ -80,6 +80,7 @@ from diffeoforge.desktop.reference_prelaunch import (
     DesktopReferenceLaunchRequest,
     DesktopReferencePrelaunchError,
     build_reference_launch_request,
+    build_reference_resume_launch_request,
 )
 from diffeoforge.desktop.reference_preparation_status import (
     DesktopReferencePreparationStatus,
@@ -108,6 +109,11 @@ from diffeoforge.desktop.result_review import (
     ModernResultReviewError,
     review_modern_result,
     verify_result_artifact,
+)
+from diffeoforge.desktop.resumable_results import (
+    ResumableReferenceRun,
+    ResumableResultDiscoveryError,
+    discover_resumable_reference_runs,
 )
 from diffeoforge.desktop.reviewed_run import (
     DesktopReviewedRunError,
@@ -977,8 +983,15 @@ class DiffeoForgeWindow(QMainWindow):
             "Select a completed run folder or its DiffeoForge project folder."
         )
         self.open_completed_run_button.clicked.connect(self._select_completed_run)
+        self.resume_interrupted_run_button = QPushButton("Resume interrupted run…")
+        self.resume_interrupted_run_button.setObjectName("secondary")
+        self.resume_interrupted_run_button.setToolTip(
+            "Select an interrupted Deformetrica run with a verified checkpoint."
+        )
+        self.resume_interrupted_run_button.clicked.connect(self._select_interrupted_run)
         resume_layout.addWidget(resume_label)
         resume_layout.addWidget(self.open_completed_run_button)
+        resume_layout.addWidget(self.resume_interrupted_run_button)
         resume_layout.addStretch()
         layout.addWidget(resume_row)
         layout.addWidget(data_form_card)
@@ -2268,7 +2281,7 @@ class DiffeoForgeWindow(QMainWindow):
         self.reference_line_search_spin.setValue(10)
         self.reference_save_every_spin = QSpinBox()
         self.reference_save_every_spin.setRange(1, 100000)
-        self.reference_save_every_spin.setValue(100)
+        self.reference_save_every_spin.setValue(5)
         self.reference_print_every_spin = QSpinBox()
         self.reference_print_every_spin.setRange(1, 100000)
         self.reference_print_every_spin.setValue(1)
@@ -4596,6 +4609,11 @@ class DiffeoForgeWindow(QMainWindow):
                 return False
             if self._review.engine is DesktopEngine.MODERN_CPU:
                 return True
+            if (
+                self._reference_run_request is not None
+                and self._reference_run_request.resume_source is not None
+            ):
+                return True
             return bool(self._reference_readiness is not None and self._reference_readiness.ready)
         if step == 4:
             return self._result_review is not None
@@ -4738,8 +4756,19 @@ class DiffeoForgeWindow(QMainWindow):
                 self._review is not None
                 and self._review.engine is DesktopEngine.DEFORMETRICA_REFERENCE
             )
+            resume = bool(
+                reference
+                and self._reference_run_request is not None
+                and self._reference_run_request.resume_source is not None
+            )
             self.start_atlas_button.setText(
-                "Start reviewed Deformetrica atlas" if reference else "Start reviewed Modern atlas"
+                "Resume interrupted Deformetrica run"
+                if resume
+                else (
+                    "Start reviewed Deformetrica atlas"
+                    if reference
+                    else "Start reviewed Modern atlas"
+                )
             )
             self.start_atlas_button.setEnabled(
                 bool(
@@ -4792,6 +4821,7 @@ class DiffeoForgeWindow(QMainWindow):
         self._sync_reference_preparation_status_controls()
         self._sync_saved_reference_status_verification_controls()
         self.open_completed_run_button.setEnabled(self._worker is None)
+        self.resume_interrupted_run_button.setEnabled(self._worker is None)
 
     @Slot()
     def _select_completed_run(self) -> None:
@@ -4838,6 +4868,142 @@ class DiffeoForgeWindow(QMainWindow):
                 return
             result = results[labels.index(chosen)]
         self._open_completed_result(result)
+
+    @Slot()
+    def _select_interrupted_run(self) -> None:
+        if self._worker is not None:
+            return
+        initial = self.project_edit.text().strip() or self.mesh_edit.text().strip()
+        selected = QFileDialog.getExistingDirectory(
+            self,
+            "Select an interrupted Deformetrica run or project folder",
+            initial,
+        )
+        if not selected:
+            return
+        try:
+            results = discover_resumable_reference_runs(selected)
+        except ResumableResultDiscoveryError as error:
+            self.status_label.setObjectName("statusError")
+            self.status_label.setStyleSheet("")
+            self.status_label.setText(f"Interrupted runs could not be inspected: {error}")
+            return
+        if not results:
+            self.status_label.setObjectName("statusError")
+            self.status_label.setStyleSheet("")
+            self.status_label.setText(
+                "No fully verified interrupted Deformetrica run with an inventoried "
+                "checkpoint was found there."
+            )
+            return
+        result = results[0]
+        if len(results) > 1:
+            labels = [
+                (
+                    f"{candidate.run_directory.name} — {candidate.terminal_status} — "
+                    f"{candidate.checkpoint_bytes:,} checkpoint bytes"
+                )
+                for candidate in results
+            ]
+            chosen, accepted = QInputDialog.getItem(
+                self,
+                "Choose interrupted run",
+                "More than one resumable run was found:",
+                labels,
+                0,
+                False,
+            )
+            if not accepted:
+                return
+            result = results[labels.index(chosen)]
+        self._prepare_reference_resume(result)
+
+    def _prepare_reference_resume(self, result: ResumableReferenceRun) -> None:
+        run_id = f"{result.run_directory.name[:100]}-resume-{uuid.uuid4().hex[:8]}"
+        try:
+            request = build_reference_resume_launch_request(
+                result.run_directory,
+                request_id=f"reference-resume-{uuid.uuid4().hex}",
+                run_id=run_id,
+            )
+        except (
+            DesktopReferencePrelaunchError,
+            OSError,
+            RuntimeError,
+            TypeError,
+            ValueError,
+        ) as error:
+            self.status_label.setObjectName("statusError")
+            self.status_label.setStyleSheet("")
+            self.status_label.setText(f"Interrupted run cannot be resumed safely: {error}")
+            return
+
+        self._result = None
+        self._run_readiness = None
+        self._run_result = None
+        self._result_review = None
+        self._reference_readiness = None
+        self._reference_run_request = request
+        self._review = ProjectReviewResult(
+            engine=DesktopEngine.DEFORMETRICA_REFERENCE,
+            project_name=result.project_name,
+            config_path=result.source_config_path,
+            config_sha256=result.source_config_sha256,
+            report_path=result.run_directory / "result-report.html",
+            report_label="Interrupted Deformetrica run",
+            subject_count=result.subject_count,
+            parameters=(),
+            workload=(),
+            warnings=(
+                "Resume restores parameters and iteration, but Deformetrica reinitializes "
+                "the objective baseline, gradient, and line-search step sizes.",
+            ),
+            scientific_boundary=(
+                "Checkpoint recovery preserves the model state but does not guarantee an "
+                "identical optimizer trajectory."
+            ),
+        )
+        self.run_title_label.setText("Resume interrupted Deformetrica atlas")
+        self.run_subtitle_label.setText(
+            "Create a new immutable successor from the verified checkpoint and continue "
+            "the protected Deformetrica calculation."
+        )
+        self.run_boundary_label.setText(
+            "The interrupted source remains unchanged. Parameters and iteration are "
+            "restored; objective, gradient, and line-search state are reinitialized by "
+            "Deformetrica 4.3."
+        )
+        self.run_summary_label.setText(
+            f"Project: {result.project_name}\n"
+            f"Interrupted source: {self._wrappable_path(result.run_directory)}\n"
+            f"Checkpoint: {result.checkpoint_bytes:,} bytes\n"
+            f"New immutable destination: {self._wrappable_path(request.destination)}"
+        )
+        self.run_readiness_status_label.setObjectName("statusSuccess")
+        self.run_readiness_status_label.setStyleSheet("")
+        self.run_readiness_status_label.setText(
+            "Source manifest, protected inputs, terminal evidence, inventory, and "
+            "checkpoint all verified."
+        )
+        self.run_readiness_detail_label.setText(
+            f"Deformetrica installation: {launcher_label(request.launcher)}\n"
+            "No source file was changed. Starting will create a new successor next to "
+            "the interrupted run."
+        )
+        self.run_progress_bar.setRange(0, 1)
+        self.run_progress_bar.setValue(0)
+        self.run_progress_bar.setFormat("Recovery not started")
+        self.run_optimizer_label.setText(
+            "Runtime estimate unavailable for checkpoint recovery. Live timing begins "
+            "when Deformetrica reports activity."
+        )
+        self.run_state_label.setObjectName("status")
+        self.run_state_label.setStyleSheet("")
+        self.run_state_label.setText("Ready; no successor or Deformetrica process has started.")
+        self.run_result_card.hide()
+        self.refresh_run_readiness_button.setEnabled(False)
+        self._navigate_to_step(3)
+        self._sync_ready_state()
 
     @Slot()
     def _open_validation_lab(self) -> None:
@@ -6190,6 +6356,23 @@ class DiffeoForgeWindow(QMainWindow):
             )
             self.start_atlas_button.setEnabled(False)
             return None
+        production_readiness = review.production_readiness
+        if (
+            production_readiness is not None
+            and production_readiness.production_scale
+            and not production_readiness.ready
+        ):
+            self.run_readiness_status_label.setObjectName("statusError")
+            self.run_readiness_status_label.setStyleSheet("")
+            self.run_readiness_status_label.setText(
+                "Production-scale execution is blocked until its recovery and storage "
+                "requirements pass."
+            )
+            self.run_readiness_detail_label.setText(
+                "\n".join(production_readiness.blockers)
+            )
+            self.start_atlas_button.setEnabled(False)
+            return None
         try:
             request = build_reference_launch_request(
                 review,
@@ -6333,8 +6516,15 @@ class DiffeoForgeWindow(QMainWindow):
     def _start_atlas(self) -> None:
         if self._review is None or self._worker is not None or self._run_result is not None:
             return
-        readiness = self._refresh_run_readiness()
         reference = self._review.engine is DesktopEngine.DEFORMETRICA_REFERENCE
+        resume_request = (
+            self._reference_run_request
+            if reference
+            and self._reference_run_request is not None
+            and self._reference_run_request.resume_source is not None
+            else None
+        )
+        readiness = resume_request or self._refresh_run_readiness()
         if reference:
             if not isinstance(readiness, DesktopReferenceLaunchRequest):
                 return
@@ -6386,7 +6576,13 @@ class DiffeoForgeWindow(QMainWindow):
             f"Request-ID: {request.request_id}\n"
             f"Configuration: {self._wrappable_path(request.config_path)}\n"
             f"Bound SHA-256: {request.expected_config_sha256}\n"
-            f"Non-overwritable destination: {self._wrappable_path(request.destination)}"
+            + (
+                f"Resume source: {self._wrappable_path(request.resume_source)}\n"
+                if isinstance(request, DesktopReferenceLaunchRequest)
+                and request.resume_source is not None
+                else ""
+            )
+            + f"Non-overwritable destination: {self._wrappable_path(request.destination)}"
         )
         self.start_atlas_button.setEnabled(False)
         self.refresh_run_readiness_button.setEnabled(False)
@@ -7193,7 +7389,11 @@ class DiffeoForgeWindow(QMainWindow):
         if not self._step_is_unlocked(step):
             self._sync_navigation_state()
             return
-        if step == 3 and self._run_result is None:
+        resume_request = bool(
+            self._reference_run_request is not None
+            and self._reference_run_request.resume_source is not None
+        )
+        if step == 3 and self._run_result is None and not resume_request:
             self._refresh_run_readiness()
         self._set_active_step(step)
         self.page_stack.setCurrentIndex(step)

@@ -19,6 +19,7 @@ import time
 from collections import deque
 from collections.abc import Callable, Mapping
 from copy import deepcopy
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from importlib.resources import files
 from pathlib import Path, PurePosixPath
@@ -63,6 +64,21 @@ CONVERGENCE_RE = re.compile(
 )
 ITERATION_RE = re.compile(r"-+\s*Iteration:\s*(\d+)\s*-+")
 REFERENCE_ACTIVITY_INTERVAL_SECONDS = 30.0
+
+
+@dataclass(frozen=True)
+class ResumeSourceEvidence:
+    """Fully verified, read-only evidence required to prepare one resume successor."""
+
+    source_run: Path
+    manifest: Mapping[str, Any]
+    result: Mapping[str, Any]
+    terminal_status: str
+    inventory_path: Path
+    inventory: Mapping[str, Any]
+    checkpoint_path: Path
+    checkpoint_bytes: int
+    checkpoint_sha256: str
 
 
 def utc_now() -> str:
@@ -1292,12 +1308,8 @@ def recover_run(
     return result
 
 
-def prepare_resume_run(
-    source_run_directory: Path | str,
-    *,
-    run_id: str | None = None,
-) -> Path:
-    """Prepare an immutable successor from an inventoried failed/interrupted checkpoint."""
+def inspect_resume_source(source_run_directory: Path | str) -> ResumeSourceEvidence:
+    """Verify resume eligibility and checkpoint integrity without changing any files."""
 
     source_run = Path(source_run_directory).expanduser().resolve()
     source_manifest = _read_manifest(source_run)
@@ -1369,6 +1381,34 @@ def prepare_resume_run(
         raise ConfigurationError(
             f"Source checkpoint checksum differs from its inventory: {checkpoint_path}"
         )
+    return ResumeSourceEvidence(
+        source_run=source_run,
+        manifest=source_manifest,
+        result=source_result,
+        terminal_status=terminal_status,
+        inventory_path=inventory_path,
+        inventory=inventory,
+        checkpoint_path=checkpoint_path,
+        checkpoint_bytes=checkpoint_path.stat().st_size,
+        checkpoint_sha256=checkpoint_hash,
+    )
+
+
+def prepare_resume_run(
+    source_run_directory: Path | str,
+    *,
+    run_id: str | None = None,
+) -> Path:
+    """Prepare an immutable successor from an inventoried failed/interrupted checkpoint."""
+
+    evidence = inspect_resume_source(source_run_directory)
+    source_run = evidence.source_run
+    source_manifest = evidence.manifest
+    source_result_path = source_run / "result.json"
+    terminal_status = evidence.terminal_status
+    inventory_path = evidence.inventory_path
+    checkpoint_path = evidence.checkpoint_path
+    checkpoint_hash = evidence.checkpoint_sha256
 
     output_root = source_run.parent
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")

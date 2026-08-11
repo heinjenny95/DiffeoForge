@@ -191,7 +191,7 @@ def initialize_project(
     timepoints: int = 10,
     use_rk2: bool = False,
     max_line_search_iterations: int = 10,
-    save_every_n_iterations: int = 100,
+    save_every_n_iterations: int = 5,
     print_every_n_iterations: int = 1,
     scale_initial_step_size: bool = True,
     use_sobolev_gradient: bool = True,

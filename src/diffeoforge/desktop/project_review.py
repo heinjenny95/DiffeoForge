@@ -9,6 +9,10 @@ from pathlib import Path
 from typing import Any
 
 from diffeoforge.desktop.project_setup import DesktopEngine
+from diffeoforge.desktop.reference_production_readiness import (
+    ReferenceProductionReadiness,
+    assess_reference_production_readiness,
+)
 from diffeoforge.desktop.reference_runtime_estimate import (
     ReferenceRuntimeEstimate,
     estimate_reference_runtime,
@@ -46,6 +50,7 @@ class ProjectReviewResult:
     warnings: tuple[str, ...]
     scientific_boundary: str
     runtime_estimate: ReferenceRuntimeEstimate | None = None
+    production_readiness: ReferenceProductionReadiness | None = None
 
 
 def _number(value: int | float) -> str:
@@ -226,6 +231,7 @@ def _reference_alignment_items(preflight) -> tuple[ReviewItem, ...]:
 def _reference_review(config_path: Path, config_sha256: str) -> ProjectReviewResult:
     preflight = collect_preflight(config_path)
     runtime_estimate = estimate_reference_runtime(preflight)
+    production_readiness = assess_reference_production_readiness(preflight)
     config = preflight.config
     model = config["model"]
     deformation = model["deformation"]
@@ -524,6 +530,34 @@ def _reference_review(config_path: Path, config_sha256: str) -> ProjectReviewRes
             "window. It is not a convergence prediction and is replaced by observed timing "
             "during the run.",
         ),
+        ReviewItem(
+            "Production-scale recovery gate",
+            (
+                "ready"
+                if production_readiness.ready
+                else "blocked"
+            )
+            + (
+                f" · checkpoint every {production_readiness.checkpoint_interval} "
+                f"· {production_readiness.projected_vtk_file_count} projected VTK files"
+                if production_readiness.production_scale
+                else " · not triggered for this cohort size and resolution"
+            ),
+            "For at least 250 subjects near 10,000 faces, DiffeoForge requires frequent "
+            "checkpoints and enough free disk for both the immutable run and one resume "
+            "successor.",
+        ),
+        ReviewItem(
+            "Production storage reserve",
+            (
+                f"{_bytes(production_readiness.observed_free_bytes)} free · "
+                f"{_bytes(production_readiness.required_free_bytes)} required"
+                if production_readiness.production_scale
+                else "not required at pilot scale"
+            ),
+            "The production requirement includes staged inputs, projected retained flow "
+            "meshes, one immutable resume successor, and a fixed free-space reserve.",
+        ),
     )
     warnings = (
         *recommendation_warnings,
@@ -534,6 +568,8 @@ def _reference_review(config_path: Path, config_sha256: str) -> ProjectReviewRes
         *preflight.notices,
         "The computation-time range is an uncalibrated planning heuristic. Actual runtime "
         "depends on GPU/CPU hardware, line search, stopping behavior, and numerical workload.",
+        *production_readiness.blockers,
+        *production_readiness.warnings,
     )
     return ProjectReviewResult(
         engine=DesktopEngine.DEFORMETRICA_REFERENCE,
@@ -552,6 +588,7 @@ def _reference_review(config_path: Path, config_sha256: str) -> ProjectReviewRes
             "execute the external Deformetrica engine."
         ),
         runtime_estimate=runtime_estimate,
+        production_readiness=production_readiness,
     )
 
 

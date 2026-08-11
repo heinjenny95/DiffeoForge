@@ -241,8 +241,10 @@ process. A Qt-independent parent independently reconciles terminal filesystem,
 result-report, and hash evidence before the GUI accepts the outcome. This real
 execution child now has a dedicated PyInstaller sibling, cancel-before-prepare
 smoke, and hard-parent-death gate in the next freeze contract; a fresh clean-runner
-v0.4 observation and rebuilt installer have not yet been produced. Interrupted
-run recovery and reference PC deformation rendering remain open. The verified
+v0.4 observation and rebuilt installer have not yet been produced. The desktop can
+discover a terminal interrupted/failed reference run, reverify its complete evidence,
+and bind an immutable checkpoint successor without changing the source. Recovery of
+an abandoned nonterminal run and reference PC deformation rendering remain open. The verified
 source-level momenta PCA handoff is connected. The older preparation-only child
 remains a separate narrow sibling in the
 evidence-only freeze and cannot authorize engine execution. The Modern path does not
@@ -286,6 +288,10 @@ self-intersection detection, or promise
 CPU/GPU equivalence or 300-specimen production performance. See the [modern-workflow
 documentation](docs/MODERN_WORKFLOW.md) and [reference-backend
 documentation](docs/REFERENCE_BACKEND.md) for the exact boundaries.
+Reference projects at 300 subjects and approximately 10,000 faces now fail closed
+unless checkpoints are written at least every five iterations and the output filesystem
+has a measured run-plus-resume reserve. See the
+[reference production-scale qualification contract](docs/REFERENCE_PRODUCTION_SCALE.md).
 The desktop reference diagnostic has its own
 [non-mutation contract](docs/REFERENCE_DESKTOP_READINESS.md).
 The native projection preview is specified in

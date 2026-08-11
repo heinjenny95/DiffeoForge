@@ -63,7 +63,7 @@ class ProjectSetupRequest:
     reference_timepoints: int = 10
     reference_use_rk2: bool = False
     reference_max_line_search_iterations: int = 10
-    reference_save_every_n_iterations: int = 100
+    reference_save_every_n_iterations: int = 5
     reference_print_every_n_iterations: int = 1
     reference_scale_initial_step_size: bool = True
     reference_use_sobolev_gradient: bool = True
