@@ -9,7 +9,10 @@ import numpy as np
 import pytest
 
 from diffeoforge.cli import main
-from diffeoforge.desktop.reference_result_review import review_reference_result
+from diffeoforge.desktop.reference_result_review import (
+    export_registration_qc_review,
+    review_reference_result,
+)
 from diffeoforge.desktop.result_review import ModernResultReviewError, verify_result_artifact
 from diffeoforge.mesh import sha256_file
 from diffeoforge.reference_pca import (
@@ -54,19 +57,28 @@ def _completed_reference_run(tmp_path: Path) -> Path:
         Path(__file__).parents[1] / "examples" / "synthetic" / "meshes" / "template.vtk"
     )
     atlas_path = output / "DeterministicAtlas__EstimatedParameters__Template_surface.vtk"
-    reconstruction_path = (
-        output
-        / "DeterministicAtlas__Reconstruction__surface__subject_subject-01.vtk.vtk"
-    )
     shutil.copyfile(surface_source, atlas_path)
-    shutil.copyfile(surface_source, reconstruction_path)
+    reconstruction_paths = []
+    for subject in subjects:
+        subject_name = Path(subject["staged_path"]).name
+        reconstruction_path = (
+            output
+            / f"DeterministicAtlas__Reconstruction__surface__subject_{subject_name}.vtk"
+        )
+        shutil.copyfile(surface_source, reconstruction_path)
+        reconstruction_paths.append(reconstruction_path)
     records = [
         {
             "path": path.relative_to(output).as_posix(),
             "bytes": path.stat().st_size,
             "sha256": sha256_file(path),
         }
-        for path in (atlas_path, controls_path, momenta_path, reconstruction_path)
+        for path in (
+            atlas_path,
+            controls_path,
+            momenta_path,
+            *reconstruction_paths,
+        )
     ]
     inventory_path = run / "output-inventory.json"
     inventory_path.write_text(
@@ -309,6 +321,38 @@ def test_desktop_reference_review_creates_and_exposes_verified_pca(tmp_path: Pat
     assert verify_result_artifact(review, "estimated-template").is_file()
     assert review.execution_duration_seconds == 60.0
     assert review.optimizer_termination_reason == "tolerance_threshold"
+    assert len(review.registration_qc) == 5
+    assert [item.residual_p95 for item in review.registration_qc] == sorted(
+        (item.residual_p95 for item in review.registration_qc),
+        reverse=True,
+    )
+    first_qc = review.registration_qc[0]
+    assert verify_result_artifact(review, first_qc.original_artifact_key).is_file()
+    assert verify_result_artifact(review, first_qc.reconstruction_artifact_key).is_file()
+
+
+def test_registration_qc_review_export_is_explicit_and_non_overwriting(
+    tmp_path: Path,
+) -> None:
+    run = _completed_reference_run(tmp_path)
+    review = review_reference_result(run)
+    first_subject = review.registration_qc[0].subject_name
+
+    first = export_registration_qc_review(review, {first_subject: "uncertain"})
+    second = export_registration_qc_review(review, {first_subject: "pass"})
+    payload = json.loads(first.path.read_text(encoding="utf-8"))
+
+    assert first.path != second.path
+    assert first.path.is_file()
+    assert first.sha256_path.is_file()
+    assert first.sha256 == sha256_file(first.path)
+    assert payload["summary"] == {
+        "reviewed_count": 1,
+        "subject_count": 5,
+        "unreviewed_count": 4,
+    }
+    assert payload["subjects"][0]["decision"] == "uncertain"
+    assert "not an automatic biological exclusion" in payload["scientific_boundary"]
 
 
 def test_desktop_reference_review_rechecks_artifact_before_open(tmp_path: Path) -> None:

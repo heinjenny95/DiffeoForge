@@ -1166,6 +1166,26 @@ def _final_configuration(
             config["project"]["parameter_provenance"]["sources"][name] = (
                 "absolute_override"
             )
+    runtime_observations: list[dict[str, object]] = []
+    for event in _load_events(root):
+        if event.get("event") != "candidate_completed":
+            continue
+        metrics = event.get("metrics")
+        if not isinstance(metrics, Mapping):
+            continue
+        final_iteration = metrics.get("final_iteration")
+        runtime_seconds = metrics.get("runtime_seconds")
+        if final_iteration is None or runtime_seconds is None:
+            continue
+        runtime_observations.append(
+            {
+                "stage_id": str(event["stage_id"]),
+                "candidate_id": str(event["candidate_id"]),
+                "runtime_seconds": float(runtime_seconds),
+                "final_iteration": int(final_iteration),
+                "maximum_iterations": int(metrics["maximum_iterations"]),
+            }
+        )
     config["project"]["parameter_provenance"]["recommendation"][
         "calibration_result"
     ] = {
@@ -1182,6 +1202,11 @@ def _final_configuration(
             for name, value in selected_values.items()
         },
         "full_cohort_confirmation_required": True,
+        "runtime_calibration": {
+            "version": "0.1",
+            "pilot_subject_count": len(manifest["inputs"]["subjects"]),
+            "observations": runtime_observations,
+        },
     }
     validate_schema(config)
     final_path = root / "selected" / "atlas-calibrated.yaml"
@@ -1271,6 +1296,9 @@ def _calibration_report_payload(
         ),
         "deformation_scale_intent": recommendation.get(
             "deformation_scale_intent", "not recorded"
+        ),
+        "expected_shape_disparity": recommendation.get(
+            "expected_shape_disparity", "moderate"
         ),
         "smallest_relevant_feature": plan.smallest_relevant_feature,
     }
@@ -1525,7 +1553,9 @@ code{{background:#eef5f4;padding:2px 5px}}
 {html.escape(str(report['summary']))}</p>
 <h2>Your declared priorities</h2>
 <p>Surface detail: <strong>{html.escape(str(priorities['surface_detail_intent']))}</strong><br>
-Deformation scale: <strong>{html.escape(str(priorities['deformation_scale_intent']))}</strong></p>
+Expected difference amplitude:
+<strong>{html.escape(str(priorities['expected_shape_disparity']))}</strong><br>
+Deformation reach: <strong>{html.escape(str(priorities['deformation_scale_intent']))}</strong></p>
 <h2>Recommended parameters</h2>
 <table><thead><tr><th>Parameter</th><th>Recommended value</th><th>What it changes</th></tr></thead>
 <tbody>{parameter_rows}</tbody></table>
@@ -1667,7 +1697,7 @@ def _record_reference_calibration_stage_selection(
             "assessment": assessment.as_manifest(),
             "selection_mode": selection_mode,
             "selection_reason": selection_reason,
-            "researcher_decision": selection_mode == "researcher_manual",
+            "researcher_decision": selection_mode.startswith("researcher_"),
         },
     )
     manifest = _verify_manifest(root)
@@ -1742,6 +1772,32 @@ def record_reference_calibration_stage_review(
         selection_reason=(
             "The researcher explicitly selected this candidate after reviewing the "
             "available automatic evidence and optional visual QC."
+        ),
+    )
+
+
+def record_reference_calibration_provisional_override(
+    study_directory: Path | str,
+    *,
+    visual_approvals: Mapping[str, bool],
+    selected_candidate_id: str,
+) -> tuple[ReferenceCalibrationStudySnapshot, CalibrationStageAssessment]:
+    """Advance an ambiguous stage with an explicit researcher-authorized default.
+
+    This is deliberately distinct from automatic selection: the evidence did not
+    meet the predeclared robustness threshold, so provenance must retain that the
+    researcher accepted the balanced-score candidate provisionally.
+    """
+
+    return _record_reference_calibration_stage_selection(
+        study_directory,
+        visual_approvals=visual_approvals,
+        selected_candidate_id=selected_candidate_id,
+        selection_mode="researcher_provisional_balanced_override",
+        selection_reason=(
+            "The automatic evidence did not identify a robust unique winner. The "
+            "researcher explicitly authorized the displayed balanced-score candidate "
+            "as a provisional choice so that pilot calibration could continue."
         ),
     )
 

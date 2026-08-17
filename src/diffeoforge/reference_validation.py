@@ -431,6 +431,9 @@ def build_reference_validation_plan(
         deformation_scale_intent=str(
             recommendation_record.get("deformation_scale_intent", "balanced")
         ),
+        expected_shape_disparity=str(
+            recommendation_record.get("expected_shape_disparity", "moderate")
+        ),
     )
     subject_observations = tuple(
         observation

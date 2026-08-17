@@ -95,7 +95,7 @@
                 "warnings"
               ],
               "properties": {
-                "version": {"enum": ["0.1", "0.2"]},
+                "version": {"enum": ["0.1", "0.2", "0.3"]},
                 "fingerprint": {
                   "type": "string",
                   "pattern": "^[0-9a-f]{64}$"
@@ -112,6 +112,9 @@
                 },
                 "deformation_scale_intent": {
                   "enum": ["local", "balanced", "global"]
+                },
+                "expected_shape_disparity": {
+                  "enum": ["low", "moderate", "high", "extreme"]
                 },
                 "template_filename": {"type": "string", "minLength": 1},
                 "template_sha256": {
@@ -230,7 +233,7 @@
                     "limitations"
                   ],
                   "properties": {
-                    "version": {"enum": ["0.1", "0.2"]},
+                    "version": {"enum": ["0.1", "0.2", "0.3"]},
                     "fingerprint": {
                       "type": "string",
                       "pattern": "^[0-9a-f]{64}$"
@@ -310,6 +313,9 @@
                         "researcher_measured_feature_with_mesh_sampling_floor",
                         "researcher_measured_feature"
                       ]
+                    },
+                    "expected_shape_disparity": {
+                      "enum": ["low", "moderate", "high", "extreme"]
                     },
                     "baseline_parameter_ratios": {
                       "type": "object",
@@ -522,24 +528,28 @@
                         "attachment": {
                           "enum": [
                             "researcher_manual",
+                            "researcher_provisional_balanced_override",
                             "automatic_provisional_balanced_score"
                           ]
                         },
                         "deformation": {
                           "enum": [
                             "researcher_manual",
+                            "researcher_provisional_balanced_override",
                             "automatic_provisional_balanced_score"
                           ]
                         },
                         "noise": {
                           "enum": [
                             "researcher_manual",
+                            "researcher_provisional_balanced_override",
                             "automatic_provisional_balanced_score"
                           ]
                         },
                         "timepoints": {
                           "enum": [
                             "researcher_manual",
+                            "researcher_provisional_balanced_override",
                             "automatic_provisional_balanced_score"
                           ]
                         }
@@ -578,7 +588,52 @@
                         }
                       }
                     },
-                    "full_cohort_confirmation_required": {"const": true}
+                    "full_cohort_confirmation_required": {"const": true},
+                    "runtime_calibration": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "version",
+                        "pilot_subject_count",
+                        "observations"
+                      ],
+                      "properties": {
+                        "version": {"const": "0.1"},
+                        "pilot_subject_count": {"type": "integer", "minimum": 2},
+                        "observations": {
+                          "type": "array",
+                          "minItems": 3,
+                          "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                              "stage_id",
+                              "candidate_id",
+                              "runtime_seconds",
+                              "final_iteration",
+                              "maximum_iterations"
+                            ],
+                            "properties": {
+                              "stage_id": {
+                                "enum": [
+                                  "attachment",
+                                  "deformation",
+                                  "noise",
+                                  "timepoints"
+                                ]
+                              },
+                              "candidate_id": {"type": "string", "minLength": 1},
+                              "runtime_seconds": {
+                                "type": "number",
+                                "exclusiveMinimum": 0
+                              },
+                              "final_iteration": {"type": "integer", "minimum": 0},
+                              "maximum_iterations": {"type": "integer", "minimum": 1}
+                            }
+                          }
+                        }
+                      }
+                    }
                   }
                 }
               }

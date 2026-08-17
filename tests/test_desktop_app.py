@@ -1774,7 +1774,10 @@ def test_desktop_window_renders_deformetrica_iteration_and_bounded_eta(
     assert "maximum" in window.run_progress_bar.format()
     assert "Iteration 12 of maximum 100" in window.run_optimizer_label.text()
     assert "Elapsed: 1 h 01 min 01 s" in window.run_optimizer_label.text()
-    assert "Estimated computation time to maximum: 7 h 27 min 20 s" in (
+    assert "Time to iteration cap: 7 h 27 min 20 s" in (
+        window.run_optimizer_label.text()
+    )
+    assert "Likely stopping window: not stable enough" in (
         window.run_optimizer_label.text()
     )
     assert "not convergence" in window.run_optimizer_label.text()

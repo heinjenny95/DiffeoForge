@@ -298,8 +298,15 @@ def test_staged_calibration_allows_selection_without_visual_qc(
     dialog.show()
     application.processEvents()
 
-    assert dialog.advanced_mode.isChecked() is True
+    assert dialog.advanced_mode.isChecked() is False
     assert dialog.start_button.isHidden() is True
+    assert dialog.use_provisional_button.isVisible() is True
+    assert dialog.compare_options_button.isVisible() is True
+    assert dialog.collect_evidence_button.isVisible() is True
+    assert "Paused checkpoint" in dialog.status.text()
+    dialog.compare_options_button.click()
+    application.processEvents()
+    assert dialog.advanced_mode.isChecked() is True
     assert dialog.selection_combo.isVisible() is True
     warning_labels = dialog.findChildren(QLabel, "statusWarning")
     assert any("Evidence grade:" in label.text() for label in warning_labels)
@@ -325,7 +332,7 @@ def test_staged_calibration_allows_selection_without_visual_qc(
         "secondary",
     ]
     assert all(
-        button.text().startswith("Optional visual QC")
+        button.text().startswith("Optional plausibility gate")
         for button in review_buttons
     )
     assert dialog.review_next_button.isHidden() is True
@@ -373,7 +380,7 @@ def test_staged_calibration_allows_selection_without_visual_qc(
     failed_statuses = [
         label
         for label in dialog.findChildren(QLabel, "statusError")
-        if "Visual QC: failed" in label.text()
+        if "Plausibility gate: failed" in label.text()
     ]
     assert len(failed_statuses) == 1
 

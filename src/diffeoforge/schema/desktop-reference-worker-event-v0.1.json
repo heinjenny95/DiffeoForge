@@ -100,8 +100,29 @@
         "elapsed_seconds": {"type": "number", "minimum": 0},
         "seconds_per_iteration": {"type": ["number", "null"], "exclusiveMinimum": 0},
         "eta_to_iteration_cap_seconds": {"type": ["number", "null"], "minimum": 0},
+        "likely_convergence_iteration_lower": {
+          "type": ["integer", "null"],
+          "minimum": 0
+        },
+        "likely_convergence_iteration_upper": {
+          "type": ["integer", "null"],
+          "minimum": 0
+        },
+        "eta_to_likely_convergence_lower_seconds": {
+          "type": ["number", "null"],
+          "minimum": 0
+        },
+        "eta_to_likely_convergence_upper_seconds": {
+          "type": ["number", "null"],
+          "minimum": 0
+        },
+        "resource_contention_detected": {"type": "boolean"},
         "estimate_status": {
-          "enum": ["warming_up", "observed_rate_to_iteration_cap"]
+          "enum": [
+            "warming_up",
+            "observed_rate_to_iteration_cap",
+            "observed_rate_to_cap_with_resource_contention"
+          ]
         }
       }
     },

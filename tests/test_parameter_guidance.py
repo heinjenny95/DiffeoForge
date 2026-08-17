@@ -12,6 +12,7 @@ EXPECTED_GUIDANCE_KEYS = {
     "recommendation_mode",
     "surface_detail",
     "deformation_scale",
+    "shape_disparity",
     "attachment_ratio",
     "deformation_ratio",
     "control_spacing_ratio",
@@ -107,7 +108,7 @@ def test_each_deformetrica_control_has_an_expandable_english_guide(
     distinction = window.reference_scale_difference_label
     assert distinction.objectName() == "conceptDifference"
     assert distinction.isVisible() is False
-    assert "two independent questions" in distinction.text()
+    assert "three independent questions" in distinction.text()
     assert "What should DiffeoForge notice?" in distinction.text()
     assert "How far should one adjustment spread?" in distinction.text()
     assert "They do not have to match." in distinction.text()
@@ -121,7 +122,7 @@ def test_each_deformetrica_control_has_an_expandable_english_guide(
     disclosure_by_title = {item.title: item for item in disclosures}
     for title in {
         "Workflow details",
-        "How these two choices work",
+        "How these three choices work",
         "Analysis details",
         "Pilot plan details",
         "What happens during calibration",
@@ -130,11 +131,11 @@ def test_each_deformetrica_control_has_an_expandable_english_guide(
         assert disclosure_by_title[title].panel.isHidden() is True
         assert disclosure_by_title[title].toggle_button.text().startswith("ⓘ ")
 
-    concept_help = disclosure_by_title["How these two choices work"]
+    concept_help = disclosure_by_title["How these three choices work"]
     concept_help.toggle_button.click()
     application.processEvents()
     assert distinction.isVisible() is True
-    assert concept_help.toggle_button.text() == "ⓘ Hide how these two choices work"
+    assert concept_help.toggle_button.text() == "ⓘ Hide how these three choices work"
 
     deformation_help = window.reference_parameter_help_panels["deformation_scale"]
     deformation_help.toggle_button.click()

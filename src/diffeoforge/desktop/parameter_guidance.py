@@ -107,6 +107,31 @@ DEFORMETRICA_PARAMETER_GUIDANCE: dict[str, ParameterGuidance] = {
             ),
         ),
     ),
+    "shape_disparity": ParameterGuidance(
+        summary=(
+            "Declares how large biologically real differences between specimens may "
+            "be. This is deformation amplitude, not the local or broad spatial reach "
+            "of each movement."
+        ),
+        sections=(
+            (
+                "High or extreme disparity",
+                "Widens the pilot search and stops deformation energy alone from being "
+                "treated as evidence against a candidate. Residual underfit, invalid "
+                "faces, and implausible correspondence still count against it.",
+            ),
+            (
+                "Low or moderate disparity",
+                "Retains stronger regularity trade-offs because very large changes were "
+                "not declared as expected biology.",
+            ),
+            (
+                "Example",
+                "Very different trochanter shapes may be declared extreme while their "
+                "coordinated deformation reach is still broad/global.",
+            ),
+        ),
+    ),
     "attachment_ratio": ParameterGuidance(
         summary=(
             "The attachment-kernel width in your mesh coordinate units. For current or "

@@ -664,6 +664,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="Researcher-declared biological deformation scale.",
     )
     reference_calibration_parser.add_argument(
+        "--expected-shape-disparity",
+        choices=("low", "moderate", "high", "extreme"),
+        default="moderate",
+        help=(
+            "Expected amplitude of real between-specimen differences, independently "
+            "of local/global deformation reach (default: moderate)."
+        ),
+    )
+    reference_calibration_parser.add_argument(
         "--smallest-relevant-feature",
         type=float,
         help=(
@@ -2627,6 +2636,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 alignment_basis="declared_gpa",
                 surface_detail_intent=args.surface_detail,
                 deformation_scale_intent=args.deformation_scale,
+                expected_shape_disparity=args.expected_shape_disparity,
             )
             plan = build_reference_calibration_plan(
                 recommendation,

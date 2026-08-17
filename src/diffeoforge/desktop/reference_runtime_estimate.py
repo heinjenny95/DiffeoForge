@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import statistics
 from dataclasses import dataclass
 
 from diffeoforge.report import PreflightResult
@@ -24,6 +25,8 @@ class ReferenceRuntimeEstimate:
     maximum_iterations: int
     pair_evaluations_per_iteration: int
     confidence: str = "very_low"
+    basis: str = "engineering_heuristic"
+    pilot_observation_count: int = 0
 
     def __post_init__(self) -> None:
         numeric = (
@@ -99,13 +102,91 @@ def estimate_reference_runtime(
         seconds_per_iteration *= _KEOPS_GPU_KERNEL_TIME_FACTOR
 
     maximum_iterations = int(optimization["max_iterations"])
+    calibration_result = (
+        config.get("project", {})
+        .get("parameter_provenance", {})
+        .get("recommendation", {})
+        .get("calibration_result", {})
+    )
+    runtime_calibration = (
+        calibration_result.get("runtime_calibration", {})
+        if isinstance(calibration_result, dict)
+        else {}
+    )
+    observations = (
+        runtime_calibration.get("observations", [])
+        if isinstance(runtime_calibration, dict)
+        else []
+    )
+    pilot_subject_count = (
+        int(runtime_calibration.get("pilot_subject_count", 0))
+        if isinstance(runtime_calibration, dict)
+        else 0
+    )
+    calibrated_samples: list[tuple[float, int]] = []
+    if pilot_subject_count > 0 and isinstance(observations, list):
+        for observation in observations:
+            if not isinstance(observation, dict):
+                continue
+            try:
+                duration = float(observation["runtime_seconds"])
+                final_iteration = int(observation["final_iteration"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            if math.isfinite(duration) and duration > 0 and final_iteration >= 1:
+                calibrated_samples.append((duration, final_iteration))
+    if len(calibrated_samples) >= 3:
+        scaled_rates = sorted(
+            duration / (final_iteration + 1) / pilot_subject_count
+            * len(preflight.subjects)
+            for duration, final_iteration in calibrated_samples
+        )
+        observed_iterations = sorted(
+            min(maximum_iterations, final_iteration)
+            for _duration, final_iteration in calibrated_samples
+        )
+        seconds_per_iteration = float(statistics.median(scaled_rates))
+        lower_iterations = max(
+            3,
+            observed_iterations[round((len(observed_iterations) - 1) * 0.20)],
+        )
+        typical_iterations = max(
+            lower_iterations,
+            round(statistics.median(observed_iterations)),
+        )
+        upper_iterations = min(
+            maximum_iterations,
+            max(
+                typical_iterations,
+                observed_iterations[
+                    round((len(observed_iterations) - 1) * 0.90)
+                ],
+            ),
+        )
+        lower_seconds = seconds_per_iteration * (lower_iterations + 1) * 0.8
+        typical_seconds = seconds_per_iteration * (typical_iterations + 1)
+        upper_seconds = seconds_per_iteration * (upper_iterations + 1) * 1.4
+        return ReferenceRuntimeEstimate(
+            lower_seconds=lower_seconds,
+            typical_seconds=typical_seconds,
+            upper_seconds=upper_seconds,
+            seconds_per_iteration=seconds_per_iteration,
+            lower_iterations=lower_iterations,
+            typical_iterations=typical_iterations,
+            maximum_iterations=maximum_iterations,
+            pair_evaluations_per_iteration=pair_evaluations,
+            confidence="pilot_calibrated",
+            basis="same-project_pilot_observations",
+            pilot_observation_count=len(calibrated_samples),
+        )
+
     lower_iterations = min(
         maximum_iterations,
-        max(3, round(maximum_iterations * 0.03)),
+        max(5, round(maximum_iterations * 0.20)),
     )
     typical_iterations = min(
         maximum_iterations,
-        max(8, round(maximum_iterations * 0.08)),
+        max(12, round(maximum_iterations * 0.60)),
     )
     total_faces = template_faces + sum(subject_faces)
     setup_seconds = 25.0 + total_faces / 20_000.0

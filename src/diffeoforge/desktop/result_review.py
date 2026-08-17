@@ -53,6 +53,17 @@ class ModernResultArtifact:
 
 
 @dataclass(frozen=True)
+class RegistrationQCItem:
+    """One full-cohort subject ranked by a geometric registration-QC proxy."""
+
+    rank: int
+    subject_name: str
+    residual_p95: float
+    original_artifact_key: str
+    reconstruction_artifact_key: str
+
+
+@dataclass(frozen=True)
 class ModernResultReview:
     """Read-only summary created only from a fully verified atlas/PCA workflow."""
 
@@ -80,12 +91,19 @@ class ModernResultReview:
     execution_duration_seconds: float | None = None
     optimizer_stop_interpretation: str | None = None
     additional_artifact_roots: tuple[Path, ...] = ()
+    registration_qc: tuple[RegistrationQCItem, ...] = ()
 
     def artifact(self, key: str) -> ModernResultArtifact:
         for artifact in self.artifacts:
             if artifact.key == key:
                 return artifact
         raise KeyError(key)
+
+    def registration_qc_item(self, subject_name: str) -> RegistrationQCItem:
+        for item in self.registration_qc:
+            if item.subject_name == subject_name:
+                return item
+        raise KeyError(subject_name)
 
 
 def _safe_bundle_path(root: Path, value: object, *, label: str) -> Path:

@@ -19,7 +19,7 @@ from diffeoforge.analysis.reference_convergence_visualization import (
     detect_reference_stop_evidence,
 )
 from diffeoforge.config import ConfigurationError
-from diffeoforge.mesh import TriangleMesh, read_vtk_polydata
+from diffeoforge.mesh import TriangleMesh, read_vtk_polydata, sha256_file
 from diffeoforge.mesh_quality import assess_triangle_mesh
 from diffeoforge.result_report import RunReport, collect_run_report
 
@@ -118,6 +118,31 @@ def _safe_output_path(run: Path, relative_value: object) -> Path:
     if not candidate.is_relative_to(output) or not candidate.is_file():
         raise ConfigurationError(f"Calibration output is missing: {relative}")
     return candidate
+
+
+def _safe_staged_input_path(run: Path, record: object) -> Path:
+    if not isinstance(record, dict):
+        raise ConfigurationError("Run input inventory contains an invalid record")
+    relative = PurePosixPath(str(record.get("staged_path", "")))
+    if (
+        relative.is_absolute()
+        or not relative.parts
+        or "." in relative.parts
+        or ".." in relative.parts
+    ):
+        raise ConfigurationError(f"Run input inventory contains an unsafe path: {relative}")
+    path = run.joinpath(*relative.parts).resolve()
+    if not path.is_relative_to(run) or path.is_symlink() or not path.is_file():
+        raise ConfigurationError(f"Staged run input is missing or symbolic: {relative}")
+    geometry = record.get("geometry")
+    if not isinstance(geometry, dict):
+        raise ConfigurationError(f"Staged run input lacks geometry evidence: {relative}")
+    if (
+        path.stat().st_size != int(geometry.get("bytes", -1))
+        or sha256_file(path) != str(geometry.get("sha256", ""))
+    ):
+        raise ConfigurationError(f"Staged run input changed after preparation: {relative}")
+    return path
 
 
 def _inventory_vtk(
@@ -242,14 +267,22 @@ def collect_reference_calibration_run_metrics(
             "Calibration run must contain exactly one estimated atlas template"
         )
     reconstructions = _inventory_vtk(report, _RECONSTRUCTION_MARKER)
-    effective_input = report.manifest["effective_config"]["input"]
-    input_directory = Path(str(effective_input["directory"])).expanduser().resolve()
-    template_path = Path(str(effective_input["template"])).expanduser().resolve()
-    subject_pattern = str(effective_input["subject_pattern"])
+    input_records = report.manifest.get("inputs")
+    if not isinstance(input_records, list):
+        raise ConfigurationError("Run manifest contains no staged input inventory")
+    template_records = [
+        record
+        for record in input_records
+        if isinstance(record, dict) and record.get("role") == "template"
+    ]
+    if len(template_records) != 1:
+        raise ConfigurationError("Run manifest must bind exactly one staged template")
+    template_path = _safe_staged_input_path(run, template_records[0])
     subjects = {
-        path.name: path.resolve()
-        for path in sorted(input_directory.glob(subject_pattern))
-        if path.is_file() and path.resolve() != template_path
+        path.name: path
+        for record in input_records
+        if isinstance(record, dict) and record.get("role") == "subject"
+        for path in (_safe_staged_input_path(run, record),)
     }
     if not subjects:
         raise ConfigurationError("Calibration run contains no pilot subjects")

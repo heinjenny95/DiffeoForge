@@ -46,6 +46,7 @@ from diffeoforge.reference_calibration_study import (
     assess_reference_calibration_snapshot,
     load_reference_calibration_report,
     load_reference_calibration_study,
+    record_reference_calibration_provisional_override,
     record_reference_calibration_stage_review,
 )
 from diffeoforge.result_report import collect_run_report
@@ -571,6 +572,15 @@ class ReferenceCalibrationDialog(QDialog):
         self.selection_combo.hide()
         self.start_button = QPushButton("Run all candidates in this stage")
         self.start_button.clicked.connect(self._start)
+        self.use_provisional_button = QPushButton("Use provisional recommendation")
+        self.use_provisional_button.clicked.connect(self._use_provisional)
+        self.use_provisional_button.hide()
+        self.compare_options_button = QPushButton("Compare options")
+        self.compare_options_button.clicked.connect(self._compare_options)
+        self.compare_options_button.hide()
+        self.collect_evidence_button = QPushButton("Collect more evidence…")
+        self.collect_evidence_button.clicked.connect(self._collect_more_evidence)
+        self.collect_evidence_button.hide()
         self.advance_button = QPushButton("Select option & prepare next stage")
         self.advance_button.clicked.connect(self._advance)
         close = QPushButton("Close")
@@ -579,12 +589,18 @@ class ReferenceCalibrationDialog(QDialog):
         _set_action_emphasis(self.cancel_button, False)
         _set_action_emphasis(self.review_next_button, False)
         _set_action_emphasis(self.start_button, True)
+        _set_action_emphasis(self.use_provisional_button, True)
+        _set_action_emphasis(self.compare_options_button, False)
+        _set_action_emphasis(self.collect_evidence_button, False)
         _set_action_emphasis(self.advance_button, False)
         _set_action_emphasis(self.close_button, False)
         footer.addWidget(self.cancel_button)
         footer.addStretch()
         footer.addWidget(self.review_next_button)
         footer.addWidget(self.selection_combo)
+        footer.addWidget(self.collect_evidence_button)
+        footer.addWidget(self.compare_options_button)
+        footer.addWidget(self.use_provisional_button)
         footer.addWidget(self.start_button)
         footer.addWidget(self.advance_button)
         footer.addWidget(close)
@@ -871,6 +887,9 @@ class ReferenceCalibrationDialog(QDialog):
         _set_choice_emphasis(self.selection_combo, False)
         self.advance_button.hide()
         self.advance_button.setEnabled(False)
+        self.use_provisional_button.hide()
+        self.compare_options_button.hide()
+        self.collect_evidence_button.hide()
         _set_action_emphasis(
             self.start_button,
             automatic_mode or not awaiting or retryable,
@@ -892,13 +911,20 @@ class ReferenceCalibrationDialog(QDialog):
                         "uncertainty-qualified choice and continue automatically."
                     )
                 else:
-                    self.advanced_mode.setChecked(True)
-                    self.status.setText(
-                        "DiffeoForge found no robust unique winner and refused to guess. "
-                        "Advanced review is now open. Compare the Pareto alternatives, "
-                        "add optional visual QC, or expand the pilot evidence."
+                    self.start_button.hide()
+                    self.use_provisional_button.setEnabled(
+                        assessment.balanced_candidate_id is not None
                     )
-                    return
+                    self.use_provisional_button.show()
+                    self.compare_options_button.show()
+                    self.collect_evidence_button.show()
+                    self.status.setText(
+                        "Paused checkpoint: the pilot evidence does not support one "
+                        "robust unique winner. Nothing was selected and Advanced mode "
+                        "was not enabled. You can explicitly use the displayed balanced "
+                        "recommendation provisionally, compare every option yourself, "
+                        "or collect more pilot evidence."
+                    )
             else:
                 self.status.setText(
                     "Next: click the green Run complete four-stage pilot button. You "
@@ -1020,7 +1046,13 @@ class ReferenceCalibrationDialog(QDialog):
                     option_help_layout.addWidget(comparison_detail)
             else:
                 comparison = QLabel(
-                    "No relative comparison is available yet."
+                    "No standout relative signal was detected for this option; "
+                    "that is a neutral comparison result, not missing evidence."
+                    if all(
+                        item.status == "completed" and item.metrics is not None
+                        for item in self._snapshot.candidates
+                    )
+                    else "Relative comparison appears after all candidates finish."
                 )
                 comparison.setObjectName("status")
                 comparison.setWordWrap(True)
@@ -1052,9 +1084,9 @@ class ReferenceCalibrationDialog(QDialog):
             reviewed = candidate.candidate_id in self._visually_reviewed_candidates
             approved = candidate.candidate_id in self._visually_approved_candidates
             viewer = QPushButton(
-                "Optional visual QC: review again…"
+                "Optional plausibility gate: review again…"
                 if reviewed
-                else "Optional visual QC: inspect originals & reconstructions…"
+                else "Optional plausibility gate: inspect originals & reconstructions…"
             )
             viewer.clicked.connect(
                 lambda _checked=False, value=candidate: self._open_candidate(value)
@@ -1067,12 +1099,15 @@ class ReferenceCalibrationDialog(QDialog):
             approval.setEnabled(False)
             approval.setToolTip("Review this option again to change the recorded decision.")
             visual_status = QLabel(
-                "Visual QC: passed (optional)."
+                "Plausibility gate: passed; this option remains eligible."
                 if approved
                 else (
-                    "Visual QC: failed. This option is currently excluded."
+                    "Plausibility gate: failed. This option is currently excluded."
                     if reviewed
-                    else "Visual QC: not performed (optional)."
+                    else (
+                        "Plausibility gate: not performed. Automatic numerical "
+                        "ranking remains available, but anatomical validity is unreviewed."
+                    )
                 )
             )
             visual_status.setObjectName(
@@ -1264,8 +1299,10 @@ class ReferenceCalibrationDialog(QDialog):
                     f"{float(payload['elapsed_seconds']):.0f} seconds."
                 )
         elif kind == "candidate_completed":
+            self._render()
             self.status.setText(f"{candidate_id} completed; automatic QC metrics were verified.")
         elif kind == "automatic_stage_selected":
+            self._render()
             self.status.setText(
                 f"Stage {event['completed_stage_count']} of {event['stage_count']} "
                 f"completed. Provisional selection: {candidate_id}. Continuing "
@@ -1282,10 +1319,62 @@ class ReferenceCalibrationDialog(QDialog):
     @Slot(str)
     def _failed(self, message: str) -> None:
         self._worker = None
-        if "refused to invent a unique winner" in message:
-            self.advanced_mode.setChecked(True)
         self._render()
-        self.status.setText(f"Calibration stage could not continue: {message}")
+        if "refused to invent a unique winner" in message:
+            self.status.setText(
+                "Paused checkpoint: no robust unique winner was found. No option was "
+                "selected automatically; choose one of the explicit actions below."
+            )
+        else:
+            self.status.setText(f"Calibration stage could not continue: {message}")
+
+    def _visual_approvals(self) -> dict[str, bool]:
+        return {
+            candidate_id: candidate_id in self._visually_approved_candidates
+            for candidate_id in self._visually_reviewed_candidates
+        }
+
+    @Slot()
+    def _use_provisional(self) -> None:
+        assessment = assess_reference_calibration_snapshot(
+            self._snapshot,
+            visual_approvals=self._visual_approvals(),
+        )
+        candidate_id = assessment.balanced_candidate_id
+        if candidate_id is None:
+            QMessageBox.warning(
+                self,
+                "No eligible provisional option",
+                "Every candidate failed an automatic or recorded plausibility gate.",
+            )
+            return
+        try:
+            snapshot, _assessment = record_reference_calibration_provisional_override(
+                self.study_directory,
+                visual_approvals=self._visual_approvals(),
+                selected_candidate_id=candidate_id,
+            )
+        except (OSError, RuntimeError, TypeError, ValueError) as error:
+            QMessageBox.warning(self, "Provisional selection rejected", str(error))
+            return
+        self._render()
+        if snapshot.status != "completed":
+            self._start()
+
+    @Slot()
+    def _compare_options(self) -> None:
+        self.advanced_mode.setChecked(True)
+
+    @Slot()
+    def _collect_more_evidence(self) -> None:
+        QMessageBox.information(
+            self,
+            "Collect more pilot evidence",
+            "This immutable pilot remains preserved. Close this dialog and create a "
+            "new parameter proposal with a larger, deliberately more diverse pilot "
+            "subset. Include known biological extremes or declared strata when they "
+            "exist; the current candidates will not be silently changed.",
+        )
 
     @Slot()
     def _cancel(self) -> None:
@@ -1308,10 +1397,7 @@ class ReferenceCalibrationDialog(QDialog):
                 "Choose one automatically valid candidate before continuing.",
             )
             return
-        approvals = {
-            candidate_id: candidate_id in self._visually_approved_candidates
-            for candidate_id in self._visually_reviewed_candidates
-        }
+        approvals = self._visual_approvals()
         try:
             _snapshot, _assessment = record_reference_calibration_stage_review(
                 self.study_directory,

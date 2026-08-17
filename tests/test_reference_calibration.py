@@ -148,6 +148,61 @@ def test_feature_measurement_changes_attachment_candidates_not_deformation_cente
     )
 
 
+def test_extreme_expected_disparity_widens_search_and_does_not_penalize_amplitude() -> None:
+    moderate = build_reference_calibration_plan(
+        _recommendation(),
+        coordinate_unit="unitless",
+        requested_pilot_subject_count=3,
+    )
+    extreme_recommendation = recommend_reference_parameters(
+        _cohort(),
+        alignment_basis="declared_gpa",
+        surface_detail_intent="balanced",
+        deformation_scale_intent="balanced",
+        expected_shape_disparity="extreme",
+    )
+    extreme = build_reference_calibration_plan(
+        extreme_recommendation,
+        coordinate_unit="unitless",
+        requested_pilot_subject_count=3,
+    )
+    moderate_widths = [
+        candidate.values["deformation_kernel_width"]
+        for candidate in moderate.stages[1].candidates
+    ]
+    extreme_widths = [
+        candidate.values["deformation_kernel_width"]
+        for candidate in extreme.stages[1].candidates
+    ]
+    assert min(extreme_widths) < min(moderate_widths)
+    assert max(extreme_widths) > max(moderate_widths)
+
+    noise_stage = extreme.stages[2]
+    evidence = tuple(
+        CalibrationCandidateEvidence(
+            candidate_id=candidate.candidate_id,
+            completed=True,
+            converged=True,
+            invalid_face_count=0,
+            residual_p95=0.1 + index,
+            deformation_energy=1000.0 if index == 0 else 0.01,
+            distortion_p95=1000.0 if index == 0 else 0.01,
+            runtime_seconds=10.0 + index,
+            review_approved=None,
+        )
+        for index, candidate in enumerate(noise_stage.candidates)
+    )
+    assessment = assess_calibration_stage(
+        extreme,
+        stage_id="noise",
+        evidence=evidence,
+    )
+
+    assert assessment.balanced_candidate_id == noise_stage.candidates[0].candidate_id
+    assert set(assessment.weights) == {"residual_p95", "runtime_seconds"}
+    assert "extreme" in " ".join(assessment.cautions)
+
+
 def test_calibration_plan_rejects_invalid_inputs() -> None:
     recommendation = _recommendation()
 

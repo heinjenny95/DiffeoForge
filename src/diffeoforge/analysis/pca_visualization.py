@@ -52,6 +52,45 @@ def _extent(values: np.ndarray) -> tuple[float, float]:
     return minimum - padding, maximum + padding
 
 
+def _scree_label_indices(component_count: int, *, bar_slot: float) -> tuple[int, ...]:
+    """Choose x-axis labels that remain separated at the fixed SVG viewBox size.
+
+    The previous fixed target of roughly twenty labels could place the penultimate
+    periodic label immediately beside the always-present final component (for
+    example PC65 and PC66).  SVG text is scaled with the viewBox, so solving the
+    spacing once in viewBox coordinates also keeps it valid at Windows display
+    scales other than 100%.
+    """
+
+    if component_count < 1:
+        raise ValueError("component_count must be positive")
+    if component_count == 1:
+        return (0,)
+    widest_label = f"PC{component_count}"
+    # Arial 14 is about eight viewBox units per glyph at this label length.  The
+    # extra gap avoids labels merely touching under platform font substitution.
+    minimum_center_gap = len(widest_label) * 8.0 + 10.0
+    maximum_labels = max(2, int(_PLOT_WIDTH // minimum_center_gap))
+    stride = max(1, math.ceil((component_count - 1) / (maximum_labels - 1)))
+    candidates = list(range(0, component_count, stride))
+    if candidates[-1] != component_count - 1:
+        candidates.append(component_count - 1)
+
+    selected: list[int] = []
+    for index in candidates:
+        center = (index + 0.5) * bar_slot
+        if not selected:
+            selected.append(index)
+            continue
+        previous_center = (selected[-1] + 0.5) * bar_slot
+        if center - previous_center >= minimum_center_gap:
+            selected.append(index)
+            continue
+        if index == component_count - 1:
+            selected[-1] = index
+    return tuple(selected)
+
+
 def _map(value: float, low: float, high: float, start: float, length: float) -> float:
     return start + ((float(value) - low) / (high - low)) * length
 
@@ -104,7 +143,9 @@ def write_pca_scree_svg(path: Path | str, pca: PCAResult) -> Path:
     maximum = max(float(np.max(ratios)) * 1.12, 0.01)
     bar_slot = _PLOT_WIDTH / pca.number_of_components
     bar_width = min(bar_slot * 0.68, 80.0)
-    label_stride = max(1, math.ceil(pca.number_of_components / 20))
+    label_indices = set(
+        _scree_label_indices(pca.number_of_components, bar_slot=bar_slot)
+    )
     show_percent_labels = pca.number_of_components <= 20
     body = [
         '  <text x="450" y="38" text-anchor="middle" class="title">PCA scree plot</text>',
@@ -142,7 +183,7 @@ def write_pca_scree_svg(path: Path | str, pca: PCAResult) -> Path:
                 "  </rect>",
             ]
         )
-        if index % label_stride == 0 or index == pca.number_of_components - 1:
+        if index in label_indices:
             body.append(
                 f'  <text x="{_number(x + bar_width / 2.0)}" '
                 f'y="{_number(_TOP + _PLOT_HEIGHT + 24)}" text-anchor="middle" '

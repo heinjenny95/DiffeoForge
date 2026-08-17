@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import json
+import uuid
 from collections.abc import Mapping
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 from typing import Any
 
@@ -10,10 +14,15 @@ from diffeoforge.desktop.result_review import (
     ModernResultArtifact,
     ModernResultReview,
     ModernResultReviewError,
+    RegistrationQCItem,
     ResultArtifactKind,
     ResultReviewItem,
 )
 from diffeoforge.mesh import sha256_file
+from diffeoforge.reference_calibration_metrics import (
+    ReferenceCalibrationRunMetrics,
+    collect_reference_calibration_run_metrics,
+)
 from diffeoforge.reference_pca import (
     DEFAULT_REFERENCE_PCA_DIRECTORY,
     REFERENCE_PCA_MANIFEST,
@@ -26,6 +35,28 @@ from diffeoforge.result_report import collect_run_report
 _PCA_DISPLAY_LIMIT = 10
 _ESTIMATED_TEMPLATE_MARKER = "__EstimatedParameters__Template_"
 _RECONSTRUCTION_MARKER = "__Reconstruction__"
+
+
+@dataclass(frozen=True)
+class RegistrationQCReviewExport:
+    """One non-overwriting researcher review record and its digest sidecar."""
+
+    path: Path
+    sha256_path: Path
+    sha256: str
+
+
+def _reconstruction_subject_name(value: str) -> str:
+    name = PurePosixPath(value).name
+    marker = "__subject_"
+    if marker not in name:
+        raise ModernResultReviewError(
+            f"Could not identify the subject in reconstruction output: {name}"
+        )
+    subject = name.split(marker, 1)[1]
+    if not subject.casefold().endswith(".vtk"):
+        raise ModernResultReviewError(f"Unexpected reconstruction filename: {name}")
+    return subject[:-4]
 
 
 def _format_bytes(value: int) -> str:
@@ -47,6 +78,80 @@ def _format_duration(value: float) -> str:
     if minutes:
         return f"{minutes} min {seconds:.1f} s"
     return f"{seconds:.1f} s"
+
+
+def export_registration_qc_review(
+    review: ModernResultReview,
+    decisions: Mapping[str, str],
+) -> RegistrationQCReviewExport:
+    """Export explicit full-cohort QC decisions without mutating run evidence."""
+
+    if review.engine_route != "deformetrica_reference" or not review.registration_qc:
+        raise ModernResultReviewError(
+            "A full-cohort Deformetrica registration-QC ranking is required"
+        )
+    allowed_subjects = {item.subject_name for item in review.registration_qc}
+    unexpected = set(decisions) - allowed_subjects
+    if unexpected:
+        raise ModernResultReviewError(
+            "Registration-QC decisions contain unknown subjects: "
+            + ", ".join(sorted(unexpected))
+        )
+    allowed_decisions = {"pass", "uncertain", "fail"}
+    invalid = {
+        subject: decision
+        for subject, decision in decisions.items()
+        if decision not in allowed_decisions
+    }
+    if invalid:
+        raise ModernResultReviewError(
+            "Registration-QC decisions must be pass, uncertain, or fail"
+        )
+    created_at = datetime.now(UTC)
+    payload = {
+        "schema_version": "0.1",
+        "created_at": created_at.isoformat(),
+        "scientific_boundary": (
+            "Residual rank prioritizes inspection and is not an automatic biological "
+            "exclusion rule. Decisions are researcher-recorded plausibility evidence."
+        ),
+        "source": {
+            "run_directory": str(review.run_directory),
+            "run_manifest_sha256": review.workflow_manifest_sha256,
+            "analysis_manifest_sha256": review.bundle_manifest_sha256,
+        },
+        "summary": {
+            "subject_count": len(review.registration_qc),
+            "reviewed_count": len(decisions),
+            "unreviewed_count": len(review.registration_qc) - len(decisions),
+        },
+        "subjects": [
+            {
+                "rank": item.rank,
+                "subject_name": item.subject_name,
+                "residual_p95": item.residual_p95,
+                "decision": decisions.get(item.subject_name, "unreviewed"),
+            }
+            for item in review.registration_qc
+        ],
+    }
+    directory = review.run_directory / "reviews"
+    directory.mkdir(parents=True, exist_ok=True)
+    stem = (
+        "registration-qc-review-"
+        + created_at.strftime("%Y%m%dT%H%M%SZ")
+        + "-"
+        + uuid.uuid4().hex[:8]
+    )
+    path = directory / f"{stem}.json"
+    with path.open("x", encoding="utf-8", newline="\n") as handle:
+        json.dump(payload, handle, indent=2, sort_keys=True, ensure_ascii=False)
+        handle.write("\n")
+    digest = sha256_file(path)
+    sidecar = directory / f"{stem}.sha256"
+    with sidecar.open("x", encoding="ascii", newline="\n") as handle:
+        handle.write(f"{digest}  {path.name}\n")
+    return RegistrationQCReviewExport(path, sidecar, digest)
 
 
 def _pca_items(bundle_manifest: dict, ratios: tuple[float, ...]) -> tuple[ResultReviewItem, ...]:
@@ -120,6 +225,13 @@ def review_reference_result(
             f"Deformetrica result and momenta PCA did not verify: {error}"
         ) from error
 
+    qc_metrics: ReferenceCalibrationRunMetrics | None = None
+    qc_unavailable_reason: str | None = None
+    try:
+        qc_metrics = collect_reference_calibration_run_metrics(run)
+    except (OSError, RuntimeError, TypeError, ValueError) as error:
+        qc_unavailable_reason = str(error)
+
     manifest = dict(verified.manifest)
     records = {str(record["path"]): record for record in manifest["artifacts"]}
     if len(records) != len(manifest["artifacts"]):
@@ -155,6 +267,7 @@ def review_reference_result(
         )
 
     output_directory = run / "output"
+    staged_input_directory = run / "input"
 
     def add_output_vtk_artifact(
         key: str,
@@ -189,6 +302,51 @@ def review_reference_result(
             raise ModernResultReviewError(f"Displayed Deformetrica VTK changed: {value}")
         artifacts.append(
             ModernResultArtifact(key, label, path.resolve(), "vtk", size, digest, description)
+        )
+
+    def add_staged_input_artifact(
+        key: str,
+        label: str,
+        record: Mapping[str, Any],
+    ) -> None:
+        relative = PurePosixPath(str(record.get("staged_path", "")))
+        if (
+            relative.is_absolute()
+            or not relative.parts
+            or "." in relative.parts
+            or ".." in relative.parts
+        ):
+            raise ModernResultReviewError(
+                f"Displayed staged input has an unsafe path: {relative}"
+            )
+        path = run.joinpath(*relative.parts).resolve()
+        geometry = record.get("geometry")
+        if not isinstance(geometry, Mapping):
+            raise ModernResultReviewError(
+                f"Displayed staged input lacks geometry evidence: {relative}"
+            )
+        size = int(geometry["bytes"])
+        digest = str(geometry["sha256"])
+        if (
+            not path.is_relative_to(staged_input_directory.resolve())
+            or path.is_symlink()
+            or not path.is_file()
+            or path.stat().st_size != size
+            or sha256_file(path) != digest
+        ):
+            raise ModernResultReviewError(
+                f"Displayed staged input changed or is unavailable: {relative}"
+            )
+        artifacts.append(
+            ModernResultArtifact(
+                key,
+                label,
+                path,
+                "vtk",
+                size,
+                digest,
+                "Immutable staged original used for original/reconstruction overlay QC.",
+            )
         )
 
     def readable_output_name(value: str, marker: str) -> str:
@@ -227,13 +385,66 @@ def review_reference_result(
         ),
         key=lambda record: str(record["path"]),
     )
+    reconstruction_keys: dict[str, str] = {}
     for index, record in enumerate(reconstructions, start=1):
-        subject_name = readable_output_name(str(record["path"]), "__subject_")
+        subject_filename = _reconstruction_subject_name(str(record["path"]))
+        subject_name = subject_filename.removesuffix(".vtk").replace("_", " ")
+        key = f"subject-reconstruction-{index}"
         add_output_vtk_artifact(
-            f"subject-reconstruction-{index}",
+            key,
             f"Subject reconstruction: {subject_name}",
             record,
             "Final subject-specific reconstruction for visual registration quality control.",
+        )
+        reconstruction_keys[subject_filename] = key
+
+    original_keys: dict[str, str] = {}
+    subject_input_records = sorted(
+        (
+            record
+            for record in report.manifest.get("inputs", [])
+            if isinstance(record, Mapping) and record.get("role") == "subject"
+        ),
+        key=lambda record: str(record.get("staged_path", "")).casefold(),
+    )
+    for index, record in enumerate(subject_input_records, start=1):
+        subject_filename = PurePosixPath(str(record["staged_path"])).name
+        key = f"subject-original-{index}"
+        add_staged_input_artifact(
+            key,
+            (
+                "Subject original: "
+                + subject_filename.removesuffix(".vtk").replace("_", " ")
+            ),
+            record,
+        )
+        original_keys[subject_filename] = key
+
+    registration_qc: tuple[RegistrationQCItem, ...] = ()
+    if qc_metrics is not None:
+        ranked = sorted(
+            qc_metrics.subject_residual_p95,
+            key=lambda item: (-item[1], item[0].casefold()),
+        )
+        missing = [
+            subject
+            for subject, _residual in ranked
+            if subject not in original_keys or subject not in reconstruction_keys
+        ]
+        if missing:
+            raise ModernResultReviewError(
+                "Registration QC could not bind originals and reconstructions for: "
+                + ", ".join(missing)
+            )
+        registration_qc = tuple(
+            RegistrationQCItem(
+                rank=index,
+                subject_name=subject,
+                residual_p95=float(residual),
+                original_artifact_key=original_keys[subject],
+                reconstruction_artifact_key=reconstruction_keys[subject],
+            )
+            for index, (subject, residual) in enumerate(ranked, start=1)
         )
 
     inputs = manifest["inputs"]
@@ -398,7 +609,7 @@ def review_reference_result(
             str(optimization_evidence["final_state_visibility"]),
         ),
     )
-    quality = (
+    quality_items = [
         ResultReviewItem(
             "Run evidence",
             f"{passed_checks} of {len(report.checks)} checks passed",
@@ -414,7 +625,40 @@ def review_reference_result(
             f"{len(manifest['artifacts'])} files",
             "Copied raw parameters, open tables, static plots, hashes, and recomputation contract.",
         ),
-    )
+    ]
+    if qc_metrics is not None:
+        quality_items.extend(
+            (
+                ResultReviewItem(
+                    "Full-cohort registration QC",
+                    (
+                        f"{len(registration_qc)} subjects ranked · pooled p95 "
+                        f"{qc_metrics.residual_p95:.6g} · median "
+                        f"{qc_metrics.residual_median:.6g}"
+                    ),
+                    "Symmetric nearest-vertex distances are a geometric QC proxy, not "
+                    "the configured Deformetrica attachment metric.",
+                ),
+                ResultReviewItem(
+                    "Topology and area-change evidence",
+                    (
+                        f"{qc_metrics.invalid_face_count} invalid faces · area-change "
+                        f"p95 {qc_metrics.distortion_p95:.6g}"
+                    ),
+                    "Large biologically necessary deformation is not a failure by itself; "
+                    "invalid faces and implausible correspondence remain failure evidence.",
+                ),
+            )
+        )
+    else:
+        quality_items.append(
+            ResultReviewItem(
+                "Full-cohort registration QC",
+                "unavailable",
+                qc_unavailable_reason or "No complete subject reconstruction set was found.",
+            )
+        )
+    quality = tuple(quality_items)
     workflow_manifest = run / "manifest.json"
     bundle_manifest = bundle_directory / REFERENCE_PCA_MANIFEST
     return ModernResultReview(
@@ -441,6 +685,8 @@ def review_reference_result(
             "establish adequate registration or optimizer convergence.",
             "The linear momenta PCA is descriptive and does not establish taxonomic, "
             "biological, group-separation, or causal claims.",
+            "Registration-QC ranking prioritizes inspection; a high residual may reflect "
+            "a real biological extreme, underfit, or both and is not an exclusion rule.",
         ),
         pca_pc2_pc3_unavailable_reason=(
             None
@@ -450,5 +696,9 @@ def review_reference_result(
         engine_route="deformetrica_reference",
         execution_duration_seconds=duration_seconds,
         optimizer_stop_interpretation=str(optimization_evidence["stop_interpretation"]),
-        additional_artifact_roots=(output_directory.resolve(),),
+        additional_artifact_roots=(
+            output_directory.resolve(),
+            staged_input_directory.resolve(),
+        ),
+        registration_qc=registration_qc,
     )

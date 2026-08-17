@@ -31,7 +31,7 @@ from diffeoforge.reference_recommendation import (
     ReferenceParameterRecommendation,
 )
 
-CALIBRATION_PLAN_VERSION = "0.2"
+CALIBRATION_PLAN_VERSION = "0.3"
 CalibrationStageKind = Literal[
     "attachment_width",
     "deformation_width",
@@ -199,6 +199,7 @@ class ReferenceCalibrationPlan:
     stages: tuple[CalibrationStage, ...]
     final_confirmation_required: tuple[str, ...]
     limitations: tuple[str, ...]
+    expected_shape_disparity: str = "moderate"
 
     @property
     def pilot_subject_count(self) -> int:
@@ -232,6 +233,7 @@ class ReferenceCalibrationPlan:
             ],
             "smallest_relevant_feature": self.smallest_relevant_feature,
             "attachment_center_source": self.attachment_center_source,
+            "expected_shape_disparity": self.expected_shape_disparity,
             "baseline_parameter_ratios": self.parameter_ratios,
             "baseline_effective_values": self.effective_values,
             "stages": [stage.as_manifest() for stage in self.stages],
@@ -253,6 +255,11 @@ class ReferenceCalibrationPlan:
             ),
             "Selected: "
             + ", ".join(subject.filename for subject in self.selected_pilot_subjects),
+            (
+                "Expected biological shape disparity: "
+                f"{self.expected_shape_disparity}. This controls the tested amplitude "
+                "range, independently of local/global deformation reach."
+            ),
         ]
         if self.smallest_relevant_feature is None:
             lines.append(
@@ -454,6 +461,7 @@ def _plan_payload(
         "selected_pilot_subjects": [item.as_manifest() for item in selected],
         "smallest_relevant_feature": smallest_relevant_feature,
         "attachment_center_source": attachment_center_source,
+        "expected_shape_disparity": recommendation.expected_shape_disparity,
         "baseline_parameter_ratios": baseline_ratios,
         "baseline_effective_values": baseline_effective,
         "stages": [stage.as_manifest() for stage in stages],
@@ -508,16 +516,22 @@ def build_reference_calibration_plan(
     deformation_center = recommendation.effective_values[
         "deformation_kernel_width"
     ]
+    disparity_lower, disparity_upper = {
+        "low": (0.75, 1.5),
+        "moderate": (0.5, 2.0),
+        "high": (0.35, 3.0),
+        "extreme": (0.25, 4.0),
+    }[recommendation.expected_shape_disparity]
     deformation_values = _geometric_candidates(
-        0.5 * deformation_center,
-        2.0 * deformation_center,
+        disparity_lower * deformation_center,
+        disparity_upper * deformation_center,
         count=5,
         include=(deformation_center,),
     )
     deformation_screen_values = (
-        0.5 * deformation_center,
+        disparity_lower * deformation_center,
         deformation_center,
-        2.0 * deformation_center,
+        disparity_upper * deformation_center,
     )
     noise_center = 0.25 * attachment_center
     noise_values = _geometric_candidates(
@@ -704,9 +718,9 @@ def build_reference_calibration_plan(
             ),
             reject_when=common_rejections,
             decision_rule=(
-                "Choose the smoothest deformation whose residual map does not retain "
-                "biologically relevant structure; report any move toward a smaller, "
-                "more local width as a researcher decision."
+                "Choose deformation reach from residual structure and plausibility. "
+                "Do not treat the amplitude of required, biologically expected change "
+                "as a defect by itself; report any local/global reach choice separately."
             ),
         ),
         CalibrationStage(
@@ -777,6 +791,9 @@ def build_reference_calibration_plan(
         "lower bound and therefore expands, but does not truncate, the search.",
         "The plan contains candidate values and decision rules but no execution results.",
         "Residual improvement alone cannot distinguish meaningful fit from over-fitting.",
+        "Large deformation energy or area change can be biologically necessary for the "
+        "declared disparity; topology failures and implausible correspondence remain "
+        "rejection evidence, while amplitude alone is not.",
         "Pilot simplification can change the attachment metric and must be followed by a "
         "full-resolution confirmation.",
     )
@@ -810,6 +827,7 @@ def build_reference_calibration_plan(
         stages=stages,
         final_confirmation_required=final_confirmation_required,
         limitations=limitations,
+        expected_shape_disparity=recommendation.expected_shape_disparity,
     )
 
 
@@ -968,6 +986,9 @@ def reference_calibration_plan_from_provenance(
                 str(value) for value in provenance["final_confirmation_required"]
             ),
             limitations=tuple(str(value) for value in provenance["limitations"]),
+            expected_shape_disparity=str(
+                provenance.get("expected_shape_disparity", "moderate")
+            ),
         )
     except (KeyError, TypeError, ValueError) as error:
         raise ConfigurationError(
@@ -1128,6 +1149,56 @@ _STAGE_METRICS: dict[
         ("runtime_seconds", 0.10),
     ),
 }
+
+
+def _stage_metrics_for_disparity(
+    kind: CalibrationStageKind,
+    expected_shape_disparity: str,
+) -> tuple[tuple[str, float], ...]:
+    """Return transparent priorities without equating amplitude with pathology."""
+
+    if expected_shape_disparity in {"low", "moderate"}:
+        return _STAGE_METRICS[kind]
+    if kind == "integration_accuracy":
+        return _STAGE_METRICS[kind]
+    if expected_shape_disparity == "high":
+        return {
+            "attachment_width": (
+                ("residual_p95", 0.55),
+                ("resampling_sensitivity", 0.25),
+                ("distortion_p95", 0.10),
+                ("runtime_seconds", 0.10),
+            ),
+            "deformation_width": (
+                ("residual_p95", 0.65),
+                ("distortion_p95", 0.20),
+                ("runtime_seconds", 0.15),
+            ),
+            "noise_weight": (
+                ("residual_p95", 0.65),
+                ("distortion_p95", 0.20),
+                ("runtime_seconds", 0.15),
+            ),
+        }[kind]
+    if expected_shape_disparity == "extreme":
+        return {
+            "attachment_width": (
+                ("residual_p95", 0.60),
+                ("resampling_sensitivity", 0.25),
+                ("runtime_seconds", 0.15),
+            ),
+            "deformation_width": (
+                ("residual_p95", 0.80),
+                ("runtime_seconds", 0.20),
+            ),
+            "noise_weight": (
+                ("residual_p95", 0.80),
+                ("runtime_seconds", 0.20),
+            ),
+        }[kind]
+    raise ValueError(
+        f"Unsupported expected shape disparity: {expected_shape_disparity!r}"
+    )
 
 
 def _evidence_metric(
@@ -1322,7 +1393,10 @@ def assess_calibration_stage(
             f"missing={missing}, unexpected={unexpected}"
         )
 
-    metric_weights = _STAGE_METRICS[stage.kind]
+    metric_weights = _stage_metrics_for_disparity(
+        stage.kind,
+        getattr(plan, "expected_shape_disparity", "moderate"),
+    )
     eligible_ids: list[str] = []
     rejection_reasons: dict[str, tuple[str, ...]] = {}
     metric_rows: list[list[float]] = []
@@ -1522,6 +1596,13 @@ def assess_calibration_stage(
         "not-performed status must remain explicit.",
         "A provisional stage recommendation becomes scientifically usable only after "
         "later full-cohort confirmation and researcher review.",
+        (
+            "Expected biological shape disparity was declared as "
+            f"{getattr(plan, 'expected_shape_disparity', 'moderate')}. "
+            "Deformation amplitude is therefore "
+            "interpreted separately from topology failures, residual underfit, and "
+            "anatomical plausibility."
+        ),
     )
     payload = {
         "version": _ASSESSMENT_VERSION,

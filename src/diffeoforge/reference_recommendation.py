@@ -18,9 +18,10 @@ from diffeoforge.config import ConfigurationError
 from diffeoforge.mesh import sha256_file
 from diffeoforge.surface_io import load_surface_mesh
 
-RECOMMENDATION_VERSION = "0.2"
+RECOMMENDATION_VERSION = "0.3"
 SurfaceDetailIntent = Literal["fine", "balanced", "coarse"]
 DeformationScaleIntent = Literal["local", "balanced", "global"]
+ExpectedShapeDisparity = Literal["low", "moderate", "high", "extreme"]
 AlignmentBasis = Literal["declared_gpa", "diffeoforge_gpa"]
 
 _ATTACHMENT_NOMINAL_RATIOS: dict[SurfaceDetailIntent, float] = {
@@ -80,6 +81,7 @@ class ReferenceParameterRecommendation:
     user_decisions: tuple[str, ...]
     pilot_validation_required: tuple[str, ...]
     warnings: tuple[str, ...]
+    expected_shape_disparity: ExpectedShapeDisparity = "moderate"
 
     @property
     def parameter_ratios(self) -> dict[str, float]:
@@ -112,6 +114,7 @@ class ReferenceParameterRecommendation:
             "alignment_fingerprint": self.alignment_fingerprint,
             "surface_detail_intent": self.surface_detail_intent,
             "deformation_scale_intent": self.deformation_scale_intent,
+            "expected_shape_disparity": self.expected_shape_disparity,
             "template_filename": self.template_filename,
             "template_sha256": self.template_sha256,
             "mesh_count": self.mesh_count,
@@ -198,6 +201,7 @@ def recommend_reference_parameters(
     alignment_basis: AlignmentBasis,
     surface_detail_intent: SurfaceDetailIntent,
     deformation_scale_intent: DeformationScaleIntent,
+    expected_shape_disparity: ExpectedShapeDisparity = "moderate",
     transforms: Sequence[SimilarityTransform] | None = None,
     alignment_fingerprint: str | None = None,
     triangle_budget_per_mesh: int = 20_000,
@@ -216,6 +220,10 @@ def recommend_reference_parameters(
     if deformation_scale_intent not in _DEFORMATION_NOMINAL_RATIOS:
         raise ValueError(
             f"Unsupported deformation-scale intent: {deformation_scale_intent!r}"
+        )
+    if expected_shape_disparity not in {"low", "moderate", "high", "extreme"}:
+        raise ValueError(
+            f"Unsupported expected shape disparity: {expected_shape_disparity!r}"
         )
     paths = tuple(Path(path).expanduser().resolve() for path in mesh_paths)
     if len(paths) < 3:
@@ -341,6 +349,7 @@ def recommend_reference_parameters(
         "alignment_fingerprint": alignment_fingerprint,
         "surface_detail_intent": surface_detail_intent,
         "deformation_scale_intent": deformation_scale_intent,
+        "expected_shape_disparity": expected_shape_disparity,
         "sources": source_records,
         "cohort_median_diagonal": cohort_diagonal,
         "cohort_diagonal_cv": diagonal_cv,
@@ -386,7 +395,8 @@ def recommend_reference_parameters(
         ),
         user_decisions=(
             "Surface detail scale represented by the attachment kernel",
-            "Local, balanced, or global deformation scale",
+            "Local, balanced, or global deformation reach",
+            "Expected amplitude of biologically real differences between specimens",
             "Whether reflected configurations are biologically admissible during GPA",
         ),
         pilot_validation_required=(
@@ -396,4 +406,5 @@ def recommend_reference_parameters(
             "Sensitivity to neighboring attachment and deformation kernel widths",
         ),
         warnings=tuple(warnings),
+        expected_shape_disparity=expected_shape_disparity,
     )

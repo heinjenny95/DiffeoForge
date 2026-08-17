@@ -106,6 +106,25 @@ class CalibrationComparisonCanvas3D(QWidget):
         self._pan = (0.0, 0.0)
         self.update()
 
+    def set_view_preset(self, preset: str) -> None:
+        """Apply the same named orthographic orientations used by result viewers."""
+
+        orientations = {
+            "three-quarter": (-0.55, 0.30),
+            "front": (0.0, 0.0),
+            "back": (math.pi, 0.0),
+            "left": (-math.pi / 2.0, 0.0),
+            "right": (math.pi / 2.0, 0.0),
+            "top": (0.0, -math.pi / 2.0),
+            "bottom": (0.0, math.pi / 2.0),
+        }
+        if preset not in orientations:
+            raise ValueError(f"Unknown comparison view preset: {preset!r}")
+        self._yaw, self._pitch = orientations[preset]
+        self._zoom = 1.0
+        self._pan = (0.0, 0.0)
+        self.update()
+
     def _project(self, vertices: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         rotation = camera_rotation(self._yaw, self._pitch)
         camera = ((vertices - self._center) / self._scale) @ rotation.T

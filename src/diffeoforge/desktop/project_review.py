@@ -260,6 +260,9 @@ def _reference_review(config_path: Path, config_sha256: str) -> ProjectReviewRes
             if alignment_basis == "diffeoforge_gpa"
             else "researcher-declared external GPA"
         )
+        expected_disparity = str(
+            recommendation.get("expected_shape_disparity", "moderate")
+        ).replace("_", " ")
         recommendation_items = (
             ReviewItem(
                 "Recommendation evidence",
@@ -286,7 +289,9 @@ def _reference_review(config_path: Path, config_sha256: str) -> ProjectReviewRes
                     f"{str(recommendation['surface_detail_intent']).replace('_', ' ')} "
                     "surface detail · "
                     f"{str(recommendation['deformation_scale_intent']).replace('_', ' ')} "
-                    "deformation scale"
+                    "deformation reach · "
+                    f"{expected_disparity} "
+                    "expected difference amplitude"
                 ),
                 "These biological scale choices are not inferred from mesh geometry.",
             ),
@@ -327,24 +332,37 @@ def _reference_review(config_path: Path, config_sha256: str) -> ProjectReviewRes
         )
         if calibration_result is not None:
             selection_modes = calibration_result.get("selection_modes", {})
-            automatic_calibration = bool(selection_modes) and any(
+            automatic_count = sum(
                 str(mode).startswith("automatic_provisional")
                 for mode in selection_modes.values()
             )
-            calibration_label = (
-                "completed / automatic provisional staged pilot"
-                if automatic_calibration
-                else "completed / researcher-selected staged pilot"
-            )
-            calibration_explanation = (
-                "The selected values are bound to a completed staged pilot and a "
-                "transparent automatic provisional recommendation. They still require "
-                "researcher review and a separate full-cohort confirmation."
-                if automatic_calibration
-                else "The selected values are bound to a completed staged pilot and "
-                "an explicit researcher decision. They still require a separate "
-                "full-cohort confirmation."
-            )
+            researcher_count = len(selection_modes) - automatic_count
+            automatic_calibration = automatic_count > 0
+            if automatic_count and researcher_count:
+                calibration_label = (
+                    "completed / mixed staged pilot "
+                    f"({automatic_count} automatic provisional, "
+                    f"{researcher_count} researcher-authorized)"
+                )
+                calibration_explanation = (
+                    "The displayed values combine transparent automatic provisional "
+                    "selections with explicit researcher decisions. Per-stage provenance "
+                    "is retained; a separate full-cohort confirmation is still required."
+                )
+            elif automatic_count:
+                calibration_label = "completed / automatic provisional staged pilot"
+                calibration_explanation = (
+                    "The selected values are bound to a completed staged pilot and a "
+                    "transparent automatic provisional recommendation. They still "
+                    "require researcher review and a separate full-cohort confirmation."
+                )
+            else:
+                calibration_label = "completed / researcher-selected staged pilot"
+                calibration_explanation = (
+                    "The selected values are bound to a completed staged pilot and "
+                    "explicit researcher decisions. They still require a separate "
+                    "full-cohort confirmation."
+                )
             recommendation_items = tuple(
                 (
                     ReviewItem(

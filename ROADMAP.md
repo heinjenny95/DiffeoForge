@@ -145,6 +145,51 @@ This roadmap describes evidence gates rather than promised dates.
 - [x] Pre-compute configured all-pairs and known-payload workload report
 - [x] Versioned workflow-stage and committed optimizer-decision reporting
 - [x] Fresh-process objective/gradient wall-time and sampled-RSS protocol
+- [ ] Refine the staged calibration UX from the v44 weevil pilot observations
+  - [x] Update the completed-run counter and candidate cards from the verified event
+    ledger after every candidate instead of leaving `0 of 31`/`Ready to run` stale
+    until a stage finishes
+  - [x] Keep Automatic mode selected when the robustness gate finds an ambiguous
+    result; show an explicit `Automatic selection paused` decision checkpoint
+    instead of silently enabling Advanced mode
+  - [x] Present one clearly labelled provisional recommendation with confidence,
+    competing evidence, and the actions `Use provisionally`, `Compare options`,
+    and `Collect more evidence`
+  - [x] Never show `No relative comparison is available yet` after a completed
+    comparison stage; display plain-language metric deltas and the actual
+    fit-versus-regularity trade-off on every eligible candidate card
+  - [x] Describe mixed pilot provenance accurately in the final review: do not
+    label the whole study an `automatic provisional staged pilot` when some
+    stages were explicit researcher selections; summarize each selection mode
+  - [x] Prevent PCA scree-plot x-axis label overlap for dense component ranges:
+    choose ticks from measured label widths, reserve the right edge, and add a
+    67-subject/66-PC regression render at common Windows display scales
+  - [x] Explain Visual QC as a plausibility/rejection gate rather than asking an
+    untrained user to rank several visually acceptable registrations
+  - [x] Turn full-cohort registration QC into a guided review: compute and rank
+    subject-level residual outliers, open each original and reconstruction in a
+    shared overlay, require pass/fail/uncertain decisions for the tail cases, and
+    export the reviewed status instead of making users search a mesh dropdown
+  - [ ] Revisit subject-tail/outlier stability and add regression tests for the
+    full automatic-to-ambiguous-to-continued four-stage workflow
+  - [x] Distinguish necessary biological deformation from pathological mapping:
+    do not present raw deformation energy or surface-area change as universally
+    negative; evaluate the fit improvement against smoothness, topology/Jacobian
+    validity, and subject-tail failures, especially for high-disparity cohorts
+  - [x] Let the researcher declare expected biological disparity and carry it
+    into pilot range, scoring, explanations, and full-cohort confirmation
+  - [ ] Add optional researcher-declared biological strata/extremes to the
+    geometry-diverse pilot selection and its evidence report
+  - [x] Separate deformation amplitude (`how different are the shapes?`) from
+    deformation reach (`how broadly do regions move together?`); show exactly
+    how both declarations change the pilot range and use them as transparent
+    priors/tie-breakers rather than silently confirming the requested intent
+  - [x] Replace the broad pre-run atlas ETA with a cohort- and hardware-bound
+    estimator calibrated from the completed pilot runs and the selected control
+    grid/timepoints, then update it from robust observed iteration timings
+  - [x] Show two honest live estimates separately: `time to iteration cap` and a
+    confidence-labelled `likely convergence window`; include startup/output cost,
+    ignore warm-up outliers, and report when contention changes the observed rate
 - [ ] Prospective multi-size end-to-end runtime and peak-memory calibration
 - [ ] Cross-platform CPU distribution
   - [x] Fresh GitHub-hosted Windows one-directory engineering freeze, complete

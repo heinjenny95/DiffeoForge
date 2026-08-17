@@ -81,3 +81,32 @@ def test_reference_runtime_estimate_accounts_for_gpu_kernels() -> None:
 
     assert gpu.seconds_per_iteration < cpu.seconds_per_iteration * 0.2
     assert gpu.typical_iterations == cpu.typical_iterations
+
+
+def test_reference_runtime_estimate_uses_same_project_pilot_timings() -> None:
+    preflight = collect_preflight(ROOT / "examples" / "minimal-atlas-container.yaml")
+    config = deepcopy(preflight.config)
+    recommendation = config["project"].setdefault(
+        "parameter_provenance",
+        {},
+    ).setdefault("recommendation", {})
+    recommendation["calibration_result"] = {
+        "runtime_calibration": {
+            "pilot_subject_count": 2,
+            "observations": [
+                {
+                    "runtime_seconds": 120.0 + index * 10.0,
+                    "final_iteration": 40 + index * 5,
+                }
+                for index in range(5)
+            ],
+        }
+    }
+
+    estimate = estimate_reference_runtime(replace(preflight, config=config))
+
+    assert estimate.confidence == "pilot_calibrated"
+    assert estimate.basis == "same-project_pilot_observations"
+    assert estimate.pilot_observation_count == 5
+    assert estimate.lower_iterations <= estimate.typical_iterations
+    assert estimate.lower_seconds < estimate.typical_seconds < estimate.upper_seconds

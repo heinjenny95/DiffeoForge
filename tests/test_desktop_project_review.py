@@ -104,7 +104,10 @@ def test_reference_review_exposes_data_assisted_evidence(tmp_path: Path) -> None
     assert values["Parameter source"] == "data assisted"
     assert "researcher-declared external GPA" in values["Recommendation evidence"]
     assert recommendation.fingerprint[:12] in values["Recommendation evidence"]
-    assert values["Researcher decisions"] == "fine surface detail · local deformation scale"
+    assert values["Researcher decisions"] == (
+        "fine surface detail · local deformation reach · "
+        "moderate expected difference amplitude"
+    )
     assert values["Pilot calibration"] == "required"
     assert "Parameter provenance" in html
     assert recommendation.fingerprint in html

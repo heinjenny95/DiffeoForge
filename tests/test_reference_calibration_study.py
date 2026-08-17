@@ -22,6 +22,7 @@ from diffeoforge.reference_calibration_study import (
     ReferenceCalibrationStudyRunner,
     create_reference_calibration_study,
     load_reference_calibration_study,
+    record_reference_calibration_provisional_override,
     record_reference_calibration_stage_review,
 )
 from diffeoforge.reference_recommendation import recommend_reference_parameters
@@ -359,6 +360,51 @@ def test_stage_selection_allows_candidate_without_optional_visual_qc(
     )
 
 
+def test_provisional_override_is_recorded_as_researcher_authorized(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    snapshot = create_reference_calibration_study(
+        _project(tmp_path),
+        tmp_path / "study",
+        pilot_max_iterations=50,
+    )
+
+    def collect(run: Path):
+        atlas = run / "atlas.vtk"
+        atlas.parent.mkdir(parents=True, exist_ok=True)
+        atlas.write_text("placeholder", encoding="utf-8")
+        return _metrics(atlas)
+
+    monkeypatch.setattr(
+        study_module,
+        "collect_reference_calibration_run_metrics",
+        collect,
+    )
+    completed = ReferenceCalibrationStudyRunner(
+        snapshot.study_directory,
+        controller_factory=_CompletedController,
+    ).run_current_stage()
+    assessment = study_module.assess_reference_calibration_snapshot(completed)
+    selected = assessment.balanced_candidate_id
+    assert selected is not None
+
+    advanced, _assessment = record_reference_calibration_provisional_override(
+        completed.study_directory,
+        visual_approvals={},
+        selected_candidate_id=selected,
+    )
+
+    assert advanced.current_stage is not None
+    event = [
+        item
+        for item in study_module._load_events(completed.study_directory)
+        if item["event"] == "stage_selected"
+    ][-1]
+    assert event["selection_mode"] == "researcher_provisional_balanced_override"
+    assert event["researcher_decision"] is True
+
+
 def test_stage_selection_rejects_candidate_that_failed_optional_visual_qc(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -509,6 +555,9 @@ def test_complete_automatic_pilot_runs_all_stages_and_writes_explainable_report(
     assert set(calibration_result["selection_modes"].values()) == {
         "automatic_provisional_balanced_score"
     }
+    runtime_calibration = calibration_result["runtime_calibration"]
+    assert runtime_calibration["pilot_subject_count"] == 3
+    assert len(runtime_calibration["observations"]) == 31
     report = study_module.load_reference_calibration_report(
         completed.study_directory
     )

@@ -249,7 +249,10 @@ def run_reference_execution_worker(
                 ),
             },
         )
-        tracker = ReferenceProgressTracker(maximum_iterations)
+        tracker = ReferenceProgressTracker(
+            maximum_iterations,
+            convergence_tolerance=float(config["optimization"]["convergence_tolerance"]),
+        )
         started = time.monotonic()
         last_iteration: int | None = None
 

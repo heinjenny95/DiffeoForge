@@ -36,6 +36,9 @@ from PySide6.QtWidgets import (
 
 from diffeoforge.config import load_config
 from diffeoforge.desktop.aspect_svg_widget import AspectRatioSvgWidget
+from diffeoforge.desktop.calibration_comparison_widget import (
+    CalibrationComparisonCanvas3D,
+)
 from diffeoforge.desktop.completed_results import (
     CompletedResultDiscoveryError,
     CompletedResultRun,
@@ -101,7 +104,10 @@ from diffeoforge.desktop.reference_readiness import (
     DesktopReferenceReadinessError,
     check_reference_environment,
 )
-from diffeoforge.desktop.reference_result_review import review_reference_result
+from diffeoforge.desktop.reference_result_review import (
+    export_registration_qc_review,
+    review_reference_result,
+)
 from diffeoforge.desktop.reference_validation_dialog import ReferenceValidationDialog
 from diffeoforge.desktop.reference_worker_protocol import DesktopReferenceWorkerEvent
 from diffeoforge.desktop.result_review import (
@@ -500,6 +506,7 @@ class _ReferenceParameterWorker(QRunnable):
         alignment_basis: str,
         surface_detail_intent: str,
         deformation_scale_intent: str,
+        expected_shape_disparity: str,
         transforms: tuple[object, ...] | None,
         alignment_fingerprint: str | None,
     ) -> None:
@@ -508,6 +515,7 @@ class _ReferenceParameterWorker(QRunnable):
         self.alignment_basis = alignment_basis
         self.surface_detail_intent = surface_detail_intent
         self.deformation_scale_intent = deformation_scale_intent
+        self.expected_shape_disparity = expected_shape_disparity
         self.transforms = transforms
         self.alignment_fingerprint = alignment_fingerprint
         self.signals = _WorkerSignals()
@@ -520,6 +528,7 @@ class _ReferenceParameterWorker(QRunnable):
                 alignment_basis=self.alignment_basis,
                 surface_detail_intent=self.surface_detail_intent,
                 deformation_scale_intent=self.deformation_scale_intent,
+                expected_shape_disparity=self.expected_shape_disparity,
                 transforms=self.transforms,
                 alignment_fingerprint=self.alignment_fingerprint,
             )
@@ -881,6 +890,7 @@ class DiffeoForgeWindow(QMainWindow):
             DesktopWorkerControllerResult | ReferenceExecutionControllerResult | None
         ) = None
         self._result_review: ModernResultReview | None = None
+        self._registration_qc_decisions: dict[str, str] = {}
         self._close_after_worker = False
         self._active_step = 0
         self.reference_parameter_help_panels: dict[str, _ExpandableParameterHelp] = {}
@@ -1838,6 +1848,48 @@ class DiffeoForgeWindow(QMainWindow):
         self.result_atlas_status_label = QLabel("Awaiting a verified atlas or reconstruction.")
         self.result_atlas_status_label.setObjectName("status")
         self.result_atlas_status_label.setWordWrap(True)
+        overlay_controls = QHBoxLayout()
+        self.result_show_original_check = QCheckBox("Show original (blue wireframe)")
+        self.result_show_original_check.setChecked(True)
+        self.result_show_reconstruction_check = QCheckBox(
+            "Show reconstruction (orange surface)"
+        )
+        self.result_show_reconstruction_check.setChecked(True)
+        self.result_show_original_check.toggled.connect(
+            self._set_registration_qc_original_visible
+        )
+        self.result_show_reconstruction_check.toggled.connect(
+            self._set_registration_qc_reconstruction_visible
+        )
+        overlay_controls.addWidget(self.result_show_original_check)
+        overlay_controls.addWidget(self.result_show_reconstruction_check)
+        overlay_controls.addStretch()
+        self.result_show_original_check.hide()
+        self.result_show_reconstruction_check.hide()
+        decision_controls = QHBoxLayout()
+        decision_controls.addWidget(QLabel("Researcher decision"))
+        self.result_qc_pass_button = QPushButton("Plausible")
+        self.result_qc_uncertain_button = QPushButton("Uncertain")
+        self.result_qc_fail_button = QPushButton("Implausible")
+        for button, decision in (
+            (self.result_qc_pass_button, "pass"),
+            (self.result_qc_uncertain_button, "uncertain"),
+            (self.result_qc_fail_button, "fail"),
+        ):
+            button.setObjectName("secondary")
+            button.clicked.connect(
+                lambda _checked=False, value=decision: self._record_registration_qc_decision(
+                    value
+                )
+            )
+            button.hide()
+            decision_controls.addWidget(button)
+        self.result_qc_export_button = QPushButton("Export QC status")
+        self.result_qc_export_button.setObjectName("secondary")
+        self.result_qc_export_button.clicked.connect(self._export_registration_qc_status)
+        self.result_qc_export_button.hide()
+        decision_controls.addWidget(self.result_qc_export_button)
+        decision_controls.addStretch()
         self.result_atlas_canvas = InteractiveMeshCanvas3D()
         self.result_atlas_canvas.setObjectName("resultAtlasViewer3D")
         self.result_atlas_canvas.setAccessibleName(
@@ -1846,12 +1898,22 @@ class DiffeoForgeWindow(QMainWindow):
         self.result_atlas_canvas.set_picking_enabled(False)
         self.result_atlas_canvas.setMinimumHeight(620)
         self.result_atlas_canvas.hide()
+        self.result_registration_qc_canvas = CalibrationComparisonCanvas3D()
+        self.result_registration_qc_canvas.setObjectName("resultRegistrationQcViewer3D")
+        self.result_registration_qc_canvas.setAccessibleName(
+            "Original and reconstruction overlay ranked by registration residual"
+        )
+        self.result_registration_qc_canvas.setMinimumHeight(620)
+        self.result_registration_qc_canvas.hide()
         atlas_viewer_layout.addWidget(atlas_viewer_title)
         atlas_viewer_layout.addWidget(atlas_viewer_hint)
         atlas_viewer_layout.addLayout(atlas_mesh_controls)
         atlas_viewer_layout.addLayout(atlas_view_controls)
+        atlas_viewer_layout.addLayout(overlay_controls)
+        atlas_viewer_layout.addLayout(decision_controls)
         atlas_viewer_layout.addWidget(self.result_atlas_status_label)
         atlas_viewer_layout.addWidget(self.result_atlas_canvas)
+        atlas_viewer_layout.addWidget(self.result_registration_qc_canvas)
         layout.addWidget(atlas_viewer)
 
         overview_card, self.result_overview_layout = self._build_result_items_card(
@@ -2636,15 +2698,18 @@ class DiffeoForgeWindow(QMainWindow):
         guidance_background_layout.setSpacing(8)
         guidance_background_layout.addWidget(guidance_intro)
         self.reference_scale_difference_label = QLabel(
-            "<b>These are two independent questions:</b><br>"
+            "<b>These are three independent questions:</b><br>"
             "<b>1 · Matching resolution — What should DiffeoForge notice?</b> "
             "This is the measuring lens used to score surface fit.<br>"
-            "<b>2 · Deformation reach — How far should one adjustment spread?</b> "
+            "<b>2 · Expected difference amplitude — How different may real specimens "
+            "be?</b> This declares whether large required changes are expected biology, "
+            "rather than automatically treating their size as a defect.<br>"
+            "<b>3 · Deformation reach — How far should one adjustment spread?</b> "
             "This controls whether a region can move locally or must move smoothly with "
             "its neighbors.<br><br>"
-            "<b>They do not have to match.</b> For example, DiffeoForge can notice a "
-            "small spur during matching while still requiring the surrounding structure "
-            "to deform smoothly as one broad region."
+            "<b>They do not have to match.</b> A cohort may contain extremely different "
+            "shapes while their coordinated changes are broad/global; DiffeoForge now "
+            "records those as separate scientific declarations."
         )
         self.reference_scale_difference_label.setObjectName("conceptDifference")
         self.reference_scale_difference_label.setAccessibleName(
@@ -2686,6 +2751,28 @@ class DiffeoForgeWindow(QMainWindow):
         self.reference_deformation_scale_combo.currentIndexChanged.connect(
             self._reference_recommendation_inputs_changed
         )
+        self.reference_shape_disparity_combo = QComboBox()
+        self.reference_shape_disparity_combo.setObjectName(
+            "referenceShapeDisparityCombo"
+        )
+        self.reference_shape_disparity_combo.addItem(
+            "Specimens differ only modestly", "low"
+        )
+        self.reference_shape_disparity_combo.addItem(
+            "Moderate differences are expected", "moderate"
+        )
+        self.reference_shape_disparity_combo.addItem(
+            "Large biological differences are expected", "high"
+        )
+        self.reference_shape_disparity_combo.addItem(
+            "Extreme biological differences are expected", "extreme"
+        )
+        self.reference_shape_disparity_combo.setCurrentIndex(
+            self.reference_shape_disparity_combo.findData("moderate")
+        )
+        self.reference_shape_disparity_combo.currentIndexChanged.connect(
+            self._reference_recommendation_inputs_changed
+        )
         guidance_form = QFormLayout()
         guidance_form.setContentsMargins(0, 0, 0, 0)
         guidance_form.setHorizontalSpacing(18)
@@ -2699,7 +2786,15 @@ class DiffeoForgeWindow(QMainWindow):
             ),
         )
         guidance_form.addRow(
-            "2 · How far deformation spreads",
+            "2 · How different specimens may be",
+            self._parameter_field_with_help(
+                self.reference_shape_disparity_combo,
+                key="shape_disparity",
+                parameter_name="Expected difference amplitude",
+            ),
+        )
+        guidance_form.addRow(
+            "3 · How far deformation spreads",
             self._parameter_field_with_help(
                 self.reference_deformation_scale_combo,
                 key="deformation_scale",
@@ -2708,16 +2803,16 @@ class DiffeoForgeWindow(QMainWindow):
         )
         guidance_layout.addLayout(guidance_form)
         guidance_hint = QLabel(
-            "DiffeoForge measures the mesh-sampling limit and turns these two independent "
-            "choices into pilot candidates. The pilot then shows whether the combination "
-            "preserves the anatomy you care about."
+            "DiffeoForge measures the mesh-sampling limit and turns these three "
+            "independent choices into pilot candidates. High or extreme expected "
+            "disparity widens the tested range without changing local/global reach."
         )
         guidance_hint.setObjectName("hint")
         guidance_hint.setWordWrap(True)
         guidance_background_layout.addWidget(guidance_hint)
         guidance_layout.addWidget(
             InfoDisclosure(
-                "How these two choices work",
+                "How these three choices work",
                 guidance_background,
                 accessible_name=(
                     "Information about matching resolution and deformation reach"
@@ -3128,6 +3223,8 @@ class DiffeoForgeWindow(QMainWindow):
             == self.reference_surface_detail_combo.currentData()
             and recommendation.deformation_scale_intent
             == self.reference_deformation_scale_combo.currentData()
+            and recommendation.expected_shape_disparity
+            == self.reference_shape_disparity_combo.currentData()
         )
 
     def _invalidate_reference_recommendation(
@@ -3484,6 +3581,9 @@ class DiffeoForgeWindow(QMainWindow):
             alignment_basis=alignment_basis,
             surface_detail_intent=str(self.reference_surface_detail_combo.currentData()),
             deformation_scale_intent=str(self.reference_deformation_scale_combo.currentData()),
+            expected_shape_disparity=str(
+                self.reference_shape_disparity_combo.currentData()
+            ),
             transforms=transforms,
             alignment_fingerprint=alignment_fingerprint,
         )
@@ -3534,6 +3634,8 @@ class DiffeoForgeWindow(QMainWindow):
             and self.reference_surface_detail_combo.currentData() == worker.surface_detail_intent
             and self.reference_deformation_scale_combo.currentData()
             == worker.deformation_scale_intent
+            and self.reference_shape_disparity_combo.currentData()
+            == worker.expected_shape_disparity
         )
         if not inputs_match:
             self._reference_parameter_analysis_failed(
@@ -6914,6 +7016,41 @@ class DiffeoForgeWindow(QMainWindow):
             rate_text = (
                 "warming up" if rate_value is None else f"{float(rate_value):.2f} s/iteration"
             )
+            likely_lower = event.payload.get(
+                "likely_convergence_iteration_lower"
+            )
+            likely_upper = event.payload.get(
+                "likely_convergence_iteration_upper"
+            )
+            likely_eta_lower = event.payload.get(
+                "eta_to_likely_convergence_lower_seconds"
+            )
+            likely_eta_upper = event.payload.get(
+                "eta_to_likely_convergence_upper_seconds"
+            )
+            if (
+                likely_lower is not None
+                and likely_upper is not None
+                and likely_eta_lower is not None
+                and likely_eta_upper is not None
+            ):
+                convergence_text = (
+                    f"Likely stopping window: iterations {int(likely_lower)}–"
+                    f"{int(likely_upper)} (about "
+                    f"{self._format_duration(float(likely_eta_lower))}–"
+                    f"{self._format_duration(float(likely_eta_upper))} remaining; "
+                    "trend estimate, not a guarantee)"
+                )
+            else:
+                convergence_text = (
+                    "Likely stopping window: not stable enough to estimate yet"
+                )
+            contention_text = (
+                " · Resource contention detected; recent iterations are slower than "
+                "the earlier baseline"
+                if bool(event.payload.get("resource_contention_detected", False))
+                else ""
+            )
             message = (
                 f"Iteration {iteration} of {maximum}; objective "
                 f"{float(event.payload['log_likelihood']):.6g}"
@@ -6930,8 +7067,8 @@ class DiffeoForgeWindow(QMainWindow):
                 f"{float(event.payload['attachment']):.6g} · regularity "
                 f"{float(event.payload['regularity']):.6g}\n"
                 f"Elapsed: {self._format_duration(elapsed)} · observed rate: {rate_text} · "
-                f"Estimated computation time to maximum: {eta_text} "
-                "(live upper bound, not convergence)"
+                f"Time to iteration cap: {eta_text} (live upper bound, not convergence)\n"
+                f"{convergence_text}{contention_text}"
             )
             self.run_state_label.setText(message)
         else:
@@ -7081,7 +7218,9 @@ class DiffeoForgeWindow(QMainWindow):
         self.run_state_label.setStyleSheet("")
         self.run_state_label.setText(
             "Deformetrica completion was independently verified; its output parameters "
-            "are now being imported and bound to a recomputed linear PCA snapshot."
+            "are now being imported, every subject reconstruction is being ranked for "
+            "registration QC, and a linear PCA snapshot is being recomputed. This can "
+            "take several minutes for a large cohort."
             if reference
             else "Workflow, bundle, inventory, mesh QC, and static SVGs are being "
             "fully reverified before the results view is enabled."
@@ -7092,6 +7231,7 @@ class DiffeoForgeWindow(QMainWindow):
     @Slot(object)
     def _result_review_succeeded(self, review: ModernResultReview) -> None:
         self._worker = None
+        self._registration_qc_decisions = {}
         self._result_review = review
         self._populate_review_rows(self.result_overview_layout, review.overview)
         self._populate_review_rows(self.result_optimization_layout, review.optimization)
@@ -7224,12 +7364,31 @@ class DiffeoForgeWindow(QMainWindow):
         )
         self.result_atlas_mesh_combo.blockSignals(True)
         self.result_atlas_mesh_combo.clear()
-        for artifact in vtk_artifacts:
-            self.result_atlas_mesh_combo.addItem(artifact.label, artifact.key)
+        if review.registration_qc:
+            for item in review.registration_qc:
+                decision = self._registration_qc_decisions.get(
+                    item.subject_name,
+                    "unreviewed",
+                )
+                self.result_atlas_mesh_combo.addItem(
+                    (
+                        f"#{item.rank} · residual p95 {item.residual_p95:.6g} · "
+                        f"{item.subject_name} · {decision}"
+                    ),
+                    f"registration-qc:{item.subject_name}",
+                )
+            for artifact in vtk_artifacts:
+                if artifact.key.startswith("estimated-template"):
+                    self.result_atlas_mesh_combo.addItem(artifact.label, artifact.key)
+        else:
+            for artifact in vtk_artifacts:
+                if not artifact.key.startswith("subject-original-"):
+                    self.result_atlas_mesh_combo.addItem(artifact.label, artifact.key)
         self.result_atlas_mesh_combo.blockSignals(False)
-        if not vtk_artifacts:
+        if self.result_atlas_mesh_combo.count() == 0:
             self.result_atlas_canvas.set_model(None)
             self.result_atlas_canvas.hide()
+            self.result_registration_qc_canvas.hide()
             self.result_atlas_mesh_combo.setEnabled(False)
             self.result_atlas_status_label.setObjectName("statusWarning")
             self.result_atlas_status_label.setStyleSheet("")
@@ -7238,6 +7397,7 @@ class DiffeoForgeWindow(QMainWindow):
             )
             return
         self.result_atlas_mesh_combo.setEnabled(True)
+        self.result_qc_export_button.setVisible(bool(review.registration_qc))
         self.result_atlas_mesh_combo.setCurrentIndex(0)
         self._load_selected_atlas_mesh(0)
 
@@ -7247,6 +7407,66 @@ class DiffeoForgeWindow(QMainWindow):
             return
         key = self.result_atlas_mesh_combo.currentData()
         if not isinstance(key, str):
+            return
+        if key.startswith("registration-qc:"):
+            subject_name = key.split(":", 1)[1]
+            try:
+                item = self._result_review.registration_qc_item(subject_name)
+                original_path = verify_result_artifact(
+                    self._result_review,
+                    item.original_artifact_key,
+                )
+                reconstruction_path = verify_result_artifact(
+                    self._result_review,
+                    item.reconstruction_artifact_key,
+                )
+                original = load_mesh_preview(original_path)
+                reconstruction = load_mesh_preview(reconstruction_path)
+                self.result_registration_qc_canvas.set_models(
+                    original,
+                    reconstruction,
+                )
+            except (
+                KeyError,
+                MeshPreviewError,
+                ModernResultReviewError,
+                OSError,
+                ValueError,
+            ) as error:
+                self.result_registration_qc_canvas.hide()
+                self.result_atlas_canvas.hide()
+                self.result_atlas_status_label.setObjectName("statusError")
+                self.result_atlas_status_label.setStyleSheet("")
+                self.result_atlas_status_label.setText(
+                    "Registration overlay locked because verification or loading "
+                    f"failed: {error}"
+                )
+                return
+            self.result_atlas_canvas.hide()
+            preset = self.result_atlas_view_combo.currentData()
+            if isinstance(preset, str):
+                self.result_registration_qc_canvas.set_view_preset(preset)
+            self.result_registration_qc_canvas.show()
+            self.result_show_original_check.show()
+            self.result_show_reconstruction_check.show()
+            self.result_qc_pass_button.show()
+            self.result_qc_uncertain_button.show()
+            self.result_qc_fail_button.show()
+            decision = self._registration_qc_decisions.get(subject_name, "unreviewed")
+            if decision == "implausible":
+                decision_style = "statusError"
+            elif decision in {"unreviewed", "uncertain"}:
+                decision_style = "statusWarning"
+            else:
+                decision_style = "statusSuccess"
+            self.result_atlas_status_label.setObjectName(decision_style)
+            self.result_atlas_status_label.setStyleSheet("")
+            self.result_atlas_status_label.setText(
+                f"Outlier rank #{item.rank} · residual p95 {item.residual_p95:.6g} · "
+                f"decision: {decision}. Blue = immutable original; orange = "
+                "reconstruction. A high residual prioritizes inspection and is not an "
+                "automatic exclusion rule."
+            )
             return
         try:
             artifact = self._result_review.artifact(key)
@@ -7259,6 +7479,7 @@ class DiffeoForgeWindow(QMainWindow):
         except (KeyError, MeshPreviewError, ModernResultReviewError, OSError) as error:
             self.result_atlas_canvas.set_model(None)
             self.result_atlas_canvas.hide()
+            self.result_registration_qc_canvas.hide()
             self.result_atlas_status_label.setObjectName("statusError")
             self.result_atlas_status_label.setStyleSheet("")
             self.result_atlas_status_label.setText(
@@ -7266,6 +7487,12 @@ class DiffeoForgeWindow(QMainWindow):
             )
             return
         self.result_atlas_canvas.set_model(model)
+        self.result_registration_qc_canvas.hide()
+        self.result_show_original_check.hide()
+        self.result_show_reconstruction_check.hide()
+        self.result_qc_pass_button.hide()
+        self.result_qc_uncertain_button.hide()
+        self.result_qc_fail_button.hide()
         preset = self.result_atlas_view_combo.currentData()
         if isinstance(preset, str):
             self.result_atlas_canvas.set_view_preset(preset)
@@ -7285,11 +7512,63 @@ class DiffeoForgeWindow(QMainWindow):
         preset = self.result_atlas_view_combo.currentData()
         if isinstance(preset, str):
             self.result_atlas_canvas.set_view_preset(preset)
+            self.result_registration_qc_canvas.set_view_preset(preset)
 
     @Slot()
     def _reset_atlas_view(self) -> None:
         self.result_atlas_view_combo.setCurrentIndex(0)
         self.result_atlas_canvas.reset_view()
+        self.result_registration_qc_canvas.reset_view()
+
+    @Slot(bool)
+    def _set_registration_qc_original_visible(self, visible: bool) -> None:
+        self.result_registration_qc_canvas.set_show_original(visible)
+
+    @Slot(bool)
+    def _set_registration_qc_reconstruction_visible(self, visible: bool) -> None:
+        self.result_registration_qc_canvas.set_show_reconstruction(visible)
+
+    @Slot(str)
+    def _record_registration_qc_decision(self, decision: str) -> None:
+        key = self.result_atlas_mesh_combo.currentData()
+        if not isinstance(key, str) or not key.startswith("registration-qc:"):
+            return
+        subject_name = key.split(":", 1)[1]
+        self._registration_qc_decisions[subject_name] = decision
+        index = self.result_atlas_mesh_combo.currentIndex()
+        item = (
+            self._result_review.registration_qc_item(subject_name)
+            if self._result_review
+            else None
+        )
+        if item is not None:
+            self.result_atlas_mesh_combo.setItemText(
+                index,
+                (
+                    f"#{item.rank} · residual p95 {item.residual_p95:.6g} · "
+                    f"{item.subject_name} · {decision}"
+                ),
+            )
+        self._load_selected_atlas_mesh(index)
+
+    @Slot()
+    def _export_registration_qc_status(self) -> None:
+        if self._result_review is None:
+            return
+        try:
+            exported = export_registration_qc_review(
+                self._result_review,
+                self._registration_qc_decisions,
+            )
+        except (ModernResultReviewError, OSError, TypeError, ValueError) as error:
+            QMessageBox.warning(self, "QC export failed", str(error))
+            return
+        self.result_atlas_status_label.setObjectName("statusSuccess")
+        self.result_atlas_status_label.setStyleSheet("")
+        self.result_atlas_status_label.setText(
+            f"QC status exported without replacing prior reviews: {exported.path} · "
+            f"SHA-256 {exported.sha256}"
+        )
 
     def _load_verified_optimizer_plot(self, review: ModernResultReview) -> None:
         try:
@@ -7499,13 +7778,19 @@ class DiffeoForgeWindow(QMainWindow):
                 "Pre-run runtime estimate unavailable. Live timing begins when "
                 "Deformetrica reports activity."
             )
+        evidence = (
+            f"calibrated from {estimate.pilot_observation_count} completed pilot runs"
+            if estimate.basis == "same-project_pilot_observations"
+            else "engineering heuristic; no same-project pilot timing was available"
+        )
         return (
-            "Pre-run planning estimate (low confidence): typically about "
+            f"Pre-run planning estimate ({estimate.confidence.replace('_', ' ')}): "
+            "typically about "
             f"{self._format_duration(estimate.typical_seconds)}; broad range "
             f"{self._format_duration(estimate.lower_seconds)} to "
             f"{self._format_duration(estimate.upper_seconds)}. Based on mesh faces, "
             "cohort size, time points, control spacing, threads, and iteration cap; "
-            "live observations will replace it."
+            f"{evidence}. Live observations will replace it."
         )
 
     @staticmethod

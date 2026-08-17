@@ -79,6 +79,32 @@ def test_user_intent_changes_only_the_corresponding_nominal_scales() -> None:
     assert coarse_global.fingerprint != fine_local.fingerprint
 
 
+def test_expected_disparity_is_independent_of_local_or_global_reach() -> None:
+    moderate = recommend_reference_parameters(
+        _cohort(),
+        alignment_basis="declared_gpa",
+        surface_detail_intent="balanced",
+        deformation_scale_intent="global",
+        expected_shape_disparity="moderate",
+    )
+    extreme = recommend_reference_parameters(
+        _cohort(),
+        alignment_basis="declared_gpa",
+        surface_detail_intent="balanced",
+        deformation_scale_intent="global",
+        expected_shape_disparity="extreme",
+    )
+
+    assert moderate.deformation_kernel_width_ratio == pytest.approx(
+        extreme.deformation_kernel_width_ratio
+    )
+    assert moderate.control_point_spacing_ratio == pytest.approx(
+        extreme.control_point_spacing_ratio
+    )
+    assert moderate.fingerprint != extreme.fingerprint
+    assert extreme.provenance["expected_shape_disparity"] == "extreme"
+
+
 def test_diffeoforge_gpa_requires_bound_transforms() -> None:
     with pytest.raises(
         ValueError,
