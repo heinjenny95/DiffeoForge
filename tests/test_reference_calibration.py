@@ -4,9 +4,11 @@ from pathlib import Path
 import pytest
 
 from diffeoforge.config import ConfigurationError
+from diffeoforge.mesh import sha256_file
 from diffeoforge.reference_calibration import (
     CalibrationCandidateEvidence,
     assess_calibration_stage,
+    bind_reference_calibration_plan_to_inputs,
     build_reference_calibration_plan,
     calibration_plan_json,
     select_representative_pilot_subjects,
@@ -31,6 +33,43 @@ def _recommendation():
         alignment_basis="declared_gpa",
         surface_detail_intent="balanced",
         deformation_scale_intent="balanced",
+    )
+
+
+def test_calibration_plan_can_bind_published_effective_input_bytes(
+    tmp_path: Path,
+) -> None:
+    recommendation = _recommendation()
+    plan = build_reference_calibration_plan(
+        recommendation,
+        coordinate_unit="unitless",
+        requested_pilot_subject_count=3,
+    )
+    cohort = _cohort()
+    effective = tmp_path / "effective"
+    effective.mkdir()
+    published = []
+    for source in cohort:
+        destination = effective / source.name
+        destination.write_bytes(source.read_bytes() + b"\n")
+        published.append(destination)
+
+    rebound = bind_reference_calibration_plan_to_inputs(
+        plan,
+        template=published[0],
+        subjects=published[1:],
+    )
+
+    assert rebound.fingerprint != plan.fingerprint
+    assert rebound.template_sha256 == sha256_file(published[0])
+    by_name = {path.name: path for path in published[1:]}
+    assert all(
+        selected.sha256 == sha256_file(by_name[selected.filename])
+        for selected in rebound.selected_pilot_subjects
+    )
+    assert (
+        verify_reference_calibration_plan_provenance(rebound.provenance)
+        == rebound.fingerprint
     )
 
 

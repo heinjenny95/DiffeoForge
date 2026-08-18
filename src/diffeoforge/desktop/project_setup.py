@@ -360,6 +360,7 @@ def _create_reference_project(request: ProjectSetupRequest) -> ProjectSetupResul
     input_directory = request.mesh_directory
     input_template = request.template
     input_subject_pattern = request.subject_pattern
+    parameter_recommendation = request.reference_parameter_recommendation
     preprocessing_report_path: Path | None = None
     effective_project_name = request.project_name
     if request.landmarks_file is not None:
@@ -387,6 +388,21 @@ def _create_reference_project(request: ProjectSetupRequest) -> ProjectSetupResul
         input_template = aligned.template
         input_subject_pattern = "*.vtk"
         preprocessing_report_path = aligned.evidence
+        if parameter_recommendation is not None:
+            calibration_record = parameter_recommendation.get("calibration_plan")
+            if calibration_record is not None:
+                from diffeoforge.reference_calibration import (
+                    bind_reference_calibration_plan_to_inputs,
+                    reference_calibration_plan_from_provenance,
+                )
+
+                rebound = bind_reference_calibration_plan_to_inputs(
+                    reference_calibration_plan_from_provenance(calibration_record),
+                    template=aligned.template,
+                    subjects=aligned.subjects,
+                )
+                parameter_recommendation = deepcopy(parameter_recommendation)
+                parameter_recommendation["calibration_plan"] = rebound.provenance
         if effective_project_name is None:
             source = request.mesh_directory
             name_source = (
@@ -425,7 +441,7 @@ def _create_reference_project(request: ProjectSetupRequest) -> ProjectSetupResul
         launcher=launcher,
         parameter_profile=request.reference_parameter_profile,
         parameter_ratios=request.reference_parameter_ratios,
-        parameter_recommendation=request.reference_parameter_recommendation,
+        parameter_recommendation=parameter_recommendation,
         max_iterations=request.reference_max_iterations,
         initial_step_size=request.reference_initial_step_size,
         convergence_tolerance=request.reference_convergence_tolerance,

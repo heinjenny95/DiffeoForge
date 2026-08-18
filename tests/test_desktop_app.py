@@ -695,6 +695,37 @@ def test_desktop_requires_exact_procrustes_preview_approval_and_rejects_drift(
     assert "normalized unit-centroid-size coordinates" in (
         window.reference_effective_widths_label.text()
     )
+    measured: dict[str, float] = {}
+
+    class FakeFeatureScaleRulerDialog:
+        def __init__(
+            self,
+            _model,
+            *,
+            coordinate_unit,
+            distance_scale,
+            parent,
+        ) -> None:
+            assert parent is window
+            assert coordinate_unit == "unitless"
+            measured["scale"] = distance_scale
+            self.measured_distance = 10.0 * distance_scale
+
+        @staticmethod
+        def exec():
+            return QDialog.DialogCode.Accepted
+
+    monkeypatch.setattr(
+        widgets_module,
+        "FeatureScaleRulerDialog",
+        FakeFeatureScaleRulerDialog,
+    )
+    window._measure_reference_feature()
+    expected_scale = window._procrustes_preview.alignment.transforms[0].scale
+    assert measured["scale"] == pytest.approx(expected_scale)
+    assert window.reference_feature_scale_spin.value() == pytest.approx(
+        10.0 * expected_scale
+    )
     original_effective_text = window.reference_effective_widths_label.text()
     window.reference_parameter_profile_combo.setCurrentIndex(
         window.reference_parameter_profile_combo.findData("advanced")

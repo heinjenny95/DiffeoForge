@@ -21,6 +21,7 @@ from diffeoforge.desktop.project_setup import (
 from diffeoforge.mesh import read_vtk_polydata, sha256_file
 from diffeoforge.preprocessing import preview_landmark_alignment
 from diffeoforge.reference_calibration import build_reference_calibration_plan
+from diffeoforge.reference_calibration_study import create_reference_calibration_study
 from diffeoforge.reference_recommendation import recommend_reference_parameters
 from diffeoforge.reference_runtime import ReferenceGpuProbe
 
@@ -523,6 +524,69 @@ def test_project_creation_is_bound_to_approved_procrustes_preview(
             )
         )
     assert not (changed_project / "atlas.yaml").exists()
+
+
+def test_gpa_project_rebinds_pilot_plan_to_published_aligned_vtk(
+    tmp_path: Path,
+) -> None:
+    landmarks = _write_landmarks(tmp_path / "landmarks.csv")
+    preview = preview_landmark_alignment(
+        MESH_DIRECTORY,
+        landmarks_file=landmarks,
+    )
+    cohort = (
+        MESH_DIRECTORY / "template.vtk",
+        *sorted(MESH_DIRECTORY.glob("subject-*.vtk")),
+    )
+    recommendation = recommend_reference_parameters(
+        cohort,
+        alignment_basis="diffeoforge_gpa",
+        surface_detail_intent="coarse",
+        deformation_scale_intent="global",
+        expected_shape_disparity="extreme",
+        transforms=preview.alignment.transforms,
+        alignment_fingerprint=preview.fingerprint,
+    )
+    plan = build_reference_calibration_plan(
+        recommendation,
+        coordinate_unit="unitless",
+        requested_pilot_subject_count=3,
+        smallest_relevant_feature=(
+            10.0 * preview.alignment.transforms[0].scale
+        ),
+    )
+    provenance = recommendation.provenance
+    provenance["calibration_plan"] = plan.provenance
+    result = create_project(
+        ProjectSetupRequest(
+            mesh_directory=MESH_DIRECTORY,
+            project_directory=tmp_path / "gpa-pilot",
+            units="unitless",
+            engine=DesktopEngine.DEFORMETRICA_REFERENCE,
+            landmarks_file=landmarks,
+            approved_procrustes_fingerprint=preview.fingerprint,
+            reference_parameter_profile="data_assisted",
+            reference_parameter_ratios=recommendation.parameter_ratios,
+            reference_parameter_recommendation=provenance,
+        )
+    )
+
+    config = load_config(result.config_path)
+    stored = config["project"]["parameter_provenance"]["recommendation"][
+        "calibration_plan"
+    ]
+    aligned_directory = result.template_path.parent
+    assert stored["template_sha256"] == sha256_file(result.template_path)
+    assert stored["template_sha256"] != plan.template_sha256
+    assert all(
+        item["sha256"] == sha256_file(aligned_directory / item["filename"])
+        for item in stored["selected_pilot_subjects"]
+    )
+    study = create_reference_calibration_study(
+        result.config_path,
+        tmp_path / "gpa-study",
+    )
+    assert study.plan.fingerprint == stored["fingerprint"]
 
 
 @pytest.mark.parametrize("fingerprint", ["too-short", "g" * 64])

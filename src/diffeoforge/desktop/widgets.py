@@ -3440,6 +3440,17 @@ class DiffeoForgeWindow(QMainWindow):
             return
         try:
             model = load_mesh_preview(self._reference_recommendation_paths[0])
+            distance_scale = 1.0
+            coordinate_unit = str(self.units_combo.currentData() or "unitless")
+            if self._reference_recommendation.alignment_basis == "diffeoforge_gpa":
+                preview = self._procrustes_preview
+                if preview is None or not preview.alignment.transforms:
+                    raise ValueError(
+                        "The approved GPA transform is unavailable for feature measurement."
+                    )
+                distance_scale = preview.alignment.transforms[0].scale
+                if preview.scale_to_unit_centroid_size:
+                    coordinate_unit = "unitless"
         except (MeshPreviewError, OSError, RuntimeError, TypeError, ValueError) as error:
             self.reference_calibration_status.setObjectName("statusError")
             self.reference_calibration_status.setStyleSheet("")
@@ -3449,7 +3460,8 @@ class DiffeoForgeWindow(QMainWindow):
             return
         dialog = FeatureScaleRulerDialog(
             model,
-            coordinate_unit=str(self.units_combo.currentData() or "unitless"),
+            coordinate_unit=coordinate_unit,
+            distance_scale=distance_scale,
             parent=self,
         )
         if dialog.exec() != QDialog.DialogCode.Accepted:

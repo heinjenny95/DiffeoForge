@@ -20,15 +20,16 @@ def test_feature_scale_ruler_records_resets_and_clears(monkeypatch) -> None:
     dialog = FeatureScaleRulerDialog(
         model,
         coordinate_unit="millimeter",
+        distance_scale=0.25,
     )
 
     assert dialog.measured_distance is None
     assert dialog.use_button.isEnabled() is False
     dialog.record_point((0.0, 0.0, 0.0))
     dialog.record_point((3.0, 4.0, 0.0))
-    assert dialog.measured_distance == pytest.approx(5.0)
+    assert dialog.measured_distance == pytest.approx(1.25)
     assert dialog.use_button.isEnabled() is True
-    assert "5 millimeter" in dialog.status_label.text()
+    assert "1.25 millimeter" in dialog.status_label.text()
 
     dialog.record_point((1.0, 1.0, 1.0))
     assert dialog.measured_distance is None

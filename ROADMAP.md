@@ -166,6 +166,10 @@ This roadmap describes evidence gates rather than promised dates.
     67-subject/66-PC regression render at common Windows display scales
   - [x] Explain Visual QC as a plausibility/rejection gate rather than asking an
     untrained user to rank several visually acceptable registrations
+  - [ ] Make visual GPA-review navigation finite and unmistakable: show both
+    `Mesh N of total` and the unique viewed count prominently, stop at the last
+    mesh instead of silently wrapping to the first, announce `All meshes viewed`,
+    and require an explicit action before starting the sequence again
   - [x] Turn full-cohort registration QC into a guided review: compute and rank
     subject-level residual outliers, open each original and reconstruction in a
     shared overlay, require pass/fail/uncertain decisions for the tail cases, and

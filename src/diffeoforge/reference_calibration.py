@@ -19,13 +19,15 @@ from __future__ import annotations
 import hashlib
 import json
 import math
-from collections.abc import Mapping
-from dataclasses import dataclass
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, replace
+from pathlib import Path
 from typing import Literal
 
 import numpy as np
 
 from diffeoforge.config import ConfigurationError
+from diffeoforge.mesh import sha256_file
 from diffeoforge.reference_recommendation import (
     MeshGeometryObservation,
     ReferenceParameterRecommendation,
@@ -844,6 +846,77 @@ def calibration_plan_json(plan: ReferenceCalibrationPlan) -> str:
         )
         + "\n"
     )
+
+
+def bind_reference_calibration_plan_to_inputs(
+    plan: ReferenceCalibrationPlan,
+    *,
+    template: Path | str,
+    subjects: Sequence[Path | str],
+) -> ReferenceCalibrationPlan:
+    """Bind a scientific pilot design to its effective execution files.
+
+    DiffeoForge can analyze raw meshes through approved in-memory GPA transforms
+    before it publishes canonical aligned VTK inputs.  The scientific candidate
+    design stays unchanged, but the execution plan must bind the bytes that the
+    calibration worker will actually read.  This function performs that final,
+    hash-bound transition without rerunning or changing the pilot selection.
+    """
+
+    template_path = Path(template).expanduser().resolve()
+    subject_paths = tuple(Path(path).expanduser().resolve() for path in subjects)
+    if template_path.name != plan.template_filename:
+        raise ConfigurationError(
+            "Effective calibration template filename differs from the planned template"
+        )
+    if len(subject_paths) != plan.subject_count:
+        raise ConfigurationError(
+            "Effective calibration subject count differs from the planned cohort"
+        )
+    names = tuple(path.name for path in subject_paths)
+    if len(set(names)) != len(names):
+        raise ConfigurationError(
+            "Effective calibration subject filenames must be unique"
+        )
+    by_name = dict(zip(names, subject_paths, strict=True))
+    for selected in plan.selected_pilot_subjects:
+        path = by_name.get(selected.filename)
+        if path is None:
+            raise ConfigurationError(
+                "Effective calibration inputs do not contain selected subject "
+                f"{selected.filename!r}"
+            )
+        if (
+            selected.source_subject_index < 0
+            or selected.source_subject_index >= len(subject_paths)
+            or subject_paths[selected.source_subject_index].name != selected.filename
+        ):
+            raise ConfigurationError(
+                "Effective calibration subject order differs from the planned cohort"
+            )
+
+    paths = (template_path, *subject_paths)
+    hashes = tuple(sha256_file(path) for path in paths)
+    if tuple(sha256_file(path) for path in paths) != hashes:
+        raise ConfigurationError(
+            "An effective calibration input changed while its plan was being bound"
+        )
+    subject_hashes = dict(zip(names, hashes[1:], strict=True))
+    selected = tuple(
+        replace(item, sha256=subject_hashes[item.filename])
+        for item in plan.selected_pilot_subjects
+    )
+    rebound = replace(
+        plan,
+        fingerprint="",
+        template_sha256=hashes[0],
+        selected_pilot_subjects=selected,
+    )
+    payload = rebound.provenance
+    payload.pop("fingerprint")
+    payload.pop("status")
+    payload.pop("pilot_subject_count")
+    return replace(rebound, fingerprint=_canonical_hash(payload))
 
 
 def verify_reference_calibration_plan_provenance(

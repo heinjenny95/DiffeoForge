@@ -27,12 +27,16 @@ class FeatureScaleRulerDialog(QDialog):
         model: MeshPreviewModel,
         *,
         coordinate_unit: str,
+        distance_scale: float = 1.0,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
+        if not math.isfinite(distance_scale) or distance_scale <= 0:
+            raise ValueError("distance_scale must be finite and positive")
         self.setWindowTitle("Measure the smallest relevant anatomical feature")
         self.resize(980, 760)
         self._coordinate_unit = coordinate_unit
+        self._distance_scale = float(distance_scale)
         self._points: list[tuple[float, float, float]] = []
         self._distance: float | None = None
 
@@ -117,7 +121,7 @@ class FeatureScaleRulerDialog(QDialog):
             return
         first = np.asarray(self._points[0], dtype=np.float64)
         second = np.asarray(self._points[1], dtype=np.float64)
-        distance = float(np.linalg.norm(second - first))
+        distance = float(np.linalg.norm(second - first)) * self._distance_scale
         self.canvas.set_markers({"A": self._points[0], "B": self._points[1]})
         if not math.isfinite(distance) or distance <= 0:
             self._distance = None
