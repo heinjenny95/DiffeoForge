@@ -1203,6 +1203,23 @@ def _log_reports_keyboard_interrupt(log_path: Path) -> bool:
     return any(line.strip() == "KeyboardInterrupt" for line in tail.splitlines())
 
 
+def _backend_process_working_directory(
+    config: Mapping[str, Any],
+    command_working_directory: str,
+) -> str | None:
+    """Return the host cwd only when the backend process depends on it.
+
+    WSL and container commands already select their working directory through
+    ``wsl.exe --cd`` and the container ``--workdir`` option.  Supplying the same
+    directory as the Windows child-process cwd is redundant and makes
+    ``CreateProcess`` reject otherwise usable project paths once the immutable
+    run hierarchy grows beyond the legacy Windows path limit.
+    """
+
+    launcher_type = config["runtime"]["launcher"]["type"]
+    return command_working_directory if launcher_type == "native" else None
+
+
 def execute_run(
     run_directory: Path | str,
     *,
@@ -1263,7 +1280,10 @@ def execute_run(
         with log_path.open("x", encoding="utf-8", newline="\n") as log_handle:
             process = subprocess.Popen(
                 list(command.argv),
-                cwd=command.working_directory,
+                cwd=_backend_process_working_directory(
+                    config,
+                    command.working_directory,
+                ),
                 env=environment,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,

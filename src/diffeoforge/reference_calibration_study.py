@@ -963,15 +963,29 @@ class ReferenceCalibrationStudyRunner:
             if snapshot.status != "awaiting_review":
                 continue
             incomplete = [
-                candidate.candidate_id
+                candidate
                 for candidate in snapshot.candidates
                 if candidate.status != "completed"
             ]
             if incomplete:
+                errors = {candidate.error for candidate in incomplete}
+                common_error = (
+                    next(iter(errors))
+                    if len(errors) == 1 and None not in errors
+                    else None
+                )
+                reason = (
+                    f" All {len(incomplete)} incomplete candidates reported the same "
+                    f"error: {common_error}."
+                    if common_error is not None
+                    else ""
+                )
                 raise ReferenceCalibrationStudyError(
                     "Automatic pilot calibration paused because not every candidate "
-                    "completed successfully. Retry the pilot after reviewing: "
-                    + ", ".join(incomplete)
+                    "completed successfully."
+                    + reason
+                    + " Retry the pilot after reviewing: "
+                    + ", ".join(candidate.candidate_id for candidate in incomplete)
                 )
             stage_id = snapshot.current_stage.stage_id if snapshot.current_stage else ""
             updated, assessment = select_reference_calibration_stage_automatically(

@@ -313,6 +313,26 @@ def test_failed_candidate_can_be_retried_without_rerunning_completed_candidates(
     } == completed_attempts
 
 
+def test_automatic_pilot_reports_a_shared_candidate_failure_reason(tmp_path: Path) -> None:
+    snapshot = create_reference_calibration_study(
+        _project(tmp_path),
+        tmp_path / "automatic-failure-study",
+        pilot_max_iterations=50,
+    )
+
+    with pytest.raises(
+        ReferenceCalibrationStudyError,
+        match=(
+            r"All 18 incomplete candidates reported the same error: "
+            r"synthetic transient failure"
+        ),
+    ):
+        ReferenceCalibrationStudyRunner(
+            snapshot.study_directory,
+            controller_factory=_FailedController,
+        ).run_complete_automatic_pilot()
+
+
 def test_stage_selection_allows_candidate_without_optional_visual_qc(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

@@ -681,6 +681,19 @@ def test_keyboard_interrupt_becomes_terminal_interrupted_state(
     assert fake_process.terminated is True
 
 
+@pytest.mark.parametrize(
+    ("launcher_type", "expected_cwd"),
+    (("native", "C:/long/run"), ("wsl", None), ("container", None)),
+)
+def test_backend_process_cwd_is_omitted_when_command_selects_its_own_directory(
+    launcher_type: str,
+    expected_cwd: str | None,
+) -> None:
+    config = {"runtime": {"launcher": {"type": launcher_type}}}
+
+    assert runs._backend_process_working_directory(config, "C:/long/run") == expected_cwd
+
+
 def test_child_reported_keyboard_interrupt_is_terminal_interruption(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
