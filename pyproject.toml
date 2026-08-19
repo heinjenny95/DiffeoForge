@@ -52,7 +52,7 @@ modern-engine = [
   "torch>=2.6,<2.14",
 ]
 sbom-builder = [
-  "cyclonedx-python-lib==11.11.0",
+  "cyclonedx-python-lib==11.12.0",
 ]
 
 [project.scripts]
