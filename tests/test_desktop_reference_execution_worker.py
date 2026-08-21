@@ -42,6 +42,17 @@ class _CommandStream:
             yield command
 
 
+class _BufferedStartupCommandStream(_CommandStream):
+    def __init__(self, request_line: str, command: str) -> None:
+        super().__init__(request_line)
+        self._buffered_command = command
+
+    def pop_buffered_line(self) -> str | None:
+        command = self._buffered_command
+        self._buffered_command = None
+        return command
+
+
 def _request(tmp_path: Path) -> DesktopReferenceLaunchRequest:
     config = (tmp_path / "atlas.yaml").resolve()
     shutil.copyfile(ROOT / "examples" / "minimal-atlas-container.yaml", config)
@@ -201,6 +212,33 @@ def test_reference_execution_worker_cancels_before_preparation_without_mutation(
 
     assert code == 130
     assert events[-1].payload["outcome"] == "stopped_before_prepare"
+    assert not request.destination.exists()
+
+
+def test_reference_execution_worker_consumes_queued_startup_cancel_synchronously(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    request = _request(tmp_path)
+    command = json.dumps(DesktopReferenceWorkerCommand(request.request_id).as_dict()) + "\n"
+    stream = _BufferedStartupCommandStream(
+        json.dumps(request.as_dict()) + "\n",
+        command,
+    )
+    prepared = False
+
+    def reject_prepare(*_args, **_kwargs):
+        nonlocal prepared
+        prepared = True
+        raise AssertionError("queued startup cancellation must prevent preparation")
+
+    monkeypatch.setattr(execution_worker, "prepare_run", reject_prepare)
+
+    code, events, _stderr = _run(request, stream=stream)
+
+    assert code == 130
+    assert events[-1].payload["outcome"] == "stopped_before_prepare"
+    assert prepared is False
     assert not request.destination.exists()
 
 

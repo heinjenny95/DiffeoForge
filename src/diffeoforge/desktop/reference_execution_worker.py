@@ -59,6 +59,16 @@ class _UnbufferedUtf8LineInput:
             else:
                 self._eof = True
 
+    def pop_buffered_line(self) -> str | None:
+        """Return one already-received line without waiting for more pipe input."""
+
+        newline = self._buffer.find(b"\n")
+        if newline < 0:
+            return None
+        line = bytes(self._buffer[: newline + 1])
+        del self._buffer[: newline + 1]
+        return line.decode("utf-8")
+
     def __iter__(self) -> Iterator[str]:
         return self
 
@@ -131,24 +141,38 @@ def run_reference_execution_worker(
     parent_disconnected = threading.Event()
     command_errors: list[Exception] = []
 
+    def accept_command(line: str) -> None:
+        try:
+            command = DesktopReferenceWorkerCommand.from_dict(
+                parse_json_object(line, "Reference execution worker command")
+            )
+            if command.request_id != request.request_id:
+                raise ValueError(
+                    "Reference execution command request_id does not match the active run"
+                )
+        except (OSError, RuntimeError, TypeError, UnicodeError, ValueError) as error:
+            command_errors.append(error)
+        cancel_event.set()
+
     def read_commands() -> None:
         for line in stdin:
             if not line.strip():
                 continue
-            try:
-                command = DesktopReferenceWorkerCommand.from_dict(
-                    parse_json_object(line, "Reference execution worker command")
-                )
-                if command.request_id != request.request_id:
-                    raise ValueError(
-                        "Reference execution command request_id does not match the active run"
-                    )
-            except (OSError, RuntimeError, TypeError, UnicodeError, ValueError) as error:
-                command_errors.append(error)
-            cancel_event.set()
+            accept_command(line)
             return
         parent_disconnected.set()
         cancel_event.set()
+
+    # The controller deliberately writes a request and any cancellation that was
+    # queued before launch in one pipe write.  Consume that retained second line
+    # synchronously when available: otherwise the main thread can win scheduling,
+    # complete a tiny preflight, and create the immutable destination before the
+    # command-reader thread has observed an already-queued cancellation.
+    pop_buffered_line = getattr(stdin, "pop_buffered_line", None)
+    startup_command = pop_buffered_line() if callable(pop_buffered_line) else None
+    if startup_command is not None:
+        if startup_command.strip():
+            accept_command(startup_command)
 
     emit(
         "accepted",
@@ -159,12 +183,13 @@ def run_reference_execution_worker(
             "cancellation": "phase_dependent",
         },
     )
-    command_thread = threading.Thread(
-        target=read_commands,
-        name="diffeoforge-reference-execution-command-reader",
-        daemon=True,
-    )
-    command_thread.start()
+    if startup_command is None:
+        command_thread = threading.Thread(
+            target=read_commands,
+            name="diffeoforge-reference-execution-command-reader",
+            daemon=True,
+        )
+        command_thread.start()
 
     try:
         emit(
