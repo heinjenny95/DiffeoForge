@@ -96,6 +96,7 @@ def _render_xml(root: ET.Element) -> bytes:
 def _model_xml(
     config: Mapping[str, Any],
     staged_template: Path,
+    staged_control_points: Path | None = None,
 ) -> bytes:
     model = config["model"]
     runtime = config["runtime"]
@@ -110,6 +111,8 @@ def _model_xml(
         "initial-cp-spacing",
         model["deformation"]["initial_control_point_spacing"],
     )
+    if staged_control_points is not None:
+        _add_text(root, "initial-control-points", staged_control_points.as_posix())
     template = ET.SubElement(root, "template")
     obj = ET.SubElement(template, "object", {"id": model["object_id"]})
     _add_text(obj, "deformable-object-type", "SurfaceMesh")
@@ -214,12 +217,13 @@ def render_engine_file_bytes(
     config: Mapping[str, Any],
     staged_template: Path,
     staged_subjects: Sequence[Path],
+    staged_control_points: Path | None = None,
 ) -> dict[str, bytes]:
     """Render the exact three Deformetrica XML inputs without writing files."""
 
     validate_reference_config(config)
     return {
-        "model.xml": _model_xml(config, staged_template),
+        "model.xml": _model_xml(config, staged_template, staged_control_points),
         "data_set.xml": _dataset_xml(config, staged_subjects),
         "optimization_parameters.xml": _optimization_xml(config),
     }
@@ -230,11 +234,17 @@ def generate_engine_files(
     engine_directory: Path,
     staged_template: Path,
     staged_subjects: Sequence[Path],
+    staged_control_points: Path | None = None,
 ) -> tuple[Path, Path, Path]:
     """Generate the three explicit XML inputs used by Deformetrica 4.3."""
 
     validate_reference_config(config)
-    rendered = render_engine_file_bytes(config, staged_template, staged_subjects)
+    rendered = render_engine_file_bytes(
+        config,
+        staged_template,
+        staged_subjects,
+        staged_control_points,
+    )
     model_path = engine_directory / "model.xml"
     dataset_path = engine_directory / "data_set.xml"
     optimization_path = engine_directory / "optimization_parameters.xml"

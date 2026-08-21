@@ -22,10 +22,12 @@ Validation Lab therefore:
 5. repeats the comparison on predeclared deterministic training resamples; and
 6. produces one scoped uncertainty report only after every frozen run finishes.
 
-The current backend does **not** use the holdout for selection. Fixed-template
-registration support is required before those untouched subjects can provide a
-real generalization estimate. Training reconstruction error is never relabeled
-as heldout error.
+After the training/resampling comparison completes, DiffeoForge creates a
+separate SHA-bound holdout study. For each finalist it copies the estimated
+training-only template and control points, freezes both, and estimates only the
+heldout-subject momenta. The same reserved subjects are registered against every
+frozen finalist. Training reconstruction error is never relabeled as heldout
+error, and the original Validation Lab manifest and report remain unchanged.
 
 ## Common external evidence
 
@@ -58,17 +60,33 @@ warns that it is not a biological threshold.
 - `robust_within_search_space`: one finalist wins at least 80% of the complete
   predeclared comparisons and all required runs pass automatic validity gates.
 
-Even the strongest state still requires fixed-template heldout registration,
-an independent anatomy-specific criterion, and a final locked full-cohort
-atlas before strong manuscript language is justified.
+The separate fixed-template holdout reports:
+
+- `failed_validity_gate`: at least one frozen registration lacks valid common
+  evidence;
+- `ambiguous_on_holdout`: no finalist wins 60% of paired subject comparisons;
+- `sensitive_on_holdout`: support is at least 60% but below 80%;
+- `heldout_preference_identified`: support reaches 80%, but the training study
+  had no unique prior winner to confirm;
+- `confirmed_on_holdout`: at least 80% support and agreement with the training
+  preference; or
+- `training_preference_not_confirmed`: at least 80% support for a different
+  finalist.
+
+Even the strongest holdout state still requires an independent anatomy-specific
+criterion and a final locked full-cohort atlas before strong manuscript language
+is justified.
 
 ## Desktop workflow
 
 Open a verified Deformetrica result and choose **Open Validation Lab** on the
 Results & PCA page. DiffeoForge creates or resumes one study next to the
-pilot-calibrated configuration. The dialog shows only the next action and a
-compact progress summary; design details and limitations are available behind
-info disclosures. Cancellation retains completed immutable runs.
+pilot-calibrated configuration. After the training comparison, the same dialog
+prepares and runs the fixed-template holdout extension. Before execution it
+states the exact run and registration count, iteration cap, broad time and disk
+planning ranges, and safe-cancellation behavior. During execution it shows the
+active run, first-iteration activity, logged optimizer iteration, elapsed time,
+and a live ETA. Cancellation retains completed immutable runs.
 
 ## Reproducible command-line workflow
 
@@ -85,11 +103,25 @@ diffeoforge reference-validation-study-run `
 
 diffeoforge reference-validation-study-status `
   "C:\project\diffeoforge-validation-lab" --json
+
+diffeoforge reference-holdout-study-init `
+  "C:\project\diffeoforge-validation-lab"
+
+diffeoforge reference-holdout-study-run `
+  "C:\project\diffeoforge-validation-lab\heldout-confirmation"
+
+diffeoforge reference-holdout-study-status `
+  "C:\project\diffeoforge-validation-lab\heldout-confirmation" --json
 ```
 
 The output contains a SHA-bound manifest, append-only hash-chained event
 ledger, immutable candidate configurations and runs, and JSON plus HTML final
 reports.
+
+The holdout extension has its own immutable manifest, digest, event ledger, run
+specifications, and JSON/HTML report. It binds the parent study manifest, parent
+training report, training-run result inventories, estimated templates, estimated
+control points, and exact heldout mesh bytes by SHA-256.
 
 ## Independent synthetic ground truth
 

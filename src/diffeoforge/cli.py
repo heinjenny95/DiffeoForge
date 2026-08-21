@@ -27,6 +27,11 @@ from diffeoforge.reference_calibration_study import (
     load_reference_calibration_study,
     record_reference_calibration_stage_review,
 )
+from diffeoforge.reference_holdout_study import (
+    ReferenceHoldoutStudyRunner,
+    create_reference_holdout_study,
+    load_reference_holdout_study,
+)
 from diffeoforge.reference_preparation_approval import (
     create_reference_preparation_approval,
     serialize_reference_preparation_approval_verification,
@@ -196,8 +201,7 @@ def build_parser() -> argparse.ArgumentParser:
         choices=("cpu", "cuda"),
         default="cpu",
         help=(
-            "Reference execution mode: CPU only or Deformetrica KeOps CUDA kernels "
-            "(default: cpu)."
+            "Reference execution mode: CPU only or Deformetrica KeOps CUDA kernels (default: cpu)."
         ),
     )
     init_parser.add_argument(
@@ -675,10 +679,7 @@ def build_parser() -> argparse.ArgumentParser:
     reference_calibration_parser.add_argument(
         "--smallest-relevant-feature",
         type=float,
-        help=(
-            "Optional researcher-measured smallest feature to preserve, expressed "
-            "in --units."
-        ),
+        help=("Optional researcher-measured smallest feature to preserve, expressed in --units."),
     )
     reference_calibration_parser.add_argument(
         "--pilot-subjects",
@@ -760,20 +761,14 @@ def build_parser() -> argparse.ArgumentParser:
         action="append",
         default=[],
         metavar="CANDIDATE_ID",
-        help=(
-            "Candidate whose atlas and reconstructions passed optional visual QC; "
-            "repeatable."
-        ),
+        help=("Candidate whose atlas and reconstructions passed optional visual QC; repeatable."),
     )
     calibration_study_review.add_argument(
         "--reject",
         action="append",
         default=[],
         metavar="CANDIDATE_ID",
-        help=(
-            "Candidate whose atlas and reconstructions failed optional visual QC; "
-            "repeatable."
-        ),
+        help=("Candidate whose atlas and reconstructions failed optional visual QC; repeatable."),
     )
     calibration_study_review.add_argument(
         "--select",
@@ -836,6 +831,33 @@ def build_parser() -> argparse.ArgumentParser:
         help="Run or resume every frozen Validation Lab comparison.",
     )
     validation_study_run.add_argument("study_directory", type=Path)
+
+    holdout_study_init = subparsers.add_parser(
+        "reference-holdout-study-init",
+        help=(
+            "Bind completed training-only finalist models and prepare fixed-template "
+            "registration of the untouched Validation Lab holdout."
+        ),
+    )
+    holdout_study_init.add_argument("validation_study_directory", type=Path)
+    holdout_study_init.add_argument(
+        "--max-iterations",
+        type=int,
+        help="Optional holdout override; default is the parent validation value.",
+    )
+
+    holdout_study_status = subparsers.add_parser(
+        "reference-holdout-study-status",
+        help="Verify and show one fixed-template holdout study and report status.",
+    )
+    holdout_study_status.add_argument("study_directory", type=Path)
+    holdout_study_status.add_argument("--json", action="store_true")
+
+    holdout_study_run = subparsers.add_parser(
+        "reference-holdout-study-run",
+        help="Run or resume every frozen fixed-template holdout registration.",
+    )
+    holdout_study_run.add_argument("study_directory", type=Path)
 
     validation_synthetic_create = subparsers.add_parser(
         "reference-validation-synthetic-create",
@@ -1439,8 +1461,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 f"{report['optimizer_bound']['objective_gradient_evaluation_upper_bound']}"
             )
             print(
-                "Largest dense-equivalent execution XYZ payload: "
-                f"{largest_execution_bytes} bytes"
+                f"Largest dense-equivalent execution XYZ payload: {largest_execution_bytes} bytes"
             )
             print(f"Pairwise execution: {report['engine']['pairwise_evaluation']['mode']}")
             print(f"Machine-readable report: {report_directory / REPORT_JSON_NAME}")
@@ -2192,9 +2213,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if args.command == "reference-validation-synthetic-evaluate":
         try:
-            result = evaluate_synthetic_correspondence_error(
-                args.recovered, args.truth
-            )
+            result = evaluate_synthetic_correspondence_error(args.recovered, args.truth)
             print(f"Known-correspondence vertices: {result.vertex_count}")
             print(f"Vertex RMSE: {result.vertex_rmse:.9g}")
             print(f"Vertex error p95: {result.vertex_p95:.9g}")
@@ -2250,19 +2269,13 @@ def main(argv: Sequence[str] | None = None) -> int:
                     for run in snapshot.runs
                 ],
                 "assessment": (
-                    None
-                    if snapshot.assessment is None
-                    else snapshot.assessment.as_manifest()
+                    None if snapshot.assessment is None else snapshot.assessment.as_manifest()
                 ),
                 "report_json_path": (
-                    None
-                    if snapshot.report_json_path is None
-                    else str(snapshot.report_json_path)
+                    None if snapshot.report_json_path is None else str(snapshot.report_json_path)
                 ),
                 "report_html_path": (
-                    None
-                    if snapshot.report_html_path is None
-                    else str(snapshot.report_html_path)
+                    None if snapshot.report_html_path is None else str(snapshot.report_html_path)
                 ),
             }
             if args.json:
@@ -2270,9 +2283,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             else:
                 print(f"Validation Lab: {snapshot.study_directory}")
                 print(f"Status: {snapshot.status}")
-                print(
-                    f"Runs: {snapshot.completed_run_count}/{len(snapshot.runs)} complete"
-                )
+                print(f"Runs: {snapshot.completed_run_count}/{len(snapshot.runs)} complete")
                 if snapshot.assessment is not None:
                     print(f"Evidence: {snapshot.assessment.confidence}")
                     print(
@@ -2289,16 +2300,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "reference-validation-study-run":
         try:
             before = load_reference_validation_study(args.study_directory)
-            run_order = {
-                run.run_id: index for index, run in enumerate(before.runs, start=1)
-            }
+            run_order = {run.run_id: index for index, run in enumerate(before.runs, start=1)}
 
             def show_validation_event(event) -> None:
                 kind = str(event["event"])
                 run_id = str(event.get("run_id", ""))
-                prefix = (
-                    f"[run {run_order.get(run_id, '?')}/{len(before.runs)} {run_id}]"
-                )
+                prefix = f"[run {run_order.get(run_id, '?')}/{len(before.runs)} {run_id}]"
                 if kind == "worker_event":
                     worker = event["worker_event"]
                     if worker["kind"] == "phase":
@@ -2324,10 +2331,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
             if result.assessment is not None:
                 print(f"Evidence: {result.assessment.confidence}")
-                print(
-                    "Preferred finalist: "
-                    f"{result.assessment.recommended_finalist_id or 'none'}"
-                )
+                print(f"Preferred finalist: {result.assessment.recommended_finalist_id or 'none'}")
                 print(f"Report: {result.report_html_path}")
                 print(
                     "Claim scope: robustness within the frozen finalist search space; "
@@ -2336,6 +2340,129 @@ def main(argv: Sequence[str] | None = None) -> int:
         except KeyboardInterrupt:
             print(
                 "Validation interrupted. Completed runs remain immutable; run this "
+                "command again to continue.",
+                file=sys.stderr,
+            )
+            return 130
+        except (ConfigurationError, OSError, RuntimeError, TypeError, ValueError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
+
+    if args.command == "reference-holdout-study-init":
+        try:
+            snapshot = create_reference_holdout_study(
+                args.validation_study_directory,
+                maximum_iterations=args.max_iterations,
+            )
+            print(f"Fixed-template holdout study created: {snapshot.study_directory}")
+            print(
+                f"Frozen design: {len(snapshot.finalist_ids)} trained finalists; "
+                f"{len(snapshot.heldout_subjects)} untouched subjects; "
+                f"{len(snapshot.runs)} registration runs."
+            )
+            print("No process was started. Template and control points are hash-bound.")
+        except (ConfigurationError, OSError, RuntimeError, TypeError, ValueError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
+
+    if args.command == "reference-holdout-study-status":
+        try:
+            snapshot = load_reference_holdout_study(args.study_directory)
+            value = {
+                "study_directory": str(snapshot.study_directory),
+                "study_id": snapshot.study_id,
+                "parent_study_id": snapshot.parent_study_id,
+                "status": snapshot.status,
+                "heldout_subject_count": len(snapshot.heldout_subjects),
+                "completed_run_count": snapshot.completed_run_count,
+                "run_count": len(snapshot.runs),
+                "runs": [
+                    {
+                        "run_id": run.run_id,
+                        "finalist_id": run.finalist_id,
+                        "status": run.status,
+                        "attempts": run.attempts,
+                        "error": run.error,
+                    }
+                    for run in snapshot.runs
+                ],
+                "assessment": (
+                    None if snapshot.assessment is None else snapshot.assessment.as_manifest()
+                ),
+                "report_json_path": (
+                    None if snapshot.report_json_path is None else str(snapshot.report_json_path)
+                ),
+                "report_html_path": (
+                    None if snapshot.report_html_path is None else str(snapshot.report_html_path)
+                ),
+            }
+            if args.json:
+                print(json.dumps(value, indent=2, ensure_ascii=False, sort_keys=True))
+            else:
+                print(f"Fixed-template holdout: {snapshot.study_directory}")
+                print(f"Status: {snapshot.status}")
+                print(f"Runs: {snapshot.completed_run_count}/{len(snapshot.runs)} complete")
+                if snapshot.assessment is not None:
+                    print(f"Evidence: {snapshot.assessment.status}")
+                    print(
+                        f"Heldout preference: {snapshot.assessment.preferred_finalist_id or 'none'}"
+                    )
+                if snapshot.report_html_path is not None:
+                    print(f"Report: {snapshot.report_html_path}")
+        except (ConfigurationError, OSError, RuntimeError, TypeError, ValueError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
+
+    if args.command == "reference-holdout-study-run":
+        try:
+            before = load_reference_holdout_study(args.study_directory)
+            run_order = {run.run_id: index for index, run in enumerate(before.runs, start=1)}
+
+            def show_holdout_event(event) -> None:
+                kind = str(event["event"])
+                run_id = str(event.get("run_id", ""))
+                prefix = f"[run {run_order.get(run_id, '?')}/{len(before.runs)} {run_id}]"
+                if kind == "worker_event":
+                    worker = event["worker_event"]
+                    if worker["kind"] == "phase":
+                        print(f"{prefix} {worker['payload']['message']}", flush=True)
+                    elif worker["kind"] == "progress":
+                        payload = worker["payload"]
+                        print(
+                            f"{prefix} iteration {payload['iteration']}/"
+                            f"{payload['maximum_iterations']}; elapsed "
+                            f"{float(payload['elapsed_seconds']):.1f} s",
+                            flush=True,
+                        )
+                elif kind == "run_started":
+                    print(f"{prefix} started", flush=True)
+                elif kind == "run_completed":
+                    evidence = event["evidence"]
+                    print(
+                        f"{prefix} completed; heldout surface p95 "
+                        f"{float(evidence['external_residual_p95']):.6g}",
+                        flush=True,
+                    )
+                elif kind in {"run_failed", "run_interrupted"}:
+                    print(f"{prefix} {kind}: {event['error']}", flush=True)
+
+            result = ReferenceHoldoutStudyRunner(args.study_directory).run_all(
+                event_callback=show_holdout_event
+            )
+            print(
+                f"Holdout status: {result.status}; "
+                f"{result.completed_run_count}/{len(result.runs)} runs complete"
+            )
+            if result.assessment is not None:
+                print(f"Evidence: {result.assessment.status}")
+                print(f"Heldout preference: {result.assessment.preferred_finalist_id or 'none'}")
+                print(f"Report: {result.report_html_path}")
+        except KeyboardInterrupt:
+            print(
+                "Holdout interrupted. Completed runs remain immutable; run this "
                 "command again to continue.",
                 file=sys.stderr,
             )
@@ -2362,9 +2489,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 f"Current stage: {snapshot.current_stage.order}/"
                 f"{len(snapshot.plan.stages)} — {snapshot.current_stage.title}"
             )
-            print(
-                f"Prepared candidates: {len(snapshot.candidates)}; no atlas run started."
-            )
+            print(f"Prepared candidates: {len(snapshot.candidates)}; no atlas run started.")
         except (ConfigurationError, OSError, TypeError, ValueError) as error:
             print(f"ERROR: {error}", file=sys.stderr)
             return 2
@@ -2408,19 +2533,13 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "selected_candidate_ids": dict(snapshot.selected_candidate_ids),
                 "event_count": snapshot.event_count,
                 "final_config_path": (
-                    None
-                    if snapshot.final_config_path is None
-                    else str(snapshot.final_config_path)
+                    None if snapshot.final_config_path is None else str(snapshot.final_config_path)
                 ),
                 "report_json_path": (
-                    None
-                    if snapshot.report_json_path is None
-                    else str(snapshot.report_json_path)
+                    None if snapshot.report_json_path is None else str(snapshot.report_json_path)
                 ),
                 "report_html_path": (
-                    None
-                    if snapshot.report_html_path is None
-                    else str(snapshot.report_html_path)
+                    None if snapshot.report_html_path is None else str(snapshot.report_html_path)
                 ),
             }
             if args.json:
@@ -2488,8 +2607,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                         )
                     elif worker_kind == "activity":
                         print(
-                            f"{prefix} active for "
-                            f"{float(payload['elapsed_seconds']):.0f} s",
+                            f"{prefix} active for {float(payload['elapsed_seconds']):.0f} s",
                             flush=True,
                         )
                 elif kind == "candidate_started":
@@ -2507,10 +2625,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     print(f"{prefix} {kind}: {event['error']}", flush=True)
                 elif kind == "stage_awaiting_review":
                     if not args.complete:
-                        print(
-                            "All candidate attempts finished; researcher selection "
-                            "is required."
-                        )
+                        print("All candidate attempts finished; researcher selection is required.")
                 elif kind == "automatic_stage_selected":
                     print(
                         f"[stage {event['completed_stage_count']}/"
@@ -2521,13 +2636,9 @@ def main(argv: Sequence[str] | None = None) -> int:
 
             runner = ReferenceCalibrationStudyRunner(args.study_directory)
             result = (
-                runner.run_complete_automatic_pilot(
-                    event_callback=show_calibration_event
-                )
+                runner.run_complete_automatic_pilot(event_callback=show_calibration_event)
                 if args.complete
-                else runner.run_current_stage(
-                    event_callback=show_calibration_event
-                )
+                else runner.run_current_stage(event_callback=show_calibration_event)
             )
             print(f"Calibration status: {result.status}")
             if result.status == "completed":
@@ -2565,9 +2676,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     "The same candidate cannot pass and fail optional visual QC: "
                     + ", ".join(sorted(overlap))
                 )
-            approvals = {
-                candidate_id: True for candidate_id in approved
-            } | {
+            approvals = {candidate_id: True for candidate_id in approved} | {
                 candidate_id: False for candidate_id in rejected
             }
             result, assessment = record_reference_calibration_stage_review(
@@ -2579,18 +2688,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"Researcher selected: {args.select}")
             if result.current_stage is None:
                 print(f"Calibration complete: {result.final_config_path}")
-                print(
-                    "The selected configuration still requires a full-cohort "
-                    "confirmation run."
-                )
+                print("The selected configuration still requires a full-cohort confirmation run.")
             else:
                 print(
                     f"Prepared stage {result.current_stage.order}/"
                     f"{len(result.plan.stages)}: {result.current_stage.title}"
                 )
-                print(
-                    f"Pending candidate runs: {len(result.candidates)}"
-                )
+                print(f"Pending candidate runs: {len(result.candidates)}")
         except (ConfigurationError, OSError, TypeError, ValueError) as error:
             print(f"ERROR: {error}", file=sys.stderr)
             return 2
@@ -2600,9 +2704,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         try:
             mesh_directory = args.mesh_directory.expanduser().resolve()
             if not mesh_directory.is_dir():
-                raise ConfigurationError(
-                    f"Mesh directory does not exist: {mesh_directory}"
-                )
+                raise ConfigurationError(f"Mesh directory does not exist: {mesh_directory}")
             if args.template is None:
                 template = detect_template(mesh_directory)
                 if template is None:

@@ -26,13 +26,17 @@ is dataset- and objective-specific:
    compared on identical non-heldout cohorts with a parameter-independent
    vertex-to-triangle surface metric; the same finalist wins at least 80% of
    the predeclared full-training and resampling comparisons.
-6. **Externally validated** — independent homologous landmarks, synthetic known
+6. **Heldout supported** — training-only templates and control points are frozen;
+   the same untouched subjects are registered against every finalist; and one
+   finalist receives at least 80% paired subject support under the predeclared
+   external metric and equivalence rule.
+7. **Externally validated** — independent homologous landmarks, synthetic known
    deformations, replicated cohorts, or another task-relevant ground truth
    corroborates the chosen correspondence scale.
 
 Level 5 supports only the explicitly scoped phrase "robust within the tested
 finalist search space." Strong biological parameter-selection language
-requires level 6. Level 4 permits automatic continuation but remains a pilot
+requires level 7. Level 4 permits automatic continuation but remains a pilot
 result.
 
 ## Current pilot metrics
@@ -54,7 +58,8 @@ correspondence.
 
 ## Remaining qualification work
 
-- complete fixed-template registration of the untouched Validation Lab holdout;
+- execute and publish the fixed-template holdout protocol on independent real
+  datasets and calibrate its predeclared support thresholds prospectively;
 - add PCA subspace and subject-score stability with sign/rotation-invariant
   comparisons;
 - support predeclared biological strata in pilot selection;

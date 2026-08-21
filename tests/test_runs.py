@@ -168,6 +168,40 @@ def test_prepare_creates_verifiable_immutable_run(tmp_path: Path) -> None:
     assert run_status(run_directory)["status"] == "prepared"
 
 
+def test_prepare_binds_explicit_initial_control_points(tmp_path: Path) -> None:
+    config_path = write_run_config(tmp_path)
+    control_points = tmp_path / "trained-control-points.txt"
+    control_points.write_text("0 0 0\n1 1 1\n", encoding="ascii")
+    config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    config["model"]["deformation"]["initial_control_points"] = (
+        "./trained-control-points.txt"
+    )
+    config["optimization"]["freeze_template"] = True
+    config["optimization"]["freeze_control_points"] = True
+    config_path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+
+    run_directory = prepare_run(config_path, run_id="fixed-trained-model")
+    manifest = verify_prepared_run(run_directory)
+
+    staged = run_directory / "input" / "control-points" / control_points.name
+    assert staged.read_bytes() == control_points.read_bytes()
+    assert any(
+        item["path"] == f"input/control-points/{control_points.name}"
+        and item["sha256"] == sha256_file(control_points)
+        for item in manifest["protected_artifacts"]
+    )
+    model_xml = (run_directory / "engine" / "model.xml").read_text(encoding="utf-8")
+    assert (
+        "<initial-control-points>../input/control-points/"
+        "trained-control-points.txt</initial-control-points>"
+    ) in model_xml
+    optimization_xml = (
+        run_directory / "engine" / "optimization_parameters.xml"
+    ).read_text(encoding="utf-8")
+    assert "<freeze-template>On</freeze-template>" in optimization_xml
+    assert "<freeze-control-points>On</freeze-control-points>" in optimization_xml
+
+
 def test_prepare_preserves_parameter_provenance_in_effective_config(tmp_path: Path) -> None:
     config_path = write_run_config(tmp_path)
     config = yaml.safe_load(config_path.read_text(encoding="utf-8"))

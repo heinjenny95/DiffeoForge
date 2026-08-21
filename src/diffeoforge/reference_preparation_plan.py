@@ -370,6 +370,16 @@ def plan_reference_preparation(
     config = load_config(source_config)
     validate_reference_config(config)
     summary = validate_input_paths(config, source_config)
+    control_points_bytes = (
+        None
+        if summary.initial_control_points is None
+        else summary.initial_control_points.stat().st_size
+    )
+    control_points_sha256 = (
+        None
+        if summary.initial_control_points is None
+        else sha256_file(summary.initial_control_points)
+    )
     template_metadata, subject_metadata = inspect_inputs(summary)
     output_root = resolve_output_directory(config, source_config)
     if output_root.exists() and not output_root.is_dir():
@@ -388,6 +398,11 @@ def plan_reference_preparation(
     staged_subject_relatives = [
         Path("input") / "subjects" / subject.name for subject in summary.subjects
     ]
+    staged_control_points_relative = (
+        None
+        if summary.initial_control_points is None
+        else Path("input") / "control-points" / summary.initial_control_points.name
+    )
     inputs = [
         reference_input_record(
             "template",
@@ -410,12 +425,18 @@ def plan_reference_preparation(
         summary.input_directory,
         summary.template,
         output_root,
+        summary.initial_control_points,
     )
     effective_bytes = _effective_yaml_bytes(effective)
     engine_bytes = render_engine_file_bytes(
         config,
         Path("..") / staged_template_relative,
         [Path("..") / path for path in staged_subject_relatives],
+        (
+            None
+            if staged_control_points_relative is None
+            else Path("..") / staged_control_points_relative
+        ),
     )
     protected_files = [
         _copied_file(
@@ -443,6 +464,19 @@ def plan_reference_preparation(
                 staged_subject_relatives,
                 subject_metadata,
                 strict=True,
+            )
+        ),
+        *(
+            ()
+            if summary.initial_control_points is None
+            or staged_control_points_relative is None
+            else (
+                _copied_file(
+                    staged_control_points_relative.as_posix(),
+                    summary.initial_control_points,
+                    int(control_points_bytes),
+                    str(control_points_sha256),
+                ),
             )
         ),
         *(
@@ -475,7 +509,14 @@ def plan_reference_preparation(
             "platform": platform.platform(),
             "native_newline": "CRLF" if os.linesep == "\r\n" else "LF",
         },
-        "directories": list(PLANNED_DIRECTORIES),
+        "directories": [
+            *PLANNED_DIRECTORIES,
+            *(
+                ()
+                if staged_control_points_relative is None
+                else ("input/control-points",)
+            ),
+        ],
         "input_count": {"templates": 1, "subjects": len(summary.subjects)},
         "inputs": inputs,
         "effective_config": effective,
@@ -496,6 +537,7 @@ def plan_reference_preparation(
         current_summary.input_directory != summary.input_directory
         or current_summary.template != summary.template
         or current_summary.subjects != summary.subjects
+        or current_summary.initial_control_points != summary.initial_control_points
     ):
         raise ConfigurationError(
             "Reference input inventory changed while the preparation plan was built"
@@ -503,6 +545,12 @@ def plan_reference_preparation(
     for item in inputs:
         geometry = item["geometry"]
         _verify_unchanged(Path(item["source_path"]), str(geometry["sha256"]), "Input mesh")
+    if summary.initial_control_points is not None:
+        _verify_unchanged(
+            summary.initial_control_points,
+            str(control_points_sha256),
+            "Initial control points",
+        )
     if resolve_output_directory(config, source_config) != output_root:
         raise ConfigurationError(
             "Configured output root changed while the preparation plan was built"

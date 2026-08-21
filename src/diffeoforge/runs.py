@@ -239,11 +239,16 @@ def effective_reference_config(
     input_directory: Path,
     template: Path,
     output_directory: Path,
+    initial_control_points: Path | None = None,
 ) -> dict[str, Any]:
     effective = deepcopy(dict(config))
     effective["input"]["directory"] = str(input_directory)
     effective["input"]["template"] = str(template)
     effective["output"]["directory"] = str(output_directory)
+    if initial_control_points is not None:
+        effective["model"]["deformation"]["initial_control_points"] = str(
+            initial_control_points
+        )
     return effective
 
 
@@ -441,6 +446,7 @@ def _prepare_run(
     try:
         input_template_directory = temp_directory / "input" / "template"
         input_subject_directory = temp_directory / "input" / "subjects"
+        input_control_points_directory = temp_directory / "input" / "control-points"
         config_directory = temp_directory / "config"
         engine_directory = temp_directory / "engine"
         output_path = temp_directory / "output"
@@ -454,6 +460,8 @@ def _prepare_run(
             logs_directory,
         ):
             directory.mkdir(parents=True, exist_ok=False)
+        if summary.initial_control_points is not None:
+            input_control_points_directory.mkdir(parents=True, exist_ok=False)
 
         staged_template_relative = Path("input") / "template" / summary.template.name
         staged_template = temp_directory / staged_template_relative
@@ -476,6 +484,19 @@ def _prepare_run(
                 reference_input_record("subject", source, staged_relative, metadata)
             )
 
+        staged_control_points_relative: Path | None = None
+        staged_control_points: Path | None = None
+        if summary.initial_control_points is not None:
+            staged_control_points_relative = (
+                Path("input") / "control-points" / summary.initial_control_points.name
+            )
+            staged_control_points = temp_directory / staged_control_points_relative
+            _copy_and_verify(
+                summary.initial_control_points,
+                staged_control_points,
+                sha256_file(summary.initial_control_points),
+            )
+
         source_config_copy = config_directory / "source-config.yaml"
         shutil.copy2(source_config, source_config_copy)
         effective = effective_reference_config(
@@ -483,6 +504,7 @@ def _prepare_run(
             summary.input_directory,
             summary.template,
             output_root,
+            summary.initial_control_points,
         )
         effective_config_path = config_directory / "effective-config.yaml"
         with effective_config_path.open("x", encoding="utf-8", newline="\n") as handle:
@@ -493,6 +515,11 @@ def _prepare_run(
             engine_directory,
             Path("..") / staged_template_relative,
             [Path("..") / path for path in staged_subject_relatives],
+            (
+                None
+                if staged_control_points_relative is None
+                else Path("..") / staged_control_points_relative
+            ),
         )
 
         protected_paths = [
@@ -500,6 +527,7 @@ def _prepare_run(
             effective_config_path,
             staged_template,
             *(temp_directory / path for path in staged_subject_relatives),
+            *(() if staged_control_points is None else (staged_control_points,)),
             *engine_files,
         ]
         command_preview = build_command(config, final_directory)

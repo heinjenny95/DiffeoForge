@@ -728,6 +728,10 @@
               "type": "number",
               "exclusiveMinimum": 0
             },
+            "initial_control_points": {
+              "type": "string",
+              "minLength": 1
+            },
             "use_rk2": {
               "type": "boolean"
             }

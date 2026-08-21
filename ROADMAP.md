@@ -226,7 +226,8 @@ This roadmap describes evidence gates rather than promised dates.
 - [x] Frozen post-pilot finalist/resampling protocol, external surface metric,
   resumable Validation Lab execution, scoped report, and analytic
   known-correspondence generator
-- [ ] Fixed-template registration of untouched Validation Lab holdout subjects
+- [x] SHA-bound fixed-template registration workflow for untouched Validation
+  Lab holdout subjects, with paired assessment and separate report
 - [ ] Independent biological landmark validation and PCA subspace stability
 - [ ] Multi-platform benchmark study
 - [ ] External usability evaluation

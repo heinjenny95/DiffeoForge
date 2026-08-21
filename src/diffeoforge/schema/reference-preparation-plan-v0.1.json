@@ -76,13 +76,28 @@
       }
     },
     "directories": {
-      "const": [
-        "config",
-        "engine",
-        "input/template",
-        "input/subjects",
-        "logs",
-        "output"
+      "oneOf": [
+        {
+          "const": [
+            "config",
+            "engine",
+            "input/template",
+            "input/subjects",
+            "logs",
+            "output"
+          ]
+        },
+        {
+          "const": [
+            "config",
+            "engine",
+            "input/template",
+            "input/subjects",
+            "logs",
+            "output",
+            "input/control-points"
+          ]
+        }
       ]
     },
     "input_count": {
