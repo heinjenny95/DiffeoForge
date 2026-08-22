@@ -292,6 +292,17 @@ def test_external_control_points_and_momenta_only_are_verified(tmp_path: Path) -
     optimizer_progress = [event.optimizer for event in progress if event.optimizer is not None]
     assert [item.completed_decisions for item in optimizer_progress] == [0, 1]
     assert {item.maximum_decisions for item in optimizer_progress} == {1}
+    assert [record["cycle"] for record in manifest["optimizer_checkpoints"]] == [1]
+    checkpoint_path = run / manifest["optimizer_checkpoints"][0]["path"]
+    checkpoint = workflow.verify_modern_cycle_checkpoint(
+        checkpoint_path,
+        workflow_root=run,
+    )
+    assert checkpoint["record"]["objective"] == pytest.approx(
+        workflow.verify_modern_atlas_bundle(run / manifest["result_bundle"]["path"])[
+            "optimizer"
+        ]["final_objective"]
+    )
 
     first_bundle = run / manifest["result_bundle"]["path"]
     first_bundle_manifest = json.loads(

@@ -63,6 +63,20 @@ class AtlasOptimizationCancelled(RuntimeError):
 
 
 @dataclass(frozen=True)
+class AtlasCycleCheckpoint:
+    """Detached state committed after one complete optimizer cycle."""
+
+    record: AtlasOptimizationRecord
+    template_vertices: torch.Tensor
+    control_points: torch.Tensor
+    momenta: torch.Tensor
+    next_step_sizes: dict[AtlasParameterBlock, float]
+
+
+AtlasCheckpointCallback = Callable[[AtlasCycleCheckpoint], None]
+
+
+@dataclass(frozen=True)
 class AtlasOptimizerSettings:
     """Normalized settings that fully declare the transparent optimizer."""
 
@@ -222,6 +236,7 @@ def optimize_atlas(
     max_line_search_iterations: int = 20,
     step_initialization: AtlasStepInitialization = "fixed",
     progress_callback: AtlasProgressCallback | None = None,
+    checkpoint_callback: AtlasCheckpointCallback | None = None,
     cancel_requested: AtlasCancellationCallback | None = None,
 ) -> AtlasOptimizationResult:
     """Maximize the atlas objective over the selected parameter blocks.
@@ -237,6 +252,8 @@ def optimize_atlas(
     cycles = _integer("max_cycles", max_cycles, minimum=0)
     if progress_callback is not None and not callable(progress_callback):
         raise TypeError("progress_callback must be callable or None")
+    if checkpoint_callback is not None and not callable(checkpoint_callback):
+        raise TypeError("checkpoint_callback must be callable or None")
     if cancel_requested is not None and not callable(cancel_requested):
         raise TypeError("cancel_requested must be callable or None")
 
@@ -449,6 +466,19 @@ def optimize_atlas(
     next_step_sizes = dict(step_sizes)
     reusable_single_block_evaluation: _BlockEvaluation | None = None
 
+    def emit_cycle_checkpoint(record: AtlasOptimizationRecord) -> None:
+        if checkpoint_callback is None:
+            return
+        checkpoint_callback(
+            AtlasCycleCheckpoint(
+                record=record,
+                template_vertices=current.template_vertices.clone(),
+                control_points=current.control_points.clone(),
+                momenta=current.momenta.clone(),
+                next_step_sizes={block: next_step_sizes[block] for block in order},
+            )
+        )
+
     def result(
         termination_reason: AtlasTerminationReason,
         *,
@@ -512,6 +542,8 @@ def optimize_atlas(
                 history.append(record)
                 if progress_callback is not None:
                     progress_callback(record)
+                if block == order[-1]:
+                    emit_cycle_checkpoint(record)
                 continue
 
             step_size = next_step_sizes[block]
@@ -585,6 +617,8 @@ def optimize_atlas(
             history.append(record)
             if progress_callback is not None:
                 progress_callback(record)
+            if block == order[-1]:
+                emit_cycle_checkpoint(record)
 
         if stationary_blocks == len(order):
             return result(

@@ -97,6 +97,14 @@ exact final template, control points, momenta, and effective subjects; it never
 modifies or relabels the parent. See
 [verified Modern optimizer continuation](MODERN_CONTINUATION.md).
 
+New runs also write hash-bound state after each complete optimizer cycle. These
+checkpoints are verified inside a successful workflow and may survive a hard
+process/machine failure inside the abandoned private directory. A guarded CLI
+can freeze the latest verified complete cycle into a separate non-overwriting
+prospective successor; it never resumes an active process or modifies the
+source. See [Modern complete-cycle checkpoints](MODERN_CHECKPOINTS.md) and
+[guarded Modern checkpoint recovery](MODERN_CHECKPOINT_RECOVERY.md).
+
 `modern-plan` v0.2 is a non-compute review step for the configured exact
 engine. It publishes logical all-pairs operation counts, the largest logical
 pair, the largest dense or blockwise matrix dimensions evaluated by the
@@ -176,6 +184,15 @@ modern-atlas-run/
   quality/
     input-mesh-quality.json
     input-mesh-quality.csv
+  checkpoints/
+    cycle-000001/
+      checkpoint.json
+      checkpoint.sha256
+      state/
+        estimated-template.vtk
+        control-points.txt
+        momenta.csv
+    ...
   result/
     atlas-bundle/
       bundle-manifest.json
@@ -292,8 +309,10 @@ configuration.
 
 SHA-256 provides integrity detection, not an authenticity signature. Progress
 counts are not runtime percentages and carry no ETA. Workflow
-v0.1 does not provide mid-run checkpoints or crash recovery; its completed-run
-continuation is a new sequential workflow, not restoration of in-memory state.
+v0.1 now records complete-cycle checkpoint state and can freeze a separately
+verified successor from an abandoned private run. Both crash recovery and its
+completed-run continuation are new sequential workflows, not restoration of an
+in-memory line-search state or a partial optimizer cycle.
 It also does not provide PLY/STL/OBJ
 input, mesh repair, self-intersection tests, loading plots, mesh rendering,
 a GUI, or an installer. PCA signs are conventional and

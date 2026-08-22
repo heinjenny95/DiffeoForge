@@ -253,14 +253,17 @@ terminal publication, and route a verified checkpoint into the same immutable-su
 workflow. Reference PC deformation rendering remains open. The verified
 source-level momenta PCA handoff is connected. The older preparation-only child
 remains a separate narrow sibling in the
-evidence-only freeze and cannot authorize engine execution. The Modern path does not
-provide checkpoint/resume. The real source preparation worker also has suspended-process Windows
+evidence-only freeze and cannot authorize engine execution. The Modern path now
+writes complete-cycle checkpoints and provides a guarded source-level command
+that freezes a separate successor from a verified abandoned private run; it is
+not automatic process resume and is not yet exposed in the GUI. The real source
+preparation worker also has suspended-process Windows
 hard-parent-death evidence before request delivery. For the Modern compute
 worker, Windows parent death terminates the contained worker tree and
 command-pipe EOF requests cooperative cancellation on every platform.
 Versioned private markers and OS-released
 leases now support exact-destination, read-only discovery after hard crashes;
-automatic deletion, resume, and reconciliation remain deliberately open.
+automatic deletion and automatic recovery remain deliberately unavailable.
 DiffeoForge can also load selected meshes outside the GUI thread and render
 deterministic native XY/XZ/YZ wireframe projections with an explicit
 display-edge budget and exact source hash. The separate guided landmark editor
@@ -357,6 +360,17 @@ diffeoforge modern-run modern-atlas.yaml
 diffeoforge modern-verify modern-atlas-run
 # If a prior hard crash left private state, inspect it without changing files:
 diffeoforge modern-private-status modern-atlas-run
+# If the exact candidate is abandoned and has complete-cycle checkpoints,
+# freeze a separate prospective recovery plan without changing the source:
+diffeoforge modern-checkpoint-recovery-init `
+  .modern-atlas-run.tmp-0123456789abcdef0123456789abcdef `
+  --output modern-atlas-run-recovery
+diffeoforge modern-checkpoint-recovery-verify modern-atlas-run-recovery
+# The explicit modern-run command remains a separate compute decision.
+diffeoforge modern-run `
+  modern-atlas-run-recovery/modern-checkpoint-recovery.yaml
+diffeoforge modern-checkpoint-recovery-verify-run `
+  modern-atlas-run-recovery modern-atlas-run-recovery-modern-run
 ```
 
 The status command classifies a held lease as active and a released valid lease
@@ -545,6 +559,8 @@ and workflow for another mesh directory.
 - [Immutable modern atlas result bundle](docs/MODERN_ATLAS_BUNDLE.md)
 - [Experimental modern mesh-folder workflow](docs/MODERN_WORKFLOW.md)
 - [Verified Modern optimizer continuation](docs/MODERN_CONTINUATION.md)
+- [Modern complete-cycle checkpoints](docs/MODERN_CHECKPOINTS.md)
+- [Guarded Modern checkpoint recovery](docs/MODERN_CHECKPOINT_RECOVERY.md)
 - [Deterministic mesh-quality evidence](docs/MESH_QUALITY.md)
 - [Modern configured-engine workload planning](docs/MODERN_WORKLOAD.md)
 - [Versioned modern progress events](docs/MODERN_PROGRESS.md)

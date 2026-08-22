@@ -6,6 +6,8 @@ this package requires the optional ``modern-engine`` dependency set.
 
 from diffeoforge.engine.atlas_optimizer import (
     AtlasCancellationCallback,
+    AtlasCheckpointCallback,
+    AtlasCycleCheckpoint,
     AtlasOptimizationCancelled,
     AtlasOptimizationRecord,
     AtlasOptimizationResult,
@@ -56,7 +58,9 @@ __all__ = [
     "PairwiseEvaluationPlan",
     "AtlasObjective",
     "AtlasCancellationCallback",
+    "AtlasCheckpointCallback",
     "AtlasOptimizationCancelled",
+    "AtlasCycleCheckpoint",
     "AtlasOptimizationRecord",
     "AtlasOptimizationResult",
     "AtlasOptimizerSettings",

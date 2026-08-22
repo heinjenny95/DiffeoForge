@@ -338,6 +338,35 @@ def build_parser() -> argparse.ArgumentParser:
     modern_continuation_run_parser.add_argument("plan_directory", type=Path)
     modern_continuation_run_parser.add_argument("successor_run", type=Path)
 
+    modern_recovery_parser = subparsers.add_parser(
+        "modern-checkpoint-recovery-init",
+        help=(
+            "Freeze a hash-bound successor from the latest complete-cycle checkpoint "
+            "in one abandoned private Modern run."
+        ),
+    )
+    modern_recovery_parser.add_argument("private_directory", type=Path)
+    modern_recovery_parser.add_argument("--output", type=Path, required=True)
+    modern_recovery_parser.add_argument(
+        "--cycles",
+        type=int,
+        help="Override the default remaining cycle count; zero publishes the recovered state.",
+    )
+    modern_recovery_parser.add_argument("--threads", type=int)
+
+    modern_recovery_verify_parser = subparsers.add_parser(
+        "modern-checkpoint-recovery-verify",
+        help="Verify a frozen no-results-yet Modern checkpoint recovery plan.",
+    )
+    modern_recovery_verify_parser.add_argument("plan_directory", type=Path)
+
+    modern_recovery_run_parser = subparsers.add_parser(
+        "modern-checkpoint-recovery-verify-run",
+        help="Verify that a completed Modern recovery exactly matches its frozen checkpoint.",
+    )
+    modern_recovery_run_parser.add_argument("plan_directory", type=Path)
+    modern_recovery_run_parser.add_argument("successor_run", type=Path)
+
     modern_run_parser = subparsers.add_parser(
         "modern-run",
         help="Execute one immutable experimental modern atlas/PCA workflow.",
@@ -1472,6 +1501,74 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "Initial objective matches the parent final state within the "
                 "declared numerical tolerance."
             )
+            print(
+                "Termination: "
+                f"{bundle['optimizer']['termination_reason']}; "
+                f"converged={str(bundle['optimizer']['converged']).lower()}"
+            )
+        except (OSError, RuntimeError, TypeError, ValueError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
+
+    if args.command == "modern-checkpoint-recovery-init":
+        try:
+            from diffeoforge.modern_checkpoint_recovery import (
+                CONFIG_NAME,
+                HTML_NAME,
+                create_modern_checkpoint_recovery,
+                verify_modern_checkpoint_recovery,
+            )
+
+            destination = create_modern_checkpoint_recovery(
+                args.private_directory,
+                args.output,
+                max_cycles=args.cycles,
+                threads=args.threads,
+            )
+            plan = verify_modern_checkpoint_recovery(destination)
+            print(f"Prospective Modern checkpoint recovery created: {destination}")
+            print(
+                "Recovered complete cycle: "
+                f"{plan['source']['checkpoint_cycle']} of "
+                f"{plan['source']['original_cycle_cap']}"
+            )
+            print(f"Frozen config: {destination / CONFIG_NAME}")
+            print(f"Review page: {destination / HTML_NAME}")
+            print("The abandoned directory was not modified; no successor optimizer was run.")
+        except (OSError, RuntimeError, TypeError, ValueError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
+
+    if args.command == "modern-checkpoint-recovery-verify":
+        try:
+            from diffeoforge.modern_checkpoint_recovery import (
+                verify_modern_checkpoint_recovery,
+            )
+
+            plan = verify_modern_checkpoint_recovery(args.plan_directory)
+            print(f"Modern checkpoint recovery verified: {args.plan_directory.resolve()}")
+            print(f"Subjects: {len(plan['subjects'])}")
+            print("The plan contains no successor result and remains prospective.")
+        except (OSError, RuntimeError, TypeError, ValueError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
+
+    if args.command == "modern-checkpoint-recovery-verify-run":
+        try:
+            from diffeoforge.modern_checkpoint_recovery import (
+                verify_modern_checkpoint_recovery_run,
+            )
+
+            result = verify_modern_checkpoint_recovery_run(
+                args.plan_directory,
+                args.successor_run,
+            )
+            bundle = result["bundle"]
+            print(f"Modern checkpoint recovery run verified: {args.successor_run.resolve()}")
+            print("Initial objective matches the frozen complete-cycle checkpoint.")
             print(
                 "Termination: "
                 f"{bundle['optimizer']['termination_reason']}; "

@@ -29,6 +29,7 @@ from diffeoforge.atomic_io import write_text_safely
 from diffeoforge.config import ConfigurationError, InputSummary, validate_input_paths
 from diffeoforge.engine import PairwiseEvaluationPlan
 from diffeoforge.engine.atlas_optimizer import (
+    AtlasCycleCheckpoint,
     AtlasOptimizationCancelled,
     AtlasOptimizationRecord,
     optimize_atlas,
@@ -61,6 +62,13 @@ from diffeoforge.modern_bundle import (
     ModernAtlasModelSettings,
     verify_modern_atlas_bundle,
     write_modern_atlas_bundle,
+)
+from diffeoforge.modern_checkpoint import (
+    MANIFEST_NAME as CHECKPOINT_MANIFEST_NAME,
+)
+from diffeoforge.modern_checkpoint import (
+    verify_modern_cycle_checkpoint,
+    write_modern_cycle_checkpoint,
 )
 from diffeoforge.modern_progress import (
     ModernOptimizerProgress,
@@ -185,9 +193,7 @@ def validate_modern_analysis_dimensions(
     maximum = min(subject_count - 1, 3 * control_points)
     pca_components = config["analysis"]["pca_components"]
     if pca_components is not None and pca_components > maximum:
-        raise ConfigurationError(
-            f"analysis.pca_components cannot exceed {maximum} for this cohort"
-        )
+        raise ConfigurationError(f"analysis.pca_components cannot exceed {maximum} for this cohort")
     retained = maximum if pca_components is None else pca_components
     deformation_components = config["analysis"]["deformation_components"]
     if deformation_components is not None and deformation_components > retained:
@@ -255,14 +261,10 @@ def _read_momenta_rows(
         raise ConfigurationError(f"Could not read momenta file {path}: {error}") from error
     expected_header = ["subject_label", "control_point", "x", "y", "z"]
     if not rows or rows[0] != expected_header:
-        raise ConfigurationError(
-            "Momenta file header must be subject_label,control_point,x,y,z"
-        )
+        raise ConfigurationError("Momenta file header must be subject_label,control_point,x,y,z")
     expected_rows = len(subject_labels) * control_point_count
     if len(rows) - 1 != expected_rows:
-        raise ConfigurationError(
-            f"Momenta file must contain exactly {expected_rows} data rows"
-        )
+        raise ConfigurationError(f"Momenta file must contain exactly {expected_rows} data rows")
     values = np.empty((len(subject_labels), control_point_count, 3), dtype=np.float64)
     for row_index, row in enumerate(rows[1:]):
         subject_index, control_index = divmod(row_index, control_point_count)
@@ -552,9 +554,7 @@ def initialize_modern_workflow(
             )
     rendered = io.StringIO(newline="\n")
     rendered.write(CONFIG_MARKER + "\n")
-    rendered.write(
-        "# Geometry-scaled starter values are exploratory, not validated presets.\n"
-    )
+    rendered.write("# Geometry-scaled starter values are exploratory, not validated presets.\n")
     rendered.write(
         "# PCA deformation settings control visual endpoints; null components means all.\n"
     )
@@ -834,8 +834,7 @@ def run_modern_workflow(
     private_state = discover_private_runs(output)
     if private_state.candidates:
         observed = ", ".join(
-            f"{candidate.path.name} ({candidate.status})"
-            for candidate in private_state.candidates
+            f"{candidate.path.name} ({candidate.status})" for candidate in private_state.candidates
         )
         raise ModernWorkflowError(
             "Private unpublished run state already exists for this destination; "
@@ -1031,6 +1030,37 @@ def run_modern_workflow(
             raise ModernWorkflowError("PyTorch did not apply the requested CPU thread count")
         optimizer_decisions = 0
         maximum_optimizer_decisions = optimizer["max_cycles"] * len(optimizer["block_order"])
+        effective_input_paths = tuple(
+            raw_path if aligned_path is None else aligned_path
+            for raw_path, aligned_path in zip(raw_path_tuple, aligned_paths, strict=True)
+        )
+
+        def bound_file(path: Path) -> dict[str, str]:
+            return {
+                "path": path.relative_to(temporary).as_posix(),
+                "sha256": sha256_file(path),
+            }
+
+        checkpoint_binding = {
+            "engine_implementation": ENGINE_IMPLEMENTATION_VERSION,
+            "source_config": bound_file(source_copy),
+            "effective_config": bound_file(effective_path),
+            "template_input": bound_file(effective_input_paths[0]),
+            "subjects": [
+                {
+                    "label": source.name,
+                    **bound_file(path),
+                }
+                for source, path in zip(
+                    inputs.subjects,
+                    effective_input_paths[1:],
+                    strict=True,
+                )
+            ],
+            "block_order": list(optimizer["block_order"]),
+            "max_cycles": int(optimizer["max_cycles"]),
+        }
+        checkpoint_records: list[dict[str, Any]] = []
 
         def observe_optimizer(record: AtlasOptimizationRecord) -> None:
             nonlocal optimizer_decisions
@@ -1057,6 +1087,28 @@ def run_modern_workflow(
                 f"Optimizer {block}: {record.status}",
                 4,
                 optimizer_progress=optimizer_progress,
+            )
+
+        def write_checkpoint(checkpoint: AtlasCycleCheckpoint) -> None:
+            destination = temporary / "checkpoints" / f"cycle-{checkpoint.record.cycle:06d}"
+            written = write_modern_cycle_checkpoint(
+                destination,
+                checkpoint,
+                triangle_tensor,
+                [path.name for path in inputs.subjects],
+                checkpoint_binding,
+                created_at=timestamp,
+            )
+            manifest = verify_modern_cycle_checkpoint(
+                written,
+                workflow_root=temporary,
+            )
+            checkpoint_records.append(
+                {
+                    "cycle": manifest["cycle"],
+                    "path": written.relative_to(temporary).as_posix(),
+                    "manifest_sha256": sha256_file(written / CHECKPOINT_MANIFEST_NAME),
+                }
             )
 
         emit_progress("optimization", "started", "Atlas optimization started", 4)
@@ -1091,6 +1143,7 @@ def run_modern_workflow(
                     progress_callback=(
                         observe_optimizer if progress_callback is not None else None
                     ),
+                    checkpoint_callback=write_checkpoint,
                     cancel_requested=cancel_requested,
                 )
             except AtlasOptimizationCancelled as error:
@@ -1203,6 +1256,7 @@ def run_modern_workflow(
                 "bundle_version": bundle_manifest["bundle_version"],
                 "manifest_sha256": sha256_file(bundle_path / BUNDLE_MANIFEST_NAME),
             },
+            "optimizer_checkpoints": checkpoint_records,
             "artifacts": artifacts,
             "scientific_boundary": SCIENTIFIC_BOUNDARY,
             "immutability_contract": {
@@ -1462,4 +1516,34 @@ def verify_modern_workflow(directory: Path | str) -> dict[str, Any]:
         raise ModernWorkflowError("Nested atlas bundle manifest SHA-256 differs")
     if len(bundle_manifest["subjects"]) != len(manifest["input"]["subjects"]):
         raise ModernWorkflowError("Nested atlas bundle subject count differs")
+    if "optimizer_checkpoints" in manifest:
+        checkpoint_records = manifest["optimizer_checkpoints"]
+        completed_cycles = int(bundle_manifest["optimizer"]["cycles_completed"])
+        if [record["cycle"] for record in checkpoint_records] != list(
+            range(1, completed_cycles + 1)
+        ):
+            raise ModernWorkflowError("Optimizer checkpoint cycle sequence differs")
+        verified_checkpoints = []
+        for record in checkpoint_records:
+            checkpoint_path = _resolve_artifact(root, record["path"], directory=True)
+            checkpoint = verify_modern_cycle_checkpoint(
+                checkpoint_path,
+                workflow_root=root,
+            )
+            if (
+                checkpoint["cycle"] != record["cycle"]
+                or sha256_file(checkpoint_path / CHECKPOINT_MANIFEST_NAME)
+                != record["manifest_sha256"]
+                or checkpoint["binding"]["engine_implementation"]
+                != manifest["engine"].get("implementation_version")
+            ):
+                raise ModernWorkflowError("Optimizer checkpoint binding differs")
+            verified_checkpoints.append(checkpoint)
+        if verified_checkpoints:
+            final_record = verified_checkpoints[-1]["record"]
+            if any(
+                final_record[name] != bundle_manifest["optimizer"][f"final_{name}"]
+                for name in ("objective", "attachment", "regularity")
+            ):
+                raise ModernWorkflowError("Final optimizer checkpoint values differ")
     return manifest

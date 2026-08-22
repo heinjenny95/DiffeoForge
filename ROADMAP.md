@@ -90,7 +90,10 @@ This roadmap describes evidence gates rather than promised dates.
 - [x] Add a general hash-bound completed-run Modern continuation that preserves
   final template/control points/momenta, derives accepted starter steps, and
   verifies the successor's initial objective against its parent
-- [ ] Add exact mid-run Modern optimizer checkpoints and crash recovery
+- [x] Write and verify immutable, input-bound Modern state after every complete
+  optimizer cycle
+- [x] Create a guarded non-overwriting recovery successor from a verified
+  abandoned Modern complete-cycle checkpoint
 
 ## Milestone 3: Accessible application
 

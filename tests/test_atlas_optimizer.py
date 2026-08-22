@@ -222,6 +222,51 @@ def test_progress_observer_mirrors_committed_history_without_changing_results() 
     assert torch.equal(with_progress.momenta, without_progress.momenta)
 
 
+def test_cycle_checkpoint_is_detached_complete_and_cannot_mutate_optimizer() -> None:
+    arguments, keywords = _problem()
+    observed = []
+
+    def checkpoint(value) -> None:
+        observed.append(
+            (
+                value.record,
+                value.template_vertices.clone(),
+                value.control_points.clone(),
+                value.momenta.clone(),
+                dict(value.next_step_sizes),
+            )
+        )
+        value.template_vertices.add_(1000.0)
+        value.control_points.add_(1000.0)
+        value.momenta.add_(1000.0)
+        value.next_step_sizes["momenta"] = 1000.0
+
+    with_checkpoints = optimize_atlas(
+        *arguments,
+        **keywords,
+        max_cycles=2,
+        step_initialization="previous_accepted",
+        checkpoint_callback=checkpoint,
+    )
+    without_checkpoints = optimize_atlas(
+        *arguments,
+        **keywords,
+        max_cycles=2,
+        step_initialization="previous_accepted",
+    )
+
+    assert [item[0].cycle for item in observed] == [1, 2]
+    assert all(item[0].block == "control_points" for item in observed)
+    assert torch.equal(observed[-1][1], without_checkpoints.template_vertices)
+    assert torch.equal(observed[-1][2], without_checkpoints.control_points)
+    assert torch.equal(observed[-1][3], without_checkpoints.momenta)
+    assert set(observed[-1][4]) == {"momenta", "template", "control_points"}
+    assert with_checkpoints.history == without_checkpoints.history
+    assert torch.equal(with_checkpoints.template_vertices, without_checkpoints.template_vertices)
+    assert torch.equal(with_checkpoints.control_points, without_checkpoints.control_points)
+    assert torch.equal(with_checkpoints.momenta, without_checkpoints.momenta)
+
+
 def test_cooperative_cancellation_stops_before_an_uncommitted_block() -> None:
     arguments, keywords = _problem()
     observed = []
@@ -248,6 +293,13 @@ def test_cancellation_callback_must_return_bool() -> None:
 
     with pytest.raises(TypeError, match="must return bool"):
         optimize_atlas(*arguments, **keywords, cancel_requested=lambda: 1)
+
+
+def test_checkpoint_callback_must_be_callable() -> None:
+    arguments, keywords = _problem(subjects=1)
+
+    with pytest.raises(TypeError, match="checkpoint_callback"):
+        optimize_atlas(*arguments, **keywords, checkpoint_callback=1)
 
 
 def test_progress_observer_reports_failed_decision_not_rejected_candidates() -> None:
