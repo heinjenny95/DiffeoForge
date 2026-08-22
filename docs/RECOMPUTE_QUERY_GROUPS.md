@@ -17,10 +17,11 @@ checkpoint contexts:    Q*S -> Q
 ```
 
 The same grouping applies to the explicit Gaussian x-gradient. Equal-tile
-symmetric Current self terms group their upper-triangle contributions per
-query tile and return them in their original accumulation order; Current cross
-terms use grouped Gaussian convolution. Varifold's specialized scalar tiles
-retain their established per-tile checkpoint path.
+symmetric Current and Varifold self terms group their upper-triangle
+contributions per query tile and return them in their original accumulation
+order; Current cross terms use grouped Gaussian convolution and Varifold cross
+terms group their unchanged source-tile loop behind one checkpoint boundary per
+query tile.
 
 Tests require bit-identical standard/recompute convolution forward values and
 gradients on the existing probe, dense-tolerance Current objective/gradient

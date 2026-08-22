@@ -82,7 +82,7 @@ keyword-only choice `autograd_strategy="standard"` or
 uses PyTorch's non-reentrant activation checkpointing: the forward graph
 retains declared inputs and reconstructs distance/kernel matrices,
 coefficients, and orientation values when backward needs them. Implementation
-0.3 groups Gaussian convolution/x-gradient and symmetric Current work by query
+0.3 groups Gaussian convolution/x-gradient and symmetric Current/Varifold work by query
 tile, so one checkpoint boundary serially reconstructs its declared source
 tiles instead of retaining one Python/autograd boundary per pair tile. Varifold
 tile calculations retain their existing per-tile boundary.
@@ -157,8 +157,8 @@ Tests currently require:
   smaller largest and summed logical saved payload while objective and all
   parameter gradients match standard exactly on the tested CPU run; and
 - direct checkpoint-call instrumentation requiring recompute Gaussian
-  convolution, explicit x-gradient, and Current source-self/cross work to use
-  one boundary per query tile rather than one per query/source tile pair.
+  convolution, explicit x-gradient, and Current/Varifold source-self/cross work
+  to use one boundary per query tile rather than one per query/source tile pair.
 
 The dense path remains the correctness oracle and continues to match the
 frozen Deformetrica primitive/objective evidence. `modern-run` can select the

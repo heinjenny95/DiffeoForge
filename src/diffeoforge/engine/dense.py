@@ -1119,10 +1119,48 @@ def _varifold_inner_product_blockwise(
         orientation = (query_units @ source_units.T).square()
         return torch.sum(query_areas * ((kernel * orientation) @ source_areas))
 
+    def evaluate_query(
+        query_centers: torch.Tensor,
+        query_areas: torch.Tensor,
+        query_units: torch.Tensor,
+        all_source_centers: torch.Tensor,
+        all_source_areas: torch.Tensor,
+        all_source_units: torch.Tensor,
+    ) -> torch.Tensor:
+        query_result = torch.zeros(
+            (),
+            dtype=query_centers.dtype,
+            device=query_centers.device,
+        )
+        for source_start in range(0, all_source_centers.shape[0], plan.source_rows):
+            query_result = query_result + evaluate(
+                query_centers,
+                query_areas,
+                query_units,
+                all_source_centers[source_start : source_start + plan.source_rows],
+                all_source_areas[source_start : source_start + plan.source_rows],
+                all_source_units[source_start : source_start + plan.source_rows],
+            )
+        return query_result
+
     for query_start in range(0, centers_a.shape[0], plan.query_rows):
         query_centers = centers_a[query_start : query_start + plan.query_rows]
         query_areas = areas_a[query_start : query_start + plan.query_rows]
         query_units = unit_a[query_start : query_start + plan.query_rows]
+        if plan.autograd_strategy == "recompute":
+            result = result + _evaluate_tile(
+                evaluate_query,
+                (
+                    query_centers,
+                    query_areas,
+                    query_units,
+                    centers_b,
+                    areas_b,
+                    unit_b,
+                ),
+                plan.autograd_strategy,
+            )
+            continue
         for source_start in range(0, centers_b.shape[0], plan.source_rows):
             source_centers = centers_b[source_start : source_start + plan.source_rows]
             source_areas = areas_b[source_start : source_start + plan.source_rows]
@@ -1136,6 +1174,111 @@ def _varifold_inner_product_blockwise(
                     source_centers,
                     source_areas,
                     source_units,
+                ),
+                plan.autograd_strategy,
+            )
+    return result
+
+
+def _varifold_self_inner_product_blockwise(
+    centers: torch.Tensor,
+    normals: torch.Tensor,
+    kernel_width: float,
+    plan: GaussianTilePlan,
+) -> torch.Tensor:
+    """Evaluate one symmetric Varifold self term without duplicate tiles."""
+
+    if plan.query_rows != plan.source_rows:
+        return _varifold_inner_product_blockwise(
+            centers,
+            normals,
+            centers,
+            normals,
+            kernel_width,
+            plan,
+        )
+    width = _validate_width(kernel_width)
+    areas = torch.linalg.vector_norm(normals, dim=1, keepdim=True)
+    units = normals / areas
+    result = torch.zeros((), dtype=centers.dtype, device=centers.device)
+    tile_rows = plan.query_rows
+
+    def diagonal(
+        tile_centers: torch.Tensor,
+        tile_areas: torch.Tensor,
+        tile_units: torch.Tensor,
+    ) -> torch.Tensor:
+        kernel = _gaussian_matrix(tile_centers, tile_centers, width)
+        orientation = (tile_units @ tile_units.T).square()
+        return torch.sum(tile_areas * ((kernel * orientation) @ tile_areas))
+
+    def mirrored_pair(
+        query_centers: torch.Tensor,
+        query_areas: torch.Tensor,
+        query_units: torch.Tensor,
+        source_centers: torch.Tensor,
+        source_areas: torch.Tensor,
+        source_units: torch.Tensor,
+    ) -> torch.Tensor:
+        weighted_kernel = _gaussian_matrix(query_centers, source_centers, width) * (
+            query_units @ source_units.T
+        ).square()
+        forward = torch.sum(query_areas * (weighted_kernel @ source_areas))
+        reverse = torch.sum(source_areas * (weighted_kernel.T @ query_areas))
+        return forward + reverse
+
+    for query_start in range(0, centers.shape[0], tile_rows):
+        query_centers = centers[query_start : query_start + tile_rows]
+        query_areas = areas[query_start : query_start + tile_rows]
+        query_units = units[query_start : query_start + tile_rows]
+        if plan.autograd_strategy == "recompute":
+
+            def query_contributions(
+                all_centers: torch.Tensor,
+                all_areas: torch.Tensor,
+                all_units: torch.Tensor,
+                start: int = query_start,
+            ) -> torch.Tensor:
+                local_centers = all_centers[start : start + tile_rows]
+                local_areas = all_areas[start : start + tile_rows]
+                local_units = all_units[start : start + tile_rows]
+                values = [diagonal(local_centers, local_areas, local_units)]
+                for source_start in range(start + tile_rows, all_centers.shape[0], tile_rows):
+                    values.append(
+                        mirrored_pair(
+                            local_centers,
+                            local_areas,
+                            local_units,
+                            all_centers[source_start : source_start + tile_rows],
+                            all_areas[source_start : source_start + tile_rows],
+                            all_units[source_start : source_start + tile_rows],
+                        )
+                    )
+                return torch.stack(values)
+
+            contributions = _evaluate_tile(
+                query_contributions,
+                (centers, areas, units),
+                plan.autograd_strategy,
+            )
+            for contribution in contributions.unbind():
+                result = result + contribution
+            continue
+        result = result + _evaluate_tile(
+            diagonal,
+            (query_centers, query_areas, query_units),
+            plan.autograd_strategy,
+        )
+        for source_start in range(query_start + tile_rows, centers.shape[0], tile_rows):
+            result = result + _evaluate_tile(
+                mirrored_pair,
+                (
+                    query_centers,
+                    query_areas,
+                    query_units,
+                    centers[source_start : source_start + tile_rows],
+                    areas[source_start : source_start + tile_rows],
+                    units[source_start : source_start + tile_rows],
                 ),
                 plan.autograd_strategy,
             )
@@ -1162,11 +1305,11 @@ def varifold_squared_distance_blockwise(
         triangles_b,
         reference_vertices=vertices_a,
     )
-    self_a = _varifold_inner_product_blockwise(
-        centers_a, normals_a, centers_a, normals_a, kernel_width, plan
+    self_a = _varifold_self_inner_product_blockwise(
+        centers_a, normals_a, kernel_width, plan
     )
-    self_b = _varifold_inner_product_blockwise(
-        centers_b, normals_b, centers_b, normals_b, kernel_width, plan
+    self_b = _varifold_self_inner_product_blockwise(
+        centers_b, normals_b, kernel_width, plan
     )
     cross = _varifold_inner_product_blockwise(
         centers_a, normals_a, centers_b, normals_b, kernel_width, plan
@@ -1221,9 +1364,7 @@ def prepare_surface_attachment_target(
                     gaussian_tile_plan,
                 )
             else:
-                self_inner_product = _varifold_inner_product_blockwise(
-                    centers,
-                    normals,
+                self_inner_product = _varifold_self_inner_product_blockwise(
                     centers,
                     normals,
                     width,
@@ -1292,9 +1433,7 @@ def surface_squared_distance_to_prepared_target(
                 plan,
             )
         else:
-            self_inner_product = blockwise_inner_product(
-                centers,
-                normals,
+            self_inner_product = _varifold_self_inner_product_blockwise(
                 centers,
                 normals,
                 prepared_target.kernel_width,

@@ -200,12 +200,12 @@ must reproduce the same parameter state, objective, gradient norm, accepted
 step, and line-search history exactly. Multi-block behavior is unchanged. See
 [single-block optimizer boundary reuse](SINGLE_BLOCK_BOUNDARY_REUSE.md).
 
-Blockwise Current self inner products with equal query/source tile sizes now
+Blockwise Current and Varifold self inner products with equal query/source tile sizes now
 evaluate only the diagonal and upper triangle of the symmetric tile grid. Each
 off-diagonal kernel supplies both ordered contributions, while cross-surface
 terms remain complete and unequal tile plans retain the established path.
 Dense float64 value/gradient comparisons cover tetrahedral and public 320-face
-surfaces. See [symmetric Current tiles](SYMMETRIC_CURRENT_TILES.md).
+surfaces. See [symmetric surface tiles](SYMMETRIC_CURRENT_TILES.md).
 
 The versioned multi-cycle optimizer benchmark now runs the production block
 optimizer in a fresh process per repeat. It separates fixed-target cache

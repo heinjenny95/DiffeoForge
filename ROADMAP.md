@@ -67,11 +67,11 @@ This roadmap describes evidence gates rather than promised dates.
 - [x] Reuse the accepted objective/gradient across one-block cycle boundaries,
   eliminating one exact duplicate evaluation after every accepted cycle
 - [x] Eliminate mirrored Gaussian tile evaluation in equal-tile blockwise
-  Current self terms with dense value/gradient parity evidence
+  Current and Varifold self terms with dense value/gradient parity evidence
 - [x] Reuse the already evaluated first RK2 shooting stage, reducing each
   step from six to four Gaussian calls with bit-identical trajectory evidence
 - [x] Group recompute checkpoint administration by query tile for Gaussian
-  convolution/x-gradient and Current self/cross paths without changing tiles
+  convolution/x-gradient and Current/Varifold self/cross paths without changing tiles
 - [x] Record a separate Modern engine implementation revision in new workflow
   and bundle evidence, and bind it prospectively in continuation plans
 - [x] Add a versioned fresh-process multi-cycle optimizer benchmark with separate
