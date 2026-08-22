@@ -571,6 +571,23 @@ def build_parser() -> argparse.ArgumentParser:
     )
     modern_optimizer_study_verify_parser.add_argument("run_directory", type=Path)
 
+    modern_optimizer_compare_parser = subparsers.add_parser(
+        "modern-optimizer-benchmark-study-compare",
+        help="Strictly compare two compatible completed optimizer studies.",
+    )
+    modern_optimizer_compare_parser.add_argument("baseline_run", type=Path)
+    modern_optimizer_compare_parser.add_argument("candidate_run", type=Path)
+    modern_optimizer_compare_parser.add_argument("--output", type=Path, required=True)
+
+    modern_optimizer_comparison_verify_parser = subparsers.add_parser(
+        "modern-optimizer-benchmark-study-comparison-verify",
+        help="Recompute and strictly verify an optimizer-study comparison.",
+    )
+    modern_optimizer_comparison_verify_parser.add_argument(
+        "comparison_directory",
+        type=Path,
+    )
+
     modern_benchmark_design_parser = subparsers.add_parser(
         "modern-benchmark-design",
         help="Freeze a paired blockwise standard/recompute design before measuring.",
@@ -2139,6 +2156,66 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"Frozen optimizer benchmark study verified: {run_directory}")
             print(f"Verified raw conditions: {len(manifest['conditions'])}")
             print("No automatic comparison, ETA, or convergence claim is present.")
+        except (RuntimeError, OSError, ValueError, TypeError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
+
+    if args.command == "modern-optimizer-benchmark-study-compare":
+        try:
+            from diffeoforge.modern_optimizer_benchmark_comparison import (
+                compare_modern_optimizer_benchmark_studies,
+                verify_modern_optimizer_benchmark_comparison,
+            )
+
+            destination = compare_modern_optimizer_benchmark_studies(
+                args.baseline_run,
+                args.candidate_run,
+                args.output,
+            )
+            comparison = verify_modern_optimizer_benchmark_comparison(destination)
+            ratios = comparison["performance"]["candidate_to_baseline_median_ratios"]
+            print(f"Optimizer study comparison created and verified: {destination}")
+            print(
+                "Candidate/baseline median optimizer-time ratio: "
+                f"{ratios['optimizer_wall_time_ns']:.6g}"
+            )
+            print(
+                "Discrete work and outcomes match: "
+                f"{str(comparison['numerical_agreement']['all_discrete_work_and_outcomes_match']).lower()}"
+            )
+            print("No preferred tile preset, ETA, or scaling claim was produced.")
+        except ImportError as error:
+            print(
+                "ERROR: Modern optimizer comparison dependencies are missing; install "
+                "diffeoforge[modern-engine].",
+                file=sys.stderr,
+            )
+            print(f"       {error}", file=sys.stderr)
+            return 2
+        except (RuntimeError, OSError, ValueError, TypeError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
+
+    if args.command == "modern-optimizer-benchmark-study-comparison-verify":
+        try:
+            from diffeoforge.modern_optimizer_benchmark_comparison import (
+                verify_modern_optimizer_benchmark_comparison,
+            )
+
+            comparison = verify_modern_optimizer_benchmark_comparison(
+                args.comparison_directory
+            )
+            print(
+                "Optimizer study comparison verified: "
+                f"{args.comparison_directory.resolve()}"
+            )
+            print(
+                "Discrete work and outcomes match: "
+                f"{str(comparison['numerical_agreement']['all_discrete_work_and_outcomes_match']).lower()}"
+            )
+            print("All source studies and comparison fields were recomputed.")
         except (RuntimeError, OSError, ValueError, TypeError) as error:
             print(f"ERROR: {error}", file=sys.stderr)
             return 2

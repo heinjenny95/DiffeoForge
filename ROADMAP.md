@@ -86,6 +86,8 @@ This roadmap describes evidence gates rather than promised dates.
   target-cache timing, exact work counters, result hashes, and strict verification
 - [x] Bind new multi-cycle optimizer reports and prospective scaling designs to
   the Modern engine implementation while preserving legacy evidence verification
+- [x] Add a strictly recomputed, non-selecting comparison artifact for compatible
+  completed optimizer studies
 - [x] Freeze immutable subject-prefix by cycle-cap optimizer scaling designs before results
 - [x] Execute and resume frozen optimizer scaling designs with strict raw-report verification
 - [x] Expose versioned exact-count optimizer-study progress and read-only partial status

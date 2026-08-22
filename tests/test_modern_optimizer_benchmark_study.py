@@ -10,6 +10,11 @@ pytest.importorskip("psutil")
 pytest.importorskip("torch")
 
 from diffeoforge.cli import main  # noqa: E402
+from diffeoforge.modern_optimizer_benchmark_comparison import (  # noqa: E402
+    COMPARISON_HTML_NAME,
+    ModernOptimizerBenchmarkComparisonError,
+    verify_modern_optimizer_benchmark_comparison,
+)
 from diffeoforge.modern_optimizer_benchmark_design import (  # noqa: E402
     collect_modern_optimizer_benchmark_design,
     write_modern_optimizer_benchmark_design,
@@ -121,6 +126,65 @@ def test_study_executes_verifies_and_is_idempotent(
         for path in run.rglob("*")
         if path.is_file()
     }
+
+
+def test_completed_studies_have_a_strict_descriptive_comparison(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    import diffeoforge.modern_optimizer_benchmark as benchmark_module
+
+    monkeypatch.setattr(benchmark_module, "_run_fresh_sample", lambda *_args: _sample())
+    design = _design(tmp_path, subjects=[1])
+    run = run_modern_optimizer_benchmark_study(
+        design,
+        EXAMPLE,
+        destination=tmp_path / "run",
+    )
+    comparison_path = tmp_path / "comparison"
+    assert (
+        main(
+            [
+                "modern-optimizer-benchmark-study-compare",
+                str(run),
+                str(run),
+                "--output",
+                str(comparison_path),
+            ]
+        )
+        == 0
+    )
+    assert "No preferred tile preset" in capsys.readouterr().out
+    comparison = verify_modern_optimizer_benchmark_comparison(comparison_path)
+    assert comparison["comparison_version"] == "0.1"
+    assert comparison["numerical_agreement"][
+        "all_discrete_work_and_outcomes_match"
+    ] is True
+    assert comparison["performance"]["candidate_to_baseline_median_ratios"][
+        "optimizer_wall_time_ns"
+    ] == pytest.approx(1.0)
+    assert (
+        main(
+            [
+                "modern-optimizer-benchmark-study-comparison-verify",
+                str(comparison_path),
+            ]
+        )
+        == 0
+    )
+    assert "recomputed" in capsys.readouterr().out
+
+    unexpected = comparison_path / "unexpected.txt"
+    unexpected.write_text("unexpected", encoding="utf-8")
+    with pytest.raises(ModernOptimizerBenchmarkComparisonError, match="unexpected files"):
+        verify_modern_optimizer_benchmark_comparison(comparison_path)
+    unexpected.unlink()
+
+    comparison_html = comparison_path / COMPARISON_HTML_NAME
+    comparison_html.write_text("tampered", encoding="utf-8")
+    with pytest.raises(ModernOptimizerBenchmarkComparisonError, match="HTML differs"):
+        verify_modern_optimizer_benchmark_comparison(comparison_path)
 
 
 def test_interrupted_study_resumes_from_verified_report_prefix(
