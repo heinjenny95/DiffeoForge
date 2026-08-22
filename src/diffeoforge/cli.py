@@ -313,6 +313,15 @@ def build_parser() -> argparse.ArgumentParser:
     modern_reference_assess_parser.add_argument("modern_run", type=Path)
     modern_reference_assess_parser.add_argument("--output", type=Path, required=True)
 
+    modern_reference_assessment_verify_parser = subparsers.add_parser(
+        "modern-reference-qualification-assessment-verify",
+        help="Recompute and strictly verify a fixed-reference qualification assessment.",
+    )
+    modern_reference_assessment_verify_parser.add_argument(
+        "assessment_directory",
+        type=Path,
+    )
+
     modern_continuation_parser = subparsers.add_parser(
         "modern-continuation-init",
         help=(
@@ -1428,8 +1437,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "modern-reference-qualification-assess":
         try:
             from diffeoforge.modern_reference_qualification import (
-                ASSESSMENT_JSON_NAME,
                 assess_modern_reference_qualification,
+                verify_modern_reference_qualification_assessment,
             )
 
             destination = assess_modern_reference_qualification(
@@ -1437,12 +1446,30 @@ def main(argv: Sequence[str] | None = None) -> int:
                 args.modern_run,
                 args.output,
             )
-            assessment = json.loads(
-                (destination / ASSESSMENT_JSON_NAME).read_text(encoding="utf-8")
-            )
+            assessment = verify_modern_reference_qualification_assessment(destination)
             print(f"Fixed-reference qualification assessed: {destination}")
             print(f"Engineering gate result: {assessment['decision']['status']}")
             print("This result does not establish biological validity or atlas equivalence.")
+        except (OSError, RuntimeError, TypeError, ValueError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
+
+    if args.command == "modern-reference-qualification-assessment-verify":
+        try:
+            from diffeoforge.modern_reference_qualification import (
+                verify_modern_reference_qualification_assessment,
+            )
+
+            assessment = verify_modern_reference_qualification_assessment(
+                args.assessment_directory
+            )
+            print(
+                "Fixed-reference qualification assessment verified: "
+                f"{args.assessment_directory.resolve()}"
+            )
+            print(f"Engineering gate result: {assessment['decision']['status']}")
+            print("All external metrics were recomputed from the bound design and run.")
         except (OSError, RuntimeError, TypeError, ValueError) as error:
             print(f"ERROR: {error}", file=sys.stderr)
             return 2

@@ -54,6 +54,8 @@ After the Modern run verifies, create an independent assessment:
 
 ```text
 diffeoforge modern-reference-qualification-assess DESIGN MODERN_RUN --output ASSESSMENT
+
+diffeoforge modern-reference-qualification-assessment-verify ASSESSMENT
 ```
 
 If the optimizer reaches its declared cycle cap without convergence, freeze a
@@ -76,7 +78,10 @@ verifiable but are not retroactively given evidence they did not record.
 New assessment v0.2 artifacts also record the verified optimizer termination,
 cycle and line-search counts, final objective components, engine
 implementation, and optimizer-history hash. These are provenance and
-convergence evidence; they do not change any predeclared registration gate.
+convergence evidence; they do not change any predeclared registration gate. The
+dedicated verifier revalidates the bound design and workflow, recomputes every
+external surface metric, and requires regenerated JSON and HTML to agree with
+the published assessment.
 
 ## Predeclared engineering gates
 

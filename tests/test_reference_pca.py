@@ -21,6 +21,7 @@ from diffeoforge.desktop.result_review import ModernResultReviewError, verify_re
 from diffeoforge.mesh import sha256_file, write_vtk_polydata
 from diffeoforge.mesh_quality import MeshQualitySettings
 from diffeoforge.modern_reference_qualification import (
+    ASSESSMENT_HTML_NAME,
     ASSESSMENT_JSON_NAME,
     CONFIG_NAME,
     ModernReferenceQualificationError,
@@ -28,6 +29,7 @@ from diffeoforge.modern_reference_qualification import (
     assess_modern_reference_qualification,
     create_modern_reference_qualification,
     create_modern_reference_qualification_continuation,
+    verify_modern_reference_qualification_assessment,
     verify_modern_reference_qualification_design,
 )
 from diffeoforge.modern_workflow import run_modern_workflow
@@ -433,6 +435,22 @@ def test_modern_reference_qualification_design_is_prospective_and_tamper_evident
     assessment = json.loads(
         (assessment_path / ASSESSMENT_JSON_NAME).read_text(encoding="utf-8")
     )
+    assert verify_modern_reference_qualification_assessment(assessment_path) == assessment
+    assert (
+        main(
+            [
+                "modern-reference-qualification-assessment-verify",
+                str(assessment_path),
+            ]
+        )
+        == 0
+    )
+    assessment_html = assessment_path / ASSESSMENT_HTML_NAME
+    original_assessment_html = assessment_html.read_text(encoding="utf-8")
+    assessment_html.write_text("tampered", encoding="utf-8")
+    with pytest.raises(ModernReferenceQualificationError, match="HTML differs"):
+        verify_modern_reference_qualification_assessment(assessment_path)
+    assessment_html.write_text(original_assessment_html, encoding="utf-8", newline="\n")
 
     assert assessment["decision"]["status"] in {
         "pass",
@@ -487,6 +505,10 @@ def test_modern_reference_qualification_design_is_prospective_and_tamper_evident
     )
     successor_assessment = json.loads(
         (successor_assessment_path / ASSESSMENT_JSON_NAME).read_text(encoding="utf-8")
+    )
+    assert (
+        verify_modern_reference_qualification_assessment(successor_assessment_path)
+        == successor_assessment
     )
     assert successor_assessment["continuation_verification"][
         "initial_objective_matches"

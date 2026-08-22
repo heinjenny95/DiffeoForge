@@ -8,6 +8,7 @@ import json
 import math
 import re
 import shutil
+import tempfile
 import uuid
 from datetime import UTC, datetime
 from html import escape
@@ -1231,3 +1232,89 @@ def assess_modern_reference_qualification(
             shutil.rmtree(temporary)
         raise
     return output
+
+
+def verify_modern_reference_qualification_assessment(
+    assessment_directory: Path | str,
+) -> dict[str, Any]:
+    """Recompute and strictly verify one published qualification assessment."""
+
+    root = Path(assessment_directory).expanduser().resolve()
+    expected_names = {
+        ASSESSMENT_JSON_NAME,
+        ASSESSMENT_SIDECAR_NAME,
+        ASSESSMENT_HTML_NAME,
+    }
+    if (
+        not root.is_dir()
+        or root.is_symlink()
+        or {path.name for path in root.iterdir()} != expected_names
+    ):
+        raise ModernReferenceQualificationError(
+            "Qualification assessment directory has unexpected files"
+        )
+    json_path = root / ASSESSMENT_JSON_NAME
+    expected_sidecar = f"{sha256_file(json_path)}  {ASSESSMENT_JSON_NAME}"
+    sidecar_path = root / ASSESSMENT_SIDECAR_NAME
+    if (
+        not sidecar_path.is_file()
+        or sidecar_path.is_symlink()
+        or sidecar_path.read_text(encoding="ascii").strip() != expected_sidecar
+    ):
+        raise ModernReferenceQualificationError(
+            "Qualification assessment SHA-256 sidecar differs"
+        )
+    try:
+        assessment = json.loads(json_path.read_text(encoding="utf-8", errors="strict"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as error:
+        raise ModernReferenceQualificationError(
+            f"Qualification assessment is unreadable: {error}"
+        ) from error
+    if (
+        not isinstance(assessment, dict)
+        or assessment.get("assessment_version") not in {"0.1", "0.2"}
+        or not isinstance(assessment.get("created_at"), str)
+        or not assessment["created_at"]
+    ):
+        raise ModernReferenceQualificationError(
+            "Qualification assessment identity is invalid"
+        )
+    try:
+        design_path = Path(assessment["design"]["path"])
+        modern_run = Path(assessment["modern_run"]["path"])
+    except (KeyError, TypeError) as error:
+        raise ModernReferenceQualificationError(
+            "Qualification assessment source binding is invalid"
+        ) from error
+
+    with tempfile.TemporaryDirectory(
+        prefix="diffeoforge-qualification-assessment-verify-",
+    ) as temporary_value:
+        expected_root = Path(temporary_value) / "expected"
+        assess_modern_reference_qualification(
+            design_path,
+            modern_run,
+            expected_root,
+            created_at=assessment["created_at"],
+        )
+        expected = json.loads(
+            (expected_root / ASSESSMENT_JSON_NAME).read_text(encoding="utf-8")
+        )
+        if assessment["assessment_version"] == "0.1":
+            expected["assessment_version"] = "0.1"
+            expected.pop("optimizer", None)
+            expected.pop("continuation_verification", None)
+        if assessment != expected:
+            raise ModernReferenceQualificationError(
+                "Qualification assessment differs from deterministic recomputation"
+            )
+        expected_html = _render_assessment_html(expected)
+    observed_html = (root / ASSESSMENT_HTML_NAME).read_text(
+        encoding="utf-8",
+        errors="strict",
+    )
+    if observed_html != expected_html:
+        raise ModernReferenceQualificationError(
+            "Qualification assessment HTML differs from deterministic regeneration"
+        )
+    return assessment

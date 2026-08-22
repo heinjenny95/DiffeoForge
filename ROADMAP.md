@@ -47,6 +47,8 @@ This roadmap describes evidence gates rather than promised dates.
   - [ ] Execute and assess the frozen ten-cycle Weevil continuation study
   - [x] Bind new fixed-reference continuation designs to parent/successor
     engine revisions and require successor-initial/parent-final objective parity
+  - [x] Add deterministic recomputation and strict verification for published
+    fixed-reference qualification assessments
 - [x] Record the engine decision in an ADR
 - [x] Prototype landmark-based generalized Procrustes alignment
 - [x] Integrate labelled landmarks and aligned mesh copies into modern run manifests
