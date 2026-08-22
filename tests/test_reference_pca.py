@@ -17,11 +17,13 @@ from diffeoforge.desktop.reference_result_review import (
     save_registration_qc_draft,
 )
 from diffeoforge.desktop.result_review import ModernResultReviewError, verify_result_artifact
-from diffeoforge.mesh import sha256_file
+from diffeoforge.mesh import sha256_file, write_vtk_polydata
+from diffeoforge.mesh_quality import MeshQualitySettings
 from diffeoforge.modern_reference_qualification import (
     ASSESSMENT_JSON_NAME,
     CONFIG_NAME,
     ModernReferenceQualificationError,
+    _screen_subject_candidates,
     assess_modern_reference_qualification,
     create_modern_reference_qualification,
     verify_modern_reference_qualification_design,
@@ -405,6 +407,9 @@ def test_modern_reference_qualification_design_is_prospective_and_tamper_evident
     assert design["status"] == "prospective_no_modern_results"
     assert len(design["subjects"]) == 3
     assert design["protocol"]["modern_result_existed_at_freeze"] is False
+    assert design["design_version"] == "0.2"
+    assert design["protocol"]["quality_screening"]["excluded_candidates"] == []
+    assert all("source_quality" in record for record in design["subjects"])
     assert config["optimization"]["block_order"] == ["momenta"]
     assert config["initialization"]["control_points"]["method"] == "file"
     assert config["runtime"]["pairwise_evaluation"]["autograd_strategy"] == "recompute"
@@ -436,6 +441,59 @@ def test_modern_reference_qualification_design_is_prospective_and_tamper_evident
     subject.write_bytes(subject.read_bytes() + b"tamper")
     with pytest.raises(ModernReferenceQualificationError, match="differs"):
         verify_modern_reference_qualification_design(destination)
+
+
+def test_reference_qualification_skips_quality_failure_in_prospective_order(
+    tmp_path: Path,
+) -> None:
+    run = tmp_path / "run"
+    inputs = run / "inputs"
+    inputs.mkdir(parents=True)
+    vertices = (
+        (0.0, 0.0, 0.0),
+        (1.0, 0.0, 0.0),
+        (0.0, 1.0, 0.0),
+        (0.0, 0.0, 1.0),
+        (0.0, -1.0, 0.0),
+    )
+    invalid = write_vtk_polydata(
+        inputs / "invalid.vtk",
+        vertices,
+        ((0, 1, 2), (1, 0, 3), (0, 1, 4)),
+    )
+    valid_a = write_vtk_polydata(
+        inputs / "valid-a.vtk",
+        vertices[:4],
+        ((0, 2, 1), (0, 1, 3), (1, 2, 3), (2, 0, 3)),
+    )
+    valid_b = write_vtk_polydata(
+        inputs / "valid-b.vtk",
+        vertices[:4],
+        ((0, 2, 1), (0, 1, 3), (1, 2, 3), (2, 0, 3)),
+    )
+    paths = (invalid, valid_a, valid_b)
+    records = {
+        path.name: {
+            "staged_path": path.relative_to(run).as_posix(),
+            "geometry": {"sha256": sha256_file(path)},
+        }
+        for path in paths
+    }
+    order = tuple(path.name for path in paths)
+    roles = {name: "prospective test order" for name in order}
+
+    selected, excluded = _screen_subject_candidates(
+        run,
+        records,
+        order,
+        roles,
+        subject_count=2,
+        settings=MeshQualitySettings(require_single_component=True),
+    )
+
+    assert selected == ("valid-a.vtk", "valid-b.vtk")
+    assert [record["filename"] for record in excluded] == ["invalid.vtk"]
+    assert excluded[0]["failed_gates"] == ["non-manifold edges"]
 
 
 def test_desktop_reference_review_rechecks_artifact_before_open(tmp_path: Path) -> None:

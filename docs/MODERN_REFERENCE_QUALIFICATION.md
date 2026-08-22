@@ -13,6 +13,8 @@ reference:
 1. copy the estimated Deformetrica template;
 2. copy its exact estimated control points;
 3. select subjects without inspecting any Modern result;
+   candidates that fail the exact declared Modern mesh-quality gates are recorded
+   and skipped before computation, then the deterministic order continues;
 4. retain the matching Deformetrica reconstructions;
 5. run the Modern Engine with only subject momenta in the optimizer block order;
 6. compare both reconstruction sets to the same original surfaces with the same
@@ -69,7 +71,7 @@ for 300 specimens.
 
 ## Full-resolution Weevil evidence frozen on 2026-08-22
 
-The first private design contains five pre-results geometry-diverse subjects,
+The first private design attempted five pre-results geometry-diverse subjects,
 approximately 16,652–20,166 triangles per subject, the 18,236-triangle estimated
 template, and 100 copied Deformetrica control points. It uses CPU/float64,
 64-by-64 exact blockwise evaluation, analytical backward recomputation, and a
@@ -81,3 +83,10 @@ A single-subject, single fresh-process objective-plus-gradient observation took
 124.129 seconds with 2.294 GiB sampled peak RSS on the local machine. This one
 measurement is a hardware-bound planning observation, not a full-run ETA or a
 scaling law. The prospective five-subject run remains deliberately unexecuted.
+
+The first execution attempt stopped before optimizer initialization because one
+preselected pilot subject failed the Modern non-manifold-edge and single-component
+gates. Design v0.2 therefore performs and records the same quality screening while
+the selection remains prospective, replacing an ineligible candidate only with
+the next subject in the already declared deterministic order. It never repairs or
+silently alters a source mesh.

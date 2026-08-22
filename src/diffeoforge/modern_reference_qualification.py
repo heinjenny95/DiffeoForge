@@ -16,6 +16,11 @@ import yaml
 
 from diffeoforge.config import ConfigurationError
 from diffeoforge.mesh import inspect_vtk, read_vtk_polydata, sha256_file
+from diffeoforge.mesh_quality import (
+    MeshQualitySettings,
+    assess_triangle_mesh,
+    mesh_quality_failures,
+)
 from diffeoforge.modern_bundle import verify_modern_atlas_bundle
 from diffeoforge.modern_workflow import (
     CONFIG_MARKER,
@@ -31,7 +36,8 @@ from diffeoforge.reference_validation_metrics import (
 )
 from diffeoforge.result_report import collect_run_report
 
-DESIGN_VERSION = "0.1"
+DESIGN_VERSION = "0.2"
+SUPPORTED_DESIGN_VERSIONS = frozenset({"0.1", DESIGN_VERSION})
 DESIGN_JSON_NAME = "modern-reference-qualification-design.json"
 DESIGN_SIDECAR_NAME = "modern-reference-qualification-design.sha256"
 DESIGN_HTML_NAME = "modern-reference-qualification-design.html"
@@ -131,6 +137,62 @@ def _preferred_subject_names(manifest: dict[str, Any]) -> tuple[str, ...]:
     return names if len(names) == len(set(names)) else ()
 
 
+def _screen_subject_candidates(
+    run: Path,
+    subject_inputs: dict[str, Any],
+    candidate_names: tuple[str, ...],
+    selection_roles: dict[str, str],
+    *,
+    subject_count: int,
+    settings: MeshQualitySettings,
+) -> tuple[tuple[str, ...], tuple[dict[str, Any], ...]]:
+    """Select the first quality-eligible subjects without inspecting Modern results."""
+
+    selected: list[str] = []
+    excluded: list[dict[str, Any]] = []
+    for name in candidate_names:
+        source_record = subject_inputs[name]
+        staged_value = str(source_record["staged_path"])
+        staged_relative = PurePosixPath(staged_value)
+        if (
+            "\\" in staged_value
+            or staged_relative.is_absolute()
+            or "." in staged_relative.parts
+            or ".." in staged_relative.parts
+        ):
+            raise ModernReferenceQualificationError(
+                f"Protected reference subject has an unsafe staged path: {name}"
+            )
+        staged = run / Path(*staged_relative.parts)
+        expected_hash = str(source_record["geometry"]["sha256"])
+        if not staged.is_file() or staged.is_symlink() or sha256_file(staged) != expected_hash:
+            raise ModernReferenceQualificationError(
+                f"Protected reference subject differs from its manifest: {name}"
+            )
+        mesh = read_vtk_polydata(staged)
+        quality = assess_triangle_mesh(mesh.vertices, mesh.triangles)
+        failures = mesh_quality_failures(quality, settings)
+        if failures:
+            excluded.append(
+                {
+                    "filename": name,
+                    "selection_role": selection_roles[name],
+                    "failed_gates": list(failures),
+                    "source_quality": quality.as_manifest(),
+                }
+            )
+            continue
+        selected.append(name)
+        if len(selected) == subject_count:
+            break
+    if len(selected) != subject_count:
+        raise ModernReferenceQualificationError(
+            "Reference cohort does not contain enough subjects that pass the declared "
+            f"Modern mesh-quality gates: requested {subject_count}, found {len(selected)}"
+        )
+    return tuple(selected), tuple(excluded)
+
+
 def _render_design_html(design: dict[str, Any]) -> str:
     subjects = "".join(
         f"<li><code>{escape(record['filename'])}</code> — {escape(record['selection_role'])}</li>"
@@ -140,6 +202,21 @@ def _render_design_html(design: dict[str, Any]) -> str:
         f"<li><strong>{escape(key)}</strong>: {escape(str(value))}</li>"
         for key, value in sorted(design["decision_gates"].items())
     )
+    quality_screening = design.get("protocol", {}).get("quality_screening")
+    quality_section = ""
+    if isinstance(quality_screening, dict):
+        exclusions = quality_screening.get("excluded_candidates", [])
+        exclusion_rows = "".join(
+            f"<li><code>{escape(str(record['filename']))}</code> — "
+            f"{escape(', '.join(str(value) for value in record['failed_gates']))}</li>"
+            for record in exclusions
+        )
+        quality_section = (
+            "\n<h2>Prospective mesh-quality screening</h2>"
+            f"<p>{len(exclusions)} candidate(s) were excluded before any Modern "
+            "optimization result existed.</p>"
+            f"<ul>{exclusion_rows}</ul>"
+        )
     return f"""<!doctype html>
 <html lang="en"><meta charset="utf-8"><title>Modern reference qualification</title>
 <style>body{{font:16px system-ui;max-width:980px;margin:2rem auto;line-height:1.45}}
@@ -151,7 +228,7 @@ engineering non-inferiority gates, not evidence of biological validity or produc
 <p>Only subject momenta may change. The Deformetrica estimated template and control points
 are copied, hashed, and fixed. Internal objective values are not treated as cross-engine
 equivalents.</p>
-<h2>Subjects ({len(design['subjects'])})</h2><ol>{subjects}</ol>
+<h2>Subjects ({len(design['subjects'])})</h2><ol>{subjects}</ol>{quality_section}
 <h2>Predeclared gates</h2><ul>{gates}</ul>
 <p>Modern configuration: <code>{escape(design['modern_workflow']['config_path'])}</code></p>
 </html>\n"""
@@ -198,13 +275,23 @@ def create_modern_reference_qualification(
         if name in subject_inputs
     ]
     remaining = sorted(set(subject_inputs) - set(preferred), key=str.casefold)
-    selected_names = tuple((preferred + remaining)[:subject_count])
+    candidate_names = tuple(preferred + remaining)
     selection_role = {
         name: "pre-results geometry-diverse Deformetrica pilot subject"
         if name in preferred
         else "deterministic filename-order fill"
-        for name in selected_names
+        for name in candidate_names
     }
+
+    quality_settings = MeshQualitySettings(require_single_component=True)
+    selected_names, excluded_candidates = _screen_subject_candidates(
+        run,
+        subject_inputs,
+        candidate_names,
+        selection_role,
+        subject_count=subject_count,
+        settings=quality_settings,
+    )
 
     template_record = _one_inventory_record(
         report.inventory,
@@ -270,6 +357,11 @@ def create_modern_reference_qualification(
                     f"Protected reference subject differs from its manifest: {name}"
                 )
             subject_copy = _copy_exclusive(staged, temporary / "inputs" / "subjects" / name)
+            subject_mesh = read_vtk_polydata(staged)
+            source_quality = assess_triangle_mesh(
+                subject_mesh.vertices,
+                subject_mesh.triangles,
+            )
             reference_copy = _copy_exclusive(
                 reconstructions[name][1],
                 temporary / "reference-reconstructions" / name,
@@ -279,6 +371,7 @@ def create_modern_reference_qualification(
                     "filename": name,
                     "selection_role": selection_role[name],
                     "source": _artifact(temporary, subject_copy),
+                    "source_quality": source_quality.as_manifest(),
                     "reference_reconstruction": _artifact(temporary, reference_copy),
                 }
             )
@@ -307,19 +400,7 @@ def create_modern_reference_qualification(
                     "max_iterations": 100,
                 }
             },
-            "quality_control": {
-                "require_no_duplicate_faces": True,
-                "require_no_isolated_vertices": True,
-                "require_edge_manifold": True,
-                "require_consistent_orientation": True,
-                "require_single_component": True,
-                "require_closed_surface": False,
-                "reject_zero_area_faces": True,
-                "minimum_triangle_angle_degrees": None,
-                "maximum_triangle_edge_ratio": None,
-                "minimum_face_area_ratio": None,
-                "maximum_face_area_ratio": None,
-            },
+            "quality_control": quality_settings.as_manifest(),
             "initialization": {
                 "control_points": {
                     "method": "file",
@@ -402,8 +483,14 @@ def create_modern_reference_qualification(
                 ),
                 "subject_selection": (
                     "Reuse the pre-results geometry-diverse calibration pilot order when "
-                    "available, then fill deterministically by filename."
+                    "available, exclude candidates that fail the declared Modern mesh-quality "
+                    "gates before computation, then fill deterministically by filename."
                 ),
+                "quality_screening": {
+                    "timing": "before_any_modern_optimization_result",
+                    "settings": quality_settings.as_manifest(),
+                    "excluded_candidates": list(excluded_candidates),
+                },
                 "internal_objective_comparison": "forbidden_across_engines",
                 "modern_result_existed_at_freeze": False,
             },
@@ -484,7 +571,7 @@ def verify_modern_reference_qualification_design(
         ) from error
     if (
         not isinstance(design, dict)
-        or design.get("design_version") != DESIGN_VERSION
+        or design.get("design_version") not in SUPPORTED_DESIGN_VERSIONS
         or design.get("status") != "prospective_no_modern_results"
         or design.get("protocol", {}).get("modern_result_existed_at_freeze") is not False
     ):
@@ -523,6 +610,29 @@ def verify_modern_reference_qualification_design(
         raise ModernReferenceQualificationError("Qualification must optimize only momenta")
     if config["runtime"]["pairwise_evaluation"].get("autograd_strategy") != "recompute":
         raise ModernReferenceQualificationError("Qualification must declare recompute autograd")
+    if design.get("design_version") == "0.2":
+        quality_settings = MeshQualitySettings.from_mapping(config["quality_control"])
+        for record in design.get("subjects", []):
+            subject_path = _safe_relative(
+                root,
+                record["source"]["path"],
+                "Qualification subject",
+            )
+            subject_mesh = read_vtk_polydata(subject_path)
+            source_quality = assess_triangle_mesh(
+                subject_mesh.vertices,
+                subject_mesh.triangles,
+            )
+            failures = mesh_quality_failures(source_quality, quality_settings)
+            if failures:
+                raise ModernReferenceQualificationError(
+                    "Qualification subject fails its prospective mesh-quality gates: "
+                    f"{record['filename']}: {', '.join(failures)}"
+                )
+            if source_quality.as_manifest() != record.get("source_quality"):
+                raise ModernReferenceQualificationError(
+                    f"Qualification subject quality evidence differs: {record['filename']}"
+                )
     observed_html = (root / DESIGN_HTML_NAME).read_text(encoding="utf-8")
     expected_html = _render_design_html(design)
     if observed_html != expected_html:
