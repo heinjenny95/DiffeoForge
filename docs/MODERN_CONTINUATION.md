@@ -23,6 +23,10 @@ parent workflow and nested atlas bundle, then copies and SHA-256 binds:
 - the model, quality-control, analysis, runtime, and optimizer settings;
 - the parent workflow and bundle manifest identities.
 
+The plan also freezes the expected Modern engine implementation revision. A
+successor produced by another revision fails lineage verification even if its
+human-readable configuration is otherwise identical.
+
 The successor disables a second Procrustes alignment and uses the copied final
 state directly. For every optimized block, its declared starter step is the
 last step accepted for that block in the parent, or the parent's original

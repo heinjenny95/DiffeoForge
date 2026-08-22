@@ -32,6 +32,7 @@ from diffeoforge.engine import (
     flow_points,
     shoot,
 )
+from diffeoforge.engine.execution import ENGINE_IMPLEMENTATION_VERSION
 from diffeoforge.mesh import inspect_vtk, sha256_file, write_vtk_polydata
 from diffeoforge.mesh_quality import MeshQualitySettings
 from diffeoforge.mesh_quality_report import (
@@ -592,6 +593,7 @@ def write_modern_atlas_bundle(
             "created_at": timestamp.strip(),
             "engine": {
                 "id": resolved_pairwise_evaluation.engine_id,
+                "implementation_version": ENGINE_IMPLEMENTATION_VERSION,
                 "diffeoforge": __version__,
                 "pytorch": torch.__version__,
                 "numpy": np.__version__,

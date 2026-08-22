@@ -9,6 +9,8 @@ from typing import Any, Literal
 
 from diffeoforge.engine.dense import GaussianTilePlan
 
+ENGINE_IMPLEMENTATION_VERSION = "0.2"
+
 
 @dataclass(frozen=True)
 class PairwiseEvaluationPlan:

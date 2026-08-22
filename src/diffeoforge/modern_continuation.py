@@ -5,6 +5,7 @@ from __future__ import annotations
 import csv
 import json
 import math
+import re
 import shutil
 import uuid
 from datetime import UTC, datetime
@@ -15,6 +16,7 @@ from typing import Any
 import yaml
 
 from diffeoforge.config import ConfigurationError
+from diffeoforge.engine.execution import ENGINE_IMPLEMENTATION_VERSION
 from diffeoforge.mesh import sha256_file
 from diffeoforge.modern_bundle import MANIFEST_NAME as BUNDLE_MANIFEST_NAME
 from diffeoforge.modern_bundle import verify_modern_atlas_bundle
@@ -402,6 +404,7 @@ def create_modern_continuation(
                 "path": CONFIG_NAME,
                 "sha256": sha256_file(config_path),
                 "expected_destination": str(output),
+                "expected_engine_implementation": ENGINE_IMPLEMENTATION_VERSION,
             },
             "scientific_boundary": SCIENTIFIC_BOUNDARY,
         }
@@ -497,6 +500,11 @@ def verify_modern_continuation(directory: Path | str) -> dict[str, Any]:
         or config["output"]["directory"] != plan["config"]["expected_destination"]
     ):
         raise ModernContinuationError("Modern continuation config semantics differ")
+    expected_implementation = plan["config"].get("expected_engine_implementation")
+    if not isinstance(expected_implementation, str) or re.fullmatch(
+        r"[0-9]+\.[0-9]+", expected_implementation
+    ) is None:
+        raise ModernContinuationError("Modern continuation engine implementation differs")
     initial = plan["initial_state"]
     template = _safe_path(root, initial["template"]["path"], "Initial template")
     if _artifact(root, template) != initial["template"]:
@@ -565,6 +573,12 @@ def verify_modern_continuation_run(
     plan = verify_modern_continuation(plan_root)
     run_root = Path(successor_run).expanduser().resolve()
     workflow = verify_modern_workflow(run_root)
+    if workflow["engine"].get("implementation_version") != plan["config"].get(
+        "expected_engine_implementation"
+    ):
+        raise ModernContinuationError(
+            "Successor engine implementation differs from the frozen continuation plan"
+        )
     source_config = _safe_path(
         run_root,
         workflow["config"]["source_path"],

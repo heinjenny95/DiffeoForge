@@ -478,6 +478,9 @@ def test_blockwise_full_workflow_and_artifacts_match_dense_with_distinct_provena
     blockwise_manifest = workflow.verify_modern_workflow(blockwise_run)
 
     assert dense_manifest["engine"]["id"] == "diffeoforge_modern_dense"
+    assert dense_manifest["engine"]["implementation_version"] == (
+        workflow.ENGINE_IMPLEMENTATION_VERSION
+    )
     assert dense_manifest["engine"]["pairwise_evaluation"]["mode"] == "dense"
     assert blockwise_manifest["engine"]["id"] == "diffeoforge_modern_blockwise"
     assert blockwise_manifest["engine"]["pairwise_evaluation"] == {
@@ -491,6 +494,9 @@ def test_blockwise_full_workflow_and_artifacts_match_dense_with_distinct_provena
     dense_bundle_manifest = workflow.verify_modern_atlas_bundle(dense_bundle)
     blockwise_bundle_manifest = workflow.verify_modern_atlas_bundle(blockwise_bundle)
     assert dense_bundle_manifest["engine"]["pairwise_evaluation"]["mode"] == "dense"
+    assert dense_bundle_manifest["engine"]["implementation_version"] == (
+        dense_manifest["engine"]["implementation_version"]
+    )
     assert blockwise_bundle_manifest["engine"]["pairwise_evaluation"] == {
         "mode": "blockwise",
         "query_tile_size": 64,

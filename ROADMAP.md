@@ -66,6 +66,8 @@ This roadmap describes evidence gates rather than promised dates.
   eliminating one exact duplicate evaluation after every accepted cycle
 - [x] Eliminate mirrored Gaussian tile evaluation in equal-tile blockwise
   Current self terms with dense value/gradient parity evidence
+- [x] Record a separate Modern engine implementation revision in new workflow
+  and bundle evidence, and bind it prospectively in continuation plans
 - [x] Add a versioned fresh-process multi-cycle optimizer benchmark with separate
   target-cache timing, exact work counters, result hashes, and strict verification
 - [x] Freeze immutable subject-prefix by cycle-cap optimizer scaling designs before results

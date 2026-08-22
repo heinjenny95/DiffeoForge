@@ -85,6 +85,12 @@ V0.4 can also initialize momenta from a canonical
 count, finite values, copied bytes, and SHA-256 are checked before execution and
 again during workflow verification.
 
+New workflow and nested bundle manifests also record a Modern engine
+`implementation_version` separately from the pairwise mode and general package
+version. The two layers must agree. Older manifests without this optional field
+remain verifiable; prospective continuation plans bind the implementation
+revision expected for their successor.
+
 A completed, verified run that reaches its cycle cap without convergence can be
 continued through a separate hash-bound prospective successor. It copies the
 exact final template, control points, momenta, and effective subjects; it never

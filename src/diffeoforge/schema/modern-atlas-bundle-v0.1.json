@@ -28,6 +28,7 @@
       "required": ["id", "diffeoforge", "pytorch", "numpy", "device", "dtype"],
       "properties": {
         "id": {"enum": ["diffeoforge_modern_dense", "diffeoforge_modern_blockwise", "diffeoforge_modern_blockwise_recompute"]},
+        "implementation_version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+$"},
         "diffeoforge": {"type": "string", "minLength": 1},
         "pytorch": {"type": "string", "minLength": 1},
         "numpy": {"type": "string", "minLength": 1},

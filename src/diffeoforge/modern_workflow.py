@@ -33,6 +33,7 @@ from diffeoforge.engine.atlas_optimizer import (
     AtlasOptimizationRecord,
     optimize_atlas,
 )
+from diffeoforge.engine.execution import ENGINE_IMPLEMENTATION_VERSION
 from diffeoforge.initialization import SUPPORTED_UNITS, detect_template
 from diffeoforge.mesh import (
     MeshMetadata,
@@ -1165,6 +1166,7 @@ def run_modern_workflow(
             "project": {"name": config["project"]["name"]},
             "engine": {
                 "id": pairwise_evaluation.engine_id,
+                "implementation_version": ENGINE_IMPLEMENTATION_VERSION,
                 "diffeoforge": __version__,
                 "pytorch": torch.__version__,
                 "numpy": np.__version__,
@@ -1452,6 +1454,10 @@ def verify_modern_workflow(directory: Path | str) -> dict[str, Any]:
     bundle_manifest = verify_modern_atlas_bundle(bundle)
     if bundle_manifest["bundle_version"] != manifest["result_bundle"]["bundle_version"]:
         raise ModernWorkflowError("Nested atlas bundle version differs")
+    if bundle_manifest["engine"].get("implementation_version") != manifest["engine"].get(
+        "implementation_version"
+    ):
+        raise ModernWorkflowError("Nested atlas bundle engine implementation differs")
     if sha256_file(bundle / BUNDLE_MANIFEST_NAME) != manifest["result_bundle"]["manifest_sha256"]:
         raise ModernWorkflowError("Nested atlas bundle manifest SHA-256 differs")
     if len(bundle_manifest["subjects"]) != len(manifest["input"]["subjects"]):
