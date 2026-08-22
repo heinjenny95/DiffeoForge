@@ -95,10 +95,14 @@ and mesh inventory. It then recomputes the final artifact hashes and event
 order. No aggregate ranking or performance summary is generated.
 
 The design hashes the source YAML and every available template/subject mesh. It
-also records the attachment and integration choices, pairwise plan, optimizer
-block order and line-search settings, control-point/timepoint counts, CPU thread
-count, and random seed. Each condition stores an exact argv with the verified
-config placeholder and a separate relative raw-report directory.
+also records the Modern engine implementation revision, attachment and
+integration choices, pairwise plan including its autograd strategy, optimizer block order and line-search
+settings, control-point/timepoint counts, CPU thread count, and random seed.
+Each condition report must carry the same engine revision. Each condition
+stores an exact argv with the verified config placeholder and a separate
+relative raw-report directory. Legacy designs and reports without a revision
+remain verifiable as a matched legacy pair, but cannot resume under current
+code as though the implementation had not changed.
 
 ## Deterministic order and analysis policy
 

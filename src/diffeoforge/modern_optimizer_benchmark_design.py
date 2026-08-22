@@ -17,6 +17,7 @@ import jsonschema
 
 from diffeoforge import __version__
 from diffeoforge.config import ConfigurationError, validate_input_paths
+from diffeoforge.engine.execution import ENGINE_IMPLEMENTATION_VERSION
 from diffeoforge.mesh import inspect_inputs, sha256_file
 from diffeoforge.modern_optimizer_benchmark import BENCHMARK_VERSION
 from diffeoforge.modern_workflow import (
@@ -257,6 +258,7 @@ def collect_modern_optimizer_benchmark_design(
         "software": {
             "diffeoforge": __version__,
             "optimizer_benchmark_version": BENCHMARK_VERSION,
+            "engine_implementation": ENGINE_IMPLEMENTATION_VERSION,
         },
         "source_config": {
             "filename": source.name,
@@ -320,6 +322,13 @@ def render_modern_optimizer_benchmark_design_html(design: dict[str, Any]) -> str
     _validate_design(design)
     source = design["source_config"]
     protocol = design["protocol"]
+    implementation = design["software"].get("engine_implementation")
+    implementation_html = (
+        ""
+        if implementation is None
+        else "\n<li>Modern engine implementation: "
+        f"{html.escape(implementation)}</li>"
+    )
     rows = "".join(
         "<tr>"
         f"<td>{condition['sequence']}</td>"
@@ -349,7 +358,7 @@ timing, memory result, comparison, ETA, or recommendation.</p>
 <li>Created: {html.escape(design['created_at'])}</li>
 <li>Source config: <code>{html.escape(source['filename'])}</code></li>
 <li>Config SHA-256: <code>{source['sha256']}</code></li>
-<li>Available subject meshes: {design['input']['available_subject_count']}</li>
+<li>Available subject meshes: {design['input']['available_subject_count']}</li>{implementation_html}
 </ul>
 <h2>Declared full-factorial protocol</h2><ul>
 <li>Subject-prefix sizes: {', '.join(str(v) for v in protocol['subject_counts'])}</li>

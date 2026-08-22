@@ -267,6 +267,12 @@ def _verify_condition_report(
         raise ModernOptimizerBenchmarkStudyError(
             "Optimizer condition source config differs from frozen design"
         )
+    if report["environment"].get("engine_implementation") != design["software"].get(
+        "engine_implementation"
+    ):
+        raise ModernOptimizerBenchmarkStudyError(
+            "Optimizer condition engine implementation differs from frozen design"
+        )
     count = condition["subject_count"]
     expected_input = {
         "template": design["input"]["template"],

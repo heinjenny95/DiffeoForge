@@ -31,6 +31,7 @@ from diffeoforge.config import ConfigurationError, validate_input_paths
 from diffeoforge.diagnostics import _physical_memory_bytes
 from diffeoforge.engine.atlas_optimizer import AtlasOptimizationResult, optimize_atlas
 from diffeoforge.engine.dense import prepare_surface_attachment_target
+from diffeoforge.engine.execution import ENGINE_IMPLEMENTATION_VERSION
 from diffeoforge.mesh import inspect_vtk, sha256_file
 from diffeoforge.modern_benchmark import _positive_integer, _prepare_problem, _summary, _timestamp
 from diffeoforge.modern_workflow import (
@@ -423,7 +424,10 @@ def _validate_report(report: dict[str, Any]) -> None:
             raise ModernOptimizerBenchmarkError("Objective-evaluation count is inconsistent")
         if sample["gradient_evaluations"] != (decisions + sample["candidate_gradient_evaluations"]):
             raise ModernOptimizerBenchmarkError("Gradient-evaluation count is inconsistent")
-        if decisions > report["configuration"]["measured_max_cycles"] * 3:
+        decision_bound = report["configuration"]["measured_max_cycles"] * len(
+            report["configuration"]["block_order"]
+        )
+        if decisions > decision_bound:
             raise ModernOptimizerBenchmarkError("Optimizer decision count exceeds cycle scope")
         if sample["cycles_completed"] > report["configuration"]["measured_max_cycles"]:
             raise ModernOptimizerBenchmarkError("Completed cycles exceed benchmark scope")
@@ -557,6 +561,7 @@ def collect_modern_optimizer_benchmark(
         },
         "environment": {
             "diffeoforge": __version__,
+            "engine_implementation": ENGINE_IMPLEMENTATION_VERSION,
             "python": platform.python_version(),
             "numpy": np.__version__,
             "pytorch": torch.__version__,
@@ -631,6 +636,13 @@ def render_modern_optimizer_benchmark_html(report: dict[str, Any]) -> str:
         if pairwise["mode"] == "dense"
         else f"{pairwise['query_tile_size']} x {pairwise['source_tile_size']}"
     )
+    implementation = report["environment"].get("engine_implementation")
+    implementation_html = (
+        ""
+        if implementation is None
+        else "\n<li>Modern engine implementation: "
+        f"{html.escape(implementation)}</li>"
+    )
     return f"""{HTML_MARKER}
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width">
@@ -655,7 +667,7 @@ background:#fff6df}}</style></head><body>
 <li>Fresh-process repeats: {config["repeats"]}; warm-ups/repeat:
 {config["warmup_runs_per_repeat"]}</li>
 <li>Threads: {config["threads"]}; pairwise execution: {html.escape(pairwise["mode"])};
-tile: {tile}</li>
+tile: {tile}</li>{implementation_html}
 <li>Target-cache preparation is measured separately and excluded from optimizer timing.</li>
 </ul>
 <h2>Descriptive summary</h2><ul>

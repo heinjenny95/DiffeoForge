@@ -31,7 +31,8 @@
           "properties": {
             "mode": {"const": "dense"},
             "query_tile_size": {"type": "null"},
-            "source_tile_size": {"type": "null"}
+            "source_tile_size": {"type": "null"},
+            "autograd_strategy": {"const": "standard"}
           }
         },
         {
@@ -41,7 +42,8 @@
           "properties": {
             "mode": {"const": "blockwise"},
             "query_tile_size": {"type": "integer", "minimum": 1},
-            "source_tile_size": {"type": "integer", "minimum": 1}
+            "source_tile_size": {"type": "integer", "minimum": 1},
+            "autograd_strategy": {"enum": ["standard", "recompute"]}
           }
         }
       ]
@@ -57,7 +59,8 @@
       "required": ["diffeoforge", "optimizer_benchmark_version"],
       "properties": {
         "diffeoforge": {"type": "string", "minLength": 1},
-        "optimizer_benchmark_version": {"const": "0.1"}
+        "optimizer_benchmark_version": {"const": "0.1"},
+        "engine_implementation": {"const": "0.3"}
       }
     },
     "source_config": {
@@ -101,7 +104,7 @@
         "source_max_cycles": {"type": "integer", "minimum": 0},
         "block_order": {
           "type": "array",
-          "minItems": 3,
+          "minItems": 1,
           "maxItems": 3,
           "uniqueItems": true,
           "items": {"enum": ["momenta", "template", "control_points"]}

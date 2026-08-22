@@ -19,6 +19,7 @@ from diffeoforge.modern_optimizer_benchmark import (  # noqa: E402
     REPORT_JSON_NAME,
     ModernOptimizerBenchmarkError,
     _schema,
+    _validate_report,
     collect_modern_optimizer_benchmark,
     render_modern_optimizer_benchmark_html,
     verify_modern_optimizer_benchmark_report,
@@ -102,6 +103,7 @@ def test_collection_binds_declared_optimizer_scope_and_counts(
     assert report["configuration"]["measured_max_cycles"] == 2
     assert report["configuration"]["warmup_runs_per_repeat"] == 1
     assert report["configuration"]["pairwise_evaluation"]["mode"] == "dense"
+    assert report["environment"]["engine_implementation"] == "0.3"
     assert report["summary"]["optimizer_wall_time_ns"] == {
         "minimum": 100,
         "median": 200,
@@ -111,6 +113,70 @@ def test_collection_binds_declared_optimizer_scope_and_counts(
     assert calls == [(EXAMPLE.resolve(), 2, 2, 1)] * 3
     assert "not a convergence result" in report["scientific_boundary"]
     assert _schema()["title"].endswith("optimizer benchmark")
+
+
+def test_one_block_scope_is_valid_and_decision_bound_tracks_declared_order(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import diffeoforge.modern_optimizer_benchmark as module
+
+    monkeypatch.setattr(module, "_run_fresh_sample", lambda *_args: _sample())
+    report = collect_modern_optimizer_benchmark(
+        EXAMPLE,
+        subject_count=1,
+        max_cycles=2,
+        repeats=1,
+        created_at=FIXED_TIME,
+    )
+    report["configuration"]["block_order"] = ["momenta"]
+    report["configuration"]["pairwise_evaluation"] = {
+        "mode": "blockwise",
+        "query_tile_size": 64,
+        "source_tile_size": 64,
+        "autograd_strategy": "recompute",
+    }
+    sample = report["samples"][0]
+    sample.update(
+        {
+            "accepted_decisions": 2,
+            "line_search_evaluations": 3,
+            "objective_evaluations": 5,
+            "gradient_evaluations": 4,
+            "candidate_gradient_evaluations": 2,
+            "line_search_candidates_without_gradient": 1,
+        }
+    )
+    report["repeat_consistency"] = module._consistency(report["samples"])
+
+    _validate_report(report)
+    invalid = json.loads(json.dumps(report))
+    invalid["samples"][0]["accepted_decisions"] = 3
+    invalid["samples"][0]["objective_evaluations"] = 6
+    invalid["samples"][0]["gradient_evaluations"] = 5
+    invalid["samples"][0]["candidate_gradient_evaluations"] = 2
+    invalid["samples"][0]["line_search_candidates_without_gradient"] = 1
+    invalid["repeat_consistency"] = module._consistency(invalid["samples"])
+    with pytest.raises(ModernOptimizerBenchmarkError, match="decision count"):
+        _validate_report(invalid)
+
+
+def test_legacy_report_without_engine_revision_remains_valid(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import diffeoforge.modern_optimizer_benchmark as module
+
+    monkeypatch.setattr(module, "_run_fresh_sample", lambda *_args: _sample())
+    report = collect_modern_optimizer_benchmark(
+        EXAMPLE,
+        subject_count=1,
+        max_cycles=2,
+        repeats=1,
+        created_at=FIXED_TIME,
+    )
+    report["environment"].pop("engine_implementation")
+
+    _validate_report(report)
+    assert "Modern engine implementation" not in render_modern_optimizer_benchmark_html(report)
 
 
 def test_report_is_atomic_escaped_and_strictly_verifiable(

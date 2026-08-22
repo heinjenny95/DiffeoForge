@@ -24,7 +24,11 @@ path order. `--cycles` is a benchmark-only cap; the source YAML and its
 configured `optimization.max_cycles` are preserved and both values are stored
 in the report. `--warmups` optionally performs complete optimizer runs inside
 each worker before the measured run. Its default is zero because a full warm-up
-can itself be expensive.
+can itself be expensive. One-, two-, and three-block optimizer orders are all
+valid, so the same benchmark can measure fixed-reference momenta-only
+qualification runs without pretending that template or control-point updates
+occurred. Blockwise reports preserve the configured `standard` or `recompute`
+autograd strategy alongside both tile dimensions.
 
 ## Isolation and timing boundary
 
@@ -82,6 +86,11 @@ The output directory contains:
 Publication is atomic. `--force` replaces only a directory that first verifies
 as a generated optimizer benchmark. The dedicated verify command rejects added
 files, schema drift, inconsistent counters, CSV changes, or HTML changes.
+
+New reports bind the separate Modern engine implementation revision in their
+environment record. Reports created before that field existed remain strictly
+verifiable, but cannot be mixed into or resumed as a newly frozen
+implementation-bound scaling study.
 
 ## Scientific boundary
 

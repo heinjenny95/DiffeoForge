@@ -63,6 +63,7 @@ def test_design_freezes_full_factorial_schedule_without_results() -> None:
     assert first == second
     assert first["optimizer_design_version"] == "0.1"
     assert first["software"]["optimizer_benchmark_version"] == "0.1"
+    assert first["software"]["engine_implementation"] == "0.3"
     assert first["protocol"]["condition_count"] == 4
     assert first["configuration"]["pairwise_evaluation"]["mode"] == "dense"
     assert len(first["input"]["subjects"]) == 5
@@ -83,6 +84,22 @@ def test_design_freezes_full_factorial_schedule_without_results() -> None:
         assert argv[-1] == condition["output_directory"]
     assert "results" not in first
     assert _schema()["title"] == "DiffeoForge prospective optimizer scaling design"
+
+    legacy = copy.deepcopy(first)
+    legacy["software"].pop("engine_implementation")
+    _validate_design(legacy)
+    assert "Modern engine implementation" not in render_modern_optimizer_benchmark_design_html(
+        legacy
+    )
+    one_block = copy.deepcopy(first)
+    one_block["configuration"]["block_order"] = ["momenta"]
+    one_block["configuration"]["pairwise_evaluation"] = {
+        "mode": "blockwise",
+        "query_tile_size": 64,
+        "source_tile_size": 64,
+        "autograd_strategy": "recompute",
+    }
+    _validate_design(one_block)
 
 
 def test_invalid_factors_and_semantic_schedule_mutation_fail() -> None:
