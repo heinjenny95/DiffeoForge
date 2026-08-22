@@ -75,13 +75,17 @@ engine identity and initial objective to match those frozen values. It does not
 start the successor optimizer. Existing immutable v0.3 designs remain
 verifiable but are not retroactively given evidence they did not record.
 
-New assessment v0.2 artifacts also record the verified optimizer termination,
+New assessment v0.3 artifacts also record the verified optimizer termination,
 cycle and line-search counts, final objective components, engine
-implementation, and optimizer-history hash. These are provenance and
-convergence evidence; they do not change any predeclared registration gate. The
+implementation, optimizer-history hash, and the normalized per-decision
+objective/gradient/step trajectory. The report states the objective gain and
+whether the observed maximizing trajectory is non-decreasing. These are
+provenance and convergence evidence; they do not change any predeclared
+registration gate or turn an iteration-cap result into convergence. The
 dedicated verifier revalidates the bound design and workflow, recomputes every
-external surface metric, and requires regenerated JSON and HTML to agree with
-the published assessment.
+external surface metric and trajectory field, and requires regenerated JSON and
+HTML to agree with the published assessment. Existing v0.1 and v0.2 assessments
+retain their original strict meaning.
 
 ## Predeclared engineering gates
 

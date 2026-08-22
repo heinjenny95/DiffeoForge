@@ -12,6 +12,7 @@ import tempfile
 import uuid
 from datetime import UTC, datetime
 from html import escape
+from itertools import pairwise
 from pathlib import Path, PurePosixPath
 from typing import Any
 
@@ -970,7 +971,96 @@ def _ratio(numerator: float, denominator: float) -> float:
     return numerator / denominator
 
 
+def _optimizer_trajectory_evidence(
+    history_rows: list[dict[str, str]],
+) -> dict[str, Any]:
+    """Normalize the verified optimizer CSV into explicit convergence evidence."""
+
+    records: list[dict[str, Any]] = []
+    allowed_statuses = {"initial", "accepted", "stationary", "failed"}
+    try:
+        for index, row in enumerate(history_rows):
+            status = row["status"]
+            cycle = int(row["cycle"])
+            objective = float(row["objective"])
+            attachment = float(row["attachment"])
+            regularity = float(row["regularity"])
+            gradient_text = row["gradient_norm"]
+            step_text = row["accepted_step_size"]
+            line_search_evaluations = int(row["line_search_evaluations"])
+            gradient_norm = None if not gradient_text else float(gradient_text)
+            accepted_step_size = None if not step_text else float(step_text)
+            if (
+                status not in allowed_statuses
+                or cycle < 0
+                or line_search_evaluations < 0
+                or not all(
+                    math.isfinite(value)
+                    for value in (objective, attachment, regularity)
+                )
+                or (
+                    gradient_norm is not None
+                    and (not math.isfinite(gradient_norm) or gradient_norm < 0.0)
+                )
+                or (
+                    accepted_step_size is not None
+                    and (not math.isfinite(accepted_step_size) or accepted_step_size <= 0.0)
+                )
+            ):
+                raise ValueError("invalid optimizer history value")
+            block = row["block"] or None
+            if index == 0:
+                if cycle != 0 or status != "initial" or block is not None:
+                    raise ValueError("invalid initial optimizer history record")
+            elif cycle < 1 or block not in {"momenta", "template", "control_points"}:
+                raise ValueError("invalid optimizer decision history record")
+            records.append(
+                {
+                    "cycle": cycle,
+                    "block": block,
+                    "status": status,
+                    "objective": objective,
+                    "attachment": attachment,
+                    "regularity": regularity,
+                    "gradient_norm": gradient_norm,
+                    "accepted_step_size": accepted_step_size,
+                    "line_search_evaluations": line_search_evaluations,
+                }
+            )
+    except (KeyError, TypeError, ValueError) as error:
+        raise ModernReferenceQualificationError(
+            "Modern optimizer history contains invalid convergence evidence"
+        ) from error
+    objectives = [record["objective"] for record in records]
+    gradient_norms = [
+        record["gradient_norm"]
+        for record in records
+        if record["gradient_norm"] is not None
+    ]
+    decisions = records[1:]
+    return {
+        "initial_objective": objectives[0],
+        "final_objective": objectives[-1],
+        "objective_gain": objectives[-1] - objectives[0],
+        "objective_nondecreasing": all(
+            later >= earlier for earlier, later in pairwise(objectives)
+        ),
+        "decision_count": len(decisions),
+        "accepted_decisions": sum(record["status"] == "accepted" for record in decisions),
+        "stationary_decisions": sum(
+            record["status"] == "stationary" for record in decisions
+        ),
+        "failed_decisions": sum(record["status"] == "failed" for record in decisions),
+        "minimum_observed_gradient_norm": min(gradient_norms) if gradient_norms else None,
+        "final_observed_gradient_norm": gradient_norms[-1] if gradient_norms else None,
+        "records": records,
+    }
+
+
 def _render_assessment_html(assessment: dict[str, Any]) -> str:
+    def optional_number(value: float | None) -> str:
+        return "n/a" if value is None else f"{value:.6g}"
+
     rows = "".join(
         "<tr>"
         f"<td><code>{escape(row['filename'])}</code></td>"
@@ -981,6 +1071,35 @@ def _render_assessment_html(assessment: dict[str, Any]) -> str:
         for row in assessment["subjects"]
     )
     optimizer = assessment.get("optimizer")
+    trajectory = None if not isinstance(optimizer, dict) else optimizer.get("trajectory")
+    trajectory_rows = (
+        ""
+        if not isinstance(trajectory, dict)
+        else "".join(
+            "<tr>"
+            f"<td>{record['cycle']}</td>"
+            f"<td>{escape(str(record['status']))}</td>"
+            f"<td>{record['objective']:.12g}</td>"
+            f"<td>{optional_number(record['gradient_norm'])}</td>"
+            f"<td>{optional_number(record['accepted_step_size'])}</td>"
+            f"<td>{record['line_search_evaluations']}</td></tr>"
+            for record in trajectory["records"]
+        )
+    )
+    trajectory_html = (
+        ""
+        if not isinstance(trajectory, dict)
+        else (
+            f"<li>Objective gain: {trajectory['objective_gain']:.12g}; "
+            "non-decreasing: "
+            f"{escape(str(trajectory['objective_nondecreasing']).lower())}</li>"
+            f"<li>Accepted/stationary/failed decisions: "
+            f"{trajectory['accepted_decisions']}/{trajectory['stationary_decisions']}/"
+            f"{trajectory['failed_decisions']}</li>"
+            f"<li>Final observed gradient norm: "
+            f"{optional_number(trajectory['final_observed_gradient_norm'])}</li>"
+        )
+    )
     optimizer_html = (
         ""
         if not isinstance(optimizer, dict)
@@ -991,7 +1110,18 @@ def _render_assessment_html(assessment: dict[str, Any]) -> str:
             f"converged: {escape(str(optimizer['converged']).lower())}; "
             f"cycles: {optimizer['cycles_completed']}</li>"
             f"<li>Line-search evaluations: {optimizer['total_line_search_evaluations']}</li>"
-            f"<li>Final objective: {optimizer['final_objective']:.12g}</li></ul>"
+            f"<li>Final objective: {optimizer['final_objective']:.12g}</li>"
+            f"{trajectory_html}</ul>"
+            + (
+                ""
+                if not trajectory_rows
+                else (
+                    "<h3>Optimizer trajectory</h3><table><thead><tr>"
+                    "<th>Cycle</th><th>Status</th><th>Objective</th><th>Gradient norm</th>"
+                    "<th>Accepted step</th><th>Line-search evaluations</th></tr></thead>"
+                    f"<tbody>{trajectory_rows}</tbody></table>"
+                )
+            )
         )
     )
     continuation = assessment.get("continuation_verification")
@@ -1055,6 +1185,29 @@ def assess_modern_reference_qualification(
     if not history_rows or history_rows[0].get("status") != "initial":
         raise ModernReferenceQualificationError(
             "Modern optimizer history does not begin with its initial state"
+        )
+    trajectory_evidence = _optimizer_trajectory_evidence(history_rows)
+    final_record = trajectory_evidence["records"][-1]
+    for history_name, bundle_name in (
+        ("objective", "final_objective"),
+        ("attachment", "final_attachment"),
+        ("regularity", "final_regularity"),
+    ):
+        if not math.isclose(
+            float(final_record[history_name]),
+            float(bundle["optimizer"][bundle_name]),
+            rel_tol=1e-12,
+            abs_tol=1e-12,
+        ):
+            raise ModernReferenceQualificationError(
+                "Modern optimizer history final components differ from the verified bundle"
+            )
+    if sum(
+        int(record["line_search_evaluations"])
+        for record in trajectory_evidence["records"]
+    ) != int(bundle["optimizer"]["total_line_search_evaluations"]):
+        raise ModernReferenceQualificationError(
+            "Modern optimizer history line-search count differs from the verified bundle"
         )
     continuation_verification = None
     if design.get("design_version") == CONTINUATION_DESIGN_VERSION:
@@ -1165,7 +1318,7 @@ def assess_modern_reference_qualification(
         else ("pass" if all(gate_results.values()) else "fail")
     )
     assessment: dict[str, Any] = {
-        "assessment_version": "0.2",
+        "assessment_version": "0.3",
         "created_at": created_at or datetime.now(UTC).isoformat(),
         "design": {
             "path": str(design_root),
@@ -1187,6 +1340,7 @@ def assess_modern_reference_qualification(
             "final_attachment": bundle["optimizer"]["final_attachment"],
             "final_regularity": bundle["optimizer"]["final_regularity"],
             "history_sha256": sha256_file(history_path),
+            "trajectory": trajectory_evidence,
         },
         **(
             {}
@@ -1272,7 +1426,7 @@ def verify_modern_reference_qualification_assessment(
         ) from error
     if (
         not isinstance(assessment, dict)
-        or assessment.get("assessment_version") not in {"0.1", "0.2"}
+        or assessment.get("assessment_version") not in {"0.1", "0.2", "0.3"}
         or not isinstance(assessment.get("created_at"), str)
         or not assessment["created_at"]
     ):
@@ -1304,6 +1458,9 @@ def verify_modern_reference_qualification_assessment(
             expected["assessment_version"] = "0.1"
             expected.pop("optimizer", None)
             expected.pop("continuation_verification", None)
+        elif assessment["assessment_version"] == "0.2":
+            expected["assessment_version"] = "0.2"
+            expected["optimizer"].pop("trajectory", None)
         if assessment != expected:
             raise ModernReferenceQualificationError(
                 "Qualification assessment differs from deterministic recomputation"

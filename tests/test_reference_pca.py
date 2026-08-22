@@ -23,8 +23,10 @@ from diffeoforge.mesh_quality import MeshQualitySettings
 from diffeoforge.modern_reference_qualification import (
     ASSESSMENT_HTML_NAME,
     ASSESSMENT_JSON_NAME,
+    ASSESSMENT_SIDECAR_NAME,
     CONFIG_NAME,
     ModernReferenceQualificationError,
+    _render_assessment_html,
     _screen_subject_candidates,
     assess_modern_reference_qualification,
     create_modern_reference_qualification,
@@ -459,9 +461,48 @@ def test_modern_reference_qualification_design_is_prospective_and_tamper_evident
     }
     assert len(assessment["subjects"]) == 3
     assert assessment["metrics"]["pooled_modern_to_reference_residual_ratio"] >= 0
-    assert assessment["assessment_version"] == "0.2"
+    assert assessment["assessment_version"] == "0.3"
     assert assessment["optimizer"]["engine_implementation"] == "0.3"
     assert len(assessment["optimizer"]["history_sha256"]) == 64
+    trajectory = assessment["optimizer"]["trajectory"]
+    assert trajectory["initial_objective"] == pytest.approx(
+        trajectory["records"][0]["objective"]
+    )
+    assert trajectory["final_objective"] == pytest.approx(
+        assessment["optimizer"]["final_objective"]
+    )
+    assert trajectory["objective_gain"] >= 0.0
+    assert trajectory["objective_nondecreasing"] is True
+    assert trajectory["decision_count"] == len(trajectory["records"]) - 1
+    assert trajectory["accepted_decisions"] == 1
+
+    for legacy_version in ("0.2", "0.1"):
+        legacy_path = tmp_path / f"assessment-{legacy_version}"
+        shutil.copytree(assessment_path, legacy_path)
+        legacy = json.loads(json.dumps(assessment))
+        legacy["assessment_version"] = legacy_version
+        if legacy_version == "0.2":
+            legacy["optimizer"].pop("trajectory")
+        else:
+            legacy.pop("optimizer")
+            legacy.pop("continuation_verification", None)
+        legacy_json = legacy_path / ASSESSMENT_JSON_NAME
+        legacy_json.write_text(
+            json.dumps(legacy, indent=2, ensure_ascii=False, sort_keys=True) + "\n",
+            encoding="utf-8",
+            newline="\n",
+        )
+        (legacy_path / ASSESSMENT_HTML_NAME).write_text(
+            _render_assessment_html(legacy),
+            encoding="utf-8",
+            newline="\n",
+        )
+        (legacy_path / ASSESSMENT_SIDECAR_NAME).write_text(
+            f"{sha256_file(legacy_json)}  {ASSESSMENT_JSON_NAME}\n",
+            encoding="ascii",
+            newline="\n",
+        )
+        assert verify_modern_reference_qualification_assessment(legacy_path) == legacy
 
     continuation_path = create_modern_reference_qualification_continuation(
         destination,
