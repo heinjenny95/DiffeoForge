@@ -93,6 +93,8 @@ This roadmap describes evidence gates rather than promised dates.
 - [x] Expose versioned exact-count optimizer-study progress and read-only partial status
 - [x] Replace ordinary rank-3 Gaussian differences with centered rank-2 matrix
   evaluation and protect values, gradients, translation stability, and workload accounting
+- [x] Remove repeated query/source mean reductions from every Gaussian tile by
+  using one detached in-tile coordinate as the algebraically equivalent shared origin
 - [x] Add an analytical recomputed Gaussian backward with first/second-derivative
   evidence and full-cohort sampled-memory measurement
 - [x] Add an explicit fresh-process recompute benchmark path and spawn smoke evidence

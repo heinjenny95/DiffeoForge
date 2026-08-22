@@ -253,7 +253,10 @@ def _centered_squared_distances(
 ) -> torch.Tensor:
     """Return pairwise squared distances using only rank-2 intermediates."""
 
-    origin = 0.5 * (x.detach().mean(dim=0) + y.detach().mean(dim=0))
+    # Any detached shared origin is algebraically equivalent. Using the first
+    # query point retains joint-translation stability while avoiding two full
+    # reductions for every forward and backward tile evaluation.
+    origin = x[0].detach()
     centered_x = x - origin
     centered_y = y - origin
     return (
@@ -288,7 +291,7 @@ class _RecomputedGaussianMatrix(torch.autograd.Function):
         squared_distances = _centered_squared_distances(x, y)
         kernel = torch.exp(-torch.clamp_min(squared_distances, 0.0) / (width * width))
         weighted_kernel = output_gradient * kernel * (squared_distances >= 0.0)
-        origin = 0.5 * (x.detach().mean(dim=0) + y.detach().mean(dim=0))
+        origin = x[0].detach()
         centered_x = x - origin
         centered_y = y - origin
         scale = 2.0 / (width * width)

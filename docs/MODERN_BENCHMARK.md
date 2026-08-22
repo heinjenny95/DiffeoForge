@@ -180,10 +180,10 @@ reject inconsistent repeat, summary, numerical, logical-pair, or execution-tile
 records before publication.
 
 Reports created before implementation provenance was added remain verifiable
-under the legacy six-call RK2 workload formula. New implementation-0.3 reports
-bind the four-call RK2 formula. A prospective study binds the same revision and
-cannot mix legacy and 0.3 condition reports or silently resume after an engine
-implementation change.
+under the legacy six-call RK2 workload formula. Implementation-0.3 and
+implementation-0.4 reports bind the four-call RK2 formula. A prospective study
+binds one exact revision and cannot mix legacy, 0.3, and 0.4 condition reports
+or silently resume after an engine implementation change.
 
 ## Scientific boundary
 

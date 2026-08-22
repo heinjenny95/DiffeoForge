@@ -84,7 +84,7 @@
           "const": "0.3"
         },
         "engine_implementation": {
-          "const": "0.3"
+          "enum": ["0.3", "0.4"]
         }
       }
     },

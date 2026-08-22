@@ -60,7 +60,7 @@
       "properties": {
         "diffeoforge": {"type": "string", "minLength": 1},
         "optimizer_benchmark_version": {"const": "0.1"},
-        "engine_implementation": {"const": "0.3"}
+        "engine_implementation": {"enum": ["0.3", "0.4"]}
       }
     },
     "source_config": {

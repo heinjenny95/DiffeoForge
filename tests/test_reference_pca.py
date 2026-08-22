@@ -462,7 +462,7 @@ def test_modern_reference_qualification_design_is_prospective_and_tamper_evident
     assert len(assessment["subjects"]) == 3
     assert assessment["metrics"]["pooled_modern_to_reference_residual_ratio"] >= 0
     assert assessment["assessment_version"] == "0.3"
-    assert assessment["optimizer"]["engine_implementation"] == "0.3"
+    assert assessment["optimizer"]["engine_implementation"] == "0.4"
     assert len(assessment["optimizer"]["history_sha256"]) == 64
     trajectory = assessment["optimizer"]["trajectory"]
     assert trajectory["initial_objective"] == pytest.approx(
@@ -518,8 +518,8 @@ def test_modern_reference_qualification_design_is_prospective_and_tamper_evident
     )
     assert continuation["design_version"] == "0.4"
     assert continuation["protocol"]["continuation"]["parent_cycles_completed"] == 1
-    assert continuation["protocol"]["continuation"]["parent_engine_implementation"] == "0.3"
-    assert continuation["protocol"]["continuation"]["expected_engine_implementation"] == "0.3"
+    assert continuation["protocol"]["continuation"]["parent_engine_implementation"] == "0.4"
+    assert continuation["protocol"]["continuation"]["expected_engine_implementation"] == "0.4"
     assert math.isfinite(
         continuation["protocol"]["continuation"]["parent_final_objective"]
     )
@@ -556,7 +556,7 @@ def test_modern_reference_qualification_design_is_prospective_and_tamper_evident
     ] is True
     assert successor_assessment["continuation_verification"][
         "successor_engine_implementation"
-    ] == "0.3"
+    ] == "0.4"
 
     subject = destination / design["subjects"][0]["source"]["path"]
     subject.write_bytes(subject.read_bytes() + b"tamper")

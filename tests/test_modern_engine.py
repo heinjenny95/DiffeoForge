@@ -110,6 +110,24 @@ def test_gaussian_matrix_matches_direct_difference_values_and_gradients() -> Non
         torch.testing.assert_close(actual, direct, rtol=5e-13, atol=5e-13)
 
 
+def test_gaussian_center_avoids_per_tile_mean_reductions(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    generator = torch.Generator().manual_seed(20260822)
+    x = torch.randn((7, 3), dtype=DTYPE, generator=generator, requires_grad=True)
+    y = torch.randn((5, 3), dtype=DTYPE, generator=generator, requires_grad=True)
+
+    def fail_mean(*_args, **_kwargs):
+        raise AssertionError("Gaussian centering must not reduce every tile")
+
+    monkeypatch.setattr(torch.Tensor, "mean", fail_mean)
+    kernel = gaussian_kernel(x, y, 1.1)
+    gradients = torch.autograd.grad(kernel.sum(), (x, y))
+
+    assert bool(torch.isfinite(kernel).all())
+    assert all(bool(torch.isfinite(gradient).all()) for gradient in gradients)
+
+
 def test_gaussian_matrix_passes_first_and_second_derivative_checks() -> None:
     generator = torch.Generator().manual_seed(20260722)
     x = torch.randn((3, 3), dtype=DTYPE, generator=generator, requires_grad=True)

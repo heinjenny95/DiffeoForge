@@ -161,9 +161,11 @@ The JSON is validated against the bundled strict schema
 `modern-workload-v0.2.json`. Additional semantic validation rejects inconsistent
 inventory counts, pair and tile arithmetic, payload subtotals, or optimizer
 bounds. Configuration and input SHA-256 values tie the plan to reviewed bytes.
-New reports additionally record Modern engine implementation `0.3` and bind
-the four-call RK2 formula; legacy reports without that optional provenance use
-the earlier six-call formula when semantically checked.
+New reports record the active Modern engine implementation (`0.3` or `0.4`) and
+bind the four-call RK2 formula; legacy reports without that optional provenance
+use the earlier six-call formula when semantically checked. Implementation
+`0.4` changes only the detached common origin used by centered Gaussian tiles;
+the workload counts and formulas are unchanged.
 Live host observations can change over time; operation counts remain
 deterministic for fixed configuration and mesh dimensions.
 
