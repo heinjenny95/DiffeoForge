@@ -66,7 +66,17 @@ diffeoforge modern-reference-qualification-continue DESIGN MODERN_RUN \
 
 This command verifies the parent design, workflow, and nested bundle; copies
 its final momenta; derives each new starter step from the last accepted step;
-and SHA-binds the complete lineage. It does not start the successor optimizer.
+and SHA-binds the complete lineage. New continuation design v0.4 additionally
+records the parent and expected successor engine implementations plus the
+parent final objective. Assessment then requires the successor's verified
+engine identity and initial objective to match those frozen values. It does not
+start the successor optimizer. Existing immutable v0.3 designs remain
+verifiable but are not retroactively given evidence they did not record.
+
+New assessment v0.2 artifacts also record the verified optimizer termination,
+cycle and line-search counts, final objective components, engine
+implementation, and optimizer-history hash. These are provenance and
+convergence evidence; they do not change any predeclared registration gate.
 
 ## Predeclared engineering gates
 

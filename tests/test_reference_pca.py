@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import json
+import math
 import shutil
 from pathlib import Path
 
@@ -440,6 +441,9 @@ def test_modern_reference_qualification_design_is_prospective_and_tamper_evident
     }
     assert len(assessment["subjects"]) == 3
     assert assessment["metrics"]["pooled_modern_to_reference_residual_ratio"] >= 0
+    assert assessment["assessment_version"] == "0.2"
+    assert assessment["optimizer"]["engine_implementation"] == "0.3"
+    assert len(assessment["optimizer"]["history_sha256"]) == 64
 
     continuation_path = create_modern_reference_qualification_continuation(
         destination,
@@ -453,8 +457,13 @@ def test_modern_reference_qualification_design_is_prospective_and_tamper_evident
     continuation_config = yaml.safe_load(
         (continuation_path / CONFIG_NAME).read_text(encoding="utf-8")
     )
-    assert continuation["design_version"] == "0.3"
+    assert continuation["design_version"] == "0.4"
     assert continuation["protocol"]["continuation"]["parent_cycles_completed"] == 1
+    assert continuation["protocol"]["continuation"]["parent_engine_implementation"] == "0.3"
+    assert continuation["protocol"]["continuation"]["expected_engine_implementation"] == "0.3"
+    assert math.isfinite(
+        continuation["protocol"]["continuation"]["parent_final_objective"]
+    )
     assert continuation_config["schema_version"] == "0.4"
     assert continuation_config["initialization"]["momenta"] == {
         "method": "file",
@@ -464,6 +473,27 @@ def test_modern_reference_qualification_design_is_prospective_and_tamper_evident
         "previous_accepted"
     )
     assert continuation_config["optimization"]["max_cycles"] == 2
+
+    successor_run = run_modern_workflow(
+        continuation_path / CONFIG_NAME,
+        destination=tmp_path / "modern-successor-run",
+        created_at="2026-08-22T04:00:00+00:00",
+    )
+    successor_assessment_path = assess_modern_reference_qualification(
+        continuation_path,
+        successor_run,
+        tmp_path / "successor-assessment",
+        created_at="2026-08-22T05:00:00+00:00",
+    )
+    successor_assessment = json.loads(
+        (successor_assessment_path / ASSESSMENT_JSON_NAME).read_text(encoding="utf-8")
+    )
+    assert successor_assessment["continuation_verification"][
+        "initial_objective_matches"
+    ] is True
+    assert successor_assessment["continuation_verification"][
+        "successor_engine_implementation"
+    ] == "0.3"
 
     subject = destination / design["subjects"][0]["source"]["path"]
     subject.write_bytes(subject.read_bytes() + b"tamper")

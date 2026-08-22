@@ -45,6 +45,8 @@ This roadmap describes evidence gates rather than promised dates.
   - [x] Execute and review the frozen five-subject full-resolution Weevil
     screening study; record its non-converged result as inconclusive
   - [ ] Execute and assess the frozen ten-cycle Weevil continuation study
+  - [x] Bind new fixed-reference continuation designs to parent/successor
+    engine revisions and require successor-initial/parent-final objective parity
 - [x] Record the engine decision in an ADR
 - [x] Prototype landmark-based generalized Procrustes alignment
 - [x] Integrate labelled landmarks and aligned mesh copies into modern run manifests

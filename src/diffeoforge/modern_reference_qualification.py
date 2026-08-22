@@ -18,6 +18,7 @@ import numpy as np
 import yaml
 
 from diffeoforge.config import ConfigurationError
+from diffeoforge.engine.execution import ENGINE_IMPLEMENTATION_VERSION
 from diffeoforge.mesh import inspect_vtk, read_vtk_polydata, sha256_file
 from diffeoforge.mesh_quality import (
     MeshQualitySettings,
@@ -45,9 +46,15 @@ from diffeoforge.reference_validation_metrics import (
 from diffeoforge.result_report import collect_run_report
 
 DESIGN_VERSION = "0.2"
-CONTINUATION_DESIGN_VERSION = "0.3"
+LEGACY_CONTINUATION_DESIGN_VERSION = "0.3"
+CONTINUATION_DESIGN_VERSION = "0.4"
 SUPPORTED_DESIGN_VERSIONS = frozenset(
-    {"0.1", DESIGN_VERSION, CONTINUATION_DESIGN_VERSION}
+    {
+        "0.1",
+        DESIGN_VERSION,
+        LEGACY_CONTINUATION_DESIGN_VERSION,
+        CONTINUATION_DESIGN_VERSION,
+    }
 )
 DESIGN_JSON_NAME = "modern-reference-qualification-design.json"
 DESIGN_SIDECAR_NAME = "modern-reference-qualification-design.sha256"
@@ -228,6 +235,21 @@ def _render_design_html(design: dict[str, Any]) -> str:
             "optimization result existed.</p>"
             f"<ul>{exclusion_rows}</ul>"
         )
+    continuation = design.get("protocol", {}).get("continuation")
+    continuation_section = ""
+    if (
+        design.get("design_version") == CONTINUATION_DESIGN_VERSION
+        and isinstance(continuation, dict)
+    ):
+        continuation_section = (
+            "\n<h2>Continuation binding</h2><ul>"
+            f"<li>Parent engine implementation: "
+            f"<code>{escape(str(continuation['parent_engine_implementation']))}</code></li>"
+            f"<li>Expected successor engine implementation: "
+            f"<code>{escape(str(continuation['expected_engine_implementation']))}</code></li>"
+            f"<li>Parent final objective: {float(continuation['parent_final_objective']):.12g}</li>"
+            "</ul>"
+        )
     return f"""<!doctype html>
 <html lang="en"><meta charset="utf-8"><title>Modern reference qualification</title>
 <style>body{{font:16px system-ui;max-width:980px;margin:2rem auto;line-height:1.45}}
@@ -239,7 +261,8 @@ engineering non-inferiority gates, not evidence of biological validity or produc
 <p>Only subject momenta may change. The Deformetrica estimated template and control points
 are copied, hashed, and fixed. Internal objective values are not treated as cross-engine
 equivalents.</p>
-<h2>Subjects ({len(design['subjects'])})</h2><ol>{subjects}</ol>{quality_section}
+<h2>Subjects ({len(design['subjects'])})</h2><ol>{subjects}</ol>{quality_section}\
+{continuation_section}
 <h2>Predeclared gates</h2><ul>{gates}</ul>
 <p>Modern configuration: <code>{escape(design['modern_workflow']['config_path'])}</code></p>
 </html>\n"""
@@ -715,6 +738,11 @@ def create_modern_reference_qualification_continuation(
             ),
             "parent_termination_reason": parent_bundle["optimizer"]["termination_reason"],
             "parent_cycles_completed": parent_bundle["optimizer"]["cycles_completed"],
+            "parent_final_objective": parent_bundle["optimizer"]["final_objective"],
+            "parent_engine_implementation": parent_workflow["engine"].get(
+                "implementation_version"
+            ),
+            "expected_engine_implementation": ENGINE_IMPLEMENTATION_VERSION,
             "initial_momenta": _artifact(temporary, copied_momenta),
             "derived_initial_step_sizes": last_steps,
             "derivation": "last accepted step per optimized block, else parent declared step",
@@ -818,7 +846,11 @@ def verify_modern_reference_qualification_design(
         raise ModernReferenceQualificationError("Qualification must optimize only momenta")
     if config["runtime"]["pairwise_evaluation"].get("autograd_strategy") != "recompute":
         raise ModernReferenceQualificationError("Qualification must declare recompute autograd")
-    if design.get("design_version") in {"0.2", CONTINUATION_DESIGN_VERSION}:
+    if design.get("design_version") in {
+        "0.2",
+        LEGACY_CONTINUATION_DESIGN_VERSION,
+        CONTINUATION_DESIGN_VERSION,
+    }:
         quality_settings = MeshQualitySettings.from_mapping(config["quality_control"])
         for record in design.get("subjects", []):
             subject_path = _safe_relative(
@@ -841,7 +873,10 @@ def verify_modern_reference_qualification_design(
                 raise ModernReferenceQualificationError(
                     f"Qualification subject quality evidence differs: {record['filename']}"
                 )
-    if design.get("design_version") == CONTINUATION_DESIGN_VERSION:
+    if design.get("design_version") in {
+        LEGACY_CONTINUATION_DESIGN_VERSION,
+        CONTINUATION_DESIGN_VERSION,
+    }:
         continuation = design.get("protocol", {}).get("continuation")
         if not isinstance(continuation, dict):
             raise ModernReferenceQualificationError("Continuation lineage is missing")
@@ -854,6 +889,25 @@ def verify_modern_reference_qualification_design(
             if not isinstance(value, str) or re.fullmatch(r"[0-9a-f]{64}", value) is None:
                 raise ModernReferenceQualificationError(
                     f"Continuation lineage hash is invalid: {name}"
+                )
+        if design.get("design_version") == CONTINUATION_DESIGN_VERSION:
+            for name in (
+                "parent_engine_implementation",
+                "expected_engine_implementation",
+            ):
+                value = continuation.get(name)
+                if not isinstance(value, str) or re.fullmatch(r"[0-9]+\.[0-9]+", value) is None:
+                    raise ModernReferenceQualificationError(
+                        f"Continuation engine lineage is invalid: {name}"
+                    )
+            parent_final = continuation.get("parent_final_objective")
+            if (
+                isinstance(parent_final, bool)
+                or not isinstance(parent_final, (int, float))
+                or not math.isfinite(float(parent_final))
+            ):
+                raise ModernReferenceQualificationError(
+                    "Continuation parent final objective is invalid"
                 )
         momenta_config = config["initialization"]["momenta"]
         if (
@@ -925,6 +979,32 @@ def _render_assessment_html(assessment: dict[str, Any]) -> str:
         f"<td>{escape(str(row['subject_gate_pass']).lower())}</td></tr>"
         for row in assessment["subjects"]
     )
+    optimizer = assessment.get("optimizer")
+    optimizer_html = (
+        ""
+        if not isinstance(optimizer, dict)
+        else (
+            "<h2>Verified optimizer evidence</h2><ul>"
+            f"<li>Engine implementation: {escape(str(optimizer['engine_implementation']))}</li>"
+            f"<li>Termination: {escape(str(optimizer['termination_reason']))}; "
+            f"converged: {escape(str(optimizer['converged']).lower())}; "
+            f"cycles: {optimizer['cycles_completed']}</li>"
+            f"<li>Line-search evaluations: {optimizer['total_line_search_evaluations']}</li>"
+            f"<li>Final objective: {optimizer['final_objective']:.12g}</li></ul>"
+        )
+    )
+    continuation = assessment.get("continuation_verification")
+    continuation_html = (
+        ""
+        if not isinstance(continuation, dict)
+        else (
+            "<h2>Continuation binding</h2><ul>"
+            f"<li>Parent final objective: {continuation['parent_final_objective']:.12g}</li>"
+            f"<li>Successor initial objective: "
+            f"{continuation['successor_initial_objective']:.12g}</li>"
+            "<li>Initial objective matches the hash-bound parent: true</li></ul>"
+        )
+    )
     return f"""<!doctype html><html lang="en"><meta charset="utf-8">
 <title>Modern fixed-reference qualification assessment</title>
 <style>body{{font:16px system-ui;max-width:1080px;margin:2rem auto;line-height:1.45}}
@@ -933,6 +1013,7 @@ table{{border-collapse:collapse}}td,th{{border:1px solid #ccd;padding:.4rem}}
 <h1>Modern Engine fixed-reference qualification assessment</h1>
 <p class="result">Engineering gate result: {escape(assessment['decision']['status'])}</p>
 <p>{escape(assessment['scientific_boundary'])}</p>
+{optimizer_html}{continuation_html}
 <table><thead><tr><th>Subject</th><th>Reference p95</th><th>Modern p95</th>
 <th>ratio</th><th>subject gate</th></tr></thead><tbody>{rows}</tbody></table>
 </html>\n"""
@@ -958,6 +1039,50 @@ def assess_modern_reference_qualification(
         )
     bundle_root = modern_root / Path(*PurePosixPath(workflow["result_bundle"]["path"]).parts)
     bundle = verify_modern_atlas_bundle(bundle_root)
+    history_path = _safe_relative(
+        bundle_root,
+        bundle["optimizer"]["history_path"],
+        "Modern optimizer history",
+    )
+    try:
+        with history_path.open(encoding="utf-8", newline="") as handle:
+            history_rows = list(csv.DictReader(handle))
+    except (OSError, UnicodeError, csv.Error) as error:
+        raise ModernReferenceQualificationError(
+            f"Modern optimizer history is unreadable: {error}"
+        ) from error
+    if not history_rows or history_rows[0].get("status") != "initial":
+        raise ModernReferenceQualificationError(
+            "Modern optimizer history does not begin with its initial state"
+        )
+    continuation_verification = None
+    if design.get("design_version") == CONTINUATION_DESIGN_VERSION:
+        continuation = design["protocol"]["continuation"]
+        expected_implementation = continuation["expected_engine_implementation"]
+        observed_implementation = workflow["engine"].get("implementation_version")
+        if observed_implementation != expected_implementation:
+            raise ModernReferenceQualificationError(
+                "Continuation run engine implementation differs from its frozen design"
+            )
+        parent_final = float(continuation["parent_final_objective"])
+        successor_initial = float(history_rows[0]["objective"])
+        tolerance = max(1e-12, abs(parent_final) * 1e-12)
+        if not math.isclose(
+            successor_initial,
+            parent_final,
+            rel_tol=1e-12,
+            abs_tol=tolerance,
+        ):
+            raise ModernReferenceQualificationError(
+                "Continuation successor initial objective differs from the parent final objective"
+            )
+        continuation_verification = {
+            "parent_engine_implementation": continuation["parent_engine_implementation"],
+            "successor_engine_implementation": observed_implementation,
+            "parent_final_objective": parent_final,
+            "successor_initial_objective": successor_initial,
+            "initial_objective_matches": True,
+        }
     modern_reconstructions = {
         record["label"]: bundle_root / Path(*PurePosixPath(record["reconstruction_path"]).parts)
         for record in bundle["subjects"]
@@ -1039,7 +1164,7 @@ def assess_modern_reference_qualification(
         else ("pass" if all(gate_results.values()) else "fail")
     )
     assessment: dict[str, Any] = {
-        "assessment_version": "0.1",
+        "assessment_version": "0.2",
         "created_at": created_at or datetime.now(UTC).isoformat(),
         "design": {
             "path": str(design_root),
@@ -1049,6 +1174,24 @@ def assess_modern_reference_qualification(
             "path": str(modern_root),
             "workflow_manifest_sha256": sha256_file(modern_root / "workflow-manifest.json"),
         },
+        "optimizer": {
+            "engine_implementation": workflow["engine"].get("implementation_version"),
+            "termination_reason": bundle["optimizer"]["termination_reason"],
+            "converged": bundle["optimizer"]["converged"],
+            "cycles_completed": bundle["optimizer"]["cycles_completed"],
+            "total_line_search_evaluations": bundle["optimizer"][
+                "total_line_search_evaluations"
+            ],
+            "final_objective": bundle["optimizer"]["final_objective"],
+            "final_attachment": bundle["optimizer"]["final_attachment"],
+            "final_regularity": bundle["optimizer"]["final_regularity"],
+            "history_sha256": sha256_file(history_path),
+        },
+        **(
+            {}
+            if continuation_verification is None
+            else {"continuation_verification": continuation_verification}
+        ),
         "metrics": {
             "method": "deterministic sampled symmetric vertex-to-triangle surface distance",
             "pooled_reference_external_residual_p95": pooled_reference,
