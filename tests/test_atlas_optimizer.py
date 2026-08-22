@@ -121,6 +121,59 @@ def test_previous_accepted_step_avoids_repeating_rejected_candidates() -> None:
     assert all(later.objective > earlier.objective for earlier, later in pairwise(reused.history))
     accepted_steps = [record.accepted_step_size for record in reused.history[1:]]
     assert accepted_steps == sorted(accepted_steps, reverse=True)
+    accepted = sum(record.status == "accepted" for record in reused.history)
+    assert reused.objective_evaluations == 1 + reused.total_line_search_evaluations
+    assert reused.gradient_evaluations == 1 + accepted
+    assert reused.candidate_gradient_evaluations == accepted
+
+
+def test_single_block_boundary_reuse_preserves_fresh_cycle_decisions_exactly() -> None:
+    arguments, keywords = _problem(subjects=1)
+    combined = optimize_atlas(
+        *arguments,
+        **keywords,
+        max_cycles=3,
+        block_order=("momenta",),
+        gradient_tolerance=0.0,
+    )
+
+    momenta = arguments[4]
+    restarted_records = []
+    restarted_objective_evaluations = 0
+    restarted_gradient_evaluations = 0
+    for _ in range(3):
+        restarted = optimize_atlas(
+            *arguments[:4],
+            momenta,
+            **keywords,
+            max_cycles=1,
+            block_order=("momenta",),
+            gradient_tolerance=0.0,
+        )
+        momenta = restarted.momenta
+        restarted_records.append(restarted.history[-1])
+        restarted_objective_evaluations += restarted.objective_evaluations
+        restarted_gradient_evaluations += restarted.gradient_evaluations
+
+    combined_records = combined.history[1:]
+    assert torch.equal(combined.momenta, momenta)
+    assert [record.status for record in combined_records] == [
+        record.status for record in restarted_records
+    ]
+    assert [record.objective for record in combined_records] == [
+        record.objective for record in restarted_records
+    ]
+    assert [record.gradient_norm for record in combined_records] == [
+        record.gradient_norm for record in restarted_records
+    ]
+    assert [record.accepted_step_size for record in combined_records] == [
+        record.accepted_step_size for record in restarted_records
+    ]
+    assert [record.line_search_evaluations for record in combined_records] == [
+        record.line_search_evaluations for record in restarted_records
+    ]
+    assert combined.objective_evaluations == restarted_objective_evaluations - 2
+    assert combined.gradient_evaluations == restarted_gradient_evaluations - 2
 
 
 def test_optimizer_is_repeatable_detached_and_does_not_mutate_inputs() -> None:

@@ -855,6 +855,69 @@ def _current_inner_product_blockwise(
     return torch.sum(normals_a * convolved)
 
 
+def _current_self_inner_product_blockwise(
+    centers: torch.Tensor,
+    normals: torch.Tensor,
+    kernel_width: float,
+    plan: GaussianTilePlan,
+) -> torch.Tensor:
+    """Evaluate one symmetric Current self term without duplicate tiles."""
+
+    if plan.query_rows != plan.source_rows:
+        return _current_inner_product_blockwise(
+            centers,
+            normals,
+            centers,
+            normals,
+            kernel_width,
+            plan,
+        )
+    width = _validate_width(kernel_width)
+    result = torch.zeros((), dtype=centers.dtype, device=centers.device)
+
+    def diagonal(
+        tile_centers: torch.Tensor,
+        tile_normals: torch.Tensor,
+    ) -> torch.Tensor:
+        kernel = _gaussian_matrix(tile_centers, tile_centers, width)
+        return torch.sum(tile_normals * (kernel @ tile_normals))
+
+    def mirrored_pair(
+        query_centers: torch.Tensor,
+        query_normals: torch.Tensor,
+        source_centers: torch.Tensor,
+        source_normals: torch.Tensor,
+    ) -> torch.Tensor:
+        kernel = _gaussian_matrix(query_centers, source_centers, width)
+        forward = torch.sum(query_normals * (kernel @ source_normals))
+        reverse = torch.sum(source_normals * (kernel.T @ query_normals))
+        return forward + reverse
+
+    tile_rows = plan.query_rows
+    for query_start in range(0, centers.shape[0], tile_rows):
+        query_centers = centers[query_start : query_start + tile_rows]
+        query_normals = normals[query_start : query_start + tile_rows]
+        result = result + _evaluate_tile(
+            diagonal,
+            (query_centers, query_normals),
+            plan.autograd_strategy,
+        )
+        for source_start in range(query_start + tile_rows, centers.shape[0], tile_rows):
+            source_centers = centers[source_start : source_start + tile_rows]
+            source_normals = normals[source_start : source_start + tile_rows]
+            result = result + _evaluate_tile(
+                mirrored_pair,
+                (
+                    query_centers,
+                    query_normals,
+                    source_centers,
+                    source_normals,
+                ),
+                plan.autograd_strategy,
+            )
+    return result
+
+
 def current_squared_distance_blockwise(
     vertices_a: torch.Tensor,
     triangles_a: torch.Tensor,
@@ -875,11 +938,11 @@ def current_squared_distance_blockwise(
         triangles_b,
         reference_vertices=vertices_a,
     )
-    self_a = _current_inner_product_blockwise(
-        centers_a, normals_a, centers_a, normals_a, kernel_width, plan
+    self_a = _current_self_inner_product_blockwise(
+        centers_a, normals_a, kernel_width, plan
     )
-    self_b = _current_inner_product_blockwise(
-        centers_b, normals_b, centers_b, normals_b, kernel_width, plan
+    self_b = _current_self_inner_product_blockwise(
+        centers_b, normals_b, kernel_width, plan
     )
     cross = _current_inner_product_blockwise(
         centers_a, normals_a, centers_b, normals_b, kernel_width, plan
@@ -1041,19 +1104,22 @@ def prepare_surface_attachment_target(
                 width,
             )
         else:
-            blockwise_inner_product = (
-                _current_inner_product_blockwise
-                if attachment_type == "current"
-                else _varifold_inner_product_blockwise
-            )
-            self_inner_product = blockwise_inner_product(
-                centers,
-                normals,
-                centers,
-                normals,
-                width,
-                gaussian_tile_plan,
-            )
+            if attachment_type == "current":
+                self_inner_product = _current_self_inner_product_blockwise(
+                    centers,
+                    normals,
+                    width,
+                    gaussian_tile_plan,
+                )
+            else:
+                self_inner_product = _varifold_inner_product_blockwise(
+                    centers,
+                    normals,
+                    centers,
+                    normals,
+                    width,
+                    gaussian_tile_plan,
+                )
     return PreparedSurfaceAttachmentTarget(
         target_vertices=target_vertices,
         target_triangles=target_triangles,
@@ -1109,14 +1175,22 @@ def surface_squared_distance_to_prepared_target(
             if prepared_target.attachment_type == "current"
             else _varifold_inner_product_blockwise
         )
-        self_inner_product = blockwise_inner_product(
-            centers,
-            normals,
-            centers,
-            normals,
-            prepared_target.kernel_width,
-            plan,
-        )
+        if prepared_target.attachment_type == "current":
+            self_inner_product = _current_self_inner_product_blockwise(
+                centers,
+                normals,
+                prepared_target.kernel_width,
+                plan,
+            )
+        else:
+            self_inner_product = blockwise_inner_product(
+                centers,
+                normals,
+                centers,
+                normals,
+                prepared_target.kernel_width,
+                plan,
+            )
         cross_inner_product = blockwise_inner_product(
             centers,
             normals,

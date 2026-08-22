@@ -85,6 +85,12 @@ V0.4 can also initialize momenta from a canonical
 count, finite values, copied bytes, and SHA-256 are checked before execution and
 again during workflow verification.
 
+A completed, verified run that reaches its cycle cap without convergence can be
+continued through a separate hash-bound prospective successor. It copies the
+exact final template, control points, momenta, and effective subjects; it never
+modifies or relabels the parent. See
+[verified Modern optimizer continuation](MODERN_CONTINUATION.md).
+
 `modern-plan` v0.2 is a non-compute review step for the configured exact
 engine. It publishes logical all-pairs operation counts, the largest logical
 pair, the largest dense or blockwise matrix dimensions evaluated by the
@@ -280,7 +286,9 @@ configuration.
 
 SHA-256 provides integrity detection, not an authenticity signature. Progress
 counts are not runtime percentages and carry no ETA. Workflow
-v0.1 also does not provide checkpoints, modern-engine resume, PLY/STL/OBJ
+v0.1 does not provide mid-run checkpoints or crash recovery; its completed-run
+continuation is a new sequential workflow, not restoration of in-memory state.
+It also does not provide PLY/STL/OBJ
 input, mesh repair, self-intersection tests, loading plots, mesh rendering,
 a GUI, or an installer. PCA signs are conventional and
 ±PC meshes are neither observations nor confidence intervals. The five-subject

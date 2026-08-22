@@ -307,6 +307,31 @@ def build_parser() -> argparse.ArgumentParser:
     modern_reference_assess_parser.add_argument("modern_run", type=Path)
     modern_reference_assess_parser.add_argument("--output", type=Path, required=True)
 
+    modern_continuation_parser = subparsers.add_parser(
+        "modern-continuation-init",
+        help=(
+            "Freeze a hash-bound successor from one verified, non-converged "
+            "Modern workflow without running it."
+        ),
+    )
+    modern_continuation_parser.add_argument("parent_run", type=Path)
+    modern_continuation_parser.add_argument("--output", type=Path, required=True)
+    modern_continuation_parser.add_argument("--cycles", type=int, default=10)
+    modern_continuation_parser.add_argument("--threads", type=int)
+
+    modern_continuation_verify_parser = subparsers.add_parser(
+        "modern-continuation-verify",
+        help="Verify a frozen no-results-yet Modern continuation plan.",
+    )
+    modern_continuation_verify_parser.add_argument("plan_directory", type=Path)
+
+    modern_continuation_run_parser = subparsers.add_parser(
+        "modern-continuation-verify-run",
+        help="Verify that a completed Modern successor exactly matches its frozen plan.",
+    )
+    modern_continuation_run_parser.add_argument("plan_directory", type=Path)
+    modern_continuation_run_parser.add_argument("successor_run", type=Path)
+
     modern_run_parser = subparsers.add_parser(
         "modern-run",
         help="Execute one immutable experimental modern atlas/PCA workflow.",
@@ -1382,6 +1407,69 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"Fixed-reference qualification assessed: {destination}")
             print(f"Engineering gate result: {assessment['decision']['status']}")
             print("This result does not establish biological validity or atlas equivalence.")
+        except (OSError, RuntimeError, TypeError, ValueError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
+
+    if args.command == "modern-continuation-init":
+        try:
+            from diffeoforge.modern_continuation import (
+                CONFIG_NAME,
+                PLAN_HTML_NAME,
+                create_modern_continuation,
+                verify_modern_continuation,
+            )
+
+            destination = create_modern_continuation(
+                args.parent_run,
+                args.output,
+                max_cycles=args.cycles,
+                threads=args.threads,
+            )
+            plan = verify_modern_continuation(destination)
+            print(f"Prospective Modern continuation created: {destination}")
+            print(f"Subjects: {len(plan['subjects'])}")
+            print(f"Frozen config: {destination / CONFIG_NAME}")
+            print(f"Review page: {destination / PLAN_HTML_NAME}")
+            print("No successor optimizer was run.")
+        except (OSError, RuntimeError, TypeError, ValueError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
+
+    if args.command == "modern-continuation-verify":
+        try:
+            from diffeoforge.modern_continuation import verify_modern_continuation
+
+            plan = verify_modern_continuation(args.plan_directory)
+            print(f"Modern continuation verified: {args.plan_directory.resolve()}")
+            print(f"Subjects: {len(plan['subjects'])}")
+            print("The plan contains no successor result and remains prospective.")
+        except (OSError, RuntimeError, TypeError, ValueError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
+
+    if args.command == "modern-continuation-verify-run":
+        try:
+            from diffeoforge.modern_continuation import verify_modern_continuation_run
+
+            result = verify_modern_continuation_run(
+                args.plan_directory,
+                args.successor_run,
+            )
+            bundle = result["bundle"]
+            print(f"Modern continuation run verified: {args.successor_run.resolve()}")
+            print(
+                "Initial objective matches the parent final state within the "
+                "declared numerical tolerance."
+            )
+            print(
+                "Termination: "
+                f"{bundle['optimizer']['termination_reason']}; "
+                f"converged={str(bundle['optimizer']['converged']).lower()}"
+            )
         except (OSError, RuntimeError, TypeError, ValueError) as error:
             print(f"ERROR: {error}", file=sys.stderr)
             return 2

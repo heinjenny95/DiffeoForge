@@ -70,15 +70,17 @@ def test_prepared_dense_target_preserves_value_and_source_gradient(
 
 @pytest.mark.parametrize("attachment_type", ["current", "varifold"])
 @pytest.mark.parametrize("autograd_strategy", ["standard", "recompute"])
+@pytest.mark.parametrize("tile_sizes", [(3, 2), (2, 2)])
 def test_prepared_blockwise_target_preserves_value_and_source_gradient(
     attachment_type,
     autograd_strategy,
+    tile_sizes,
 ) -> None:
     source, triangles = _tetrahedron()
     target, target_triangles = _tetrahedron((0.13, -0.08, 0.04))
     dense_source = source.clone().requires_grad_(True)
     prepared_source = source.clone().requires_grad_(True)
-    plan = engine.GaussianTilePlan(3, 2, autograd_strategy)
+    plan = engine.GaussianTilePlan(*tile_sizes, autograd_strategy)
     distance_function = (
         engine.current_squared_distance_blockwise
         if attachment_type == "current"

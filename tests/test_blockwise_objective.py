@@ -174,10 +174,12 @@ def test_atlas_blockwise_objective_and_all_parameter_gradients_match_dense(
 
 @pytest.mark.parametrize("attachment_type", ["current", "varifold"])
 @pytest.mark.parametrize("autograd_strategy", ["standard", "recompute"])
+@pytest.mark.parametrize("tile_sizes", [(2, 3), (2, 2)])
 def test_one_cycle_blockwise_optimizer_matches_dense_decisions_and_parameters(
     reference: dict,
     attachment_type: str,
     autograd_strategy: str,
+    tile_sizes: tuple[int, int],
 ) -> None:
     arguments, keywords = _atlas_problem(reference)
     keywords["attachment_type"] = attachment_type
@@ -186,7 +188,7 @@ def test_one_cycle_blockwise_optimizer_matches_dense_decisions_and_parameters(
         *arguments,
         **keywords,
         max_cycles=1,
-        gaussian_tile_plan=GaussianTilePlan(2, 3, autograd_strategy),
+        gaussian_tile_plan=GaussianTilePlan(*tile_sizes, autograd_strategy),
     )
     options = {"rtol": 2e-10, "atol": 2e-11}
 

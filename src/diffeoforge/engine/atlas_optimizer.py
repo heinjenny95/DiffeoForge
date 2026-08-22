@@ -447,6 +447,7 @@ def optimize_atlas(
         progress_callback(initial_record)
     total_line_search_evaluations = 0
     next_step_sizes = dict(step_sizes)
+    reusable_single_block_evaluation: _BlockEvaluation | None = None
 
     def result(
         termination_reason: AtlasTerminationReason,
@@ -478,6 +479,13 @@ def optimize_atlas(
             if cycle == 1 and block == order[0]:
                 evaluated = initial
                 initial = None
+            elif len(order) == 1 and reusable_single_block_evaluation is not None:
+                # The accepted candidate already carries the exact gradient for
+                # this sole block. Re-evaluating it at the next cycle boundary
+                # changes no state or decision and can dominate surface runs.
+                check_cancellation()
+                evaluated = reusable_single_block_evaluation
+                reusable_single_block_evaluation = None
             else:
                 pending = evaluate_objective(
                     current.template_vertices,
@@ -562,6 +570,8 @@ def optimize_atlas(
                 )
 
             current = accepted.state
+            if len(order) == 1:
+                reusable_single_block_evaluation = accepted
             if step_initialization == "previous_accepted":
                 next_step_sizes[block] = step_size
             record = current.record(

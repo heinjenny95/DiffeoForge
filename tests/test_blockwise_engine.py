@@ -154,6 +154,65 @@ def test_blockwise_surface_distances_match_dense_forward_and_gradient(
     torch.testing.assert_close(block_gradient, dense_gradient, rtol=3e-11, atol=3e-12)
 
 
+@pytest.mark.parametrize("autograd_strategy", ["standard", "recompute"])
+def test_symmetric_current_tiles_match_dense_forward_and_gradient(
+    autograd_strategy: str,
+) -> None:
+    source, triangles = _tetrahedron()
+    target = source.clone()
+    target[3] += torch.tensor([0.03, -0.02, 0.04], dtype=DTYPE)
+    dense_source = source.clone().requires_grad_(True)
+    block_source = source.clone().requires_grad_(True)
+
+    dense = current_squared_distance(dense_source, triangles, target, triangles, 0.75)
+    blockwise = current_squared_distance_blockwise(
+        block_source,
+        triangles,
+        target,
+        triangles,
+        0.75,
+        query_tile_size=2,
+        source_tile_size=2,
+        autograd_strategy=autograd_strategy,
+    )
+    (dense_gradient,) = torch.autograd.grad(dense, dense_source)
+    (block_gradient,) = torch.autograd.grad(blockwise, block_source)
+
+    torch.testing.assert_close(blockwise, dense, rtol=2e-12, atol=2e-13)
+    torch.testing.assert_close(block_gradient, dense_gradient, rtol=3e-11, atol=3e-12)
+
+
+def test_symmetric_current_self_terms_evaluate_only_one_triangle_of_tiles(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import diffeoforge.engine.dense as dense_module
+
+    source, triangles = _tetrahedron()
+    target = source.clone()
+    target[3, 2] += 0.04
+    calls = 0
+    original = dense_module._gaussian_matrix
+
+    def observe(x, y, width):
+        nonlocal calls
+        calls += 1
+        return original(x, y, width)
+
+    monkeypatch.setattr(dense_module, "_gaussian_matrix", observe)
+    value = current_squared_distance_blockwise(
+        source,
+        triangles,
+        target,
+        triangles,
+        0.75,
+        query_tile_size=2,
+        source_tile_size=2,
+    )
+
+    assert torch.isfinite(value)
+    assert calls == 10  # 3 + 3 symmetric self tiles, plus 4 cross tiles.
+
+
 @pytest.mark.parametrize(
     ("dense_distance", "blockwise_distance"),
     [
@@ -185,6 +244,41 @@ def test_blockwise_surface_forward_matches_dense_on_cc0_320_face_meshes(
     )
 
     torch.testing.assert_close(blockwise, dense, rtol=2e-11, atol=2e-12)
+
+
+def test_symmetric_current_tiles_match_dense_on_cc0_mesh_gradient() -> None:
+    directory = ROOT / "examples" / "synthetic" / "meshes"
+    source_mesh = read_vtk_polydata(directory / "template.vtk")
+    target_mesh = read_vtk_polydata(directory / "subject-01.vtk")
+    source = torch.tensor(source_mesh.vertices, dtype=DTYPE)
+    source_triangles = torch.tensor(source_mesh.triangles, dtype=torch.int64)
+    target = torch.tensor(target_mesh.vertices, dtype=DTYPE)
+    target_triangles = torch.tensor(target_mesh.triangles, dtype=torch.int64)
+    dense_source = source.clone().requires_grad_(True)
+    block_source = source.clone().requires_grad_(True)
+
+    dense = current_squared_distance(
+        dense_source,
+        source_triangles,
+        target,
+        target_triangles,
+        0.45,
+    )
+    blockwise = current_squared_distance_blockwise(
+        block_source,
+        source_triangles,
+        target,
+        target_triangles,
+        0.45,
+        query_tile_size=32,
+        source_tile_size=32,
+        autograd_strategy="recompute",
+    )
+    (dense_gradient,) = torch.autograd.grad(dense, dense_source)
+    (block_gradient,) = torch.autograd.grad(blockwise, block_source)
+
+    torch.testing.assert_close(blockwise, dense, rtol=2e-11, atol=2e-12)
+    torch.testing.assert_close(block_gradient, dense_gradient, rtol=5e-10, atol=5e-11)
 
 
 def test_blockwise_varifold_orientation_and_joint_translation_contracts() -> None:

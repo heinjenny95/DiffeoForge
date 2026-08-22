@@ -40,7 +40,9 @@ This roadmap describes evidence gates rather than promised dates.
   - [x] Add common external surface-distance assessment with predeclared
     engineering non-inferiority gates; internal objectives are not compared as
     cross-engine equivalents
-  - [ ] Execute and review the frozen five-subject full-resolution Weevil study
+  - [x] Execute and review the frozen five-subject full-resolution Weevil
+    screening study; record its non-converged result as inconclusive
+  - [ ] Execute and assess the frozen ten-cycle Weevil continuation study
 - [x] Record the engine decision in an ADR
 - [x] Prototype landmark-based generalized Procrustes alignment
 - [x] Integrate labelled landmarks and aligned mesh copies into modern run manifests
@@ -60,6 +62,10 @@ This roadmap describes evidence gates rather than promised dates.
   across optimizer evaluations with dense/blockwise value and gradient parity
 - [x] Defer Armijo candidate gradients until objective acceptance and reuse the
   initial evaluation without changing optimizer decisions
+- [x] Reuse the accepted objective/gradient across one-block cycle boundaries,
+  eliminating one exact duplicate evaluation after every accepted cycle
+- [x] Eliminate mirrored Gaussian tile evaluation in equal-tile blockwise
+  Current self terms with dense value/gradient parity evidence
 - [x] Add a versioned fresh-process multi-cycle optimizer benchmark with separate
   target-cache timing, exact work counters, result hashes, and strict verification
 - [x] Freeze immutable subject-prefix by cycle-cap optimizer scaling designs before results
@@ -77,6 +83,10 @@ This roadmap describes evidence gates rather than promised dates.
 - [x] Specify backward-compatible prospective multi-tile matrix semantics
 - [x] Run a prospective public standard/recompute engineering study without analysis
 - [x] Run a prospective public multi-size/tile engineering study without analysis
+- [x] Add a general hash-bound completed-run Modern continuation that preserves
+  final template/control points/momenta, derives accepted starter steps, and
+  verifies the successor's initial objective against its parent
+- [ ] Add exact mid-run Modern optimizer checkpoints and crash recovery
 
 ## Milestone 3: Accessible application
 

@@ -81,8 +81,11 @@ matching dtype/device, finite positive kernel widths, and valid zero-based
 zero-area faces fail explicitly.
 
 This boundary does **not** yet include automatic control-point initialization,
-optimizer checkpointing, GPU execution, sparse/chunked kernels, mesh-quality
-constraints, or a workflow-backend adapter.
+mid-run optimizer checkpoint/crash recovery, GPU execution, sparse kernels, or
+a workflow-backend adapter. A completed verified non-converged run can now be
+continued through a separately frozen, hash-bound successor; this is sequential
+optimization rather than restoration of an interrupted process. Blockwise exact
+kernels and deterministic mesh-quality constraints are implemented.
 
 ## Evidence in this baseline
 
@@ -188,6 +191,21 @@ observation measured a 1.388x ratio for a one-cycle run containing seven
 rejected candidates in its momenta block; this is rejection-specific
 implementation evidence rather than a full-atlas claim. See
 [deferred Armijo gradients](DEFERRED_ARMIJO_GRADIENTS.md).
+
+For one-block atlases, the accepted candidate objective and gradient are now
+carried across the cycle boundary instead of being recomputed unchanged. A
+ten-cycle accepted momenta-only run therefore avoids nine complete redundant
+objective-plus-gradient evaluations. Independent fresh one-cycle recomputation
+must reproduce the same parameter state, objective, gradient norm, accepted
+step, and line-search history exactly. Multi-block behavior is unchanged. See
+[single-block optimizer boundary reuse](SINGLE_BLOCK_BOUNDARY_REUSE.md).
+
+Blockwise Current self inner products with equal query/source tile sizes now
+evaluate only the diagonal and upper triangle of the symmetric tile grid. Each
+off-diagonal kernel supplies both ordered contributions, while cross-surface
+terms remain complete and unequal tile plans retain the established path.
+Dense float64 value/gradient comparisons cover tetrahedral and public 320-face
+surfaces. See [symmetric Current tiles](SYMMETRIC_CURRENT_TILES.md).
 
 The versioned multi-cycle optimizer benchmark now runs the production block
 optimizer in a fresh process per repeat. It separates fixed-target cache
