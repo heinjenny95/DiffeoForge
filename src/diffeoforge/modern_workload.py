@@ -19,6 +19,7 @@ from diffeoforge import __version__
 from diffeoforge.config import InputSummary, validate_input_paths
 from diffeoforge.diagnostics import _physical_memory_bytes
 from diffeoforge.engine import PairwiseEvaluationPlan
+from diffeoforge.engine.execution import ENGINE_IMPLEMENTATION_VERSION
 from diffeoforge.mesh import MeshMetadata, inspect_inputs, sha256_file
 from diffeoforge.modern_workflow import (
     load_modern_workflow_config,
@@ -100,6 +101,7 @@ def _validate_report(report: dict[str, Any]) -> None:
     ):
         raise ModernWorkloadError("Blockwise execution tile exceeds its configured row bounds")
     configuration = report["configuration"]
+    implementation = report["engine"].get("implementation_version")
     expected_operation = _operation_model(
         {
             "initialization": {
@@ -117,6 +119,7 @@ def _validate_report(report: dict[str, Any]) -> None:
         },
         input_record["template"],
         input_record["subjects"],
+        rk2_shooting_calls_per_step=6 if implementation is None else 4,
     )
     if operation != expected_operation:
         raise ModernWorkloadError(
@@ -281,12 +284,20 @@ def _operation_model(
     config: dict[str, Any],
     template: dict[str, Any],
     subjects: list[dict[str, Any]],
+    *,
+    rk2_shooting_calls_per_step: int = 4,
 ) -> dict[str, Any]:
+    if rk2_shooting_calls_per_step not in {4, 6}:
+        raise ValueError("rk2_shooting_calls_per_step must be 4 or 6")
     subject_count = len(subjects)
     control_points = config["initialization"]["control_points"]["count"]
     deformation = config["model"]["deformation"]
     time_steps = deformation["timepoints"] - 1
-    shooting_calls_per_step = 2 if deformation["shooting_integrator"] == "euler" else 6
+    shooting_calls_per_step = (
+        2
+        if deformation["shooting_integrator"] == "euler"
+        else rk2_shooting_calls_per_step
+    )
     flow_calls_per_step = 1 if deformation["flow_integrator"] == "euler" else 2
     extrapolation_calls = 4 if deformation["flow_integrator"] == "deformetrica_heun" else 0
     attachment_pairs = sum(
@@ -325,7 +336,10 @@ def _operation_model(
             "attachment_per_subject": (
                 "template_faces^2 + subject_faces^2 + template_faces * subject_faces"
             ),
-            "shooting_per_step": "2 * control_points^2 for Euler; 6 * control_points^2 for RK2",
+            "shooting_per_step": (
+                "2 * control_points^2 for Euler; "
+                f"{rk2_shooting_calls_per_step} * control_points^2 for RK2"
+            ),
             "flow_per_step": (
                 "template_points * control_points for Euler; twice that for Heun variants"
             ),
@@ -470,6 +484,7 @@ def collect_modern_workload(
         "workload_version": WORKLOAD_VERSION,
         "engine": {
             "id": pairwise_evaluation.engine_id,
+            "implementation_version": ENGINE_IMPLEMENTATION_VERSION,
             "diffeoforge": __version__,
             "device": config["runtime"]["device"],
             "precision": config["runtime"]["precision"],
@@ -531,6 +546,13 @@ def render_modern_workload_html(report: dict[str, Any]) -> str:
 
     input_record = report["input"]
     operation = report["operation_model"]
+    implementation = report["engine"].get("implementation_version")
+    implementation_item = (
+        ""
+        if implementation is None
+        else "<li>Modern engine implementation: "
+        f"{html.escape(implementation)}</li>"
+    )
     payload = report["payload_model"]
     host = report["host_observations"]
     subject_rows = "".join(
@@ -577,7 +599,7 @@ def render_modern_workload_html(report: dict[str, Any]) -> str:
             ),
         )
     )
-    operation_items = "".join(
+    operation_items = implementation_item + "".join(
         f"<li>{label}: {value}</li>"
         for label, value in (
             ("Gaussian calls per objective forward", f"{objective['gaussian_calls']:,}"),

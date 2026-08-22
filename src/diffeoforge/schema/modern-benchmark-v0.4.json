@@ -366,6 +366,9 @@
                                                                                   "type":  "string",
                                                                                   "minLength":  1
                                                                               },
+                                                              "engine_implementation":  {
+                                                                                              "const":  "0.3"
+                                                                                          },
                                                               "python":  {
                                                                              "type":  "string",
                                                                              "minLength":  1

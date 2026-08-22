@@ -568,6 +568,8 @@ and workflow for another mesh directory.
 - [Modern multi-cycle optimizer benchmark](docs/MODERN_OPTIMIZER_BENCHMARK.md)
 - [Single-block optimizer boundary reuse](docs/SINGLE_BLOCK_BOUNDARY_REUSE.md)
 - [Symmetric blockwise Current self terms](docs/SYMMETRIC_CURRENT_TILES.md)
+- [RK2 first-stage reuse](docs/RK2_STAGE_REUSE.md)
+- [Recompute query-tile checkpoint grouping](docs/RECOMPUTE_QUERY_GROUPS.md)
 - [Prospective optimizer scaling design](docs/MODERN_OPTIMIZER_BENCHMARK_DESIGN.md)
 - [Centered Gaussian matrix evaluation](docs/CENTERED_GAUSSIAN_MATRIX.md)
 - [Bounded-memory blockwise Gaussian primitives](docs/BLOCKWISE_GAUSSIAN.md)

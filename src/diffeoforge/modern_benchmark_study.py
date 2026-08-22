@@ -265,6 +265,12 @@ def _verify_condition_report(
         raise ModernBenchmarkStudyError(
             f"Condition report {condition['condition_id']} is invalid: {error}"
         ) from error
+    if report["environment"].get("engine_implementation") != design["software"].get(
+        "engine_implementation"
+    ):
+        raise ModernBenchmarkStudyError(
+            "Condition engine implementation differs from the frozen design"
+        )
     count = condition["subject_count"]
     if report["source_config"] != design["source_config"]:
         raise ModernBenchmarkStudyError("Condition source config differs from the frozen design")

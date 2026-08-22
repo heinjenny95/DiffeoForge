@@ -79,10 +79,13 @@ integration begins.
 The four low-level blockwise primitive functions additionally accept the
 keyword-only choice `autograd_strategy="standard"` or
 `autograd_strategy="recompute"`. Standard is the unchanged default. Recompute
-uses PyTorch's non-reentrant activation checkpointing around each deterministic
-tile calculation: the forward graph retains tile inputs and reconstructs
-distance/kernel matrices, coefficients, and orientation values when backward
-needs them.
+uses PyTorch's non-reentrant activation checkpointing: the forward graph
+retains declared inputs and reconstructs distance/kernel matrices,
+coefficients, and orientation values when backward needs them. Implementation
+0.3 groups Gaussian convolution/x-gradient and symmetric Current work by query
+tile, so one checkpoint boundary serially reconstructs its declared source
+tiles instead of retaining one Python/autograd boundary per pair tile. Varifold
+tile calculations retain their existing per-tile boundary.
 
 ```python
 value = gaussian_convolve_blockwise(
@@ -106,9 +109,9 @@ plan = GaussianTilePlan(256, 256, autograd_strategy="recompute")
 result = atlas_objective(..., gaussian_tile_plan=plan)
 ```
 
-This remains an engine-level prototype. Public `PairwiseEvaluationPlan`,
-`modern-init`, YAML, manifests, `modern-run`, and workload reports continue to
-construct standard-autograd tile plans only. `modern-benchmark` v0.3 can apply
+The strategy remains explicit. Configuration v0.3/v0.4 YAML and immutable
+workflow provenance can select it for `modern-run`; generated starter configs
+remain standard unless deliberately edited and reviewed. `modern-benchmark` v0.3 can apply
 an explicit benchmark-only override in its fresh worker and records it in the
 strict report. Benchmark v0.4 additionally accepts a paired positive
 query/source tile-shape override for a configured blockwise base plan, recording
@@ -152,7 +155,10 @@ Tests currently require:
 - a 320-face CC0 Current-objective probe with `64 × 64` tiles: standard retains
   tile-sized rank-2 matrices while recompute does not, giving recompute a
   smaller largest and summed logical saved payload while objective and all
-  parameter gradients match standard exactly on the tested CPU run.
+  parameter gradients match standard exactly on the tested CPU run; and
+- direct checkpoint-call instrumentation requiring recompute Gaussian
+  convolution, explicit x-gradient, and Current source-self/cross work to use
+  one boundary per query tile rather than one per query/source tile pair.
 
 The dense path remains the correctness oracle and continues to match the
 frozen Deformetrica primitive/objective evidence. `modern-run` can select the

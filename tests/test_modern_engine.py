@@ -7,6 +7,7 @@ import pytest
 
 torch = pytest.importorskip("torch")
 engine = pytest.importorskip("diffeoforge.engine")
+dense = pytest.importorskip("diffeoforge.engine.dense")
 
 ShootingTrajectory = engine.ShootingTrajectory
 current_squared_distance = engine.current_squared_distance
@@ -242,6 +243,49 @@ def test_shooting_is_differentiable_deterministic_and_does_not_mutate_inputs() -
     assert torch.equal(momenta.detach(), original_momenta)
     assert bool(torch.isfinite(gradient).all())
     assert torch.count_nonzero(gradient) > 0
+
+
+def test_rk2_shooting_reuses_each_first_stage_without_changing_results(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    control_points, momenta = _shooting_inputs()
+    time_points = 5
+    observed = {"convolve": 0, "gradient": 0}
+    original_convolve = dense._gaussian_convolve_with_plan
+    original_gradient = dense._gaussian_convolve_gradient_with_plan
+    expected_points = [control_points]
+    expected_momenta = [momenta]
+    points_state = control_points
+    momenta_state = momenta
+    for _ in range(time_points - 1):
+        points_state, momenta_state = dense._rk2_shooting_step(
+            points_state,
+            momenta_state,
+            1.25,
+            1.0 / (time_points - 1),
+            None,
+        )
+        expected_points.append(points_state)
+        expected_momenta.append(momenta_state)
+
+    def count_convolve(*args, **kwargs):
+        observed["convolve"] += 1
+        return original_convolve(*args, **kwargs)
+
+    def count_gradient(*args, **kwargs):
+        observed["gradient"] += 1
+        return original_gradient(*args, **kwargs)
+
+    monkeypatch.setattr(dense, "_gaussian_convolve_with_plan", count_convolve)
+    monkeypatch.setattr(dense, "_gaussian_convolve_gradient_with_plan", count_gradient)
+    optimized = shoot(control_points, momenta, 1.25, time_points, integrator="rk2")
+
+    assert observed == {
+        "convolve": 2 * (time_points - 1),
+        "gradient": 2 * (time_points - 1),
+    }
+    assert torch.equal(optimized.control_points, torch.stack(expected_points))
+    assert torch.equal(optimized.momenta, torch.stack(expected_momenta))
 
 
 @pytest.mark.parametrize("integrator", ["euler", "rk2"])

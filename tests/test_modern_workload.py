@@ -61,19 +61,20 @@ def test_example_workload_has_exact_public_dimensions_and_formulas() -> None:
     report = collect_modern_workload(EXAMPLE, host_observations=FIXED_HOST)
 
     assert report["input"]["subject_count"] == 5
+    assert report["engine"]["implementation_version"] == "0.3"
     assert report["input"]["template"]["points"] == 162
     assert report["input"]["template"]["triangles"] == 320
     assert {subject["triangles"] for subject in report["input"]["subjects"]} == {320}
     objective = report["operation_model"]["one_objective_forward"]
     assert objective == {
-        "gaussian_calls": 200,
-        "gaussian_pair_elements": 1_606_065,
+        "gaussian_calls": 160,
+        "gaussian_pair_elements": 1_602_825,
         "attachment": {
             "calls": 15,
             "pair_elements": 1_536_000,
             "orientation_pair_elements": 0,
         },
-        "shooting": {"calls": 120, "pair_elements": 9_720},
+        "shooting": {"calls": 80, "pair_elements": 6_480},
         "template_flow": {"calls": 40, "pair_elements": 58_320},
         "deformetrica_heun_extrapolation": {"calls": 20, "pair_elements": 1_620},
         "deformation_energy": {"calls": 5, "pair_elements": 405},
@@ -82,7 +83,7 @@ def test_example_workload_has_exact_public_dimensions_and_formulas() -> None:
     assert largest["rows"] == largest["columns"] == 320
     assert largest["float64_xyz_difference_tensor_bytes"] == 2_457_600
     assert report["optimizer_bound"]["objective_gradient_evaluation_upper_bound"] == 190
-    assert report["optimizer_bound"]["gaussian_pair_elements_upper_bound"] == (190 * 1_606_065)
+    assert report["optimizer_bound"]["gaussian_pair_elements_upper_bound"] == (190 * 1_602_825)
     assert report["output_bound"] == {
         "maximum_retained_components": 4,
         "maximum_deformation_components": 3,

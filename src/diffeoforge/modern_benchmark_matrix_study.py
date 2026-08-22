@@ -284,6 +284,12 @@ def _verify_condition_report(
         ) from error
     if report["benchmark_version"] != TILE_OVERRIDE_BENCHMARK_VERSION:
         raise ModernBenchmarkStudyError("Matrix condition report is not benchmark v0.4")
+    if report["environment"].get("engine_implementation") != design["software"].get(
+        "engine_implementation"
+    ):
+        raise ModernBenchmarkStudyError(
+            "Matrix condition engine implementation differs from the frozen design"
+        )
     count = condition["subject_count"]
     if report["source_config"] != design["source_config"]:
         raise ModernBenchmarkStudyError("Condition source config differs from the frozen design")

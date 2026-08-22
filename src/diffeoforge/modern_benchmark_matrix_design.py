@@ -17,6 +17,7 @@ import jsonschema
 
 from diffeoforge import __version__
 from diffeoforge.config import ConfigurationError, validate_input_paths
+from diffeoforge.engine.execution import ENGINE_IMPLEMENTATION_VERSION
 from diffeoforge.mesh import inspect_inputs, sha256_file
 from diffeoforge.modern_benchmark import TILE_OVERRIDE_BENCHMARK_VERSION
 from diffeoforge.modern_workflow import (
@@ -327,6 +328,7 @@ def collect_modern_benchmark_matrix_design(
         "software": {
             "diffeoforge": __version__,
             "benchmark_version": TILE_OVERRIDE_BENCHMARK_VERSION,
+            "engine_implementation": ENGINE_IMPLEMENTATION_VERSION,
         },
         "source_config": {
             "filename": source.name,
@@ -394,6 +396,12 @@ def render_modern_benchmark_matrix_design_html(design: dict[str, Any]) -> str:
     source = design["source_config"]
     protocol = design["protocol"]
     source_pairwise = design["configuration"]["source_pairwise_evaluation"]
+    implementation = design["software"].get("engine_implementation")
+    implementation_html = (
+        ""
+        if implementation is None
+        else f"\n<li>Modern engine implementation: {html.escape(implementation)}</li>"
+    )
     shapes = ", ".join(
         f"{shape['query_tile_size']} × {shape['source_tile_size']}"
         for shape in protocol["tile_shapes"]
@@ -426,7 +434,7 @@ code{{overflow-wrap:anywhere}} .boundary{{border-left:.3rem solid #b65b00;paddin
 recommendation, and creating it runs no benchmark.</p>
 <h2>Frozen identity</h2><ul>
 <li>Project: {html.escape(source['project'])}</li>
-<li>Created: {html.escape(design['created_at'])}</li>
+<li>Created: {html.escape(design['created_at'])}</li>{implementation_html}
 <li>Source config: <code>{html.escape(source['filename'])}</code></li>
 <li>Config SHA-256: <code>{source['sha256']}</code></li>
 <li>Available subject meshes: {design['input']['available_subject_count']}</li>

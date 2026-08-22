@@ -407,6 +407,78 @@ def test_recompute_avoids_saving_pairwise_convolution_matrices() -> None:
     assert sum(size for size, _ in recomputed_saved) < sum(size for size, _ in standard_saved)
 
 
+def test_recompute_groups_gaussian_checkpoint_boundaries_by_query_tile(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import diffeoforge.engine.dense as dense_module
+
+    x, y, left, right = _convolution_inputs()
+    calls = 0
+    original = dense_module.checkpoint
+
+    def observe(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(dense_module, "checkpoint", observe)
+    variables = tuple(value.clone().requires_grad_(True) for value in (x, y, left, right))
+    convolved = gaussian_convolve_blockwise(
+        variables[0],
+        variables[1],
+        variables[3],
+        1.1,
+        query_tile_size=3,
+        source_tile_size=2,
+        autograd_strategy="recompute",
+    )
+    assert calls == 3
+    gradient = gaussian_convolve_gradient_blockwise(
+        variables[2],
+        variables[0],
+        variables[1],
+        variables[3],
+        1.1,
+        query_tile_size=3,
+        source_tile_size=2,
+        autograd_strategy="recompute",
+    )
+    assert calls == 6
+    torch.autograd.grad(convolved.sum() + gradient.sum(), variables)
+
+
+def test_recompute_groups_current_self_and_cross_boundaries_by_query_tile(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import diffeoforge.engine.dense as dense_module
+
+    source, triangles = _tetrahedron()
+    target = source.clone()
+    target[3, 2] += 0.04
+    calls = 0
+    original = dense_module.checkpoint
+
+    def observe(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(dense_module, "checkpoint", observe)
+    variable = source.clone().requires_grad_(True)
+    value = current_squared_distance_blockwise(
+        variable,
+        triangles,
+        target,
+        triangles,
+        0.75,
+        query_tile_size=2,
+        source_tile_size=2,
+        autograd_strategy="recompute",
+    )
+    assert calls == 4  # Two query groups for source self, then two for cross.
+    torch.autograd.grad(value, variable)
+
+
 def test_recompute_strategy_is_strict_and_opt_in() -> None:
     x, y, _left, right = _convolution_inputs()
 

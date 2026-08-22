@@ -30,7 +30,10 @@ from diffeoforge import __version__
 from diffeoforge.config import ConfigurationError, validate_input_paths
 from diffeoforge.diagnostics import _physical_memory_bytes
 from diffeoforge.engine.dense import GaussianTilePlan, TileAutogradStrategy
-from diffeoforge.engine.execution import PairwiseEvaluationPlan
+from diffeoforge.engine.execution import (
+    ENGINE_IMPLEMENTATION_VERSION,
+    PairwiseEvaluationPlan,
+)
 from diffeoforge.engine.objective import atlas_objective
 from diffeoforge.mesh import inspect_vtk, read_vtk_polydata, sha256_file
 from diffeoforge.modern_workflow import (
@@ -206,6 +209,7 @@ def _validate_report(report: dict[str, Any]) -> None:
         or tile["tile_columns"] > pairwise["source_tile_size"]
     ):
         raise ModernBenchmarkError("Blockwise execution tile exceeds its configured row bounds")
+    implementation = report["environment"].get("engine_implementation")
     expected = _operation_model(
         {
             "initialization": {"control_points": {"count": configuration["control_points"]}},
@@ -221,6 +225,7 @@ def _validate_report(report: dict[str, Any]) -> None:
         },
         input_record["template"],
         input_record["subjects"],
+        rk2_shooting_calls_per_step=6 if implementation is None else 4,
     )
     expected_benchmark_operation = {
         "gaussian_calls_per_evaluation": expected["one_objective_forward"]["gaussian_calls"],
@@ -678,6 +683,7 @@ def collect_modern_benchmark(
         "configuration": configuration,
         "environment": {
             "diffeoforge": __version__,
+            "engine_implementation": ENGINE_IMPLEMENTATION_VERSION,
             "python": platform.python_version(),
             "numpy": np.__version__,
             "pytorch": torch.__version__,
@@ -739,6 +745,12 @@ def render_modern_benchmark_html(report: dict[str, Any]) -> str:
         source_pairwise = config["source_pairwise_evaluation"]
         pairwise = config["effective_pairwise_evaluation"]
     autograd_strategy = config["tile_autograd_strategy"]
+    implementation = report["environment"].get("engine_implementation")
+    implementation_html = (
+        ""
+        if implementation is None
+        else f"\n<li>Modern engine implementation: {html.escape(implementation)}</li>"
+    )
     tile_rows = (
         "not applicable"
         if pairwise["mode"] == "dense"
@@ -797,7 +809,7 @@ padding:.45rem;text-align:left}} th{{background:#eef4f8}}
 <li>Gradient block: {html.escape(config["gradient_block"])}</li>
 <li>Warm-ups per repeat: {config["warmup_evaluations_per_repeat"]}</li>
 <li>Fresh-process repeats: {config["repeats"]}</li>
-<li>Threads: {config["threads"]}</li>
+<li>Threads: {config["threads"]}</li>{implementation_html}
 {pairwise_protocol_html}
 <li>RSS sampling interval: {config["rss_sampling_interval_ms"]:.3f} ms</li>
 <li>Logical Gaussian pair elements/evaluation:

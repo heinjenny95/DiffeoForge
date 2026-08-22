@@ -58,15 +58,17 @@ forms orientation-similarity values with the same logical pair dimensions.
 
 The current implementation makes these additional Gaussian calls per subject:
 
-- shooting: `2 * C^2` per Euler step or `6 * C^2` per RK2 step;
+- shooting: `2 * C^2` per Euler step or `4 * C^2` per RK2 step;
 - template flow: `Vt * C` per Euler step or `2 * Vt * C` per Heun step;
 - `deformetrica_heun`: one final extrapolation containing `4 * C^2`;
 - deformation energy: one `C^2` call.
 
-The six RK2 shooting calls include two calculations currently performed before
-the RK2 helper plus four inside it. This is a model of observable code, not an
-idealized algorithm; an implementation change must update the versioned model
-and instrumentation test.
+RK2 evaluates its first and midpoint stages once each: one Gaussian convolution
+and one analytical Gaussian x-gradient per stage. Earlier implementation 0.2
+computed the first stage before the RK2 helper and then repeated it inside the
+helper. Implementation 0.3 reuses the already evaluated tensors; the workload
+model and instrumented all-integrator test require the resulting four calls.
+This remains a model of observable code, not an idealized algorithm.
 
 The optimizer performs one initial objective/gradient evaluation. In the worst
 configured line-search case its evaluation bound is
@@ -159,6 +161,9 @@ The JSON is validated against the bundled strict schema
 `modern-workload-v0.2.json`. Additional semantic validation rejects inconsistent
 inventory counts, pair and tile arithmetic, payload subtotals, or optimizer
 bounds. Configuration and input SHA-256 values tie the plan to reviewed bytes.
+New reports additionally record Modern engine implementation `0.3` and bind
+the four-call RK2 formula; legacy reports without that optional provenance use
+the earlier six-call formula when semantically checked.
 Live host observations can change over time; operation counts remain
 deterministic for fixed configuration and mesh dimensions.
 

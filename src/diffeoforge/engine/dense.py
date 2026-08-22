@@ -379,9 +379,36 @@ def gaussian_convolve_blockwise(
         kernel = _gaussian_matrix(query, source, width)
         return kernel @ source_weights
 
+    def evaluate_query(
+        query: torch.Tensor,
+        all_sources: torch.Tensor,
+        all_source_weights: torch.Tensor,
+    ) -> torch.Tensor:
+        result = torch.zeros(
+            (query.shape[0], all_source_weights.shape[1]),
+            dtype=query.dtype,
+            device=query.device,
+        )
+        for source_start in range(0, all_sources.shape[0], plan.source_rows):
+            source = all_sources[source_start : source_start + plan.source_rows]
+            source_weights = all_source_weights[
+                source_start : source_start + plan.source_rows
+            ]
+            result = result + evaluate(query, source, source_weights)
+        return result
+
     outputs = []
     for query_start in range(0, x.shape[0], plan.query_rows):
         query = x[query_start : query_start + plan.query_rows]
+        if plan.autograd_strategy == "recompute":
+            outputs.append(
+                _evaluate_tile(
+                    evaluate_query,
+                    (query, y, weights),
+                    plan.autograd_strategy,
+                )
+            )
+            continue
         result = torch.zeros(
             (query.shape[0], weights.shape[1]),
             dtype=x.dtype,
@@ -482,9 +509,38 @@ def gaussian_convolve_gradient_blockwise(
         coefficients = (query_weights @ source_weights.T) * kernel
         return scale * torch.sum(coefficients[:, :, None] * differences, dim=1)
 
+    def evaluate_query(
+        query_weights: torch.Tensor,
+        query: torch.Tensor,
+        all_sources: torch.Tensor,
+        all_source_weights: torch.Tensor,
+    ) -> torch.Tensor:
+        result = torch.zeros_like(query)
+        for source_start in range(0, all_sources.shape[0], plan.source_rows):
+            source = all_sources[source_start : source_start + plan.source_rows]
+            source_weights = all_source_weights[
+                source_start : source_start + plan.source_rows
+            ]
+            result = result + evaluate(
+                query_weights,
+                query,
+                source,
+                source_weights,
+            )
+        return result
+
     for query_start in range(0, x.shape[0], plan.query_rows):
         query = x[query_start : query_start + plan.query_rows]
         query_weights = left_weights[query_start : query_start + plan.query_rows]
+        if plan.autograd_strategy == "recompute":
+            outputs.append(
+                _evaluate_tile(
+                    evaluate_query,
+                    (query_weights, query, y, right_weights),
+                    plan.autograd_strategy,
+                )
+            )
+            continue
         result = torch.zeros_like(query)
         for source_start in range(0, y.shape[0], plan.source_rows):
             source = y[source_start : source_start + plan.source_rows]
@@ -593,6 +649,28 @@ def _rk2_shooting_step(
         kernel_width,
         gaussian_tile_plan,
     )
+    return _rk2_shooting_step_from_velocity(
+        control_points,
+        momenta,
+        kernel_width,
+        step,
+        gaussian_tile_plan,
+        points_velocity,
+        momenta_velocity,
+    )
+
+
+def _rk2_shooting_step_from_velocity(
+    control_points: torch.Tensor,
+    momenta: torch.Tensor,
+    kernel_width: float,
+    step: float,
+    gaussian_tile_plan: GaussianTilePlan | None,
+    points_velocity: torch.Tensor,
+    momenta_velocity: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Finish RK2 from an already evaluated first stage."""
+
     midpoint_points = control_points + 0.5 * step * points_velocity
     midpoint_momenta = momenta + 0.5 * step * momenta_velocity
     next_points = control_points + step * _gaussian_convolve_with_plan(
@@ -657,12 +735,14 @@ def shoot(
             next_points = points_state + step * points_velocity
             next_momenta = momenta_state + step * momenta_velocity
         else:
-            next_points, next_momenta = _rk2_shooting_step(
+            next_points, next_momenta = _rk2_shooting_step_from_velocity(
                 points_state,
                 momenta_state,
                 width,
                 step,
                 plan,
+                points_velocity,
+                momenta_velocity,
             )
         points_state = next_points
         momenta_state = next_momenta
@@ -897,6 +977,35 @@ def _current_self_inner_product_blockwise(
     for query_start in range(0, centers.shape[0], tile_rows):
         query_centers = centers[query_start : query_start + tile_rows]
         query_normals = normals[query_start : query_start + tile_rows]
+        if plan.autograd_strategy == "recompute":
+
+            def query_contributions(
+                all_centers: torch.Tensor,
+                all_normals: torch.Tensor,
+                start: int = query_start,
+            ) -> torch.Tensor:
+                local_centers = all_centers[start : start + tile_rows]
+                local_normals = all_normals[start : start + tile_rows]
+                values = [diagonal(local_centers, local_normals)]
+                for source_start in range(start + tile_rows, all_centers.shape[0], tile_rows):
+                    values.append(
+                        mirrored_pair(
+                            local_centers,
+                            local_normals,
+                            all_centers[source_start : source_start + tile_rows],
+                            all_normals[source_start : source_start + tile_rows],
+                        )
+                    )
+                return torch.stack(values)
+
+            contributions = _evaluate_tile(
+                query_contributions,
+                (centers, normals),
+                plan.autograd_strategy,
+            )
+            for contribution in contributions.unbind():
+                result = result + contribution
+            continue
         result = result + _evaluate_tile(
             diagonal,
             (query_centers, query_normals),
