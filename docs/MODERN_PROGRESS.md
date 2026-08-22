@@ -25,6 +25,9 @@ The denominator is a count of configured parameter-block decisions, not a
 time estimate. Objective evaluations have very different costs from file
 copying, PCA, verification, or report generation. DiffeoForge therefore does
 not label these counts as percent complete and does not calculate an ETA.
+The decision bound is the cycle cap multiplied by the number of blocks actually
+declared in `block_order`; fixed-reference qualification may therefore expose one
+momenta decision per cycle instead of the full three-block atlas sequence.
 
 ## Application-service contract
 

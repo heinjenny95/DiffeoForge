@@ -253,10 +253,12 @@ def test_external_control_points_and_momenta_only_are_verified(tmp_path: Path) -
     config = tmp_path / "fixed-reference.yaml"
     config.write_text(yaml.safe_dump(config_value, sort_keys=False), encoding="utf-8")
 
+    progress = []
     run = workflow.run_modern_workflow(
         config,
         destination=tmp_path / "fixed-reference-run",
         created_at=FIXED_TIME,
+        progress_callback=progress.append,
     )
     manifest = workflow.verify_modern_workflow(run)
 
@@ -269,6 +271,9 @@ def test_external_control_points_and_momenta_only_are_verified(tmp_path: Path) -
     }
     effective = json.loads((run / "config" / "effective-config.json").read_text())
     assert effective["optimization"]["block_order"] == ["momenta"]
+    optimizer_progress = [event.optimizer for event in progress if event.optimizer is not None]
+    assert [item.completed_decisions for item in optimizer_progress] == [0, 1]
+    assert {item.maximum_decisions for item in optimizer_progress} == {1}
 
 
 def test_five_subject_workflow_is_verified_and_byte_repeatable(tmp_path: Path) -> None:
