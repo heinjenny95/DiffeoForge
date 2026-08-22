@@ -1,6 +1,6 @@
 # Modern Engine fixed-reference qualification
 
-Status: **prospective harness implemented; the real Weevil comparison has not run**.
+Status: **first real Weevil screening run completed; continuation protocol frozen**.
 
 The first useful Deformetrica comparison does not train two independent atlases
 and then ask whether their freely estimated templates happen to look alike. That
@@ -51,6 +51,18 @@ After the Modern run verifies, create an independent assessment:
 diffeoforge modern-reference-qualification-assess DESIGN MODERN_RUN --output ASSESSMENT
 ```
 
+If the optimizer reaches its declared cycle cap without convergence, freeze a
+separate successor rather than altering or restarting the completed run:
+
+```text
+diffeoforge modern-reference-qualification-continue DESIGN MODERN_RUN \
+  --output CONTINUATION_DESIGN --cycles 10
+```
+
+This command verifies the parent design, workflow, and nested bundle; copies
+its final momenta; derives each new starter step from the last accepted step;
+and SHA-binds the complete lineage. It does not start the successor optimizer.
+
 ## Predeclared engineering gates
 
 The v0.1 design freezes the following provisional gates before Modern results
@@ -82,7 +94,7 @@ must motivate a longer predeclared convergence run rather than a pass/fail claim
 A single-subject, single fresh-process objective-plus-gradient observation took
 124.129 seconds with 2.294 GiB sampled peak RSS on the local machine. This one
 measurement is a hardware-bound planning observation, not a full-run ETA or a
-scaling law. The prospective five-subject run remains deliberately unexecuted.
+scaling law.
 
 The first execution attempt stopped before optimizer initialization because one
 preselected pilot subject failed the Modern non-manifold-edge and single-component
@@ -90,3 +102,15 @@ gates. Design v0.2 therefore performs and records the same quality screening whi
 the selection remains prospective, replacing an ineligible candidate only with
 the next subject in the already declared deterministic order. It never repairs or
 silently alters a source mesh.
+
+The screened five-subject run then completed all three declared cycles without
+meeting the gradient tolerance, so its engineering decision is
+`inconclusive_not_converged`. Its cross-engine reconstruction p95 passed the
+provisional 5% diagonal gate (`0.028318`), while its provisional pooled
+external-residual ratio was `1.60409`; that ratio is not interpreted as a
+pass/fail result because convergence was absent.
+
+Continuation design v0.3 is now frozen for ten further momenta-only cycles. It
+starts from the verified parent momenta and the last accepted momenta step
+`0.00015625`, rather than zero momenta and the original `0.01` starter. The
+successor remains a sequential pilot, not independent validation evidence.

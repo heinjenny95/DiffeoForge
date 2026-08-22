@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import copy
+import csv
 import json
 import math
+import re
 import shutil
 import uuid
 from datetime import UTC, datetime
@@ -21,11 +24,16 @@ from diffeoforge.mesh_quality import (
     assess_triangle_mesh,
     mesh_quality_failures,
 )
+from diffeoforge.modern_bundle import MANIFEST_NAME as BUNDLE_MANIFEST_NAME
 from diffeoforge.modern_bundle import verify_modern_atlas_bundle
 from diffeoforge.modern_workflow import (
     CONFIG_MARKER,
+    _read_momenta_rows,
     validate_modern_workflow_config,
     verify_modern_workflow,
+)
+from diffeoforge.modern_workflow import (
+    MANIFEST_NAME as WORKFLOW_MANIFEST_NAME,
 )
 from diffeoforge.reference_pca import (
     read_deformetrica_control_points,
@@ -37,7 +45,10 @@ from diffeoforge.reference_validation_metrics import (
 from diffeoforge.result_report import collect_run_report
 
 DESIGN_VERSION = "0.2"
-SUPPORTED_DESIGN_VERSIONS = frozenset({"0.1", DESIGN_VERSION})
+CONTINUATION_DESIGN_VERSION = "0.3"
+SUPPORTED_DESIGN_VERSIONS = frozenset(
+    {"0.1", DESIGN_VERSION, CONTINUATION_DESIGN_VERSION}
+)
 DESIGN_JSON_NAME = "modern-reference-qualification-design.json"
 DESIGN_SIDECAR_NAME = "modern-reference-qualification-design.sha256"
 DESIGN_HTML_NAME = "modern-reference-qualification-design.html"
@@ -382,7 +393,7 @@ def create_modern_reference_qualification(
         noise_std = float(model["noise_std"])
         output = destination_path.parent / f"{destination_path.name}-modern-run"
         config = {
-            "schema_version": "0.3",
+            "schema_version": "0.4",
             "project": {"name": f"{effective['project']['name']}-modern-fixed-reference"},
             "input": {
                 "directory": "inputs/subjects",
@@ -437,6 +448,7 @@ def create_modern_reference_qualification(
                 "max_line_search_iterations": int(
                     optimization["max_line_search_iterations"]
                 ),
+                "step_initialization": "previous_accepted",
             },
             "analysis": {
                 "pca_components": None,
@@ -547,6 +559,200 @@ def create_modern_reference_qualification(
     return destination_path
 
 
+def create_modern_reference_qualification_continuation(
+    design_directory: Path | str,
+    parent_modern_run: Path | str,
+    destination: Path | str,
+    *,
+    max_cycles: int = 10,
+    threads: int | None = None,
+    created_at: str | None = None,
+) -> Path:
+    """Freeze an immutable successor that starts from a verified Modern result."""
+
+    if isinstance(max_cycles, bool) or not isinstance(max_cycles, int) or max_cycles < 1:
+        raise ValueError("max_cycles must be an integer of at least 1")
+    if threads is not None and (
+        isinstance(threads, bool) or not isinstance(threads, int) or threads < 1
+    ):
+        raise ValueError("threads must be an integer of at least 1 or None")
+    source_root = Path(design_directory).expanduser().resolve()
+    source_design = verify_modern_reference_qualification_design(source_root)
+    parent_root = Path(parent_modern_run).expanduser().resolve()
+    parent_workflow = verify_modern_workflow(parent_root)
+    parent_source_config = _safe_relative(
+        parent_root,
+        parent_workflow["config"]["source_path"],
+        "Parent Modern source config",
+    )
+    if sha256_file(parent_source_config) != source_design["modern_workflow"]["config_sha256"]:
+        raise ModernReferenceQualificationError(
+            "Parent Modern run was not created from the supplied frozen qualification"
+        )
+    bundle_value = str(parent_workflow["result_bundle"]["path"])
+    bundle_relative = PurePosixPath(bundle_value)
+    if (
+        "\\" in bundle_value
+        or bundle_relative.is_absolute()
+        or "." in bundle_relative.parts
+        or ".." in bundle_relative.parts
+    ):
+        raise ModernReferenceQualificationError("Parent Modern bundle path is unsafe")
+    parent_bundle_root = parent_root / Path(*bundle_relative.parts)
+    parent_bundle = verify_modern_atlas_bundle(parent_bundle_root)
+    if parent_bundle["optimizer"]["converged"]:
+        raise ModernReferenceQualificationError(
+            "Parent Modern optimizer already converged; no continuation is required"
+        )
+    expected_subjects = {record["filename"] for record in source_design["subjects"]}
+    if {record["label"] for record in parent_bundle["subjects"]} != expected_subjects:
+        raise ModernReferenceQualificationError(
+            "Parent Modern subjects differ from the frozen qualification"
+        )
+    parent_momenta = _safe_relative(
+        parent_bundle_root,
+        parent_bundle["parameters"]["momenta_path"],
+        "Parent Modern momenta",
+    )
+    parent_history = _safe_relative(
+        parent_bundle_root,
+        parent_bundle["optimizer"]["history_path"],
+        "Parent optimizer history",
+    )
+    try:
+        with parent_history.open(encoding="utf-8", newline="") as handle:
+            history_rows = list(csv.DictReader(handle))
+    except (OSError, UnicodeError, csv.Error) as error:
+        raise ModernReferenceQualificationError(
+            f"Parent optimizer history is unreadable: {error}"
+        ) from error
+
+    source_config_path = _safe_relative(
+        source_root,
+        source_design["modern_workflow"]["config_path"],
+        "Source qualification config",
+    )
+    source_config = yaml.safe_load(source_config_path.read_text(encoding="utf-8"))
+    last_steps = {
+        block: float(source_config["optimization"][f"{block}_step_size"])
+        for block in source_config["optimization"]["block_order"]
+    }
+    for row in history_rows:
+        block = row.get("block")
+        value = row.get("accepted_step_size")
+        if row.get("status") == "accepted" and block in last_steps and value:
+            last_steps[block] = float(value)
+
+    destination_path = Path(destination).expanduser().resolve()
+    if destination_path.exists():
+        raise FileExistsError(
+            f"Qualification continuation destination already exists: {destination_path}"
+        )
+    destination_path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = destination_path.parent / f".{destination_path.name}.tmp-{uuid.uuid4().hex}"
+    temporary.mkdir()
+    try:
+        for record in source_design["artifacts"]:
+            relative = str(record["path"])
+            if relative in {CONFIG_NAME, DESIGN_HTML_NAME}:
+                continue
+            source = _safe_relative(source_root, relative, "Source qualification artifact")
+            _copy_exclusive(source, temporary / Path(*PurePosixPath(relative).parts))
+        copied_momenta = _copy_exclusive(
+            parent_momenta,
+            temporary / "inputs" / "initial-momenta.csv",
+        )
+        subject_labels = tuple(sorted(expected_subjects))
+        try:
+            _read_momenta_rows(
+                copied_momenta,
+                subject_labels,
+                int(source_design["fixed_reference"]["control_point_count"]),
+            )
+        except ConfigurationError as error:
+            raise ModernReferenceQualificationError(
+                f"Parent momenta cannot initialize the successor: {error}"
+            ) from error
+
+        config = copy.deepcopy(source_config)
+        config["schema_version"] = "0.4"
+        config["project"]["name"] = f"{config['project']['name']}-continuation"
+        config["initialization"]["momenta"] = {
+            "method": "file",
+            "path": "inputs/initial-momenta.csv",
+        }
+        config["optimization"]["max_cycles"] = max_cycles
+        config["optimization"]["step_initialization"] = "previous_accepted"
+        for block, value in last_steps.items():
+            config["optimization"][f"{block}_step_size"] = value
+        if threads is not None:
+            config["runtime"]["threads"] = threads
+        output = destination_path.parent / f"{destination_path.name}-modern-run"
+        config["output"]["directory"] = str(output)
+        validate_modern_workflow_config(config)
+        config_path = temporary / CONFIG_NAME
+        with config_path.open("x", encoding="utf-8", newline="\n") as handle:
+            handle.write(CONFIG_MARKER + "\n")
+            yaml.safe_dump(config, handle, sort_keys=False, allow_unicode=True)
+
+        design = copy.deepcopy(source_design)
+        design["design_version"] = CONTINUATION_DESIGN_VERSION
+        design["created_at"] = created_at or datetime.now(UTC).isoformat()
+        design["protocol"]["comparison"] = (
+            source_design["protocol"]["comparison"]
+            + " Continue from the parent Modern momenta without changing the fixed "
+            "template or control points."
+        )
+        design["protocol"]["continuation"] = {
+            "parent_design_sha256": sha256_file(source_root / DESIGN_JSON_NAME),
+            "parent_workflow_manifest_sha256": sha256_file(
+                parent_root / WORKFLOW_MANIFEST_NAME
+            ),
+            "parent_bundle_manifest_sha256": sha256_file(
+                parent_bundle_root / BUNDLE_MANIFEST_NAME
+            ),
+            "parent_termination_reason": parent_bundle["optimizer"]["termination_reason"],
+            "parent_cycles_completed": parent_bundle["optimizer"]["cycles_completed"],
+            "initial_momenta": _artifact(temporary, copied_momenta),
+            "derived_initial_step_sizes": last_steps,
+            "derivation": "last accepted step per optimized block, else parent declared step",
+        }
+        design["modern_workflow"] = {
+            **design["modern_workflow"],
+            "config_path": CONFIG_NAME,
+            "config_sha256": sha256_file(config_path),
+            "expected_destination": str(output),
+            "max_cycles": max_cycles,
+            "step_initialization": "previous_accepted",
+        }
+        design["scientific_boundary"] += (
+            " This successor is a sequential optimization pilot whose parent result and "
+            "derived starting state are hash-bound; it remains non-independent evidence."
+        )
+        html_path = temporary / DESIGN_HTML_NAME
+        html_path.write_text(_render_design_html(design), encoding="utf-8", newline="\n")
+        inventory_paths = sorted(
+            path
+            for path in temporary.rglob("*")
+            if path.is_file() and path.name not in {DESIGN_JSON_NAME, DESIGN_SIDECAR_NAME}
+        )
+        design["artifacts"] = [_artifact(temporary, path) for path in inventory_paths]
+        design_path = temporary / DESIGN_JSON_NAME
+        _write_json_exclusive(design_path, design)
+        (temporary / DESIGN_SIDECAR_NAME).write_text(
+            f"{sha256_file(design_path)}  {DESIGN_JSON_NAME}\n",
+            encoding="ascii",
+            newline="\n",
+        )
+        verify_modern_reference_qualification_design(temporary)
+        temporary.rename(destination_path)
+    except Exception:
+        if temporary.exists():
+            shutil.rmtree(temporary)
+        raise
+    return destination_path
+
+
 def verify_modern_reference_qualification_design(
     design_directory: Path | str,
 ) -> dict[str, Any]:
@@ -610,7 +816,7 @@ def verify_modern_reference_qualification_design(
         raise ModernReferenceQualificationError("Qualification must optimize only momenta")
     if config["runtime"]["pairwise_evaluation"].get("autograd_strategy") != "recompute":
         raise ModernReferenceQualificationError("Qualification must declare recompute autograd")
-    if design.get("design_version") == "0.2":
+    if design.get("design_version") in {"0.2", CONTINUATION_DESIGN_VERSION}:
         quality_settings = MeshQualitySettings.from_mapping(config["quality_control"])
         for record in design.get("subjects", []):
             subject_path = _safe_relative(
@@ -633,6 +839,48 @@ def verify_modern_reference_qualification_design(
                 raise ModernReferenceQualificationError(
                     f"Qualification subject quality evidence differs: {record['filename']}"
                 )
+    if design.get("design_version") == CONTINUATION_DESIGN_VERSION:
+        continuation = design.get("protocol", {}).get("continuation")
+        if not isinstance(continuation, dict):
+            raise ModernReferenceQualificationError("Continuation lineage is missing")
+        for name in (
+            "parent_design_sha256",
+            "parent_workflow_manifest_sha256",
+            "parent_bundle_manifest_sha256",
+        ):
+            value = continuation.get(name)
+            if not isinstance(value, str) or re.fullmatch(r"[0-9a-f]{64}", value) is None:
+                raise ModernReferenceQualificationError(
+                    f"Continuation lineage hash is invalid: {name}"
+                )
+        momenta_config = config["initialization"]["momenta"]
+        if (
+            not isinstance(momenta_config, dict)
+            or momenta_config.get("method") != "file"
+            or config["optimization"].get("step_initialization") != "previous_accepted"
+        ):
+            raise ModernReferenceQualificationError(
+                "Continuation must declare file momenta and previous-accepted steps"
+            )
+        momenta_path = _safe_relative(
+            root,
+            momenta_config["path"],
+            "Continuation initial momenta",
+        )
+        if _artifact(root, momenta_path) != continuation.get("initial_momenta"):
+            raise ModernReferenceQualificationError(
+                "Continuation initial-momenta evidence differs"
+            )
+        try:
+            _read_momenta_rows(
+                momenta_path,
+                tuple(sorted(record["filename"] for record in design["subjects"])),
+                int(design["fixed_reference"]["control_point_count"]),
+            )
+        except ConfigurationError as error:
+            raise ModernReferenceQualificationError(
+                f"Continuation initial momenta are invalid: {error}"
+            ) from error
     observed_html = (root / DESIGN_HTML_NAME).read_text(encoding="utf-8")
     expected_html = _render_design_html(design)
     if observed_html != expected_html:

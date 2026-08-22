@@ -13,7 +13,7 @@ blockwise workflow provenance tracked by
 ## Purpose
 
 The modern numerical functions previously accepted only in-memory tensors.
-Configuration v0.3 and workflow manifest v0.1 connect a normal directory of
+Configuration v0.4 and workflow manifest v0.1 connect a normal directory of
 triangular legacy VTK PolyData
 meshes to the full atlas optimizer and the immutable atlas/PCA bundle without
 requiring a notebook, XML, or a special working directory.
@@ -69,11 +69,21 @@ editing YAML, pass `--pairwise-mode blockwise --query-tile-size N
 counts; dense mode requires both to remain null. There is no automatic size,
 threshold, environment override, or fallback. Legacy v0.1 configurations and
 manifests without this record remain readable only as dense; configuration
-v0.2 and v0.3 require it. Configuration v0.3 may additionally declare
+v0.2 through v0.4 require it. Configuration v0.3 may additionally declare
 `autograd_strategy: recompute` for blockwise execution. This preserves the
 exact forward and gradient result while recomputing pairwise intermediates
 during backward to reduce retained memory; the extra calculation is explicit
 in both engine identity and immutable provenance.
+
+Configuration v0.4 additionally makes optimizer step initialization explicit.
+`fixed` restarts every block search from its declared starter step, preserving
+the original behavior. `previous_accepted` starts the next visit to that block
+from its last accepted step and therefore avoids deterministically repeating
+known oversized candidates. Every accepted step remains in optimizer history.
+V0.4 can also initialize momenta from a canonical
+`subject_label,control_point,x,y,z` CSV. The exact subject order, control-point
+count, finite values, copied bytes, and SHA-256 are checked before execution and
+again during workflow verification.
 
 `modern-plan` v0.2 is a non-compute review step for the configured exact
 engine. It publishes logical all-pairs operation counts, the largest logical
@@ -118,7 +128,8 @@ For every run, DiffeoForge:
    every raw and effective input mesh;
 7. selects shared initial control points with the configured deterministic
    farthest-template-vertex method, or copies and verifies an explicit finite
-   three-column control-point file, and initializes all momenta to zero;
+   three-column control-point file, and initializes momenta either to zero or
+   from a strictly identity-bound v0.4 CSV;
 8. executes the declared dense or exact blockwise CPU/float64 atlas optimizer;
 9. creates and verifies the nested immutable atlas/PCA/quality bundle;
 10. removes private-only marker/lease state, then verifies the outer workflow

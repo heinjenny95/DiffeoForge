@@ -280,6 +280,19 @@ def build_parser() -> argparse.ArgumentParser:
     modern_reference_design_parser.add_argument("--cycles", type=int, default=3)
     modern_reference_design_parser.add_argument("--threads", type=int, default=4)
 
+    modern_reference_continue_parser = subparsers.add_parser(
+        "modern-reference-qualification-continue",
+        help=(
+            "Freeze a successor qualification that starts from one verified, "
+            "non-converged Modern result."
+        ),
+    )
+    modern_reference_continue_parser.add_argument("design_directory", type=Path)
+    modern_reference_continue_parser.add_argument("modern_run", type=Path)
+    modern_reference_continue_parser.add_argument("--output", type=Path, required=True)
+    modern_reference_continue_parser.add_argument("--cycles", type=int, default=10)
+    modern_reference_continue_parser.add_argument("--threads", type=int)
+
     modern_reference_verify_parser = subparsers.add_parser(
         "modern-reference-qualification-verify",
         help="Verify a frozen no-results-yet Modern/Deformetrica comparison design.",
@@ -1321,6 +1334,31 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"Fixed-reference qualification verified: {args.design_directory.resolve()}")
             print(f"Subjects: {len(design['subjects'])}")
             print("The design contains no Modern result and remains prospective.")
+        except (OSError, RuntimeError, TypeError, ValueError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
+
+    if args.command == "modern-reference-qualification-continue":
+        try:
+            from diffeoforge.modern_reference_qualification import (
+                CONFIG_NAME,
+                create_modern_reference_qualification_continuation,
+                verify_modern_reference_qualification_design,
+            )
+
+            destination = create_modern_reference_qualification_continuation(
+                args.design_directory,
+                args.modern_run,
+                args.output,
+                max_cycles=args.cycles,
+                threads=args.threads,
+            )
+            design = verify_modern_reference_qualification_design(destination)
+            print(f"Prospective continuation qualification created: {destination}")
+            print(f"Subjects: {len(design['subjects'])}")
+            print(f"Frozen Modern config: {destination / CONFIG_NAME}")
+            print("The parent result is hash-bound; no successor optimizer was run yet.")
         except (OSError, RuntimeError, TypeError, ValueError) as error:
             print(f"ERROR: {error}", file=sys.stderr)
             return 2

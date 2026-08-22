@@ -93,6 +93,34 @@ def test_every_accepted_block_monotonically_improves_the_objective() -> None:
     assert result.settings.max_cycles == 2
     assert result.settings.block_order == ("momenta", "template", "control_points")
     assert result.settings.momenta_step_size == 0.1
+    assert result.settings.step_initialization == "fixed"
+
+
+def test_previous_accepted_step_avoids_repeating_rejected_candidates() -> None:
+    arguments, keywords = _problem()
+
+    fixed = optimize_atlas(
+        *arguments,
+        **keywords,
+        max_cycles=4,
+        block_order=("momenta",),
+        gradient_tolerance=0.0,
+        step_initialization="fixed",
+    )
+    reused = optimize_atlas(
+        *arguments,
+        **keywords,
+        max_cycles=4,
+        block_order=("momenta",),
+        gradient_tolerance=0.0,
+        step_initialization="previous_accepted",
+    )
+
+    assert reused.settings.step_initialization == "previous_accepted"
+    assert reused.total_line_search_evaluations < fixed.total_line_search_evaluations
+    assert all(later.objective > earlier.objective for earlier, later in pairwise(reused.history))
+    accepted_steps = [record.accepted_step_size for record in reused.history[1:]]
+    assert accepted_steps == sorted(accepted_steps, reverse=True)
 
 
 def test_optimizer_is_repeatable_detached_and_does_not_mutate_inputs() -> None:
@@ -358,6 +386,7 @@ def test_optimizer_remains_differentiable_internally_under_no_grad() -> None:
             {"block_order": ("momenta", "template", "template")},
             "block_order",
         ),
+        ({"step_initialization": "automatic"}, "step_initialization"),
     ],
 )
 def test_invalid_optimizer_settings_fail_explicitly(override: dict, message: str) -> None:

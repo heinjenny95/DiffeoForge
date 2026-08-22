@@ -74,7 +74,7 @@ from diffeoforge.private_runs import (
     discover_private_runs,
 )
 
-CONFIG_VERSION = "0.3"
+CONFIG_VERSION = "0.4"
 WORKFLOW_VERSION = "0.1"
 MANIFEST_NAME = "workflow-manifest.json"
 MANIFEST_SIDECAR_NAME = "workflow-manifest.sha256"
@@ -236,6 +236,53 @@ def _read_control_point_rows(path: Path, expected_count: int) -> np.ndarray:
             f"but contains {len(rows)}"
         )
     return np.asarray(rows, dtype=np.float64)
+
+
+def _read_momenta_rows(
+    path: Path,
+    subject_labels: tuple[str, ...],
+    control_point_count: int,
+) -> np.ndarray:
+    """Read canonical bundle-compatible momenta with exact identity binding."""
+
+    if not path.is_file() or path.is_symlink():
+        raise ConfigurationError(f"Momenta file does not exist or is symbolic: {path}")
+    try:
+        with path.open(encoding="utf-8", errors="strict", newline="") as handle:
+            rows = list(csv.reader(handle))
+    except (OSError, UnicodeError, csv.Error) as error:
+        raise ConfigurationError(f"Could not read momenta file {path}: {error}") from error
+    expected_header = ["subject_label", "control_point", "x", "y", "z"]
+    if not rows or rows[0] != expected_header:
+        raise ConfigurationError(
+            "Momenta file header must be subject_label,control_point,x,y,z"
+        )
+    expected_rows = len(subject_labels) * control_point_count
+    if len(rows) - 1 != expected_rows:
+        raise ConfigurationError(
+            f"Momenta file must contain exactly {expected_rows} data rows"
+        )
+    values = np.empty((len(subject_labels), control_point_count, 3), dtype=np.float64)
+    for row_index, row in enumerate(rows[1:]):
+        subject_index, control_index = divmod(row_index, control_point_count)
+        expected_label = subject_labels[subject_index]
+        if len(row) != 5:
+            raise ConfigurationError(f"Momenta row {row_index + 2} must contain five values")
+        if row[0] != expected_label or row[1] != str(control_index):
+            raise ConfigurationError(
+                "Momenta rows must follow configured subject order and contiguous "
+                f"control-point indices; mismatch at row {row_index + 2}"
+            )
+        try:
+            point = tuple(float(value) for value in row[2:])
+        except ValueError as error:
+            raise ConfigurationError(
+                f"Momenta row {row_index + 2} contains a non-number"
+            ) from error
+        if not all(math.isfinite(value) for value in point):
+            raise ConfigurationError(f"Momenta row {row_index + 2} is non-finite")
+        values[subject_index, control_index] = point
+    return values
 
 
 def _portable_path(path: Path, base: Path) -> str:
@@ -450,6 +497,7 @@ def initialize_modern_workflow(
             "gradient_tolerance": 1e-8,
             "minimum_step_size": 1e-12,
             "max_line_search_iterations": 20,
+            "step_initialization": "previous_accepted",
         },
         "analysis": {
             "pca_components": None,
@@ -756,12 +804,23 @@ def run_modern_workflow(
     validate_modern_analysis_dimensions(config, len(inputs.subjects))
     template_metadata, subject_metadata = inspect_inputs(inputs)
     control_config = config["initialization"]["control_points"]
+    momenta_config = config["initialization"]["momenta"]
     external_control_source: Path | None = None
     external_control_values: np.ndarray | None = None
     if control_config["method"] == "file":
         external_control_source = _resolve_from_config(control_config["path"], source_config)
         external_control_values = _read_control_point_rows(
             external_control_source,
+            int(control_config["count"]),
+        )
+    external_momenta_source: Path | None = None
+    external_momenta_values: np.ndarray | None = None
+    subject_labels = tuple(path.name for path in inputs.subjects)
+    if isinstance(momenta_config, Mapping):
+        external_momenta_source = _resolve_from_config(momenta_config["path"], source_config)
+        external_momenta_values = _read_momenta_rows(
+            external_momenta_source,
+            subject_labels,
             int(control_config["count"]),
         )
     output = (
@@ -938,9 +997,27 @@ def run_modern_workflow(
                 "source_sha256": sha256_file(external_control_source),
                 "copied_path": copied_controls.relative_to(temporary).as_posix(),
             }
-        momenta = torch.zeros(
-            (len(target_tensors), control_points.shape[0], 3), dtype=torch.float64
-        )
+        if external_momenta_source is None:
+            momenta = torch.zeros(
+                (len(target_tensors), control_points.shape[0], 3), dtype=torch.float64
+            )
+            momenta_manifest: str | dict[str, Any] = "zeros"
+        else:
+            if external_momenta_values is None:
+                raise ModernWorkflowError("External momenta initialization was not loaded")
+            copied_momenta = temporary / "input" / "initialization" / "momenta.csv"
+            _copy_exclusive(external_momenta_source, copied_momenta)
+            if sha256_file(copied_momenta) != sha256_file(external_momenta_source):
+                raise ModernWorkflowError("Copied momenta initialization differs from source")
+            momenta = torch.tensor(external_momenta_values, dtype=torch.float64)
+            momenta_manifest = {
+                "method": "file",
+                "source_sha256": sha256_file(external_momenta_source),
+                "copied_path": copied_momenta.relative_to(temporary).as_posix(),
+                "subjects": int(momenta.shape[0]),
+                "control_points": int(momenta.shape[1]),
+                "dimensions": 3,
+            }
         emit_progress("initialization", "completed", "Atlas tensors initialized", 4)
         check_cancellation()
         model = config["model"]
@@ -1009,6 +1086,7 @@ def run_modern_workflow(
                     gradient_tolerance=optimizer["gradient_tolerance"],
                     minimum_step_size=optimizer["minimum_step_size"],
                     max_line_search_iterations=optimizer["max_line_search_iterations"],
+                    step_initialization=optimizer.get("step_initialization", "fixed"),
                     progress_callback=(
                         observe_optimizer if progress_callback is not None else None
                     ),
@@ -1116,7 +1194,7 @@ def run_modern_workflow(
             },
             "initialization": {
                 "control_points": control_manifest,
-                "momenta": "zeros",
+                "momenta": momenta_manifest,
             },
             "result_bundle": {
                 "path": bundle_path.relative_to(temporary).as_posix(),
@@ -1354,6 +1432,21 @@ def verify_modern_workflow(directory: Path | str) -> dict[str, Any]:
             raise ModernWorkflowError(
                 f"Invalid copied control-point initialization: {error}"
             ) from error
+
+    momenta = manifest["initialization"]["momenta"]
+    if isinstance(momenta, dict):
+        copied_momenta = _resolve_artifact(root, momenta["copied_path"])
+        if sha256_file(copied_momenta) != momenta["source_sha256"]:
+            raise ModernWorkflowError("Copied momenta initialization SHA-256 differs")
+        subject_labels = tuple(record["label"] for record in manifest["input"]["subjects"])
+        if momenta["subjects"] != len(subject_labels):
+            raise ModernWorkflowError("Momenta initialization subject count differs")
+        if momenta["control_points"] != int(control["count"]):
+            raise ModernWorkflowError("Momenta initialization control-point count differs")
+        try:
+            _read_momenta_rows(copied_momenta, subject_labels, int(control["count"]))
+        except ConfigurationError as error:
+            raise ModernWorkflowError(f"Invalid copied momenta initialization: {error}") from error
 
     bundle = _resolve_artifact(root, manifest["result_bundle"]["path"], directory=True)
     bundle_manifest = verify_modern_atlas_bundle(bundle)

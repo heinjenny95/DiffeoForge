@@ -26,6 +26,7 @@ from diffeoforge.modern_reference_qualification import (
     _screen_subject_candidates,
     assess_modern_reference_qualification,
     create_modern_reference_qualification,
+    create_modern_reference_qualification_continuation,
     verify_modern_reference_qualification_design,
 )
 from diffeoforge.modern_workflow import run_modern_workflow
@@ -436,6 +437,30 @@ def test_modern_reference_qualification_design_is_prospective_and_tamper_evident
     }
     assert len(assessment["subjects"]) == 3
     assert assessment["metrics"]["pooled_modern_to_reference_residual_ratio"] >= 0
+
+    continuation_path = create_modern_reference_qualification_continuation(
+        destination,
+        modern_run,
+        tmp_path / "qualification-continuation",
+        max_cycles=2,
+        threads=1,
+        created_at="2026-08-22T03:00:00+00:00",
+    )
+    continuation = verify_modern_reference_qualification_design(continuation_path)
+    continuation_config = yaml.safe_load(
+        (continuation_path / CONFIG_NAME).read_text(encoding="utf-8")
+    )
+    assert continuation["design_version"] == "0.3"
+    assert continuation["protocol"]["continuation"]["parent_cycles_completed"] == 1
+    assert continuation_config["schema_version"] == "0.4"
+    assert continuation_config["initialization"]["momenta"] == {
+        "method": "file",
+        "path": "inputs/initial-momenta.csv",
+    }
+    assert continuation_config["optimization"]["step_initialization"] == (
+        "previous_accepted"
+    )
+    assert continuation_config["optimization"]["max_cycles"] == 2
 
     subject = destination / design["subjects"][0]["source"]["path"]
     subject.write_bytes(subject.read_bytes() + b"tamper")

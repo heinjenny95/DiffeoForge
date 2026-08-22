@@ -18,7 +18,7 @@
     "output"
   ],
   "properties": {
-    "schema_version": {"enum": ["0.1", "0.2", "0.3"]},
+    "schema_version": {"enum": ["0.1", "0.2", "0.3", "0.4"]},
     "project": {
       "type": "object",
       "additionalProperties": false,
@@ -155,7 +155,20 @@
             }
           ]
         },
-        "momenta": {"const": "zeros"}
+        "momenta": {
+          "oneOf": [
+            {"const": "zeros"},
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["method", "path"],
+              "properties": {
+                "method": {"const": "file"},
+                "path": {"type": "string", "minLength": 1}
+              }
+            }
+          ]
+        }
       }
     },
     "model": {
@@ -217,7 +230,8 @@
         "armijo_constant": {"type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 1},
         "gradient_tolerance": {"type": "number", "minimum": 0},
         "minimum_step_size": {"type": "number", "exclusiveMinimum": 0},
-        "max_line_search_iterations": {"type": "integer", "minimum": 1}
+        "max_line_search_iterations": {"type": "integer", "minimum": 1},
+        "step_initialization": {"enum": ["fixed", "previous_accepted"]}
       }
     },
     "analysis": {
@@ -291,6 +305,19 @@
     {
       "if": {
         "required": ["schema_version"],
+        "properties": {"schema_version": {"enum": ["0.1", "0.2", "0.3"]}}
+      },
+      "then": {
+        "properties": {
+          "initialization": {
+            "properties": {"momenta": {"const": "zeros"}}
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": ["schema_version"],
         "properties": {"schema_version": {"const": "0.2"}}
       },
       "then": {
@@ -307,6 +334,18 @@
       "then": {
         "properties": {
           "runtime": {"required": ["pairwise_evaluation"]}
+        }
+      }
+    },
+    {
+      "if": {
+        "required": ["schema_version"],
+        "properties": {"schema_version": {"const": "0.4"}}
+      },
+      "then": {
+        "properties": {
+          "runtime": {"required": ["pairwise_evaluation"]},
+          "optimization": {"required": ["step_initialization"]}
         }
       }
     }

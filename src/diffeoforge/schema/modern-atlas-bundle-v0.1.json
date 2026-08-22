@@ -127,7 +127,8 @@
             "armijo_constant": {"type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 1},
             "gradient_tolerance": {"type": "number", "minimum": 0},
             "minimum_step_size": {"type": "number", "exclusiveMinimum": 0},
-            "max_line_search_iterations": {"type": "integer", "minimum": 1}
+            "max_line_search_iterations": {"type": "integer", "minimum": 1},
+            "step_initialization": {"enum": ["fixed", "previous_accepted"]}
           }
         },
         "termination_reason": {"enum": ["gradient_tolerance", "max_cycles", "line_search_failed"]},

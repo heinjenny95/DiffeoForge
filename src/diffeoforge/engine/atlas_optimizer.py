@@ -23,6 +23,7 @@ from diffeoforge.engine.objective import (
 )
 
 AtlasParameterBlock = Literal["momenta", "template", "control_points"]
+AtlasStepInitialization = Literal["fixed", "previous_accepted"]
 AtlasAttemptStatus = Literal["initial", "accepted", "stationary", "failed"]
 AtlasTerminationReason = Literal[
     "gradient_tolerance",
@@ -75,6 +76,7 @@ class AtlasOptimizerSettings:
     gradient_tolerance: float
     minimum_step_size: float
     max_line_search_iterations: int
+    step_initialization: AtlasStepInitialization = "fixed"
 
 
 @dataclass(frozen=True)
@@ -218,15 +220,18 @@ def optimize_atlas(
     gradient_tolerance: float = 1e-8,
     minimum_step_size: float = 1e-12,
     max_line_search_iterations: int = 20,
+    step_initialization: AtlasStepInitialization = "fixed",
     progress_callback: AtlasProgressCallback | None = None,
     cancel_requested: AtlasCancellationCallback | None = None,
 ) -> AtlasOptimizationResult:
     """Maximize the atlas objective over the selected parameter blocks.
 
     Blocks are updated sequentially. Each accepted candidate must satisfy an
-    ascent Armijo condition for the current block. No adaptive or hidden
-    optimizer state is used. This is a correctness prototype, not a claim of
-    Deformetrica optimizer-trajectory equivalence or production convergence.
+    ascent Armijo condition for the current block. ``previous_accepted`` may
+    reuse the last accepted step as the next declared line-search start; that
+    state is deterministic and recorded in the accepted history. This is a
+    correctness prototype, not a claim of Deformetrica optimizer-trajectory
+    equivalence or production convergence.
     """
 
     cycles = _integer("max_cycles", max_cycles, minimum=0)
@@ -248,6 +253,8 @@ def optimize_atlas(
         "max_line_search_iterations", max_line_search_iterations, minimum=1
     )
     order = _block_order(block_order)
+    if step_initialization not in ("fixed", "previous_accepted"):
+        raise ValueError("step_initialization must be fixed or previous_accepted")
     step_sizes = {
         "momenta": _finite_real("momenta_step_size", momenta_step_size, minimum=0.0),
         "template": _finite_real("template_step_size", template_step_size, minimum=0.0),
@@ -277,6 +284,7 @@ def optimize_atlas(
         gradient_tolerance=gradient_threshold,
         minimum_step_size=minimum_step,
         max_line_search_iterations=line_search_limit,
+        step_initialization=step_initialization,
     )
     for name, value in (
         ("initial_template_vertices", initial_template_vertices),
@@ -438,6 +446,7 @@ def optimize_atlas(
     if progress_callback is not None:
         progress_callback(initial_record)
     total_line_search_evaluations = 0
+    next_step_sizes = dict(step_sizes)
 
     def result(
         termination_reason: AtlasTerminationReason,
@@ -497,7 +506,7 @@ def optimize_atlas(
                     progress_callback(record)
                 continue
 
-            step_size = step_sizes[block]
+            step_size = next_step_sizes[block]
             directional_derivative = evaluated.gradient_norm.square()
             accepted: _BlockEvaluation | None = None
             evaluations = 0
@@ -553,6 +562,8 @@ def optimize_atlas(
                 )
 
             current = accepted.state
+            if step_initialization == "previous_accepted":
+                next_step_sizes[block] = step_size
             record = current.record(
                 cycle,
                 block=block,

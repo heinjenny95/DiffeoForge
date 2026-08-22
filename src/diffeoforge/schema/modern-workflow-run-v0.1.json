@@ -241,7 +241,24 @@
             }
           ]
         },
-        "momenta": {"const": "zeros"}
+        "momenta": {
+          "oneOf": [
+            {"const": "zeros"},
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["method", "source_sha256", "copied_path", "subjects", "control_points", "dimensions"],
+              "properties": {
+                "method": {"const": "file"},
+                "source_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                "copied_path": {"type": "string", "minLength": 1},
+                "subjects": {"type": "integer", "minimum": 2},
+                "control_points": {"type": "integer", "minimum": 1},
+                "dimensions": {"const": 3}
+              }
+            }
+          ]
+        }
       }
     },
     "result_bundle": {

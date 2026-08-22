@@ -17,8 +17,7 @@ three explicit parameter blocks:
 Triangle connectivity, target surfaces, kernel widths, noise variance,
 attachment type, and numerical integrators remain fixed during a run. The
 default block order is `momenta`, `template`, then `control_points`; callers may
-declare another permutation, which is recorded exactly. Omitting a block is
-not allowed in this full-parameter entry point. The earlier
+declare another unique subset or permutation, which is recorded exactly. The earlier
 `optimize_momenta` function remains available for a deliberately frozen
 template/control-point experiment.
 
@@ -41,8 +40,11 @@ The candidate is accepted only when
 
 Otherwise, `s` is multiplied by the declared backtracking factor and tried
 again. Each parameter block has its own initial step size because their units
-and gradient scales differ. There is no adaptive learning rate, stochastic
-batching, momentum term, or hidden optimizer state.
+and gradient scales differ. The explicit `fixed` strategy restarts there on
+every visit. The explicit `previous_accepted` strategy instead reuses that
+block's last accepted step on its next visit, avoiding repeated rejected
+candidates while remaining deterministic and visible in history and settings.
+There is no stochastic batching, momentum term, or unrecorded optimizer state.
 
 Candidate objectives are evaluated before their gradients. A rejected Armijo
 candidate releases its graph without an unused backward pass; an acceptable

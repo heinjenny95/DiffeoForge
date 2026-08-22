@@ -185,6 +185,24 @@ def test_config_v02_requires_explicit_pairwise_record() -> None:
         workflow.validate_modern_workflow_config(invalid)
 
 
+def test_config_v04_requires_declared_step_strategy_and_versions_file_momenta() -> None:
+    current = _configuration()
+    current["schema_version"] = "0.4"
+    with pytest.raises(ConfigurationError, match="step_initialization"):
+        workflow.validate_modern_workflow_config(current)
+
+    current["optimization"]["step_initialization"] = "previous_accepted"
+    current["initialization"]["momenta"] = {
+        "method": "file",
+        "path": "momenta.csv",
+    }
+    workflow.validate_modern_workflow_config(current)
+
+    current["schema_version"] = "0.3"
+    with pytest.raises(ConfigurationError, match="momenta"):
+        workflow.validate_modern_workflow_config(current)
+
+
 def test_legacy_dense_manifest_without_pairwise_record_remains_verifiable() -> None:
     legacy = _configuration()
     del legacy["runtime"]["pairwise_evaluation"]
@@ -274,6 +292,64 @@ def test_external_control_points_and_momenta_only_are_verified(tmp_path: Path) -
     optimizer_progress = [event.optimizer for event in progress if event.optimizer is not None]
     assert [item.completed_decisions for item in optimizer_progress] == [0, 1]
     assert {item.maximum_decisions for item in optimizer_progress} == {1}
+
+    first_bundle = run / manifest["result_bundle"]["path"]
+    first_bundle_manifest = json.loads(
+        (first_bundle / "bundle-manifest.json").read_text(encoding="utf-8")
+    )
+    initial_momenta = first_bundle / first_bundle_manifest["parameters"]["momenta_path"]
+    continuation_value = copy.deepcopy(config_value)
+    continuation_value["schema_version"] = "0.4"
+    continuation_value["initialization"]["momenta"] = {
+        "method": "file",
+        "path": str(initial_momenta),
+    }
+    continuation_value["optimization"]["max_cycles"] = 1
+    continuation_value["optimization"]["gradient_tolerance"] = 1e100
+    continuation_value["optimization"]["step_initialization"] = "previous_accepted"
+    continuation_config = tmp_path / "continuation.yaml"
+    continuation_config.write_text(
+        yaml.safe_dump(continuation_value, sort_keys=False), encoding="utf-8"
+    )
+
+    continuation = workflow.run_modern_workflow(
+        continuation_config,
+        destination=tmp_path / "continuation-run",
+        created_at=FIXED_TIME,
+    )
+    continuation_manifest = workflow.verify_modern_workflow(continuation)
+    observed_initialization = continuation_manifest["initialization"]["momenta"]
+    assert observed_initialization == {
+        "method": "file",
+        "source_sha256": sha256_file(initial_momenta),
+        "copied_path": "input/initialization/momenta.csv",
+        "subjects": 5,
+        "control_points": 9,
+        "dimensions": 3,
+    }
+    continuation_bundle = continuation / continuation_manifest["result_bundle"]["path"]
+    continuation_bundle_manifest = json.loads(
+        (continuation_bundle / "bundle-manifest.json").read_text(encoding="utf-8")
+    )
+    assert continuation_bundle_manifest["optimizer"]["settings"][
+        "step_initialization"
+    ] == "previous_accepted"
+    assert continuation_bundle_manifest["optimizer"]["final_objective"] == pytest.approx(
+        first_bundle_manifest["optimizer"]["final_objective"], rel=1e-12, abs=1e-12
+    )
+
+
+def test_momenta_initialization_rejects_changed_subject_order(tmp_path: Path) -> None:
+    labels = ("subject-a.vtk", "subject-b.vtk")
+    path = tmp_path / "momenta.csv"
+    rows = [["subject_label", "control_point", "x", "y", "z"]]
+    for label in reversed(labels):
+        rows.extend([[label, str(index), "0", "0", "0"] for index in range(2)])
+    with path.open("w", encoding="utf-8", newline="") as handle:
+        csv.writer(handle, lineterminator="\n").writerows(rows)
+
+    with pytest.raises(ConfigurationError, match="subject order"):
+        workflow._read_momenta_rows(path, labels, 2)
 
 
 def test_five_subject_workflow_is_verified_and_byte_repeatable(tmp_path: Path) -> None:
