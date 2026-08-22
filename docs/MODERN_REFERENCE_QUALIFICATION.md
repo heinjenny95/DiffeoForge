@@ -33,6 +33,11 @@ Create a no-results-yet design:
 diffeoforge modern-reference-qualification-init REFERENCE_RUN --output DESIGN
 ```
 
+The exact equal query/source tile size remains explicit and defaults to the
+established 64-row screening value. A different prospectively justified value
+can be frozen with `--tile-size N`; the generated configuration and its hash
+record the choice before Modern results exist.
+
 Verify the frozen design without computing:
 
 ```text

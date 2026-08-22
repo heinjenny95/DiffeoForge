@@ -40,6 +40,8 @@ This roadmap describes evidence gates rather than promised dates.
   - [x] Add common external surface-distance assessment with predeclared
     engineering non-inferiority gates; internal objectives are not compared as
     cross-engine equivalents
+  - [x] Make the fixed-reference blockwise tile size an explicit prospective
+    design input while retaining the established 64-row default
   - [x] Execute and review the frozen five-subject full-resolution Weevil
     screening study; record its non-converged result as inconclusive
   - [ ] Execute and assess the frozen ten-cycle Weevil continuation study

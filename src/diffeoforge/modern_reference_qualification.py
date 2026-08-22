@@ -252,6 +252,7 @@ def create_modern_reference_qualification(
     subject_count: int = 5,
     max_cycles: int = 3,
     threads: int = 4,
+    tile_size: int = 64,
     created_at: str | None = None,
 ) -> Path:
     """Freeze a no-results-yet comparison against one completed Deformetrica atlas."""
@@ -260,6 +261,7 @@ def create_modern_reference_qualification(
         ("subject_count", subject_count, 2),
         ("max_cycles", max_cycles, 1),
         ("threads", threads, 1),
+        ("tile_size", tile_size, 1),
     ):
         if isinstance(value, bool) or not isinstance(value, int) or value < minimum:
             raise ValueError(f"{name} must be an integer of at least {minimum}")
@@ -462,8 +464,8 @@ def create_modern_reference_qualification(
                 "random_seed": int(effective["runtime"]["random_seed"]),
                 "pairwise_evaluation": {
                     "mode": "blockwise",
-                    "query_tile_size": 64,
-                    "source_tile_size": 64,
+                    "query_tile_size": tile_size,
+                    "source_tile_size": tile_size,
                     "autograd_strategy": "recompute",
                 },
             },

@@ -279,6 +279,12 @@ def build_parser() -> argparse.ArgumentParser:
     modern_reference_design_parser.add_argument("--subjects", type=int, default=5)
     modern_reference_design_parser.add_argument("--cycles", type=int, default=3)
     modern_reference_design_parser.add_argument("--threads", type=int, default=4)
+    modern_reference_design_parser.add_argument(
+        "--tile-size",
+        type=int,
+        default=64,
+        help="Explicit equal query/source rows for exact blockwise recompute (default: 64).",
+    )
 
     modern_reference_continue_parser = subparsers.add_parser(
         "modern-reference-qualification-continue",
@@ -1336,6 +1342,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 subject_count=args.subjects,
                 max_cycles=args.cycles,
                 threads=args.threads,
+                tile_size=args.tile_size,
             )
             design = verify_modern_reference_qualification_design(destination)
             print(f"Prospective fixed-reference qualification created: {destination}")

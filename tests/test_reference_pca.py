@@ -400,6 +400,7 @@ def test_modern_reference_qualification_design_is_prospective_and_tamper_evident
         subject_count=3,
         max_cycles=1,
         threads=1,
+        tile_size=32,
         created_at="2026-08-22T00:00:00+00:00",
     )
     design = verify_modern_reference_qualification_design(destination)
@@ -414,6 +415,8 @@ def test_modern_reference_qualification_design_is_prospective_and_tamper_evident
     assert config["optimization"]["block_order"] == ["momenta"]
     assert config["initialization"]["control_points"]["method"] == "file"
     assert config["runtime"]["pairwise_evaluation"]["autograd_strategy"] == "recompute"
+    assert config["runtime"]["pairwise_evaluation"]["query_tile_size"] == 32
+    assert config["runtime"]["pairwise_evaluation"]["source_tile_size"] == 32
 
     modern_run = run_modern_workflow(
         destination / CONFIG_NAME,
