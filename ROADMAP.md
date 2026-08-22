@@ -68,6 +68,8 @@ This roadmap describes evidence gates rather than promised dates.
   eliminating one exact duplicate evaluation after every accepted cycle
 - [x] Eliminate mirrored Gaussian tile evaluation in equal-tile blockwise
   Current and Varifold self terms with dense value/gradient parity evidence
+- [x] Eliminate the redundant reverse surface-product multiplication for
+  symmetric Current and Varifold off-diagonal self tiles
 - [x] Reuse the already evaluated first RK2 shooting stage, reducing each
   step from six to four Gaussian calls with bit-identical trajectory evidence
 - [x] Group recompute checkpoint administration by query tile for Gaussian

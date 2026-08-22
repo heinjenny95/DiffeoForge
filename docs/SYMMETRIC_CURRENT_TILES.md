@@ -14,8 +14,9 @@ symmetric. Varifold's squared orientation similarity is symmetric as well. The
 old blockwise implementation nevertheless evaluated both tile `A × B` and its
 mirror `B × A`. When query and source tile sizes are equal, DiffeoForge now
 evaluates only the diagonal and upper triangle of the tile grid. Each
-off-diagonal kernel matrix contributes both forward and transposed surface
-products, preserving the full ordered sum and its gradients.
+off-diagonal surface product is symmetric, so its one evaluated scalar is
+doubled. This preserves the full ordered sum and its gradients while avoiding
+both the mirrored Gaussian tile and a redundant transposed matrix product.
 
 For `T` tiles, either self term now evaluates `T(T+1)/2` Gaussian matrices
 instead of `T²`. The cross term remains complete. Fixed target self terms still

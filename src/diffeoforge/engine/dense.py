@@ -970,8 +970,7 @@ def _current_self_inner_product_blockwise(
     ) -> torch.Tensor:
         kernel = _gaussian_matrix(query_centers, source_centers, width)
         forward = torch.sum(query_normals * (kernel @ source_normals))
-        reverse = torch.sum(source_normals * (kernel.T @ query_normals))
-        return forward + reverse
+        return 2.0 * forward
 
     tile_rows = plan.query_rows
     for query_start in range(0, centers.shape[0], tile_rows):
@@ -1224,8 +1223,7 @@ def _varifold_self_inner_product_blockwise(
             query_units @ source_units.T
         ).square()
         forward = torch.sum(query_areas * (weighted_kernel @ source_areas))
-        reverse = torch.sum(source_areas * (weighted_kernel.T @ query_areas))
-        return forward + reverse
+        return 2.0 * forward
 
     for query_start in range(0, centers.shape[0], tile_rows):
         query_centers = centers[query_start : query_start + tile_rows]
