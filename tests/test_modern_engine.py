@@ -128,6 +128,24 @@ def test_gaussian_center_avoids_per_tile_mean_reductions(
     assert all(bool(torch.isfinite(gradient).all()) for gradient in gradients)
 
 
+def test_shoot_validates_finite_inputs_at_the_public_boundary_only(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    control_points, momenta = _shooting_inputs()
+    original = torch.isfinite
+    observed_shapes: list[tuple[int, ...]] = []
+
+    def observe(value: torch.Tensor) -> torch.Tensor:
+        observed_shapes.append(tuple(value.shape))
+        return original(value)
+
+    monkeypatch.setattr(torch, "isfinite", observe)
+    trajectory = shoot(control_points, momenta, 1.25, 5)
+
+    assert trajectory.number_of_time_points == 5
+    assert observed_shapes == [tuple(control_points.shape), tuple(momenta.shape)]
+
+
 def test_gaussian_matrix_passes_first_and_second_derivative_checks() -> None:
     generator = torch.Generator().manual_seed(20260722)
     x = torch.randn((3, 3), dtype=DTYPE, generator=generator, requires_grad=True)

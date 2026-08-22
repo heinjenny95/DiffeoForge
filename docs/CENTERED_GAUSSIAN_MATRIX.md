@@ -52,6 +52,13 @@ derivatives with respect to `x` and `y` remain those of the original distances.
 Engine implementation 0.3 used the midpoint of the two detached tile centroids;
 implementation 0.4 records this scheduling-only origin change separately.
 
+The public Gaussian, shooting, flow, energy, and surface-distance functions
+still validate their input tensors. Their private integration and attachment
+loops now call explicitly unchecked Gaussian helpers after those boundary
+checks. This avoids repeatedly scanning unchanged or internally derived tensors
+for finiteness at every time step and tile without weakening validation for an
+external caller.
+
 Small negative squared distances caused by floating-point roundoff are clamped
 to zero before exponentiation. This is not distance truncation or a compact
 kernel approximation.
@@ -70,6 +77,8 @@ Automated evidence includes:
   no pair-sized rank-2 or rank-3 construction tensor; and
 - instrumentation that rejects any tensor-mean call during the Gaussian forward
   and backward paths, proving centering no longer reduces every tile; and
+- instrumentation proving shooting performs finite-value scans at its public
+  tensor boundary rather than at every internal Gaussian stage; and
 - exact logical Gaussian-operation accounting after the implementation change.
 
 ## Exploratory implementation observation

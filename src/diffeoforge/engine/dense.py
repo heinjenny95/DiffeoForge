@@ -348,35 +348,20 @@ def gaussian_convolve(
     if weights.shape[0] != y.shape[0]:
         raise ValueError("weights must have one row per point in y")
     _validate_compatible("weights", weights, y)
-    return gaussian_kernel(x, y, kernel_width) @ weights
+    _validate_float_matrix("x", x, columns=3)
+    _validate_compatible("y", y, x)
+    width = _validate_width(kernel_width)
+    return _gaussian_matrix(x, y, width) @ weights
 
 
-def gaussian_convolve_blockwise(
+def _gaussian_convolve_blockwise_unchecked(
     x: torch.Tensor,
     y: torch.Tensor,
     weights: torch.Tensor,
-    kernel_width: float,
-    *,
-    query_tile_size: int,
-    source_tile_size: int,
-    autograd_strategy: TileAutogradStrategy = "standard",
+    width: float,
+    plan: GaussianTilePlan,
 ) -> torch.Tensor:
-    """Apply the exact Gaussian convolution through explicit bounded tiles.
-
-    ``recompute`` retains tile inputs for backward and reconstructs pairwise
-    intermediates there. It is an explicit compute-for-graph-retention tradeoff,
-    not a peak-memory guarantee.
-    """
-
-    _validate_float_matrix("x", x, columns=3)
-    _validate_float_matrix("y", y, columns=3)
-    _validate_float_matrix("weights", weights)
-    _validate_compatible("y", y, x)
-    _validate_compatible("weights", weights, x)
-    if weights.shape[0] != y.shape[0]:
-        raise ValueError("weights must have one row per point in y")
-    width = _validate_width(kernel_width)
-    plan = GaussianTilePlan(query_tile_size, source_tile_size, autograd_strategy)
+    """Apply an already validated blockwise Gaussian convolution."""
 
     def evaluate(query: torch.Tensor, source: torch.Tensor, source_weights: torch.Tensor):
         kernel = _gaussian_matrix(query, source, width)
@@ -429,6 +414,35 @@ def gaussian_convolve_blockwise(
     return torch.cat(outputs, dim=0)
 
 
+def gaussian_convolve_blockwise(
+    x: torch.Tensor,
+    y: torch.Tensor,
+    weights: torch.Tensor,
+    kernel_width: float,
+    *,
+    query_tile_size: int,
+    source_tile_size: int,
+    autograd_strategy: TileAutogradStrategy = "standard",
+) -> torch.Tensor:
+    """Apply the exact Gaussian convolution through explicit bounded tiles.
+
+    ``recompute`` retains tile inputs for backward and reconstructs pairwise
+    intermediates there. It is an explicit compute-for-graph-retention tradeoff,
+    not a peak-memory guarantee.
+    """
+
+    _validate_float_matrix("x", x, columns=3)
+    _validate_float_matrix("y", y, columns=3)
+    _validate_float_matrix("weights", weights)
+    _validate_compatible("y", y, x)
+    _validate_compatible("weights", weights, x)
+    if weights.shape[0] != y.shape[0]:
+        raise ValueError("weights must have one row per point in y")
+    width = _validate_width(kernel_width)
+    plan = GaussianTilePlan(query_tile_size, source_tile_size, autograd_strategy)
+    return _gaussian_convolve_blockwise_unchecked(x, y, weights, width, plan)
+
+
 def gaussian_convolve_gradient(
     left_weights: torch.Tensor,
     x: torch.Tensor,
@@ -462,43 +476,39 @@ def gaussian_convolve_gradient(
         raise ValueError("left_weights and right_weights must have the same column count")
 
     width = _validate_width(kernel_width)
+    return _gaussian_convolve_gradient_unchecked(
+        left_weights,
+        x,
+        y,
+        right_weights,
+        width,
+    )
+
+
+def _gaussian_convolve_gradient_unchecked(
+    left_weights: torch.Tensor,
+    x: torch.Tensor,
+    y: torch.Tensor,
+    right_weights: torch.Tensor,
+    width: float,
+) -> torch.Tensor:
+    """Evaluate an already validated dense Gaussian x-gradient."""
+
     differences, kernel = _gaussian_tile(x, y, width)
     coefficients = (left_weights @ right_weights.T) * kernel
     return (-2.0 / (width * width)) * torch.sum(coefficients[:, :, None] * differences, dim=1)
 
 
-def gaussian_convolve_gradient_blockwise(
+def _gaussian_convolve_gradient_blockwise_unchecked(
     left_weights: torch.Tensor,
     x: torch.Tensor,
-    y: torch.Tensor | None = None,
-    right_weights: torch.Tensor | None = None,
-    kernel_width: float = 1.0,
-    *,
-    query_tile_size: int,
-    source_tile_size: int,
-    autograd_strategy: TileAutogradStrategy = "standard",
+    y: torch.Tensor,
+    right_weights: torch.Tensor,
+    width: float,
+    plan: GaussianTilePlan,
 ) -> torch.Tensor:
-    """Evaluate the exact explicit Gaussian x-gradient through bounded tiles."""
+    """Evaluate an already validated blockwise Gaussian x-gradient."""
 
-    if y is None:
-        y = x
-    if right_weights is None:
-        right_weights = left_weights
-    _validate_float_matrix("x", x, columns=3)
-    _validate_float_matrix("y", y, columns=3)
-    _validate_float_matrix("left_weights", left_weights)
-    _validate_float_matrix("right_weights", right_weights)
-    _validate_compatible("y", y, x)
-    _validate_compatible("left_weights", left_weights, x)
-    _validate_compatible("right_weights", right_weights, x)
-    if left_weights.shape[0] != x.shape[0]:
-        raise ValueError("left_weights must have one row per point in x")
-    if right_weights.shape[0] != y.shape[0]:
-        raise ValueError("right_weights must have one row per point in y")
-    if left_weights.shape[1] != right_weights.shape[1]:
-        raise ValueError("left_weights and right_weights must have the same column count")
-    width = _validate_width(kernel_width)
-    plan = GaussianTilePlan(query_tile_size, source_tile_size, autograd_strategy)
     outputs = []
     scale = -2.0 / (width * width)
 
@@ -557,6 +567,48 @@ def gaussian_convolve_gradient_blockwise(
     return torch.cat(outputs, dim=0)
 
 
+def gaussian_convolve_gradient_blockwise(
+    left_weights: torch.Tensor,
+    x: torch.Tensor,
+    y: torch.Tensor | None = None,
+    right_weights: torch.Tensor | None = None,
+    kernel_width: float = 1.0,
+    *,
+    query_tile_size: int,
+    source_tile_size: int,
+    autograd_strategy: TileAutogradStrategy = "standard",
+) -> torch.Tensor:
+    """Evaluate the exact explicit Gaussian x-gradient through bounded tiles."""
+
+    if y is None:
+        y = x
+    if right_weights is None:
+        right_weights = left_weights
+    _validate_float_matrix("x", x, columns=3)
+    _validate_float_matrix("y", y, columns=3)
+    _validate_float_matrix("left_weights", left_weights)
+    _validate_float_matrix("right_weights", right_weights)
+    _validate_compatible("y", y, x)
+    _validate_compatible("left_weights", left_weights, x)
+    _validate_compatible("right_weights", right_weights, x)
+    if left_weights.shape[0] != x.shape[0]:
+        raise ValueError("left_weights must have one row per point in x")
+    if right_weights.shape[0] != y.shape[0]:
+        raise ValueError("right_weights must have one row per point in y")
+    if left_weights.shape[1] != right_weights.shape[1]:
+        raise ValueError("left_weights and right_weights must have the same column count")
+    width = _validate_width(kernel_width)
+    plan = GaussianTilePlan(query_tile_size, source_tile_size, autograd_strategy)
+    return _gaussian_convolve_gradient_blockwise_unchecked(
+        left_weights,
+        x,
+        y,
+        right_weights,
+        width,
+        plan,
+    )
+
+
 def _validate_gaussian_tile_plan(
     value: GaussianTilePlan | None,
 ) -> GaussianTilePlan | None:
@@ -573,15 +625,13 @@ def _gaussian_convolve_with_plan(
     plan: GaussianTilePlan | None,
 ) -> torch.Tensor:
     if plan is None:
-        return gaussian_convolve(x, y, weights, kernel_width)
-    return gaussian_convolve_blockwise(
+        return _gaussian_matrix(x, y, kernel_width) @ weights
+    return _gaussian_convolve_blockwise_unchecked(
         x,
         y,
         weights,
         kernel_width,
-        query_tile_size=plan.query_rows,
-        source_tile_size=plan.source_rows,
-        autograd_strategy=plan.autograd_strategy,
+        plan,
     )
 
 
@@ -592,18 +642,20 @@ def _gaussian_convolve_gradient_with_plan(
     plan: GaussianTilePlan | None,
 ) -> torch.Tensor:
     if plan is None:
-        return gaussian_convolve_gradient(
+        return _gaussian_convolve_gradient_unchecked(
             left_weights,
             x,
-            kernel_width=kernel_width,
+            x,
+            left_weights,
+            kernel_width,
         )
-    return gaussian_convolve_gradient_blockwise(
+    return _gaussian_convolve_gradient_blockwise_unchecked(
         left_weights,
         x,
-        kernel_width=kernel_width,
-        query_tile_size=plan.query_rows,
-        source_tile_size=plan.source_rows,
-        autograd_strategy=plan.autograd_strategy,
+        x,
+        left_weights,
+        kernel_width,
+        plan,
     )
 
 
@@ -622,11 +674,12 @@ def deformation_energy(
     _validate_compatible("momenta", momenta, control_points)
     if momenta.shape != control_points.shape:
         raise ValueError("momenta must have the same shape as control_points")
+    width = _validate_width(kernel_width)
     velocity = _gaussian_convolve_with_plan(
         control_points,
         control_points,
         momenta,
-        kernel_width,
+        width,
         plan,
     )
     return torch.sum(momenta * velocity)
@@ -898,7 +951,9 @@ def _current_inner_product(
     normals_b: torch.Tensor,
     kernel_width: float,
 ) -> torch.Tensor:
-    return torch.sum(normals_a * gaussian_convolve(centers_a, centers_b, normals_b, kernel_width))
+    return torch.sum(
+        normals_a * (_gaussian_matrix(centers_a, centers_b, kernel_width) @ normals_b)
+    )
 
 
 def current_squared_distance(
@@ -910,11 +965,12 @@ def current_squared_distance(
 ) -> torch.Tensor:
     """Return the orientation-sensitive current squared distance between surfaces."""
 
+    width = _validate_width(kernel_width)
     centers_a, normals_a = _surface_geometry(vertices_a, triangles_a)
     centers_b, normals_b = _surface_geometry(vertices_b, triangles_b, reference_vertices=vertices_a)
-    self_a = _current_inner_product(centers_a, normals_a, centers_a, normals_a, kernel_width)
-    self_b = _current_inner_product(centers_b, normals_b, centers_b, normals_b, kernel_width)
-    cross = _current_inner_product(centers_a, normals_a, centers_b, normals_b, kernel_width)
+    self_a = _current_inner_product(centers_a, normals_a, centers_a, normals_a, width)
+    self_b = _current_inner_product(centers_b, normals_b, centers_b, normals_b, width)
+    cross = _current_inner_product(centers_a, normals_a, centers_b, normals_b, width)
     return self_a + self_b - 2.0 * cross
 
 
@@ -926,14 +982,12 @@ def _current_inner_product_blockwise(
     kernel_width: float,
     plan: GaussianTilePlan,
 ) -> torch.Tensor:
-    convolved = gaussian_convolve_blockwise(
+    convolved = _gaussian_convolve_blockwise_unchecked(
         centers_a,
         centers_b,
         normals_b,
         kernel_width,
-        query_tile_size=plan.query_rows,
-        source_tile_size=plan.source_rows,
-        autograd_strategy=plan.autograd_strategy,
+        plan,
     )
     return torch.sum(normals_a * convolved)
 
@@ -955,14 +1009,13 @@ def _current_self_inner_product_blockwise(
             kernel_width,
             plan,
         )
-    width = _validate_width(kernel_width)
     result = torch.zeros((), dtype=centers.dtype, device=centers.device)
 
     def diagonal(
         tile_centers: torch.Tensor,
         tile_normals: torch.Tensor,
     ) -> torch.Tensor:
-        kernel = _gaussian_matrix(tile_centers, tile_centers, width)
+        kernel = _gaussian_matrix(tile_centers, tile_centers, kernel_width)
         return torch.sum(tile_normals * (kernel @ tile_normals))
 
     def mirrored_pair(
@@ -971,7 +1024,7 @@ def _current_self_inner_product_blockwise(
         source_centers: torch.Tensor,
         source_normals: torch.Tensor,
     ) -> torch.Tensor:
-        kernel = _gaussian_matrix(query_centers, source_centers, width)
+        kernel = _gaussian_matrix(query_centers, source_centers, kernel_width)
         forward = torch.sum(query_normals * (kernel @ source_normals))
         return 2.0 * forward
 
@@ -1042,6 +1095,7 @@ def current_squared_distance_blockwise(
 ) -> torch.Tensor:
     """Return the exact Current distance without full face-pair matrices."""
 
+    width = _validate_width(kernel_width)
     plan = GaussianTilePlan(query_tile_size, source_tile_size, autograd_strategy)
     centers_a, normals_a = _surface_geometry(vertices_a, triangles_a)
     centers_b, normals_b = _surface_geometry(
@@ -1050,13 +1104,13 @@ def current_squared_distance_blockwise(
         reference_vertices=vertices_a,
     )
     self_a = _current_self_inner_product_blockwise(
-        centers_a, normals_a, kernel_width, plan
+        centers_a, normals_a, width, plan
     )
     self_b = _current_self_inner_product_blockwise(
-        centers_b, normals_b, kernel_width, plan
+        centers_b, normals_b, width, plan
     )
     cross = _current_inner_product_blockwise(
-        centers_a, normals_a, centers_b, normals_b, kernel_width, plan
+        centers_a, normals_a, centers_b, normals_b, width, plan
     )
     return self_a + self_b - 2.0 * cross
 
@@ -1073,7 +1127,7 @@ def _varifold_inner_product(
     unit_a = normals_a / areas_a
     unit_b = normals_b / areas_b
     orientation_similarity = (unit_a @ unit_b.T).square()
-    weighted_kernel = gaussian_kernel(centers_a, centers_b, kernel_width) * orientation_similarity
+    weighted_kernel = _gaussian_matrix(centers_a, centers_b, kernel_width) * orientation_similarity
     return torch.sum(areas_a * (weighted_kernel @ areas_b))
 
 
@@ -1086,11 +1140,12 @@ def varifold_squared_distance(
 ) -> torch.Tensor:
     """Return the orientation-insensitive varifold squared distance between surfaces."""
 
+    width = _validate_width(kernel_width)
     centers_a, normals_a = _surface_geometry(vertices_a, triangles_a)
     centers_b, normals_b = _surface_geometry(vertices_b, triangles_b, reference_vertices=vertices_a)
-    self_a = _varifold_inner_product(centers_a, normals_a, centers_a, normals_a, kernel_width)
-    self_b = _varifold_inner_product(centers_b, normals_b, centers_b, normals_b, kernel_width)
-    cross = _varifold_inner_product(centers_a, normals_a, centers_b, normals_b, kernel_width)
+    self_a = _varifold_inner_product(centers_a, normals_a, centers_a, normals_a, width)
+    self_b = _varifold_inner_product(centers_b, normals_b, centers_b, normals_b, width)
+    cross = _varifold_inner_product(centers_a, normals_a, centers_b, normals_b, width)
     return self_a + self_b - 2.0 * cross
 
 
@@ -1102,7 +1157,6 @@ def _varifold_inner_product_blockwise(
     kernel_width: float,
     plan: GaussianTilePlan,
 ) -> torch.Tensor:
-    width = _validate_width(kernel_width)
     areas_a = torch.linalg.vector_norm(normals_a, dim=1, keepdim=True)
     areas_b = torch.linalg.vector_norm(normals_b, dim=1, keepdim=True)
     unit_a = normals_a / areas_a
@@ -1117,7 +1171,7 @@ def _varifold_inner_product_blockwise(
         source_areas: torch.Tensor,
         source_units: torch.Tensor,
     ) -> torch.Tensor:
-        kernel = _gaussian_matrix(query_centers, source_centers, width)
+        kernel = _gaussian_matrix(query_centers, source_centers, kernel_width)
         orientation = (query_units @ source_units.T).square()
         return torch.sum(query_areas * ((kernel * orientation) @ source_areas))
 
@@ -1199,7 +1253,6 @@ def _varifold_self_inner_product_blockwise(
             kernel_width,
             plan,
         )
-    width = _validate_width(kernel_width)
     areas = torch.linalg.vector_norm(normals, dim=1, keepdim=True)
     units = normals / areas
     result = torch.zeros((), dtype=centers.dtype, device=centers.device)
@@ -1210,7 +1263,7 @@ def _varifold_self_inner_product_blockwise(
         tile_areas: torch.Tensor,
         tile_units: torch.Tensor,
     ) -> torch.Tensor:
-        kernel = _gaussian_matrix(tile_centers, tile_centers, width)
+        kernel = _gaussian_matrix(tile_centers, tile_centers, kernel_width)
         orientation = (tile_units @ tile_units.T).square()
         return torch.sum(tile_areas * ((kernel * orientation) @ tile_areas))
 
@@ -1222,7 +1275,7 @@ def _varifold_self_inner_product_blockwise(
         source_areas: torch.Tensor,
         source_units: torch.Tensor,
     ) -> torch.Tensor:
-        weighted_kernel = _gaussian_matrix(query_centers, source_centers, width) * (
+        weighted_kernel = _gaussian_matrix(query_centers, source_centers, kernel_width) * (
             query_units @ source_units.T
         ).square()
         forward = torch.sum(query_areas * (weighted_kernel @ source_areas))
@@ -1299,6 +1352,7 @@ def varifold_squared_distance_blockwise(
 ) -> torch.Tensor:
     """Return the exact Varifold distance without full face-pair matrices."""
 
+    width = _validate_width(kernel_width)
     plan = GaussianTilePlan(query_tile_size, source_tile_size, autograd_strategy)
     centers_a, normals_a = _surface_geometry(vertices_a, triangles_a)
     centers_b, normals_b = _surface_geometry(
@@ -1307,13 +1361,13 @@ def varifold_squared_distance_blockwise(
         reference_vertices=vertices_a,
     )
     self_a = _varifold_self_inner_product_blockwise(
-        centers_a, normals_a, kernel_width, plan
+        centers_a, normals_a, width, plan
     )
     self_b = _varifold_self_inner_product_blockwise(
-        centers_b, normals_b, kernel_width, plan
+        centers_b, normals_b, width, plan
     )
     cross = _varifold_inner_product_blockwise(
-        centers_a, normals_a, centers_b, normals_b, kernel_width, plan
+        centers_a, normals_a, centers_b, normals_b, width, plan
     )
     return self_a + self_b - 2.0 * cross
 

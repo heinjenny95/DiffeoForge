@@ -95,6 +95,8 @@ This roadmap describes evidence gates rather than promised dates.
   evaluation and protect values, gradients, translation stability, and workload accounting
 - [x] Remove repeated query/source mean reductions from every Gaussian tile by
   using one detached in-tile coordinate as the algebraically equivalent shared origin
+- [x] Keep public tensor validation while removing repeated finite-value scans
+  from already validated Gaussian calls inside shooting, flow, and attachment hot paths
 - [x] Add an analytical recomputed Gaussian backward with first/second-derivative
   evidence and full-cohort sampled-memory measurement
 - [x] Add an explicit fresh-process recompute benchmark path and spawn smoke evidence
