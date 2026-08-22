@@ -34,6 +34,21 @@ def test_blockwise_plan_normalizes_and_constructs_gaussian_tiles() -> None:
     assert plan.engine_id == "diffeoforge_modern_blockwise"
 
 
+def test_blockwise_recompute_plan_is_explicit_in_execution_identity() -> None:
+    plan = PairwiseEvaluationPlan.from_mapping(
+        {
+            "mode": "blockwise",
+            "query_tile_size": 17,
+            "source_tile_size": 23,
+            "autograd_strategy": "recompute",
+        }
+    )
+
+    assert plan.gaussian_tile_plan.autograd_strategy == "recompute"
+    assert plan.engine_id == "diffeoforge_modern_blockwise_recompute"
+    assert plan.as_manifest()["autograd_strategy"] == "recompute"
+
+
 @pytest.mark.parametrize(
     "arguments",
     [

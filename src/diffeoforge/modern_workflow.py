@@ -74,7 +74,7 @@ from diffeoforge.private_runs import (
     discover_private_runs,
 )
 
-CONFIG_VERSION = "0.2"
+CONFIG_VERSION = "0.3"
 WORKFLOW_VERSION = "0.1"
 MANIFEST_NAME = "workflow-manifest.json"
 MANIFEST_SIDECAR_NAME = "workflow-manifest.sha256"
@@ -201,6 +201,41 @@ def _resolve_from_config(value: str, config_path: Path) -> Path:
     if not path.is_absolute():
         path = config_path.parent / path
     return path.resolve()
+
+
+def _read_control_point_rows(path: Path, expected_count: int) -> np.ndarray:
+    """Read a strict finite three-column control-point file."""
+
+    if not path.is_file() or path.is_symlink():
+        raise ConfigurationError(f"Control-point file does not exist or is symbolic: {path}")
+    rows: list[tuple[float, float, float]] = []
+    try:
+        lines = path.read_text(encoding="utf-8", errors="strict").splitlines()
+    except (OSError, UnicodeError) as error:
+        raise ConfigurationError(f"Could not read control-point file {path}: {error}") from error
+    for line_number, line in enumerate(lines, start=1):
+        if not line.strip():
+            continue
+        fields = line.split()
+        if len(fields) != 3:
+            raise ConfigurationError(
+                f"Control-point line {line_number} must contain exactly three values"
+            )
+        try:
+            row = tuple(float(field) for field in fields)
+        except ValueError as error:
+            raise ConfigurationError(
+                f"Control-point line {line_number} contains a non-number"
+            ) from error
+        if not all(math.isfinite(value) for value in row):
+            raise ConfigurationError(f"Control-point line {line_number} is non-finite")
+        rows.append((row[0], row[1], row[2]))
+    if len(rows) != expected_count:
+        raise ConfigurationError(
+            f"Control-point file declares {expected_count} rows in the configuration "
+            f"but contains {len(rows)}"
+        )
+    return np.asarray(rows, dtype=np.float64)
 
 
 def _portable_path(path: Path, base: Path) -> str:
@@ -720,6 +755,15 @@ def run_modern_workflow(
     inputs: InputSummary = validate_input_paths(config, source_config)
     validate_modern_analysis_dimensions(config, len(inputs.subjects))
     template_metadata, subject_metadata = inspect_inputs(inputs)
+    control_config = config["initialization"]["control_points"]
+    external_control_source: Path | None = None
+    external_control_values: np.ndarray | None = None
+    if control_config["method"] == "file":
+        external_control_source = _resolve_from_config(control_config["path"], source_config)
+        external_control_values = _read_control_point_rows(
+            external_control_source,
+            int(control_config["count"]),
+        )
     output = (
         _resolve_from_config(config["output"]["directory"], source_config)
         if destination is None
@@ -862,8 +906,7 @@ def run_modern_workflow(
         emit_progress("quality", "completed", "Input mesh quality gates passed", 3)
         check_cancellation()
 
-        count = config["initialization"]["control_points"]["count"]
-        control_indices = farthest_template_vertex_indices(vertices[0], count)
+        count = int(control_config["count"])
         template_tensor = torch.tensor(vertices[0], dtype=torch.float64)
         triangle_tensor = torch.tensor(geometries[0].triangles, dtype=torch.int64)
         target_tensors = tuple(
@@ -873,7 +916,28 @@ def run_modern_workflow(
             )
             for subject_vertices, geometry in zip(vertices[1:], geometries[1:], strict=True)
         )
-        control_points = template_tensor[list(control_indices)].clone()
+        if control_config["method"] == "farthest_template_vertices":
+            control_indices = farthest_template_vertex_indices(vertices[0], count)
+            control_points = template_tensor[list(control_indices)].clone()
+            control_manifest: dict[str, Any] = {
+                "method": "farthest_template_vertices",
+                "count": len(control_indices),
+                "template_vertex_indices": list(control_indices),
+            }
+        else:
+            if external_control_source is None or external_control_values is None:
+                raise ModernWorkflowError("External control-point initialization was not loaded")
+            copied_controls = temporary / "input" / "initialization" / "control-points.txt"
+            _copy_exclusive(external_control_source, copied_controls)
+            if sha256_file(copied_controls) != sha256_file(external_control_source):
+                raise ModernWorkflowError("Copied control-point initialization differs from source")
+            control_points = torch.tensor(external_control_values, dtype=torch.float64)
+            control_manifest = {
+                "method": "file",
+                "count": int(control_points.shape[0]),
+                "source_sha256": sha256_file(external_control_source),
+                "copied_path": copied_controls.relative_to(temporary).as_posix(),
+            }
         momenta = torch.zeros(
             (len(target_tensors), control_points.shape[0], 3), dtype=torch.float64
         )
@@ -1051,11 +1115,7 @@ def run_modern_workflow(
                 "scientific_boundary": quality_report["scientific_boundary"],
             },
             "initialization": {
-                "control_points": {
-                    "method": "farthest_template_vertices",
-                    "count": len(control_indices),
-                    "template_vertex_indices": list(control_indices),
-                },
+                "control_points": control_manifest,
                 "momenta": "zeros",
             },
             "result_bundle": {
@@ -1279,10 +1339,21 @@ def verify_modern_workflow(directory: Path | str) -> dict[str, Any]:
         )
 
     control = manifest["initialization"]["control_points"]
-    if control["count"] != len(control["template_vertex_indices"]):
-        raise ModernWorkflowError("Control-point count differs from stored vertex indices")
-    if max(control["template_vertex_indices"]) >= manifest["input"]["template"]["points"]:
-        raise ModernWorkflowError("Control-point initialization index is out of range")
+    if control["method"] == "farthest_template_vertices":
+        if control["count"] != len(control["template_vertex_indices"]):
+            raise ModernWorkflowError("Control-point count differs from stored vertex indices")
+        if max(control["template_vertex_indices"]) >= manifest["input"]["template"]["points"]:
+            raise ModernWorkflowError("Control-point initialization index is out of range")
+    else:
+        copied_controls = _resolve_artifact(root, control["copied_path"])
+        if sha256_file(copied_controls) != control["source_sha256"]:
+            raise ModernWorkflowError("Copied control-point initialization SHA-256 differs")
+        try:
+            _read_control_point_rows(copied_controls, int(control["count"]))
+        except ConfigurationError as error:
+            raise ModernWorkflowError(
+                f"Invalid copied control-point initialization: {error}"
+            ) from error
 
     bundle = _resolve_artifact(root, manifest["result_bundle"]["path"], directory=True)
     bundle_manifest = verify_modern_atlas_bundle(bundle)

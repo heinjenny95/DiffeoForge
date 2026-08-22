@@ -32,6 +32,15 @@ This roadmap describes evidence gates rather than promised dates.
 - [x] Evaluate current PyTorch/KeOps-based libraries
 - [x] Prototype only the deterministic 3D surface-atlas path
 - [ ] Compare gradients, objectives, deformations, and performance
+  - [x] Add a prospective fixed-reference qualification design that copies and
+    hashes a completed Deformetrica template, its control points, pre-results
+    geometry-diverse subjects, and their reference reconstructions
+  - [x] Permit a Modern run to freeze template/control points, optimize momenta
+    only, and use explicit blockwise recompute provenance
+  - [x] Add common external surface-distance assessment with predeclared
+    engineering non-inferiority gates; internal objectives are not compared as
+    cross-engine equivalents
+  - [ ] Execute and review the frozen five-subject full-resolution Weevil study
 - [x] Record the engine decision in an ADR
 - [x] Prototype landmark-based generalized Procrustes alignment
 - [x] Integrate labelled landmarks and aligned mesh copies into modern run manifests
@@ -174,6 +183,9 @@ This roadmap describes evidence gates rather than promised dates.
     subject-level residual outliers, open each original and reconstruction in a
     shared overlay, require pass/fail/uncertain decisions for the tail cases, and
     export the reviewed status instead of making users search a mesh dropdown
+  - [x] Advance registration QC to the next unreviewed mesh after every decision,
+    stop explicitly after the final decision instead of restarting, and atomically
+    autosave/load a source-bound draft while retaining immutable snapshot export
   - [ ] Revisit subject-tail/outlier stability and add regression tests for the
     full automatic-to-ambiguous-to-continued four-stage workflow
   - [x] Distinguish necessary biological deformation from pathological mapping:

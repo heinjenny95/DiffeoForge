@@ -1,0 +1,730 @@
+"""Prospective fixed-reference qualification of the experimental Modern Engine."""
+
+from __future__ import annotations
+
+import json
+import math
+import shutil
+import uuid
+from datetime import UTC, datetime
+from html import escape
+from pathlib import Path, PurePosixPath
+from typing import Any
+
+import numpy as np
+import yaml
+
+from diffeoforge.config import ConfigurationError
+from diffeoforge.mesh import inspect_vtk, read_vtk_polydata, sha256_file
+from diffeoforge.modern_bundle import verify_modern_atlas_bundle
+from diffeoforge.modern_workflow import (
+    CONFIG_MARKER,
+    validate_modern_workflow_config,
+    verify_modern_workflow,
+)
+from diffeoforge.reference_pca import (
+    read_deformetrica_control_points,
+    read_deformetrica_momenta,
+)
+from diffeoforge.reference_validation_metrics import (
+    symmetric_vertex_to_surface_distances,
+)
+from diffeoforge.result_report import collect_run_report
+
+DESIGN_VERSION = "0.1"
+DESIGN_JSON_NAME = "modern-reference-qualification-design.json"
+DESIGN_SIDECAR_NAME = "modern-reference-qualification-design.sha256"
+DESIGN_HTML_NAME = "modern-reference-qualification-design.html"
+CONFIG_NAME = "modern-fixed-reference.yaml"
+ASSESSMENT_JSON_NAME = "modern-reference-qualification-assessment.json"
+ASSESSMENT_SIDECAR_NAME = "modern-reference-qualification-assessment.sha256"
+ASSESSMENT_HTML_NAME = "modern-reference-qualification-assessment.html"
+
+
+class ModernReferenceQualificationError(RuntimeError):
+    """Raised when prospective comparison evidence is incomplete or inconsistent."""
+
+
+def _write_json_exclusive(path: Path, value: object) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("x", encoding="utf-8", newline="\n") as handle:
+        json.dump(value, handle, indent=2, sort_keys=True, ensure_ascii=False, allow_nan=False)
+        handle.write("\n")
+
+
+def _copy_exclusive(source: Path, destination: Path) -> Path:
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with source.open("rb") as input_handle, destination.open("xb") as output_handle:
+        shutil.copyfileobj(input_handle, output_handle)
+    return destination
+
+
+def _artifact(root: Path, path: Path) -> dict[str, object]:
+    return {
+        "path": path.relative_to(root).as_posix(),
+        "bytes": path.stat().st_size,
+        "sha256": sha256_file(path),
+    }
+
+
+def _safe_relative(root: Path, value: object, label: str) -> Path:
+    if not isinstance(value, str) or not value or "\\" in value:
+        raise ModernReferenceQualificationError(f"{label} is not a POSIX-style path")
+    relative = PurePosixPath(value)
+    if relative.is_absolute() or "." in relative.parts or ".." in relative.parts:
+        raise ModernReferenceQualificationError(f"{label} is unsafe: {value!r}")
+    path = root.joinpath(*relative.parts)
+    if not path.is_file() or path.is_symlink():
+        raise ModernReferenceQualificationError(f"{label} is missing or symbolic: {value}")
+    return path
+
+
+def _output_artifact(run: Path, record: dict[str, Any]) -> Path:
+    relative = PurePosixPath(str(record["path"]))
+    if relative.is_absolute() or "." in relative.parts or ".." in relative.parts:
+        raise ModernReferenceQualificationError("Reference inventory contains an unsafe path")
+    path = run / "output" / Path(*relative.parts)
+    if (
+        not path.is_file()
+        or path.is_symlink()
+        or path.stat().st_size != int(record["bytes"])
+        or sha256_file(path) != str(record["sha256"])
+    ):
+        raise ModernReferenceQualificationError(
+            f"Reference output differs from its verified inventory: {relative}"
+        )
+    return path
+
+
+def _one_inventory_record(records: tuple[Any, ...], marker: str, label: str) -> dict[str, Any]:
+    matches = [dict(record) for record in records if marker in PurePosixPath(record["path"]).name]
+    if len(matches) != 1:
+        raise ModernReferenceQualificationError(
+            f"Completed reference run must contain exactly one {label}; found {len(matches)}"
+        )
+    return matches[0]
+
+
+def _reconstruction_subject(filename: str) -> str:
+    marker = "__subject_"
+    if marker not in filename or not filename.casefold().endswith(".vtk"):
+        raise ModernReferenceQualificationError(
+            f"Could not identify reference reconstruction subject: {filename}"
+        )
+    return filename.split(marker, 1)[1][:-4]
+
+
+def _preferred_subject_names(manifest: dict[str, Any]) -> tuple[str, ...]:
+    try:
+        records = manifest["effective_config"]["project"]["parameter_provenance"][
+            "recommendation"
+        ]["calibration_plan"]["selected_pilot_subjects"]
+    except (KeyError, TypeError):
+        return ()
+    if not isinstance(records, list):
+        return ()
+    names = tuple(
+        str(record["filename"])
+        for record in records
+        if isinstance(record, dict) and isinstance(record.get("filename"), str)
+    )
+    return names if len(names) == len(set(names)) else ()
+
+
+def _render_design_html(design: dict[str, Any]) -> str:
+    subjects = "".join(
+        f"<li><code>{escape(record['filename'])}</code> — {escape(record['selection_role'])}</li>"
+        for record in design["subjects"]
+    )
+    gates = "".join(
+        f"<li><strong>{escape(key)}</strong>: {escape(str(value))}</li>"
+        for key, value in sorted(design["decision_gates"].items())
+    )
+    return f"""<!doctype html>
+<html lang="en"><meta charset="utf-8"><title>Modern reference qualification</title>
+<style>body{{font:16px system-ui;max-width:980px;margin:2rem auto;line-height:1.45}}
+code{{background:#eef4f3;padding:.1rem .25rem}} .warning{{background:#fff4cf;padding:1rem}}</style>
+<h1>Prospective Modern Engine fixed-reference qualification</h1>
+<p class="warning">No Modern Engine result existed when this design was frozen. These are
+engineering non-inferiority gates, not evidence of biological validity or production readiness.</p>
+<h2>Controlled comparison</h2><p>{escape(design['protocol']['comparison'])}</p>
+<p>Only subject momenta may change. The Deformetrica estimated template and control points
+are copied, hashed, and fixed. Internal objective values are not treated as cross-engine
+equivalents.</p>
+<h2>Subjects ({len(design['subjects'])})</h2><ol>{subjects}</ol>
+<h2>Predeclared gates</h2><ul>{gates}</ul>
+<p>Modern configuration: <code>{escape(design['modern_workflow']['config_path'])}</code></p>
+</html>\n"""
+
+
+def create_modern_reference_qualification(
+    reference_run: Path | str,
+    destination: Path | str,
+    *,
+    subject_count: int = 5,
+    max_cycles: int = 3,
+    threads: int = 4,
+    created_at: str | None = None,
+) -> Path:
+    """Freeze a no-results-yet comparison against one completed Deformetrica atlas."""
+
+    for name, value, minimum in (
+        ("subject_count", subject_count, 2),
+        ("max_cycles", max_cycles, 1),
+        ("threads", threads, 1),
+    ):
+        if isinstance(value, bool) or not isinstance(value, int) or value < minimum:
+            raise ValueError(f"{name} must be an integer of at least {minimum}")
+    run = Path(reference_run).expanduser().resolve()
+    report = collect_run_report(run)
+    if report.result.get("status") != "completed" or any(
+        check.status != "pass" for check in report.checks
+    ):
+        raise ModernReferenceQualificationError(
+            "Reference run is not completed with all independent evidence checks passing"
+        )
+    subject_inputs = {
+        Path(str(record["staged_path"])).name: record
+        for record in report.manifest["inputs"]
+        if record.get("role") == "subject"
+    }
+    if subject_count > len(subject_inputs):
+        raise ValueError(
+            f"subject_count cannot exceed the {len(subject_inputs)} reference subjects"
+        )
+    preferred = [
+        name
+        for name in _preferred_subject_names(dict(report.manifest))
+        if name in subject_inputs
+    ]
+    remaining = sorted(set(subject_inputs) - set(preferred), key=str.casefold)
+    selected_names = tuple((preferred + remaining)[:subject_count])
+    selection_role = {
+        name: "pre-results geometry-diverse Deformetrica pilot subject"
+        if name in preferred
+        else "deterministic filename-order fill"
+        for name in selected_names
+    }
+
+    template_record = _one_inventory_record(
+        report.inventory,
+        "__EstimatedParameters__Template_",
+        "estimated template",
+    )
+    control_record = _one_inventory_record(
+        report.inventory,
+        "__EstimatedParameters__ControlPoints.txt",
+        "control-point file",
+    )
+    momenta_record = _one_inventory_record(
+        report.inventory,
+        "__EstimatedParameters__Momenta.txt",
+        "momenta file",
+    )
+    momenta = read_deformetrica_momenta(_output_artifact(run, momenta_record))
+    control_count = int(momenta.shape[1])
+    read_deformetrica_control_points(
+        _output_artifact(run, control_record), expected_count=control_count
+    )
+    reconstructions: dict[str, tuple[dict[str, Any], Path]] = {}
+    for record_value in report.inventory:
+        record = dict(record_value)
+        name = PurePosixPath(str(record["path"])).name
+        if "__Reconstruction__" not in name or not name.casefold().endswith(".vtk"):
+            continue
+        subject = _reconstruction_subject(name)
+        if subject in reconstructions:
+            raise ModernReferenceQualificationError(
+                f"Reference run contains duplicate reconstruction for {subject}"
+            )
+        reconstructions[subject] = (record, _output_artifact(run, record))
+    if any(name not in reconstructions for name in selected_names):
+        raise ModernReferenceQualificationError(
+            "Reference reconstructions do not cover the prospectively selected subjects"
+        )
+
+    destination_path = Path(destination).expanduser().resolve()
+    if destination_path.exists():
+        raise FileExistsError(
+            f"Qualification design destination already exists: {destination_path}"
+        )
+    destination_path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = destination_path.parent / f".{destination_path.name}.tmp-{uuid.uuid4().hex}"
+    temporary.mkdir()
+    try:
+        copied_template = _copy_exclusive(
+            _output_artifact(run, template_record),
+            temporary / "inputs" / "reference-template.vtk",
+        )
+        copied_controls = _copy_exclusive(
+            _output_artifact(run, control_record),
+            temporary / "inputs" / "reference-control-points.txt",
+        )
+        subject_rows: list[dict[str, Any]] = []
+        for name in selected_names:
+            source_record = subject_inputs[name]
+            staged = run / Path(*PurePosixPath(str(source_record["staged_path"])).parts)
+            expected_hash = str(source_record["geometry"]["sha256"])
+            if not staged.is_file() or staged.is_symlink() or sha256_file(staged) != expected_hash:
+                raise ModernReferenceQualificationError(
+                    f"Protected reference subject differs from its manifest: {name}"
+                )
+            subject_copy = _copy_exclusive(staged, temporary / "inputs" / "subjects" / name)
+            reference_copy = _copy_exclusive(
+                reconstructions[name][1],
+                temporary / "reference-reconstructions" / name,
+            )
+            subject_rows.append(
+                {
+                    "filename": name,
+                    "selection_role": selection_role[name],
+                    "source": _artifact(temporary, subject_copy),
+                    "reference_reconstruction": _artifact(temporary, reference_copy),
+                }
+            )
+
+        effective = report.manifest["effective_config"]
+        model = effective["model"]
+        optimization = effective["optimization"]
+        noise_std = float(model["noise_std"])
+        output = destination_path.parent / f"{destination_path.name}-modern-run"
+        config = {
+            "schema_version": "0.3",
+            "project": {"name": f"{effective['project']['name']}-modern-fixed-reference"},
+            "input": {
+                "directory": "inputs/subjects",
+                "subject_pattern": "*.vtk",
+                "template": "inputs/reference-template.vtk",
+                "units": effective["input"]["units"],
+            },
+            "preprocessing": {
+                "procrustes": {
+                    "enabled": False,
+                    "landmarks_file": None,
+                    "scale_to_unit_centroid_size": True,
+                    "allow_reflection": False,
+                    "tolerance": 1e-10,
+                    "max_iterations": 100,
+                }
+            },
+            "quality_control": {
+                "require_no_duplicate_faces": True,
+                "require_no_isolated_vertices": True,
+                "require_edge_manifold": True,
+                "require_consistent_orientation": True,
+                "require_single_component": True,
+                "require_closed_surface": False,
+                "reject_zero_area_faces": True,
+                "minimum_triangle_angle_degrees": None,
+                "maximum_triangle_edge_ratio": None,
+                "minimum_face_area_ratio": None,
+                "maximum_face_area_ratio": None,
+            },
+            "initialization": {
+                "control_points": {
+                    "method": "file",
+                    "count": control_count,
+                    "path": "inputs/reference-control-points.txt",
+                },
+                "momenta": "zeros",
+            },
+            "model": {
+                "attachment": {
+                    "type": model["attachment"]["type"],
+                    "kernel_width": float(model["attachment"]["kernel_width"]),
+                },
+                "deformation": {
+                    "kernel_width": float(model["deformation"]["kernel_width"]),
+                    "timepoints": int(model["deformation"]["timepoints"]),
+                    "shooting_integrator": (
+                        "rk2" if model["deformation"]["use_rk2"] else "euler"
+                    ),
+                    "flow_integrator": "deformetrica_heun",
+                },
+                "noise_variance": noise_std**2,
+            },
+            "optimization": {
+                "max_cycles": max_cycles,
+                "block_order": ["momenta"],
+                "momenta_step_size": float(optimization["initial_step_size"]),
+                "template_step_size": 0.01,
+                "control_points_step_size": 0.01,
+                "backtracking_factor": 0.5,
+                "armijo_constant": 0.0001,
+                "gradient_tolerance": float(optimization["convergence_tolerance"]),
+                "minimum_step_size": 1e-12,
+                "max_line_search_iterations": int(
+                    optimization["max_line_search_iterations"]
+                ),
+            },
+            "analysis": {
+                "pca_components": None,
+                "deformation_standard_deviations": 2.0,
+                "deformation_components": min(3, subject_count - 1),
+            },
+            "runtime": {
+                "device": "cpu",
+                "precision": "float64",
+                "threads": threads,
+                "random_seed": int(effective["runtime"]["random_seed"]),
+                "pairwise_evaluation": {
+                    "mode": "blockwise",
+                    "query_tile_size": 64,
+                    "source_tile_size": 64,
+                    "autograd_strategy": "recompute",
+                },
+            },
+            "output": {"directory": str(output)},
+        }
+        validate_modern_workflow_config(config)
+        config_path = temporary / CONFIG_NAME
+        with config_path.open("x", encoding="utf-8", newline="\n") as handle:
+            handle.write(CONFIG_MARKER + "\n")
+            yaml.safe_dump(config, handle, sort_keys=False, allow_unicode=True)
+
+        timestamp = created_at or datetime.now(UTC).isoformat()
+        design: dict[str, Any] = {
+            "design_version": DESIGN_VERSION,
+            "created_at": timestamp,
+            "status": "prospective_no_modern_results",
+            "source_reference": {
+                "run_directory": str(run),
+                "manifest_sha256": sha256_file(run / "manifest.json"),
+                "result_sha256": sha256_file(run / "result.json"),
+                "output_inventory_sha256": sha256_file(run / "output-inventory.json"),
+                "reference_duration_seconds": float(report.result["duration_seconds"]),
+            },
+            "protocol": {
+                "comparison": (
+                    "Register the same preselected subjects to the completed Deformetrica "
+                    "estimated template, using its exact estimated control points; optimize "
+                    "Modern Engine momenta only."
+                ),
+                "subject_selection": (
+                    "Reuse the pre-results geometry-diverse calibration pilot order when "
+                    "available, then fill deterministically by filename."
+                ),
+                "internal_objective_comparison": "forbidden_across_engines",
+                "modern_result_existed_at_freeze": False,
+            },
+            "fixed_reference": {
+                "template": _artifact(temporary, copied_template),
+                "control_points": _artifact(temporary, copied_controls),
+                "control_point_count": control_count,
+            },
+            "subjects": subject_rows,
+            "modern_workflow": {
+                "config_path": CONFIG_NAME,
+                "config_sha256": sha256_file(config_path),
+                "expected_destination": str(output),
+                "optimized_blocks": ["momenta"],
+                "max_cycles": max_cycles,
+                "pairwise_autograd_strategy": "recompute",
+            },
+            "decision_gates": {
+                "modern_workflow_verification": "pass",
+                "modern_optimizer_converged": True,
+                "pooled_external_residual_ratio_maximum": 1.20,
+                "subject_external_residual_ratio_maximum": 1.25,
+                "minimum_subject_pass_fraction": 0.80,
+                "cross_engine_reconstruction_p95_over_template_diagonal_maximum": 0.05,
+            },
+            "scientific_boundary": (
+                "This fixed-reference pilot isolates registration behavior. Its thresholds "
+                "are prospective engineering non-inferiority gates, not proof of optimizer "
+                "equivalence, atlas equivalence, biological validity, convergence, GPU "
+                "parity, or readiness for 300 specimens."
+            ),
+        }
+        html_path = temporary / DESIGN_HTML_NAME
+        html_path.write_text(_render_design_html(design), encoding="utf-8", newline="\n")
+        inventory_paths = sorted(
+            path
+            for path in temporary.rglob("*")
+            if path.is_file() and path.name not in {DESIGN_JSON_NAME, DESIGN_SIDECAR_NAME}
+        )
+        design["artifacts"] = [_artifact(temporary, path) for path in inventory_paths]
+        design_path = temporary / DESIGN_JSON_NAME
+        _write_json_exclusive(design_path, design)
+        (temporary / DESIGN_SIDECAR_NAME).write_text(
+            f"{sha256_file(design_path)}  {DESIGN_JSON_NAME}\n",
+            encoding="ascii",
+            newline="\n",
+        )
+        verify_modern_reference_qualification_design(temporary)
+        temporary.rename(destination_path)
+    except Exception:
+        if temporary.exists():
+            shutil.rmtree(temporary)
+        raise
+    return destination_path
+
+
+def verify_modern_reference_qualification_design(
+    design_directory: Path | str,
+) -> dict[str, Any]:
+    """Verify the frozen design, copied inputs, config, hashes, and deterministic HTML."""
+
+    root = Path(design_directory).expanduser().resolve()
+    manifest_path = root / DESIGN_JSON_NAME
+    sidecar_path = root / DESIGN_SIDECAR_NAME
+    if not root.is_dir() or root.is_symlink() or not manifest_path.is_file():
+        raise ModernReferenceQualificationError("Qualification design is missing or symbolic")
+    expected_sidecar = f"{sha256_file(manifest_path)}  {DESIGN_JSON_NAME}"
+    if (
+        not sidecar_path.is_file()
+        or sidecar_path.read_text(encoding="ascii").strip() != expected_sidecar
+    ):
+        raise ModernReferenceQualificationError("Qualification design SHA-256 sidecar differs")
+    try:
+        design = json.loads(manifest_path.read_text(encoding="utf-8", errors="strict"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as error:
+        raise ModernReferenceQualificationError(
+            f"Qualification design is unreadable: {error}"
+        ) from error
+    if (
+        not isinstance(design, dict)
+        or design.get("design_version") != DESIGN_VERSION
+        or design.get("status") != "prospective_no_modern_results"
+        or design.get("protocol", {}).get("modern_result_existed_at_freeze") is not False
+    ):
+        raise ModernReferenceQualificationError("Qualification design identity is invalid")
+    declared: set[str] = set()
+    for record in design.get("artifacts", []):
+        path = _safe_relative(root, record.get("path"), "Qualification artifact")
+        relative = path.relative_to(root).as_posix()
+        if relative in declared:
+            raise ModernReferenceQualificationError(f"Duplicate qualification artifact: {relative}")
+        declared.add(relative)
+        if path.stat().st_size != record.get("bytes") or sha256_file(path) != record.get("sha256"):
+            raise ModernReferenceQualificationError(f"Qualification artifact differs: {relative}")
+    actual = {
+        path.relative_to(root).as_posix()
+        for path in root.rglob("*")
+        if path.is_file() and path.name not in {DESIGN_JSON_NAME, DESIGN_SIDECAR_NAME}
+    }
+    if actual != declared:
+        raise ModernReferenceQualificationError("Qualification artifact inventory differs")
+    config_path = _safe_relative(
+        root,
+        design["modern_workflow"]["config_path"],
+        "Modern workflow config",
+    )
+    if sha256_file(config_path) != design["modern_workflow"]["config_sha256"]:
+        raise ModernReferenceQualificationError("Modern workflow config hash differs")
+    try:
+        config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+        validate_modern_workflow_config(config)
+    except (OSError, UnicodeError, yaml.YAMLError, ConfigurationError) as error:
+        raise ModernReferenceQualificationError(
+            f"Modern workflow config is invalid: {error}"
+        ) from error
+    if config["optimization"]["block_order"] != ["momenta"]:
+        raise ModernReferenceQualificationError("Qualification must optimize only momenta")
+    if config["runtime"]["pairwise_evaluation"].get("autograd_strategy") != "recompute":
+        raise ModernReferenceQualificationError("Qualification must declare recompute autograd")
+    observed_html = (root / DESIGN_HTML_NAME).read_text(encoding="utf-8")
+    expected_html = _render_design_html(design)
+    if observed_html != expected_html:
+        mismatch = next(
+            (
+                index
+                for index, (observed, expected) in enumerate(
+                    zip(observed_html, expected_html, strict=False)
+                )
+                if observed != expected
+            ),
+            min(len(observed_html), len(expected_html)),
+        )
+        raise ModernReferenceQualificationError(
+            "Qualification review HTML differs from deterministic regeneration "
+            f"at character {mismatch}: observed "
+            f"{observed_html[mismatch:mismatch + 40]!r}; expected "
+            f"{expected_html[mismatch:mismatch + 40]!r}"
+        )
+    return design
+
+
+def _quantile(values: np.ndarray) -> float:
+    return float(np.quantile(values, 0.95, method="linear"))
+
+
+def _ratio(numerator: float, denominator: float) -> float:
+    if denominator <= np.finfo(float).eps:
+        return 1.0 if numerator <= np.finfo(float).eps else math.inf
+    return numerator / denominator
+
+
+def _render_assessment_html(assessment: dict[str, Any]) -> str:
+    rows = "".join(
+        "<tr>"
+        f"<td><code>{escape(row['filename'])}</code></td>"
+        f"<td>{row['reference_external_residual_p95']:.6g}</td>"
+        f"<td>{row['modern_external_residual_p95']:.6g}</td>"
+        f"<td>{row['modern_to_reference_residual_ratio']:.4g}</td>"
+        f"<td>{escape(str(row['subject_gate_pass']).lower())}</td></tr>"
+        for row in assessment["subjects"]
+    )
+    return f"""<!doctype html><html lang="en"><meta charset="utf-8">
+<title>Modern fixed-reference qualification assessment</title>
+<style>body{{font:16px system-ui;max-width:1080px;margin:2rem auto;line-height:1.45}}
+table{{border-collapse:collapse}}td,th{{border:1px solid #ccd;padding:.4rem}}
+.result{{font-size:1.3rem;font-weight:700}}</style>
+<h1>Modern Engine fixed-reference qualification assessment</h1>
+<p class="result">Engineering gate result: {escape(assessment['decision']['status'])}</p>
+<p>{escape(assessment['scientific_boundary'])}</p>
+<table><thead><tr><th>Subject</th><th>Reference p95</th><th>Modern p95</th>
+<th>ratio</th><th>subject gate</th></tr></thead><tbody>{rows}</tbody></table>
+</html>\n"""
+
+
+def assess_modern_reference_qualification(
+    design_directory: Path | str,
+    modern_run: Path | str,
+    destination: Path | str,
+    *,
+    created_at: str | None = None,
+) -> Path:
+    """Compare independently verified reconstructions with common external metrics."""
+
+    design_root = Path(design_directory).expanduser().resolve()
+    design = verify_modern_reference_qualification_design(design_root)
+    modern_root = Path(modern_run).expanduser().resolve()
+    workflow = verify_modern_workflow(modern_root)
+    source_config = modern_root / Path(*PurePosixPath(workflow["config"]["source_path"]).parts)
+    if sha256_file(source_config) != design["modern_workflow"]["config_sha256"]:
+        raise ModernReferenceQualificationError(
+            "Modern run was not created from the frozen qualification configuration"
+        )
+    bundle_root = modern_root / Path(*PurePosixPath(workflow["result_bundle"]["path"]).parts)
+    bundle = verify_modern_atlas_bundle(bundle_root)
+    modern_reconstructions = {
+        record["label"]: bundle_root / Path(*PurePosixPath(record["reconstruction_path"]).parts)
+        for record in bundle["subjects"]
+    }
+    expected_names = {record["filename"] for record in design["subjects"]}
+    if set(modern_reconstructions) != expected_names:
+        raise ModernReferenceQualificationError(
+            "Modern run subject labels differ from the prospective design"
+        )
+    template_path = _safe_relative(
+        design_root,
+        design["fixed_reference"]["template"]["path"],
+        "Fixed reference template",
+    )
+    template_diagonal = inspect_vtk(template_path).bounding_box_diagonal
+    subject_rows: list[dict[str, Any]] = []
+    reference_parts: list[np.ndarray] = []
+    modern_parts: list[np.ndarray] = []
+    cross_parts: list[np.ndarray] = []
+    subject_limit = float(
+        design["decision_gates"]["subject_external_residual_ratio_maximum"]
+    )
+    for record in design["subjects"]:
+        name = record["filename"]
+        target = read_vtk_polydata(
+            _safe_relative(design_root, record["source"]["path"], "Qualification subject")
+        )
+        reference_reconstruction = read_vtk_polydata(
+            _safe_relative(
+                design_root,
+                record["reference_reconstruction"]["path"],
+                "Reference reconstruction",
+            )
+        )
+        modern_reconstruction = read_vtk_polydata(modern_reconstructions[name])
+        reference_distances = symmetric_vertex_to_surface_distances(
+            target, reference_reconstruction
+        )
+        modern_distances = symmetric_vertex_to_surface_distances(target, modern_reconstruction)
+        cross_distances = symmetric_vertex_to_surface_distances(
+            reference_reconstruction, modern_reconstruction
+        )
+        reference_parts.append(reference_distances)
+        modern_parts.append(modern_distances)
+        cross_parts.append(cross_distances)
+        reference_p95 = _quantile(reference_distances)
+        modern_p95 = _quantile(modern_distances)
+        ratio = _ratio(modern_p95, reference_p95)
+        subject_rows.append(
+            {
+                "filename": name,
+                "reference_external_residual_p95": reference_p95,
+                "modern_external_residual_p95": modern_p95,
+                "modern_to_reference_residual_ratio": ratio,
+                "cross_engine_reconstruction_p95": _quantile(cross_distances),
+                "subject_gate_pass": ratio <= subject_limit,
+            }
+        )
+    pooled_reference = _quantile(np.concatenate(reference_parts))
+    pooled_modern = _quantile(np.concatenate(modern_parts))
+    pooled_ratio = _ratio(pooled_modern, pooled_reference)
+    cross_normalized = _quantile(np.concatenate(cross_parts)) / template_diagonal
+    pass_fraction = sum(row["subject_gate_pass"] for row in subject_rows) / len(subject_rows)
+    gates = design["decision_gates"]
+    gate_results = {
+        "modern_workflow_verification": True,
+        "modern_optimizer_converged": bool(bundle["optimizer"]["converged"]),
+        "pooled_external_residual_ratio": pooled_ratio
+        <= float(gates["pooled_external_residual_ratio_maximum"]),
+        "minimum_subject_pass_fraction": pass_fraction
+        >= float(gates["minimum_subject_pass_fraction"]),
+        "cross_engine_reconstruction_distance": cross_normalized
+        <= float(gates["cross_engine_reconstruction_p95_over_template_diagonal_maximum"]),
+    }
+    converged = gate_results["modern_optimizer_converged"]
+    decision_status = (
+        "inconclusive_not_converged"
+        if not converged
+        else ("pass" if all(gate_results.values()) else "fail")
+    )
+    assessment: dict[str, Any] = {
+        "assessment_version": "0.1",
+        "created_at": created_at or datetime.now(UTC).isoformat(),
+        "design": {
+            "path": str(design_root),
+            "sha256": sha256_file(design_root / DESIGN_JSON_NAME),
+        },
+        "modern_run": {
+            "path": str(modern_root),
+            "workflow_manifest_sha256": sha256_file(modern_root / "workflow-manifest.json"),
+        },
+        "metrics": {
+            "method": "deterministic sampled symmetric vertex-to-triangle surface distance",
+            "pooled_reference_external_residual_p95": pooled_reference,
+            "pooled_modern_external_residual_p95": pooled_modern,
+            "pooled_modern_to_reference_residual_ratio": pooled_ratio,
+            "subject_pass_fraction": pass_fraction,
+            "cross_engine_reconstruction_p95_over_template_diagonal": cross_normalized,
+        },
+        "subjects": subject_rows,
+        "decision": {
+            "status": decision_status,
+            "gate_results": gate_results,
+            "predeclared_gates": gates,
+        },
+        "scientific_boundary": design["scientific_boundary"],
+    }
+    output = Path(destination).expanduser().resolve()
+    if output.exists():
+        raise FileExistsError(f"Qualification assessment destination already exists: {output}")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    temporary = output.parent / f".{output.name}.tmp-{uuid.uuid4().hex}"
+    temporary.mkdir()
+    try:
+        json_path = temporary / ASSESSMENT_JSON_NAME
+        _write_json_exclusive(json_path, assessment)
+        (temporary / ASSESSMENT_HTML_NAME).write_text(
+            _render_assessment_html(assessment), encoding="utf-8", newline="\n"
+        )
+        (temporary / ASSESSMENT_SIDECAR_NAME).write_text(
+            f"{sha256_file(json_path)}  {ASSESSMENT_JSON_NAME}\n",
+            encoding="ascii",
+            newline="\n",
+        )
+        temporary.rename(output)
+    except Exception:
+        if temporary.exists():
+            shutil.rmtree(temporary)
+        raise
+    return output

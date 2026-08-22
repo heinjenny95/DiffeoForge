@@ -13,7 +13,7 @@ blockwise workflow provenance tracked by
 ## Purpose
 
 The modern numerical functions previously accepted only in-memory tensors.
-Configuration v0.2 and workflow manifest v0.1 connect a normal directory of
+Configuration v0.3 and workflow manifest v0.1 connect a normal directory of
 triangular legacy VTK PolyData
 meshes to the full atlas optimizer and the immutable atlas/PCA bundle without
 requiring a notebook, XML, or a special working directory.
@@ -60,6 +60,7 @@ runtime:
     mode: dense
     query_tile_size: null
     source_tile_size: null
+    autograd_strategy: standard  # optional for standard execution
 ```
 
 To select the already parity-tested non-approximate blockwise engine without
@@ -68,7 +69,11 @@ editing YAML, pass `--pairwise-mode blockwise --query-tile-size N
 counts; dense mode requires both to remain null. There is no automatic size,
 threshold, environment override, or fallback. Legacy v0.1 configurations and
 manifests without this record remain readable only as dense; configuration
-v0.2 requires it.
+v0.2 and v0.3 require it. Configuration v0.3 may additionally declare
+`autograd_strategy: recompute` for blockwise execution. This preserves the
+exact forward and gradient result while recomputing pairwise intermediates
+during backward to reduce retained memory; the extra calculation is explicit
+in both engine identity and immutable provenance.
 
 `modern-plan` v0.2 is a non-compute review step for the configured exact
 engine. It publishes logical all-pairs operation counts, the largest logical
@@ -94,8 +99,7 @@ diffeoforge modern-benchmark modern-atlas.yaml --subjects 5
 
 This measures fresh-process objective/gradient repeats using the same declared
 dense or blockwise plan, not the complete optimizer or workflow. A blockwise
-run may additionally declare a benchmark-only standard/recompute override; it
-does not change `modern-run` or its provenance. See the
+benchmark may additionally override standard/recompute explicitly. See the
 [modern benchmark protocol](MODERN_BENCHMARK.md).
 
 ## End-to-end contract
@@ -113,7 +117,8 @@ For every run, DiffeoForge:
 6. records and enforces deterministic topology and triangle-shape gates for
    every raw and effective input mesh;
 7. selects shared initial control points with the configured deterministic
-   farthest-template-vertex rule and initializes all momenta to zero;
+   farthest-template-vertex method, or copies and verifies an explicit finite
+   three-column control-point file, and initializes all momenta to zero;
 8. executes the declared dense or exact blockwise CPU/float64 atlas optimizer;
 9. creates and verifies the nested immutable atlas/PCA/quality bundle;
 10. removes private-only marker/lease state, then verifies the outer workflow

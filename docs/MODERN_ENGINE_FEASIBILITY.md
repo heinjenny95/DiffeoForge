@@ -230,6 +230,16 @@ The committed run deliberately contains no automatic analysis or ranking; its
 tiny synthetic geometry cannot establish full-atlas performance, a public
 preset, or large-cohort feasibility.
 
+A prospective fixed-reference qualification path now isolates subject
+registration from atlas-template and control-grid drift. It copies and hashes a
+completed Deformetrica estimated template, its exact control points, subjects
+selected before Modern results, and the matching reference reconstructions. The
+Modern workflow can optimize momenta only and can declare blockwise analytical
+backward recomputation end to end. A common external surface-distance assessor
+uses gates frozen before results. The first five-subject full-resolution Weevil
+design exists, but its Modern run has deliberately not been executed. See
+[Modern Engine fixed-reference qualification](MODERN_REFERENCE_QUALIFICATION.md).
+
 ## Gates before a usable atlas engine
 
 1. ~~Add current/varifold fixtures generated through the independent reference
@@ -239,7 +249,9 @@ preset, or large-cohort feasibility.
 3. ~~Prototype explicit optimization of momenta, template vertices, and shared
    control points.~~ Completed in the v0.4 CC0 block-optimizer evidence.
 4. Compare objective components, endpoint surfaces, control-point trajectories,
-   and gradients on CC0 meshes.
+   and gradients on CC0 meshes. A prospective fixed-reference endpoint-surface
+   harness is complete; its first real result and the remaining primitive
+   comparisons are still open.
 5. ~~Add explicit blockwise Gaussian and surface primitives and prove local
    forward/autograd parity with the dense baseline.~~ Completed as an isolated
    primitive slice.

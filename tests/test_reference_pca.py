@@ -7,14 +7,26 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+import yaml
 
 from diffeoforge.cli import main
 from diffeoforge.desktop.reference_result_review import (
     export_registration_qc_review,
+    load_registration_qc_draft,
     review_reference_result,
+    save_registration_qc_draft,
 )
 from diffeoforge.desktop.result_review import ModernResultReviewError, verify_result_artifact
 from diffeoforge.mesh import sha256_file
+from diffeoforge.modern_reference_qualification import (
+    ASSESSMENT_JSON_NAME,
+    CONFIG_NAME,
+    ModernReferenceQualificationError,
+    assess_modern_reference_qualification,
+    create_modern_reference_qualification,
+    verify_modern_reference_qualification_design,
+)
+from diffeoforge.modern_workflow import run_modern_workflow
 from diffeoforge.reference_pca import (
     REFERENCE_PCA_MANIFEST,
     REFERENCE_PCA_SIDECAR,
@@ -353,6 +365,77 @@ def test_registration_qc_review_export_is_explicit_and_non_overwriting(
     }
     assert payload["subjects"][0]["decision"] == "uncertain"
     assert "not an automatic biological exclusion" in payload["scientific_boundary"]
+
+
+def test_registration_qc_draft_round_trips_and_is_bound_to_verified_source(
+    tmp_path: Path,
+) -> None:
+    run = _completed_reference_run(tmp_path)
+    review = review_reference_result(run)
+    first_subject = review.registration_qc[0].subject_name
+
+    draft = save_registration_qc_draft(review, {first_subject: "pass"})
+
+    assert draft.name == "registration-qc-draft.json"
+    assert load_registration_qc_draft(review) == {first_subject: "pass"}
+
+    payload = json.loads(draft.read_text(encoding="utf-8"))
+    payload["source"]["analysis_manifest_sha256"] = "0" * 64
+    draft.write_text(json.dumps(payload), encoding="utf-8")
+    with pytest.raises(ModernResultReviewError, match="different verified run"):
+        load_registration_qc_draft(review)
+
+
+def test_modern_reference_qualification_design_is_prospective_and_tamper_evident(
+    tmp_path: Path,
+) -> None:
+    run = _completed_reference_run(tmp_path / "reference")
+
+    destination = create_modern_reference_qualification(
+        run,
+        tmp_path / "qualification-design",
+        subject_count=3,
+        max_cycles=1,
+        threads=1,
+        created_at="2026-08-22T00:00:00+00:00",
+    )
+    design = verify_modern_reference_qualification_design(destination)
+    config = yaml.safe_load((destination / CONFIG_NAME).read_text(encoding="utf-8"))
+
+    assert design["status"] == "prospective_no_modern_results"
+    assert len(design["subjects"]) == 3
+    assert design["protocol"]["modern_result_existed_at_freeze"] is False
+    assert config["optimization"]["block_order"] == ["momenta"]
+    assert config["initialization"]["control_points"]["method"] == "file"
+    assert config["runtime"]["pairwise_evaluation"]["autograd_strategy"] == "recompute"
+
+    modern_run = run_modern_workflow(
+        destination / CONFIG_NAME,
+        destination=tmp_path / "modern-run",
+        created_at="2026-08-22T01:00:00+00:00",
+    )
+    assessment_path = assess_modern_reference_qualification(
+        destination,
+        modern_run,
+        tmp_path / "assessment",
+        created_at="2026-08-22T02:00:00+00:00",
+    )
+    assessment = json.loads(
+        (assessment_path / ASSESSMENT_JSON_NAME).read_text(encoding="utf-8")
+    )
+
+    assert assessment["decision"]["status"] in {
+        "pass",
+        "fail",
+        "inconclusive_not_converged",
+    }
+    assert len(assessment["subjects"]) == 3
+    assert assessment["metrics"]["pooled_modern_to_reference_residual_ratio"] >= 0
+
+    subject = destination / design["subjects"][0]["source"]["path"]
+    subject.write_bytes(subject.read_bytes() + b"tamper")
+    with pytest.raises(ModernReferenceQualificationError, match="differs"):
+        verify_modern_reference_qualification_design(destination)
 
 
 def test_desktop_reference_review_rechecks_artifact_before_open(tmp_path: Path) -> None:

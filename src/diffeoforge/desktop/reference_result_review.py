@@ -10,6 +10,7 @@ from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 from typing import Any
 
+from diffeoforge.atomic_io import write_text_safely
 from diffeoforge.desktop.result_review import (
     ModernResultArtifact,
     ModernResultReview,
@@ -35,6 +36,7 @@ from diffeoforge.result_report import collect_run_report
 _PCA_DISPLAY_LIMIT = 10
 _ESTIMATED_TEMPLATE_MARKER = "__EstimatedParameters__Template_"
 _RECONSTRUCTION_MARKER = "__Reconstruction__"
+_REGISTRATION_QC_DRAFT = "registration-qc-draft.json"
 
 
 @dataclass(frozen=True)
@@ -44,6 +46,86 @@ class RegistrationQCReviewExport:
     path: Path
     sha256_path: Path
     sha256: str
+
+
+def _validated_registration_qc_decisions(
+    review: ModernResultReview,
+    decisions: Mapping[str, str],
+) -> dict[str, str]:
+    if review.engine_route != "deformetrica_reference" or not review.registration_qc:
+        raise ModernResultReviewError(
+            "A full-cohort Deformetrica registration-QC ranking is required"
+        )
+    allowed_subjects = {item.subject_name for item in review.registration_qc}
+    normalized = dict(decisions)
+    unexpected = set(normalized) - allowed_subjects
+    if unexpected:
+        raise ModernResultReviewError(
+            "Registration-QC decisions contain unknown subjects: "
+            + ", ".join(sorted(unexpected))
+        )
+    allowed_decisions = {"pass", "uncertain", "fail"}
+    if any(decision not in allowed_decisions for decision in normalized.values()):
+        raise ModernResultReviewError(
+            "Registration-QC decisions must be pass, uncertain, or fail"
+        )
+    return normalized
+
+
+def save_registration_qc_draft(
+    review: ModernResultReview,
+    decisions: Mapping[str, str],
+) -> Path:
+    """Atomically persist the current QC session outside immutable run evidence."""
+
+    normalized = _validated_registration_qc_decisions(review, decisions)
+    payload = {
+        "schema_version": "0.1",
+        "updated_at": datetime.now(UTC).isoformat(),
+        "source": {
+            "run_manifest_sha256": review.workflow_manifest_sha256,
+            "analysis_manifest_sha256": review.bundle_manifest_sha256,
+        },
+        "decisions": dict(sorted(normalized.items())),
+    }
+    path = review.run_directory / "reviews" / _REGISTRATION_QC_DRAFT
+    write_text_safely(
+        path,
+        json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
+        overwrite=True,
+    )
+    return path
+
+
+def load_registration_qc_draft(review: ModernResultReview) -> dict[str, str]:
+    """Load a source-bound autosave draft, returning an empty mapping when absent."""
+
+    path = review.run_directory / "reviews" / _REGISTRATION_QC_DRAFT
+    if not path.exists():
+        return {}
+    if not path.is_file() or path.is_symlink():
+        raise ModernResultReviewError("Registration-QC draft is not a regular file")
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8", errors="strict"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as error:
+        raise ModernResultReviewError(f"Registration-QC draft is unreadable: {error}") from error
+    if not isinstance(payload, dict) or payload.get("schema_version") != "0.1":
+        raise ModernResultReviewError("Registration-QC draft has an unsupported schema")
+    source = payload.get("source")
+    if not isinstance(source, dict) or source != {
+        "run_manifest_sha256": review.workflow_manifest_sha256,
+        "analysis_manifest_sha256": review.bundle_manifest_sha256,
+    }:
+        raise ModernResultReviewError(
+            "Registration-QC draft belongs to different verified run evidence"
+        )
+    decisions = payload.get("decisions")
+    if not isinstance(decisions, dict) or not all(
+        isinstance(subject, str) and isinstance(decision, str)
+        for subject, decision in decisions.items()
+    ):
+        raise ModernResultReviewError("Registration-QC draft decisions are invalid")
+    return _validated_registration_qc_decisions(review, decisions)
 
 
 def _reconstruction_subject_name(value: str) -> str:
@@ -86,27 +168,7 @@ def export_registration_qc_review(
 ) -> RegistrationQCReviewExport:
     """Export explicit full-cohort QC decisions without mutating run evidence."""
 
-    if review.engine_route != "deformetrica_reference" or not review.registration_qc:
-        raise ModernResultReviewError(
-            "A full-cohort Deformetrica registration-QC ranking is required"
-        )
-    allowed_subjects = {item.subject_name for item in review.registration_qc}
-    unexpected = set(decisions) - allowed_subjects
-    if unexpected:
-        raise ModernResultReviewError(
-            "Registration-QC decisions contain unknown subjects: "
-            + ", ".join(sorted(unexpected))
-        )
-    allowed_decisions = {"pass", "uncertain", "fail"}
-    invalid = {
-        subject: decision
-        for subject, decision in decisions.items()
-        if decision not in allowed_decisions
-    }
-    if invalid:
-        raise ModernResultReviewError(
-            "Registration-QC decisions must be pass, uncertain, or fail"
-        )
+    decisions = _validated_registration_qc_decisions(review, decisions)
     created_at = datetime.now(UTC)
     payload = {
         "schema_version": "0.1",

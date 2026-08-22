@@ -18,7 +18,7 @@
     "output"
   ],
   "properties": {
-    "schema_version": {"enum": ["0.1", "0.2"]},
+    "schema_version": {"enum": ["0.1", "0.2", "0.3"]},
     "project": {
       "type": "object",
       "additionalProperties": false,
@@ -133,13 +133,27 @@
       "required": ["control_points", "momenta"],
       "properties": {
         "control_points": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["method", "count"],
-          "properties": {
-            "method": {"const": "farthest_template_vertices"},
-            "count": {"type": "integer", "minimum": 1}
-          }
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["method", "count"],
+              "properties": {
+                "method": {"const": "farthest_template_vertices"},
+                "count": {"type": "integer", "minimum": 1}
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["method", "count", "path"],
+              "properties": {
+                "method": {"const": "file"},
+                "count": {"type": "integer", "minimum": 1},
+                "path": {"type": "string", "minLength": 1}
+              }
+            }
+          ]
         },
         "momenta": {"const": "zeros"}
       }
@@ -191,7 +205,7 @@
         "max_cycles": {"type": "integer", "minimum": 0},
         "block_order": {
           "type": "array",
-          "minItems": 3,
+          "minItems": 1,
           "maxItems": 3,
           "uniqueItems": true,
           "items": {"enum": ["momenta", "template", "control_points"]}
@@ -247,7 +261,8 @@
               "properties": {
                 "mode": {"const": "dense"},
                 "query_tile_size": {"type": "null"},
-                "source_tile_size": {"type": "null"}
+                "source_tile_size": {"type": "null"},
+                "autograd_strategy": {"const": "standard"}
               }
             },
             {
@@ -257,7 +272,8 @@
               "properties": {
                 "mode": {"const": "blockwise"},
                 "query_tile_size": {"type": "integer", "minimum": 1},
-                "source_tile_size": {"type": "integer", "minimum": 1}
+                "source_tile_size": {"type": "integer", "minimum": 1},
+                "autograd_strategy": {"enum": ["standard", "recompute"]}
               }
             }
           ]
@@ -276,6 +292,17 @@
       "if": {
         "required": ["schema_version"],
         "properties": {"schema_version": {"const": "0.2"}}
+      },
+      "then": {
+        "properties": {
+          "runtime": {"required": ["pairwise_evaluation"]}
+        }
+      }
+    },
+    {
+      "if": {
+        "required": ["schema_version"],
+        "properties": {"schema_version": {"const": "0.3"}}
       },
       "then": {
         "properties": {

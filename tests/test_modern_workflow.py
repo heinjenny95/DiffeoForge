@@ -229,6 +229,48 @@ def test_farthest_template_initialization_is_repeatable_and_explicit() -> None:
         workflow.farthest_template_vertex_indices(vertices, vertices.shape[0] + 1)
 
 
+def test_external_control_points_and_momenta_only_are_verified(tmp_path: Path) -> None:
+    control_path = tmp_path / "reference-control-points.txt"
+    vertices = read_vtk_polydata(MESH_DIRECTORY / "template.vtk").vertices
+    control_path.write_text(
+        "".join(" ".join(format(value, ".17g") for value in row) + "\n" for row in vertices[:9]),
+        encoding="utf-8",
+    )
+    config_value = _configuration(output=str(tmp_path / "unused"))
+    config_value["schema_version"] = "0.3"
+    config_value["initialization"]["control_points"] = {
+        "method": "file",
+        "count": 9,
+        "path": control_path.name,
+    }
+    config_value["optimization"]["block_order"] = ["momenta"]
+    config_value["runtime"]["pairwise_evaluation"] = {
+        "mode": "blockwise",
+        "query_tile_size": 32,
+        "source_tile_size": 32,
+        "autograd_strategy": "recompute",
+    }
+    config = tmp_path / "fixed-reference.yaml"
+    config.write_text(yaml.safe_dump(config_value, sort_keys=False), encoding="utf-8")
+
+    run = workflow.run_modern_workflow(
+        config,
+        destination=tmp_path / "fixed-reference-run",
+        created_at=FIXED_TIME,
+    )
+    manifest = workflow.verify_modern_workflow(run)
+
+    assert manifest["engine"]["id"] == "diffeoforge_modern_blockwise_recompute"
+    assert manifest["initialization"]["control_points"] == {
+        "method": "file",
+        "count": 9,
+        "source_sha256": sha256_file(control_path),
+        "copied_path": "input/initialization/control-points.txt",
+    }
+    effective = json.loads((run / "config" / "effective-config.json").read_text())
+    assert effective["optimization"]["block_order"] == ["momenta"]
+
+
 def test_five_subject_workflow_is_verified_and_byte_repeatable(tmp_path: Path) -> None:
     config = _write_config(tmp_path / "workflow.yaml")
     progress = []

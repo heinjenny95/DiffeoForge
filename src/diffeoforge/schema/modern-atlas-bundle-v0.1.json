@@ -27,7 +27,7 @@
       "additionalProperties": false,
       "required": ["id", "diffeoforge", "pytorch", "numpy", "device", "dtype"],
       "properties": {
-        "id": {"enum": ["diffeoforge_modern_dense", "diffeoforge_modern_blockwise"]},
+        "id": {"enum": ["diffeoforge_modern_dense", "diffeoforge_modern_blockwise", "diffeoforge_modern_blockwise_recompute"]},
         "diffeoforge": {"type": "string", "minLength": 1},
         "pytorch": {"type": "string", "minLength": 1},
         "numpy": {"type": "string", "minLength": 1},
@@ -46,7 +46,9 @@
             }
           },
           "then": {
-            "properties": {"id": {"const": "diffeoforge_modern_blockwise"}}
+            "properties": {
+              "id": {"enum": ["diffeoforge_modern_blockwise", "diffeoforge_modern_blockwise_recompute"]}
+            }
           }
         },
         {
@@ -60,6 +62,20 @@
           },
           "then": {
             "properties": {"id": {"const": "diffeoforge_modern_dense"}}
+          }
+        },
+        {
+          "if": {
+            "required": ["pairwise_evaluation"],
+            "properties": {
+              "pairwise_evaluation": {
+                "required": ["autograd_strategy"],
+                "properties": {"autograd_strategy": {"const": "recompute"}}
+              }
+            }
+          },
+          "then": {
+            "properties": {"id": {"const": "diffeoforge_modern_blockwise_recompute"}}
           }
         }
       ]
@@ -99,7 +115,7 @@
             "max_cycles": {"type": "integer", "minimum": 0},
             "block_order": {
               "type": "array",
-              "minItems": 3,
+              "minItems": 1,
               "maxItems": 3,
               "uniqueItems": true,
               "items": {"enum": ["momenta", "template", "control_points"]}
@@ -291,7 +307,8 @@
           "properties": {
             "mode": {"const": "dense"},
             "query_tile_size": {"type": "null"},
-            "source_tile_size": {"type": "null"}
+            "source_tile_size": {"type": "null"},
+            "autograd_strategy": {"const": "standard"}
           }
         },
         {
@@ -301,7 +318,8 @@
           "properties": {
             "mode": {"const": "blockwise"},
             "query_tile_size": {"type": "integer", "minimum": 1},
-            "source_tile_size": {"type": "integer", "minimum": 1}
+            "source_tile_size": {"type": "integer", "minimum": 1},
+            "autograd_strategy": {"enum": ["standard", "recompute"]}
           }
         }
       ]

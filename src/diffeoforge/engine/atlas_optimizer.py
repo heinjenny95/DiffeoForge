@@ -182,9 +182,12 @@ def _block_order(value: Sequence[str]) -> tuple[AtlasParameterBlock, ...]:
     if isinstance(value, (str, bytes)):
         raise TypeError("block_order must be a sequence of parameter-block names")
     normalized = tuple(value)
-    if len(normalized) != len(_ALL_BLOCKS) or set(normalized) != set(_ALL_BLOCKS):
+    if not normalized or len(normalized) != len(set(normalized)) or not set(normalized) <= set(
+        _ALL_BLOCKS
+    ):
         raise ValueError(
-            "block_order must contain momenta, template, and control_points exactly once"
+            "block_order must contain one or more unique entries selected from "
+            "momenta, template, and control_points"
         )
     return normalized  # type: ignore[return-value]
 
@@ -218,7 +221,7 @@ def optimize_atlas(
     progress_callback: AtlasProgressCallback | None = None,
     cancel_requested: AtlasCancellationCallback | None = None,
 ) -> AtlasOptimizationResult:
-    """Maximize the atlas objective over all three declared parameter blocks.
+    """Maximize the atlas objective over the selected parameter blocks.
 
     Blocks are updated sequentially. Each accepted candidate must satisfy an
     ascent Armijo condition for the current block. No adaptive or hidden

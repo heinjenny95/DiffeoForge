@@ -267,6 +267,33 @@ def build_parser() -> argparse.ArgumentParser:
     )
     modern_init_parser.add_argument("--force", action="store_true")
 
+    modern_reference_design_parser = subparsers.add_parser(
+        "modern-reference-qualification-init",
+        help=(
+            "Freeze a fixed-template, fixed-control-point Modern Engine comparison "
+            "against a completed Deformetrica run without computing it."
+        ),
+    )
+    modern_reference_design_parser.add_argument("reference_run", type=Path)
+    modern_reference_design_parser.add_argument("--output", type=Path, required=True)
+    modern_reference_design_parser.add_argument("--subjects", type=int, default=5)
+    modern_reference_design_parser.add_argument("--cycles", type=int, default=3)
+    modern_reference_design_parser.add_argument("--threads", type=int, default=4)
+
+    modern_reference_verify_parser = subparsers.add_parser(
+        "modern-reference-qualification-verify",
+        help="Verify a frozen no-results-yet Modern/Deformetrica comparison design.",
+    )
+    modern_reference_verify_parser.add_argument("design_directory", type=Path)
+
+    modern_reference_assess_parser = subparsers.add_parser(
+        "modern-reference-qualification-assess",
+        help="Assess a verified Modern run against its frozen Deformetrica reference design.",
+    )
+    modern_reference_assess_parser.add_argument("design_directory", type=Path)
+    modern_reference_assess_parser.add_argument("modern_run", type=Path)
+    modern_reference_assess_parser.add_argument("--output", type=Path, required=True)
+
     modern_run_parser = subparsers.add_parser(
         "modern-run",
         help="Execute one immutable experimental modern atlas/PCA workflow.",
@@ -1251,6 +1278,73 @@ def main(argv: Sequence[str] | None = None) -> int:
                 )
                 print(f"Preflight report: {written_report}")
         except ConfigurationError as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
+
+    if args.command == "modern-reference-qualification-init":
+        try:
+            from diffeoforge.modern_reference_qualification import (
+                CONFIG_NAME,
+                DESIGN_HTML_NAME,
+                DESIGN_JSON_NAME,
+                create_modern_reference_qualification,
+                verify_modern_reference_qualification_design,
+            )
+
+            destination = create_modern_reference_qualification(
+                args.reference_run,
+                args.output,
+                subject_count=args.subjects,
+                max_cycles=args.cycles,
+                threads=args.threads,
+            )
+            design = verify_modern_reference_qualification_design(destination)
+            print(f"Prospective fixed-reference qualification created: {destination}")
+            print(f"Subjects: {len(design['subjects'])}")
+            print(f"Frozen Modern config: {destination / CONFIG_NAME}")
+            print(f"Machine-readable design: {destination / DESIGN_JSON_NAME}")
+            print(f"Review page: {destination / DESIGN_HTML_NAME}")
+            print("No Modern optimizer was run and no comparison result exists yet.")
+        except (OSError, RuntimeError, TypeError, ValueError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
+
+    if args.command == "modern-reference-qualification-verify":
+        try:
+            from diffeoforge.modern_reference_qualification import (
+                verify_modern_reference_qualification_design,
+            )
+
+            design = verify_modern_reference_qualification_design(args.design_directory)
+            print(f"Fixed-reference qualification verified: {args.design_directory.resolve()}")
+            print(f"Subjects: {len(design['subjects'])}")
+            print("The design contains no Modern result and remains prospective.")
+        except (OSError, RuntimeError, TypeError, ValueError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
+
+    if args.command == "modern-reference-qualification-assess":
+        try:
+            from diffeoforge.modern_reference_qualification import (
+                ASSESSMENT_JSON_NAME,
+                assess_modern_reference_qualification,
+            )
+
+            destination = assess_modern_reference_qualification(
+                args.design_directory,
+                args.modern_run,
+                args.output,
+            )
+            assessment = json.loads(
+                (destination / ASSESSMENT_JSON_NAME).read_text(encoding="utf-8")
+            )
+            print(f"Fixed-reference qualification assessed: {destination}")
+            print(f"Engineering gate result: {assessment['decision']['status']}")
+            print("This result does not establish biological validity or atlas equivalence.")
+        except (OSError, RuntimeError, TypeError, ValueError) as error:
             print(f"ERROR: {error}", file=sys.stderr)
             return 2
         return 0

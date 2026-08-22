@@ -106,7 +106,9 @@ from diffeoforge.desktop.reference_readiness import (
 )
 from diffeoforge.desktop.reference_result_review import (
     export_registration_qc_review,
+    load_registration_qc_draft,
     review_reference_result,
+    save_registration_qc_draft,
 )
 from diffeoforge.desktop.reference_validation_dialog import ReferenceValidationDialog
 from diffeoforge.desktop.reference_worker_protocol import DesktopReferenceWorkerEvent
@@ -7243,8 +7245,13 @@ class DiffeoForgeWindow(QMainWindow):
     @Slot(object)
     def _result_review_succeeded(self, review: ModernResultReview) -> None:
         self._worker = None
-        self._registration_qc_decisions = {}
         self._result_review = review
+        draft_warning: str | None = None
+        try:
+            self._registration_qc_decisions = load_registration_qc_draft(review)
+        except ModernResultReviewError as error:
+            self._registration_qc_decisions = {}
+            draft_warning = str(error)
         self._populate_review_rows(self.result_overview_layout, review.overview)
         self._populate_review_rows(self.result_optimization_layout, review.optimization)
         self._populate_review_rows(self.result_pca_layout, review.pca)
@@ -7344,6 +7351,11 @@ class DiffeoForgeWindow(QMainWindow):
         self.result_status_label.setText(
             "Snapshot fully verified. Before each open action, the selected artifact is "
             "rebound to both manifest hashes, its file size, and SHA-256."
+            + (
+                f" Existing registration-QC autosave was ignored: {draft_warning}"
+                if draft_warning is not None
+                else ""
+            )
         )
         self.run_back_button.setEnabled(True)
         self._sync_ready_state()
@@ -7561,7 +7573,55 @@ class DiffeoForgeWindow(QMainWindow):
                     f"{item.subject_name} · {decision}"
                 ),
             )
-        self._load_selected_atlas_mesh(index)
+        autosave_error: str | None = None
+        if self._result_review is not None:
+            try:
+                save_registration_qc_draft(
+                    self._result_review,
+                    self._registration_qc_decisions,
+                )
+            except (ModernResultReviewError, OSError, TypeError, ValueError) as error:
+                autosave_error = str(error)
+
+        qc_indices = [
+            candidate
+            for candidate in range(self.result_atlas_mesh_combo.count())
+            if isinstance(self.result_atlas_mesh_combo.itemData(candidate), str)
+            and self.result_atlas_mesh_combo.itemData(candidate).startswith("registration-qc:")
+        ]
+        unreviewed = [
+            candidate
+            for candidate in qc_indices
+            if self.result_atlas_mesh_combo.itemData(candidate).split(":", 1)[1]
+            not in self._registration_qc_decisions
+        ]
+        later = [candidate for candidate in unreviewed if candidate > index]
+        next_index = later[0] if later else (unreviewed[0] if unreviewed else None)
+        if next_index is not None:
+            wrapped = next_index < index
+            self.result_atlas_mesh_combo.setCurrentIndex(next_index)
+            if wrapped:
+                self.result_atlas_status_label.setText(
+                    self.result_atlas_status_label.text()
+                    + " Continuing with an earlier item that is still unreviewed; this is "
+                    "an explicit finite review pass, not a silent restart."
+                )
+        else:
+            self._load_selected_atlas_mesh(index)
+            self.result_atlas_status_label.setObjectName("statusSuccess")
+            self.result_atlas_status_label.setStyleSheet("")
+            self.result_atlas_status_label.setText(
+                f"All {len(qc_indices)} registration-QC meshes have a decision. "
+                "The review will not restart automatically. The current draft is saved; "
+                "use Export QC status for a timestamped immutable snapshot."
+            )
+        if autosave_error is not None:
+            self.result_atlas_status_label.setObjectName("statusWarning")
+            self.result_atlas_status_label.setStyleSheet("")
+            self.result_atlas_status_label.setText(
+                self.result_atlas_status_label.text()
+                + f" Autosave failed; export before closing: {autosave_error}"
+            )
 
     @Slot()
     def _export_registration_qc_status(self) -> None:

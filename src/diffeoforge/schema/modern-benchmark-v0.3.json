@@ -101,6 +101,9 @@
             },
             "source_tile_size": {
               "type": "null"
+            },
+            "autograd_strategy": {
+              "const": "standard"
             }
           }
         },
@@ -123,6 +126,12 @@
             "source_tile_size": {
               "type": "integer",
               "minimum": 1
+            },
+            "autograd_strategy": {
+              "enum": [
+                "standard",
+                "recompute"
+              ]
             }
           }
         }

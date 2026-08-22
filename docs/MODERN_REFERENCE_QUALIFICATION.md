@@ -1,0 +1,83 @@
+# Modern Engine fixed-reference qualification
+
+Status: **prospective harness implemented; the real Weevil comparison has not run**.
+
+The first useful Deformetrica comparison does not train two independent atlases
+and then ask whether their freely estimated templates happen to look alike. That
+would combine template drift, control-grid drift, optimizer behavior, and subject
+registration into one hard-to-interpret difference.
+
+DiffeoForge instead freezes a completed, verified Deformetrica result as the
+reference:
+
+1. copy the estimated Deformetrica template;
+2. copy its exact estimated control points;
+3. select subjects without inspecting any Modern result;
+4. retain the matching Deformetrica reconstructions;
+5. run the Modern Engine with only subject momenta in the optimizer block order;
+6. compare both reconstruction sets to the same original surfaces with the same
+   deterministic sampled symmetric vertex-to-triangle metric.
+
+Internal objective values are not treated as equivalent across engines. The two
+implementations can use different parameterizations and numerical trajectories,
+so an equal or lower raw objective would not by itself establish equivalent
+registration.
+
+## Prospective commands
+
+Create a no-results-yet design:
+
+```text
+diffeoforge modern-reference-qualification-init REFERENCE_RUN --output DESIGN
+```
+
+Verify the frozen design without computing:
+
+```text
+diffeoforge modern-reference-qualification-verify DESIGN
+```
+
+Run the generated Modern configuration through the ordinary immutable workflow:
+
+```text
+diffeoforge modern-run DESIGN/modern-fixed-reference.yaml
+```
+
+After the Modern run verifies, create an independent assessment:
+
+```text
+diffeoforge modern-reference-qualification-assess DESIGN MODERN_RUN --output ASSESSMENT
+```
+
+## Predeclared engineering gates
+
+The v0.1 design freezes the following provisional gates before Modern results
+exist:
+
+- verified Modern workflow and nested bundle;
+- explicit Modern optimizer convergence; an iteration-cap result is reported as
+  inconclusive rather than as registration non-inferiority;
+- pooled external residual p95 no more than 1.20 times the reference value;
+- per-subject residual ratio no more than 1.25 for at least 80% of subjects;
+- pooled cross-engine reconstruction p95 no more than 5% of the frozen template
+  bounding-box diagonal.
+
+These thresholds are engineering non-inferiority criteria for a pilot. They are
+not validated universal tolerances, optimizer-equivalence proof, biological
+validation, convergence proof, GPU parity, or evidence that the engine is ready
+for 300 specimens.
+
+## Full-resolution Weevil evidence frozen on 2026-08-22
+
+The first private design contains five pre-results geometry-diverse subjects,
+approximately 16,652–20,166 triangles per subject, the 18,236-triangle estimated
+template, and 100 copied Deformetrica control points. It uses CPU/float64,
+64-by-64 exact blockwise evaluation, analytical backward recomputation, and a
+three-cycle screening cap. Unless the optimizer reaches its declared gradient
+tolerance within that cap, its later comparison is explicitly inconclusive and
+must motivate a longer predeclared convergence run rather than a pass/fail claim.
+
+A single-subject, single fresh-process objective-plus-gradient observation took
+124.129 seconds with 2.294 GiB sampled peak RSS on the local machine. This one
+measurement is a hardware-bound planning observation, not a full-run ETA or a
+scaling law. The prospective five-subject run remains deliberately unexecuted.

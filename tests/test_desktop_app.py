@@ -59,6 +59,79 @@ def test_desktop_ui_source_has_no_german_copy() -> None:
     assert violations == []
 
 
+def test_registration_qc_decision_advances_once_and_stops_after_last(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from diffeoforge.desktop.result_review import ModernResultReview, RegistrationQCItem
+    from diffeoforge.desktop.widgets import DiffeoForgeWindow
+
+    application = QApplication.instance() or QApplication(["registration-qc-advance-test"])
+    items = tuple(
+        RegistrationQCItem(
+            rank=index,
+            subject_name=f"subject-{index}",
+            residual_p95=float(3 - index),
+            original_artifact_key=f"original-{index}",
+            reconstruction_artifact_key=f"reconstruction-{index}",
+        )
+        for index in (1, 2)
+    )
+    review = ModernResultReview(
+        run_directory=tmp_path,
+        bundle_directory=tmp_path,
+        project_name="QC",
+        created_at="2026-08-22T00:00:00+00:00",
+        workflow_manifest_path=tmp_path / "manifest.json",
+        workflow_manifest_sha256="a" * 64,
+        bundle_manifest_path=tmp_path / "analysis.json",
+        bundle_manifest_sha256="b" * 64,
+        optimizer_converged=True,
+        optimizer_termination_reason="test",
+        optimizer_cycles_completed=1,
+        optimizer_max_cycles=1,
+        overview=(),
+        optimization=(),
+        pca=(),
+        quality=(),
+        artifacts=(),
+        scientific_boundaries=(),
+        engine_route="deformetrica_reference",
+        registration_qc=items,
+    )
+    window = DiffeoForgeWindow()
+    window._result_review = review
+    window.result_atlas_mesh_combo.blockSignals(True)
+    for item in items:
+        window.result_atlas_mesh_combo.addItem(
+            item.subject_name,
+            f"registration-qc:{item.subject_name}",
+        )
+    loaded: list[int] = []
+    window._load_selected_atlas_mesh = loaded.append  # type: ignore[method-assign]
+
+    window._record_registration_qc_decision("pass")
+
+    assert window.result_atlas_mesh_combo.currentIndex() == 1
+    assert window._registration_qc_decisions == {"subject-1": "pass"}
+
+    window._record_registration_qc_decision("pass")
+
+    assert window.result_atlas_mesh_combo.currentIndex() == 1
+    assert window._registration_qc_decisions == {
+        "subject-1": "pass",
+        "subject-2": "pass",
+    }
+    assert loaded == [1]
+    assert "All 2 registration-QC meshes" in window.result_atlas_status_label.text()
+    assert (tmp_path / "reviews" / "registration-qc-draft.json").is_file()
+    application.processEvents()
+
+
 def _reference_preparation_status_fixture(
     *,
     config: Path,

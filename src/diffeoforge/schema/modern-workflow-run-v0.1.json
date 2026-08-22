@@ -84,7 +84,8 @@
           "properties": {
             "mode": {"const": "dense"},
             "query_tile_size": {"type": "null"},
-            "source_tile_size": {"type": "null"}
+            "source_tile_size": {"type": "null"},
+            "autograd_strategy": {"const": "standard"}
           }
         },
         {
@@ -94,7 +95,8 @@
           "properties": {
             "mode": {"const": "blockwise"},
             "query_tile_size": {"type": "integer", "minimum": 1},
-            "source_tile_size": {"type": "integer", "minimum": 1}
+            "source_tile_size": {"type": "integer", "minimum": 1},
+            "autograd_strategy": {"enum": ["standard", "recompute"]}
           }
         }
       ]
@@ -109,7 +111,7 @@
       "additionalProperties": false,
       "required": ["id", "diffeoforge", "pytorch", "numpy", "device", "dtype", "threads", "random_seed"],
       "properties": {
-        "id": {"enum": ["diffeoforge_modern_dense", "diffeoforge_modern_blockwise"]},
+        "id": {"enum": ["diffeoforge_modern_dense", "diffeoforge_modern_blockwise", "diffeoforge_modern_blockwise_recompute"]},
         "diffeoforge": {"type": "string", "minLength": 1},
         "pytorch": {"type": "string", "minLength": 1},
         "numpy": {"type": "string", "minLength": 1},
@@ -130,7 +132,9 @@
             }
           },
           "then": {
-            "properties": {"id": {"const": "diffeoforge_modern_blockwise"}}
+            "properties": {
+              "id": {"enum": ["diffeoforge_modern_blockwise", "diffeoforge_modern_blockwise_recompute"]}
+            }
           }
         },
         {
@@ -144,6 +148,21 @@
           },
           "then": {
             "properties": {"id": {"const": "diffeoforge_modern_dense"}}
+          }
+        }
+        ,
+        {
+          "if": {
+            "required": ["pairwise_evaluation"],
+            "properties": {
+              "pairwise_evaluation": {
+                "required": ["autograd_strategy"],
+                "properties": {"autograd_strategy": {"const": "recompute"}}
+              }
+            }
+          },
+          "then": {
+            "properties": {"id": {"const": "diffeoforge_modern_blockwise_recompute"}}
           }
         }
       ]
@@ -198,14 +217,29 @@
       "required": ["control_points", "momenta"],
       "properties": {
         "control_points": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["method", "count", "template_vertex_indices"],
-          "properties": {
-            "method": {"const": "farthest_template_vertices"},
-            "count": {"type": "integer", "minimum": 1},
-            "template_vertex_indices": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "integer", "minimum": 0}}
-          }
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["method", "count", "template_vertex_indices"],
+              "properties": {
+                "method": {"const": "farthest_template_vertices"},
+                "count": {"type": "integer", "minimum": 1},
+                "template_vertex_indices": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "integer", "minimum": 0}}
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["method", "count", "source_sha256", "copied_path"],
+              "properties": {
+                "method": {"const": "file"},
+                "count": {"type": "integer", "minimum": 1},
+                "source_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                "copied_path": {"type": "string", "minLength": 1}
+              }
+            }
+          ]
         },
         "momenta": {"const": "zeros"}
       }
