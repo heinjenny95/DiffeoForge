@@ -2177,6 +2177,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             ratios = comparison["performance"]["candidate_to_baseline_median_ratios"]
             print(f"Optimizer study comparison created and verified: {destination}")
             print(
+                "Comparison dimension: "
+                f"{comparison.get('comparison_dimension', 'pairwise_evaluation')}"
+            )
+            print(
                 "Candidate/baseline median optimizer-time ratio: "
                 f"{ratios['optimizer_wall_time_ns']:.6g}"
             )
@@ -2184,7 +2188,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "Discrete work and outcomes match: "
                 f"{str(comparison['numerical_agreement']['all_discrete_work_and_outcomes_match']).lower()}"
             )
-            print("No preferred tile preset, ETA, or scaling claim was produced.")
+            print("No automatic winner, safe preset, ETA, or scaling claim was produced.")
         except ImportError as error:
             print(
                 "ERROR: Modern optimizer comparison dependencies are missing; install "
@@ -2210,6 +2214,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(
                 "Optimizer study comparison verified: "
                 f"{args.comparison_directory.resolve()}"
+            )
+            print(
+                "Comparison dimension: "
+                f"{comparison.get('comparison_dimension', 'pairwise_evaluation')}"
             )
             print(
                 "Discrete work and outcomes match: "

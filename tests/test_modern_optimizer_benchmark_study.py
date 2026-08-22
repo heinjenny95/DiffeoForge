@@ -12,8 +12,11 @@ pytest.importorskip("torch")
 from diffeoforge.cli import main  # noqa: E402
 from diffeoforge.modern_optimizer_benchmark_comparison import (  # noqa: E402
     COMPARISON_HTML_NAME,
+    LEGACY_COMPARISON_VERSION,
     ModernOptimizerBenchmarkComparisonError,
+    collect_modern_optimizer_benchmark_comparison,
     verify_modern_optimizer_benchmark_comparison,
+    write_modern_optimizer_benchmark_comparison,
 )
 from diffeoforge.modern_optimizer_benchmark_design import (  # noqa: E402
     collect_modern_optimizer_benchmark_design,
@@ -155,9 +158,10 @@ def test_completed_studies_have_a_strict_descriptive_comparison(
         )
         == 0
     )
-    assert "No preferred tile preset" in capsys.readouterr().out
+    assert "No automatic winner" in capsys.readouterr().out
     comparison = verify_modern_optimizer_benchmark_comparison(comparison_path)
-    assert comparison["comparison_version"] == "0.1"
+    assert comparison["comparison_version"] == "0.2"
+    assert comparison["comparison_dimension"] == "pairwise_evaluation"
     assert comparison["numerical_agreement"][
         "all_discrete_work_and_outcomes_match"
     ] is True
@@ -185,6 +189,93 @@ def test_completed_studies_have_a_strict_descriptive_comparison(
     comparison_html.write_text("tampered", encoding="utf-8")
     with pytest.raises(ModernOptimizerBenchmarkComparisonError, match="HTML differs"):
         verify_modern_optimizer_benchmark_comparison(comparison_path)
+
+
+def test_comparison_can_isolate_engine_implementation_and_verify_legacy_v01(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import diffeoforge.modern_optimizer_benchmark as benchmark_module
+    import diffeoforge.modern_optimizer_benchmark_design as design_module
+
+    monkeypatch.setattr(benchmark_module, "_run_fresh_sample", lambda *_args: _sample())
+
+    def versioned_run(version: str, name: str, config: Path = EXAMPLE) -> Path:
+        monkeypatch.setattr(design_module, "ENGINE_IMPLEMENTATION_VERSION", version)
+        monkeypatch.setattr(benchmark_module, "ENGINE_IMPLEMENTATION_VERSION", version)
+        design_value = collect_modern_optimizer_benchmark_design(
+            config,
+            subject_counts=[1],
+            cycle_caps=[1],
+            repeats_per_condition=1,
+            warmup_runs=0,
+            order_seed=23,
+            created_at=FIXED_TIME,
+        )
+        design_path = write_modern_optimizer_benchmark_design(
+            design_value,
+            tmp_path / f"{name}-design",
+        )
+        return run_modern_optimizer_benchmark_study(
+            design_path,
+            config,
+            destination=tmp_path / f"{name}-run",
+        )
+
+    baseline = versioned_run("0.3", "baseline")
+    candidate = versioned_run("0.4", "candidate")
+    comparison = collect_modern_optimizer_benchmark_comparison(
+        baseline,
+        candidate,
+        created_at=FIXED_TIME,
+    )
+    destination = write_modern_optimizer_benchmark_comparison(
+        comparison,
+        tmp_path / "engine-comparison",
+    )
+    verified = verify_modern_optimizer_benchmark_comparison(destination)
+
+    assert verified["comparison_dimension"] == "engine_implementation"
+    assert verified["baseline"]["engine_implementation"] == "0.3"
+    assert verified["candidate"]["engine_implementation"] == "0.4"
+    assert verified["numerical_agreement"][
+        "all_parameter_hashes_match_exactly"
+    ] is True
+
+    with pytest.raises(
+        ModernOptimizerBenchmarkComparisonError,
+        match="same software and engine implementation",
+    ):
+        collect_modern_optimizer_benchmark_comparison(
+            baseline,
+            candidate,
+            comparison_version=LEGACY_COMPARISON_VERSION,
+        )
+
+    legacy = collect_modern_optimizer_benchmark_comparison(
+        baseline,
+        baseline,
+        created_at=FIXED_TIME,
+        comparison_version=LEGACY_COMPARISON_VERSION,
+    )
+    legacy_destination = write_modern_optimizer_benchmark_comparison(
+        legacy,
+        tmp_path / "legacy-comparison",
+    )
+    assert verify_modern_optimizer_benchmark_comparison(legacy_destination)[
+        "comparison_version"
+    ] == LEGACY_COMPARISON_VERSION
+
+    mixed_candidate = versioned_run(
+        "0.4",
+        "mixed-candidate",
+        ROOT / "examples" / "minimal-modern-atlas-blockwise.yaml",
+    )
+    with pytest.raises(
+        ModernOptimizerBenchmarkComparisonError,
+        match="cannot change engine implementation and pairwise evaluation together",
+    ):
+        collect_modern_optimizer_benchmark_comparison(baseline, mixed_candidate)
 
 
 def test_interrupted_study_resumes_from_verified_report_prefix(

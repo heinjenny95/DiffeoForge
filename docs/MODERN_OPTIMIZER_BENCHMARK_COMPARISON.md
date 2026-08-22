@@ -12,15 +12,23 @@ diffeoforge modern-optimizer-benchmark-study-comparison-verify COMPARISON
 
 The comparison first strictly verifies both study manifests, copied designs,
 source configurations, event histories, and every raw optimizer report. The
-current v0.1 contract accepts exactly one condition per study and requires:
+current v0.2 contract accepts exactly one condition per study and records one
+isolated comparison dimension: `pairwise_evaluation` or
+`engine_implementation`. It requires:
 
 - the complete template and subject inventory to match;
-- the software and Modern Engine implementation to match;
+- the software outside the explicitly recorded Engine implementation to match;
 - subject count, cycle cap, repeats, warm-ups, and deterministic protocol to
   match;
-- every configuration field outside the explicit pairwise-evaluation plan to
-  match; and
+- for a pairwise comparison, the Engine implementation and every configuration
+  field outside the pairwise-evaluation plan to match;
+- for an Engine-implementation comparison, the complete optimizer configuration
+  including the pairwise-evaluation plan to match;
+- the two dimensions may never change together; and
 - the selected report inputs and measured optimizer protocol to match.
+
+Legacy v0.1 comparisons remain strictly verifiable and retain their original
+same-engine, pairwise-only semantics. New comparison writers produce v0.2.
 
 The output contains exactly three files: authoritative JSON, its SHA-256
 sidecar, and deterministic HTML. It records per-study medians for target-cache
@@ -29,7 +37,9 @@ growth, plus candidate/baseline median ratios. Every paired repeat is checked
 for identical termination, decisions, work counters, and line-search behavior;
 final objective components are compared at `1e-12` absolute and relative
 tolerance. Exact history and parameter-hash matches are reported separately so
-floating-point accumulation changes are never hidden.
+floating-point accumulation changes are never hidden. This lets a prospective
+Engine 0.4 study be compared with its frozen Engine 0.3 baseline without also
+changing tile size, subject selection, cycle cap, or any scientific parameter.
 
 The dedicated verifier reopens both source studies and deterministically
 recomputes all comparison fields and HTML. Moving or changing a source study

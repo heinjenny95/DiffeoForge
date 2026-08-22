@@ -25,7 +25,9 @@ from diffeoforge.modern_optimizer_benchmark_study import (
     verify_modern_optimizer_benchmark_study_run,
 )
 
-COMPARISON_VERSION = "0.1"
+LEGACY_COMPARISON_VERSION = "0.1"
+COMPARISON_VERSION = "0.2"
+SUPPORTED_COMPARISON_VERSIONS = (LEGACY_COMPARISON_VERSION, COMPARISON_VERSION)
 COMPARISON_JSON_NAME = "optimizer-study-comparison.json"
 COMPARISON_SIDECAR_NAME = "optimizer-study-comparison.sha256"
 COMPARISON_HTML_NAME = "optimizer-study-comparison.html"
@@ -99,27 +101,61 @@ def _without_pairwise(configuration: dict[str, Any]) -> dict[str, Any]:
     return value
 
 
+def _without_engine_implementation(software: dict[str, Any]) -> dict[str, Any]:
+    value = json.loads(json.dumps(software))
+    value.pop("engine_implementation", None)
+    return value
+
+
 def _require_comparable(
     baseline: dict[str, Any],
     candidate: dict[str, Any],
-) -> None:
+    *,
+    legacy: bool = False,
+) -> str:
     baseline_design = baseline["design"]
     candidate_design = candidate["design"]
     if baseline_design["input"] != candidate_design["input"]:
         raise ModernOptimizerBenchmarkComparisonError(
             "Optimizer studies do not bind the same complete input inventory"
         )
-    if baseline_design["software"] != candidate_design["software"]:
+    baseline_software = baseline_design["software"]
+    candidate_software = candidate_design["software"]
+    baseline_engine = baseline_software.get("engine_implementation")
+    candidate_engine = candidate_software.get("engine_implementation")
+    if legacy and baseline_software != candidate_software:
         raise ModernOptimizerBenchmarkComparisonError(
             "Optimizer studies do not bind the same software and engine implementation"
+        )
+    if not legacy and _without_engine_implementation(
+        baseline_software
+    ) != _without_engine_implementation(candidate_software):
+        raise ModernOptimizerBenchmarkComparisonError(
+            "Optimizer studies do not bind the same software outside engine implementation"
         )
     if baseline_design["protocol"] != candidate_design["protocol"]:
         raise ModernOptimizerBenchmarkComparisonError(
             "Optimizer studies do not use the same frozen benchmark protocol"
         )
-    if _without_pairwise(baseline_design["configuration"]) != _without_pairwise(
-        candidate_design["configuration"]
-    ):
+    baseline_configuration = baseline_design["configuration"]
+    candidate_configuration = candidate_design["configuration"]
+    baseline_pairwise = baseline_configuration["pairwise_evaluation"]
+    candidate_pairwise = candidate_configuration["pairwise_evaluation"]
+    engine_differs = baseline_engine != candidate_engine
+    pairwise_differs = baseline_pairwise != candidate_pairwise
+    if engine_differs and pairwise_differs:
+        raise ModernOptimizerBenchmarkComparisonError(
+            "Optimizer comparison cannot change engine implementation and "
+            "pairwise evaluation together"
+        )
+    dimension = "engine_implementation" if engine_differs else "pairwise_evaluation"
+    if dimension == "engine_implementation" and baseline_configuration != candidate_configuration:
+        raise ModernOptimizerBenchmarkComparisonError(
+            "Engine-implementation comparison requires identical optimizer configurations"
+        )
+    if dimension == "pairwise_evaluation" and _without_pairwise(
+        baseline_configuration
+    ) != _without_pairwise(candidate_configuration):
         raise ModernOptimizerBenchmarkComparisonError(
             "Optimizer study configurations differ outside pairwise evaluation"
         )
@@ -132,12 +168,32 @@ def _require_comparable(
         raise ModernOptimizerBenchmarkComparisonError(
             "Optimizer reports do not contain the same selected inputs"
         )
-    if _without_pairwise(baseline["report"]["configuration"]) != _without_pairwise(
-        candidate["report"]["configuration"]
+    baseline_report_configuration = baseline["report"]["configuration"]
+    candidate_report_configuration = candidate["report"]["configuration"]
+    report_configurations_match = (
+        baseline_report_configuration == candidate_report_configuration
+        if dimension == "engine_implementation"
+        else _without_pairwise(baseline_report_configuration)
+        == _without_pairwise(candidate_report_configuration)
+    )
+    if not report_configurations_match:
+        raise ModernOptimizerBenchmarkComparisonError(
+            "Optimizer report protocols differ outside the declared comparison dimension"
+        )
+    report_baseline_engine = baseline["report"]["environment"].get(
+        "engine_implementation"
+    )
+    report_candidate_engine = candidate["report"]["environment"].get(
+        "engine_implementation"
+    )
+    if (
+        report_baseline_engine != baseline_engine
+        or report_candidate_engine != candidate_engine
     ):
         raise ModernOptimizerBenchmarkComparisonError(
-            "Optimizer report protocols differ outside pairwise evaluation"
+            "Optimizer reports do not bind their source design engine implementations"
         )
+    return dimension
 
 
 def _summary(samples: list[dict[str, Any]], field: str) -> dict[str, float]:
@@ -241,56 +297,74 @@ def collect_modern_optimizer_benchmark_comparison(
     candidate_run: Path | str,
     *,
     created_at: str | None = None,
+    comparison_version: str = COMPARISON_VERSION,
 ) -> dict[str, Any]:
     """Verify and descriptively compare two completed single-condition studies."""
 
+    if comparison_version not in SUPPORTED_COMPARISON_VERSIONS:
+        raise ModernOptimizerBenchmarkComparisonError(
+            f"Unsupported optimizer comparison version: {comparison_version}"
+        )
     baseline_root = Path(baseline_run).expanduser().resolve()
     candidate_root = Path(candidate_run).expanduser().resolve()
     baseline = _single_condition_evidence(baseline_root)
     candidate = _single_condition_evidence(candidate_root)
-    _require_comparable(baseline, candidate)
+    dimension = _require_comparable(
+        baseline,
+        candidate,
+        legacy=comparison_version == LEGACY_COMPARISON_VERSION,
+    )
     baseline_samples = baseline["report"]["samples"]
     candidate_samples = candidate["report"]["samples"]
     if not isinstance(baseline_samples, list) or not isinstance(candidate_samples, list):
         raise ModernOptimizerBenchmarkComparisonError(
             "Optimizer reports do not contain valid repeat samples"
         )
-    return {
-        "comparison_version": COMPARISON_VERSION,
+    baseline_engine = baseline["design"]["software"].get("engine_implementation")
+    candidate_engine = candidate["design"]["software"].get("engine_implementation")
+    baseline_record = {
+        "path": str(baseline_root),
+        "manifest_sha256": sha256_file(baseline_root / MANIFEST_NAME),
+        "design_sha256": sha256_file(
+            baseline_root / DESIGN_DIRECTORY_NAME / DESIGN_JSON_NAME
+        ),
+        "pairwise_evaluation": baseline["design"]["configuration"][
+            "pairwise_evaluation"
+        ],
+        "repeat_consistent": baseline["report"]["repeat_consistency"]["consistent"],
+    }
+    candidate_record = {
+        "path": str(candidate_root),
+        "manifest_sha256": sha256_file(candidate_root / MANIFEST_NAME),
+        "design_sha256": sha256_file(
+            candidate_root / DESIGN_DIRECTORY_NAME / DESIGN_JSON_NAME
+        ),
+        "pairwise_evaluation": candidate["design"]["configuration"][
+            "pairwise_evaluation"
+        ],
+        "repeat_consistent": candidate["report"]["repeat_consistency"]["consistent"],
+    }
+    protocol = {
+        "subject_count": baseline["condition"]["subject_count"],
+        "cycle_cap": baseline["condition"]["cycle_cap"],
+        "repeats": baseline["design"]["protocol"]["repeats_per_condition"],
+        "warmup_runs_per_repeat": baseline["design"]["protocol"][
+            "warmup_runs_per_repeat"
+        ],
+    }
+    if comparison_version == LEGACY_COMPARISON_VERSION:
+        protocol["engine_implementation"] = baseline_engine
+    else:
+        baseline_record["engine_implementation"] = baseline_engine
+        candidate_record["engine_implementation"] = candidate_engine
+        protocol["baseline_engine_implementation"] = baseline_engine
+        protocol["candidate_engine_implementation"] = candidate_engine
+    result = {
+        "comparison_version": comparison_version,
         "created_at": created_at or datetime.now(UTC).isoformat(),
-        "baseline": {
-            "path": str(baseline_root),
-            "manifest_sha256": sha256_file(baseline_root / MANIFEST_NAME),
-            "design_sha256": sha256_file(
-                baseline_root / DESIGN_DIRECTORY_NAME / DESIGN_JSON_NAME
-            ),
-            "pairwise_evaluation": baseline["design"]["configuration"][
-                "pairwise_evaluation"
-            ],
-            "repeat_consistent": baseline["report"]["repeat_consistency"]["consistent"],
-        },
-        "candidate": {
-            "path": str(candidate_root),
-            "manifest_sha256": sha256_file(candidate_root / MANIFEST_NAME),
-            "design_sha256": sha256_file(
-                candidate_root / DESIGN_DIRECTORY_NAME / DESIGN_JSON_NAME
-            ),
-            "pairwise_evaluation": candidate["design"]["configuration"][
-                "pairwise_evaluation"
-            ],
-            "repeat_consistent": candidate["report"]["repeat_consistency"]["consistent"],
-        },
-        "protocol": {
-            "subject_count": baseline["condition"]["subject_count"],
-            "cycle_cap": baseline["condition"]["cycle_cap"],
-            "repeats": baseline["design"]["protocol"]["repeats_per_condition"],
-            "warmup_runs_per_repeat": baseline["design"]["protocol"][
-                "warmup_runs_per_repeat"
-            ],
-            "engine_implementation": baseline["design"]["software"].get(
-                "engine_implementation"
-            ),
-        },
+        "baseline": baseline_record,
+        "candidate": candidate_record,
+        "protocol": protocol,
         "numerical_agreement": _numerical_agreement(
             baseline_samples,
             candidate_samples,
@@ -298,6 +372,9 @@ def collect_modern_optimizer_benchmark_comparison(
         "performance": _performance(baseline_samples, candidate_samples),
         "scientific_boundary": SCIENTIFIC_BOUNDARY,
     }
+    if comparison_version != LEGACY_COMPARISON_VERSION:
+        result["comparison_dimension"] = dimension
+    return result
 
 
 def _render_html(comparison: dict[str, Any]) -> str:
@@ -306,6 +383,30 @@ def _render_html(comparison: dict[str, Any]) -> str:
 
     performance = comparison["performance"]
     agreement = comparison["numerical_agreement"]
+    dimension = comparison.get("comparison_dimension", "pairwise_evaluation")
+    baseline_engine = comparison["baseline"].get(
+        "engine_implementation",
+        comparison["protocol"].get("engine_implementation"),
+    )
+    candidate_engine = comparison["candidate"].get(
+        "engine_implementation",
+        comparison["protocol"].get("engine_implementation"),
+    )
+    if comparison["comparison_version"] == LEGACY_COMPARISON_VERSION:
+        context_rows = (
+            f"<ul><li>Subjects: {comparison['protocol']['subject_count']}; cycle cap:\n"
+            f"{comparison['protocol']['cycle_cap']}; repeats: "
+            f"{comparison['protocol']['repeats']}</li>"
+        )
+    else:
+        context_rows = (
+            f"<ul><li>Comparison dimension: {escape(dimension)}</li>\n"
+            f"<li>Engine implementation: {escape(str(baseline_engine))} →\n"
+            f"{escape(str(candidate_engine))}</li>\n"
+            f"<li>Subjects: {comparison['protocol']['subject_count']}; cycle cap:\n"
+            f"{comparison['protocol']['cycle_cap']}; repeats: "
+            f"{comparison['protocol']['repeats']}</li>"
+        )
     discrete_match = str(agreement["all_discrete_work_and_outcomes_match"]).lower()
     scalar_match = str(agreement["all_scalar_components_match_within_tolerance"]).lower()
     rows = "".join(
@@ -325,8 +426,7 @@ def _render_html(comparison: dict[str, Any]) -> str:
 table{{border-collapse:collapse}}td,th{{border:1px solid #ccd;padding:.4rem}}</style>
 <h1>Modern optimizer benchmark study comparison</h1>
 <p>{escape(comparison['scientific_boundary'])}</p>
-<ul><li>Subjects: {comparison['protocol']['subject_count']}; cycle cap:
-{comparison['protocol']['cycle_cap']}; repeats: {comparison['protocol']['repeats']}</li>
+{context_rows}
 <li>Discrete work/outcomes match: {discrete_match}</li>
 <li>Final scalar components match within 1e-12: 
 {scalar_match}</li></ul>
@@ -418,7 +518,7 @@ def verify_modern_optimizer_benchmark_comparison(
         ) from error
     if (
         not isinstance(comparison, dict)
-        or comparison.get("comparison_version") != COMPARISON_VERSION
+        or comparison.get("comparison_version") not in SUPPORTED_COMPARISON_VERSIONS
         or not isinstance(comparison.get("created_at"), str)
         or not comparison["created_at"]
     ):
@@ -438,6 +538,7 @@ def verify_modern_optimizer_benchmark_comparison(
             baseline,
             candidate,
             created_at=comparison["created_at"],
+            comparison_version=comparison["comparison_version"],
         )
         write_modern_optimizer_benchmark_comparison(expected, expected_root)
         if comparison != expected:
