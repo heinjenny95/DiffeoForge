@@ -58,6 +58,13 @@ diffeoforge modern-reference-qualification-assess DESIGN MODERN_RUN --output ASS
 diffeoforge modern-reference-qualification-assessment-verify ASSESSMENT
 ```
 
+Both commands accept `--metric-workers 1..8`; the CLI default is four. Subject
+metrics are evaluated concurrently, while results are accumulated in the frozen
+design order, so worker scheduling cannot change assessment JSON, HTML, hashes,
+or gate decisions. The CLI prints one completed-subject event for both the
+initial assessment pass and the independent recomputation pass. Direct Python
+callers retain the conservative single-worker default unless they opt in.
+
 If the optimizer reaches its declared cycle cap without convergence, freeze a
 separate successor rather than altering or restarting the completed run:
 
@@ -138,3 +145,39 @@ Continuation design v0.3 is now frozen for ten further momenta-only cycles. It
 starts from the verified parent momenta and the last accepted momenta step
 `0.00015625`, rather than zero momenta and the original `0.01` starter. The
 successor remains a sequential pilot, not independent validation evidence.
+
+## Engine 0.9 prospective 16-subject result (23 August 2026)
+
+A new initial design was frozen before its Modern result existed and explicitly
+bound to Modern Engine implementation `0.9`. It selected 16 full-resolution
+Weevil subjects, copied the matching Deformetrica reconstructions, fixed the
+estimated template and 100 control points, and declared a momenta-only L-BFGS
+run with a 150-cycle cap and relative-objective tolerance `0.0001`.
+
+The immutable Modern workflow completed and verified. Optimization stopped by
+the declared relative-objective criterion after 83 cycles rather than by the
+cycle cap. All 83 decisions were accepted; the run used 88 line-search
+evaluations. The objective increased monotonically from `-612.108853308423` to
+`-21.786620266872`, a gain of `590.322233041552`.
+
+The separately generated fixed-reference assessment reports `pass` for every
+predeclared engineering gate:
+
+- pooled external residual p95: reference `0.035650977379`, Modern
+  `0.027034298906`, ratio `0.758304565363` against the maximum `1.20`;
+- per-subject residual-ratio gate: 16/16 subjects passed, fraction `1.0`
+  against the minimum `0.80`;
+- pooled cross-engine reconstruction p95: `0.017734582040` of the frozen
+  template diagonal against the maximum `0.05`;
+- verified workflow and explicit optimizer convergence: both true.
+
+The strict assessment verifier independently recomputes all surface-distance
+metrics and must reproduce the JSON and HTML byte-for-byte. This result is
+prospective engineering non-inferiority evidence for this fixed-reference,
+16-subject registration test. It is not proof of atlas equivalence, biological
+validity, GPU parity, or readiness for a 300-subject production study.
+
+After the result was frozen, the unchanged strict verifier was run with four
+subject workers. It reproduced the published PASS assessment in `210.83 s` on
+the local machine, with approximately 460 MiB observed working set. This is a
+machine-specific execution observation, not a general runtime promise.

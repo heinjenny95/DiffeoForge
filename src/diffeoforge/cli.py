@@ -348,6 +348,12 @@ def build_parser() -> argparse.ArgumentParser:
     modern_reference_assess_parser.add_argument("design_directory", type=Path)
     modern_reference_assess_parser.add_argument("modern_run", type=Path)
     modern_reference_assess_parser.add_argument("--output", type=Path, required=True)
+    modern_reference_assess_parser.add_argument(
+        "--metric-workers",
+        type=int,
+        default=4,
+        help="Parallel surface-distance workers, from 1 to 8 (default: 4).",
+    )
 
     modern_reference_assessment_verify_parser = subparsers.add_parser(
         "modern-reference-qualification-assessment-verify",
@@ -356,6 +362,12 @@ def build_parser() -> argparse.ArgumentParser:
     modern_reference_assessment_verify_parser.add_argument(
         "assessment_directory",
         type=Path,
+    )
+    modern_reference_assessment_verify_parser.add_argument(
+        "--metric-workers",
+        type=int,
+        default=4,
+        help="Parallel surface-distance workers, from 1 to 8 (default: 4).",
     )
 
     modern_continuation_parser = subparsers.add_parser(
@@ -1500,12 +1512,34 @@ def main(argv: Sequence[str] | None = None) -> int:
                 verify_modern_reference_qualification_assessment,
             )
 
+            def assessment_progress(completed: int, total: int, filename: str) -> None:
+                print(
+                    f"Assessment metrics: subject {completed}/{total} complete: {filename}",
+                    flush=True,
+                )
+
             destination = assess_modern_reference_qualification(
                 args.design_directory,
                 args.modern_run,
                 args.output,
+                metric_workers=args.metric_workers,
+                progress_callback=assessment_progress,
             )
-            assessment = verify_modern_reference_qualification_assessment(destination)
+
+            def assessment_verification_progress(
+                completed: int, total: int, filename: str
+            ) -> None:
+                print(
+                    f"Independent verification: subject {completed}/{total} complete: "
+                    f"{filename}",
+                    flush=True,
+                )
+
+            assessment = verify_modern_reference_qualification_assessment(
+                destination,
+                metric_workers=args.metric_workers,
+                progress_callback=assessment_verification_progress,
+            )
             print(f"Fixed-reference qualification assessed: {destination}")
             print(f"Engineering gate result: {assessment['decision']['status']}")
             print("This result does not establish biological validity or atlas equivalence.")
@@ -1520,8 +1554,19 @@ def main(argv: Sequence[str] | None = None) -> int:
                 verify_modern_reference_qualification_assessment,
             )
 
+            def standalone_verification_progress(
+                completed: int, total: int, filename: str
+            ) -> None:
+                print(
+                    f"Independent verification: subject {completed}/{total} complete: "
+                    f"{filename}",
+                    flush=True,
+                )
+
             assessment = verify_modern_reference_qualification_assessment(
-                args.assessment_directory
+                args.assessment_directory,
+                metric_workers=args.metric_workers,
+                progress_callback=standalone_verification_progress,
             )
             print(
                 "Fixed-reference qualification assessment verified: "

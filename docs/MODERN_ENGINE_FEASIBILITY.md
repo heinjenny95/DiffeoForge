@@ -254,8 +254,12 @@ completed Deformetrica estimated template, its exact control points, subjects
 selected before Modern results, and the matching reference reconstructions. The
 Modern workflow can optimize momenta only and can declare blockwise analytical
 backward recomputation end to end. A common external surface-distance assessor
-uses gates frozen before results. The first five-subject full-resolution Weevil
-design exists, but its Modern run has deliberately not been executed. See
+uses gates frozen before results. The first five-subject screening run was
+inconclusive because it exhausted its deliberately short cycle cap. A later
+Engine 0.9 design bound 16 full-resolution Weevil subjects before results,
+converged after 83 of at most 150 cycles, and passed every predeclared
+fixed-reference engineering gate, including all 16 subject-level residual
+gates. See
 [Modern Engine fixed-reference qualification](MODERN_REFERENCE_QUALIFICATION.md).
 
 ## Gates before a usable atlas engine
@@ -268,8 +272,8 @@ design exists, but its Modern run has deliberately not been executed. See
    control points.~~ Completed in the v0.4 CC0 block-optimizer evidence.
 4. Compare objective components, endpoint surfaces, control-point trajectories,
    and gradients on CC0 meshes. A prospective fixed-reference endpoint-surface
-   harness is complete; its first real result and the remaining primitive
-   comparisons are still open.
+   harness now has a converged, passing 16-subject real-data result; the
+   remaining primitive and control-point-trajectory comparisons are still open.
 5. ~~Add explicit blockwise Gaussian and surface primitives and prove local
    forward/autograd parity with the dense baseline.~~ Completed as an isolated
    primitive slice.
@@ -283,8 +287,13 @@ design exists, but its Modern run has deliberately not been executed. See
    A versioned fresh-process multi-cycle primitive is complete; the prospective
    multi-dimensional study and peak-memory characterization remain open.
 9. Define evidence-derived tolerances before accepting a production backend.
-10. Integrate the engine through immutable run manifests without weakening the
-    existing reference workflow.
+   Provisional fixed-reference gates have now passed once prospectively; broader
+   datasets and atlas-update tests are still needed before the tolerances can be
+   treated as production acceptance criteria.
+10. ~~Integrate the engine through immutable run manifests without weakening the
+    existing reference workflow.~~ Completed for the experimental CLI workflow,
+    including strict nested verification, bounded complete-cycle checkpoints,
+    and exact Engine 0.9 continuation. Desktop productization remains separate.
 
 No scientific atlas result should be produced or interpreted through this
 experimental module until these gates pass.

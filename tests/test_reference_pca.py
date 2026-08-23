@@ -455,6 +455,26 @@ def test_modern_reference_qualification_design_is_prospective_and_tamper_evident
     )
     assessment = json.loads((assessment_path / ASSESSMENT_JSON_NAME).read_text(encoding="utf-8"))
     assert verify_modern_reference_qualification_assessment(assessment_path) == assessment
+    metric_progress: list[tuple[int, int, str]] = []
+    assert (
+        verify_modern_reference_qualification_assessment(
+            assessment_path,
+            metric_workers=2,
+            progress_callback=lambda completed, total, filename: metric_progress.append(
+                (completed, total, filename)
+            ),
+        )
+        == assessment
+    )
+    assert metric_progress == [
+        (index, len(design["subjects"]), record["filename"])
+        for index, record in enumerate(design["subjects"], start=1)
+    ]
+    with pytest.raises(ValueError, match="between 1 and 8"):
+        verify_modern_reference_qualification_assessment(
+            assessment_path,
+            metric_workers=0,
+        )
     assert (
         main(
             [

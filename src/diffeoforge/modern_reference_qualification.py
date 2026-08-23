@@ -10,6 +10,8 @@ import re
 import shutil
 import tempfile
 import uuid
+from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from html import escape
 from itertools import pairwise
@@ -95,6 +97,9 @@ ASSESSMENT_HTML_NAME = "modern-reference-qualification-assessment.html"
 
 class ModernReferenceQualificationError(RuntimeError):
     """Raised when prospective comparison evidence is incomplete or inconsistent."""
+
+
+QualificationMetricProgress = Callable[[int, int, str], None]
 
 
 def _write_json_exclusive(path: Path, value: object) -> None:
@@ -1225,6 +1230,59 @@ def _ratio(numerator: float, denominator: float) -> float:
     return numerator / denominator
 
 
+def _validate_metric_workers(metric_workers: int) -> int:
+    if isinstance(metric_workers, bool) or not isinstance(metric_workers, int):
+        raise TypeError("Qualification metric workers must be an integer")
+    if not 1 <= metric_workers <= 8:
+        raise ValueError("Qualification metric workers must be between 1 and 8")
+    return metric_workers
+
+
+def _qualification_subject_metrics(
+    design_root: Path,
+    record: dict[str, Any],
+    modern_reconstruction_path: Path,
+    subject_limit: float,
+) -> tuple[dict[str, Any], np.ndarray, np.ndarray, np.ndarray]:
+    """Measure one frozen subject without changing deterministic report order."""
+
+    name = record["filename"]
+    target = read_vtk_polydata(
+        _safe_relative(design_root, record["source"]["path"], "Qualification subject")
+    )
+    reference_reconstruction = read_vtk_polydata(
+        _safe_relative(
+            design_root,
+            record["reference_reconstruction"]["path"],
+            "Reference reconstruction",
+        )
+    )
+    modern_reconstruction = read_vtk_polydata(modern_reconstruction_path)
+    reference_distances = symmetric_vertex_to_surface_distances(
+        target, reference_reconstruction
+    )
+    modern_distances = symmetric_vertex_to_surface_distances(target, modern_reconstruction)
+    cross_distances = symmetric_vertex_to_surface_distances(
+        reference_reconstruction, modern_reconstruction
+    )
+    reference_p95 = _quantile(reference_distances)
+    modern_p95 = _quantile(modern_distances)
+    ratio = _ratio(modern_p95, reference_p95)
+    return (
+        {
+            "filename": name,
+            "reference_external_residual_p95": reference_p95,
+            "modern_external_residual_p95": modern_p95,
+            "modern_to_reference_residual_ratio": ratio,
+            "cross_engine_reconstruction_p95": _quantile(cross_distances),
+            "subject_gate_pass": ratio <= subject_limit,
+        },
+        reference_distances,
+        modern_distances,
+        cross_distances,
+    )
+
+
 def _optimizer_trajectory_evidence(
     history_rows: list[dict[str, str]],
 ) -> dict[str, Any]:
@@ -1401,8 +1459,12 @@ def assess_modern_reference_qualification(
     destination: Path | str,
     *,
     created_at: str | None = None,
+    metric_workers: int = 1,
+    progress_callback: QualificationMetricProgress | None = None,
 ) -> Path:
     """Compare independently verified reconstructions with common external metrics."""
+
+    metric_workers = _validate_metric_workers(metric_workers)
 
     design_root = Path(design_directory).expanduser().resolve()
     design = verify_modern_reference_qualification_design(design_root)
@@ -1509,42 +1571,40 @@ def assess_modern_reference_qualification(
     modern_parts: list[np.ndarray] = []
     cross_parts: list[np.ndarray] = []
     subject_limit = float(design["decision_gates"]["subject_external_residual_ratio_maximum"])
-    for record in design["subjects"]:
-        name = record["filename"]
-        target = read_vtk_polydata(
-            _safe_relative(design_root, record["source"]["path"], "Qualification subject")
+    records = list(design["subjects"])
+
+    def measure(record: dict[str, Any]) -> tuple[
+        dict[str, Any], np.ndarray, np.ndarray, np.ndarray
+    ]:
+        return _qualification_subject_metrics(
+            design_root,
+            record,
+            modern_reconstructions[record["filename"]],
+            subject_limit,
         )
-        reference_reconstruction = read_vtk_polydata(
-            _safe_relative(
-                design_root,
-                record["reference_reconstruction"]["path"],
-                "Reference reconstruction",
-            )
+
+    worker_count = min(metric_workers, len(records))
+    if worker_count == 1:
+        measured = map(measure, records)
+        executor = None
+    else:
+        executor = ThreadPoolExecutor(
+            max_workers=worker_count,
+            thread_name_prefix="qualification-metric",
         )
-        modern_reconstruction = read_vtk_polydata(modern_reconstructions[name])
-        reference_distances = symmetric_vertex_to_surface_distances(
-            target, reference_reconstruction
-        )
-        modern_distances = symmetric_vertex_to_surface_distances(target, modern_reconstruction)
-        cross_distances = symmetric_vertex_to_surface_distances(
-            reference_reconstruction, modern_reconstruction
-        )
-        reference_parts.append(reference_distances)
-        modern_parts.append(modern_distances)
-        cross_parts.append(cross_distances)
-        reference_p95 = _quantile(reference_distances)
-        modern_p95 = _quantile(modern_distances)
-        ratio = _ratio(modern_p95, reference_p95)
-        subject_rows.append(
-            {
-                "filename": name,
-                "reference_external_residual_p95": reference_p95,
-                "modern_external_residual_p95": modern_p95,
-                "modern_to_reference_residual_ratio": ratio,
-                "cross_engine_reconstruction_p95": _quantile(cross_distances),
-                "subject_gate_pass": ratio <= subject_limit,
-            }
-        )
+        measured = executor.map(measure, records)
+    try:
+        for completed, result in enumerate(measured, start=1):
+            subject_row, reference_distances, modern_distances, cross_distances = result
+            subject_rows.append(subject_row)
+            reference_parts.append(reference_distances)
+            modern_parts.append(modern_distances)
+            cross_parts.append(cross_distances)
+            if progress_callback is not None:
+                progress_callback(completed, len(records), subject_row["filename"])
+    finally:
+        if executor is not None:
+            executor.shutdown(wait=True, cancel_futures=True)
     pooled_reference = _quantile(np.concatenate(reference_parts))
     pooled_modern = _quantile(np.concatenate(modern_parts))
     pooled_ratio = _ratio(pooled_modern, pooled_reference)
@@ -1638,8 +1698,13 @@ def assess_modern_reference_qualification(
 
 def verify_modern_reference_qualification_assessment(
     assessment_directory: Path | str,
+    *,
+    metric_workers: int = 1,
+    progress_callback: QualificationMetricProgress | None = None,
 ) -> dict[str, Any]:
     """Recompute and strictly verify one published qualification assessment."""
+
+    metric_workers = _validate_metric_workers(metric_workers)
 
     root = Path(assessment_directory).expanduser().resolve()
     expected_names = {
@@ -1694,6 +1759,8 @@ def verify_modern_reference_qualification_assessment(
             modern_run,
             expected_root,
             created_at=assessment["created_at"],
+            metric_workers=metric_workers,
+            progress_callback=progress_callback,
         )
         expected = json.loads((expected_root / ASSESSMENT_JSON_NAME).read_text(encoding="utf-8"))
         if assessment["assessment_version"] == "0.1":
