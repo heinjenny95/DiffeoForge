@@ -25,6 +25,8 @@ from diffeoforge.modern_reference_qualification import (
     ASSESSMENT_JSON_NAME,
     ASSESSMENT_SIDECAR_NAME,
     CONFIG_NAME,
+    DESIGN_JSON_NAME,
+    DESIGN_SIDECAR_NAME,
     ModernReferenceQualificationError,
     _render_assessment_html,
     _screen_subject_candidates,
@@ -411,7 +413,9 @@ def test_modern_reference_qualification_design_is_prospective_and_tamper_evident
     assert design["status"] == "prospective_no_modern_results"
     assert len(design["subjects"]) == 3
     assert design["protocol"]["modern_result_existed_at_freeze"] is False
-    assert design["design_version"] == "0.2"
+    assert design["design_version"] == "0.6"
+    assert design["modern_workflow"]["expected_engine_implementation"] == "0.9"
+    assert config["schema_version"] == "0.5"
     assert design["protocol"]["quality_screening"]["excluded_candidates"] == []
     assert all("source_quality" in record for record in design["subjects"])
     assert config["optimization"]["block_order"] == ["momenta"]
@@ -419,6 +423,24 @@ def test_modern_reference_qualification_design_is_prospective_and_tamper_evident
     assert config["runtime"]["pairwise_evaluation"]["autograd_strategy"] == "recompute"
     assert config["runtime"]["pairwise_evaluation"]["query_tile_size"] == 32
     assert config["runtime"]["pairwise_evaluation"]["source_tile_size"] == 32
+
+    unbound = tmp_path / "qualification-unbound-engine"
+    shutil.copytree(destination, unbound)
+    unbound_design_path = unbound / DESIGN_JSON_NAME
+    unbound_design = json.loads(unbound_design_path.read_text(encoding="utf-8"))
+    unbound_design["modern_workflow"].pop("expected_engine_implementation")
+    unbound_design_path.write_text(
+        json.dumps(unbound_design, indent=2, ensure_ascii=False, sort_keys=True) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    (unbound / DESIGN_SIDECAR_NAME).write_text(
+        f"{sha256_file(unbound_design_path)}  {DESIGN_JSON_NAME}\n",
+        encoding="ascii",
+        newline="\n",
+    )
+    with pytest.raises(ModernReferenceQualificationError, match="expected-engine"):
+        verify_modern_reference_qualification_design(unbound)
 
     modern_run = run_modern_workflow(
         destination / CONFIG_NAME,
@@ -509,7 +531,7 @@ def test_modern_reference_qualification_design_is_prospective_and_tamper_evident
     continuation_config = yaml.safe_load(
         (continuation_path / CONFIG_NAME).read_text(encoding="utf-8")
     )
-    assert continuation["design_version"] == "0.5"
+    assert continuation["design_version"] == "0.7"
     assert continuation["protocol"]["continuation"]["parent_cycles_completed"] == 1
     assert continuation["protocol"]["continuation"]["parent_engine_implementation"] == "0.9"
     assert continuation["protocol"]["continuation"]["expected_engine_implementation"] == "0.9"

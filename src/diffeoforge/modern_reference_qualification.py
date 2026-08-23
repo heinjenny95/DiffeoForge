@@ -38,6 +38,7 @@ from diffeoforge.modern_checkpoint import (
 )
 from diffeoforge.modern_workflow import (
     CONFIG_MARKER,
+    CONFIG_VERSION,
     _read_momenta_rows,
     validate_modern_workflow_config,
     verify_modern_workflow,
@@ -54,21 +55,33 @@ from diffeoforge.reference_validation_metrics import (
 )
 from diffeoforge.result_report import collect_run_report
 
-DESIGN_VERSION = "0.2"
+LEGACY_DESIGN_VERSION = "0.2"
+DESIGN_VERSION = "0.6"
 LEGACY_CONTINUATION_DESIGN_VERSION = "0.3"
 PREVIOUS_CONTINUATION_DESIGN_VERSION = "0.4"
-CONTINUATION_DESIGN_VERSION = "0.5"
+PREVIOUS_EXACT_CONTINUATION_DESIGN_VERSION = "0.5"
+CONTINUATION_DESIGN_VERSION = "0.7"
+CONTINUATION_DESIGN_VERSIONS = {
+    LEGACY_CONTINUATION_DESIGN_VERSION,
+    PREVIOUS_CONTINUATION_DESIGN_VERSION,
+    PREVIOUS_EXACT_CONTINUATION_DESIGN_VERSION,
+    CONTINUATION_DESIGN_VERSION,
+}
 ENGINE_BOUND_CONTINUATION_VERSIONS = {
     PREVIOUS_CONTINUATION_DESIGN_VERSION,
+    PREVIOUS_EXACT_CONTINUATION_DESIGN_VERSION,
+    CONTINUATION_DESIGN_VERSION,
+}
+EXACT_CONTINUATION_DESIGN_VERSIONS = {
+    PREVIOUS_EXACT_CONTINUATION_DESIGN_VERSION,
     CONTINUATION_DESIGN_VERSION,
 }
 SUPPORTED_DESIGN_VERSIONS = frozenset(
     {
         "0.1",
+        LEGACY_DESIGN_VERSION,
         DESIGN_VERSION,
-        LEGACY_CONTINUATION_DESIGN_VERSION,
-        PREVIOUS_CONTINUATION_DESIGN_VERSION,
-        CONTINUATION_DESIGN_VERSION,
+        *CONTINUATION_DESIGN_VERSIONS,
     }
 )
 DESIGN_JSON_NAME = "modern-reference-qualification-design.json"
@@ -276,6 +289,17 @@ def _render_design_html(design: dict[str, Any]) -> str:
             f"<ul>{exclusion_rows}</ul>"
         )
     continuation = design.get("protocol", {}).get("continuation")
+    expected_engine = design.get("modern_workflow", {}).get(
+        "expected_engine_implementation"
+    )
+    engine_section = (
+        ""
+        if not isinstance(expected_engine, str)
+        else (
+            "\n<p>Expected Modern Engine implementation: "
+            f"<code>{escape(expected_engine)}</code>.</p>"
+        )
+    )
     continuation_section = ""
     if design.get("design_version") in ENGINE_BOUND_CONTINUATION_VERSIONS and isinstance(
         continuation, dict
@@ -303,7 +327,8 @@ equivalents.</p>
 <h2>Subjects ({len(design["subjects"])})</h2><ol>{subjects}</ol>{quality_section}\
 {continuation_section}
 <h2>Predeclared gates</h2><ul>{gates}</ul>
-<p>Modern configuration: <code>{escape(design["modern_workflow"]["config_path"])}</code></p>
+<p>Modern configuration: <code>{escape(design["modern_workflow"]["config_path"])}</code></p>\
+{engine_section}
 </html>\n"""
 
 
@@ -494,7 +519,7 @@ def create_modern_reference_qualification(
         noise_std = float(model["noise_std"])
         output = destination_path.parent / f"{destination_path.name}-modern-run"
         config = {
-            "schema_version": "0.4",
+            "schema_version": CONFIG_VERSION,
             "project": {"name": f"{effective['project']['name']}-modern-fixed-reference"},
             "input": {
                 "directory": "inputs/subjects",
@@ -635,6 +660,7 @@ def create_modern_reference_qualification(
                 "optimized_blocks": ["momenta"],
                 "max_cycles": max_cycles,
                 "pairwise_autograd_strategy": "recompute",
+                "expected_engine_implementation": ENGINE_IMPLEMENTATION_VERSION,
             },
             "decision_gates": {
                 "modern_workflow_verification": "pass",
@@ -889,6 +915,7 @@ def create_modern_reference_qualification_continuation(
             "expected_destination": str(output),
             "max_cycles": max_cycles,
             "step_initialization": config["optimization"].get("step_initialization", "fixed"),
+            "expected_engine_implementation": ENGINE_IMPLEMENTATION_VERSION,
         }
         design["scientific_boundary"] += (
             " This successor is a sequential optimization pilot whose parent result and "
@@ -981,11 +1008,22 @@ def verify_modern_reference_qualification_design(
         raise ModernReferenceQualificationError("Qualification must optimize only momenta")
     if config["runtime"]["pairwise_evaluation"].get("autograd_strategy") != "recompute":
         raise ModernReferenceQualificationError("Qualification must declare recompute autograd")
+    if design.get("design_version") == DESIGN_VERSION:
+        expected_engine = design["modern_workflow"].get(
+            "expected_engine_implementation"
+        )
+        if (
+            not isinstance(expected_engine, str)
+            or re.fullmatch(r"[0-9]+\.[0-9]+", expected_engine) is None
+            or config["schema_version"] != CONFIG_VERSION
+        ):
+            raise ModernReferenceQualificationError(
+                "Qualification expected-engine binding is invalid"
+            )
     if design.get("design_version") in {
-        "0.2",
-        LEGACY_CONTINUATION_DESIGN_VERSION,
-        PREVIOUS_CONTINUATION_DESIGN_VERSION,
-        CONTINUATION_DESIGN_VERSION,
+        LEGACY_DESIGN_VERSION,
+        DESIGN_VERSION,
+        *CONTINUATION_DESIGN_VERSIONS,
     }:
         quality_settings = MeshQualitySettings.from_mapping(config["quality_control"])
         for record in design.get("subjects", []):
@@ -1009,11 +1047,7 @@ def verify_modern_reference_qualification_design(
                 raise ModernReferenceQualificationError(
                     f"Qualification subject quality evidence differs: {record['filename']}"
                 )
-    if design.get("design_version") in {
-        LEGACY_CONTINUATION_DESIGN_VERSION,
-        PREVIOUS_CONTINUATION_DESIGN_VERSION,
-        CONTINUATION_DESIGN_VERSION,
-    }:
+    if design.get("design_version") in CONTINUATION_DESIGN_VERSIONS:
         continuation = design.get("protocol", {}).get("continuation")
         if not isinstance(continuation, dict):
             raise ModernReferenceQualificationError("Continuation lineage is missing")
@@ -1046,11 +1080,26 @@ def verify_modern_reference_qualification_design(
                 raise ModernReferenceQualificationError(
                     "Continuation parent final objective is invalid"
                 )
+            workflow_expected_engine = design["modern_workflow"].get(
+                "expected_engine_implementation"
+            )
+            if (
+                design.get("design_version") == CONTINUATION_DESIGN_VERSION
+                and workflow_expected_engine
+                != continuation["expected_engine_implementation"]
+            ) or (
+                design.get("design_version") != CONTINUATION_DESIGN_VERSION
+                and workflow_expected_engine
+                not in (None, continuation["expected_engine_implementation"])
+            ):
+                raise ModernReferenceQualificationError(
+                    "Continuation expected-engine bindings differ"
+                )
         momenta_config = config["initialization"]["momenta"]
         if not isinstance(momenta_config, dict) or momenta_config.get("method") != "file":
             raise ModernReferenceQualificationError("Continuation must declare file momenta")
         if (
-            design.get("design_version") != CONTINUATION_DESIGN_VERSION
+            design.get("design_version") not in EXACT_CONTINUATION_DESIGN_VERSIONS
             and config["optimization"].get("step_initialization") != "previous_accepted"
         ):
             raise ModernReferenceQualificationError(
@@ -1073,7 +1122,7 @@ def verify_modern_reference_qualification_design(
             raise ModernReferenceQualificationError(
                 f"Continuation initial momenta are invalid: {error}"
             ) from error
-        if design.get("design_version") == CONTINUATION_DESIGN_VERSION:
+        if design.get("design_version") in EXACT_CONTINUATION_DESIGN_VERSIONS:
             checkpoint_root = _safe_directory(
                 root,
                 continuation.get("checkpoint_path"),
@@ -1359,6 +1408,14 @@ def assess_modern_reference_qualification(
     design = verify_modern_reference_qualification_design(design_root)
     modern_root = Path(modern_run).expanduser().resolve()
     workflow = verify_modern_workflow(modern_root)
+    expected_engine = design["modern_workflow"].get("expected_engine_implementation")
+    if (
+        expected_engine is not None
+        and workflow["engine"].get("implementation_version") != expected_engine
+    ):
+        raise ModernReferenceQualificationError(
+            "Modern run engine implementation differs from its frozen design"
+        )
     source_config = modern_root / Path(*PurePosixPath(workflow["config"]["source_path"]).parts)
     if sha256_file(source_config) != design["modern_workflow"]["config_sha256"]:
         raise ModernReferenceQualificationError(
