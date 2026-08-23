@@ -71,7 +71,7 @@ def test_completed_modern_run_can_continue_from_its_exact_final_state(
     assert plan["status"] == "prospective_no_successor_result"
     assert plan["parent"]["termination_reason"] == "max_cycles"
     assert plan["continuation"]["step_initialization"] == "previous_accepted"
-    assert plan["config"]["expected_engine_implementation"] == "0.7"
+    assert plan["config"]["expected_engine_implementation"] == "0.8"
     assert config["schema_version"] == "0.4"
     assert config["initialization"]["momenta"] == {
         "method": "file",
@@ -96,7 +96,7 @@ def test_completed_modern_run_can_continue_from_its_exact_final_state(
     assert "matches the parent final state within" in run_output.out
 
     assert verified["initial_objective_matches"] is True
-    assert verified["workflow"]["engine"]["implementation_version"] == "0.7"
+    assert verified["workflow"]["engine"]["implementation_version"] == "0.8"
     assert verified["initial_objective"] == pytest.approx(
         verified["parent_final_objective"], rel=1e-12, abs=1e-12
     )
@@ -117,3 +117,38 @@ def test_completed_modern_run_can_continue_from_its_exact_final_state(
     momenta.write_bytes(momenta.read_bytes() + b"tamper")
     with pytest.raises(ModernContinuationError, match="artifact differs"):
         verify_modern_continuation(plan_root)
+
+
+def test_relative_objective_run_rejects_continuation_without_baselines(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config = initialize_modern_workflow(
+        MESH_DIRECTORY,
+        units="unitless",
+        config_path=tmp_path / "relative-parent.yaml",
+        template=MESH_DIRECTORY / "template.vtk",
+        subject_pattern="subject-*.vtk",
+        attachment_kernel_width=0.45,
+        deformation_kernel_width=0.6,
+        noise_variance=0.01,
+        max_cycles=1,
+        threads=1,
+    )
+    value = yaml.safe_load(config.read_text(encoding="utf-8"))
+    value["optimization"]["gradient_tolerance"] = 0.0
+    value["optimization"]["relative_objective_tolerance"] = 0.0001
+    config.write_text(yaml.safe_dump(value, sort_keys=False), encoding="utf-8")
+    parent = run_modern_workflow(
+        config,
+        destination=tmp_path / "relative-parent-run",
+        created_at=FIXED_TIME,
+    )
+
+    output = tmp_path / "must-not-exist"
+    assert main(
+        ["modern-continuation-init", str(parent), "--output", str(output), "--cycles", "1"]
+    ) == 2
+    error = capsys.readouterr()
+    assert "objective baselines" in error.err
+    assert not output.exists()

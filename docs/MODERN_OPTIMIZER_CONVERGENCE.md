@@ -77,6 +77,14 @@ Modern stopping criterion must reproduce and record the objective-change test
 while retaining the absolute gradient norm as a diagnostic rather than
 silently weakening it after observing these results.
 
+Engine 0.8 implements that correction as an optional, separately recorded
+`relative_objective_tolerance`. New fixed-reference designs map the source
+Deformetrica value to this field, set the unrelated absolute
+`gradient_tolerance` to zero, and continue recording every gradient norm as a
+diagnostic. Legacy configurations omit the field and retain their exact prior
+termination behavior. See
+[Modern relative-objective stopping semantics](MODERN_OBJECTIVE_STOPPING.md).
+
 ## Scientific boundary
 
 These are engineering registration and convergence diagnostics on one selected

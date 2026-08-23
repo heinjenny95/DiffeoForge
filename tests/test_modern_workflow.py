@@ -386,6 +386,7 @@ def test_lbfgs_momenta_workflow_is_explicit_repeatable_and_verified(tmp_path: Pa
             "lbfgs_curvature_tolerance": 1e-12,
             "lbfgs_initial_step_size": 1.0,
             "step_initialization": "previous_accepted",
+            "relative_objective_tolerance": 0.5,
         }
     )
     config = tmp_path / "lbfgs.yaml"
@@ -413,6 +414,9 @@ def test_lbfgs_momenta_workflow_is_explicit_repeatable_and_verified(tmp_path: Pa
     assert first_bundle["optimizer"]["settings"]["direction_update"] == "lbfgs"
     assert first_bundle["optimizer"]["settings"]["lbfgs_history_size"] == 3
     assert first_bundle["optimizer"]["settings"]["lbfgs_initial_step_size"] == 1.0
+    assert first_bundle["optimizer"]["settings"]["relative_objective_tolerance"] == 0.5
+    assert first_bundle["optimizer"]["termination_reason"] == "relative_objective_tolerance"
+    assert first_bundle["optimizer"]["converged"] is True
     assert first_bundle["optimizer"]["final_objective"] == second_bundle["optimizer"][
         "final_objective"
     ]

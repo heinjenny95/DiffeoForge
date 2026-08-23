@@ -243,6 +243,11 @@ def create_modern_continuation(
             "L-BFGS continuation is not available because curvature history is not yet "
             "stored in completed-run lineage"
         )
+    if settings.get("relative_objective_tolerance") is not None:
+        raise ModernContinuationError(
+            "Relative-objective continuation is not available because its initial and "
+            "previous-cycle objective baselines are not yet stored in completed-run lineage"
+        )
     history_path = _safe_path(
         bundle_root,
         bundle["optimizer"]["history_path"],

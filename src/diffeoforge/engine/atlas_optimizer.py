@@ -29,6 +29,7 @@ AtlasLineSearchCondition = Literal["armijo", "strong_wolfe"]
 AtlasAttemptStatus = Literal["initial", "accepted", "stationary", "failed"]
 AtlasTerminationReason = Literal[
     "gradient_tolerance",
+    "relative_objective_tolerance",
     "max_cycles",
     "line_search_failed",
 ]
@@ -100,6 +101,7 @@ class AtlasOptimizerSettings:
     line_search_condition: AtlasLineSearchCondition = "armijo"
     strong_wolfe_curvature_constant: float = 0.9
     strong_wolfe_maximum_step_size: float = 10.0
+    relative_objective_tolerance: float | None = None
 
 
 @dataclass(frozen=True)
@@ -401,6 +403,7 @@ def optimize_atlas(
     line_search_condition: AtlasLineSearchCondition = "armijo",
     strong_wolfe_curvature_constant: float = 0.9,
     strong_wolfe_maximum_step_size: float = 10.0,
+    relative_objective_tolerance: float | None = None,
     progress_callback: AtlasProgressCallback | None = None,
     checkpoint_callback: AtlasCheckpointCallback | None = None,
     cancel_requested: AtlasCancellationCallback | None = None,
@@ -484,6 +487,16 @@ def optimize_atlas(
         raise ValueError(
             "strong_wolfe_maximum_step_size must not be smaller than lbfgs_initial_step_size"
         )
+    objective_change_tolerance = (
+        None
+        if relative_objective_tolerance is None
+        else _finite_real(
+            "relative_objective_tolerance",
+            relative_objective_tolerance,
+            minimum=0.0,
+            maximum=1.0,
+        )
+    )
     gradient_threshold = _finite_real(
         "gradient_tolerance",
         gradient_tolerance,
@@ -512,6 +525,7 @@ def optimize_atlas(
         line_search_condition=line_search_condition,
         strong_wolfe_curvature_constant=wolfe_curvature,
         strong_wolfe_maximum_step_size=wolfe_maximum_step,
+        relative_objective_tolerance=objective_change_tolerance,
     )
     for name, value in (
         ("initial_template_vertices", initial_template_vertices),
@@ -670,6 +684,8 @@ def optimize_atlas(
         line_search_evaluations=0,
     )
     history = [initial_record]
+    initial_cycle_objective = float(current.objective)
+    previous_cycle_objective = initial_cycle_objective
     if progress_callback is not None:
         progress_callback(initial_record)
     total_line_search_evaluations = 0
@@ -905,6 +921,20 @@ def optimize_atlas(
                 failed_block=None,
                 cycles_completed=cycle,
             )
+        current_cycle_objective = float(current.objective)
+        if objective_change_tolerance is not None:
+            latest_change = abs(current_cycle_objective - previous_cycle_objective)
+            cumulative_change = abs(current_cycle_objective - initial_cycle_objective)
+            if cumulative_change > 0.0 and latest_change < (
+                objective_change_tolerance * cumulative_change
+            ):
+                return result(
+                    "relative_objective_tolerance",
+                    converged=True,
+                    failed_block=None,
+                    cycles_completed=cycle,
+                )
+        previous_cycle_objective = current_cycle_objective
 
     return result(
         "max_cycles",

@@ -528,6 +528,7 @@ def initialize_modern_workflow(
             "line_search_condition": "armijo",
             "strong_wolfe_curvature_constant": 0.9,
             "strong_wolfe_maximum_step_size": 10.0,
+            "relative_objective_tolerance": None,
         },
         "analysis": {
             "pca_components": None,
@@ -1179,6 +1180,9 @@ def run_modern_workflow(
                     ),
                     strong_wolfe_maximum_step_size=optimizer.get(
                         "strong_wolfe_maximum_step_size", 10.0
+                    ),
+                    relative_objective_tolerance=optimizer.get(
+                        "relative_objective_tolerance"
                     ),
                     progress_callback=(
                         observe_optimizer if progress_callback is not None else None

@@ -156,7 +156,7 @@
         "sampled_rss_delta_bytes": {"type": "integer", "minimum": 0},
         "rss_sample_count": {"type": "integer", "minimum": 2},
         "termination_reason": {
-          "enum": ["gradient_tolerance", "max_cycles", "line_search_failed"]
+          "enum": ["gradient_tolerance", "relative_objective_tolerance", "max_cycles", "line_search_failed"]
         },
         "converged": {"type": "boolean"},
         "failed_block": {
@@ -264,6 +264,7 @@
         "line_search_condition": {"enum": ["armijo", "strong_wolfe"]},
         "strong_wolfe_curvature_constant": {"type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 1},
         "strong_wolfe_maximum_step_size": {"type": "number", "exclusiveMinimum": 0},
+        "relative_objective_tolerance": {"type": ["number", "null"], "exclusiveMinimum": 0, "exclusiveMaximum": 1},
         "threads": {"type": "integer", "minimum": 1},
         "random_seed": {"type": "integer", "minimum": 0},
         "warmup_runs_per_repeat": {"type": "integer", "minimum": 0, "maximum": 10},
@@ -292,7 +293,7 @@
       ],
       "properties": {
         "diffeoforge": {"type": "string", "minLength": 1},
-        "engine_implementation": {"enum": ["0.3", "0.4", "0.5", "0.6", "0.7"]},
+        "engine_implementation": {"enum": ["0.3", "0.4", "0.5", "0.6", "0.7", "0.8"]},
         "python": {"type": "string", "minLength": 1},
         "numpy": {"type": "string", "minLength": 1},
         "pytorch": {"type": "string", "minLength": 1},

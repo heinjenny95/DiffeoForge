@@ -238,7 +238,8 @@
         "lbfgs_initial_step_size": {"type": "number", "exclusiveMinimum": 0},
         "line_search_condition": {"enum": ["armijo", "strong_wolfe"]},
         "strong_wolfe_curvature_constant": {"type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 1},
-        "strong_wolfe_maximum_step_size": {"type": "number", "exclusiveMinimum": 0}
+        "strong_wolfe_maximum_step_size": {"type": "number", "exclusiveMinimum": 0},
+        "relative_objective_tolerance": {"type": ["number", "null"], "exclusiveMinimum": 0, "exclusiveMaximum": 1}
       }
     },
     "analysis": {

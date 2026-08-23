@@ -308,6 +308,9 @@ def collect_modern_optimizer_benchmark_design(
                     "strong_wolfe_maximum_step_size": optimizer.get(
                         "strong_wolfe_maximum_step_size", 10.0
                     ),
+                    "relative_objective_tolerance": optimizer.get(
+                        "relative_objective_tolerance"
+                    ),
                 }
                 if "direction_update" in optimizer
                 else {}

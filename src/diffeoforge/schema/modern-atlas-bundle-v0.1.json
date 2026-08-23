@@ -136,10 +136,11 @@
             "lbfgs_initial_step_size": {"type": "number", "exclusiveMinimum": 0},
             "line_search_condition": {"enum": ["armijo", "strong_wolfe"]},
             "strong_wolfe_curvature_constant": {"type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 1},
-            "strong_wolfe_maximum_step_size": {"type": "number", "exclusiveMinimum": 0}
+            "strong_wolfe_maximum_step_size": {"type": "number", "exclusiveMinimum": 0},
+            "relative_objective_tolerance": {"type": ["number", "null"], "exclusiveMinimum": 0, "exclusiveMaximum": 1}
           }
         },
-        "termination_reason": {"enum": ["gradient_tolerance", "max_cycles", "line_search_failed"]},
+        "termination_reason": {"enum": ["gradient_tolerance", "relative_objective_tolerance", "max_cycles", "line_search_failed"]},
         "converged": {"type": "boolean"},
         "failed_block": {"enum": ["momenta", "template", "control_points", null]},
         "cycles_completed": {"type": "integer", "minimum": 0},

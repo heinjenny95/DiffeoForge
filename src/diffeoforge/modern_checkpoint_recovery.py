@@ -204,6 +204,11 @@ def create_modern_checkpoint_recovery(
             "L-BFGS checkpoint recovery is not available because curvature history is "
             "not yet stored in cycle checkpoints"
         )
+    if effective["optimization"].get("relative_objective_tolerance") is not None:
+        raise ModernCheckpointRecoveryError(
+            "Relative-objective checkpoint recovery is not available because its initial "
+            "and previous-cycle objective baselines are not yet stored in cycle checkpoints"
+        )
     remaining = int(binding["max_cycles"]) - int(checkpoint["cycle"])
     successor_cycles = max(0, remaining) if max_cycles is None else max_cycles
 

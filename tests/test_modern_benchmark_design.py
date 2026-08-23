@@ -102,7 +102,7 @@ def test_collection_freezes_inventory_pairing_and_exact_deterministic_argv(
 
     assert first["design_version"] == "0.1"
     assert first["software"]["benchmark_version"] == "0.3"
-    assert first["software"]["engine_implementation"] == "0.7"
+    assert first["software"]["engine_implementation"] == "0.8"
     assert first["created_at"] == FIXED_TIME
     assert first["input"]["available_subject_count"] == 5
     assert [item["label"] for item in first["input"]["subjects"]] == [

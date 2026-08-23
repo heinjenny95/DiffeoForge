@@ -509,7 +509,7 @@ def create_modern_reference_qualification(
                 "control_points_step_size": 0.01,
                 "backtracking_factor": 0.5,
                 "armijo_constant": 0.0001,
-                "gradient_tolerance": float(optimization["convergence_tolerance"]),
+                "gradient_tolerance": 0.0,
                 "minimum_step_size": 1e-12,
                 "max_line_search_iterations": int(
                     optimization["max_line_search_iterations"]
@@ -525,6 +525,9 @@ def create_modern_reference_qualification(
                 ),
                 "strong_wolfe_maximum_step_size": float(
                     strong_wolfe_maximum_step_size
+                ),
+                "relative_objective_tolerance": float(
+                    optimization["convergence_tolerance"]
                 ),
             },
             "analysis": {
@@ -581,6 +584,15 @@ def create_modern_reference_qualification(
                     "excluded_candidates": list(excluded_candidates),
                 },
                 "internal_objective_comparison": "forbidden_across_engines",
+                "stopping_semantics": {
+                    "source": "Deformetrica 4.3 gradient_ascent convergence_tolerance",
+                    "modern_mapping": "relative_objective_tolerance",
+                    "formula": (
+                        "abs(current_objective - previous_cycle_objective) < tolerance * "
+                        "abs(current_objective - initial_objective)"
+                    ),
+                    "absolute_gradient_tolerance": "disabled; gradient norms remain diagnostic",
+                },
                 "modern_result_existed_at_freeze": False,
             },
             "fixed_reference": {

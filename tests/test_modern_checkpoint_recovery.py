@@ -145,3 +145,43 @@ def test_recovery_rejects_a_live_private_run(tmp_path: Path) -> None:
         assert not (tmp_path / "must-not-exist").exists()
     finally:
         lease.close()
+
+
+def test_relative_objective_checkpoint_rejects_recovery_without_baselines(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config = initialize_modern_workflow(
+        MESH_DIRECTORY,
+        units="unitless",
+        config_path=tmp_path / "relative-source.yaml",
+        template=MESH_DIRECTORY / "template.vtk",
+        subject_pattern="subject-*.vtk",
+        attachment_kernel_width=0.45,
+        deformation_kernel_width=0.6,
+        noise_variance=0.01,
+        max_cycles=1,
+        threads=1,
+    )
+    value = yaml.safe_load(config.read_text(encoding="utf-8"))
+    value["optimization"]["gradient_tolerance"] = 0.0
+    value["optimization"]["relative_objective_tolerance"] = 0.0001
+    config.write_text(yaml.safe_dump(value, sort_keys=False), encoding="utf-8")
+    completed = run_modern_workflow(
+        config,
+        destination=tmp_path / "relative-completed",
+        created_at=FIXED_TIME,
+    )
+    destination = tmp_path / "relative-interrupted"
+    private = tmp_path / f".{destination.name}.tmp-{'c' * 32}"
+    shutil.copytree(completed, private)
+    lease = acquire_private_run_lease(private, destination, operation="modern_workflow")
+    lease.close()
+
+    output = tmp_path / "must-not-exist"
+    assert main(
+        ["modern-checkpoint-recovery-init", str(private), "--output", str(output)]
+    ) == 2
+    error = capsys.readouterr()
+    assert "objective baselines" in error.err
+    assert not output.exists()

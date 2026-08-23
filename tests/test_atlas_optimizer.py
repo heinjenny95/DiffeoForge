@@ -97,6 +97,7 @@ def test_every_accepted_block_monotonically_improves_the_objective() -> None:
     assert result.settings.direction_update == "steepest"
     assert result.settings.lbfgs_history_size == 10
     assert result.settings.lbfgs_initial_step_size == 1.0
+    assert result.settings.relative_objective_tolerance is None
 
 
 def test_previous_accepted_step_avoids_repeating_rejected_candidates() -> None:
@@ -202,6 +203,34 @@ def test_lbfgs_reaches_declared_tolerance_that_steepest_does_not() -> None:
     assert lbfgs.history[-1].status == "stationary"
     assert lbfgs.history[-1].gradient_norm <= 1e-4
     assert lbfgs.cycles_completed < steepest.cycles_completed
+
+
+def test_relative_objective_tolerance_matches_deformetrica_change_ratio() -> None:
+    arguments, keywords = _problem(subjects=1)
+    tolerance = 0.1
+
+    result = optimize_atlas(
+        *arguments,
+        **keywords,
+        max_cycles=35,
+        block_order=("momenta",),
+        gradient_tolerance=0.0,
+        step_initialization="previous_accepted",
+        direction_update="lbfgs",
+        lbfgs_history_size=5,
+        relative_objective_tolerance=tolerance,
+    )
+
+    assert result.converged is True
+    assert result.termination_reason == "relative_objective_tolerance"
+    assert result.cycles_completed == 5
+    objectives = [record.objective for record in result.history]
+    initial = objectives[0]
+    for previous, current in pairwise(objectives[:-1]):
+        assert abs(current - previous) >= tolerance * abs(current - initial)
+    assert abs(objectives[-1] - objectives[-2]) < tolerance * abs(
+        objectives[-1] - initial
+    )
 
 
 def test_strong_wolfe_lbfgs_is_repeatable_monotone_and_uses_gradient_trials() -> None:
@@ -613,6 +642,8 @@ def test_optimizer_remains_differentiable_internally_under_no_grad() -> None:
             {"strong_wolfe_maximum_step_size": 0.5},
             "strong_wolfe_maximum_step_size",
         ),
+        ({"relative_objective_tolerance": 0.0}, "relative_objective_tolerance"),
+        ({"relative_objective_tolerance": 1.0}, "relative_objective_tolerance"),
     ],
 )
 def test_invalid_optimizer_settings_fail_explicitly(override: dict, message: str) -> None:

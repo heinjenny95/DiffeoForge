@@ -60,7 +60,7 @@
       "properties": {
         "diffeoforge": {"type": "string", "minLength": 1},
         "optimizer_benchmark_version": {"const": "0.1"},
-        "engine_implementation": {"enum": ["0.3", "0.4", "0.5", "0.6", "0.7"]}
+        "engine_implementation": {"enum": ["0.3", "0.4", "0.5", "0.6", "0.7", "0.8"]}
       }
     },
     "source_config": {
@@ -125,6 +125,7 @@
         "line_search_condition": {"enum": ["armijo", "strong_wolfe"]},
         "strong_wolfe_curvature_constant": {"type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 1},
         "strong_wolfe_maximum_step_size": {"type": "number", "exclusiveMinimum": 0},
+        "relative_objective_tolerance": {"type": ["number", "null"], "exclusiveMinimum": 0, "exclusiveMaximum": 1},
         "threads": {"type": "integer", "minimum": 1},
         "random_seed": {"type": "integer", "minimum": 0}
       }
