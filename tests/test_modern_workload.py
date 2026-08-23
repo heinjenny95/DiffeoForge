@@ -61,7 +61,7 @@ def test_example_workload_has_exact_public_dimensions_and_formulas() -> None:
     report = collect_modern_workload(EXAMPLE, host_observations=FIXED_HOST)
 
     assert report["input"]["subject_count"] == 5
-    assert report["engine"]["implementation_version"] == "0.5"
+    assert report["engine"]["implementation_version"] == "0.6"
     assert report["input"]["template"]["points"] == 162
     assert report["input"]["template"]["triangles"] == 320
     assert {subject["triangles"] for subject in report["input"]["subjects"]} == {320}

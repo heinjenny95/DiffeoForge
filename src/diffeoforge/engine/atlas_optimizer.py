@@ -24,6 +24,7 @@ from diffeoforge.engine.objective import (
 
 AtlasParameterBlock = Literal["momenta", "template", "control_points"]
 AtlasStepInitialization = Literal["fixed", "previous_accepted"]
+AtlasDirectionUpdate = Literal["steepest", "lbfgs"]
 AtlasAttemptStatus = Literal["initial", "accepted", "stationary", "failed"]
 AtlasTerminationReason = Literal[
     "gradient_tolerance",
@@ -91,6 +92,10 @@ class AtlasOptimizerSettings:
     minimum_step_size: float
     max_line_search_iterations: int
     step_initialization: AtlasStepInitialization = "fixed"
+    direction_update: AtlasDirectionUpdate = "steepest"
+    lbfgs_history_size: int = 10
+    lbfgs_curvature_tolerance: float = 1e-12
+    lbfgs_initial_step_size: float = 1.0
 
 
 @dataclass(frozen=True)
@@ -208,6 +213,49 @@ def _block_order(value: Sequence[str]) -> tuple[AtlasParameterBlock, ...]:
     return normalized  # type: ignore[return-value]
 
 
+def _lbfgs_ascent_direction(
+    gradient: torch.Tensor,
+    history: Sequence[tuple[torch.Tensor, torch.Tensor]],
+) -> torch.Tensor:
+    """Return an L-BFGS ascent direction for a maximization objective.
+
+    The stored ``y`` values are gradients of the equivalent minimization
+    objective ``-f``. The standard two-loop recursion therefore operates on
+    ``-gradient`` and its negated result is an ascent direction for ``f``.
+    A non-finite or non-ascent result fails closed to steepest ascent.
+    """
+
+    if not history:
+        return gradient
+    q = -gradient.clone()
+    reverse_alphas: list[torch.Tensor] = []
+    for step, gradient_delta in reversed(history):
+        inverse_curvature = torch.reciprocal(torch.sum(step * gradient_delta))
+        alpha = inverse_curvature * torch.sum(step * q)
+        reverse_alphas.append(alpha)
+        q = q - alpha * gradient_delta
+    last_step, last_gradient_delta = history[-1]
+    scale = torch.sum(last_step * last_gradient_delta) / torch.sum(
+        last_gradient_delta.square()
+    )
+    inverse_hessian_gradient = scale * q
+    for (step, gradient_delta), alpha in zip(
+        history,
+        reversed(reverse_alphas),
+        strict=True,
+    ):
+        inverse_curvature = torch.reciprocal(torch.sum(step * gradient_delta))
+        beta = inverse_curvature * torch.sum(gradient_delta * inverse_hessian_gradient)
+        inverse_hessian_gradient = inverse_hessian_gradient + step * (alpha - beta)
+    direction = -inverse_hessian_gradient
+    directional_derivative = torch.sum(gradient * direction)
+    if not bool(torch.isfinite(direction).all()) or not bool(
+        torch.isfinite(directional_derivative)
+    ) or float(directional_derivative) <= 0.0:
+        return gradient
+    return direction
+
+
 def optimize_atlas(
     initial_template_vertices: torch.Tensor,
     template_triangles: torch.Tensor,
@@ -235,6 +283,10 @@ def optimize_atlas(
     minimum_step_size: float = 1e-12,
     max_line_search_iterations: int = 20,
     step_initialization: AtlasStepInitialization = "fixed",
+    direction_update: AtlasDirectionUpdate = "steepest",
+    lbfgs_history_size: int = 10,
+    lbfgs_curvature_tolerance: float = 1e-12,
+    lbfgs_initial_step_size: float = 1.0,
     progress_callback: AtlasProgressCallback | None = None,
     checkpoint_callback: AtlasCheckpointCallback | None = None,
     cancel_requested: AtlasCancellationCallback | None = None,
@@ -272,6 +324,22 @@ def optimize_atlas(
     order = _block_order(block_order)
     if step_initialization not in ("fixed", "previous_accepted"):
         raise ValueError("step_initialization must be fixed or previous_accepted")
+    if direction_update not in ("steepest", "lbfgs"):
+        raise ValueError("direction_update must be steepest or lbfgs")
+    history_size = _integer("lbfgs_history_size", lbfgs_history_size, minimum=1)
+    curvature_tolerance = _finite_real(
+        "lbfgs_curvature_tolerance",
+        lbfgs_curvature_tolerance,
+        minimum=0.0,
+        inclusive_minimum=True,
+    )
+    lbfgs_step_size = _finite_real(
+        "lbfgs_initial_step_size",
+        lbfgs_initial_step_size,
+        minimum=0.0,
+    )
+    if direction_update == "lbfgs" and len(order) != 1:
+        raise ValueError("direction_update=lbfgs currently requires exactly one parameter block")
     step_sizes = {
         "momenta": _finite_real("momenta_step_size", momenta_step_size, minimum=0.0),
         "template": _finite_real("template_step_size", template_step_size, minimum=0.0),
@@ -302,6 +370,10 @@ def optimize_atlas(
         minimum_step_size=minimum_step,
         max_line_search_iterations=line_search_limit,
         step_initialization=step_initialization,
+        direction_update=direction_update,
+        lbfgs_history_size=history_size,
+        lbfgs_curvature_tolerance=curvature_tolerance,
+        lbfgs_initial_step_size=lbfgs_step_size,
     )
     for name, value in (
         ("initial_template_vertices", initial_template_vertices),
@@ -465,6 +537,7 @@ def optimize_atlas(
     total_line_search_evaluations = 0
     next_step_sizes = dict(step_sizes)
     reusable_single_block_evaluation: _BlockEvaluation | None = None
+    lbfgs_history: list[tuple[torch.Tensor, torch.Tensor]] = []
 
     def emit_cycle_checkpoint(record: AtlasOptimizationRecord) -> None:
         if checkpoint_callback is None:
@@ -546,8 +619,17 @@ def optimize_atlas(
                     emit_cycle_checkpoint(record)
                 continue
 
-            step_size = next_step_sizes[block]
-            directional_derivative = evaluated.gradient_norm.square()
+            step_size = (
+                lbfgs_step_size
+                if direction_update == "lbfgs" and lbfgs_history
+                else next_step_sizes[block]
+            )
+            direction = (
+                _lbfgs_ascent_direction(evaluated.gradient, lbfgs_history)
+                if direction_update == "lbfgs"
+                else evaluated.gradient
+            )
+            directional_derivative = torch.sum(evaluated.gradient * direction)
             accepted: _BlockEvaluation | None = None
             evaluations = 0
             for _ in range(line_search_limit):
@@ -563,7 +645,7 @@ def optimize_atlas(
                 candidate_parameters = replace_block(
                     current,
                     block,
-                    current_value + step_size * evaluated.gradient,
+                    current_value + step_size * direction,
                 )
                 try:
                     candidate_pending = evaluate_objective(*candidate_parameters, block)
@@ -602,6 +684,21 @@ def optimize_atlas(
                 )
 
             current = accepted.state
+            if direction_update == "lbfgs":
+                step = (step_size * direction).detach()
+                # L-BFGS is applied to the equivalent minimization objective
+                # -f, so y = grad(-f_new) - grad(-f_old).
+                gradient_delta = (evaluated.gradient - accepted.gradient).detach()
+                curvature = torch.sum(step * gradient_delta)
+                curvature_scale = torch.linalg.vector_norm(step) * torch.linalg.vector_norm(
+                    gradient_delta
+                )
+                if bool(torch.isfinite(curvature)) and bool(
+                    torch.isfinite(curvature_scale)
+                ) and float(curvature) > curvature_tolerance * float(curvature_scale):
+                    lbfgs_history.append((step, gradient_delta))
+                    if len(lbfgs_history) > history_size:
+                        del lbfgs_history[0]
             if len(order) == 1:
                 reusable_single_block_evaluation = accepted
             if step_initialization == "previous_accepted":

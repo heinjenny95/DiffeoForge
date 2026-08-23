@@ -288,6 +288,21 @@ def collect_modern_optimizer_benchmark_design(
             "gradient_tolerance": optimizer["gradient_tolerance"],
             "minimum_step_size": optimizer["minimum_step_size"],
             "max_line_search_iterations": optimizer["max_line_search_iterations"],
+            **(
+                {
+                    "step_initialization": optimizer.get("step_initialization", "fixed"),
+                    "direction_update": optimizer["direction_update"],
+                    "lbfgs_history_size": optimizer.get("lbfgs_history_size", 10),
+                    "lbfgs_curvature_tolerance": optimizer.get(
+                        "lbfgs_curvature_tolerance", 1e-12
+                    ),
+                    "lbfgs_initial_step_size": optimizer.get(
+                        "lbfgs_initial_step_size", 1.0
+                    ),
+                }
+                if "direction_update" in optimizer
+                else {}
+            ),
             "threads": config["runtime"]["threads"],
             "random_seed": config["runtime"]["random_seed"],
         },

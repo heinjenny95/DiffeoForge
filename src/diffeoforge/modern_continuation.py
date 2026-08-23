@@ -238,6 +238,11 @@ def create_modern_continuation(
     )
     effective = _json_object(effective_path, "Parent effective config")
     settings = dict(bundle["optimizer"]["settings"])
+    if settings.get("direction_update", "steepest") == "lbfgs":
+        raise ModernContinuationError(
+            "L-BFGS continuation is not available because curvature history is not yet "
+            "stored in completed-run lineage"
+        )
     history_path = _safe_path(
         bundle_root,
         bundle["optimizer"]["history_path"],

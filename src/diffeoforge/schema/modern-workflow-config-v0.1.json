@@ -231,7 +231,11 @@
         "gradient_tolerance": {"type": "number", "minimum": 0},
         "minimum_step_size": {"type": "number", "exclusiveMinimum": 0},
         "max_line_search_iterations": {"type": "integer", "minimum": 1},
-        "step_initialization": {"enum": ["fixed", "previous_accepted"]}
+        "step_initialization": {"enum": ["fixed", "previous_accepted"]},
+        "direction_update": {"enum": ["steepest", "lbfgs"]},
+        "lbfgs_history_size": {"type": "integer", "minimum": 1, "maximum": 100},
+        "lbfgs_curvature_tolerance": {"type": "number", "minimum": 0},
+        "lbfgs_initial_step_size": {"type": "number", "exclusiveMinimum": 0}
       }
     },
     "analysis": {

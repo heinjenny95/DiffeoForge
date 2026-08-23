@@ -94,6 +94,9 @@ def test_every_accepted_block_monotonically_improves_the_objective() -> None:
     assert result.settings.block_order == ("momenta", "template", "control_points")
     assert result.settings.momenta_step_size == 0.1
     assert result.settings.step_initialization == "fixed"
+    assert result.settings.direction_update == "steepest"
+    assert result.settings.lbfgs_history_size == 10
+    assert result.settings.lbfgs_initial_step_size == 1.0
 
 
 def test_previous_accepted_step_avoids_repeating_rejected_candidates() -> None:
@@ -125,6 +128,80 @@ def test_previous_accepted_step_avoids_repeating_rejected_candidates() -> None:
     assert reused.objective_evaluations == 1 + reused.total_line_search_evaluations
     assert reused.gradient_evaluations == 1 + accepted
     assert reused.candidate_gradient_evaluations == accepted
+
+
+def test_lbfgs_direction_is_deterministic_monotone_and_improves_after_ten_cycles() -> None:
+    arguments, keywords = _problem(subjects=1)
+
+    steepest = optimize_atlas(
+        *arguments,
+        **keywords,
+        max_cycles=10,
+        block_order=("momenta",),
+        gradient_tolerance=0.0,
+        step_initialization="previous_accepted",
+        direction_update="steepest",
+    )
+    first = optimize_atlas(
+        *arguments,
+        **keywords,
+        max_cycles=10,
+        block_order=("momenta",),
+        gradient_tolerance=0.0,
+        step_initialization="previous_accepted",
+        direction_update="lbfgs",
+        lbfgs_history_size=5,
+    )
+    second = optimize_atlas(
+        *arguments,
+        **keywords,
+        max_cycles=10,
+        block_order=("momenta",),
+        gradient_tolerance=0.0,
+        step_initialization="previous_accepted",
+        direction_update="lbfgs",
+        lbfgs_history_size=5,
+    )
+
+    assert first.settings.direction_update == "lbfgs"
+    assert first.settings.lbfgs_history_size == 5
+    assert first.history == second.history
+    assert torch.equal(first.momenta, second.momenta)
+    assert all(later.objective > earlier.objective for earlier, later in pairwise(first.history))
+    assert first.history[-1].objective > steepest.history[-1].objective
+    assert first.history[-1].gradient_norm < steepest.history[-1].gradient_norm
+
+
+def test_lbfgs_reaches_declared_tolerance_that_steepest_does_not() -> None:
+    arguments, keywords = _problem(subjects=1)
+    shared = {
+        "max_cycles": 35,
+        "block_order": ("momenta",),
+        "gradient_tolerance": 1e-4,
+        "step_initialization": "previous_accepted",
+    }
+
+    steepest = optimize_atlas(
+        *arguments,
+        **keywords,
+        **shared,
+        direction_update="steepest",
+    )
+    lbfgs = optimize_atlas(
+        *arguments,
+        **keywords,
+        **shared,
+        direction_update="lbfgs",
+        lbfgs_history_size=5,
+    )
+
+    assert steepest.converged is False
+    assert steepest.termination_reason == "max_cycles"
+    assert lbfgs.converged is True
+    assert lbfgs.termination_reason == "gradient_tolerance"
+    assert lbfgs.history[-1].status == "stationary"
+    assert lbfgs.history[-1].gradient_norm <= 1e-4
+    assert lbfgs.cycles_completed < steepest.cycles_completed
 
 
 def test_single_block_boundary_reuse_preserves_fresh_cycle_decisions_exactly() -> None:
@@ -492,6 +569,11 @@ def test_optimizer_remains_differentiable_internally_under_no_grad() -> None:
             "block_order",
         ),
         ({"step_initialization": "automatic"}, "step_initialization"),
+        ({"direction_update": "automatic"}, "direction_update"),
+        ({"direction_update": "lbfgs"}, "exactly one parameter block"),
+        ({"lbfgs_history_size": 0}, "lbfgs_history_size"),
+        ({"lbfgs_curvature_tolerance": -1.0}, "lbfgs_curvature_tolerance"),
+        ({"lbfgs_initial_step_size": 0.0}, "lbfgs_initial_step_size"),
     ],
 )
 def test_invalid_optimizer_settings_fail_explicitly(override: dict, message: str) -> None:

@@ -60,7 +60,7 @@
       "properties": {
         "diffeoforge": {"type": "string", "minLength": 1},
         "optimizer_benchmark_version": {"const": "0.1"},
-        "engine_implementation": {"enum": ["0.3", "0.4", "0.5"]}
+        "engine_implementation": {"enum": ["0.3", "0.4", "0.5", "0.6"]}
       }
     },
     "source_config": {
@@ -117,6 +117,11 @@
         "gradient_tolerance": {"type": "number", "minimum": 0},
         "minimum_step_size": {"type": "number", "exclusiveMinimum": 0},
         "max_line_search_iterations": {"type": "integer", "minimum": 1},
+        "step_initialization": {"enum": ["fixed", "previous_accepted"]},
+        "direction_update": {"enum": ["steepest", "lbfgs"]},
+        "lbfgs_history_size": {"type": "integer", "minimum": 1, "maximum": 100},
+        "lbfgs_curvature_tolerance": {"type": "number", "minimum": 0},
+        "lbfgs_initial_step_size": {"type": "number", "exclusiveMinimum": 0},
         "threads": {"type": "integer", "minimum": 1},
         "random_seed": {"type": "integer", "minimum": 0}
       }

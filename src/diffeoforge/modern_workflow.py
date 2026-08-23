@@ -126,6 +126,13 @@ def validate_modern_workflow_config(config: Mapping[str, Any]) -> None:
         MeshQualitySettings.from_mapping(config["quality_control"])
     except (TypeError, ValueError) as error:
         raise ConfigurationError(f"Invalid quality_control settings: {error}") from error
+    optimizer = config["optimization"]
+    direction_update = optimizer.get("direction_update", "steepest")
+    if direction_update == "lbfgs" and optimizer["block_order"] != ["momenta"]:
+        raise ConfigurationError(
+            "optimization.direction_update=lbfgs currently requires "
+            "optimization.block_order=[momenta]"
+        )
 
 
 def load_modern_workflow_config(path: Path | str) -> dict[str, Any]:
@@ -501,6 +508,10 @@ def initialize_modern_workflow(
             "minimum_step_size": 1e-12,
             "max_line_search_iterations": 20,
             "step_initialization": "previous_accepted",
+            "direction_update": "steepest",
+            "lbfgs_history_size": 10,
+            "lbfgs_curvature_tolerance": 1e-12,
+            "lbfgs_initial_step_size": 1.0,
         },
         "analysis": {
             "pca_components": None,
@@ -1140,6 +1151,12 @@ def run_modern_workflow(
                     minimum_step_size=optimizer["minimum_step_size"],
                     max_line_search_iterations=optimizer["max_line_search_iterations"],
                     step_initialization=optimizer.get("step_initialization", "fixed"),
+                    direction_update=optimizer.get("direction_update", "steepest"),
+                    lbfgs_history_size=optimizer.get("lbfgs_history_size", 10),
+                    lbfgs_curvature_tolerance=optimizer.get(
+                        "lbfgs_curvature_tolerance", 1e-12
+                    ),
+                    lbfgs_initial_step_size=optimizer.get("lbfgs_initial_step_size", 1.0),
                     progress_callback=(
                         observe_optimizer if progress_callback is not None else None
                     ),

@@ -235,6 +235,20 @@ def test_schema_rejects_incoherent_pairwise_execution_before_work(
         workflow.validate_modern_workflow_config(invalid)
 
 
+def test_lbfgs_requires_explicit_momenta_only_configuration() -> None:
+    invalid = _configuration()
+    invalid["optimization"]["direction_update"] = "lbfgs"
+
+    with pytest.raises(ConfigurationError, match=r"block_order=\[momenta\]"):
+        workflow.validate_modern_workflow_config(invalid)
+
+    invalid["optimization"]["block_order"] = ["momenta"]
+    invalid["optimization"]["lbfgs_history_size"] = 5
+    invalid["optimization"]["lbfgs_curvature_tolerance"] = 1e-12
+    invalid["optimization"]["lbfgs_initial_step_size"] = 1.0
+    workflow.validate_modern_workflow_config(invalid)
+
+
 def test_farthest_template_initialization_is_repeatable_and_explicit() -> None:
     vertices = np.array(read_vtk_polydata(MESH_DIRECTORY / "template.vtk").vertices)
 
@@ -348,6 +362,52 @@ def test_external_control_points_and_momenta_only_are_verified(tmp_path: Path) -
     assert continuation_bundle_manifest["optimizer"]["final_objective"] == pytest.approx(
         first_bundle_manifest["optimizer"]["final_objective"], rel=1e-12, abs=1e-12
     )
+
+
+def test_lbfgs_momenta_workflow_is_explicit_repeatable_and_verified(tmp_path: Path) -> None:
+    config_value = _configuration(output=str(tmp_path / "unused"))
+    config_value["optimization"].update(
+        {
+            "max_cycles": 4,
+            "block_order": ["momenta"],
+            "direction_update": "lbfgs",
+            "lbfgs_history_size": 3,
+            "lbfgs_curvature_tolerance": 1e-12,
+            "lbfgs_initial_step_size": 1.0,
+            "step_initialization": "previous_accepted",
+        }
+    )
+    config = tmp_path / "lbfgs.yaml"
+    config.write_text(yaml.safe_dump(config_value, sort_keys=False), encoding="utf-8")
+
+    first = workflow.run_modern_workflow(
+        config,
+        destination=tmp_path / "lbfgs-first",
+        created_at=FIXED_TIME,
+    )
+    second = workflow.run_modern_workflow(
+        config,
+        destination=tmp_path / "lbfgs-second",
+        created_at=FIXED_TIME,
+    )
+    first_manifest = workflow.verify_modern_workflow(first)
+    second_manifest = workflow.verify_modern_workflow(second)
+    first_bundle = workflow.verify_modern_atlas_bundle(
+        first / first_manifest["result_bundle"]["path"]
+    )
+    second_bundle = workflow.verify_modern_atlas_bundle(
+        second / second_manifest["result_bundle"]["path"]
+    )
+
+    assert first_bundle["optimizer"]["settings"]["direction_update"] == "lbfgs"
+    assert first_bundle["optimizer"]["settings"]["lbfgs_history_size"] == 3
+    assert first_bundle["optimizer"]["settings"]["lbfgs_initial_step_size"] == 1.0
+    assert first_bundle["optimizer"]["final_objective"] == second_bundle["optimizer"][
+        "final_objective"
+    ]
+    assert first_bundle["optimizer"]["final_regularity"] == second_bundle["optimizer"][
+        "final_regularity"
+    ]
 
 
 def test_momenta_initialization_rejects_changed_subject_order(tmp_path: Path) -> None:

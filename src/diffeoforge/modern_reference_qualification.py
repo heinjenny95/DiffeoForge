@@ -278,6 +278,9 @@ def create_modern_reference_qualification(
     max_cycles: int = 3,
     threads: int = 4,
     tile_size: int = 64,
+    optimizer_direction: str = "steepest",
+    lbfgs_history_size: int = 10,
+    lbfgs_initial_step_size: float = 1.0,
     created_at: str | None = None,
 ) -> Path:
     """Freeze a no-results-yet comparison against one completed Deformetrica atlas."""
@@ -287,9 +290,19 @@ def create_modern_reference_qualification(
         ("max_cycles", max_cycles, 1),
         ("threads", threads, 1),
         ("tile_size", tile_size, 1),
+        ("lbfgs_history_size", lbfgs_history_size, 1),
     ):
         if isinstance(value, bool) or not isinstance(value, int) or value < minimum:
             raise ValueError(f"{name} must be an integer of at least {minimum}")
+    if optimizer_direction not in {"steepest", "lbfgs"}:
+        raise ValueError("optimizer_direction must be steepest or lbfgs")
+    if (
+        isinstance(lbfgs_initial_step_size, bool)
+        or not isinstance(lbfgs_initial_step_size, (int, float))
+        or not math.isfinite(float(lbfgs_initial_step_size))
+        or float(lbfgs_initial_step_size) <= 0.0
+    ):
+        raise ValueError("lbfgs_initial_step_size must be finite and greater than zero")
     run = Path(reference_run).expanduser().resolve()
     report = collect_run_report(run)
     if report.result.get("status") != "completed" or any(
@@ -476,6 +489,10 @@ def create_modern_reference_qualification(
                     optimization["max_line_search_iterations"]
                 ),
                 "step_initialization": "previous_accepted",
+                "direction_update": optimizer_direction,
+                "lbfgs_history_size": lbfgs_history_size,
+                "lbfgs_curvature_tolerance": 1e-12,
+                "lbfgs_initial_step_size": float(lbfgs_initial_step_size),
             },
             "analysis": {
                 "pca_components": None,
@@ -660,6 +677,11 @@ def create_modern_reference_qualification_continuation(
         "Source qualification config",
     )
     source_config = yaml.safe_load(source_config_path.read_text(encoding="utf-8"))
+    if source_config["optimization"].get("direction_update", "steepest") == "lbfgs":
+        raise ModernReferenceQualificationError(
+            "L-BFGS qualification continuation is unavailable until curvature history "
+            "is stored in completed-run lineage"
+        )
     last_steps = {
         block: float(source_config["optimization"][f"{block}_step_size"])
         for block in source_config["optimization"]["block_order"]

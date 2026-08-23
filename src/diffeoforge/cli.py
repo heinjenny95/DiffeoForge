@@ -285,6 +285,24 @@ def build_parser() -> argparse.ArgumentParser:
         default=64,
         help="Explicit equal query/source rows for exact blockwise recompute (default: 64).",
     )
+    modern_reference_design_parser.add_argument(
+        "--optimizer-direction",
+        choices=("steepest", "lbfgs"),
+        default="steepest",
+        help="Declared momenta direction update (default: steepest).",
+    )
+    modern_reference_design_parser.add_argument(
+        "--lbfgs-history-size",
+        type=int,
+        default=10,
+        help="Retained L-BFGS curvature pairs when --optimizer-direction lbfgs.",
+    )
+    modern_reference_design_parser.add_argument(
+        "--lbfgs-initial-step-size",
+        type=float,
+        default=1.0,
+        help="Armijo starting step for curvature-scaled L-BFGS directions.",
+    )
 
     modern_reference_continue_parser = subparsers.add_parser(
         "modern-reference-qualification-continue",
@@ -1398,6 +1416,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                 max_cycles=args.cycles,
                 threads=args.threads,
                 tile_size=args.tile_size,
+                optimizer_direction=args.optimizer_direction,
+                lbfgs_history_size=args.lbfgs_history_size,
+                lbfgs_initial_step_size=args.lbfgs_initial_step_size,
             )
             design = verify_modern_reference_qualification_design(destination)
             print(f"Prospective fixed-reference qualification created: {destination}")

@@ -199,6 +199,11 @@ def create_modern_checkpoint_recovery(
     if not isinstance(effective, dict):
         raise ModernCheckpointRecoveryError("Effective config is not an object")
     validate_modern_workflow_config(effective)
+    if effective["optimization"].get("direction_update", "steepest") == "lbfgs":
+        raise ModernCheckpointRecoveryError(
+            "L-BFGS checkpoint recovery is not available because curvature history is "
+            "not yet stored in cycle checkpoints"
+        )
     remaining = int(binding["max_cycles"]) - int(checkpoint["cycle"])
     successor_cycles = max(0, remaining) if max_cycles is None else max_cycles
 

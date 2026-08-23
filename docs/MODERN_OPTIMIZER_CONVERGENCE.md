@@ -46,11 +46,12 @@ Its direction, line-search work, convergence criterion, state needed for
 continuation, and checkpoint behavior must be recorded. A prospective
 fixed-reference design must exist before a real-input result is computed.
 
-Limited-memory BFGS is the next candidate because it uses gradient-history
-curvature to avoid the zig-zag behavior of fixed steepest ascent while keeping
-memory proportional to a declared small history size. Initial implementation
-and tests do not establish superiority; acceptance requires a frozen Weevil
-comparison and the unchanged external endpoint gates.
+Limited-memory BFGS is implemented as the next Engine 0.6 candidate because it
+uses gradient-history curvature to avoid the zig-zag behavior of fixed steepest
+ascent while keeping memory proportional to a declared small history size.
+Initial implementation and tests do not establish superiority; acceptance
+requires a frozen Weevil comparison and the unchanged external endpoint gates.
+See [Experimental Modern L-BFGS direction](MODERN_LBFGS.md).
 
 ## Scientific boundary
 

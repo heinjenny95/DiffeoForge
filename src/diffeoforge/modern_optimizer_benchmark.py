@@ -123,7 +123,7 @@ def _optimizer_keywords(config: dict[str, Any], max_cycles: int) -> dict[str, An
     attachment = model["attachment"]
     optimizer = config["optimization"]
     pairwise = pairwise_evaluation_from_config(config)
-    return {
+    keywords = {
         "deformation_kernel_width": deformation["kernel_width"],
         "attachment_kernel_width": attachment["kernel_width"],
         "noise_variance": model["noise_variance"],
@@ -143,6 +143,21 @@ def _optimizer_keywords(config: dict[str, Any], max_cycles: int) -> dict[str, An
         "minimum_step_size": optimizer["minimum_step_size"],
         "max_line_search_iterations": optimizer["max_line_search_iterations"],
     }
+    # Preserve the historical v0.1 benchmark trajectory for legacy configs.
+    # New optimizer semantics are activated only by the explicit direction key.
+    if "direction_update" in optimizer:
+        keywords.update(
+            {
+                "step_initialization": optimizer.get("step_initialization", "fixed"),
+                "direction_update": optimizer["direction_update"],
+                "lbfgs_history_size": optimizer.get("lbfgs_history_size", 10),
+                "lbfgs_curvature_tolerance": optimizer.get(
+                    "lbfgs_curvature_tolerance", 1e-12
+                ),
+                "lbfgs_initial_step_size": optimizer.get("lbfgs_initial_step_size", 1.0),
+            }
+        )
+    return keywords
 
 
 def _prepare_targets(
@@ -559,6 +574,21 @@ def collect_modern_optimizer_benchmark(
             "gradient_tolerance": optimizer["gradient_tolerance"],
             "minimum_step_size": optimizer["minimum_step_size"],
             "max_line_search_iterations": optimizer["max_line_search_iterations"],
+            **(
+                {
+                    "step_initialization": optimizer.get("step_initialization", "fixed"),
+                    "direction_update": optimizer["direction_update"],
+                    "lbfgs_history_size": optimizer.get("lbfgs_history_size", 10),
+                    "lbfgs_curvature_tolerance": optimizer.get(
+                        "lbfgs_curvature_tolerance", 1e-12
+                    ),
+                    "lbfgs_initial_step_size": optimizer.get(
+                        "lbfgs_initial_step_size", 1.0
+                    ),
+                }
+                if "direction_update" in optimizer
+                else {}
+            ),
             "threads": config["runtime"]["threads"],
             "random_seed": config["runtime"]["random_seed"],
             "warmup_runs_per_repeat": warmups,
