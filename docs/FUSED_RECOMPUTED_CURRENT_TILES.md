@@ -1,7 +1,8 @@
 # Fused recomputed Current tiles
 
-Status: **implemented in Modern engine implementation 0.5; formal real-input
-qualification remains required before promotion to a production preset**
+Status: **implemented in Modern engine implementation 0.5 and formally compared
+with Engine 0.4 on the frozen five-subject full-resolution Weevil protocol;
+larger-cohort and multi-cycle qualification remains open**
 
 ## Purpose
 
@@ -49,27 +50,38 @@ operation scheduling can change last-bit results; automated comparisons use
 the predeclared float64 tolerances rather than requiring parameter hashes to be
 identical across engine implementations.
 
-## Exploratory observation
+## Real-input evidence
 
-One local engineering run used the frozen five-subject, approximately 10k-face
-Weevil input, one optimizer cycle, four CPU threads, float64, Current
-attachment, and 1024 × 1024 tiles. The fused prototype measured 57.585 seconds
-of optimizer time and 0.553 GiB sampled peak RSS. A separate Engine 0.4
-observation measured 68.850 seconds and 0.642 GiB. The final reported objective
-was equal at displayed precision.
+A prospective Engine 0.5 design and the already frozen Engine 0.4 baseline use
+the same five approximately 10k-face Weevil subjects, input hashes, optimizer
+configuration, one-cycle cap, two fresh-process repeats, zero warmups, four CPU
+threads, float64, Current attachment, 1024 × 1024 tiles, and deterministic order
+seed 20260823. The only declared comparison dimension is the engine
+implementation.
 
-These are separate single-repeat engineering observations. They do not select
-a safe preset, establish a stable speed ratio, prove convergence, extrapolate
-to 300 subjects, or validate biological results. Only a separately frozen,
-strictly verified Engine 0.4 versus 0.5 study may support a formal implementation
-comparison.
+Both studies and their comparison pass strict recomputation-based verification.
+Engine 0.4 measured 68.971 seconds median optimizer time and 0.642 GiB median
+sampled peak RSS. Engine 0.5 measured 53.704 seconds and 0.555 GiB: a candidate
+to baseline time ratio of 0.778647 and peak-RSS ratio of 0.864452. The two Engine
+0.5 repeats were internally identical in all decisions, result hashes, and
+reported scalar values.
+
+Across Engine 0.4 and 0.5, all discrete optimizer work and outcomes match. Final
+attachment and objective differ by `5.684341886080802e-14` in each paired
+repeat, final regularity is equal, and all scalar components pass the frozen
+`1e-12` absolute and relative tolerances. Template and control-point hashes
+match exactly. Momenta and history hashes do not, as expected from the changed
+last-bit gradient scheduling.
+
+This evidence describes one machine, one five-subject prefix, and one optimizer
+cycle. It does not select a universally safe tile preset, prove convergence,
+extrapolate to 300 subjects, compare with Deformetrica, or validate biological
+results. Sampled RSS can miss short peaks.
 
 ## Remaining gates
 
-1. Freeze and run matched multi-repeat Engine 0.4 and Engine 0.5 studies on the
-   same real inputs and 1024 × 1024 tile protocol.
-2. Verify scalar agreement, discrete optimizer work, termination, and sampled
-   memory with the strict comparison workflow.
-3. Run the complete automated test suite and repository lint checks.
-4. Preserve Engine 0.4 artifacts and reject continuation/recovery across the
+1. Run the complete automated test suite and repository lint checks.
+2. Qualify multiple optimizer cycles and a larger subject cohort without
+   extrapolating from this limited study.
+3. Preserve Engine 0.4 artifacts and reject continuation/recovery across the
    implementation-version boundary unless an explicit migration is developed.
