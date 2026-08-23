@@ -1,8 +1,8 @@
 # Fused recomputed Current tiles
 
 Status: **implemented in Modern engine implementation 0.5 and formally compared
-with Engine 0.4 on the frozen five-subject full-resolution Weevil protocol;
-larger-cohort and multi-cycle qualification remains open**
+with Engine 0.4 on prospectively frozen five- and sixteen-subject,
+full-resolution Weevil protocols**
 
 ## Purpose
 
@@ -81,10 +81,27 @@ measured 113.369 seconds and 0.564 GiB. The candidate-to-baseline ratios were
 work and outcomes again matched, and every final scalar difference was the
 same `5.684341886080802e-14` or zero observed in the one-cycle comparison.
 
-This evidence describes one machine and one five-subject prefix. It does not
-select a universally safe tile preset, prove convergence,
-extrapolate to 300 subjects, compare with Deformetrica, or validate biological
-results. Sampled RSS can miss short peaks.
+A third, separately frozen comparison expanded the real-input cohort to 16
+approximately 10k-face subjects and retained the three-cycle, two-repeat,
+float64 CPU, four-thread, 1024 × 1024 protocol. Subject selection was bound to
+the completed Deformetrica reference run before either optimizer study: it
+reused the pre-results geometry-diverse calibration order, excluded seven
+candidates that failed the declared topology gates, and filled the remainder
+deterministically by filename.
+
+Engine 0.4 measured 815.307 seconds median optimizer time and 1.170 GiB median
+sampled peak RSS. Engine 0.5 measured 649.931 seconds and 1.094 GiB. The
+candidate-to-baseline ratios were 0.797161 for optimizer time, 0.935562 for
+sampled peak RSS, and 0.918227 for RSS growth above the fresh-process baseline.
+All discrete work and outcomes matched. Final attachment and objective differed
+by `1.1368683772161603e-13`, and final regularity differed by
+`1.1102230246251565e-16`; every scalar passed the frozen `1e-12` tolerances.
+Both source studies and the generated comparison passed strict verification.
+
+This evidence describes one machine and cohorts of at most 16 subjects. It does
+not select a universally safe tile preset, prove convergence, extrapolate to
+300 subjects, establish endpoint non-inferiority to Deformetrica, or validate
+biological results. Sampled RSS can miss short peaks.
 
 Repository qualification after the implementation and schema revision passed
 all lint checks and the complete automated suite: 1065 tests passed and seven
@@ -92,7 +109,9 @@ environment-specific Windows/PySide or symbolic-link tests were skipped.
 
 ## Remaining gates
 
-1. Qualify a larger subject cohort without extrapolating from the five-subject
-   studies.
+1. Resolve the optimizer-convergence limitation exposed by the executed
+   16-subject fixed-reference workflow and its ten-cycle continuation. The
+   engine hotpath passed, but the declared endpoint gates remain inconclusive.
+   See [Modern optimizer convergence evidence](MODERN_OPTIMIZER_CONVERGENCE.md).
 2. Preserve Engine 0.4 artifacts and reject continuation/recovery across the
    implementation-version boundary unless an explicit migration is developed.
