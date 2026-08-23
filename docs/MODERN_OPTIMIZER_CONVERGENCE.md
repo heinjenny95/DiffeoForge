@@ -1,7 +1,8 @@
 # Modern optimizer convergence evidence
 
 Status: **the Engine 0.5 compute hotpath is qualified on 16 full-resolution
-subjects; the current steepest-ascent optimizer is not qualified as converged**
+subjects; Engine 0.6 L-BFGS materially improves real-input optimization and
+external gates but is not yet qualified as converged**
 
 ## Frozen evidence
 
@@ -49,13 +50,24 @@ fixed-reference design must exist before a real-input result is computed.
 Limited-memory BFGS is implemented as the next Engine 0.6 candidate because it
 uses gradient-history curvature to avoid the zig-zag behavior of fixed steepest
 ascent while keeping memory proportional to a declared small history size.
-Initial implementation and tests do not establish superiority; acceptance
-requires a frozen Weevil comparison and the unchanged external endpoint gates.
+Its prospectively frozen five-subject comparison passed every unchanged
+external endpoint gate and reduced the 20-cycle final gradient norm from
+`322.889990219` to `68.377691283`. The pooled external residual ratio improved
+from `1.145717736` to `0.954123362`, and the subject pass fraction improved from
+4/5 to 5/5. An independently frozen 40-cycle reserve reached a lower minimum
+gradient of `34.592042331` and a pooled ratio of `0.798957722`, but its final
+gradient rose to `129.152175750`. Every workflow and assessment passed strict
+verification and external-metric recomputation.
+
+The unchanged `0.0001` absolute-gradient gate therefore continues to reject all
+real-input runs as not converged. The next engineering step is a separately
+versioned curvature-aware line-search experiment; additional cycle count alone
+is not treated as evidence of convergence.
 See [Experimental Modern L-BFGS direction](MODERN_LBFGS.md).
 
 ## Scientific boundary
 
 These are engineering registration and convergence diagnostics on one selected
-16-subject cohort. They do not prove atlas equivalence, biological validity,
-parameter suitability, safe operation on 300 subjects, or that Deformetrica is
-the biological ground truth.
+16-subject cohort and one prospectively frozen five-subject cohort. They do not
+prove atlas equivalence, biological validity, parameter suitability, safe
+operation on 300 subjects, or that Deformetrica is the biological ground truth.
