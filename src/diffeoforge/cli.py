@@ -303,6 +303,24 @@ def build_parser() -> argparse.ArgumentParser:
         default=1.0,
         help="Armijo starting step for curvature-scaled L-BFGS directions.",
     )
+    modern_reference_design_parser.add_argument(
+        "--line-search-condition",
+        choices=("armijo", "strong_wolfe"),
+        default="armijo",
+        help="Declared acceptance rule for optimizer trial steps (default: armijo).",
+    )
+    modern_reference_design_parser.add_argument(
+        "--strong-wolfe-curvature-constant",
+        type=float,
+        default=0.9,
+        help="Strong-Wolfe directional-derivative contraction c2 (default: 0.9).",
+    )
+    modern_reference_design_parser.add_argument(
+        "--strong-wolfe-maximum-step-size",
+        type=float,
+        default=10.0,
+        help="Maximum bracket-expansion step for strong-Wolfe search (default: 10).",
+    )
 
     modern_reference_continue_parser = subparsers.add_parser(
         "modern-reference-qualification-continue",
@@ -1419,6 +1437,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                 optimizer_direction=args.optimizer_direction,
                 lbfgs_history_size=args.lbfgs_history_size,
                 lbfgs_initial_step_size=args.lbfgs_initial_step_size,
+                line_search_condition=args.line_search_condition,
+                strong_wolfe_curvature_constant=args.strong_wolfe_curvature_constant,
+                strong_wolfe_maximum_step_size=args.strong_wolfe_maximum_step_size,
             )
             design = verify_modern_reference_qualification_design(destination)
             print(f"Prospective fixed-reference qualification created: {destination}")

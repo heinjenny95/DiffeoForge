@@ -155,6 +155,13 @@ def _optimizer_keywords(config: dict[str, Any], max_cycles: int) -> dict[str, An
                     "lbfgs_curvature_tolerance", 1e-12
                 ),
                 "lbfgs_initial_step_size": optimizer.get("lbfgs_initial_step_size", 1.0),
+                "line_search_condition": optimizer.get("line_search_condition", "armijo"),
+                "strong_wolfe_curvature_constant": optimizer.get(
+                    "strong_wolfe_curvature_constant", 0.9
+                ),
+                "strong_wolfe_maximum_step_size": optimizer.get(
+                    "strong_wolfe_maximum_step_size", 10.0
+                ),
             }
         )
     return keywords
@@ -584,6 +591,15 @@ def collect_modern_optimizer_benchmark(
                     ),
                     "lbfgs_initial_step_size": optimizer.get(
                         "lbfgs_initial_step_size", 1.0
+                    ),
+                    "line_search_condition": optimizer.get(
+                        "line_search_condition", "armijo"
+                    ),
+                    "strong_wolfe_curvature_constant": optimizer.get(
+                        "strong_wolfe_curvature_constant", 0.9
+                    ),
+                    "strong_wolfe_maximum_step_size": optimizer.get(
+                        "strong_wolfe_maximum_step_size", 10.0
                     ),
                 }
                 if "direction_update" in optimizer

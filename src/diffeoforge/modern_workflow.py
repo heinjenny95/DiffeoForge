@@ -133,6 +133,19 @@ def validate_modern_workflow_config(config: Mapping[str, Any]) -> None:
             "optimization.direction_update=lbfgs currently requires "
             "optimization.block_order=[momenta]"
         )
+    line_search_condition = optimizer.get("line_search_condition", "armijo")
+    if line_search_condition == "strong_wolfe" and direction_update != "lbfgs":
+        raise ConfigurationError(
+            "optimization.line_search_condition=strong_wolfe currently requires "
+            "optimization.direction_update=lbfgs"
+        )
+    if optimizer.get("strong_wolfe_maximum_step_size", 10.0) < optimizer.get(
+        "lbfgs_initial_step_size", 1.0
+    ):
+        raise ConfigurationError(
+            "optimization.strong_wolfe_maximum_step_size must not be smaller than "
+            "optimization.lbfgs_initial_step_size"
+        )
 
 
 def load_modern_workflow_config(path: Path | str) -> dict[str, Any]:
@@ -512,6 +525,9 @@ def initialize_modern_workflow(
             "lbfgs_history_size": 10,
             "lbfgs_curvature_tolerance": 1e-12,
             "lbfgs_initial_step_size": 1.0,
+            "line_search_condition": "armijo",
+            "strong_wolfe_curvature_constant": 0.9,
+            "strong_wolfe_maximum_step_size": 10.0,
         },
         "analysis": {
             "pca_components": None,
@@ -1157,6 +1173,13 @@ def run_modern_workflow(
                         "lbfgs_curvature_tolerance", 1e-12
                     ),
                     lbfgs_initial_step_size=optimizer.get("lbfgs_initial_step_size", 1.0),
+                    line_search_condition=optimizer.get("line_search_condition", "armijo"),
+                    strong_wolfe_curvature_constant=optimizer.get(
+                        "strong_wolfe_curvature_constant", 0.9
+                    ),
+                    strong_wolfe_maximum_step_size=optimizer.get(
+                        "strong_wolfe_maximum_step_size", 10.0
+                    ),
                     progress_callback=(
                         observe_optimizer if progress_callback is not None else None
                     ),
@@ -1168,6 +1191,12 @@ def run_modern_workflow(
                     "Modern workflow cancellation requested during optimization"
                 ) from error
         check_cancellation()
+        if result.termination_reason == "line_search_failed":
+            raise ModernWorkflowError(
+                "Atlas optimization stopped because the declared line search could not "
+                f"accept a finite {result.failed_block or 'parameter'} step; no atlas/PCA "
+                "bundle was published"
+            )
         emit_progress("optimization", "completed", "Atlas optimization completed", 5)
         check_cancellation()
         model_settings = ModernAtlasModelSettings(

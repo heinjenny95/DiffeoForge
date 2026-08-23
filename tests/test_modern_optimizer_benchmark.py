@@ -103,7 +103,7 @@ def test_collection_binds_declared_optimizer_scope_and_counts(
     assert report["configuration"]["measured_max_cycles"] == 2
     assert report["configuration"]["warmup_runs_per_repeat"] == 1
     assert report["configuration"]["pairwise_evaluation"]["mode"] == "dense"
-    assert report["environment"]["engine_implementation"] == "0.6"
+    assert report["environment"]["engine_implementation"] == "0.7"
     assert report["summary"]["optimizer_wall_time_ns"] == {
         "minimum": 100,
         "median": 200,

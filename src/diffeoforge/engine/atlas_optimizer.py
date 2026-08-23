@@ -25,6 +25,7 @@ from diffeoforge.engine.objective import (
 AtlasParameterBlock = Literal["momenta", "template", "control_points"]
 AtlasStepInitialization = Literal["fixed", "previous_accepted"]
 AtlasDirectionUpdate = Literal["steepest", "lbfgs"]
+AtlasLineSearchCondition = Literal["armijo", "strong_wolfe"]
 AtlasAttemptStatus = Literal["initial", "accepted", "stationary", "failed"]
 AtlasTerminationReason = Literal[
     "gradient_tolerance",
@@ -96,6 +97,9 @@ class AtlasOptimizerSettings:
     lbfgs_history_size: int = 10
     lbfgs_curvature_tolerance: float = 1e-12
     lbfgs_initial_step_size: float = 1.0
+    line_search_condition: AtlasLineSearchCondition = "armijo"
+    strong_wolfe_curvature_constant: float = 0.9
+    strong_wolfe_maximum_step_size: float = 10.0
 
 
 @dataclass(frozen=True)
@@ -256,6 +260,113 @@ def _lbfgs_ascent_direction(
     return direction
 
 
+def _strong_wolfe_ascent_search(
+    initial: _BlockEvaluation,
+    direction: torch.Tensor,
+    *,
+    initial_step_size: float,
+    minimum_step_size: float,
+    maximum_step_size: float,
+    armijo_constant: float,
+    curvature_constant: float,
+    maximum_evaluations: int,
+    evaluate: Callable[[float], _BlockEvaluation | None],
+) -> tuple[_BlockEvaluation | None, float | None, int]:
+    """Bracket and bisect a step satisfying the strong Wolfe conditions.
+
+    The implementation is expressed for maximization. Trial points must satisfy
+    sufficient increase and reduce the absolute directional derivative. Every
+    trial requests both objective and gradient evidence; no objective-only
+    candidate can be accepted. Invalid trial states behave as an upper bracket.
+    """
+
+    initial_derivative = float(torch.sum(initial.gradient * direction))
+    if not math.isfinite(initial_derivative) or initial_derivative <= 0.0:
+        return None, None, 0
+    initial_objective = float(initial.state.objective)
+
+    def sufficient_increase(step_size: float, objective: float) -> bool:
+        required = initial_objective + armijo_constant * step_size * initial_derivative
+        return objective >= required
+
+    def curvature_satisfied(derivative: float) -> bool:
+        return abs(derivative) <= curvature_constant * initial_derivative
+
+    evaluations = 0
+    previous_step = 0.0
+    previous_evaluation = initial
+    step_size = min(initial_step_size, maximum_step_size)
+    bracket: tuple[float, _BlockEvaluation, float, _BlockEvaluation | None] | None = None
+
+    while evaluations < maximum_evaluations:
+        if step_size < minimum_step_size:
+            break
+        candidate = evaluate(step_size)
+        evaluations += 1
+        if candidate is None:
+            bracket = (previous_step, previous_evaluation, step_size, None)
+            break
+        candidate_objective = float(candidate.state.objective)
+        candidate_derivative = float(torch.sum(candidate.gradient * direction))
+        if not math.isfinite(candidate_derivative):
+            bracket = (previous_step, previous_evaluation, step_size, None)
+            break
+        if not sufficient_increase(step_size, candidate_objective) or (
+            previous_step > 0.0
+            and candidate_objective <= float(previous_evaluation.state.objective)
+        ):
+            bracket = (previous_step, previous_evaluation, step_size, candidate)
+            break
+        if curvature_satisfied(candidate_derivative):
+            return candidate, step_size, evaluations
+        if candidate_derivative <= 0.0:
+            bracket = (step_size, candidate, previous_step, previous_evaluation)
+            break
+        if step_size >= maximum_step_size:
+            break
+        previous_step = step_size
+        previous_evaluation = candidate
+        step_size = min(step_size * 2.0, maximum_step_size)
+
+    while bracket is not None and evaluations < maximum_evaluations:
+        first_step, first_evaluation, second_step, second_evaluation = bracket
+        if abs(second_step - first_step) < minimum_step_size:
+            break
+        if second_evaluation is not None and float(second_evaluation.state.objective) > float(
+            first_evaluation.state.objective
+        ):
+            low_step, low_evaluation = second_step, second_evaluation
+            high_step, high_evaluation = first_step, first_evaluation
+        else:
+            low_step, low_evaluation = first_step, first_evaluation
+            high_step, high_evaluation = second_step, second_evaluation
+        trial_step = 0.5 * (low_step + high_step)
+        if trial_step < minimum_step_size:
+            break
+        candidate = evaluate(trial_step)
+        evaluations += 1
+        if candidate is None:
+            bracket = (low_step, low_evaluation, trial_step, None)
+            continue
+        candidate_objective = float(candidate.state.objective)
+        candidate_derivative = float(torch.sum(candidate.gradient * direction))
+        if not math.isfinite(candidate_derivative):
+            bracket = (low_step, low_evaluation, trial_step, None)
+            continue
+        if not sufficient_increase(trial_step, candidate_objective) or candidate_objective <= float(
+            low_evaluation.state.objective
+        ):
+            bracket = (low_step, low_evaluation, trial_step, candidate)
+            continue
+        if curvature_satisfied(candidate_derivative):
+            return candidate, trial_step, evaluations
+        if candidate_derivative * (high_step - low_step) >= 0.0:
+            high_step, high_evaluation = low_step, low_evaluation
+        bracket = (trial_step, candidate, high_step, high_evaluation)
+
+    return None, None, evaluations
+
+
 def optimize_atlas(
     initial_template_vertices: torch.Tensor,
     template_triangles: torch.Tensor,
@@ -287,14 +398,17 @@ def optimize_atlas(
     lbfgs_history_size: int = 10,
     lbfgs_curvature_tolerance: float = 1e-12,
     lbfgs_initial_step_size: float = 1.0,
+    line_search_condition: AtlasLineSearchCondition = "armijo",
+    strong_wolfe_curvature_constant: float = 0.9,
+    strong_wolfe_maximum_step_size: float = 10.0,
     progress_callback: AtlasProgressCallback | None = None,
     checkpoint_callback: AtlasCheckpointCallback | None = None,
     cancel_requested: AtlasCancellationCallback | None = None,
 ) -> AtlasOptimizationResult:
     """Maximize the atlas objective over the selected parameter blocks.
 
-    Blocks are updated sequentially. Each accepted candidate must satisfy an
-    ascent Armijo condition for the current block. ``previous_accepted`` may
+    Blocks are updated sequentially. Each accepted candidate must satisfy the
+    declared ascent line-search condition. ``previous_accepted`` may
     reuse the last accepted step as the next declared line-search start; that
     state is deterministic and recorded in the accepted history. This is a
     correctness prototype, not a claim of Deformetrica optimizer-trajectory
@@ -326,6 +440,8 @@ def optimize_atlas(
         raise ValueError("step_initialization must be fixed or previous_accepted")
     if direction_update not in ("steepest", "lbfgs"):
         raise ValueError("direction_update must be steepest or lbfgs")
+    if line_search_condition not in ("armijo", "strong_wolfe"):
+        raise ValueError("line_search_condition must be armijo or strong_wolfe")
     history_size = _integer("lbfgs_history_size", lbfgs_history_size, minimum=1)
     curvature_tolerance = _finite_real(
         "lbfgs_curvature_tolerance",
@@ -340,6 +456,10 @@ def optimize_atlas(
     )
     if direction_update == "lbfgs" and len(order) != 1:
         raise ValueError("direction_update=lbfgs currently requires exactly one parameter block")
+    if line_search_condition == "strong_wolfe" and direction_update != "lbfgs":
+        raise ValueError(
+            "line_search_condition=strong_wolfe currently requires direction_update=lbfgs"
+        )
     step_sizes = {
         "momenta": _finite_real("momenta_step_size", momenta_step_size, minimum=0.0),
         "template": _finite_real("template_step_size", template_step_size, minimum=0.0),
@@ -349,6 +469,21 @@ def optimize_atlas(
     }
     shrink = _finite_real("backtracking_factor", backtracking_factor, minimum=0.0, maximum=1.0)
     armijo = _finite_real("armijo_constant", armijo_constant, minimum=0.0, maximum=1.0)
+    wolfe_curvature = _finite_real(
+        "strong_wolfe_curvature_constant",
+        strong_wolfe_curvature_constant,
+        minimum=armijo,
+        maximum=1.0,
+    )
+    wolfe_maximum_step = _finite_real(
+        "strong_wolfe_maximum_step_size",
+        strong_wolfe_maximum_step_size,
+        minimum=0.0,
+    )
+    if wolfe_maximum_step < lbfgs_step_size:
+        raise ValueError(
+            "strong_wolfe_maximum_step_size must not be smaller than lbfgs_initial_step_size"
+        )
     gradient_threshold = _finite_real(
         "gradient_tolerance",
         gradient_tolerance,
@@ -374,6 +509,9 @@ def optimize_atlas(
         lbfgs_history_size=history_size,
         lbfgs_curvature_tolerance=curvature_tolerance,
         lbfgs_initial_step_size=lbfgs_step_size,
+        line_search_condition=line_search_condition,
+        strong_wolfe_curvature_constant=wolfe_curvature,
+        strong_wolfe_maximum_step_size=wolfe_maximum_step,
     )
     for name, value in (
         ("initial_template_vertices", initial_template_vertices),
@@ -632,37 +770,80 @@ def optimize_atlas(
             directional_derivative = torch.sum(evaluated.gradient * direction)
             accepted: _BlockEvaluation | None = None
             evaluations = 0
-            for _ in range(line_search_limit):
-                if step_size < minimum_step:
-                    break
-                evaluations += 1
-                total_line_search_evaluations += 1
-                current_value = {
-                    "template": current.template_vertices,
-                    "control_points": current.control_points,
-                    "momenta": current.momenta,
-                }[block]
+            current_value = {
+                "template": current.template_vertices,
+                "control_points": current.control_points,
+                "momenta": current.momenta,
+            }[block]
+
+            def candidate_at(
+                candidate_step_size: float,
+                *,
+                accepted_state: _State = current,
+                active_block: AtlasParameterBlock = block,
+                base_value: torch.Tensor = current_value,
+                search_direction: torch.Tensor = direction,
+            ) -> _BlockEvaluation | None:
+                nonlocal candidate_gradient_evaluations
                 candidate_parameters = replace_block(
-                    current,
-                    block,
-                    current_value + step_size * direction,
+                    accepted_state,
+                    active_block,
+                    base_value + candidate_step_size * search_direction,
                 )
                 try:
-                    candidate_pending = evaluate_objective(*candidate_parameters, block)
+                    candidate_pending = evaluate_objective(*candidate_parameters, active_block)
                 except ValueError:
-                    candidate_pending = None
-                if candidate_pending is not None:
-                    required = current.objective + armijo * step_size * directional_derivative
-                    if bool(candidate_pending.state.objective >= required):
-                        try:
-                            candidate_gradient_evaluations += 1
-                            candidate = evaluate_gradient(candidate_pending)
-                        except ValueError:
-                            candidate = None
-                        if candidate is not None:
-                            accepted = candidate
-                            break
-                step_size *= shrink
+                    return None
+                if candidate_pending is None:
+                    return None
+                try:
+                    candidate_gradient_evaluations += 1
+                    return evaluate_gradient(candidate_pending)
+                except ValueError:
+                    return None
+
+            if line_search_condition == "strong_wolfe":
+                accepted, accepted_step_size, evaluations = _strong_wolfe_ascent_search(
+                    evaluated,
+                    direction,
+                    initial_step_size=step_size,
+                    minimum_step_size=minimum_step,
+                    maximum_step_size=wolfe_maximum_step,
+                    armijo_constant=armijo,
+                    curvature_constant=wolfe_curvature,
+                    maximum_evaluations=line_search_limit,
+                    evaluate=candidate_at,
+                )
+                total_line_search_evaluations += evaluations
+                if accepted_step_size is not None:
+                    step_size = accepted_step_size
+            else:
+                for _ in range(line_search_limit):
+                    if step_size < minimum_step:
+                        break
+                    evaluations += 1
+                    total_line_search_evaluations += 1
+                    candidate_parameters = replace_block(
+                        current,
+                        block,
+                        current_value + step_size * direction,
+                    )
+                    try:
+                        candidate_pending = evaluate_objective(*candidate_parameters, block)
+                    except ValueError:
+                        candidate_pending = None
+                    if candidate_pending is not None:
+                        required = current.objective + armijo * step_size * directional_derivative
+                        if bool(candidate_pending.state.objective >= required):
+                            try:
+                                candidate_gradient_evaluations += 1
+                                candidate = evaluate_gradient(candidate_pending)
+                            except ValueError:
+                                candidate = None
+                            if candidate is not None:
+                                accepted = candidate
+                                break
+                    step_size *= shrink
 
             if accepted is None:
                 record = current.record(

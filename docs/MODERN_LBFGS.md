@@ -64,6 +64,10 @@ improvement. More cycles alone are therefore not accepted as the next fix. The
 next candidate must prospectively test a curvature-aware line search or another
 explicitly versioned convergence strategy.
 
+That next option is implemented separately in Engine 0.7; see
+[Experimental Strong-Wolfe line search](MODERN_STRONG_WOLFE.md). Armijo remains
+the default, so the Engine 0.6 trajectory stays available unchanged.
+
 ## Evidence boundary
 
 Automated tests establish deterministic repeatability, monotone accepted

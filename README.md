@@ -575,6 +575,7 @@ and workflow for another mesh directory.
 - [Fused recomputed Current tiles](docs/FUSED_RECOMPUTED_CURRENT_TILES.md)
 - [Modern optimizer convergence evidence](docs/MODERN_OPTIMIZER_CONVERGENCE.md)
 - [Experimental Modern L-BFGS direction](docs/MODERN_LBFGS.md)
+- [Experimental Strong-Wolfe line search](docs/MODERN_STRONG_WOLFE.md)
 - [Bounded-memory blockwise Gaussian primitives](docs/BLOCKWISE_GAUSSIAN.md)
 - [Landmark-based Procrustes alignment](docs/PROCRUSTES_ALIGNMENT.md)
 - [Data-assisted Deformetrica parameter guidance](docs/DATA_ASSISTED_PARAMETERS.md)

@@ -462,7 +462,7 @@ def test_modern_reference_qualification_design_is_prospective_and_tamper_evident
     assert len(assessment["subjects"]) == 3
     assert assessment["metrics"]["pooled_modern_to_reference_residual_ratio"] >= 0
     assert assessment["assessment_version"] == "0.3"
-    assert assessment["optimizer"]["engine_implementation"] == "0.6"
+    assert assessment["optimizer"]["engine_implementation"] == "0.7"
     assert len(assessment["optimizer"]["history_sha256"]) == 64
     trajectory = assessment["optimizer"]["trajectory"]
     assert trajectory["initial_objective"] == pytest.approx(
@@ -518,8 +518,8 @@ def test_modern_reference_qualification_design_is_prospective_and_tamper_evident
     )
     assert continuation["design_version"] == "0.4"
     assert continuation["protocol"]["continuation"]["parent_cycles_completed"] == 1
-    assert continuation["protocol"]["continuation"]["parent_engine_implementation"] == "0.6"
-    assert continuation["protocol"]["continuation"]["expected_engine_implementation"] == "0.6"
+    assert continuation["protocol"]["continuation"]["parent_engine_implementation"] == "0.7"
+    assert continuation["protocol"]["continuation"]["expected_engine_implementation"] == "0.7"
     assert math.isfinite(
         continuation["protocol"]["continuation"]["parent_final_objective"]
     )
@@ -543,6 +543,9 @@ def test_modern_reference_qualification_design_is_prospective_and_tamper_evident
         optimizer_direction="lbfgs",
         lbfgs_history_size=5,
         lbfgs_initial_step_size=1.0,
+        line_search_condition="strong_wolfe",
+        strong_wolfe_curvature_constant=0.5,
+        strong_wolfe_maximum_step_size=8.0,
         created_at="2026-08-22T03:30:00+00:00",
     )
     lbfgs_design = verify_modern_reference_qualification_design(lbfgs_path)
@@ -551,6 +554,9 @@ def test_modern_reference_qualification_design_is_prospective_and_tamper_evident
     assert lbfgs_config["optimization"]["direction_update"] == "lbfgs"
     assert lbfgs_config["optimization"]["lbfgs_history_size"] == 5
     assert lbfgs_config["optimization"]["lbfgs_initial_step_size"] == 1.0
+    assert lbfgs_config["optimization"]["line_search_condition"] == "strong_wolfe"
+    assert lbfgs_config["optimization"]["strong_wolfe_curvature_constant"] == 0.5
+    assert lbfgs_config["optimization"]["strong_wolfe_maximum_step_size"] == 8.0
 
     successor_run = run_modern_workflow(
         continuation_path / CONFIG_NAME,
@@ -575,7 +581,7 @@ def test_modern_reference_qualification_design_is_prospective_and_tamper_evident
     ] is True
     assert successor_assessment["continuation_verification"][
         "successor_engine_implementation"
-    ] == "0.6"
+    ] == "0.7"
 
     subject = destination / design["subjects"][0]["source"]["path"]
     subject.write_bytes(subject.read_bytes() + b"tamper")

@@ -281,6 +281,9 @@ def create_modern_reference_qualification(
     optimizer_direction: str = "steepest",
     lbfgs_history_size: int = 10,
     lbfgs_initial_step_size: float = 1.0,
+    line_search_condition: str = "armijo",
+    strong_wolfe_curvature_constant: float = 0.9,
+    strong_wolfe_maximum_step_size: float = 10.0,
     created_at: str | None = None,
 ) -> Path:
     """Freeze a no-results-yet comparison against one completed Deformetrica atlas."""
@@ -296,6 +299,10 @@ def create_modern_reference_qualification(
             raise ValueError(f"{name} must be an integer of at least {minimum}")
     if optimizer_direction not in {"steepest", "lbfgs"}:
         raise ValueError("optimizer_direction must be steepest or lbfgs")
+    if line_search_condition not in {"armijo", "strong_wolfe"}:
+        raise ValueError("line_search_condition must be armijo or strong_wolfe")
+    if line_search_condition == "strong_wolfe" and optimizer_direction != "lbfgs":
+        raise ValueError("line_search_condition=strong_wolfe requires optimizer_direction=lbfgs")
     if (
         isinstance(lbfgs_initial_step_size, bool)
         or not isinstance(lbfgs_initial_step_size, (int, float))
@@ -303,6 +310,25 @@ def create_modern_reference_qualification(
         or float(lbfgs_initial_step_size) <= 0.0
     ):
         raise ValueError("lbfgs_initial_step_size must be finite and greater than zero")
+    if (
+        isinstance(strong_wolfe_curvature_constant, bool)
+        or not isinstance(strong_wolfe_curvature_constant, (int, float))
+        or not 0.0001 < float(strong_wolfe_curvature_constant) < 1.0
+    ):
+        raise ValueError(
+            "strong_wolfe_curvature_constant must be finite, greater than the Armijo "
+            "constant 0.0001, and smaller than one"
+        )
+    if (
+        isinstance(strong_wolfe_maximum_step_size, bool)
+        or not isinstance(strong_wolfe_maximum_step_size, (int, float))
+        or not math.isfinite(float(strong_wolfe_maximum_step_size))
+        or float(strong_wolfe_maximum_step_size) < float(lbfgs_initial_step_size)
+    ):
+        raise ValueError(
+            "strong_wolfe_maximum_step_size must be finite and not smaller than "
+            "lbfgs_initial_step_size"
+        )
     run = Path(reference_run).expanduser().resolve()
     report = collect_run_report(run)
     if report.result.get("status") != "completed" or any(
@@ -493,6 +519,13 @@ def create_modern_reference_qualification(
                 "lbfgs_history_size": lbfgs_history_size,
                 "lbfgs_curvature_tolerance": 1e-12,
                 "lbfgs_initial_step_size": float(lbfgs_initial_step_size),
+                "line_search_condition": line_search_condition,
+                "strong_wolfe_curvature_constant": float(
+                    strong_wolfe_curvature_constant
+                ),
+                "strong_wolfe_maximum_step_size": float(
+                    strong_wolfe_maximum_step_size
+                ),
             },
             "analysis": {
                 "pca_components": None,

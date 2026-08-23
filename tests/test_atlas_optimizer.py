@@ -204,6 +204,38 @@ def test_lbfgs_reaches_declared_tolerance_that_steepest_does_not() -> None:
     assert lbfgs.cycles_completed < steepest.cycles_completed
 
 
+def test_strong_wolfe_lbfgs_is_repeatable_monotone_and_uses_gradient_trials() -> None:
+    arguments, keywords = _problem(subjects=1)
+    settings = {
+        "max_cycles": 12,
+        "block_order": ("momenta",),
+        "gradient_tolerance": 0.0,
+        "step_initialization": "previous_accepted",
+        "direction_update": "lbfgs",
+        "lbfgs_history_size": 5,
+        "line_search_condition": "strong_wolfe",
+        "strong_wolfe_curvature_constant": 0.9,
+        "strong_wolfe_maximum_step_size": 10.0,
+    }
+
+    first = optimize_atlas(*arguments, **keywords, **settings)
+    second = optimize_atlas(*arguments, **keywords, **settings)
+
+    assert first.settings.line_search_condition == "strong_wolfe"
+    assert first.settings.strong_wolfe_curvature_constant == 0.9
+    assert first.settings.strong_wolfe_maximum_step_size == 10.0
+    assert first.history == second.history
+    assert torch.equal(first.momenta, second.momenta)
+    assert first.termination_reason == "max_cycles"
+    assert all(later.objective > earlier.objective for earlier, later in pairwise(first.history))
+    assert first.candidate_gradient_evaluations == first.total_line_search_evaluations
+    assert first.gradient_evaluations == 1 + first.total_line_search_evaluations
+    assert all(
+        record.accepted_step_size is None or record.accepted_step_size <= 10.0
+        for record in first.history
+    )
+
+
 def test_single_block_boundary_reuse_preserves_fresh_cycle_decisions_exactly() -> None:
     arguments, keywords = _problem(subjects=1)
     combined = optimize_atlas(
@@ -571,9 +603,16 @@ def test_optimizer_remains_differentiable_internally_under_no_grad() -> None:
         ({"step_initialization": "automatic"}, "step_initialization"),
         ({"direction_update": "automatic"}, "direction_update"),
         ({"direction_update": "lbfgs"}, "exactly one parameter block"),
+        ({"line_search_condition": "automatic"}, "line_search_condition"),
+        ({"line_search_condition": "strong_wolfe"}, "requires direction_update=lbfgs"),
         ({"lbfgs_history_size": 0}, "lbfgs_history_size"),
         ({"lbfgs_curvature_tolerance": -1.0}, "lbfgs_curvature_tolerance"),
         ({"lbfgs_initial_step_size": 0.0}, "lbfgs_initial_step_size"),
+        ({"strong_wolfe_curvature_constant": 0.0}, "strong_wolfe_curvature_constant"),
+        (
+            {"strong_wolfe_maximum_step_size": 0.5},
+            "strong_wolfe_maximum_step_size",
+        ),
     ],
 )
 def test_invalid_optimizer_settings_fail_explicitly(override: dict, message: str) -> None:

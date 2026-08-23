@@ -63,7 +63,7 @@ def test_design_freezes_full_factorial_schedule_without_results() -> None:
     assert first == second
     assert first["optimizer_design_version"] == "0.1"
     assert first["software"]["optimizer_benchmark_version"] == "0.1"
-    assert first["software"]["engine_implementation"] == "0.6"
+    assert first["software"]["engine_implementation"] == "0.7"
     assert first["protocol"]["condition_count"] == 4
     assert first["configuration"]["pairwise_evaluation"]["mode"] == "dense"
     assert len(first["input"]["subjects"]) == 5

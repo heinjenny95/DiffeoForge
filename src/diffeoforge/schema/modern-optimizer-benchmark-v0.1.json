@@ -261,6 +261,9 @@
         "lbfgs_history_size": {"type": "integer", "minimum": 1, "maximum": 100},
         "lbfgs_curvature_tolerance": {"type": "number", "minimum": 0},
         "lbfgs_initial_step_size": {"type": "number", "exclusiveMinimum": 0},
+        "line_search_condition": {"enum": ["armijo", "strong_wolfe"]},
+        "strong_wolfe_curvature_constant": {"type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 1},
+        "strong_wolfe_maximum_step_size": {"type": "number", "exclusiveMinimum": 0},
         "threads": {"type": "integer", "minimum": 1},
         "random_seed": {"type": "integer", "minimum": 0},
         "warmup_runs_per_repeat": {"type": "integer", "minimum": 0, "maximum": 10},
@@ -289,7 +292,7 @@
       ],
       "properties": {
         "diffeoforge": {"type": "string", "minLength": 1},
-        "engine_implementation": {"enum": ["0.3", "0.4", "0.5", "0.6"]},
+        "engine_implementation": {"enum": ["0.3", "0.4", "0.5", "0.6", "0.7"]},
         "python": {"type": "string", "minLength": 1},
         "numpy": {"type": "string", "minLength": 1},
         "pytorch": {"type": "string", "minLength": 1},

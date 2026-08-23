@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import csv
 import json
+from itertools import pairwise
 from pathlib import Path
 
 import pytest
@@ -248,6 +249,16 @@ def test_lbfgs_requires_explicit_momenta_only_configuration() -> None:
     invalid["optimization"]["lbfgs_initial_step_size"] = 1.0
     workflow.validate_modern_workflow_config(invalid)
 
+    invalid["optimization"]["direction_update"] = "steepest"
+    invalid["optimization"]["line_search_condition"] = "strong_wolfe"
+    with pytest.raises(ConfigurationError, match="requires.*direction_update=lbfgs"):
+        workflow.validate_modern_workflow_config(invalid)
+
+    invalid["optimization"]["direction_update"] = "lbfgs"
+    invalid["optimization"]["strong_wolfe_maximum_step_size"] = 0.5
+    with pytest.raises(ConfigurationError, match="maximum_step_size"):
+        workflow.validate_modern_workflow_config(invalid)
+
 
 def test_farthest_template_initialization_is_repeatable_and_explicit() -> None:
     vertices = np.array(read_vtk_polydata(MESH_DIRECTORY / "template.vtk").vertices)
@@ -408,6 +419,71 @@ def test_lbfgs_momenta_workflow_is_explicit_repeatable_and_verified(tmp_path: Pa
     assert first_bundle["optimizer"]["final_regularity"] == second_bundle["optimizer"][
         "final_regularity"
     ]
+
+
+def test_strong_wolfe_workflow_records_and_verifies_line_search(tmp_path: Path) -> None:
+    config_value = _configuration(output=str(tmp_path / "unused"))
+    config_value["optimization"].update(
+        {
+            "max_cycles": 3,
+            "block_order": ["momenta"],
+            "direction_update": "lbfgs",
+            "lbfgs_history_size": 3,
+            "lbfgs_curvature_tolerance": 1e-12,
+            "lbfgs_initial_step_size": 1.0,
+            "line_search_condition": "strong_wolfe",
+            "strong_wolfe_curvature_constant": 0.9,
+            "strong_wolfe_maximum_step_size": 10.0,
+            "step_initialization": "previous_accepted",
+        }
+    )
+    config = tmp_path / "strong-wolfe.yaml"
+    config.write_text(yaml.safe_dump(config_value, sort_keys=False), encoding="utf-8")
+
+    destination = workflow.run_modern_workflow(
+        config,
+        destination=tmp_path / "strong-wolfe-run",
+        created_at=FIXED_TIME,
+    )
+    manifest = workflow.verify_modern_workflow(destination)
+    bundle = workflow.verify_modern_atlas_bundle(destination / manifest["result_bundle"]["path"])
+
+    settings = bundle["optimizer"]["settings"]
+    assert settings["line_search_condition"] == "strong_wolfe"
+    assert settings["strong_wolfe_curvature_constant"] == 0.9
+    assert settings["strong_wolfe_maximum_step_size"] == 10.0
+    history_path = (
+        destination
+        / manifest["result_bundle"]["path"]
+        / bundle["optimizer"]["history_path"]
+    )
+    with history_path.open("r", encoding="utf-8", newline="") as handle:
+        objectives = [float(record["objective"]) for record in csv.DictReader(handle)]
+    assert all(later >= earlier for earlier, later in pairwise(objectives))
+
+
+def test_strong_wolfe_failure_stops_before_bundle_publication(tmp_path: Path) -> None:
+    config_value = _configuration(output=str(tmp_path / "unused"))
+    config_value["optimization"].update(
+        {
+            "max_cycles": 1,
+            "block_order": ["momenta"],
+            "direction_update": "lbfgs",
+            "line_search_condition": "strong_wolfe",
+            "strong_wolfe_curvature_constant": 0.5,
+            "strong_wolfe_maximum_step_size": 10.0,
+        }
+    )
+    config = tmp_path / "strong-wolfe-failure.yaml"
+    config.write_text(yaml.safe_dump(config_value, sort_keys=False), encoding="utf-8")
+
+    with pytest.raises(workflow.ModernWorkflowError, match="line search could not accept"):
+        workflow.run_modern_workflow(
+            config,
+            destination=tmp_path / "strong-wolfe-failure-run",
+            created_at=FIXED_TIME,
+        )
+    assert not (tmp_path / "strong-wolfe-failure-run").exists()
 
 
 def test_momenta_initialization_rejects_changed_subject_order(tmp_path: Path) -> None:
