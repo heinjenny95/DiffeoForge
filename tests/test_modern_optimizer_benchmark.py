@@ -140,8 +140,8 @@ def test_one_block_scope_is_valid_and_decision_bound_tracks_declared_order(
         {
             "accepted_decisions": 2,
             "line_search_evaluations": 3,
-            "objective_evaluations": 5,
-            "gradient_evaluations": 4,
+            "objective_evaluations": 4,
+            "gradient_evaluations": 3,
             "candidate_gradient_evaluations": 2,
             "line_search_candidates_without_gradient": 1,
         }
@@ -149,10 +149,14 @@ def test_one_block_scope_is_valid_and_decision_bound_tracks_declared_order(
     report["repeat_consistency"] = module._consistency(report["samples"])
 
     _validate_report(report)
+    invalid_counts = json.loads(json.dumps(report))
+    invalid_counts["samples"][0]["objective_evaluations"] = 5
+    with pytest.raises(ModernOptimizerBenchmarkError, match="Objective-evaluation count"):
+        _validate_report(invalid_counts)
     invalid = json.loads(json.dumps(report))
     invalid["samples"][0]["accepted_decisions"] = 3
-    invalid["samples"][0]["objective_evaluations"] = 6
-    invalid["samples"][0]["gradient_evaluations"] = 5
+    invalid["samples"][0]["objective_evaluations"] = 4
+    invalid["samples"][0]["gradient_evaluations"] = 3
     invalid["samples"][0]["candidate_gradient_evaluations"] = 2
     invalid["samples"][0]["line_search_candidates_without_gradient"] = 1
     invalid["repeat_consistency"] = module._consistency(invalid["samples"])

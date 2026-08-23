@@ -420,9 +420,20 @@ def _validate_report(report: dict[str, Any]) -> None:
             + sample["stationary_decisions"]
             + sample["failed_decisions"]
         )
-        if sample["objective_evaluations"] != (decisions + sample["line_search_evaluations"]):
+        single_block = len(report["configuration"]["block_order"]) == 1
+        expected_objective_evaluations = (
+            1 + sample["line_search_evaluations"]
+            if single_block
+            else decisions + sample["line_search_evaluations"]
+        )
+        if sample["objective_evaluations"] != expected_objective_evaluations:
             raise ModernOptimizerBenchmarkError("Objective-evaluation count is inconsistent")
-        if sample["gradient_evaluations"] != (decisions + sample["candidate_gradient_evaluations"]):
+        expected_gradient_evaluations = (
+            1 + sample["candidate_gradient_evaluations"]
+            if single_block
+            else decisions + sample["candidate_gradient_evaluations"]
+        )
+        if sample["gradient_evaluations"] != expected_gradient_evaluations:
             raise ModernOptimizerBenchmarkError("Gradient-evaluation count is inconsistent")
         decision_bound = report["configuration"]["measured_max_cycles"] * len(
             report["configuration"]["block_order"]
