@@ -124,6 +124,7 @@ class AtlasOptimizerSettings:
     strong_wolfe_curvature_constant: float = 0.9
     strong_wolfe_maximum_step_size: float = 10.0
     relative_objective_tolerance: float | None = None
+    subject_batch_size: int | None = None
 
 
 @dataclass(frozen=True)
@@ -192,7 +193,8 @@ class _PendingBlockEvaluation:
 
     state: _State
     total: torch.Tensor
-    variable: torch.Tensor
+    variable: torch.Tensor | None
+    block: AtlasParameterBlock
 
 
 def _integer(name: str, value: int, *, minimum: int) -> int:
@@ -428,6 +430,7 @@ def optimize_atlas(
     strong_wolfe_curvature_constant: float = 0.9,
     strong_wolfe_maximum_step_size: float = 10.0,
     relative_objective_tolerance: float | None = None,
+    subject_batch_size: int | None = None,
     resume_state: AtlasOptimizerResumeState | None = None,
     progress_callback: AtlasProgressCallback | None = None,
     checkpoint_callback: AtlasCheckpointCallback | None = None,
@@ -524,6 +527,11 @@ def optimize_atlas(
             maximum=1.0,
         )
     )
+    normalized_subject_batch_size = (
+        None
+        if subject_batch_size is None
+        else _integer("subject_batch_size", subject_batch_size, minimum=1)
+    )
     gradient_threshold = _finite_real(
         "gradient_tolerance",
         gradient_tolerance,
@@ -553,6 +561,7 @@ def optimize_atlas(
         strong_wolfe_curvature_constant=wolfe_curvature,
         strong_wolfe_maximum_step_size=wolfe_maximum_step,
         relative_objective_tolerance=objective_change_tolerance,
+        subject_batch_size=normalized_subject_batch_size,
     )
     for name, value in (
         ("initial_template_vertices", initial_template_vertices),
@@ -618,6 +627,95 @@ def optimize_atlas(
     gradient_evaluations = 0
     candidate_gradient_evaluations = 0
 
+    def subject_slices() -> tuple[slice, ...]:
+        size = normalized_subject_batch_size
+        if size is None or size >= len(target_sequence):
+            return (slice(0, len(target_sequence)),)
+        return tuple(
+            slice(start, min(start + size, len(target_sequence)))
+            for start in range(0, len(target_sequence), size)
+        )
+
+    batch_slices = subject_slices()
+
+    def evaluate_batched_objective(
+        template_vertices: torch.Tensor,
+        control_points: torch.Tensor,
+        momenta: torch.Tensor,
+    ) -> _State | None:
+        totals: list[torch.Tensor] = []
+        attachments: list[torch.Tensor] = []
+        regularities: list[torch.Tensor] = []
+        residuals: list[torch.Tensor] = []
+        with torch.no_grad():
+            for subject_slice in batch_slices:
+                check_cancellation()
+                objective = atlas_objective(
+                    template_vertices,
+                    template_triangles,
+                    target_sequence[subject_slice],
+                    control_points,
+                    momenta[subject_slice],
+                    **{
+                        **objective_keywords,
+                        "prepared_targets": prepared_target_sequence[subject_slice],
+                    },
+                )
+                if not bool(torch.isfinite(objective.total)):
+                    return None
+                totals.append(objective.total.detach())
+                attachments.append(objective.attachment.detach())
+                regularities.append(objective.regularity.detach())
+                residuals.append(objective.residuals.detach())
+        return _State(
+            template_vertices=template_vertices.detach(),
+            control_points=control_points.detach(),
+            momenta=momenta.detach(),
+            objective=torch.stack(totals).sum(),
+            attachment=torch.stack(attachments).sum(),
+            regularity=torch.stack(regularities).sum(),
+            residuals=torch.cat(residuals),
+        )
+
+    def evaluate_batched_gradient(
+        state: _State,
+        block: AtlasParameterBlock,
+    ) -> torch.Tensor | None:
+        gradients: list[torch.Tensor] = []
+        for subject_slice in batch_slices:
+            check_cancellation()
+            template_vertices = state.template_vertices.detach().clone()
+            control_points = state.control_points.detach().clone()
+            momenta = state.momenta[subject_slice].detach().clone()
+            parameters = {
+                "template": template_vertices,
+                "control_points": control_points,
+                "momenta": momenta,
+            }
+            variable = parameters[block].requires_grad_(True)
+            parameters[block] = variable
+            with torch.enable_grad():
+                objective = atlas_objective(
+                    parameters["template"],
+                    template_triangles,
+                    target_sequence[subject_slice],
+                    parameters["control_points"],
+                    parameters["momenta"],
+                    **{
+                        **objective_keywords,
+                        "prepared_targets": prepared_target_sequence[subject_slice],
+                    },
+                )
+                if not bool(torch.isfinite(objective.total)):
+                    return None
+                (gradient,) = torch.autograd.grad(objective.total, variable)
+            if not bool(torch.isfinite(gradient).all()):
+                return None
+            gradients.append(gradient.detach())
+        if block == "momenta":
+            return torch.cat(gradients)
+        return torch.stack(gradients).sum(dim=0)
+
     def evaluate_objective(
         template_vertices: torch.Tensor,
         control_points: torch.Tensor,
@@ -626,6 +724,21 @@ def optimize_atlas(
     ) -> _PendingBlockEvaluation | None:
         nonlocal objective_evaluations
         check_cancellation()
+        if normalized_subject_batch_size is not None:
+            objective_evaluations += 1
+            state = evaluate_batched_objective(
+                template_vertices.detach().clone(),
+                control_points.detach().clone(),
+                momenta.detach().clone(),
+            )
+            if state is None:
+                return None
+            return _PendingBlockEvaluation(
+                state=state,
+                total=state.objective,
+                variable=None,
+                block=block,
+            )
         parameters = {
             "template": template_vertices.detach().clone(),
             "control_points": control_points.detach().clone(),
@@ -659,16 +772,24 @@ def optimize_atlas(
             state=state,
             total=objective.total,
             variable=variable,
+            block=block,
         )
 
     def evaluate_gradient(
         pending: _PendingBlockEvaluation,
     ) -> _BlockEvaluation | None:
-        nonlocal gradient_evaluations
+        nonlocal gradient_evaluations, objective_evaluations
         check_cancellation()
-        with torch.enable_grad():
+        if pending.variable is None:
+            objective_evaluations += 1
             gradient_evaluations += 1
-            (gradient,) = torch.autograd.grad(pending.total, pending.variable)
+            gradient = evaluate_batched_gradient(pending.state, pending.block)
+            if gradient is None:
+                return None
+        else:
+            with torch.enable_grad():
+                gradient_evaluations += 1
+                (gradient,) = torch.autograd.grad(pending.total, pending.variable)
         check_cancellation()
         if not bool(torch.isfinite(gradient).all()):
             return None

@@ -311,6 +311,7 @@ def collect_modern_optimizer_benchmark_design(
                     "relative_objective_tolerance": optimizer.get(
                         "relative_objective_tolerance"
                     ),
+                    "subject_batch_size": optimizer.get("subject_batch_size"),
                 }
                 if "direction_update" in optimizer
                 else {}

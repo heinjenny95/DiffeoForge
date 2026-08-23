@@ -578,6 +578,7 @@ def initialize_modern_workflow(
             "strong_wolfe_curvature_constant": 0.9,
             "strong_wolfe_maximum_step_size": 10.0,
             "relative_objective_tolerance": None,
+            "subject_batch_size": None,
             "checkpoint_interval_cycles": 5,
             "checkpoint_retention": "latest",
         },
@@ -1369,6 +1370,7 @@ def run_modern_workflow(
                         "strong_wolfe_maximum_step_size", 10.0
                     ),
                     relative_objective_tolerance=optimizer.get("relative_objective_tolerance"),
+                    subject_batch_size=optimizer.get("subject_batch_size"),
                     resume_state=optimizer_resume_state,
                     progress_callback=(
                         observe_optimizer if progress_callback is not None else None

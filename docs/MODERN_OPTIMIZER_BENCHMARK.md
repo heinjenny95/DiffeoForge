@@ -72,6 +72,12 @@ identities are `objectives = 1 + line-search evaluations` and
 a runtime change reflects less mathematical work rather than only a wall-clock
 fluctuation, without rejecting the documented single-block reuse path.
 
+When `subject_batch_size` is enabled, every requested gradient intentionally
+recomputes one graph-free complete-cohort objective in bounded subject batches.
+The verifier therefore additionally requires
+`objectives = ordinary objectives + gradient evaluations`; it does not hide the
+memory/runtime trade-off behind unchanged work counters.
+
 ## Repeatability evidence
 
 The report hashes the complete decision history and the final template,

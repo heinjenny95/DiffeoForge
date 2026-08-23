@@ -351,6 +351,7 @@ def create_modern_reference_qualification(
     line_search_condition: str = "armijo",
     strong_wolfe_curvature_constant: float = 0.9,
     strong_wolfe_maximum_step_size: float = 10.0,
+    subject_batch_size: int | None = None,
     created_at: str | None = None,
 ) -> Path:
     """Freeze a no-results-yet comparison against one completed Deformetrica atlas."""
@@ -364,6 +365,12 @@ def create_modern_reference_qualification(
     ):
         if isinstance(value, bool) or not isinstance(value, int) or value < minimum:
             raise ValueError(f"{name} must be an integer of at least {minimum}")
+    if subject_batch_size is not None and (
+        isinstance(subject_batch_size, bool)
+        or not isinstance(subject_batch_size, int)
+        or subject_batch_size < 1
+    ):
+        raise ValueError("subject_batch_size must be an integer of at least 1 or None")
     if optimizer_direction not in {"steepest", "lbfgs"}:
         raise ValueError("optimizer_direction must be steepest or lbfgs")
     if line_search_condition not in {"armijo", "strong_wolfe"}:
@@ -584,6 +591,7 @@ def create_modern_reference_qualification(
                 "strong_wolfe_curvature_constant": float(strong_wolfe_curvature_constant),
                 "strong_wolfe_maximum_step_size": float(strong_wolfe_maximum_step_size),
                 "relative_objective_tolerance": float(optimization["convergence_tolerance"]),
+                "subject_batch_size": subject_batch_size,
                 "checkpoint_interval_cycles": 5,
                 "checkpoint_retention": "latest",
             },

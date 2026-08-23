@@ -265,6 +265,7 @@
         "strong_wolfe_curvature_constant": {"type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 1},
         "strong_wolfe_maximum_step_size": {"type": "number", "exclusiveMinimum": 0},
         "relative_objective_tolerance": {"type": ["number", "null"], "exclusiveMinimum": 0, "exclusiveMaximum": 1},
+        "subject_batch_size": {"type": ["integer", "null"], "minimum": 1},
         "threads": {"type": "integer", "minimum": 1},
         "random_seed": {"type": "integer", "minimum": 0},
         "warmup_runs_per_repeat": {"type": "integer", "minimum": 0, "maximum": 10},
@@ -293,7 +294,7 @@
       ],
       "properties": {
         "diffeoforge": {"type": "string", "minLength": 1},
-        "engine_implementation": {"enum": ["0.3", "0.4", "0.5", "0.6", "0.7", "0.8", "0.9"]},
+        "engine_implementation": {"enum": ["0.3", "0.4", "0.5", "0.6", "0.7", "0.8", "0.9", "1.0"]},
         "python": {"type": "string", "minLength": 1},
         "numpy": {"type": "string", "minLength": 1},
         "pytorch": {"type": "string", "minLength": 1},

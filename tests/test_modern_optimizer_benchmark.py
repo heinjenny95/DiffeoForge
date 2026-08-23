@@ -103,7 +103,7 @@ def test_collection_binds_declared_optimizer_scope_and_counts(
     assert report["configuration"]["measured_max_cycles"] == 2
     assert report["configuration"]["warmup_runs_per_repeat"] == 1
     assert report["configuration"]["pairwise_evaluation"]["mode"] == "dense"
-    assert report["environment"]["engine_implementation"] == "0.9"
+    assert report["environment"]["engine_implementation"] == "1.0"
     assert report["summary"]["optimizer_wall_time_ns"] == {
         "minimum": 100,
         "median": 200,
@@ -162,6 +162,31 @@ def test_one_block_scope_is_valid_and_decision_bound_tracks_declared_order(
     invalid["repeat_consistency"] = module._consistency(invalid["samples"])
     with pytest.raises(ModernOptimizerBenchmarkError, match="decision count"):
         _validate_report(invalid)
+
+
+def test_subject_batched_scope_records_gradient_recomputation_objectives(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import diffeoforge.modern_optimizer_benchmark as module
+
+    monkeypatch.setattr(module, "_run_fresh_sample", lambda *_args: _sample())
+    report = collect_modern_optimizer_benchmark(
+        EXAMPLE,
+        subject_count=2,
+        max_cycles=2,
+        repeats=1,
+        created_at=FIXED_TIME,
+    )
+    report["configuration"]["subject_batch_size"] = 1
+    report["samples"][0]["objective_evaluations"] += report["samples"][0][
+        "gradient_evaluations"
+    ]
+    report["repeat_consistency"] = module._consistency(report["samples"])
+
+    _validate_report(report)
+    report["samples"][0]["objective_evaluations"] -= 1
+    with pytest.raises(ModernOptimizerBenchmarkError, match="Objective-evaluation count"):
+        _validate_report(report)
 
 
 def test_legacy_report_without_engine_revision_remains_valid(

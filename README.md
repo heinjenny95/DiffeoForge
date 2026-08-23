@@ -258,7 +258,10 @@ writes complete-cycle checkpoints and provides a guarded source-level command
 that freezes a separate successor from a verified abandoned private run.
 Engine 0.9 preserves committed L-BFGS history, relative-objective baselines,
 and accepted gradients exactly; it is not automatic or mid-cycle process resume
-and is not yet exposed in the GUI. The real source
+and is not yet exposed in the GUI. Engine 1.0 adds explicit deterministic
+subject batching for memory-bounded large cohorts while preserving the complete
+cohort objective and frozen subject order; see
+[subject batching](docs/MODERN_SUBJECT_BATCHING.md). The real source
 preparation worker also has suspended-process Windows
 hard-parent-death evidence before request delivery. For the Modern compute
 worker, Windows parent death terminates the contained worker tree and

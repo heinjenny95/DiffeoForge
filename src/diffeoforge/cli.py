@@ -321,6 +321,14 @@ def build_parser() -> argparse.ArgumentParser:
         default=10.0,
         help="Maximum bracket-expansion step for strong-Wolfe search (default: 10).",
     )
+    modern_reference_design_parser.add_argument(
+        "--subject-batch-size",
+        type=int,
+        help=(
+            "Optional number of subjects retained per objective/gradient batch; "
+            "smaller values trade extra forward work for bounded autograd memory."
+        ),
+    )
 
     modern_reference_continue_parser = subparsers.add_parser(
         "modern-reference-qualification-continue",
@@ -1452,6 +1460,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 line_search_condition=args.line_search_condition,
                 strong_wolfe_curvature_constant=args.strong_wolfe_curvature_constant,
                 strong_wolfe_maximum_step_size=args.strong_wolfe_maximum_step_size,
+                subject_batch_size=args.subject_batch_size,
             )
             design = verify_modern_reference_qualification_design(destination)
             print(f"Prospective fixed-reference qualification created: {destination}")

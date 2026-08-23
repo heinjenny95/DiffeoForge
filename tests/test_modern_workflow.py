@@ -486,6 +486,49 @@ def test_lbfgs_momenta_workflow_is_explicit_repeatable_and_verified(tmp_path: Pa
     ]
 
 
+def test_subject_batched_workflow_is_explicit_and_numerically_matches_full_cohort(
+    tmp_path: Path,
+) -> None:
+    full_value = _configuration(output=str(tmp_path / "unused-full"))
+    full_config = tmp_path / "full.yaml"
+    full_config.write_text(yaml.safe_dump(full_value, sort_keys=False), encoding="utf-8")
+    batched_value = copy.deepcopy(full_value)
+    batched_value["optimization"]["subject_batch_size"] = 2
+    batched_config = tmp_path / "batched.yaml"
+    batched_config.write_text(
+        yaml.safe_dump(batched_value, sort_keys=False),
+        encoding="utf-8",
+    )
+
+    full_run = workflow.run_modern_workflow(
+        full_config,
+        destination=tmp_path / "full-run",
+        created_at=FIXED_TIME,
+    )
+    batched_run = workflow.run_modern_workflow(
+        batched_config,
+        destination=tmp_path / "batched-run",
+        created_at=FIXED_TIME,
+    )
+    full_manifest = workflow.verify_modern_workflow(full_run)
+    batched_manifest = workflow.verify_modern_workflow(batched_run)
+    full_bundle = workflow.verify_modern_atlas_bundle(
+        full_run / full_manifest["result_bundle"]["path"]
+    )
+    batched_bundle = workflow.verify_modern_atlas_bundle(
+        batched_run / batched_manifest["result_bundle"]["path"]
+    )
+
+    assert batched_bundle["optimizer"]["settings"]["subject_batch_size"] == 2
+    assert full_bundle["optimizer"]["settings"]["subject_batch_size"] is None
+    for field in ("final_objective", "final_attachment", "final_regularity"):
+        assert batched_bundle["optimizer"][field] == pytest.approx(
+            full_bundle["optimizer"][field],
+            rel=1e-12,
+            abs=1e-12,
+        )
+
+
 def test_strong_wolfe_workflow_records_and_verifies_line_search(tmp_path: Path) -> None:
     config_value = _configuration(output=str(tmp_path / "unused"))
     config_value["optimization"].update(

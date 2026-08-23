@@ -405,6 +405,7 @@ def test_modern_reference_qualification_design_is_prospective_and_tamper_evident
         max_cycles=1,
         threads=1,
         tile_size=32,
+        subject_batch_size=2,
         created_at="2026-08-22T00:00:00+00:00",
     )
     design = verify_modern_reference_qualification_design(destination)
@@ -414,7 +415,7 @@ def test_modern_reference_qualification_design_is_prospective_and_tamper_evident
     assert len(design["subjects"]) == 3
     assert design["protocol"]["modern_result_existed_at_freeze"] is False
     assert design["design_version"] == "0.6"
-    assert design["modern_workflow"]["expected_engine_implementation"] == "0.9"
+    assert design["modern_workflow"]["expected_engine_implementation"] == "1.0"
     assert config["schema_version"] == "0.5"
     assert design["protocol"]["quality_screening"]["excluded_candidates"] == []
     assert all("source_quality" in record for record in design["subjects"])
@@ -423,6 +424,7 @@ def test_modern_reference_qualification_design_is_prospective_and_tamper_evident
     assert config["runtime"]["pairwise_evaluation"]["autograd_strategy"] == "recompute"
     assert config["runtime"]["pairwise_evaluation"]["query_tile_size"] == 32
     assert config["runtime"]["pairwise_evaluation"]["source_tile_size"] == 32
+    assert config["optimization"]["subject_batch_size"] == 2
 
     unbound = tmp_path / "qualification-unbound-engine"
     shutil.copytree(destination, unbound)
@@ -499,7 +501,7 @@ def test_modern_reference_qualification_design_is_prospective_and_tamper_evident
     assert len(assessment["subjects"]) == 3
     assert assessment["metrics"]["pooled_modern_to_reference_residual_ratio"] >= 0
     assert assessment["assessment_version"] == "0.3"
-    assert assessment["optimizer"]["engine_implementation"] == "0.9"
+    assert assessment["optimizer"]["engine_implementation"] == "1.0"
     assert len(assessment["optimizer"]["history_sha256"]) == 64
     trajectory = assessment["optimizer"]["trajectory"]
     assert trajectory["initial_objective"] == pytest.approx(trajectory["records"][0]["objective"])
@@ -553,8 +555,8 @@ def test_modern_reference_qualification_design_is_prospective_and_tamper_evident
     )
     assert continuation["design_version"] == "0.7"
     assert continuation["protocol"]["continuation"]["parent_cycles_completed"] == 1
-    assert continuation["protocol"]["continuation"]["parent_engine_implementation"] == "0.9"
-    assert continuation["protocol"]["continuation"]["expected_engine_implementation"] == "0.9"
+    assert continuation["protocol"]["continuation"]["parent_engine_implementation"] == "1.0"
+    assert continuation["protocol"]["continuation"]["expected_engine_implementation"] == "1.0"
     assert math.isfinite(continuation["protocol"]["continuation"]["parent_final_objective"])
     assert continuation_config["schema_version"] == "0.5"
     assert continuation_config["initialization"]["momenta"] == {
@@ -622,7 +624,7 @@ def test_modern_reference_qualification_design_is_prospective_and_tamper_evident
     assert successor_assessment["continuation_verification"]["initial_objective_matches"] is True
     assert (
         successor_assessment["continuation_verification"]["successor_engine_implementation"]
-        == "0.9"
+        == "1.0"
     )
 
     subject = destination / design["subjects"][0]["source"]["path"]

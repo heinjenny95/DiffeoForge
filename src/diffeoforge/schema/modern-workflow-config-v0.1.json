@@ -240,6 +240,7 @@
         "strong_wolfe_curvature_constant": {"type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 1},
         "strong_wolfe_maximum_step_size": {"type": "number", "exclusiveMinimum": 0},
         "relative_objective_tolerance": {"type": ["number", "null"], "exclusiveMinimum": 0, "exclusiveMaximum": 1},
+        "subject_batch_size": {"type": ["integer", "null"], "minimum": 1},
         "checkpoint_interval_cycles": {"type": "integer", "minimum": 1},
         "checkpoint_retention": {"enum": ["all", "latest"]},
         "resume_state": {

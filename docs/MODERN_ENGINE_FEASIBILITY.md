@@ -285,7 +285,10 @@ gates. See
    cross-checks and fresh-process execution coverage.
 8. Benchmark runtime and peak memory over mesh, control-point, and subject count.
    A versioned fresh-process multi-cycle primitive is complete; the prospective
-   multi-dimensional study and peak-memory characterization remain open.
+   multi-dimensional study and peak-memory characterization remain open. Engine
+   1.0 now also has an opt-in deterministic subject-batch path; an initial
+   16-subject observation reduced sampled peak RSS by 55.7% for a 7.8% wall-time
+   increase. See [subject batching](MODERN_SUBJECT_BATCHING.md).
 9. Define evidence-derived tolerances before accepting a production backend.
    Provisional fixed-reference gates have now passed once prospectively; broader
    datasets and atlas-update tests are still needed before the tolerances can be
@@ -293,7 +296,8 @@ gates. See
 10. ~~Integrate the engine through immutable run manifests without weakening the
     existing reference workflow.~~ Completed for the experimental CLI workflow,
     including strict nested verification, bounded complete-cycle checkpoints,
-    and exact Engine 0.9 continuation. Desktop productization remains separate.
+    and exact Engine 0.9-or-later continuation. Desktop productization remains
+    separate.
 
 No scientific atlas result should be produced or interpreted through this
 experimental module until these gates pass.

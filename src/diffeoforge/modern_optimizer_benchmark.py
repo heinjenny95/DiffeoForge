@@ -165,6 +165,7 @@ def _optimizer_keywords(config: dict[str, Any], max_cycles: int) -> dict[str, An
                 "relative_objective_tolerance": optimizer.get(
                     "relative_objective_tolerance"
                 ),
+                "subject_batch_size": optimizer.get("subject_batch_size"),
             }
         )
     return keywords
@@ -451,13 +452,15 @@ def _validate_report(report: dict[str, Any]) -> None:
             if single_block
             else decisions + sample["line_search_evaluations"]
         )
-        if sample["objective_evaluations"] != expected_objective_evaluations:
-            raise ModernOptimizerBenchmarkError("Objective-evaluation count is inconsistent")
         expected_gradient_evaluations = (
             1 + sample["candidate_gradient_evaluations"]
             if single_block
             else decisions + sample["candidate_gradient_evaluations"]
         )
+        if report["configuration"].get("subject_batch_size") is not None:
+            expected_objective_evaluations += expected_gradient_evaluations
+        if sample["objective_evaluations"] != expected_objective_evaluations:
+            raise ModernOptimizerBenchmarkError("Objective-evaluation count is inconsistent")
         if sample["gradient_evaluations"] != expected_gradient_evaluations:
             raise ModernOptimizerBenchmarkError("Gradient-evaluation count is inconsistent")
         decision_bound = report["configuration"]["measured_max_cycles"] * len(
@@ -607,6 +610,7 @@ def collect_modern_optimizer_benchmark(
                     "relative_objective_tolerance": optimizer.get(
                         "relative_objective_tolerance"
                     ),
+                    "subject_batch_size": optimizer.get("subject_batch_size"),
                 }
                 if "direction_update" in optimizer
                 else {}

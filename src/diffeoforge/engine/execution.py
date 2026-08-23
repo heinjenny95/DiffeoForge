@@ -9,7 +9,7 @@ from typing import Any, Literal
 
 from diffeoforge.engine.dense import GaussianTilePlan
 
-ENGINE_IMPLEMENTATION_VERSION = "0.9"
+ENGINE_IMPLEMENTATION_VERSION = "1.0"
 
 
 @dataclass(frozen=True)

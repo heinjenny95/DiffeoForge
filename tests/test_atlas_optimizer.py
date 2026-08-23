@@ -132,6 +132,54 @@ def test_previous_accepted_step_avoids_repeating_rejected_candidates() -> None:
     assert reused.candidate_gradient_evaluations == accepted
 
 
+def test_subject_batched_gradients_match_full_cohort_for_every_parameter_block() -> None:
+    arguments, keywords = _problem(subjects=2)
+    settings = {
+        "max_cycles": 1,
+        "gradient_tolerance": 0.0,
+        "step_initialization": "previous_accepted",
+    }
+
+    full = optimize_atlas(*arguments, **keywords, **settings)
+    batched = optimize_atlas(
+        *arguments,
+        **keywords,
+        **settings,
+        subject_batch_size=1,
+    )
+
+    assert batched.settings.subject_batch_size == 1
+    assert batched.termination_reason == full.termination_reason
+    assert batched.converged == full.converged
+    assert batched.failed_block == full.failed_block
+    assert batched.cycles_completed == full.cycles_completed
+    assert [record.block for record in batched.history] == [
+        record.block for record in full.history
+    ]
+    assert [record.status for record in batched.history] == [
+        record.status for record in full.history
+    ]
+    assert [record.accepted_step_size for record in batched.history] == [
+        record.accepted_step_size for record in full.history
+    ]
+    for observed, expected in zip(batched.history, full.history, strict=True):
+        assert observed.objective == pytest.approx(expected.objective, rel=1e-12, abs=1e-12)
+        assert observed.attachment == pytest.approx(expected.attachment, rel=1e-12, abs=1e-12)
+        assert observed.regularity == pytest.approx(expected.regularity, rel=1e-12, abs=1e-12)
+        assert observed.residuals == pytest.approx(expected.residuals, rel=1e-12, abs=1e-12)
+        if expected.gradient_norm is not None:
+            assert observed.gradient_norm == pytest.approx(
+                expected.gradient_norm,
+                rel=1e-12,
+                abs=1e-12,
+            )
+    assert torch.allclose(batched.template_vertices, full.template_vertices, rtol=1e-12, atol=1e-12)
+    assert torch.allclose(batched.control_points, full.control_points, rtol=1e-12, atol=1e-12)
+    assert torch.allclose(batched.momenta, full.momenta, rtol=1e-12, atol=1e-12)
+    assert batched.objective_evaluations > full.objective_evaluations
+    assert batched.gradient_evaluations == full.gradient_evaluations
+
+
 def test_lbfgs_direction_is_deterministic_monotone_and_improves_after_ten_cycles() -> None:
     arguments, keywords = _problem(subjects=1)
 
@@ -749,6 +797,8 @@ def test_optimizer_remains_differentiable_internally_under_no_grad() -> None:
         ),
         ({"relative_objective_tolerance": 0.0}, "relative_objective_tolerance"),
         ({"relative_objective_tolerance": 1.0}, "relative_objective_tolerance"),
+        ({"subject_batch_size": 0}, "subject_batch_size"),
+        ({"subject_batch_size": True}, "subject_batch_size"),
     ],
 )
 def test_invalid_optimizer_settings_fail_explicitly(override: dict, message: str) -> None:
