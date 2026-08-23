@@ -10,6 +10,8 @@ contains:
 - canonical control points and subject-ordered momenta;
 - the complete committed optimizer record;
 - the next starter step for every configured parameter block;
+- original/current objective baselines and a completed-cycle stop decision;
+- the reusable accepted gradient and retained L-BFGS curvature pairs;
 - hashes of the source/effective configuration and every effective input mesh;
 - the Modern engine implementation revision;
 - a complete artifact inventory and manifest sidecar.
@@ -35,13 +37,14 @@ These files are recovery ingredients, not automatic recovery authorization.
 `modern-checkpoint-recovery-init` accepts only a private directory that strict
 read-only lease discovery classifies as `abandoned`. It verifies the contiguous
 checkpoint sequence, embeds the latest complete cycle and every bound input in
-a new immutable prospective plan, and writes a separate non-overwriting v0.4
+a new immutable prospective plan, and writes a separate non-overwriting v0.5
 successor configuration. The source directory is never changed. See
 [guarded Modern checkpoint recovery](MODERN_CHECKPOINT_RECOVERY.md).
 
 Recovery deliberately discards a partial cycle and the transient in-memory
-autograd/line-search graph. It restores the committed template, control points,
-subject-ordered momenta, and next starter steps. The successor is a sequential
-run, not an independent replicate or a claim that the interrupted computation
-converged. This is guarded complete-cycle recovery, not transparent process
-resume.
+autograd/line-search graph. Checkpoint v0.2 restores the committed parameters,
+next step, objective baselines, reusable gradient, and L-BFGS history exactly.
+Checkpoint v0.1 remains readable but cannot authorize an Engine 0.9 successor.
+The successor is a sequential run, not an independent replicate or a claim
+that the interrupted computation converged. This is guarded exact
+complete-cycle recovery, not transparent process resume.

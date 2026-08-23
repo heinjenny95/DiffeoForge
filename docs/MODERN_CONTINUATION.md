@@ -1,6 +1,6 @@
 # Verified Modern optimizer continuation
 
-Status: **experimental completed-run successor; not crash recovery**
+Status: **experimental exact complete-cycle successor; not crash recovery**
 
 A Modern atlas that reaches its declared cycle cap without convergence must not
 be edited in place or presented as converged. DiffeoForge can instead freeze a
@@ -16,9 +16,10 @@ diffeoforge modern-continuation-verify-run PLAN SUCCESSOR_RUN
 The initialization command does not run an optimizer. It first verifies the
 parent workflow and nested atlas bundle, then copies and SHA-256 binds:
 
-- the final estimated template;
-- the final control points;
-- the final subject momenta;
+- the final complete-cycle checkpoint v0.2;
+- the final estimated template, control points, and subject momenta;
+- retained L-BFGS curvature pairs and the reusable accepted gradient;
+- relative-objective baselines and any completed-cycle stop decision;
 - the exact effective subject meshes and their deterministic order;
 - the model, quality-control, analysis, runtime, and optimizer settings;
 - the parent workflow and bundle manifest identities.
@@ -28,11 +29,10 @@ successor produced by another revision fails lineage verification even if its
 human-readable configuration is otherwise identical.
 
 The successor disables a second Procrustes alignment and uses the copied final
-state directly. For every optimized block, its declared starter step is the
-last step accepted for that block in the parent, or the parent's original
-starter if no step was accepted. `step_initialization: previous_accepted` then
-reuses each block's most recently accepted step on later visits instead of
-retesting a known oversized step at every cycle.
+state directly. Configuration v0.5 binds the checkpoint and parent effective
+configuration. Engine, CPU/float64 runtime, thread count, model, optimizer,
+subject order, and numerical initialization must remain identical; only the
+new cycle cap and output destination may change.
 
 `modern-continuation-verify-run` proves that the completed successor came from
 the frozen configuration, verifies both immutable result layers, checks the
@@ -49,6 +49,6 @@ verifiable. A converged parent is rejected because it has no technical need for
 this continuation path.
 
 This mechanism begins only after a completed, verified workflow. It is not a
-mid-cycle checkpoint and cannot recover the exact in-memory line-search state
-after a crash or power loss. True interruption recovery remains a separate open
-engineering requirement.
+mid-cycle checkpoint and cannot recover a partially evaluated line-search
+candidate or autograd graph. Guarded abandoned-run recovery uses the same exact
+committed-cycle state through a separate safety contract.

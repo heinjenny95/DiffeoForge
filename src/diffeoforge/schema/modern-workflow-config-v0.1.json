@@ -18,7 +18,7 @@
     "output"
   ],
   "properties": {
-    "schema_version": {"enum": ["0.1", "0.2", "0.3", "0.4"]},
+    "schema_version": {"enum": ["0.1", "0.2", "0.3", "0.4", "0.5"]},
     "project": {
       "type": "object",
       "additionalProperties": false,
@@ -239,7 +239,28 @@
         "line_search_condition": {"enum": ["armijo", "strong_wolfe"]},
         "strong_wolfe_curvature_constant": {"type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 1},
         "strong_wolfe_maximum_step_size": {"type": "number", "exclusiveMinimum": 0},
-        "relative_objective_tolerance": {"type": ["number", "null"], "exclusiveMinimum": 0, "exclusiveMaximum": 1}
+        "relative_objective_tolerance": {"type": ["number", "null"], "exclusiveMinimum": 0, "exclusiveMaximum": 1},
+        "resume_state": {
+          "oneOf": [
+            {"type": "null"},
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "checkpoint_directory",
+                "checkpoint_manifest_sha256",
+                "source_effective_config",
+                "source_effective_config_sha256"
+              ],
+              "properties": {
+                "checkpoint_directory": {"type": "string", "minLength": 1},
+                "checkpoint_manifest_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                "source_effective_config": {"type": "string", "minLength": 1},
+                "source_effective_config_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+              }
+            }
+          ]
+        }
       }
     },
     "analysis": {

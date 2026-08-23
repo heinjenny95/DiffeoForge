@@ -259,6 +259,25 @@
               }
             }
           ]
+        },
+        "optimizer_resume": {
+          "oneOf": [
+            {"type": "null"},
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "checkpoint_path",
+                "checkpoint_manifest_sha256",
+                "source_effective_config"
+              ],
+              "properties": {
+                "checkpoint_path": {"type": "string", "minLength": 1},
+                "checkpoint_manifest_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                "source_effective_config": {"$ref": "#/$defs/artifact"}
+              }
+            }
+          ]
         }
       }
     },

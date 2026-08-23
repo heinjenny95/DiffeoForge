@@ -34,10 +34,10 @@ diffeoforge modern-checkpoint-recovery-verify `
 By default, the successor receives the number of cycles that remained under
 the abandoned run's original cap. `--cycles N` makes a different new cap
 explicit; zero is valid and publishes the recovered committed state through a
-normal verified bundle without another optimizer cycle. `--threads N` may
-prospectively change only the successor thread count.
+normal verified bundle without another optimizer cycle. `--threads N` may only
+repeat the parent thread count. Exact continuation fails closed if it differs.
 
-The plan contains a marked v0.4 YAML but does not authorize or launch compute:
+The plan contains a marked v0.5 YAML but does not authorize or launch compute:
 
 ```powershell
 diffeoforge modern-run `
@@ -49,9 +49,9 @@ diffeoforge modern-checkpoint-recovery-verify-run `
 ```
 
 The completed-run verifier requires the exact frozen source-config hash, Modern
-engine implementation revision, subject identity/order, and a recomputed
-initial objective equal to the checkpoint objective within the declared
-floating-point tolerance.
+engine implementation revision, CPU/float64 runtime and thread count, model and
+optimizer settings, subject identity/order, and a recomputed initial objective
+equal to the checkpoint objective within the declared floating-point tolerance.
 
 ## Frozen evidence
 

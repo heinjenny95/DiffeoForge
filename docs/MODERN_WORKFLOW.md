@@ -13,7 +13,7 @@ blockwise workflow provenance tracked by
 ## Purpose
 
 The modern numerical functions previously accepted only in-memory tensors.
-Configuration v0.4 and workflow manifest v0.1 connect a normal directory of
+Configuration v0.5 and workflow manifest v0.1 connect a normal directory of
 triangular legacy VTK PolyData
 meshes to the full atlas optimizer and the immutable atlas/PCA bundle without
 requiring a notebook, XML, or a special working directory.
@@ -69,7 +69,7 @@ editing YAML, pass `--pairwise-mode blockwise --query-tile-size N
 counts; dense mode requires both to remain null. There is no automatic size,
 threshold, environment override, or fallback. Legacy v0.1 configurations and
 manifests without this record remain readable only as dense; configuration
-v0.2 through v0.4 require it. Configuration v0.3 may additionally declare
+v0.2 through v0.5 require it. Configuration v0.3 may additionally declare
 `autograd_strategy: recompute` for blockwise execution. This preserves the
 exact forward and gradient result while recomputing pairwise intermediates
 during backward to reduce retained memory; the extra calculation is explicit
@@ -85,6 +85,12 @@ V0.4 can also initialize momenta from a canonical
 count, finite values, copied bytes, and SHA-256 are checked before execution and
 again during workflow verification.
 
+Configuration v0.5 may bind one verified checkpoint v0.2 and its exact parent
+effective configuration. This is reserved for immutable completed-run
+continuation and guarded abandoned-run recovery. Preflight verifies exact
+Engine, runtime/thread, model, optimizer, subject, and numerical-state identity
+before deserializing the non-executable optimizer tensor store.
+
 New workflow and nested bundle manifests also record a Modern engine
 `implementation_version` separately from the pairwise mode and general package
 version. The two layers must agree. Older manifests without this optional field
@@ -92,9 +98,9 @@ remain verifiable; prospective continuation plans bind the implementation
 revision expected for their successor.
 
 A completed, verified run that reaches its cycle cap without convergence can be
-continued through a separate hash-bound prospective successor. It copies the
-exact final template, control points, momenta, and effective subjects; it never
-modifies or relabels the parent. See
+continued through a separate hash-bound prospective successor. Engine 0.9
+copies the exact complete-cycle numerical state, including L-BFGS history and
+relative-objective baselines; it never modifies or relabels the parent. See
 [verified Modern optimizer continuation](MODERN_CONTINUATION.md).
 
 New runs also write hash-bound state after each complete optimizer cycle. These

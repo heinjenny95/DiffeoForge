@@ -60,15 +60,16 @@ New fixed-reference designs now:
 - retain the unchanged external residual, subject-pass, reconstruction, and
   workflow-verification gates.
 
-Completed-run continuation and checkpoint recovery deliberately reject this
-criterion for now unless it is already disabled. Exact continuation needs both
-the original objective and previous complete-cycle objective in the serialized
-lineage. Reinitializing either baseline would change the stop decision. Engine
-0.8 fails explicitly until a future checkpoint format stores and verifies both.
+Engine 0.9 checkpoint v0.2 now stores and verifies the original and current
+complete-cycle objective baselines, any completed-cycle termination decision,
+the reusable gradient, and retained L-BFGS history. Completed-run continuation
+and guarded abandoned-run recovery can therefore preserve this criterion
+exactly instead of rejecting it or resetting its baseline. Legacy checkpoint
+v0.1 remains verifiable but cannot authorize exact continuation.
 
 Unit and workflow tests establish the exact ratio formula, cycle-boundary
 behavior, deterministic termination, schema and bundle provenance, legacy
-compatibility, and safe continuation/recovery rejection.
+compatibility, and exact terminal-decision continuation.
 
 ## Prospective real-input result
 

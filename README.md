@@ -255,8 +255,10 @@ source-level momenta PCA handoff is connected. The older preparation-only child
 remains a separate narrow sibling in the
 evidence-only freeze and cannot authorize engine execution. The Modern path now
 writes complete-cycle checkpoints and provides a guarded source-level command
-that freezes a separate successor from a verified abandoned private run; it is
-not automatic process resume and is not yet exposed in the GUI. The real source
+that freezes a separate successor from a verified abandoned private run.
+Engine 0.9 preserves committed L-BFGS history, relative-objective baselines,
+and accepted gradients exactly; it is not automatic or mid-cycle process resume
+and is not yet exposed in the GUI. The real source
 preparation worker also has suspended-process Windows
 hard-parent-death evidence before request delivery. For the Modern compute
 worker, Windows parent death terminates the contained worker tree and
@@ -561,6 +563,7 @@ and workflow for another mesh directory.
 - [Verified Modern optimizer continuation](docs/MODERN_CONTINUATION.md)
 - [Modern complete-cycle checkpoints](docs/MODERN_CHECKPOINTS.md)
 - [Guarded Modern checkpoint recovery](docs/MODERN_CHECKPOINT_RECOVERY.md)
+- [Exact complete-cycle optimizer continuation](docs/MODERN_STATEFUL_RESUME.md)
 - [Deterministic mesh-quality evidence](docs/MESH_QUALITY.md)
 - [Modern configured-engine workload planning](docs/MODERN_WORKLOAD.md)
 - [Versioned modern progress events](docs/MODERN_PROGRESS.md)

@@ -64,11 +64,13 @@ from diffeoforge.modern_bundle import (
     write_modern_atlas_bundle,
 )
 from diffeoforge.modern_checkpoint import (
-    MANIFEST_NAME as CHECKPOINT_MANIFEST_NAME,
-)
-from diffeoforge.modern_checkpoint import (
+    CHECKPOINT_VERSION,
+    load_modern_checkpoint_resume_state,
     verify_modern_cycle_checkpoint,
     write_modern_cycle_checkpoint,
+)
+from diffeoforge.modern_checkpoint import (
+    MANIFEST_NAME as CHECKPOINT_MANIFEST_NAME,
 )
 from diffeoforge.modern_progress import (
     ModernOptimizerProgress,
@@ -83,7 +85,7 @@ from diffeoforge.private_runs import (
     discover_private_runs,
 )
 
-CONFIG_VERSION = "0.4"
+CONFIG_VERSION = "0.5"
 WORKFLOW_VERSION = "0.1"
 MANIFEST_NAME = "workflow-manifest.json"
 MANIFEST_SIDECAR_NAME = "workflow-manifest.sha256"
@@ -145,6 +147,44 @@ def validate_modern_workflow_config(config: Mapping[str, Any]) -> None:
         raise ConfigurationError(
             "optimization.strong_wolfe_maximum_step_size must not be smaller than "
             "optimization.lbfgs_initial_step_size"
+        )
+    resume = optimizer.get("resume_state")
+    if resume is not None:
+        if config["schema_version"] != "0.5":
+            raise ConfigurationError("optimization.resume_state requires schema_version=0.5")
+        if config["preprocessing"]["procrustes"]["enabled"] is not False:
+            raise ConfigurationError(
+                "optimization.resume_state requires preprocessing.procrustes.enabled=false"
+            )
+        if config["initialization"]["control_points"]["method"] != "file" or not isinstance(
+            config["initialization"]["momenta"], Mapping
+        ):
+            raise ConfigurationError(
+                "optimization.resume_state requires file control-point and momenta initialization"
+            )
+
+
+def _validate_resume_semantics(
+    config: Mapping[str, Any],
+    source_effective: Mapping[str, Any],
+) -> None:
+    """Require an exact objective and optimizer contract across a resumed boundary."""
+
+    if config["model"] != source_effective["model"]:
+        raise ConfigurationError("Resume model differs from the checkpoint source model")
+    if config["runtime"] != source_effective["runtime"]:
+        raise ConfigurationError("Resume runtime differs from the checkpoint source runtime")
+    if config["input"]["units"] != source_effective["input"]["units"]:
+        raise ConfigurationError("Resume coordinate units differ from the checkpoint source")
+    current_optimization = dict(config["optimization"])
+    source_optimization = dict(source_effective["optimization"])
+    current_optimization.pop("max_cycles", None)
+    current_optimization.pop("resume_state", None)
+    source_optimization.pop("max_cycles", None)
+    source_optimization.pop("resume_state", None)
+    if current_optimization != source_optimization:
+        raise ConfigurationError(
+            "Resume optimizer settings differ from the checkpoint source settings"
         )
 
 
@@ -617,6 +657,21 @@ def _copy_exclusive(source: Path, destination: Path) -> None:
         raise ModernWorkflowError(f"Copied input checksum mismatch: {source.name}")
 
 
+def _copy_tree_exclusive(source: Path, destination: Path) -> None:
+    if (
+        source.is_symlink()
+        or not source.is_dir()
+        or any(path.is_symlink() for path in source.rglob("*"))
+    ):
+        raise ModernWorkflowError(
+            f"Input directory is missing or contains symbolic links: {source}"
+        )
+    if destination.exists():
+        raise FileExistsError(f"Copy destination exists: {destination}")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(source, destination)
+
+
 def _slug(value: str) -> str:
     ascii_value = unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode()
     normalized = re.sub(r"[^A-Za-z0-9._-]+", "-", ascii_value).strip("-._").lower()
@@ -828,6 +883,55 @@ def run_modern_workflow(
         raise TypeError("cancel_requested must be callable or None")
     source_config = Path(config_path).expanduser().resolve()
     config = load_modern_workflow_config(source_config)
+    resume_config = config["optimization"].get("resume_state")
+    resume_checkpoint_source: Path | None = None
+    resume_source_effective_path: Path | None = None
+    resume_checkpoint_manifest: dict[str, Any] | None = None
+    optimizer_resume_state = None
+    if resume_config is not None:
+        resume_checkpoint_source = _resolve_from_config(
+            resume_config["checkpoint_directory"],
+            source_config,
+        )
+        resume_source_effective_path = _resolve_from_config(
+            resume_config["source_effective_config"],
+            source_config,
+        )
+        resume_checkpoint_manifest = verify_modern_cycle_checkpoint(resume_checkpoint_source)
+        if resume_checkpoint_manifest["checkpoint_version"] != CHECKPOINT_VERSION:
+            raise ConfigurationError(
+                "Resume checkpoint predates exact optimizer-state serialization"
+            )
+        checkpoint_manifest_path = resume_checkpoint_source / CHECKPOINT_MANIFEST_NAME
+        if sha256_file(checkpoint_manifest_path) != resume_config["checkpoint_manifest_sha256"]:
+            raise ConfigurationError("Resume checkpoint manifest SHA-256 differs")
+        if (
+            not resume_source_effective_path.is_file()
+            or resume_source_effective_path.is_symlink()
+            or sha256_file(resume_source_effective_path)
+            != resume_config["source_effective_config_sha256"]
+            or sha256_file(resume_source_effective_path)
+            != resume_checkpoint_manifest["binding"]["effective_config"]["sha256"]
+        ):
+            raise ConfigurationError("Resume source effective configuration differs")
+        try:
+            resume_source_effective = json.loads(
+                resume_source_effective_path.read_text(encoding="utf-8", errors="strict")
+            )
+        except (OSError, UnicodeError, json.JSONDecodeError) as error:
+            raise ConfigurationError(
+                "Resume source effective configuration is unreadable"
+            ) from error
+        if not isinstance(resume_source_effective, dict):
+            raise ConfigurationError("Resume source effective configuration is not an object")
+        validate_modern_workflow_config(resume_source_effective)
+        _validate_resume_semantics(config, resume_source_effective)
+        if (
+            resume_checkpoint_manifest["binding"]["engine_implementation"]
+            != ENGINE_IMPLEMENTATION_VERSION
+        ):
+            raise ConfigurationError("Resume checkpoint engine implementation differs")
+        optimizer_resume_state = load_modern_checkpoint_resume_state(resume_checkpoint_source)
     pairwise_evaluation = pairwise_evaluation_from_config(config)
     inputs: InputSummary = validate_input_paths(config, source_config)
     validate_modern_analysis_dimensions(config, len(inputs.subjects))
@@ -852,6 +956,28 @@ def run_modern_workflow(
             subject_labels,
             int(control_config["count"]),
         )
+    if resume_checkpoint_manifest is not None:
+        binding = resume_checkpoint_manifest["binding"]
+        state = resume_checkpoint_manifest["state"]
+        if tuple(record["label"] for record in binding["subjects"]) != subject_labels:
+            raise ConfigurationError("Resume subject labels/order differ from the checkpoint")
+        if any(
+            sha256_file(path) != record["sha256"]
+            for path, record in zip(inputs.subjects, binding["subjects"], strict=True)
+        ):
+            raise ConfigurationError("Resume subject content differs from the checkpoint")
+        if sha256_file(inputs.template) != state["template"]["sha256"]:
+            raise ConfigurationError("Resume template differs from the checkpoint state")
+        if (
+            external_control_source is None
+            or sha256_file(external_control_source) != state["control_points"]["sha256"]
+        ):
+            raise ConfigurationError("Resume control points differ from the checkpoint state")
+        if (
+            external_momenta_source is None
+            or sha256_file(external_momenta_source) != state["momenta"]["sha256"]
+        ):
+            raise ConfigurationError("Resume momenta differ from the checkpoint state")
     output = (
         _resolve_from_config(config["output"]["directory"], source_config)
         if destination is None
@@ -875,6 +1001,7 @@ def run_modern_workflow(
     private_lease: PrivateRunLease | None = None
     previous_threads = torch.get_num_threads()
     progress_sequence = 0
+    optimizer_resume_manifest: dict[str, Any] | None = None
 
     def check_cancellation() -> None:
         if cancel_requested is None:
@@ -919,6 +1046,30 @@ def run_modern_workflow(
         _copy_exclusive(source_config, source_copy)
         effective_path = temporary / "config" / "effective-config.json"
         _write_json_exclusive(effective_path, config)
+        if (
+            resume_checkpoint_source is not None
+            and resume_source_effective_path is not None
+            and resume_checkpoint_manifest is not None
+        ):
+            copied_checkpoint = temporary / "input" / "optimizer-resume" / "checkpoint"
+            _copy_tree_exclusive(resume_checkpoint_source, copied_checkpoint)
+            copied_checkpoint_manifest = verify_modern_cycle_checkpoint(copied_checkpoint)
+            if copied_checkpoint_manifest != resume_checkpoint_manifest:
+                raise ModernWorkflowError("Copied resume checkpoint differs from source")
+            copied_source_effective = (
+                temporary / "input" / "optimizer-resume" / "source-effective-config.json"
+            )
+            _copy_exclusive(resume_source_effective_path, copied_source_effective)
+            optimizer_resume_manifest = {
+                "checkpoint_path": copied_checkpoint.relative_to(temporary).as_posix(),
+                "checkpoint_manifest_sha256": sha256_file(
+                    copied_checkpoint / CHECKPOINT_MANIFEST_NAME
+                ),
+                "source_effective_config": _artifact(
+                    temporary,
+                    copied_source_effective,
+                ),
+            }
 
         source_paths = (inputs.template, *inputs.subjects)
         raw_paths: list[Path] = []
@@ -1170,9 +1321,7 @@ def run_modern_workflow(
                     step_initialization=optimizer.get("step_initialization", "fixed"),
                     direction_update=optimizer.get("direction_update", "steepest"),
                     lbfgs_history_size=optimizer.get("lbfgs_history_size", 10),
-                    lbfgs_curvature_tolerance=optimizer.get(
-                        "lbfgs_curvature_tolerance", 1e-12
-                    ),
+                    lbfgs_curvature_tolerance=optimizer.get("lbfgs_curvature_tolerance", 1e-12),
                     lbfgs_initial_step_size=optimizer.get("lbfgs_initial_step_size", 1.0),
                     line_search_condition=optimizer.get("line_search_condition", "armijo"),
                     strong_wolfe_curvature_constant=optimizer.get(
@@ -1181,9 +1330,8 @@ def run_modern_workflow(
                     strong_wolfe_maximum_step_size=optimizer.get(
                         "strong_wolfe_maximum_step_size", 10.0
                     ),
-                    relative_objective_tolerance=optimizer.get(
-                        "relative_objective_tolerance"
-                    ),
+                    relative_objective_tolerance=optimizer.get("relative_objective_tolerance"),
+                    resume_state=optimizer_resume_state,
                     progress_callback=(
                         observe_optimizer if progress_callback is not None else None
                     ),
@@ -1300,6 +1448,7 @@ def run_modern_workflow(
             "initialization": {
                 "control_points": control_manifest,
                 "momenta": momenta_manifest,
+                "optimizer_resume": optimizer_resume_manifest,
             },
             "result_bundle": {
                 "path": bundle_path.relative_to(temporary).as_posix(),
@@ -1553,6 +1702,51 @@ def verify_modern_workflow(directory: Path | str) -> dict[str, Any]:
             _read_momenta_rows(copied_momenta, subject_labels, int(control["count"]))
         except ConfigurationError as error:
             raise ModernWorkflowError(f"Invalid copied momenta initialization: {error}") from error
+
+    optimizer_resume = manifest["initialization"].get("optimizer_resume")
+    effective_resume = effective["optimization"].get("resume_state")
+    if (optimizer_resume is None) != (effective_resume is None):
+        raise ModernWorkflowError("Optimizer resume provenance differs from effective config")
+    if optimizer_resume is not None:
+        copied_checkpoint = _resolve_artifact(
+            root,
+            optimizer_resume["checkpoint_path"],
+            directory=True,
+        )
+        checkpoint = verify_modern_cycle_checkpoint(copied_checkpoint)
+        if (
+            checkpoint["checkpoint_version"] != CHECKPOINT_VERSION
+            or sha256_file(copied_checkpoint / CHECKPOINT_MANIFEST_NAME)
+            != optimizer_resume["checkpoint_manifest_sha256"]
+            or optimizer_resume["checkpoint_manifest_sha256"]
+            != effective_resume["checkpoint_manifest_sha256"]
+        ):
+            raise ModernWorkflowError("Optimizer resume checkpoint provenance differs")
+        copied_source_effective = _resolve_artifact(
+            root,
+            optimizer_resume["source_effective_config"]["path"],
+        )
+        if (
+            _artifact(root, copied_source_effective) != optimizer_resume["source_effective_config"]
+            or sha256_file(copied_source_effective)
+            != effective_resume["source_effective_config_sha256"]
+        ):
+            raise ModernWorkflowError("Optimizer resume source config provenance differs")
+        source_effective = _read_json_object(
+            copied_source_effective,
+            "Optimizer resume source effective config",
+        )
+        try:
+            validate_modern_workflow_config(source_effective)
+            _validate_resume_semantics(effective, source_effective)
+        except ConfigurationError as error:
+            raise ModernWorkflowError(str(error)) from error
+        if (
+            sha256_file(copied_source_effective)
+            != checkpoint["binding"]["effective_config"]["sha256"]
+        ):
+            raise ModernWorkflowError("Optimizer resume checkpoint/source binding differs")
+        load_modern_checkpoint_resume_state(copied_checkpoint)
 
     bundle = _resolve_artifact(root, manifest["result_bundle"]["path"], directory=True)
     bundle_manifest = verify_modern_atlas_bundle(bundle)

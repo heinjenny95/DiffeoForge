@@ -114,6 +114,10 @@ This roadmap describes evidence gates rather than promised dates.
   optimizer cycle
 - [x] Create a guarded non-overwriting recovery successor from a verified
   abandoned Modern complete-cycle checkpoint
+- [x] Serialize and strictly verify relative-objective baselines, reusable
+  accepted gradients, and retained L-BFGS curvature pairs in checkpoint v0.2
+- [x] Make completed-run continuation and abandoned-run recovery exact at
+  committed cycle boundaries through configuration v0.5 and Engine 0.9
 
 ## Milestone 3: Accessible application
 

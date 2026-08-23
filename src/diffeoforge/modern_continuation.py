@@ -20,6 +20,13 @@ from diffeoforge.engine.execution import ENGINE_IMPLEMENTATION_VERSION
 from diffeoforge.mesh import sha256_file
 from diffeoforge.modern_bundle import MANIFEST_NAME as BUNDLE_MANIFEST_NAME
 from diffeoforge.modern_bundle import verify_modern_atlas_bundle
+from diffeoforge.modern_checkpoint import (
+    CHECKPOINT_VERSION,
+    verify_modern_cycle_checkpoint,
+)
+from diffeoforge.modern_checkpoint import (
+    MANIFEST_NAME as CHECKPOINT_MANIFEST_NAME,
+)
 from diffeoforge.modern_workflow import (
     CONFIG_MARKER,
     _read_control_point_rows,
@@ -32,7 +39,8 @@ from diffeoforge.modern_workflow import (
     MANIFEST_NAME as WORKFLOW_MANIFEST_NAME,
 )
 
-PLAN_VERSION = "0.1"
+PLAN_VERSION = "0.2"
+SUPPORTED_PLAN_VERSIONS = {"0.1", PLAN_VERSION}
 PLAN_NAME = "modern-continuation-plan.json"
 PLAN_SIDECAR_NAME = "modern-continuation-plan.sha256"
 PLAN_HTML_NAME = "modern-continuation-plan.html"
@@ -61,6 +69,17 @@ def _copy_exclusive(source: Path, destination: Path) -> Path:
     destination.parent.mkdir(parents=True, exist_ok=True)
     with source.open("rb") as input_handle, destination.open("xb") as output_handle:
         shutil.copyfileobj(input_handle, output_handle)
+    return destination
+
+
+def _copy_tree(source: Path, destination: Path) -> Path:
+    if (
+        source.is_symlink()
+        or not source.is_dir()
+        or any(path.is_symlink() for path in source.rglob("*"))
+    ):
+        raise ModernContinuationError("Continuation checkpoint source is invalid or symbolic")
+    shutil.copytree(source, destination)
     return destination
 
 
@@ -190,15 +209,15 @@ def _render_html(plan: dict[str, Any]) -> str:
 <style>body{{font:16px system-ui;max-width:960px;margin:2rem auto;line-height:1.45}}
 code{{overflow-wrap:anywhere}}.warning{{padding:1rem;background:#fff4ce}}</style>
 <h1>Prospective Modern atlas continuation</h1>
-<p class="warning">{escape(plan['scientific_boundary'])}</p>
-<p>Status: <strong>{escape(plan['status'])}</strong></p>
-<p>Parent termination: <code>{escape(plan['parent']['termination_reason'])}</code> after
-{plan['parent']['cycles_completed']} cycle(s).</p>
-<p>Successor cycle cap: {plan['continuation']['max_cycles']}; strategy:
-<code>{escape(plan['continuation']['step_initialization'])}</code>.</p>
+<p class="warning">{escape(plan["scientific_boundary"])}</p>
+<p>Status: <strong>{escape(plan["status"])}</strong></p>
+<p>Parent termination: <code>{escape(plan["parent"]["termination_reason"])}</code> after
+{plan["parent"]["cycles_completed"]} cycle(s).</p>
+<p>Successor cycle cap: {plan["continuation"]["max_cycles"]}; strategy:
+<code>{escape(plan["continuation"]["step_initialization"])}</code>.</p>
 <h2>Derived initial step sizes</h2><ul>{steps}</ul>
-<h2>Subjects ({len(plan['subjects'])})</h2><ol>{subjects}</ol>
-<p>Frozen config: <code>{escape(plan['config']['path'])}</code></p>
+<h2>Subjects ({len(plan["subjects"])})</h2><ol>{subjects}</ol>
+<p>Frozen config: <code>{escape(plan["config"]["path"])}</code></p>
 </html>\n"""
 
 
@@ -238,48 +257,45 @@ def create_modern_continuation(
     )
     effective = _json_object(effective_path, "Parent effective config")
     settings = dict(bundle["optimizer"]["settings"])
-    if settings.get("direction_update", "steepest") == "lbfgs":
+    completed_cycles = int(bundle["optimizer"]["cycles_completed"])
+    checkpoint_records = workflow.get("optimizer_checkpoints", [])
+    if (
+        completed_cycles < 1
+        or not checkpoint_records
+        or checkpoint_records[-1]["cycle"] != completed_cycles
+    ):
         raise ModernContinuationError(
-            "L-BFGS continuation is not available because curvature history is not yet "
-            "stored in completed-run lineage"
+            "Parent run has no final complete-cycle checkpoint for exact continuation"
         )
-    if settings.get("relative_objective_tolerance") is not None:
-        raise ModernContinuationError(
-            "Relative-objective continuation is not available because its initial and "
-            "previous-cycle objective baselines are not yet stored in completed-run lineage"
-        )
-    history_path = _safe_path(
-        bundle_root,
-        bundle["optimizer"]["history_path"],
-        "Parent optimizer history",
+    checkpoint_root = _safe_path(
+        parent_root,
+        checkpoint_records[-1]["path"],
+        "Parent final checkpoint",
+        directory=True,
     )
-    history_rows = _history(history_path)
-    last_steps = _last_steps(settings, history_rows)
+    checkpoint = verify_modern_cycle_checkpoint(
+        checkpoint_root,
+        workflow_root=parent_root,
+    )
+    if checkpoint["checkpoint_version"] != CHECKPOINT_VERSION:
+        raise ModernContinuationError(
+            "Parent checkpoint predates exact L-BFGS and objective-baseline serialization"
+        )
+    if checkpoint["binding"]["engine_implementation"] != ENGINE_IMPLEMENTATION_VERSION:
+        raise ModernContinuationError("Parent checkpoint engine implementation differs")
+    last_steps = {
+        block: float(value)
+        for block, value in checkpoint["optimizer_state"]["next_step_sizes"].items()
+    }
     labels = tuple(record["label"] for record in bundle["subjects"])
     workflow_labels = tuple(record["label"] for record in workflow["input"]["subjects"])
     if labels != workflow_labels:
         raise ModernContinuationError("Parent workflow and bundle subject order differs")
-    control_count = int(bundle["parameters"]["control_points"])
-    control_source = _safe_path(
-        bundle_root,
-        bundle["parameters"]["control_points_path"],
-        "Parent final control points",
-    )
-    control_rows = _control_point_rows(control_source, control_count)
-    momenta_source = _safe_path(
-        bundle_root,
-        bundle["parameters"]["momenta_path"],
-        "Parent final momenta",
-    )
-    try:
-        _read_momenta_rows(momenta_source, labels, control_count)
-    except ConfigurationError as error:
-        raise ModernContinuationError(f"Parent final momenta are invalid: {error}") from error
-    template_source = _safe_path(
-        bundle_root,
-        bundle["template"]["path"],
-        "Parent final template",
-    )
+    control_count = int(checkpoint["state"]["control_points"]["count"])
+    if threads is not None and threads != int(effective["runtime"]["threads"]):
+        raise ModernContinuationError(
+            "Exact continuation requires the parent thread count; --threads may only repeat it"
+        )
 
     destination_path = Path(destination).expanduser().resolve()
     if destination_path.exists():
@@ -288,17 +304,30 @@ def create_modern_continuation(
     temporary = destination_path.parent / f".{destination_path.name}.tmp-{uuid.uuid4().hex}"
     temporary.mkdir()
     try:
-        template_copy = _copy_exclusive(
-            template_source,
-            temporary / "inputs" / "estimated-template.vtk",
+        embedded_checkpoint = _copy_tree(
+            checkpoint_root,
+            temporary / "lineage" / "checkpoint",
         )
-        control_copy = _write_control_points(
-            temporary / "inputs" / "control-points.txt",
-            control_rows,
+        embedded = verify_modern_cycle_checkpoint(embedded_checkpoint)
+        source_effective_copy = _copy_exclusive(
+            effective_path,
+            temporary / "lineage" / "source-effective-config.json",
         )
-        momenta_copy = _copy_exclusive(
-            momenta_source,
-            temporary / "inputs" / "momenta.csv",
+        state = embedded["state"]
+        template_copy = _safe_path(
+            embedded_checkpoint,
+            state["template"]["path"],
+            "Embedded checkpoint template",
+        )
+        control_copy = _safe_path(
+            embedded_checkpoint,
+            state["control_points"]["path"],
+            "Embedded checkpoint controls",
+        )
+        momenta_copy = _safe_path(
+            embedded_checkpoint,
+            state["momenta"]["path"],
+            "Embedded checkpoint momenta",
         )
         subject_records: list[dict[str, object]] = []
         for record in workflow["input"]["subjects"]:
@@ -310,39 +339,26 @@ def create_modern_continuation(
             copied = _copy_exclusive(source, temporary / "inputs" / "subjects" / label)
             subject_records.append({"label": label, "effective_mesh": _artifact(temporary, copied)})
 
-        optimization = {
-            name: settings[name]
-            for name in (
-                "max_cycles",
-                "block_order",
-                "momenta_step_size",
-                "template_step_size",
-                "control_points_step_size",
-                "backtracking_factor",
-                "armijo_constant",
-                "gradient_tolerance",
-                "minimum_step_size",
-                "max_line_search_iterations",
-            )
-        }
+        optimization = dict(effective["optimization"])
         optimization["max_cycles"] = max_cycles
-        optimization["step_initialization"] = "previous_accepted"
-        for block, value in last_steps.items():
-            optimization[f"{block}_step_size"] = value
+        optimization["resume_state"] = {
+            "checkpoint_directory": "lineage/checkpoint",
+            "checkpoint_manifest_sha256": sha256_file(
+                embedded_checkpoint / CHECKPOINT_MANIFEST_NAME
+            ),
+            "source_effective_config": "lineage/source-effective-config.json",
+            "source_effective_config_sha256": sha256_file(source_effective_copy),
+        }
         runtime = dict(effective["runtime"])
-        runtime["pairwise_evaluation"] = pairwise_evaluation_from_config(
-            effective
-        ).as_manifest()
-        if threads is not None:
-            runtime["threads"] = threads
+        runtime["pairwise_evaluation"] = pairwise_evaluation_from_config(effective).as_manifest()
         output = destination_path.parent / f"{destination_path.name}-modern-run"
         config = {
-            "schema_version": "0.4",
+            "schema_version": "0.5",
             "project": {"name": f"{workflow['project']['name']}-continuation"},
             "input": {
                 "directory": "inputs/subjects",
                 "subject_pattern": "*.vtk",
-                "template": "inputs/estimated-template.vtk",
+                "template": template_copy.relative_to(temporary).as_posix(),
                 "units": workflow["input"]["units"],
             },
             "preprocessing": {
@@ -360,9 +376,12 @@ def create_modern_continuation(
                 "control_points": {
                     "method": "file",
                     "count": control_count,
-                    "path": "inputs/control-points.txt",
+                    "path": control_copy.relative_to(temporary).as_posix(),
                 },
-                "momenta": {"method": "file", "path": "inputs/momenta.csv"},
+                "momenta": {
+                    "method": "file",
+                    "path": momenta_copy.relative_to(temporary).as_posix(),
+                },
             },
             "model": effective["model"],
             "optimization": optimization,
@@ -382,12 +401,8 @@ def create_modern_continuation(
             "status": "prospective_no_successor_result",
             "parent": {
                 "run_directory": str(parent_root),
-                "workflow_manifest_sha256": sha256_file(
-                    parent_root / WORKFLOW_MANIFEST_NAME
-                ),
-                "bundle_manifest_sha256": sha256_file(
-                    bundle_root / BUNDLE_MANIFEST_NAME
-                ),
+                "workflow_manifest_sha256": sha256_file(parent_root / WORKFLOW_MANIFEST_NAME),
+                "bundle_manifest_sha256": sha256_file(bundle_root / BUNDLE_MANIFEST_NAME),
                 "termination_reason": bundle["optimizer"]["termination_reason"],
                 "converged": False,
                 "cycles_completed": bundle["optimizer"]["cycles_completed"],
@@ -400,15 +415,20 @@ def create_modern_continuation(
                 "control_point_count": control_count,
                 "dimensions": 3,
             },
+            "optimizer_state": {
+                "checkpoint_path": embedded_checkpoint.relative_to(temporary).as_posix(),
+                "checkpoint_manifest_sha256": sha256_file(
+                    embedded_checkpoint / CHECKPOINT_MANIFEST_NAME
+                ),
+                "source_effective_config": _artifact(temporary, source_effective_copy),
+            },
             "subjects": subject_records,
             "continuation": {
                 "max_cycles": max_cycles,
                 "optimized_blocks": list(settings["block_order"]),
-                "step_initialization": "previous_accepted",
+                "step_initialization": optimization.get("step_initialization", "fixed"),
                 "initial_step_sizes": last_steps,
-                "step_derivation": (
-                    "last accepted step per optimized block, else parent declared step"
-                ),
+                "step_derivation": "exact values serialized in the final cycle checkpoint",
             },
             "config": {
                 "path": CONFIG_NAME,
@@ -423,8 +443,7 @@ def create_modern_continuation(
         inventory = sorted(
             path
             for path in temporary.rglob("*")
-            if path.is_file()
-            and path not in {temporary / PLAN_NAME, temporary / PLAN_SIDECAR_NAME}
+            if path.is_file() and path not in {temporary / PLAN_NAME, temporary / PLAN_SIDECAR_NAME}
         )
         plan["artifacts"] = [_artifact(temporary, path) for path in inventory]
         plan_path = temporary / PLAN_NAME
@@ -458,7 +477,8 @@ def verify_modern_continuation(directory: Path | str) -> dict[str, Any]:
     ):
         raise ModernContinuationError("Modern continuation sidecar differs")
     plan = _json_object(plan_path, "Modern continuation plan")
-    if set(plan) != {
+    plan_version = plan.get("plan_version")
+    expected_fields = {
         "plan_version",
         "created_at",
         "status",
@@ -469,10 +489,13 @@ def verify_modern_continuation(directory: Path | str) -> dict[str, Any]:
         "config",
         "scientific_boundary",
         "artifacts",
-    }:
+    }
+    if plan_version == PLAN_VERSION:
+        expected_fields.add("optimizer_state")
+    if set(plan) != expected_fields:
         raise ModernContinuationError("Modern continuation top-level fields differ")
     if (
-        plan["plan_version"] != PLAN_VERSION
+        plan_version not in SUPPORTED_PLAN_VERSIONS
         or plan["status"] != "prospective_no_successor_result"
         or plan["parent"].get("converged") is not False
     ):
@@ -484,9 +507,7 @@ def verify_modern_continuation(directory: Path | str) -> dict[str, Any]:
         if relative in declared:
             raise ModernContinuationError(f"Duplicate continuation artifact: {relative}")
         declared.add(relative)
-        if path.stat().st_size != record.get("bytes") or sha256_file(path) != record.get(
-            "sha256"
-        ):
+        if path.stat().st_size != record.get("bytes") or sha256_file(path) != record.get("sha256"):
             raise ModernContinuationError(f"Continuation artifact differs: {relative}")
     actual = {
         path.relative_to(root).as_posix()
@@ -503,18 +524,61 @@ def verify_modern_continuation(directory: Path | str) -> dict[str, Any]:
         validate_modern_workflow_config(config)
     except (OSError, UnicodeError, yaml.YAMLError, ConfigurationError) as error:
         raise ModernContinuationError(f"Modern continuation config is invalid: {error}") from error
+    expected_schema_version = "0.5" if plan_version == PLAN_VERSION else "0.4"
     if (
-        config["schema_version"] != "0.4"
+        config["schema_version"] != expected_schema_version
         or config["preprocessing"]["procrustes"]["enabled"] is not False
         or config["optimization"]["step_initialization"] != "previous_accepted"
         or config["output"]["directory"] != plan["config"]["expected_destination"]
     ):
         raise ModernContinuationError("Modern continuation config semantics differ")
     expected_implementation = plan["config"].get("expected_engine_implementation")
-    if not isinstance(expected_implementation, str) or re.fullmatch(
-        r"[0-9]+\.[0-9]+", expected_implementation
-    ) is None:
+    if (
+        not isinstance(expected_implementation, str)
+        or re.fullmatch(r"[0-9]+\.[0-9]+", expected_implementation) is None
+    ):
         raise ModernContinuationError("Modern continuation engine implementation differs")
+    if plan_version == PLAN_VERSION:
+        optimizer_state = plan["optimizer_state"]
+        if not isinstance(optimizer_state, dict) or set(optimizer_state) != {
+            "checkpoint_path",
+            "checkpoint_manifest_sha256",
+            "source_effective_config",
+        }:
+            raise ModernContinuationError("Modern continuation optimizer state differs")
+        checkpoint_root = _safe_path(
+            root,
+            optimizer_state["checkpoint_path"],
+            "Continuation checkpoint",
+            directory=True,
+        )
+        checkpoint = verify_modern_cycle_checkpoint(checkpoint_root)
+        if (
+            checkpoint["checkpoint_version"] != CHECKPOINT_VERSION
+            or sha256_file(checkpoint_root / CHECKPOINT_MANIFEST_NAME)
+            != optimizer_state["checkpoint_manifest_sha256"]
+            or checkpoint["binding"]["engine_implementation"] != expected_implementation
+        ):
+            raise ModernContinuationError("Modern continuation checkpoint binding differs")
+        source_effective_record = optimizer_state["source_effective_config"]
+        source_effective = _safe_path(
+            root,
+            source_effective_record["path"],
+            "Continuation source effective config",
+        )
+        if (
+            _artifact(root, source_effective) != source_effective_record
+            or sha256_file(source_effective) != checkpoint["binding"]["effective_config"]["sha256"]
+        ):
+            raise ModernContinuationError("Modern continuation source effective config differs")
+        resume = config["optimization"].get("resume_state")
+        if resume != {
+            "checkpoint_directory": optimizer_state["checkpoint_path"],
+            "checkpoint_manifest_sha256": optimizer_state["checkpoint_manifest_sha256"],
+            "source_effective_config": source_effective_record["path"],
+            "source_effective_config_sha256": source_effective_record["sha256"],
+        }:
+            raise ModernContinuationError("Modern continuation resume config differs")
     initial = plan["initial_state"]
     template = _safe_path(root, initial["template"]["path"], "Initial template")
     if _artifact(root, template) != initial["template"]:
@@ -540,6 +604,16 @@ def verify_modern_continuation(directory: Path | str) -> dict[str, Any]:
         raise ModernContinuationError("Config and plan initial controls differ")
     if config["input"]["template"] != initial["template"]["path"]:
         raise ModernContinuationError("Config and plan initial template differ")
+    if plan_version == PLAN_VERSION:
+        checkpoint_state = checkpoint["state"]
+        for name in ("template", "control_points", "momenta"):
+            if (
+                initial[name]["bytes"] != checkpoint_state[name]["bytes"]
+                or initial[name]["sha256"] != checkpoint_state[name]["sha256"]
+            ):
+                raise ModernContinuationError(
+                    f"Modern continuation initial {name} differs from checkpoint"
+                )
     if tuple(sorted(labels)) != labels:
         raise ModernContinuationError("Continuation subject order is not deterministic")
     for record in plan["subjects"]:

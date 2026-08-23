@@ -190,7 +190,7 @@ def test_collection_binds_selection_operations_and_descriptive_samples(
     ]
     assert report["input"]["available_subject_count"] == 5
     assert report["operation_model"]["gaussian_calls_per_evaluation"] == 64
-    assert report["environment"]["engine_implementation"] == "0.8"
+    assert report["environment"]["engine_implementation"] == "0.9"
     assert report["operation_model"]["gaussian_pair_elements_per_evaluation"] == 641_130
     assert report["summary"]["wall_time_ns"] == {
         "minimum": 100,

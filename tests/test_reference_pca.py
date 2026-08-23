@@ -82,8 +82,7 @@ def _completed_reference_run(tmp_path: Path) -> Path:
     for subject in subjects:
         subject_name = Path(subject["staged_path"]).name
         reconstruction_path = (
-            output
-            / f"DeterministicAtlas__Reconstruction__surface__subject_{subject_name}.vtk"
+            output / f"DeterministicAtlas__Reconstruction__surface__subject_{subject_name}.vtk"
         )
         shutil.copyfile(surface_source, reconstruction_path)
         reconstruction_paths.append(reconstruction_path)
@@ -114,9 +113,7 @@ def _completed_reference_run(tmp_path: Path) -> Path:
         encoding="utf-8",
     )
     (run / "logs" / "convergence.csv").write_text(
-        "iteration,log_likelihood,attachment,regularity\n"
-        "0,-10,-9.5,-0.5\n"
-        "1,-8,-7.4,-0.6\n",
+        "iteration,log_likelihood,attachment,regularity\n0,-10,-9.5,-0.5\n1,-8,-7.4,-0.6\n",
         encoding="utf-8",
     )
     (run / "logs" / "deformetrica.log").write_text(
@@ -434,9 +431,7 @@ def test_modern_reference_qualification_design_is_prospective_and_tamper_evident
         tmp_path / "assessment",
         created_at="2026-08-22T02:00:00+00:00",
     )
-    assessment = json.loads(
-        (assessment_path / ASSESSMENT_JSON_NAME).read_text(encoding="utf-8")
-    )
+    assessment = json.loads((assessment_path / ASSESSMENT_JSON_NAME).read_text(encoding="utf-8"))
     assert verify_modern_reference_qualification_assessment(assessment_path) == assessment
     assert (
         main(
@@ -462,12 +457,10 @@ def test_modern_reference_qualification_design_is_prospective_and_tamper_evident
     assert len(assessment["subjects"]) == 3
     assert assessment["metrics"]["pooled_modern_to_reference_residual_ratio"] >= 0
     assert assessment["assessment_version"] == "0.3"
-    assert assessment["optimizer"]["engine_implementation"] == "0.8"
+    assert assessment["optimizer"]["engine_implementation"] == "0.9"
     assert len(assessment["optimizer"]["history_sha256"]) == 64
     trajectory = assessment["optimizer"]["trajectory"]
-    assert trajectory["initial_objective"] == pytest.approx(
-        trajectory["records"][0]["objective"]
-    )
+    assert trajectory["initial_objective"] == pytest.approx(trajectory["records"][0]["objective"])
     assert trajectory["final_objective"] == pytest.approx(
         assessment["optimizer"]["final_objective"]
     )
@@ -516,21 +509,27 @@ def test_modern_reference_qualification_design_is_prospective_and_tamper_evident
     continuation_config = yaml.safe_load(
         (continuation_path / CONFIG_NAME).read_text(encoding="utf-8")
     )
-    assert continuation["design_version"] == "0.4"
+    assert continuation["design_version"] == "0.5"
     assert continuation["protocol"]["continuation"]["parent_cycles_completed"] == 1
-    assert continuation["protocol"]["continuation"]["parent_engine_implementation"] == "0.8"
-    assert continuation["protocol"]["continuation"]["expected_engine_implementation"] == "0.8"
-    assert math.isfinite(
-        continuation["protocol"]["continuation"]["parent_final_objective"]
-    )
-    assert continuation_config["schema_version"] == "0.4"
+    assert continuation["protocol"]["continuation"]["parent_engine_implementation"] == "0.9"
+    assert continuation["protocol"]["continuation"]["expected_engine_implementation"] == "0.9"
+    assert math.isfinite(continuation["protocol"]["continuation"]["parent_final_objective"])
+    assert continuation_config["schema_version"] == "0.5"
     assert continuation_config["initialization"]["momenta"] == {
         "method": "file",
-        "path": "inputs/initial-momenta.csv",
+        "path": "lineage/checkpoint/state/momenta.csv",
     }
-    assert continuation_config["optimization"]["step_initialization"] == (
-        "previous_accepted"
-    )
+    assert continuation_config["optimization"]["resume_state"] == {
+        "checkpoint_directory": "lineage/checkpoint",
+        "checkpoint_manifest_sha256": continuation["protocol"]["continuation"][
+            "checkpoint_manifest_sha256"
+        ],
+        "source_effective_config": "lineage/source-effective-config.json",
+        "source_effective_config_sha256": continuation["protocol"]["continuation"][
+            "source_effective_config"
+        ]["sha256"],
+    }
+    assert continuation_config["optimization"]["step_initialization"] == ("previous_accepted")
     assert continuation_config["optimization"]["max_cycles"] == 2
 
     lbfgs_path = create_modern_reference_qualification(
@@ -555,9 +554,7 @@ def test_modern_reference_qualification_design_is_prospective_and_tamper_evident
     assert lbfgs_config["optimization"]["lbfgs_history_size"] == 5
     assert lbfgs_config["optimization"]["lbfgs_initial_step_size"] == 1.0
     assert lbfgs_config["optimization"]["gradient_tolerance"] == 0.0
-    assert lbfgs_config["optimization"]["relative_objective_tolerance"] == pytest.approx(
-        0.0001
-    )
+    assert lbfgs_config["optimization"]["relative_objective_tolerance"] == pytest.approx(0.0001)
     assert lbfgs_config["optimization"]["line_search_condition"] == "strong_wolfe"
     assert lbfgs_config["optimization"]["strong_wolfe_curvature_constant"] == 0.5
     assert lbfgs_config["optimization"]["strong_wolfe_maximum_step_size"] == 8.0
@@ -580,12 +577,11 @@ def test_modern_reference_qualification_design_is_prospective_and_tamper_evident
         verify_modern_reference_qualification_assessment(successor_assessment_path)
         == successor_assessment
     )
-    assert successor_assessment["continuation_verification"][
-        "initial_objective_matches"
-    ] is True
-    assert successor_assessment["continuation_verification"][
-        "successor_engine_implementation"
-    ] == "0.8"
+    assert successor_assessment["continuation_verification"]["initial_objective_matches"] is True
+    assert (
+        successor_assessment["continuation_verification"]["successor_engine_implementation"]
+        == "0.9"
+    )
 
     subject = destination / design["subjects"][0]["source"]["path"]
     subject.write_bytes(subject.read_bytes() + b"tamper")

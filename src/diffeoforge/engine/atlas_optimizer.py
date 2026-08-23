@@ -33,6 +33,10 @@ AtlasTerminationReason = Literal[
     "max_cycles",
     "line_search_failed",
 ]
+AtlasCompletedCycleTerminationReason = Literal[
+    "gradient_tolerance",
+    "relative_objective_tolerance",
+]
 
 _ALL_BLOCKS: tuple[AtlasParameterBlock, ...] = (
     "momenta",
@@ -74,6 +78,24 @@ class AtlasCycleCheckpoint:
     control_points: torch.Tensor
     momenta: torch.Tensor
     next_step_sizes: dict[AtlasParameterBlock, float]
+    initial_cycle_objective: float
+    prior_cycle_objective: float
+    current_cycle_objective: float
+    lbfgs_history: tuple[tuple[torch.Tensor, torch.Tensor], ...]
+    reusable_gradient: torch.Tensor | None
+    completed_cycle_termination_reason: AtlasCompletedCycleTerminationReason | None
+
+
+@dataclass(frozen=True)
+class AtlasOptimizerResumeState:
+    """Exact optimizer state required after one complete accepted cycle."""
+
+    initial_cycle_objective: float
+    current_cycle_objective: float
+    next_step_sizes: dict[AtlasParameterBlock, float]
+    lbfgs_history: tuple[tuple[torch.Tensor, torch.Tensor], ...] = ()
+    reusable_gradient: torch.Tensor | None = None
+    completed_cycle_termination_reason: AtlasCompletedCycleTerminationReason | None = None
 
 
 AtlasCheckpointCallback = Callable[[AtlasCycleCheckpoint], None]
@@ -209,8 +231,10 @@ def _block_order(value: Sequence[str]) -> tuple[AtlasParameterBlock, ...]:
     if isinstance(value, (str, bytes)):
         raise TypeError("block_order must be a sequence of parameter-block names")
     normalized = tuple(value)
-    if not normalized or len(normalized) != len(set(normalized)) or not set(normalized) <= set(
-        _ALL_BLOCKS
+    if (
+        not normalized
+        or len(normalized) != len(set(normalized))
+        or not set(normalized) <= set(_ALL_BLOCKS)
     ):
         raise ValueError(
             "block_order must contain one or more unique entries selected from "
@@ -241,9 +265,7 @@ def _lbfgs_ascent_direction(
         reverse_alphas.append(alpha)
         q = q - alpha * gradient_delta
     last_step, last_gradient_delta = history[-1]
-    scale = torch.sum(last_step * last_gradient_delta) / torch.sum(
-        last_gradient_delta.square()
-    )
+    scale = torch.sum(last_step * last_gradient_delta) / torch.sum(last_gradient_delta.square())
     inverse_hessian_gradient = scale * q
     for (step, gradient_delta), alpha in zip(
         history,
@@ -255,9 +277,11 @@ def _lbfgs_ascent_direction(
         inverse_hessian_gradient = inverse_hessian_gradient + step * (alpha - beta)
     direction = -inverse_hessian_gradient
     directional_derivative = torch.sum(gradient * direction)
-    if not bool(torch.isfinite(direction).all()) or not bool(
-        torch.isfinite(directional_derivative)
-    ) or float(directional_derivative) <= 0.0:
+    if (
+        not bool(torch.isfinite(direction).all())
+        or not bool(torch.isfinite(directional_derivative))
+        or float(directional_derivative) <= 0.0
+    ):
         return gradient
     return direction
 
@@ -404,6 +428,7 @@ def optimize_atlas(
     strong_wolfe_curvature_constant: float = 0.9,
     strong_wolfe_maximum_step_size: float = 10.0,
     relative_objective_tolerance: float | None = None,
+    resume_state: AtlasOptimizerResumeState | None = None,
     progress_callback: AtlasProgressCallback | None = None,
     checkpoint_callback: AtlasCheckpointCallback | None = None,
     cancel_requested: AtlasCancellationCallback | None = None,
@@ -419,6 +444,8 @@ def optimize_atlas(
     """
 
     cycles = _integer("max_cycles", max_cycles, minimum=0)
+    if resume_state is not None and not isinstance(resume_state, AtlasOptimizerResumeState):
+        raise TypeError("resume_state must be an AtlasOptimizerResumeState or None")
     if progress_callback is not None and not callable(progress_callback):
         raise TypeError("progress_callback must be callable or None")
     if checkpoint_callback is not None and not callable(checkpoint_callback):
@@ -675,6 +702,87 @@ def optimize_atlas(
     if initial is None:
         raise FloatingPointError("initial atlas parameters produced a non-finite objective")
     current = initial.state
+    observed_initial_objective = float(current.objective)
+    normalized_resume_history: list[tuple[torch.Tensor, torch.Tensor]] = []
+    normalized_resume_gradient: torch.Tensor | None = None
+    if resume_state is not None:
+        for name, value in (
+            ("resume initial_cycle_objective", resume_state.initial_cycle_objective),
+            ("resume current_cycle_objective", resume_state.current_cycle_objective),
+        ):
+            if isinstance(value, bool) or not isinstance(value, Real) or not math.isfinite(value):
+                raise ValueError(f"{name} must be finite")
+        if float(resume_state.current_cycle_objective) != observed_initial_objective:
+            raise ValueError("resume current objective differs from the recomputed initial state")
+        if set(resume_state.next_step_sizes) != set(order):
+            raise ValueError("resume next-step blocks differ from block_order")
+        for block, value in resume_state.next_step_sizes.items():
+            if isinstance(value, bool) or not isinstance(value, Real) or not math.isfinite(value):
+                raise ValueError(f"resume next step for {block} must be finite")
+            if float(value) <= 0.0:
+                raise ValueError(f"resume next step for {block} must be positive")
+        if len(resume_state.lbfgs_history) > history_size:
+            raise ValueError("resume L-BFGS history exceeds lbfgs_history_size")
+        expected_history_shape = tuple(
+            {
+                "template": initial_template_vertices,
+                "control_points": initial_control_points,
+                "momenta": initial_momenta,
+            }[order[0]].shape
+        )
+        for index, pair in enumerate(resume_state.lbfgs_history):
+            if not isinstance(pair, tuple) or len(pair) != 2:
+                raise TypeError("resume L-BFGS history must contain (step, gradient_delta) pairs")
+            step, gradient_delta = pair
+            for label, tensor in (("step", step), ("gradient_delta", gradient_delta)):
+                if not isinstance(tensor, torch.Tensor):
+                    raise TypeError(f"resume L-BFGS {label} {index} must be a torch.Tensor")
+                if (
+                    tuple(tensor.shape) != expected_history_shape
+                    or tensor.device.type != "cpu"
+                    or tensor.dtype != torch.float64
+                    or tensor.requires_grad
+                    or not bool(torch.isfinite(tensor).all())
+                ):
+                    raise ValueError(
+                        f"resume L-BFGS {label} {index} must be detached finite CPU float64 "
+                        "with the momenta shape"
+                    )
+            normalized_resume_history.append((step.clone(), gradient_delta.clone()))
+        if direction_update != "lbfgs" and normalized_resume_history:
+            raise ValueError("resume L-BFGS history requires direction_update=lbfgs")
+        if resume_state.reusable_gradient is not None:
+            candidate = resume_state.reusable_gradient
+            expected_gradient_shape = expected_history_shape if len(order) == 1 else ()
+            if (
+                len(order) != 1
+                or not isinstance(candidate, torch.Tensor)
+                or tuple(candidate.shape) != expected_gradient_shape
+                or candidate.device.type != "cpu"
+                or candidate.dtype != torch.float64
+                or candidate.requires_grad
+                or not bool(torch.isfinite(candidate).all())
+            ):
+                raise ValueError(
+                    "resume reusable_gradient must be detached finite CPU float64 with the "
+                    "single optimized block shape"
+                )
+            if not torch.equal(candidate, initial.gradient):
+                raise ValueError("resume gradient differs from the recomputed initial gradient")
+            normalized_resume_gradient = candidate.clone()
+        if resume_state.completed_cycle_termination_reason not in (
+            None,
+            "gradient_tolerance",
+            "relative_objective_tolerance",
+        ):
+            raise ValueError("resume completed-cycle termination reason is invalid")
+        if (
+            resume_state.completed_cycle_termination_reason == "relative_objective_tolerance"
+            and objective_change_tolerance is None
+        ):
+            raise ValueError(
+                "resume relative-objective termination requires relative_objective_tolerance"
+            )
     initial_record = current.record(
         0,
         block=None,
@@ -684,18 +792,47 @@ def optimize_atlas(
         line_search_evaluations=0,
     )
     history = [initial_record]
-    initial_cycle_objective = float(current.objective)
-    previous_cycle_objective = initial_cycle_objective
+    initial_cycle_objective = (
+        observed_initial_objective
+        if resume_state is None
+        else float(resume_state.initial_cycle_objective)
+    )
+    previous_cycle_objective = (
+        observed_initial_objective
+        if resume_state is None
+        else float(resume_state.current_cycle_objective)
+    )
     if progress_callback is not None:
         progress_callback(initial_record)
     total_line_search_evaluations = 0
-    next_step_sizes = dict(step_sizes)
+    next_step_sizes = (
+        dict(step_sizes)
+        if resume_state is None
+        else {block: float(resume_state.next_step_sizes[block]) for block in order}
+    )
     reusable_single_block_evaluation: _BlockEvaluation | None = None
-    lbfgs_history: list[tuple[torch.Tensor, torch.Tensor]] = []
+    if normalized_resume_gradient is not None:
+        reusable_single_block_evaluation = _BlockEvaluation(
+            state=current,
+            gradient=normalized_resume_gradient,
+            gradient_norm=torch.linalg.vector_norm(normalized_resume_gradient),
+        )
+    lbfgs_history = normalized_resume_history
 
-    def emit_cycle_checkpoint(record: AtlasOptimizationRecord) -> None:
+    def emit_cycle_checkpoint(
+        record: AtlasOptimizationRecord,
+        *,
+        prior_cycle_objective: float,
+        current_cycle_objective: float,
+        completed_cycle_termination_reason: AtlasCompletedCycleTerminationReason | None,
+    ) -> None:
         if checkpoint_callback is None:
             return
+        reusable_gradient = (
+            None
+            if reusable_single_block_evaluation is None
+            else reusable_single_block_evaluation.gradient.clone()
+        )
         checkpoint_callback(
             AtlasCycleCheckpoint(
                 record=record,
@@ -703,6 +840,14 @@ def optimize_atlas(
                 control_points=current.control_points.clone(),
                 momenta=current.momenta.clone(),
                 next_step_sizes={block: next_step_sizes[block] for block in order},
+                initial_cycle_objective=initial_cycle_objective,
+                prior_cycle_objective=prior_cycle_objective,
+                current_cycle_objective=current_cycle_objective,
+                lbfgs_history=tuple(
+                    (step.clone(), gradient_delta.clone()) for step, gradient_delta in lbfgs_history
+                ),
+                reusable_gradient=reusable_gradient,
+                completed_cycle_termination_reason=completed_cycle_termination_reason,
             )
         )
 
@@ -728,6 +873,14 @@ def optimize_atlas(
             objective_evaluations=objective_evaluations,
             gradient_evaluations=gradient_evaluations,
             candidate_gradient_evaluations=candidate_gradient_evaluations,
+        )
+
+    if resume_state is not None and resume_state.completed_cycle_termination_reason is not None:
+        return result(
+            resume_state.completed_cycle_termination_reason,
+            converged=True,
+            failed_block=None,
+            cycles_completed=0,
         )
 
     for cycle in range(1, cycles + 1):
@@ -769,8 +922,6 @@ def optimize_atlas(
                 history.append(record)
                 if progress_callback is not None:
                     progress_callback(record)
-                if block == order[-1]:
-                    emit_cycle_checkpoint(record)
                 continue
 
             step_size = (
@@ -890,9 +1041,11 @@ def optimize_atlas(
                 curvature_scale = torch.linalg.vector_norm(step) * torch.linalg.vector_norm(
                     gradient_delta
                 )
-                if bool(torch.isfinite(curvature)) and bool(
-                    torch.isfinite(curvature_scale)
-                ) and float(curvature) > curvature_tolerance * float(curvature_scale):
+                if (
+                    bool(torch.isfinite(curvature))
+                    and bool(torch.isfinite(curvature_scale))
+                    and float(curvature) > curvature_tolerance * float(curvature_scale)
+                ):
                     lbfgs_history.append((step, gradient_delta))
                     if len(lbfgs_history) > history_size:
                         del lbfgs_history[0]
@@ -911,30 +1064,38 @@ def optimize_atlas(
             history.append(record)
             if progress_callback is not None:
                 progress_callback(record)
-            if block == order[-1]:
-                emit_cycle_checkpoint(record)
-
+        current_cycle_objective = float(current.objective)
+        completed_reason: AtlasCompletedCycleTerminationReason | None = None
         if stationary_blocks == len(order):
+            completed_reason = "gradient_tolerance"
+        elif objective_change_tolerance is not None:
+            latest_change = abs(current_cycle_objective - previous_cycle_objective)
+            cumulative_change = abs(current_cycle_objective - initial_cycle_objective)
+            if cumulative_change > 0.0 and latest_change < (
+                objective_change_tolerance * cumulative_change
+            ):
+                completed_reason = "relative_objective_tolerance"
+        emit_cycle_checkpoint(
+            history[-1],
+            prior_cycle_objective=previous_cycle_objective,
+            current_cycle_objective=current_cycle_objective,
+            completed_cycle_termination_reason=completed_reason,
+        )
+        previous_cycle_objective = current_cycle_objective
+        if completed_reason == "gradient_tolerance":
             return result(
                 "gradient_tolerance",
                 converged=True,
                 failed_block=None,
                 cycles_completed=cycle,
             )
-        current_cycle_objective = float(current.objective)
-        if objective_change_tolerance is not None:
-            latest_change = abs(current_cycle_objective - previous_cycle_objective)
-            cumulative_change = abs(current_cycle_objective - initial_cycle_objective)
-            if cumulative_change > 0.0 and latest_change < (
-                objective_change_tolerance * cumulative_change
-            ):
-                return result(
-                    "relative_objective_tolerance",
-                    converged=True,
-                    failed_block=None,
-                    cycles_completed=cycle,
-                )
-        previous_cycle_objective = current_cycle_objective
+        if completed_reason == "relative_objective_tolerance":
+            return result(
+                "relative_objective_tolerance",
+                converged=True,
+                failed_block=None,
+                cycles_completed=cycle,
+            )
 
     return result(
         "max_cycles",

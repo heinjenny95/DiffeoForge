@@ -714,7 +714,7 @@ def test_modern_project_setup_records_an_explicit_blockwise_high_face_plan(
     )
     config = yaml.safe_load(result.config_path.read_text(encoding="utf-8"))
 
-    assert config["schema_version"] == "0.4"
+    assert config["schema_version"] == "0.5"
     assert config["optimization"]["step_initialization"] == "previous_accepted"
     assert config["runtime"]["pairwise_evaluation"] == {
         "mode": "blockwise",

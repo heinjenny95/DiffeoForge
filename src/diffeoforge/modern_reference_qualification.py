@@ -29,6 +29,13 @@ from diffeoforge.mesh_quality import (
 )
 from diffeoforge.modern_bundle import MANIFEST_NAME as BUNDLE_MANIFEST_NAME
 from diffeoforge.modern_bundle import verify_modern_atlas_bundle
+from diffeoforge.modern_checkpoint import (
+    CHECKPOINT_VERSION,
+    verify_modern_cycle_checkpoint,
+)
+from diffeoforge.modern_checkpoint import (
+    MANIFEST_NAME as CHECKPOINT_MANIFEST_NAME,
+)
 from diffeoforge.modern_workflow import (
     CONFIG_MARKER,
     _read_momenta_rows,
@@ -49,12 +56,18 @@ from diffeoforge.result_report import collect_run_report
 
 DESIGN_VERSION = "0.2"
 LEGACY_CONTINUATION_DESIGN_VERSION = "0.3"
-CONTINUATION_DESIGN_VERSION = "0.4"
+PREVIOUS_CONTINUATION_DESIGN_VERSION = "0.4"
+CONTINUATION_DESIGN_VERSION = "0.5"
+ENGINE_BOUND_CONTINUATION_VERSIONS = {
+    PREVIOUS_CONTINUATION_DESIGN_VERSION,
+    CONTINUATION_DESIGN_VERSION,
+}
 SUPPORTED_DESIGN_VERSIONS = frozenset(
     {
         "0.1",
         DESIGN_VERSION,
         LEGACY_CONTINUATION_DESIGN_VERSION,
+        PREVIOUS_CONTINUATION_DESIGN_VERSION,
         CONTINUATION_DESIGN_VERSION,
     }
 )
@@ -85,6 +98,19 @@ def _copy_exclusive(source: Path, destination: Path) -> Path:
     return destination
 
 
+def _copy_tree(source: Path, destination: Path) -> Path:
+    if (
+        source.is_symlink()
+        or not source.is_dir()
+        or any(path.is_symlink() for path in source.rglob("*"))
+    ):
+        raise ModernReferenceQualificationError(
+            "Qualification continuation checkpoint is invalid or symbolic"
+        )
+    shutil.copytree(source, destination)
+    return destination
+
+
 def _artifact(root: Path, path: Path) -> dict[str, object]:
     return {
         "path": path.relative_to(root).as_posix(),
@@ -101,6 +127,18 @@ def _safe_relative(root: Path, value: object, label: str) -> Path:
         raise ModernReferenceQualificationError(f"{label} is unsafe: {value!r}")
     path = root.joinpath(*relative.parts)
     if not path.is_file() or path.is_symlink():
+        raise ModernReferenceQualificationError(f"{label} is missing or symbolic: {value}")
+    return path
+
+
+def _safe_directory(root: Path, value: object, label: str) -> Path:
+    if not isinstance(value, str) or not value or "\\" in value:
+        raise ModernReferenceQualificationError(f"{label} is not a POSIX-style path")
+    relative = PurePosixPath(value)
+    if relative.is_absolute() or "." in relative.parts or ".." in relative.parts:
+        raise ModernReferenceQualificationError(f"{label} is unsafe: {value!r}")
+    path = root.joinpath(*relative.parts)
+    if not path.is_dir() or path.is_symlink():
         raise ModernReferenceQualificationError(f"{label} is missing or symbolic: {value}")
     return path
 
@@ -142,9 +180,9 @@ def _reconstruction_subject(filename: str) -> str:
 
 def _preferred_subject_names(manifest: dict[str, Any]) -> tuple[str, ...]:
     try:
-        records = manifest["effective_config"]["project"]["parameter_provenance"][
-            "recommendation"
-        ]["calibration_plan"]["selected_pilot_subjects"]
+        records = manifest["effective_config"]["project"]["parameter_provenance"]["recommendation"][
+            "calibration_plan"
+        ]["selected_pilot_subjects"]
     except (KeyError, TypeError):
         return ()
     if not isinstance(records, list):
@@ -239,9 +277,8 @@ def _render_design_html(design: dict[str, Any]) -> str:
         )
     continuation = design.get("protocol", {}).get("continuation")
     continuation_section = ""
-    if (
-        design.get("design_version") == CONTINUATION_DESIGN_VERSION
-        and isinstance(continuation, dict)
+    if design.get("design_version") in ENGINE_BOUND_CONTINUATION_VERSIONS and isinstance(
+        continuation, dict
     ):
         continuation_section = (
             "\n<h2>Continuation binding</h2><ul>"
@@ -259,14 +296,14 @@ code{{background:#eef4f3;padding:.1rem .25rem}} .warning{{background:#fff4cf;pad
 <h1>Prospective Modern Engine fixed-reference qualification</h1>
 <p class="warning">No Modern Engine result existed when this design was frozen. These are
 engineering non-inferiority gates, not evidence of biological validity or production readiness.</p>
-<h2>Controlled comparison</h2><p>{escape(design['protocol']['comparison'])}</p>
+<h2>Controlled comparison</h2><p>{escape(design["protocol"]["comparison"])}</p>
 <p>Only subject momenta may change. The Deformetrica estimated template and control points
 are copied, hashed, and fixed. Internal objective values are not treated as cross-engine
 equivalents.</p>
-<h2>Subjects ({len(design['subjects'])})</h2><ol>{subjects}</ol>{quality_section}\
+<h2>Subjects ({len(design["subjects"])})</h2><ol>{subjects}</ol>{quality_section}\
 {continuation_section}
 <h2>Predeclared gates</h2><ul>{gates}</ul>
-<p>Modern configuration: <code>{escape(design['modern_workflow']['config_path'])}</code></p>
+<p>Modern configuration: <code>{escape(design["modern_workflow"]["config_path"])}</code></p>
 </html>\n"""
 
 
@@ -347,9 +384,7 @@ def create_modern_reference_qualification(
             f"subject_count cannot exceed the {len(subject_inputs)} reference subjects"
         )
     preferred = [
-        name
-        for name in _preferred_subject_names(dict(report.manifest))
-        if name in subject_inputs
+        name for name in _preferred_subject_names(dict(report.manifest)) if name in subject_inputs
     ]
     remaining = sorted(set(subject_inputs) - set(preferred), key=str.casefold)
     candidate_names = tuple(preferred + remaining)
@@ -494,9 +529,7 @@ def create_modern_reference_qualification(
                 "deformation": {
                     "kernel_width": float(model["deformation"]["kernel_width"]),
                     "timepoints": int(model["deformation"]["timepoints"]),
-                    "shooting_integrator": (
-                        "rk2" if model["deformation"]["use_rk2"] else "euler"
-                    ),
+                    "shooting_integrator": ("rk2" if model["deformation"]["use_rk2"] else "euler"),
                     "flow_integrator": "deformetrica_heun",
                 },
                 "noise_variance": noise_std**2,
@@ -511,24 +544,16 @@ def create_modern_reference_qualification(
                 "armijo_constant": 0.0001,
                 "gradient_tolerance": 0.0,
                 "minimum_step_size": 1e-12,
-                "max_line_search_iterations": int(
-                    optimization["max_line_search_iterations"]
-                ),
+                "max_line_search_iterations": int(optimization["max_line_search_iterations"]),
                 "step_initialization": "previous_accepted",
                 "direction_update": optimizer_direction,
                 "lbfgs_history_size": lbfgs_history_size,
                 "lbfgs_curvature_tolerance": 1e-12,
                 "lbfgs_initial_step_size": float(lbfgs_initial_step_size),
                 "line_search_condition": line_search_condition,
-                "strong_wolfe_curvature_constant": float(
-                    strong_wolfe_curvature_constant
-                ),
-                "strong_wolfe_maximum_step_size": float(
-                    strong_wolfe_maximum_step_size
-                ),
-                "relative_objective_tolerance": float(
-                    optimization["convergence_tolerance"]
-                ),
+                "strong_wolfe_curvature_constant": float(strong_wolfe_curvature_constant),
+                "strong_wolfe_maximum_step_size": float(strong_wolfe_maximum_step_size),
+                "relative_objective_tolerance": float(optimization["convergence_tolerance"]),
             },
             "analysis": {
                 "pca_components": None,
@@ -698,44 +723,54 @@ def create_modern_reference_qualification_continuation(
         raise ModernReferenceQualificationError(
             "Parent Modern subjects differ from the frozen qualification"
         )
-    parent_momenta = _safe_relative(
-        parent_bundle_root,
-        parent_bundle["parameters"]["momenta_path"],
-        "Parent Modern momenta",
-    )
-    parent_history = _safe_relative(
-        parent_bundle_root,
-        parent_bundle["optimizer"]["history_path"],
-        "Parent optimizer history",
-    )
-    try:
-        with parent_history.open(encoding="utf-8", newline="") as handle:
-            history_rows = list(csv.DictReader(handle))
-    except (OSError, UnicodeError, csv.Error) as error:
+    completed_cycles = int(parent_bundle["optimizer"]["cycles_completed"])
+    checkpoint_records = parent_workflow.get("optimizer_checkpoints", [])
+    if (
+        completed_cycles < 1
+        or not checkpoint_records
+        or checkpoint_records[-1]["cycle"] != completed_cycles
+    ):
         raise ModernReferenceQualificationError(
-            f"Parent optimizer history is unreadable: {error}"
-        ) from error
+            "Parent Modern run has no final complete-cycle checkpoint"
+        )
+    checkpoint_value = str(checkpoint_records[-1]["path"])
+    checkpoint_relative = PurePosixPath(checkpoint_value)
+    if (
+        "\\" in checkpoint_value
+        or checkpoint_relative.is_absolute()
+        or "." in checkpoint_relative.parts
+        or ".." in checkpoint_relative.parts
+    ):
+        raise ModernReferenceQualificationError("Parent checkpoint path is unsafe")
+    checkpoint_root = parent_root / Path(*checkpoint_relative.parts)
+    checkpoint = verify_modern_cycle_checkpoint(
+        checkpoint_root,
+        workflow_root=parent_root,
+    )
+    if checkpoint["checkpoint_version"] != CHECKPOINT_VERSION:
+        raise ModernReferenceQualificationError(
+            "Parent checkpoint predates exact L-BFGS and objective-baseline serialization"
+        )
+    if checkpoint["binding"]["engine_implementation"] != ENGINE_IMPLEMENTATION_VERSION:
+        raise ModernReferenceQualificationError("Parent checkpoint engine differs")
+    parent_effective_path = _safe_relative(
+        parent_root,
+        parent_workflow["config"]["effective_path"],
+        "Parent Modern effective config",
+    )
+    parent_effective = json.loads(parent_effective_path.read_text(encoding="utf-8"))
+    if not isinstance(parent_effective, dict):
+        raise ModernReferenceQualificationError("Parent effective config is not an object")
+    validate_modern_workflow_config(parent_effective)
 
-    source_config_path = _safe_relative(
-        source_root,
-        source_design["modern_workflow"]["config_path"],
-        "Source qualification config",
-    )
-    source_config = yaml.safe_load(source_config_path.read_text(encoding="utf-8"))
-    if source_config["optimization"].get("direction_update", "steepest") == "lbfgs":
+    if threads is not None and threads != int(parent_effective["runtime"]["threads"]):
         raise ModernReferenceQualificationError(
-            "L-BFGS qualification continuation is unavailable until curvature history "
-            "is stored in completed-run lineage"
+            "Exact qualification continuation requires the parent thread count"
         )
     last_steps = {
-        block: float(source_config["optimization"][f"{block}_step_size"])
-        for block in source_config["optimization"]["block_order"]
+        block: float(value)
+        for block, value in checkpoint["optimizer_state"]["next_step_sizes"].items()
     }
-    for row in history_rows:
-        block = row.get("block")
-        value = row.get("accepted_step_size")
-        if row.get("status") == "accepted" and block in last_steps and value:
-            last_steps[block] = float(value)
 
     destination_path = Path(destination).expanduser().resolve()
     if destination_path.exists():
@@ -752,9 +787,30 @@ def create_modern_reference_qualification_continuation(
                 continue
             source = _safe_relative(source_root, relative, "Source qualification artifact")
             _copy_exclusive(source, temporary / Path(*PurePosixPath(relative).parts))
-        copied_momenta = _copy_exclusive(
-            parent_momenta,
-            temporary / "inputs" / "initial-momenta.csv",
+        embedded_checkpoint = _copy_tree(
+            checkpoint_root,
+            temporary / "lineage" / "checkpoint",
+        )
+        embedded = verify_modern_cycle_checkpoint(embedded_checkpoint)
+        copied_effective = _copy_exclusive(
+            parent_effective_path,
+            temporary / "lineage" / "source-effective-config.json",
+        )
+        state = embedded["state"]
+        checkpoint_template = _safe_relative(
+            embedded_checkpoint,
+            state["template"]["path"],
+            "Embedded checkpoint template",
+        )
+        checkpoint_controls = _safe_relative(
+            embedded_checkpoint,
+            state["control_points"]["path"],
+            "Embedded checkpoint controls",
+        )
+        copied_momenta = _safe_relative(
+            embedded_checkpoint,
+            state["momenta"]["path"],
+            "Embedded checkpoint momenta",
         )
         subject_labels = tuple(sorted(expected_subjects))
         try:
@@ -768,19 +824,28 @@ def create_modern_reference_qualification_continuation(
                 f"Parent momenta cannot initialize the successor: {error}"
             ) from error
 
-        config = copy.deepcopy(source_config)
-        config["schema_version"] = "0.4"
+        config = copy.deepcopy(parent_effective)
+        config["schema_version"] = "0.5"
         config["project"]["name"] = f"{config['project']['name']}-continuation"
+        config["input"]["template"] = checkpoint_template.relative_to(temporary).as_posix()
+        config["initialization"]["control_points"] = {
+            "method": "file",
+            "count": int(state["control_points"]["count"]),
+            "path": checkpoint_controls.relative_to(temporary).as_posix(),
+        }
         config["initialization"]["momenta"] = {
             "method": "file",
-            "path": "inputs/initial-momenta.csv",
+            "path": copied_momenta.relative_to(temporary).as_posix(),
         }
         config["optimization"]["max_cycles"] = max_cycles
-        config["optimization"]["step_initialization"] = "previous_accepted"
-        for block, value in last_steps.items():
-            config["optimization"][f"{block}_step_size"] = value
-        if threads is not None:
-            config["runtime"]["threads"] = threads
+        config["optimization"]["resume_state"] = {
+            "checkpoint_directory": embedded_checkpoint.relative_to(temporary).as_posix(),
+            "checkpoint_manifest_sha256": sha256_file(
+                embedded_checkpoint / CHECKPOINT_MANIFEST_NAME
+            ),
+            "source_effective_config": copied_effective.relative_to(temporary).as_posix(),
+            "source_effective_config_sha256": sha256_file(copied_effective),
+        }
         output = destination_path.parent / f"{destination_path.name}-modern-run"
         config["output"]["directory"] = str(output)
         validate_modern_workflow_config(config)
@@ -794,27 +859,26 @@ def create_modern_reference_qualification_continuation(
         design["created_at"] = created_at or datetime.now(UTC).isoformat()
         design["protocol"]["comparison"] = (
             source_design["protocol"]["comparison"]
-            + " Continue from the parent Modern momenta without changing the fixed "
-            "template or control points."
+            + " Continue from the exact parent complete-cycle optimizer state without "
+            "changing the fixed geometric reference."
         )
         design["protocol"]["continuation"] = {
             "parent_design_sha256": sha256_file(source_root / DESIGN_JSON_NAME),
-            "parent_workflow_manifest_sha256": sha256_file(
-                parent_root / WORKFLOW_MANIFEST_NAME
-            ),
-            "parent_bundle_manifest_sha256": sha256_file(
-                parent_bundle_root / BUNDLE_MANIFEST_NAME
-            ),
+            "parent_workflow_manifest_sha256": sha256_file(parent_root / WORKFLOW_MANIFEST_NAME),
+            "parent_bundle_manifest_sha256": sha256_file(parent_bundle_root / BUNDLE_MANIFEST_NAME),
             "parent_termination_reason": parent_bundle["optimizer"]["termination_reason"],
             "parent_cycles_completed": parent_bundle["optimizer"]["cycles_completed"],
             "parent_final_objective": parent_bundle["optimizer"]["final_objective"],
-            "parent_engine_implementation": parent_workflow["engine"].get(
-                "implementation_version"
-            ),
+            "parent_engine_implementation": parent_workflow["engine"].get("implementation_version"),
             "expected_engine_implementation": ENGINE_IMPLEMENTATION_VERSION,
             "initial_momenta": _artifact(temporary, copied_momenta),
             "derived_initial_step_sizes": last_steps,
-            "derivation": "last accepted step per optimized block, else parent declared step",
+            "checkpoint_path": embedded_checkpoint.relative_to(temporary).as_posix(),
+            "checkpoint_manifest_sha256": sha256_file(
+                embedded_checkpoint / CHECKPOINT_MANIFEST_NAME
+            ),
+            "source_effective_config": _artifact(temporary, copied_effective),
+            "derivation": "exact state serialized in the parent final cycle checkpoint",
         }
         design["modern_workflow"] = {
             **design["modern_workflow"],
@@ -822,7 +886,7 @@ def create_modern_reference_qualification_continuation(
             "config_sha256": sha256_file(config_path),
             "expected_destination": str(output),
             "max_cycles": max_cycles,
-            "step_initialization": "previous_accepted",
+            "step_initialization": config["optimization"].get("step_initialization", "fixed"),
         }
         design["scientific_boundary"] += (
             " This successor is a sequential optimization pilot whose parent result and "
@@ -918,6 +982,7 @@ def verify_modern_reference_qualification_design(
     if design.get("design_version") in {
         "0.2",
         LEGACY_CONTINUATION_DESIGN_VERSION,
+        PREVIOUS_CONTINUATION_DESIGN_VERSION,
         CONTINUATION_DESIGN_VERSION,
     }:
         quality_settings = MeshQualitySettings.from_mapping(config["quality_control"])
@@ -944,6 +1009,7 @@ def verify_modern_reference_qualification_design(
                 )
     if design.get("design_version") in {
         LEGACY_CONTINUATION_DESIGN_VERSION,
+        PREVIOUS_CONTINUATION_DESIGN_VERSION,
         CONTINUATION_DESIGN_VERSION,
     }:
         continuation = design.get("protocol", {}).get("continuation")
@@ -959,7 +1025,7 @@ def verify_modern_reference_qualification_design(
                 raise ModernReferenceQualificationError(
                     f"Continuation lineage hash is invalid: {name}"
                 )
-        if design.get("design_version") == CONTINUATION_DESIGN_VERSION:
+        if design.get("design_version") in ENGINE_BOUND_CONTINUATION_VERSIONS:
             for name in (
                 "parent_engine_implementation",
                 "expected_engine_implementation",
@@ -979,13 +1045,14 @@ def verify_modern_reference_qualification_design(
                     "Continuation parent final objective is invalid"
                 )
         momenta_config = config["initialization"]["momenta"]
+        if not isinstance(momenta_config, dict) or momenta_config.get("method") != "file":
+            raise ModernReferenceQualificationError("Continuation must declare file momenta")
         if (
-            not isinstance(momenta_config, dict)
-            or momenta_config.get("method") != "file"
-            or config["optimization"].get("step_initialization") != "previous_accepted"
+            design.get("design_version") != CONTINUATION_DESIGN_VERSION
+            and config["optimization"].get("step_initialization") != "previous_accepted"
         ):
             raise ModernReferenceQualificationError(
-                "Continuation must declare file momenta and previous-accepted steps"
+                "Legacy continuation must declare previous-accepted steps"
             )
         momenta_path = _safe_relative(
             root,
@@ -993,9 +1060,7 @@ def verify_modern_reference_qualification_design(
             "Continuation initial momenta",
         )
         if _artifact(root, momenta_path) != continuation.get("initial_momenta"):
-            raise ModernReferenceQualificationError(
-                "Continuation initial-momenta evidence differs"
-            )
+            raise ModernReferenceQualificationError("Continuation initial-momenta evidence differs")
         try:
             _read_momenta_rows(
                 momenta_path,
@@ -1006,6 +1071,77 @@ def verify_modern_reference_qualification_design(
             raise ModernReferenceQualificationError(
                 f"Continuation initial momenta are invalid: {error}"
             ) from error
+        if design.get("design_version") == CONTINUATION_DESIGN_VERSION:
+            checkpoint_root = _safe_directory(
+                root,
+                continuation.get("checkpoint_path"),
+                "Continuation checkpoint",
+            )
+            checkpoint_manifest = checkpoint_root / CHECKPOINT_MANIFEST_NAME
+            if sha256_file(checkpoint_manifest) != continuation.get("checkpoint_manifest_sha256"):
+                raise ModernReferenceQualificationError(
+                    "Continuation checkpoint manifest hash differs"
+                )
+            try:
+                checkpoint = verify_modern_cycle_checkpoint(checkpoint_root)
+            except Exception as error:
+                raise ModernReferenceQualificationError(
+                    f"Continuation checkpoint is invalid: {error}"
+                ) from error
+            if (
+                checkpoint["checkpoint_version"] != CHECKPOINT_VERSION
+                or checkpoint["binding"]["engine_implementation"]
+                != continuation["parent_engine_implementation"]
+            ):
+                raise ModernReferenceQualificationError("Continuation checkpoint identity differs")
+            source_effective_record = continuation.get("source_effective_config")
+            if not isinstance(source_effective_record, dict):
+                raise ModernReferenceQualificationError(
+                    "Continuation source effective config evidence is missing"
+                )
+            source_effective_path = _safe_relative(
+                root,
+                source_effective_record.get("path"),
+                "Continuation source effective config",
+            )
+            if _artifact(root, source_effective_path) != source_effective_record:
+                raise ModernReferenceQualificationError(
+                    "Continuation source effective config evidence differs"
+                )
+            try:
+                source_effective = json.loads(
+                    source_effective_path.read_text(encoding="utf-8", errors="strict")
+                )
+                validate_modern_workflow_config(source_effective)
+            except (
+                OSError,
+                UnicodeError,
+                json.JSONDecodeError,
+                ConfigurationError,
+            ) as error:
+                raise ModernReferenceQualificationError(
+                    f"Continuation source effective config is invalid: {error}"
+                ) from error
+            resume_state = config["optimization"].get("resume_state")
+            expected_resume_state = {
+                "checkpoint_directory": checkpoint_root.relative_to(root).as_posix(),
+                "checkpoint_manifest_sha256": sha256_file(checkpoint_manifest),
+                "source_effective_config": source_effective_path.relative_to(root).as_posix(),
+                "source_effective_config_sha256": sha256_file(source_effective_path),
+            }
+            if resume_state != expected_resume_state:
+                raise ModernReferenceQualificationError(
+                    "Continuation optimizer-resume binding differs"
+                )
+            state_momenta = _safe_relative(
+                checkpoint_root,
+                checkpoint["state"]["momenta"]["path"],
+                "Continuation checkpoint momenta",
+            )
+            if momenta_path != state_momenta:
+                raise ModernReferenceQualificationError(
+                    "Continuation initial momenta differ from checkpoint state"
+                )
     observed_html = (root / DESIGN_HTML_NAME).read_text(encoding="utf-8")
     expected_html = _render_design_html(design)
     if observed_html != expected_html:
@@ -1022,8 +1158,8 @@ def verify_modern_reference_qualification_design(
         raise ModernReferenceQualificationError(
             "Qualification review HTML differs from deterministic regeneration "
             f"at character {mismatch}: observed "
-            f"{observed_html[mismatch:mismatch + 40]!r}; expected "
-            f"{expected_html[mismatch:mismatch + 40]!r}"
+            f"{observed_html[mismatch : mismatch + 40]!r}; expected "
+            f"{expected_html[mismatch : mismatch + 40]!r}"
         )
     return design
 
@@ -1061,10 +1197,7 @@ def _optimizer_trajectory_evidence(
                 status not in allowed_statuses
                 or cycle < 0
                 or line_search_evaluations < 0
-                or not all(
-                    math.isfinite(value)
-                    for value in (objective, attachment, regularity)
-                )
+                or not all(math.isfinite(value) for value in (objective, attachment, regularity))
                 or (
                     gradient_norm is not None
                     and (not math.isfinite(gradient_norm) or gradient_norm < 0.0)
@@ -1100,23 +1233,17 @@ def _optimizer_trajectory_evidence(
         ) from error
     objectives = [record["objective"] for record in records]
     gradient_norms = [
-        record["gradient_norm"]
-        for record in records
-        if record["gradient_norm"] is not None
+        record["gradient_norm"] for record in records if record["gradient_norm"] is not None
     ]
     decisions = records[1:]
     return {
         "initial_objective": objectives[0],
         "final_objective": objectives[-1],
         "objective_gain": objectives[-1] - objectives[0],
-        "objective_nondecreasing": all(
-            later >= earlier for earlier, later in pairwise(objectives)
-        ),
+        "objective_nondecreasing": all(later >= earlier for earlier, later in pairwise(objectives)),
         "decision_count": len(decisions),
         "accepted_decisions": sum(record["status"] == "accepted" for record in decisions),
-        "stationary_decisions": sum(
-            record["status"] == "stationary" for record in decisions
-        ),
+        "stationary_decisions": sum(record["status"] == "stationary" for record in decisions),
         "failed_decisions": sum(record["status"] == "failed" for record in decisions),
         "minimum_observed_gradient_norm": min(gradient_norms) if gradient_norms else None,
         "final_observed_gradient_norm": gradient_norms[-1] if gradient_norms else None,
@@ -1209,8 +1336,8 @@ def _render_assessment_html(assessment: dict[str, Any]) -> str:
 table{{border-collapse:collapse}}td,th{{border:1px solid #ccd;padding:.4rem}}
 .result{{font-size:1.3rem;font-weight:700}}</style>
 <h1>Modern Engine fixed-reference qualification assessment</h1>
-<p class="result">Engineering gate result: {escape(assessment['decision']['status'])}</p>
-<p>{escape(assessment['scientific_boundary'])}</p>
+<p class="result">Engineering gate result: {escape(assessment["decision"]["status"])}</p>
+<p>{escape(assessment["scientific_boundary"])}</p>
 {optimizer_html}{continuation_html}
 <table><thead><tr><th>Subject</th><th>Reference p95</th><th>Modern p95</th>
 <th>ratio</th><th>subject gate</th></tr></thead><tbody>{rows}</tbody></table>
@@ -1270,14 +1397,13 @@ def assess_modern_reference_qualification(
                 "Modern optimizer history final components differ from the verified bundle"
             )
     if sum(
-        int(record["line_search_evaluations"])
-        for record in trajectory_evidence["records"]
+        int(record["line_search_evaluations"]) for record in trajectory_evidence["records"]
     ) != int(bundle["optimizer"]["total_line_search_evaluations"]):
         raise ModernReferenceQualificationError(
             "Modern optimizer history line-search count differs from the verified bundle"
         )
     continuation_verification = None
-    if design.get("design_version") == CONTINUATION_DESIGN_VERSION:
+    if design.get("design_version") in ENGINE_BOUND_CONTINUATION_VERSIONS:
         continuation = design["protocol"]["continuation"]
         expected_implementation = continuation["expected_engine_implementation"]
         observed_implementation = workflow["engine"].get("implementation_version")
@@ -1323,9 +1449,7 @@ def assess_modern_reference_qualification(
     reference_parts: list[np.ndarray] = []
     modern_parts: list[np.ndarray] = []
     cross_parts: list[np.ndarray] = []
-    subject_limit = float(
-        design["decision_gates"]["subject_external_residual_ratio_maximum"]
-    )
+    subject_limit = float(design["decision_gates"]["subject_external_residual_ratio_maximum"])
     for record in design["subjects"]:
         name = record["filename"]
         target = read_vtk_polydata(
@@ -1400,9 +1524,7 @@ def assess_modern_reference_qualification(
             "termination_reason": bundle["optimizer"]["termination_reason"],
             "converged": bundle["optimizer"]["converged"],
             "cycles_completed": bundle["optimizer"]["cycles_completed"],
-            "total_line_search_evaluations": bundle["optimizer"][
-                "total_line_search_evaluations"
-            ],
+            "total_line_search_evaluations": bundle["optimizer"]["total_line_search_evaluations"],
             "final_objective": bundle["optimizer"]["final_objective"],
             "final_attachment": bundle["optimizer"]["final_attachment"],
             "final_regularity": bundle["optimizer"]["final_regularity"],
@@ -1482,9 +1604,7 @@ def verify_modern_reference_qualification_assessment(
         or sidecar_path.is_symlink()
         or sidecar_path.read_text(encoding="ascii").strip() != expected_sidecar
     ):
-        raise ModernReferenceQualificationError(
-            "Qualification assessment SHA-256 sidecar differs"
-        )
+        raise ModernReferenceQualificationError("Qualification assessment SHA-256 sidecar differs")
     try:
         assessment = json.loads(json_path.read_text(encoding="utf-8", errors="strict"))
     except (OSError, UnicodeError, json.JSONDecodeError) as error:
@@ -1497,9 +1617,7 @@ def verify_modern_reference_qualification_assessment(
         or not isinstance(assessment.get("created_at"), str)
         or not assessment["created_at"]
     ):
-        raise ModernReferenceQualificationError(
-            "Qualification assessment identity is invalid"
-        )
+        raise ModernReferenceQualificationError("Qualification assessment identity is invalid")
     try:
         design_path = Path(assessment["design"]["path"])
         modern_run = Path(assessment["modern_run"]["path"])
@@ -1518,9 +1636,7 @@ def verify_modern_reference_qualification_assessment(
             expected_root,
             created_at=assessment["created_at"],
         )
-        expected = json.loads(
-            (expected_root / ASSESSMENT_JSON_NAME).read_text(encoding="utf-8")
-        )
+        expected = json.loads((expected_root / ASSESSMENT_JSON_NAME).read_text(encoding="utf-8"))
         if assessment["assessment_version"] == "0.1":
             expected["assessment_version"] = "0.1"
             expected.pop("optimizer", None)

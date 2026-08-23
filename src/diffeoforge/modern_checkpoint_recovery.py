@@ -19,10 +19,11 @@ from diffeoforge.engine.execution import ENGINE_IMPLEMENTATION_VERSION
 from diffeoforge.mesh import sha256_file
 from diffeoforge.modern_bundle import verify_modern_atlas_bundle
 from diffeoforge.modern_checkpoint import (
-    MANIFEST_NAME as CHECKPOINT_MANIFEST_NAME,
+    CHECKPOINT_VERSION,
+    verify_modern_cycle_checkpoint,
 )
 from diffeoforge.modern_checkpoint import (
-    verify_modern_cycle_checkpoint,
+    MANIFEST_NAME as CHECKPOINT_MANIFEST_NAME,
 )
 from diffeoforge.modern_workflow import (
     CONFIG_MARKER,
@@ -33,7 +34,8 @@ from diffeoforge.modern_workflow import (
 )
 from diffeoforge.private_runs import MARKER_NAME, discover_private_runs
 
-RECOVERY_VERSION = "0.1"
+RECOVERY_VERSION = "0.2"
+SUPPORTED_RECOVERY_VERSIONS = {"0.1", RECOVERY_VERSION}
 PLAN_NAME = "modern-checkpoint-recovery.json"
 SIDECAR_NAME = "modern-checkpoint-recovery.sha256"
 HTML_NAME = "modern-checkpoint-recovery.html"
@@ -112,14 +114,14 @@ def _render_html(plan: dict[str, Any]) -> str:
 <style>body{{font:16px system-ui;max-width:960px;margin:2rem auto;line-height:1.45}}
 code{{overflow-wrap:anywhere}}.warning{{padding:1rem;background:#fff4ce}}</style>
 <h1>Prospective Modern checkpoint recovery</h1>
-<p class="warning">{escape(plan['scientific_boundary'])}</p>
-<p>Status: <strong>{escape(plan['status'])}</strong></p>
-<p>Abandoned private source: <code>{escape(plan['source']['private_directory'])}</code></p>
-<p>Recovered complete cycle: {plan['source']['checkpoint_cycle']} of
-{plan['source']['original_cycle_cap']}.</p>
-<p>Successor cycle cap: {plan['continuation']['max_cycles']}.</p>
-<h2>Subjects ({len(plan['subjects'])})</h2><ol>{subjects}</ol>
-<p>Frozen config: <code>{escape(plan['config']['path'])}</code></p>
+<p class="warning">{escape(plan["scientific_boundary"])}</p>
+<p>Status: <strong>{escape(plan["status"])}</strong></p>
+<p>Abandoned private source: <code>{escape(plan["source"]["private_directory"])}</code></p>
+<p>Recovered complete cycle: {plan["source"]["checkpoint_cycle"]} of
+{plan["source"]["original_cycle_cap"]}.</p>
+<p>Successor cycle cap: {plan["continuation"]["max_cycles"]}.</p>
+<h2>Subjects ({len(plan["subjects"])})</h2><ol>{subjects}</ol>
+<p>Frozen config: <code>{escape(plan["config"]["path"])}</code></p>
 </html>\n"""
 
 
@@ -173,8 +175,7 @@ def create_modern_checkpoint_recovery(
     if not checkpoint_roots:
         raise ModernCheckpointRecoveryError("Abandoned private run has no cycle checkpoint")
     checkpoints = [
-        verify_modern_cycle_checkpoint(path, workflow_root=private)
-        for path in checkpoint_roots
+        verify_modern_cycle_checkpoint(path, workflow_root=private) for path in checkpoint_roots
     ]
     if [checkpoint["cycle"] for checkpoint in checkpoints] != list(
         range(1, checkpoints[-1]["cycle"] + 1)
@@ -182,6 +183,10 @@ def create_modern_checkpoint_recovery(
         raise ModernCheckpointRecoveryError("Abandoned checkpoint cycle sequence is incomplete")
     checkpoint_root = checkpoint_roots[-1]
     checkpoint = checkpoints[-1]
+    if checkpoint["checkpoint_version"] != CHECKPOINT_VERSION:
+        raise ModernCheckpointRecoveryError(
+            "Checkpoint predates exact L-BFGS and objective-baseline serialization"
+        )
     binding = checkpoint["binding"]
     if binding["engine_implementation"] != ENGINE_IMPLEMENTATION_VERSION:
         raise ModernCheckpointRecoveryError(
@@ -199,15 +204,9 @@ def create_modern_checkpoint_recovery(
     if not isinstance(effective, dict):
         raise ModernCheckpointRecoveryError("Effective config is not an object")
     validate_modern_workflow_config(effective)
-    if effective["optimization"].get("direction_update", "steepest") == "lbfgs":
+    if threads is not None and threads != int(effective["runtime"]["threads"]):
         raise ModernCheckpointRecoveryError(
-            "L-BFGS checkpoint recovery is not available because curvature history is "
-            "not yet stored in cycle checkpoints"
-        )
-    if effective["optimization"].get("relative_objective_tolerance") is not None:
-        raise ModernCheckpointRecoveryError(
-            "Relative-objective checkpoint recovery is not available because its initial "
-            "and previous-cycle objective baselines are not yet stored in cycle checkpoints"
+            "Exact recovery requires the source thread count; --threads may only repeat it"
         )
     remaining = int(binding["max_cycles"]) - int(checkpoint["cycle"])
     successor_cycles = max(0, remaining) if max_cycles is None else max_cycles
@@ -274,7 +273,7 @@ def create_modern_checkpoint_recovery(
             int(state["control_points"]["count"]),
         )
         config = json.loads(json.dumps(effective, allow_nan=False))
-        config["schema_version"] = "0.4"
+        config["schema_version"] = "0.5"
         config["project"]["name"] = f"{config['project']['name']}-checkpoint-recovery"
         config["input"] = {
             "directory": "inputs/subjects",
@@ -300,19 +299,18 @@ def create_modern_checkpoint_recovery(
             },
             "momenta": {
                 "method": "file",
-                "path": state["momenta"]["path"].replace(
-                    "state/", "lineage/checkpoint/state/"
-                ),
+                "path": state["momenta"]["path"].replace("state/", "lineage/checkpoint/state/"),
             },
         }
         config["optimization"]["max_cycles"] = successor_cycles
-        config["optimization"]["step_initialization"] = effective["optimization"].get(
-            "step_initialization", "fixed"
-        )
-        for block, value in checkpoint["optimizer_state"]["next_step_sizes"].items():
-            config["optimization"][f"{block}_step_size"] = float(value)
-        if threads is not None:
-            config["runtime"]["threads"] = threads
+        config["optimization"]["resume_state"] = {
+            "checkpoint_directory": "lineage/checkpoint",
+            "checkpoint_manifest_sha256": sha256_file(
+                embedded_checkpoint / CHECKPOINT_MANIFEST_NAME
+            ),
+            "source_effective_config": "lineage/effective.json",
+            "source_effective_config_sha256": sha256_file(effective_copy),
+        }
         successor_output = output.parent / f"{output.name}-modern-run"
         config["output"]["directory"] = str(successor_output)
         validate_modern_workflow_config(config)
@@ -412,7 +410,7 @@ def verify_modern_checkpoint_recovery(directory: Path | str) -> dict[str, Any]:
     }:
         raise ModernCheckpointRecoveryError("Modern recovery plan fields differ")
     if (
-        plan["recovery_version"] != RECOVERY_VERSION
+        plan["recovery_version"] not in SUPPORTED_RECOVERY_VERSIONS
         or plan["status"] != "prospective_no_successor_result"
         or plan["scientific_boundary"] != SCIENTIFIC_BOUNDARY
     ):
@@ -424,9 +422,7 @@ def verify_modern_checkpoint_recovery(directory: Path | str) -> dict[str, Any]:
         if relative in declared:
             raise ModernCheckpointRecoveryError("Modern recovery artifact is duplicated")
         declared.add(relative)
-        if path.stat().st_size != record.get("bytes") or sha256_file(path) != record.get(
-            "sha256"
-        ):
+        if path.stat().st_size != record.get("bytes") or sha256_file(path) != record.get("sha256"):
             raise ModernCheckpointRecoveryError(f"Modern recovery artifact differs: {relative}")
     actual = {
         path.relative_to(root).as_posix()
@@ -438,6 +434,11 @@ def verify_modern_checkpoint_recovery(directory: Path | str) -> dict[str, Any]:
     checkpoint_root = root / plan["lineage"]["checkpoint_path"]
     checkpoint = verify_modern_cycle_checkpoint(checkpoint_root)
     if (
+        plan["recovery_version"] == RECOVERY_VERSION
+        and checkpoint["checkpoint_version"] != CHECKPOINT_VERSION
+    ):
+        raise ModernCheckpointRecoveryError("Embedded checkpoint version differs")
+    if (
         checkpoint["cycle"] != plan["source"]["checkpoint_cycle"]
         or sha256_file(checkpoint_root / CHECKPOINT_MANIFEST_NAME)
         != plan["source"]["checkpoint_manifest_sha256"]
@@ -448,18 +449,20 @@ def verify_modern_checkpoint_recovery(directory: Path | str) -> dict[str, Any]:
     binding = checkpoint["binding"]
     for name in ("source_config", "effective_config", "template_input"):
         copied = _safe_path(root, plan["lineage"][name]["path"], f"Recovery {name}")
-        if _artifact(root, copied) != plan["lineage"][name] or sha256_file(copied) != binding[
-            name
-        ]["sha256"]:
+        if (
+            _artifact(root, copied) != plan["lineage"][name]
+            or sha256_file(copied) != binding[name]["sha256"]
+        ):
             raise ModernCheckpointRecoveryError(f"Recovery lineage differs: {name}")
     labels = tuple(record["label"] for record in plan["subjects"])
     if labels != tuple(record["label"] for record in binding["subjects"]):
         raise ModernCheckpointRecoveryError("Recovery subject identity/order differs")
     for record, bound in zip(plan["subjects"], binding["subjects"], strict=True):
         subject = _safe_path(root, record["effective_mesh"]["path"], "Recovery subject")
-        if _artifact(root, subject) != record["effective_mesh"] or sha256_file(subject) != bound[
-            "sha256"
-        ]:
+        if (
+            _artifact(root, subject) != record["effective_mesh"]
+            or sha256_file(subject) != bound["sha256"]
+        ):
             raise ModernCheckpointRecoveryError(f"Recovery subject differs: {record['label']}")
     config_path = _safe_path(root, plan["config"]["path"], "Recovery config")
     if sha256_file(config_path) != plan["config"]["sha256"]:
@@ -474,8 +477,10 @@ def verify_modern_checkpoint_recovery(directory: Path | str) -> dict[str, Any]:
     state = checkpoint["state"]
     blocks = tuple(checkpoint["binding"]["block_order"])
     declared_steps = plan["continuation"].get("initial_step_sizes")
+    is_exact_state = plan["recovery_version"] == RECOVERY_VERSION
+    expected_schema_version = "0.5" if is_exact_state else "0.4"
     if (
-        config["schema_version"] != "0.4"
+        config["schema_version"] != expected_schema_version
         or config["input"]["directory"] != "inputs/subjects"
         or config["input"]["subject_pattern"] != "*.vtk"
         or config["input"]["template"]
@@ -483,8 +488,7 @@ def verify_modern_checkpoint_recovery(directory: Path | str) -> dict[str, Any]:
         or config["preprocessing"]["procrustes"]["enabled"] is not False
         or config["initialization"]["control_points"]["path"]
         != state["control_points"]["path"].replace("state/", "lineage/checkpoint/state/")
-        or config["initialization"]["control_points"]["count"]
-        != state["control_points"]["count"]
+        or config["initialization"]["control_points"]["count"] != state["control_points"]["count"]
         or config["initialization"]["momenta"]["path"]
         != state["momenta"]["path"].replace("state/", "lineage/checkpoint/state/")
         or config["output"]["directory"] != plan["config"]["expected_destination"]
@@ -493,12 +497,21 @@ def verify_modern_checkpoint_recovery(directory: Path | str) -> dict[str, Any]:
         or config["optimization"]["step_initialization"]
         != plan["continuation"]["step_initialization"]
         or declared_steps != checkpoint["optimizer_state"]["next_step_sizes"]
-        or any(
-            config["optimization"][f"{block}_step_size"] != declared_steps[block]
-            for block in blocks
-        )
     ):
         raise ModernCheckpointRecoveryError("Modern recovery config semantics differ")
+    if is_exact_state:
+        expected_resume = {
+            "checkpoint_directory": plan["lineage"]["checkpoint_path"],
+            "checkpoint_manifest_sha256": plan["source"]["checkpoint_manifest_sha256"],
+            "source_effective_config": plan["lineage"]["effective_config"]["path"],
+            "source_effective_config_sha256": plan["lineage"]["effective_config"]["sha256"],
+        }
+        if config["optimization"].get("resume_state") != expected_resume:
+            raise ModernCheckpointRecoveryError("Modern recovery resume state differs")
+    elif any(
+        config["optimization"][f"{block}_step_size"] != declared_steps[block] for block in blocks
+    ):
+        raise ModernCheckpointRecoveryError("Modern recovery legacy step state differs")
     observed_html = (root / HTML_NAME).read_text(encoding="utf-8", errors="strict")
     if observed_html != _render_html(plan):
         raise ModernCheckpointRecoveryError("Modern recovery HTML differs")

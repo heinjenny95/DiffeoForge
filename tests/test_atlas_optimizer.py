@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import math
 import runpy
+from dataclasses import replace
 from itertools import pairwise
 from pathlib import Path
 
@@ -228,9 +229,113 @@ def test_relative_objective_tolerance_matches_deformetrica_change_ratio() -> Non
     initial = objectives[0]
     for previous, current in pairwise(objectives[:-1]):
         assert abs(current - previous) >= tolerance * abs(current - initial)
-    assert abs(objectives[-1] - objectives[-2]) < tolerance * abs(
-        objectives[-1] - initial
+    assert abs(objectives[-1] - objectives[-2]) < tolerance * abs(objectives[-1] - initial)
+
+
+def test_lbfgs_resume_state_reproduces_an_uninterrupted_trajectory_exactly() -> None:
+    arguments, keywords = _problem(subjects=1)
+    settings = {
+        "block_order": ("momenta",),
+        "gradient_tolerance": 0.0,
+        "step_initialization": "previous_accepted",
+        "direction_update": "lbfgs",
+        "lbfgs_history_size": 5,
+        "line_search_condition": "strong_wolfe",
+        "strong_wolfe_curvature_constant": 0.9,
+        "strong_wolfe_maximum_step_size": 10.0,
+        "relative_objective_tolerance": 1e-12,
+    }
+    uninterrupted = optimize_atlas(
+        *arguments,
+        **keywords,
+        **settings,
+        max_cycles=12,
     )
+    checkpoints = []
+    first = optimize_atlas(
+        *arguments,
+        **keywords,
+        **settings,
+        max_cycles=5,
+        checkpoint_callback=checkpoints.append,
+    )
+    checkpoint = checkpoints[-1]
+    resume_state = engine.AtlasOptimizerResumeState(
+        initial_cycle_objective=checkpoint.initial_cycle_objective,
+        current_cycle_objective=checkpoint.current_cycle_objective,
+        next_step_sizes=checkpoint.next_step_sizes,
+        lbfgs_history=checkpoint.lbfgs_history,
+        reusable_gradient=checkpoint.reusable_gradient,
+        completed_cycle_termination_reason=checkpoint.completed_cycle_termination_reason,
+    )
+    resumed = optimize_atlas(
+        checkpoint.template_vertices,
+        arguments[1],
+        arguments[2],
+        checkpoint.control_points,
+        checkpoint.momenta,
+        **keywords,
+        **settings,
+        max_cycles=7,
+        resume_state=resume_state,
+    )
+
+    assert first.history == uninterrupted.history[:6]
+    assert resumed.history[0].objective == checkpoint.record.objective
+    uninterrupted_tail = [
+        replace(record, cycle=index) for index, record in enumerate(uninterrupted.history[6:], 1)
+    ]
+    assert uninterrupted_tail == list(resumed.history[1:])
+    assert torch.equal(resumed.template_vertices, uninterrupted.template_vertices)
+    assert torch.equal(resumed.control_points, uninterrupted.control_points)
+    assert torch.equal(resumed.momenta, uninterrupted.momenta)
+
+
+def test_resume_state_preserves_a_completed_cycle_convergence_decision() -> None:
+    arguments, keywords = _problem(subjects=1)
+    checkpoints = []
+    settings = {
+        "block_order": ("momenta",),
+        "gradient_tolerance": 0.0,
+        "step_initialization": "previous_accepted",
+        "direction_update": "lbfgs",
+        "lbfgs_history_size": 5,
+        "relative_objective_tolerance": 0.1,
+    }
+    converged = optimize_atlas(
+        *arguments,
+        **keywords,
+        **settings,
+        max_cycles=35,
+        checkpoint_callback=checkpoints.append,
+    )
+    checkpoint = checkpoints[-1]
+    assert checkpoint.completed_cycle_termination_reason == "relative_objective_tolerance"
+
+    resumed = optimize_atlas(
+        checkpoint.template_vertices,
+        arguments[1],
+        arguments[2],
+        checkpoint.control_points,
+        checkpoint.momenta,
+        **keywords,
+        **settings,
+        max_cycles=10,
+        resume_state=engine.AtlasOptimizerResumeState(
+            initial_cycle_objective=checkpoint.initial_cycle_objective,
+            current_cycle_objective=checkpoint.current_cycle_objective,
+            next_step_sizes=checkpoint.next_step_sizes,
+            lbfgs_history=checkpoint.lbfgs_history,
+            reusable_gradient=checkpoint.reusable_gradient,
+            completed_cycle_termination_reason=checkpoint.completed_cycle_termination_reason,
+        ),
+    )
+
+    assert resumed.converged is True
+    assert resumed.termination_reason == "relative_objective_tolerance"
+    assert resumed.cycles_completed == 0
+    assert len(resumed.history) == 1
+    assert torch.equal(resumed.momenta, converged.momenta)
 
 
 def test_strong_wolfe_lbfgs_is_repeatable_monotone_and_uses_gradient_trials() -> None:
