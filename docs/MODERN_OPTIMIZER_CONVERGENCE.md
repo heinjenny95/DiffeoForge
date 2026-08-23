@@ -65,6 +65,18 @@ versioned curvature-aware line-search experiment; additional cycle count alone
 is not treated as evidence of convergence.
 See [Experimental Modern L-BFGS direction](MODERN_LBFGS.md).
 
+That Engine 0.7 Strong-Wolfe screen did not improve the trajectory: `c2 = 0.9`
+was byte-identical to Armijo, while `c2 = 0.5` and `0.1` exhausted the frozen
+first-step search budget without publishing a result. During this audit the
+installed Deformetrica 4.3 source also confirmed that its
+`convergence_tolerance` is an objective-change ratio, not an absolute gradient
+norm: it compares the latest accepted objective change with the cumulative
+change since initialization. Mapping that value to Modern
+`gradient_tolerance` was therefore semantically incorrect. A new versioned
+Modern stopping criterion must reproduce and record the objective-change test
+while retaining the absolute gradient norm as a diagnostic rather than
+silently weakening it after observing these results.
+
 ## Scientific boundary
 
 These are engineering registration and convergence diagnostics on one selected
