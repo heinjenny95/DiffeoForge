@@ -78,10 +78,13 @@ cycle. It does not select a universally safe tile preset, prove convergence,
 extrapolate to 300 subjects, compare with Deformetrica, or validate biological
 results. Sampled RSS can miss short peaks.
 
+Repository qualification after the implementation and schema revision passed
+all lint checks and the complete automated suite: 1065 tests passed and seven
+environment-specific Windows/PySide or symbolic-link tests were skipped.
+
 ## Remaining gates
 
-1. Run the complete automated test suite and repository lint checks.
-2. Qualify multiple optimizer cycles and a larger subject cohort without
+1. Qualify multiple optimizer cycles and a larger subject cohort without
    extrapolating from this limited study.
-3. Preserve Engine 0.4 artifacts and reject continuation/recovery across the
+2. Preserve Engine 0.4 artifacts and reject continuation/recovery across the
    implementation-version boundary unless an explicit migration is developed.
