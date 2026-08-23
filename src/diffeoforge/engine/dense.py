@@ -325,6 +325,80 @@ def _gaussian_matrix(
     return _RecomputedGaussianMatrix.apply(x, y, width)
 
 
+class _RecomputedCurrentInnerProduct(torch.autograd.Function):
+    """One exact Current tile without retaining its Gaussian matrix."""
+
+    @staticmethod
+    def forward(
+        ctx,
+        centers_a: torch.Tensor,
+        normals_a: torch.Tensor,
+        centers_b: torch.Tensor,
+        normals_b: torch.Tensor,
+        width: float,
+    ) -> torch.Tensor:
+        ctx.save_for_backward(centers_a, normals_a, centers_b, normals_b)
+        ctx.width = width
+        kernel = _gaussian_matrix_raw(centers_a, centers_b, width)
+        return torch.sum(normals_a * (kernel @ normals_b))
+
+    @staticmethod
+    def backward(ctx, output_gradient: torch.Tensor):
+        centers_a, normals_a, centers_b, normals_b = ctx.saved_tensors
+        width = ctx.width
+        squared_distances = _centered_squared_distances(centers_a, centers_b)
+        kernel = torch.exp(-torch.clamp_min(squared_distances, 0.0) / (width * width))
+        centered_origin = centers_a[0].detach()
+        centered_a = centers_a - centered_origin
+        centered_b = centers_b - centered_origin
+        weighted_kernel = (
+            output_gradient
+            * (normals_a @ normals_b.T)
+            * kernel
+            * (squared_distances >= 0.0)
+        )
+        scale = 2.0 / (width * width)
+        centers_a_gradient = normals_a_gradient = None
+        centers_b_gradient = normals_b_gradient = None
+        if ctx.needs_input_grad[0]:
+            centers_a_gradient = -scale * (
+                centered_a * weighted_kernel.sum(dim=1, keepdim=True)
+                - weighted_kernel @ centered_b
+            )
+        if ctx.needs_input_grad[1]:
+            normals_a_gradient = output_gradient * (kernel @ normals_b)
+        if ctx.needs_input_grad[2]:
+            centers_b_gradient = scale * (
+                weighted_kernel.T @ centered_a
+                - centered_b * weighted_kernel.sum(dim=0)[:, None]
+            )
+        if ctx.needs_input_grad[3]:
+            normals_b_gradient = output_gradient * (kernel.T @ normals_a)
+        return (
+            centers_a_gradient,
+            normals_a_gradient,
+            centers_b_gradient,
+            normals_b_gradient,
+            None,
+        )
+
+
+def _recomputed_current_inner_product(
+    centers_a: torch.Tensor,
+    normals_a: torch.Tensor,
+    centers_b: torch.Tensor,
+    normals_b: torch.Tensor,
+    width: float,
+) -> torch.Tensor:
+    return _RecomputedCurrentInnerProduct.apply(
+        centers_a,
+        normals_a,
+        centers_b,
+        normals_b,
+        width,
+    )
+
+
 def gaussian_kernel(x: torch.Tensor, y: torch.Tensor, kernel_width: float) -> torch.Tensor:
     """Return the dense Deformetrica-convention Gaussian kernel matrix."""
 
@@ -982,6 +1056,20 @@ def _current_inner_product_blockwise(
     kernel_width: float,
     plan: GaussianTilePlan,
 ) -> torch.Tensor:
+    if plan.autograd_strategy == "recompute":
+        result = torch.zeros((), dtype=centers_a.dtype, device=centers_a.device)
+        for query_start in range(0, centers_a.shape[0], plan.query_rows):
+            query_centers = centers_a[query_start : query_start + plan.query_rows]
+            query_normals = normals_a[query_start : query_start + plan.query_rows]
+            for source_start in range(0, centers_b.shape[0], plan.source_rows):
+                result = result + _recomputed_current_inner_product(
+                    query_centers,
+                    query_normals,
+                    centers_b[source_start : source_start + plan.source_rows],
+                    normals_b[source_start : source_start + plan.source_rows],
+                    kernel_width,
+                )
+        return result
     convolved = _gaussian_convolve_blockwise_unchecked(
         centers_a,
         centers_b,
@@ -1010,6 +1098,27 @@ def _current_self_inner_product_blockwise(
             plan,
         )
     result = torch.zeros((), dtype=centers.dtype, device=centers.device)
+    tile_rows = plan.query_rows
+    if plan.autograd_strategy == "recompute":
+        for query_start in range(0, centers.shape[0], tile_rows):
+            query_centers = centers[query_start : query_start + tile_rows]
+            query_normals = normals[query_start : query_start + tile_rows]
+            result = result + _recomputed_current_inner_product(
+                query_centers,
+                query_normals,
+                query_centers,
+                query_normals,
+                kernel_width,
+            )
+            for source_start in range(query_start + tile_rows, centers.shape[0], tile_rows):
+                result = result + 2.0 * _recomputed_current_inner_product(
+                    query_centers,
+                    query_normals,
+                    centers[source_start : source_start + tile_rows],
+                    normals[source_start : source_start + tile_rows],
+                    kernel_width,
+                )
+        return result
 
     def diagonal(
         tile_centers: torch.Tensor,
@@ -1028,39 +1137,9 @@ def _current_self_inner_product_blockwise(
         forward = torch.sum(query_normals * (kernel @ source_normals))
         return 2.0 * forward
 
-    tile_rows = plan.query_rows
     for query_start in range(0, centers.shape[0], tile_rows):
         query_centers = centers[query_start : query_start + tile_rows]
         query_normals = normals[query_start : query_start + tile_rows]
-        if plan.autograd_strategy == "recompute":
-
-            def query_contributions(
-                all_centers: torch.Tensor,
-                all_normals: torch.Tensor,
-                start: int = query_start,
-            ) -> torch.Tensor:
-                local_centers = all_centers[start : start + tile_rows]
-                local_normals = all_normals[start : start + tile_rows]
-                values = [diagonal(local_centers, local_normals)]
-                for source_start in range(start + tile_rows, all_centers.shape[0], tile_rows):
-                    values.append(
-                        mirrored_pair(
-                            local_centers,
-                            local_normals,
-                            all_centers[source_start : source_start + tile_rows],
-                            all_normals[source_start : source_start + tile_rows],
-                        )
-                    )
-                return torch.stack(values)
-
-            contributions = _evaluate_tile(
-                query_contributions,
-                (centers, normals),
-                plan.autograd_strategy,
-            )
-            for contribution in contributions.unbind():
-                result = result + contribution
-            continue
         result = result + _evaluate_tile(
             diagonal,
             (query_centers, query_normals),

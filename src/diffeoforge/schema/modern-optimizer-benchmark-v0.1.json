@@ -284,7 +284,7 @@
       ],
       "properties": {
         "diffeoforge": {"type": "string", "minLength": 1},
-        "engine_implementation": {"enum": ["0.3", "0.4"]},
+        "engine_implementation": {"enum": ["0.3", "0.4", "0.5"]},
         "python": {"type": "string", "minLength": 1},
         "numpy": {"type": "string", "minLength": 1},
         "pytorch": {"type": "string", "minLength": 1},

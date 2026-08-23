@@ -487,7 +487,7 @@ def test_recompute_groups_gaussian_checkpoint_boundaries_by_query_tile(
     torch.autograd.grad(convolved.sum() + gradient.sum(), variables)
 
 
-def test_recompute_groups_current_self_and_cross_boundaries_by_query_tile(
+def test_recompute_current_tiles_use_fused_autograd_without_checkpoints(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     import diffeoforge.engine.dense as dense_module
@@ -515,8 +515,58 @@ def test_recompute_groups_current_self_and_cross_boundaries_by_query_tile(
         source_tile_size=2,
         autograd_strategy="recompute",
     )
-    assert calls == 4  # Two query groups for source self, then two for cross.
+    assert calls == 0
     torch.autograd.grad(value, variable)
+
+
+def test_recomputed_current_tile_passes_first_and_second_derivative_checks() -> None:
+    import diffeoforge.engine.dense as dense_module
+
+    generator = torch.Generator().manual_seed(20260823)
+    values = tuple(
+        torch.randn(shape, dtype=DTYPE, generator=generator, requires_grad=True)
+        for shape in ((3, 3), (3, 3), (4, 3), (4, 3))
+    )
+
+    def function(*inputs: torch.Tensor) -> torch.Tensor:
+        return dense_module._recomputed_current_inner_product(*inputs, 0.9)
+
+    assert torch.autograd.gradcheck(function, values, eps=1e-6, atol=2e-6, rtol=2e-5)
+    assert torch.autograd.gradgradcheck(
+        function,
+        values,
+        eps=1e-6,
+        atol=4e-6,
+        rtol=4e-5,
+    )
+
+
+def test_recomputed_current_tile_retains_no_pairwise_matrix() -> None:
+    import diffeoforge.engine.dense as dense_module
+
+    generator = torch.Generator().manual_seed(20260823)
+    centers_a = torch.randn((16, 3), dtype=DTYPE, generator=generator, requires_grad=True)
+    normals_a = torch.randn((16, 3), dtype=DTYPE, generator=generator, requires_grad=True)
+    centers_b = torch.randn((12, 3), dtype=DTYPE, generator=generator, requires_grad=True)
+    normals_b = torch.randn((12, 3), dtype=DTYPE, generator=generator, requires_grad=True)
+    saved_shapes: list[tuple[int, ...]] = []
+
+    def pack(tensor: torch.Tensor) -> torch.Tensor:
+        saved_shapes.append(tuple(tensor.shape))
+        return tensor
+
+    with torch.autograd.graph.saved_tensors_hooks(pack, lambda tensor: tensor):
+        value = dense_module._recomputed_current_inner_product(
+            centers_a,
+            normals_a,
+            centers_b,
+            normals_b,
+            1.1,
+        )
+        torch.autograd.grad(value, (centers_a, normals_a, centers_b, normals_b))
+
+    assert (16, 12) not in saved_shapes
+    assert (16, 12, 3) not in saved_shapes
 
 
 def test_recompute_groups_varifold_self_and_cross_boundaries_by_query_tile(

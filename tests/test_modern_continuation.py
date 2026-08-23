@@ -71,7 +71,7 @@ def test_completed_modern_run_can_continue_from_its_exact_final_state(
     assert plan["status"] == "prospective_no_successor_result"
     assert plan["parent"]["termination_reason"] == "max_cycles"
     assert plan["continuation"]["step_initialization"] == "previous_accepted"
-    assert plan["config"]["expected_engine_implementation"] == "0.4"
+    assert plan["config"]["expected_engine_implementation"] == "0.5"
     assert config["schema_version"] == "0.4"
     assert config["initialization"]["momenta"] == {
         "method": "file",
@@ -96,7 +96,7 @@ def test_completed_modern_run_can_continue_from_its_exact_final_state(
     assert "matches the parent final state within" in run_output.out
 
     assert verified["initial_objective_matches"] is True
-    assert verified["workflow"]["engine"]["implementation_version"] == "0.4"
+    assert verified["workflow"]["engine"]["implementation_version"] == "0.5"
     assert verified["initial_objective"] == pytest.approx(
         verified["parent_final_objective"], rel=1e-12, abs=1e-12
     )

@@ -572,6 +572,7 @@ and workflow for another mesh directory.
 - [Recompute query-tile checkpoint grouping](docs/RECOMPUTE_QUERY_GROUPS.md)
 - [Prospective optimizer scaling design](docs/MODERN_OPTIMIZER_BENCHMARK_DESIGN.md)
 - [Centered Gaussian matrix evaluation](docs/CENTERED_GAUSSIAN_MATRIX.md)
+- [Fused recomputed Current tiles](docs/FUSED_RECOMPUTED_CURRENT_TILES.md)
 - [Bounded-memory blockwise Gaussian primitives](docs/BLOCKWISE_GAUSSIAN.md)
 - [Landmark-based Procrustes alignment](docs/PROCRUSTES_ALIGNMENT.md)
 - [Data-assisted Deformetrica parameter guidance](docs/DATA_ASSISTED_PARAMETERS.md)
