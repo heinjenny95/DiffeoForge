@@ -3,8 +3,24 @@
 Status: **implemented private state and guarded successor-recovery contract**
 
 Every newly started Modern workflow writes an immutable checkpoint after the
-last parameter block of each fully completed optimizer cycle. A checkpoint
-contains:
+last parameter block of a configured fully completed optimizer cycle. Newly
+generated configurations use:
+
+```yaml
+optimization:
+  checkpoint_interval_cycles: 5
+  checkpoint_retention: latest
+```
+
+The terminal cycle is always checkpointed, even when it is not divisible by
+five. `latest` writes and verifies the new checkpoint before atomically
+retiring the preceding private checkpoint, so retained optimizer state is
+bounded by one checkpoint instead of growing once per cycle. Legacy
+configurations without these fields preserve the original `1`/`all` behavior.
+Choosing `all` is explicit forensic retention and can consume substantial disk
+space for L-BFGS cohort state.
+
+A checkpoint contains:
 
 - the detached estimated template as VTK;
 - canonical control points and subject-ordered momenta;
@@ -21,10 +37,11 @@ callback receives cloned tensors, so checkpoint code cannot mutate the active
 optimizer. Failed line-search attempts and partially completed multi-block
 cycles are never checkpointed.
 
-On normal completion, the workflow manifest inventories every checkpoint,
-requires the exact cycle sequence, verifies each nested manifest and input
-binding, and requires the last checkpoint objective components to equal the
-final atlas bundle. Older workflows without checkpoint records remain readable.
+On normal completion, the workflow manifest records the effective persistence
+policy, inventories every retained checkpoint, requires its exact scheduled
+cycle sequence, verifies each nested manifest and input binding, and requires
+the last checkpoint objective components to equal the final atlas bundle.
+Older workflows without a policy retain contiguous-cycle verification.
 
 If the process or machine dies, the private run directory and its last complete
 checkpoint can remain for inspection because normal exception cleanup did not

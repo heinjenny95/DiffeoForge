@@ -31,6 +31,12 @@ relative-objective stopping. If the last committed cycle already triggered a
 stopping criterion, the successor publishes that converged state with zero
 additional cycles rather than taking an extra step.
 
+New configurations checkpoint every five complete cycles and retain only the
+latest verified checkpoint. The terminal cycle is always retained. This bounds
+checkpoint disk growth while limiting hard-crash rollback to at most four
+completed cycles. Both cadence and retention are explicit configuration and
+immutable workflow evidence; legacy configurations keep every cycle.
+
 ## Evidence
 
 The test contract compares an uninterrupted L-BFGS trajectory with a split

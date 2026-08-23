@@ -91,6 +91,11 @@ continuation and guarded abandoned-run recovery. Preflight verifies exact
 Engine, runtime/thread, model, optimizer, subject, and numerical-state identity
 before deserializing the non-executable optimizer tensor store.
 
+New starter configurations set `checkpoint_interval_cycles: 5` and
+`checkpoint_retention: latest`. A terminal cycle is always written. The
+workflow manifest binds the effective policy and retained cycle sequence;
+legacy configurations without either field retain every complete cycle.
+
 New workflow and nested bundle manifests also record a Modern engine
 `implementation_version` separately from the pairwise mode and general package
 version. The two layers must agree. Older manifests without this optional field

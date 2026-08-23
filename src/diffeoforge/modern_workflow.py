@@ -188,6 +188,15 @@ def _validate_resume_semantics(
         )
 
 
+def _checkpoint_policy(optimization: Mapping[str, Any]) -> tuple[int, str]:
+    """Normalize the backward-compatible checkpoint persistence policy."""
+
+    return (
+        int(optimization.get("checkpoint_interval_cycles", 1)),
+        str(optimization.get("checkpoint_retention", "all")),
+    )
+
+
 def load_modern_workflow_config(path: Path | str) -> dict[str, Any]:
     """Load and validate one modern-workflow YAML configuration."""
 
@@ -569,6 +578,8 @@ def initialize_modern_workflow(
             "strong_wolfe_curvature_constant": 0.9,
             "strong_wolfe_maximum_step_size": 10.0,
             "relative_objective_tolerance": None,
+            "checkpoint_interval_cycles": 5,
+            "checkpoint_retention": "latest",
         },
         "analysis": {
             "pca_components": None,
@@ -1204,6 +1215,7 @@ def run_modern_workflow(
         attachment = model["attachment"]
         optimizer = config["optimization"]
         runtime = config["runtime"]
+        checkpoint_interval, checkpoint_retention = _checkpoint_policy(optimizer)
         torch.set_num_threads(runtime["threads"])
         if torch.get_num_threads() != runtime["threads"]:
             raise ModernWorkflowError("PyTorch did not apply the requested CPU thread count")
@@ -1269,6 +1281,13 @@ def run_modern_workflow(
             )
 
         def write_checkpoint(checkpoint: AtlasCycleCheckpoint) -> None:
+            cycle = checkpoint.record.cycle
+            if (
+                cycle % checkpoint_interval != 0
+                and cycle != optimizer["max_cycles"]
+                and checkpoint.completed_cycle_termination_reason is None
+            ):
+                return
             destination = temporary / "checkpoints" / f"cycle-{checkpoint.record.cycle:06d}"
             written = write_modern_cycle_checkpoint(
                 destination,
@@ -1282,6 +1301,25 @@ def run_modern_workflow(
                 written,
                 workflow_root=temporary,
             )
+            if checkpoint_retention == "latest":
+                checkpoint_directory = (temporary / "checkpoints").resolve()
+                for record in checkpoint_records:
+                    previous = (temporary / record["path"]).resolve()
+                    if (
+                        previous.parent != checkpoint_directory
+                        or re.fullmatch(r"cycle-[0-9]{6}", previous.name) is None
+                        or not previous.is_dir()
+                        or previous.is_symlink()
+                    ):
+                        raise ModernWorkflowError(
+                            "Refusing to retire an unsafe private checkpoint path"
+                        )
+                    retired = checkpoint_directory / (
+                        f".retired-{previous.name}-{uuid.uuid4().hex}"
+                    )
+                    previous.rename(retired)
+                    shutil.rmtree(retired)
+                checkpoint_records.clear()
             checkpoint_records.append(
                 {
                     "cycle": manifest["cycle"],
@@ -1456,6 +1494,10 @@ def run_modern_workflow(
                 "manifest_sha256": sha256_file(bundle_path / BUNDLE_MANIFEST_NAME),
             },
             "optimizer_checkpoints": checkpoint_records,
+            "optimizer_checkpoint_policy": {
+                "interval_cycles": checkpoint_interval,
+                "retention": checkpoint_retention,
+            },
             "artifacts": artifacts,
             "scientific_boundary": SCIENTIFIC_BOUNDARY,
             "immutability_contract": {
@@ -1763,9 +1805,22 @@ def verify_modern_workflow(directory: Path | str) -> dict[str, Any]:
     if "optimizer_checkpoints" in manifest:
         checkpoint_records = manifest["optimizer_checkpoints"]
         completed_cycles = int(bundle_manifest["optimizer"]["cycles_completed"])
-        if [record["cycle"] for record in checkpoint_records] != list(
-            range(1, completed_cycles + 1)
-        ):
+        policy = manifest.get("optimizer_checkpoint_policy")
+        if policy is None:
+            expected_checkpoint_cycles = list(range(1, completed_cycles + 1))
+        else:
+            interval, retention = _checkpoint_policy(effective["optimization"])
+            if policy != {"interval_cycles": interval, "retention": retention}:
+                raise ModernWorkflowError(
+                    "Optimizer checkpoint policy differs from effective config"
+                )
+            scheduled = [
+                cycle
+                for cycle in range(1, completed_cycles + 1)
+                if cycle % interval == 0 or cycle == completed_cycles
+            ]
+            expected_checkpoint_cycles = scheduled[-1:] if retention == "latest" else scheduled
+        if [record["cycle"] for record in checkpoint_records] != expected_checkpoint_cycles:
             raise ModernWorkflowError("Optimizer checkpoint cycle sequence differs")
         verified_checkpoints = []
         for record in checkpoint_records:

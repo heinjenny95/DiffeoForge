@@ -15,6 +15,7 @@ from diffeoforge.modern_checkpoint_recovery import (  # noqa: E402
     CONFIG_NAME,
     PLAN_NAME,
     ModernCheckpointRecoveryError,
+    create_modern_checkpoint_recovery,
     verify_modern_checkpoint_recovery,
     verify_modern_checkpoint_recovery_run,
 )
@@ -206,3 +207,62 @@ def test_relative_objective_checkpoint_recovers_with_serialized_baselines(
     assert plan["source"]["checkpoint_cycle"] == 1
     assert verified["initial_objective_matches"] is True
     assert verified["bundle"]["optimizer"]["settings"]["relative_objective_tolerance"] == 0.0001
+
+
+def test_recovery_accepts_both_verified_checkpoints_from_retirement_crash_window(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = initialize_modern_workflow(
+        MESH_DIRECTORY,
+        units="unitless",
+        config_path=tmp_path / "retirement-source.yaml",
+        template=MESH_DIRECTORY / "template.vtk",
+        subject_pattern="subject-*.vtk",
+        attachment_kernel_width=0.45,
+        deformation_kernel_width=0.6,
+        noise_variance=0.01,
+        max_cycles=4,
+        threads=1,
+    )
+    value = yaml.safe_load(config.read_text(encoding="utf-8"))
+    value["optimization"]["block_order"] = ["momenta"]
+    value["optimization"]["gradient_tolerance"] = 0.0
+    value["optimization"]["checkpoint_interval_cycles"] = 2
+    config.write_text(
+        yaml.safe_dump(value, sort_keys=False),
+        encoding="utf-8",
+        newline="\n",
+    )
+    original_rename = Path.rename
+
+    def interrupt_before_retirement(source: Path, destination: Path) -> Path:
+        if source.name == "cycle-000002" and destination.name.startswith(
+            ".retired-cycle-000002-"
+        ):
+            raise KeyboardInterrupt("simulated hard exit before checkpoint retirement")
+        return original_rename(source, destination)
+
+    monkeypatch.setattr(Path, "rename", interrupt_before_retirement)
+    intended = tmp_path / "retirement-run"
+    with pytest.raises(KeyboardInterrupt, match="simulated hard exit"):
+        run_modern_workflow(config, destination=intended, created_at=FIXED_TIME)
+    monkeypatch.setattr(Path, "rename", original_rename)
+
+    private_candidates = list(tmp_path.glob(".retirement-run.tmp-*"))
+    assert len(private_candidates) == 1
+    private = private_candidates[0]
+    assert sorted(path.name for path in (private / "checkpoints").iterdir()) == [
+        "cycle-000002",
+        "cycle-000004",
+    ]
+    recovery = create_modern_checkpoint_recovery(
+        private,
+        tmp_path / "retirement-recovery",
+        max_cycles=0,
+        threads=1,
+        created_at=FIXED_TIME,
+    )
+    plan = verify_modern_checkpoint_recovery(recovery)
+
+    assert plan["source"]["checkpoint_cycle"] == 4

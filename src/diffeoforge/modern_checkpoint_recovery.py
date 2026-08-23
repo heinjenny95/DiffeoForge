@@ -177,10 +177,9 @@ def create_modern_checkpoint_recovery(
     checkpoints = [
         verify_modern_cycle_checkpoint(path, workflow_root=private) for path in checkpoint_roots
     ]
-    if [checkpoint["cycle"] for checkpoint in checkpoints] != list(
-        range(1, checkpoints[-1]["cycle"] + 1)
-    ):
-        raise ModernCheckpointRecoveryError("Abandoned checkpoint cycle sequence is incomplete")
+    checkpoint_cycles = [checkpoint["cycle"] for checkpoint in checkpoints]
+    if checkpoint_cycles != sorted(set(checkpoint_cycles)):
+        raise ModernCheckpointRecoveryError("Abandoned checkpoint cycle sequence is invalid")
     checkpoint_root = checkpoint_roots[-1]
     checkpoint = checkpoints[-1]
     if checkpoint["checkpoint_version"] != CHECKPOINT_VERSION:
@@ -204,6 +203,21 @@ def create_modern_checkpoint_recovery(
     if not isinstance(effective, dict):
         raise ModernCheckpointRecoveryError("Effective config is not an object")
     validate_modern_workflow_config(effective)
+    interval = int(effective["optimization"].get("checkpoint_interval_cycles", 1))
+    retention = str(effective["optimization"].get("checkpoint_retention", "all"))
+    if retention == "all":
+        expected_checkpoint_cycles = [
+            cycle for cycle in range(1, checkpoint["cycle"] + 1) if cycle % interval == 0
+        ]
+        if (
+            checkpoint["cycle"] == binding["max_cycles"]
+            or checkpoint["optimizer_state"]["completed_cycle_termination_reason"] is not None
+        ) and checkpoint["cycle"] not in expected_checkpoint_cycles:
+            expected_checkpoint_cycles.append(checkpoint["cycle"])
+        if checkpoint_cycles != expected_checkpoint_cycles:
+            raise ModernCheckpointRecoveryError(
+                "Abandoned checkpoint cycle sequence differs from its persistence policy"
+            )
     if threads is not None and threads != int(effective["runtime"]["threads"]):
         raise ModernCheckpointRecoveryError(
             "Exact recovery requires the source thread count; --threads may only repeat it"

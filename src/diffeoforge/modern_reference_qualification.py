@@ -554,6 +554,8 @@ def create_modern_reference_qualification(
                 "strong_wolfe_curvature_constant": float(strong_wolfe_curvature_constant),
                 "strong_wolfe_maximum_step_size": float(strong_wolfe_maximum_step_size),
                 "relative_objective_tolerance": float(optimization["convergence_tolerance"]),
+                "checkpoint_interval_cycles": 5,
+                "checkpoint_retention": "latest",
             },
             "analysis": {
                 "pca_components": None,

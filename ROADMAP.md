@@ -118,6 +118,8 @@ This roadmap describes evidence gates rather than promised dates.
   accepted gradients, and retained L-BFGS curvature pairs in checkpoint v0.2
 - [x] Make completed-run continuation and abandoned-run recovery exact at
   committed cycle boundaries through configuration v0.5 and Engine 0.9
+- [x] Bound new-run checkpoint storage to the latest verified five-cycle
+  recovery point while preserving explicit all-cycle legacy behavior
 
 ## Milestone 3: Accessible application
 

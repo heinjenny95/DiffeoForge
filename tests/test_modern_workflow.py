@@ -260,6 +260,25 @@ def test_lbfgs_requires_explicit_momenta_only_configuration() -> None:
         workflow.validate_modern_workflow_config(invalid)
 
 
+@pytest.mark.parametrize(
+    ("name", "value"),
+    [
+        ("checkpoint_interval_cycles", 0),
+        ("checkpoint_interval_cycles", 1.5),
+        ("checkpoint_retention", "automatic"),
+    ],
+)
+def test_checkpoint_policy_rejects_implicit_or_invalid_values(
+    name: str,
+    value: object,
+) -> None:
+    invalid = _configuration()
+    invalid["optimization"][name] = value
+
+    with pytest.raises(ConfigurationError, match=name):
+        workflow.validate_modern_workflow_config(invalid)
+
+
 def test_farthest_template_initialization_is_repeatable_and_explicit() -> None:
     vertices = np.array(read_vtk_polydata(MESH_DIRECTORY / "template.vtk").vertices)
 
@@ -270,6 +289,48 @@ def test_farthest_template_initialization_is_repeatable_and_explicit() -> None:
     assert len(first) == len(set(first)) == 9
     with pytest.raises(ValueError, match="exceeds"):
         workflow.farthest_template_vertex_indices(vertices, vertices.shape[0] + 1)
+
+
+def test_generated_checkpoint_policy_retains_only_the_latest_recovery_point(
+    tmp_path: Path,
+) -> None:
+    config_path = workflow.initialize_modern_workflow(
+        MESH_DIRECTORY,
+        units="unitless",
+        config_path=tmp_path / "bounded-checkpoints.yaml",
+        template=MESH_DIRECTORY / "template.vtk",
+        subject_pattern="subject-*.vtk",
+        attachment_kernel_width=0.45,
+        deformation_kernel_width=0.6,
+        noise_variance=0.01,
+        max_cycles=6,
+        threads=1,
+    )
+    config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    config["optimization"]["block_order"] = ["momenta"]
+    config["optimization"]["gradient_tolerance"] = 0.0
+    config_path.write_text(
+        yaml.safe_dump(config, sort_keys=False),
+        encoding="utf-8",
+        newline="\n",
+    )
+
+    run = workflow.run_modern_workflow(
+        config_path,
+        destination=tmp_path / "bounded-checkpoints-run",
+        created_at=FIXED_TIME,
+    )
+    manifest = workflow.verify_modern_workflow(run)
+    bundle = workflow.verify_modern_atlas_bundle(run / manifest["result_bundle"]["path"])
+    completed_cycles = bundle["optimizer"]["cycles_completed"]
+
+    assert completed_cycles == 6
+    assert manifest["optimizer_checkpoint_policy"] == {
+        "interval_cycles": 5,
+        "retention": "latest",
+    }
+    assert [record["cycle"] for record in manifest["optimizer_checkpoints"]] == [6]
+    assert [path.name for path in (run / "checkpoints").iterdir()] == ["cycle-000006"]
 
 
 def test_external_control_points_and_momenta_only_are_verified(tmp_path: Path) -> None:

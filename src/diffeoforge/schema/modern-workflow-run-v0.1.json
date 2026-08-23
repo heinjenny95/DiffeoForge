@@ -304,6 +304,15 @@
         }
       }
     },
+    "optimizer_checkpoint_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["interval_cycles", "retention"],
+      "properties": {
+        "interval_cycles": {"type": "integer", "minimum": 1},
+        "retention": {"enum": ["all", "latest"]}
+      }
+    },
     "artifacts": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/artifact"}},
     "scientific_boundary": {"type": "string", "minLength": 1},
     "immutability_contract": {
