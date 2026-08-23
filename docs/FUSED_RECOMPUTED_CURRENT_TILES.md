@@ -73,8 +73,16 @@ repeat, final regularity is equal, and all scalar components pass the frozen
 match exactly. Momenta and history hashes do not, as expected from the changed
 last-bit gradient scheduling.
 
-This evidence describes one machine, one five-subject prefix, and one optimizer
-cycle. It does not select a universally safe tile preset, prove convergence,
+A second pair of prospectively frozen studies used the same subjects and
+1024 × 1024 protocol with a three-cycle cap. Engine 0.4 measured 139.090
+seconds median optimizer time and 0.681 GiB median sampled peak RSS; Engine 0.5
+measured 113.369 seconds and 0.564 GiB. The candidate-to-baseline ratios were
+0.815078 for optimizer time and 0.828159 for sampled peak RSS. All discrete
+work and outcomes again matched, and every final scalar difference was the
+same `5.684341886080802e-14` or zero observed in the one-cycle comparison.
+
+This evidence describes one machine and one five-subject prefix. It does not
+select a universally safe tile preset, prove convergence,
 extrapolate to 300 subjects, compare with Deformetrica, or validate biological
 results. Sampled RSS can miss short peaks.
 
@@ -84,7 +92,7 @@ environment-specific Windows/PySide or symbolic-link tests were skipped.
 
 ## Remaining gates
 
-1. Qualify multiple optimizer cycles and a larger subject cohort without
-   extrapolating from this limited study.
+1. Qualify a larger subject cohort without extrapolating from the five-subject
+   studies.
 2. Preserve Engine 0.4 artifacts and reject continuation/recovery across the
    implementation-version boundary unless an explicit migration is developed.

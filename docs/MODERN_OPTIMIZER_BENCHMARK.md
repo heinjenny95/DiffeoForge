@@ -63,11 +63,14 @@ Each repeat records:
 - line-search candidates rejected without a backward pass;
 - termination reason, completed cycles, and final objective components.
 
-The verifier checks the optimizer identities
+For a multi-block optimizer, the verifier checks
 `objectives = decisions + line-search evaluations` and
-`gradients = decisions + candidate gradients`. These counters therefore expose
-whether a runtime change reflects less mathematical work rather than only a
-wall-clock fluctuation.
+`gradients = decisions + candidate gradients`. A one-block optimizer reuses
+the accepted candidate gradient at the next cycle boundary, so its exact
+identities are `objectives = 1 + line-search evaluations` and
+`gradients = 1 + candidate gradients`. These counters therefore expose whether
+a runtime change reflects less mathematical work rather than only a wall-clock
+fluctuation, without rejecting the documented single-block reuse path.
 
 ## Repeatability evidence
 

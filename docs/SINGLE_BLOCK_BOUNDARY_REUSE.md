@@ -35,6 +35,13 @@ bit-identical final momenta, objective values, gradient norms, accepted steps,
 and line-search decisions. Multi-block evaluation counts and behavior remain
 unchanged.
 
+The versioned optimizer-benchmark verifier follows the same distinction. For
+one block it requires exactly one initial objective and gradient plus the
+recorded line-search objectives and accepted-candidate gradients. For multiple
+blocks it retains the decision-based identities. This prevents the benchmark
+harness from misclassifying correct multi-cycle boundary reuse as inconsistent
+work accounting.
+
 This is exact implementation evidence, not a convergence or wall-time claim.
 Runtime savings depend on how many cycles accept a candidate and on the relative
 cost of line-search candidates. Existing runs keep their original provenance;
