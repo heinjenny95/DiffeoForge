@@ -1,7 +1,7 @@
 # Modern relative-objective stopping semantics
 
-Status: **implemented as an explicit Engine 0.8 option; real-input
-qualification remains prospective**
+Status: **implemented and prospectively qualified on the frozen
+five-subject full-resolution Weevil fixed-reference screen**
 
 ## Corrected interpretation
 
@@ -68,6 +68,43 @@ lineage. Reinitializing either baseline would change the stop decision. Engine
 
 Unit and workflow tests establish the exact ratio formula, cycle-boundary
 behavior, deterministic termination, schema and bundle provenance, legacy
-compatibility, and safe continuation/recovery rejection. These tests do not
-establish real-input convergence. A prospective Weevil design must exist before
-the first Engine 0.8 result is computed.
+compatibility, and safe continuation/recovery rejection.
+
+## Prospective real-input result
+
+Before any Engine 0.8 result existed, a five-subject full-resolution Weevil
+design froze the Deformetrica-derived tolerance (`0.0001`), L-BFGS/Armijo
+optimizer, 150-cycle ceiling, fixed template and control points, subjects, and
+all external non-inferiority gates. The run then stopped itself after 84
+accepted cycles with:
+
+```text
+initial objective:                    -189.78482461065454
+final objective:                        -8.926917073610918
+termination reason:                     relative_objective_tolerance
+cycle 83 relative objective change:      0.00025156877665148848
+cycle 84 relative objective change:      0.000069593162405623017
+declared tolerance:                      0.0001
+```
+
+Thus cycle 83 correctly continued and cycle 84 correctly triggered the
+predeclared criterion. The objective was nondecreasing across all 84 accepted
+decisions, no optimizer decision failed, and 91 total line-search evaluations
+were required. The final gradient norm (`28.4773545271`) and minimum observed
+gradient norm (`10.9429228888`) remain diagnostics; neither was repurposed as
+the stopping test.
+
+The immutable workflow and a separately published assessment both passed
+strict verification. Recomputing every external metric from the bound design
+and result produced:
+
+```text
+pooled Modern/reference residual ratio:  0.6936240097772872  (maximum 1.2)
+subject pass fraction:                    1.0                 (minimum 0.8)
+cross-engine reconstruction distance:     0.01896835023041072 (maximum 0.05)
+engineering gate:                         pass
+```
+
+This qualifies the stopping implementation for this fixed five-subject
+engineering screen. It does not qualify a 300-subject production atlas or
+establish biological validity.

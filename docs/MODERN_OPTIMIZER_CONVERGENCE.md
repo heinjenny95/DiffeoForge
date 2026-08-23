@@ -1,8 +1,9 @@
 # Modern optimizer convergence evidence
 
 Status: **the Engine 0.5 compute hotpath is qualified on 16 full-resolution
-subjects; Engine 0.6 L-BFGS materially improves real-input optimization and
-external gates but is not yet qualified as converged**
+subjects; Engine 0.8 L-BFGS with corrected relative-objective stopping passed
+its prospective five-subject convergence and fixed-reference engineering
+gates**
 
 ## Frozen evidence
 
@@ -85,9 +86,28 @@ diagnostic. Legacy configurations omit the field and retain their exact prior
 termination behavior. See
 [Modern relative-objective stopping semantics](MODERN_OBJECTIVE_STOPPING.md).
 
+The first Engine 0.8 result remained prospective until its design had frozen
+the five subjects, fixed template and control points, L-BFGS/Armijo settings,
+150-cycle ceiling, `0.0001` relative-objective tolerance, and unchanged
+external gates. It stopped at cycle 84: the ratio was
+`0.00025156877665148848` at cycle 83 and
+`0.000069593162405623017` at cycle 84. All 84 decisions were accepted and the
+objective improved monotonically from `-189.78482461065454` to
+`-8.926917073610918`.
+
+The independently recomputed fixed-reference assessment passed every frozen
+gate. Its pooled Modern-to-Deformetrica external-residual ratio was
+`0.6936240097772872`, all 5/5 subjects passed, and cross-engine reconstruction
+distance was `0.01896835023041072`. Both the workflow and assessment passed
+strict verification. This resolves the five-subject optimizer-stopping
+qualification without weakening the gradient diagnostic after observing a
+result.
+
 ## Scientific boundary
 
 These are engineering registration and convergence diagnostics on one selected
-16-subject cohort and one prospectively frozen five-subject cohort. They do not
-prove atlas equivalence, biological validity, parameter suitability, safe
-operation on 300 subjects, or that Deformetrica is the biological ground truth.
+16-subject cohort and one prospectively frozen five-subject cohort. The
+five-subject Engine 0.8 result passes its declared engineering gates, but it
+does not prove atlas equivalence, biological validity, parameter suitability,
+safe operation on 300 subjects, or that Deformetrica is the biological ground
+truth.
