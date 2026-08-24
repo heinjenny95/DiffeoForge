@@ -10,11 +10,14 @@ from typing import Any, Literal
 
 import jsonschema
 
-PROGRESS_VERSION = "0.1"
+from diffeoforge.modern_progress import ModernOptimizerProgress
+
+PROGRESS_VERSION = "0.2"
 OptimizerStudyProgressStatus = Literal[
     "study_started",
     "study_resumed",
     "condition_started",
+    "condition_progress",
     "condition_completed",
     "condition_reconciled",
     "study_interrupted",
@@ -27,9 +30,10 @@ class OptimizerStudyProgressObserverError(RuntimeError):
     """Raised when a synchronous optimizer-study observer fails."""
 
 
-def _schema() -> dict[str, Any]:
+def _schema(version: str = PROGRESS_VERSION) -> dict[str, Any]:
+    selected = "0.1" if version == "0.1" else PROGRESS_VERSION
     resource = files("diffeoforge.schema").joinpath(
-        "modern-optimizer-benchmark-study-progress-v0.1.json"
+        f"modern-optimizer-benchmark-study-progress-v{selected}.json"
     )
     return json.loads(resource.read_text(encoding="utf-8"))
 
@@ -37,7 +41,8 @@ def _schema() -> dict[str, Any]:
 def validate_optimizer_study_progress_event(event: dict[str, Any]) -> None:
     """Validate one serialized observer event against the public schema."""
 
-    jsonschema.Draft202012Validator(_schema()).validate(event)
+    version = event.get("progress_version")
+    jsonschema.Draft202012Validator(_schema(str(version))).validate(event)
 
 
 @dataclass(frozen=True)
@@ -76,8 +81,34 @@ class OptimizerStudyProgressCondition:
 
 
 @dataclass(frozen=True)
+class OptimizerStudyProgressObservation:
+    """One committed optimizer decision observed inside a fresh-process repeat."""
+
+    repeat: int
+    total_repeats: int
+    optimizer_elapsed_ns: int
+    optimizer: ModernOptimizerProgress
+
+    def __post_init__(self) -> None:
+        if self.total_repeats < 1:
+            raise ValueError("total repeats must be positive")
+        if not 1 <= self.repeat <= self.total_repeats:
+            raise ValueError("repeat must be within total repeats")
+        if self.optimizer_elapsed_ns < 0:
+            raise ValueError("optimizer elapsed time must be nonnegative")
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "repeat": self.repeat,
+            "total_repeats": self.total_repeats,
+            "optimizer_elapsed_ns": self.optimizer_elapsed_ns,
+            "optimizer": self.optimizer.as_dict(),
+        }
+
+
+@dataclass(frozen=True)
 class OptimizerStudyProgressEvent:
-    """One exact optimizer-study lifecycle observation; never an ETA."""
+    """One exact optimizer-study lifecycle or committed-decision observation."""
 
     sequence: int
     status: OptimizerStudyProgressStatus
@@ -85,6 +116,7 @@ class OptimizerStudyProgressEvent:
     completed_conditions: int
     total_conditions: int
     condition: OptimizerStudyProgressCondition | None = None
+    observation: OptimizerStudyProgressObservation | None = None
 
     def __post_init__(self) -> None:
         if self.sequence < 0:
@@ -97,12 +129,15 @@ class OptimizerStudyProgressEvent:
             raise ValueError("completed condition count is outside the frozen total")
         condition_statuses = {
             "condition_started",
+            "condition_progress",
             "condition_completed",
             "condition_reconciled",
             "study_interrupted",
         }
         if (self.status in condition_statuses) != (self.condition is not None):
             raise ValueError("progress status and condition presence are inconsistent")
+        if (self.status == "condition_progress") != (self.observation is not None):
+            raise ValueError("progress status and optimizer observation are inconsistent")
         if self.condition is not None:
             if self.condition.sequence > self.total_conditions:
                 raise ValueError("condition sequence exceeds the frozen total")
@@ -134,6 +169,9 @@ class OptimizerStudyProgressEvent:
             "completed_conditions": self.completed_conditions,
             "total_conditions": self.total_conditions,
             "condition": None if self.condition is None else self.condition.as_dict(),
+            "observation": (
+                None if self.observation is None else self.observation.as_dict()
+            ),
         }
 
 

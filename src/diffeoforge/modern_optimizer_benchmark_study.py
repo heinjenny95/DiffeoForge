@@ -26,6 +26,7 @@ from diffeoforge.modern_optimizer_benchmark import (
     REPORT_HTML_NAME,
     REPORT_JSON_NAME,
     ModernOptimizerBenchmarkError,
+    ModernOptimizerBenchmarkProgress,
     benchmark_modern_optimizer,
     verify_modern_optimizer_benchmark_report,
 )
@@ -38,9 +39,11 @@ from diffeoforge.modern_optimizer_benchmark_progress import (
     OptimizerStudyProgressCallback,
     OptimizerStudyProgressCondition,
     OptimizerStudyProgressEvent,
+    OptimizerStudyProgressObservation,
     OptimizerStudyProgressObserverError,
     OptimizerStudyProgressStatus,
 )
+from diffeoforge.modern_progress import ModernOptimizerProgress
 
 STUDY_RUN_VERSION = "0.1"
 STATE_NAME = "optimizer-study-state.json"
@@ -722,6 +725,7 @@ def run_modern_optimizer_benchmark_study(
         completed: int,
         total: int,
         condition: dict[str, Any] | None = None,
+        observation: OptimizerStudyProgressObservation | None = None,
     ) -> None:
         nonlocal progress_sequence
         if progress_callback is None:
@@ -737,6 +741,7 @@ def run_modern_optimizer_benchmark_study(
                 if condition is None
                 else OptimizerStudyProgressCondition.from_design(condition)
             ),
+            observation=observation,
         )
         try:
             progress_callback(
@@ -838,6 +843,53 @@ def run_modern_optimizer_benchmark_study(
                 total,
                 condition,
             )
+
+            block_order = tuple(design["configuration"]["block_order"])
+            maximum_decisions = condition["cycle_cap"] * len(block_order)
+
+            def observe_optimizer(
+                progress: ModernOptimizerBenchmarkProgress,
+                *,
+                observed_block_order: tuple[str, ...] = block_order,
+                observed_maximum_decisions: int = maximum_decisions,
+                observed_condition: dict[str, Any] = condition,
+            ) -> None:
+                record = progress.record
+                completed_decisions = (
+                    0
+                    if record.status == "initial"
+                    else (record.cycle - 1) * len(observed_block_order)
+                    + observed_block_order.index(record.block)
+                    + 1
+                )
+                observation = OptimizerStudyProgressObservation(
+                    repeat=progress.repeat,
+                    total_repeats=progress.total_repeats,
+                    optimizer_elapsed_ns=progress.optimizer_elapsed_ns,
+                    optimizer=ModernOptimizerProgress(
+                        completed_decisions=completed_decisions,
+                        maximum_decisions=observed_maximum_decisions,
+                        cycle=record.cycle,
+                        max_cycles=observed_condition["cycle_cap"],
+                        block=record.block,
+                        status=record.status,
+                        objective=record.objective,
+                        attachment=record.attachment,
+                        regularity=record.regularity,
+                        gradient_norm=record.gradient_norm,
+                        accepted_step_size=record.accepted_step_size,
+                        line_search_evaluations=record.line_search_evaluations,
+                    ),
+                )
+                emit(
+                    "condition_progress",
+                    "A committed optimizer decision was observed in the fresh worker.",
+                    observed_condition["sequence"] - 1,
+                    total,
+                    observed_condition,
+                    observation,
+                )
+
             try:
                 benchmark_modern_optimizer(
                     source,
@@ -846,6 +898,7 @@ def run_modern_optimizer_benchmark_study(
                     repeats=design["protocol"]["repeats_per_condition"],
                     warmup_runs=design["protocol"]["warmup_runs_per_repeat"],
                     destination=_condition_directory(output, condition),
+                    progress_callback=observe_optimizer,
                 )
                 _verify_condition_report(output, design, condition)
             except Exception as error:

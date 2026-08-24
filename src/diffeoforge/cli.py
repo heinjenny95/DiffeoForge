@@ -2168,6 +2168,34 @@ def main(argv: Sequence[str] | None = None) -> int:
                         f"{condition.subject_count} subjects; "
                         f"{condition.cycle_cap} cycles"
                     )
+                observation = event.observation
+                if observation is not None:
+                    optimizer = observation.optimizer
+                    elapsed_seconds = observation.optimizer_elapsed_ns / 1e9
+                    eta = ""
+                    if optimizer.completed_decisions > 0:
+                        remaining_seconds = elapsed_seconds * (
+                            optimizer.maximum_decisions - optimizer.completed_decisions
+                        ) / optimizer.completed_decisions
+                        remaining = (
+                            f"{remaining_seconds:.0f} s"
+                            if remaining_seconds < 60
+                            else f"{remaining_seconds / 60:.1f} min"
+                        )
+                        eta = f"; observed ETA to decision cap ~{remaining}"
+                    elapsed = (
+                        f"{elapsed_seconds:.1f} s"
+                        if elapsed_seconds < 60
+                        else f"{elapsed_seconds / 60:.1f} min"
+                    )
+                    detail += (
+                        f"; repeat {observation.repeat}/{observation.total_repeats}; "
+                        f"decision {optimizer.completed_decisions}/"
+                        f"{optimizer.maximum_decisions}; cycle {optimizer.cycle}/"
+                        f"{optimizer.max_cycles}; block {optimizer.block or 'initial'}; "
+                        f"{optimizer.status}; elapsed {elapsed}"
+                        f"{eta}"
+                    )
                 print(
                     "Optimizer study progress "
                     f"[{event.completed_conditions}/{event.total_conditions}] "
@@ -2184,7 +2212,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             manifest = verify_modern_optimizer_benchmark_study_run(run_directory)
             print(f"Frozen optimizer benchmark study completed: {run_directory}")
             print(f"Verified raw conditions: {len(manifest['conditions'])}")
-            print("No automatic comparison, ETA, or convergence claim was produced.")
+            print(
+                "No automatic comparison or convergence claim was produced; only an "
+                "observed decision-rate ETA to the configured cap was shown, not a fitted "
+                "scaling ETA."
+            )
         except ImportError as error:
             print(
                 "ERROR: Modern optimizer study dependencies are missing; install "
@@ -2251,7 +2283,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             manifest = verify_modern_optimizer_benchmark_study_run(run_directory)
             print(f"Frozen optimizer benchmark study verified: {run_directory}")
             print(f"Verified raw conditions: {len(manifest['conditions'])}")
-            print("No automatic comparison, ETA, or convergence claim is present.")
+            print(
+                "No automatic comparison or convergence claim is present; any live ETA was "
+                "an observed decision-rate estimate to the configured cap, not a fitted "
+                "scaling ETA."
+            )
         except (RuntimeError, OSError, ValueError, TypeError) as error:
             print(f"ERROR: {error}", file=sys.stderr)
             return 2

@@ -413,6 +413,16 @@ the first consumer; no event contains a percentage, elapsed-time fraction,
 ETA, runtime forecast, or comparative result. Tests require callback presence
 to leave all published evidence byte-identical.
 
+Optimizer scaling studies use a distinct progress v0.2 transport. Their fresh
+measurement child sends only committed `AtlasOptimizationRecord` values and
+measured optimizer elapsed nanoseconds through the existing one-way process
+pipe. The parent reconstructs the immutable record, adds repeat and exact
+decision-cap context, and emits it without persisting it into the study ledger.
+The CLI can therefore show an observed decision-rate ETA to the declared cap;
+it remains explicitly separate from convergence and fitted scaling forecasts.
+Observer transport time is included in measured wall time and declared in the
+raw report warnings.
+
 The next multi-tile study is governed by
 [ADR 0004](decisions/0004-prospective-multi-tile-matrix.md). It uses one hashed
 base config plus explicit benchmark-only effective tile plans, not a bag of

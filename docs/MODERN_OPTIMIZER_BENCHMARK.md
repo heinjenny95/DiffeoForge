@@ -104,10 +104,15 @@ implementation-bound scaling study.
 ## Scientific boundary
 
 A limited prefix and cycle count do not establish convergence, robustness,
-scientific validity, an end-to-end runtime, an ETA, 300-subject feasibility, or
+scientific validity, an end-to-end runtime, an ETA to convergence,
+300-subject feasibility, or
 superiority over Deformetrica. Scaling and backend comparisons require a
 prospectively frozen design with independently verified runs. The immutable
 [optimizer scaling design](MODERN_OPTIMIZER_BENCHMARK_DESIGN.md) now freezes the
 subject-by-cycle factorial before measurement. Its resumable executor verifies
 unchanged source identity, retains every raw condition report, and binds the
 completed run with a strict manifest without performing an automatic analysis.
+During optimizer-study execution, committed decisions may support a clearly
+labelled observed-rate ETA to the configured decision cap. It is live-only,
+low-confidence, and neither persisted as a fitted model nor interpreted as
+scientific convergence.

@@ -85,9 +85,18 @@ read-only re-verification.
 The status command is read-only. It verifies the copied design, source hash,
 raw-report prefix, state prefix, event order, completion-manifest state, and
 process-identity lock. It reports exact completed/total condition counts and
-the next frozen subject/cycle condition; it never reports a percentage or ETA.
-The in-process observer uses an immutable versioned event schema and cannot
-change published study evidence.
+the next frozen subject/cycle condition; it never invents a percentage.
+
+Live execution uses the immutable progress v0.2 schema. In addition to the v0.1
+lifecycle events, it forwards each committed optimizer decision from the fresh
+worker with its exact cycle, block, status, repeat, decision count, and measured
+optimizer elapsed time. The CLI may divide the observed elapsed time by the
+completed decision count to display an explicitly bounded ETA to the configured
+decision cap. That low-confidence estimate is not persisted as evidence, is not
+an ETA to convergence, and is not a fitted subject-scaling forecast. Legacy
+v0.1 lifecycle events remain schema-valid. The synchronous observer cannot
+change optimizer results; its small post-decision transport overhead is declared
+in reports and included in measured wall time.
 
 The completed-run verifier checks every nested raw report against its frozen
 subject prefix, cycle cap, repeats, warm-ups, optimizer settings, source hash,

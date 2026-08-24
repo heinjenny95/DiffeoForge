@@ -380,6 +380,12 @@ diffeoforge modern-checkpoint-recovery-verify-run `
   modern-atlas-run-recovery modern-atlas-run-recovery-modern-run
 ```
 
+Optimizer studies stream each committed block decision from their isolated
+worker. The CLI shows exact decision counts, elapsed optimizer time, and—after
+the first completed decision—a low-confidence observed-rate ETA to the declared
+decision cap. This is not percent convergence, a fitted scaling model, or a
+forecast of when the scientific solution is converged.
+
 The status command classifies a held lease as active and a released valid lease
 as abandoned. Unattributed, invalid, indeterminate, and symbolic-link candidates
 fail closed and require explicit review. It never deletes, renames, resumes, or

@@ -11,6 +11,7 @@ pytest.importorskip("psutil")
 pytest.importorskip("torch")
 
 from diffeoforge.cli import main  # noqa: E402
+from diffeoforge.engine.atlas_optimizer import AtlasOptimizationRecord  # noqa: E402
 from diffeoforge.modern_optimizer_benchmark_comparison import (  # noqa: E402
     COMPARISON_HTML_NAME,
     LEGACY_COMPARISON_VERSION,
@@ -130,6 +131,56 @@ def test_study_executes_verifies_and_is_idempotent(
         for path in run.rglob("*")
         if path.is_file()
     }
+
+
+def test_study_forwards_fresh_worker_decisions_with_exact_counts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import diffeoforge.modern_optimizer_benchmark as benchmark_module
+
+    blocks = (None, "momenta", "template", "control_points")
+    statuses = ("initial", "accepted", "accepted", "accepted")
+
+    def fixed_worker(*args):
+        observe = args[4]
+        for index, (block, status) in enumerate(zip(blocks, statuses, strict=True)):
+            observe(
+                AtlasOptimizationRecord(
+                    cycle=0 if block is None else 1,
+                    block=block,
+                    status=status,
+                    objective=-10.0 + index,
+                    attachment=-9.0 + index,
+                    regularity=-1.0,
+                    residuals=(1.0,),
+                    gradient_norm=None if block is None else 0.5,
+                    accepted_step_size=None if block is None else 0.01,
+                    line_search_evaluations=0 if block is None else 1,
+                ),
+                (index + 1) * 1_000_000_000,
+            )
+        return _sample()
+
+    monkeypatch.setattr(benchmark_module, "_run_fresh_sample", fixed_worker)
+    design = _design(tmp_path, subjects=[1])
+    progress = []
+    run_modern_optimizer_benchmark_study(
+        design,
+        EXAMPLE,
+        destination=tmp_path / "run",
+        progress_callback=progress.append,
+    )
+
+    decisions = [event for event in progress if event.status == "condition_progress"]
+    assert [event.observation.optimizer.completed_decisions for event in decisions] == [
+        0,
+        1,
+        2,
+        3,
+    ]
+    assert all(event.completed_conditions == 0 for event in decisions)
+    assert decisions[-1].observation.optimizer.block == "control_points"
+    assert decisions[-1].observation.optimizer_elapsed_ns == 4_000_000_000
 
 
 def test_study_binds_explicit_optimizer_extensions(

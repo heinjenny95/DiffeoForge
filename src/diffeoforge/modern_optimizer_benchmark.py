@@ -15,7 +15,8 @@ import sys
 import threading
 import time
 import uuid
-from dataclasses import asdict
+from collections.abc import Callable
+from dataclasses import asdict, dataclass
 from importlib.resources import files
 from multiprocessing import get_context
 from pathlib import Path
@@ -29,7 +30,12 @@ import torch
 from diffeoforge import __version__
 from diffeoforge.config import ConfigurationError, validate_input_paths
 from diffeoforge.diagnostics import _physical_memory_bytes
-from diffeoforge.engine.atlas_optimizer import AtlasOptimizationResult, optimize_atlas
+from diffeoforge.engine.atlas_optimizer import (
+    AtlasOptimizationRecord,
+    AtlasOptimizationResult,
+    AtlasProgressCallback,
+    optimize_atlas,
+)
 from diffeoforge.engine.dense import prepare_surface_attachment_target
 from diffeoforge.engine.execution import ENGINE_IMPLEMENTATION_VERSION
 from diffeoforge.mesh import inspect_vtk, sha256_file
@@ -89,6 +95,33 @@ SCIENTIFIC_BOUNDARY = (
 
 class ModernOptimizerBenchmarkError(RuntimeError):
     """Raised when optimizer evidence cannot be measured or published safely."""
+
+
+class ModernOptimizerBenchmarkProgressObserverError(RuntimeError):
+    """Raised when a read-only benchmark progress observer fails."""
+
+
+@dataclass(frozen=True)
+class ModernOptimizerBenchmarkProgress:
+    """One measured-run optimizer decision received from the fresh worker."""
+
+    repeat: int
+    total_repeats: int
+    optimizer_elapsed_ns: int
+    record: AtlasOptimizationRecord
+
+    def __post_init__(self) -> None:
+        if self.total_repeats < 1:
+            raise ValueError("total_repeats must be positive")
+        if not 1 <= self.repeat <= self.total_repeats:
+            raise ValueError("repeat must be within total_repeats")
+        if self.optimizer_elapsed_ns < 0:
+            raise ValueError("optimizer_elapsed_ns must be nonnegative")
+
+
+ModernOptimizerBenchmarkProgressCallback = Callable[
+    [ModernOptimizerBenchmarkProgress], None
+]
 
 
 def _schema() -> dict[str, Any]:
@@ -195,6 +228,8 @@ def _run_optimizer(
     problem: tuple[Any, ...],
     prepared_targets: tuple[Any, ...],
     max_cycles: int,
+    *,
+    progress_callback: AtlasProgressCallback | None = None,
 ) -> AtlasOptimizationResult:
     template, triangles, targets, controls, momenta = problem
     return optimize_atlas(
@@ -204,6 +239,7 @@ def _run_optimizer(
         controls,
         momenta,
         prepared_targets=prepared_targets,
+        progress_callback=progress_callback,
         **_optimizer_keywords(config, max_cycles),
     )
 
@@ -247,6 +283,7 @@ def _measure_once(
     subject_count: int,
     max_cycles: int,
     warmup_runs: int,
+    progress_callback: Callable[[AtlasOptimizationRecord, int], None] | None = None,
 ) -> dict[str, Any]:
     config, problem = _prepare_problem(config_path, subject_count)
     torch.set_num_threads(config["runtime"]["threads"])
@@ -278,8 +315,19 @@ def _measure_once(
     )
     sampler.start()
     started = time.perf_counter_ns()
+
+    def observe(record: AtlasOptimizationRecord) -> None:
+        if progress_callback is not None:
+            progress_callback(record, time.perf_counter_ns() - started)
+
     try:
-        result = _run_optimizer(config, problem, prepared_targets, max_cycles)
+        result = _run_optimizer(
+            config,
+            problem,
+            prepared_targets,
+            max_cycles,
+            progress_callback=observe if progress_callback is not None else None,
+        )
     finally:
         elapsed = time.perf_counter_ns() - started
         rss_samples.append(process.memory_info().rss)
@@ -303,22 +351,35 @@ def _benchmark_worker(
     subject_count: int,
     max_cycles: int,
     warmup_runs: int,
+    observe_progress: bool,
 ) -> None:
     try:
+        def emit_progress(record: AtlasOptimizationRecord, elapsed_ns: int) -> None:
+            connection.send(
+                {
+                    "kind": "progress",
+                    "optimizer_elapsed_ns": elapsed_ns,
+                    "record": asdict(record),
+                }
+            )
+
         connection.send(
             {
+                "kind": "result",
                 "ok": True,
                 "sample": _measure_once(
                     config_path,
                     subject_count,
                     max_cycles,
                     warmup_runs,
+                    emit_progress if observe_progress else None,
                 ),
             }
         )
     except Exception as error:
         connection.send(
             {
+                "kind": "result",
                 "ok": False,
                 "error_type": type(error).__name__,
                 "message": str(error),
@@ -333,18 +394,57 @@ def _run_fresh_sample(
     subject_count: int,
     max_cycles: int,
     warmup_runs: int,
+    progress_callback: Callable[[AtlasOptimizationRecord, int], None] | None = None,
 ) -> dict[str, Any]:
     context = get_context("spawn")
     receiver, sender = context.Pipe(duplex=False)
     process = context.Process(
         target=_benchmark_worker,
-        args=(sender, str(config_path), subject_count, max_cycles, warmup_runs),
+        args=(
+            sender,
+            str(config_path),
+            subject_count,
+            max_cycles,
+            warmup_runs,
+            progress_callback is not None,
+        ),
         name="diffeoforge-modern-optimizer-benchmark",
     )
     process.start()
     sender.close()
     try:
-        payload = receiver.recv()
+        while True:
+            payload = receiver.recv()
+            if payload.get("kind") == "result":
+                break
+            if payload.get("kind") != "progress":
+                raise ModernOptimizerBenchmarkError(
+                    "Optimizer benchmark worker returned an unknown message"
+                )
+            raw_record = payload.get("record")
+            elapsed_ns = payload.get("optimizer_elapsed_ns")
+            if not isinstance(raw_record, dict) or not isinstance(elapsed_ns, int):
+                raise ModernOptimizerBenchmarkError(
+                    "Optimizer benchmark worker returned invalid progress"
+                )
+            try:
+                record = AtlasOptimizationRecord(
+                    **{
+                        **raw_record,
+                        "residuals": tuple(raw_record.get("residuals", ())),
+                    }
+                )
+            except (TypeError, ValueError) as error:
+                raise ModernOptimizerBenchmarkError(
+                    "Optimizer benchmark worker returned malformed progress"
+                ) from error
+            if progress_callback is not None:
+                try:
+                    progress_callback(record, elapsed_ns)
+                except Exception as error:
+                    raise ModernOptimizerBenchmarkProgressObserverError(
+                        f"Optimizer benchmark progress observer failed: {error}"
+                    ) from error
     except EOFError as error:
         process.join()
         raise ModernOptimizerBenchmarkError(
@@ -520,6 +620,7 @@ def collect_modern_optimizer_benchmark(
     repeats: int = 3,
     warmup_runs: int = 0,
     created_at: str | None = None,
+    progress_callback: ModernOptimizerBenchmarkProgressCallback | None = None,
 ) -> dict[str, Any]:
     """Collect fresh-process production-optimizer observations without extrapolation."""
 
@@ -527,6 +628,8 @@ def collect_modern_optimizer_benchmark(
     cycle_count = _positive_integer("max_cycles", max_cycles, minimum=1, maximum=100)
     repeat_count = _positive_integer("repeats", repeats, minimum=1, maximum=50)
     warmups = _positive_integer("warmup_runs", warmup_runs, minimum=0, maximum=10)
+    if progress_callback is not None and not callable(progress_callback):
+        raise TypeError("progress_callback must be callable or None")
     source = Path(config_path).expanduser().resolve()
     config = load_modern_workflow_config(source)
     if config["preprocessing"]["procrustes"]["enabled"]:
@@ -544,19 +647,45 @@ def collect_modern_optimizer_benchmark(
     subjects = [_mesh_record(path.name, "subject", inspect_vtk(path)) for path in selected_paths]
     pairwise = pairwise_evaluation_from_config(config)
     operation = _operation_model(config, template, subjects)
-    samples = [
-        {
-            "repeat": repeat,
-            **_run_fresh_sample(source, selected_count, cycle_count, warmups),
-        }
-        for repeat in range(1, repeat_count + 1)
-    ]
+    samples = []
+    for repeat in range(1, repeat_count + 1):
+        if progress_callback is None:
+            sample = _run_fresh_sample(source, selected_count, cycle_count, warmups)
+        else:
+            def observe(
+                record: AtlasOptimizationRecord,
+                elapsed_ns: int,
+                *,
+                current_repeat: int = repeat,
+            ) -> None:
+                progress_callback(
+                    ModernOptimizerBenchmarkProgress(
+                        repeat=current_repeat,
+                        total_repeats=repeat_count,
+                        optimizer_elapsed_ns=elapsed_ns,
+                        record=record,
+                    )
+                )
+
+            sample = _run_fresh_sample(
+                source,
+                selected_count,
+                cycle_count,
+                warmups,
+                observe,
+            )
+        samples.append({"repeat": repeat, **sample})
     consistency = _consistency(samples)
     warnings = [
         "Sampled process RSS can miss peaks shorter than the 5 ms sampling interval.",
         "The configured subject prefix and cycle override are benchmark scope, not convergence.",
         "Do not extrapolate these observations to 300 subjects without a prospective design.",
     ]
+    if progress_callback is not None:
+        warnings.append(
+            "Read-only progress observation ran synchronously after committed optimizer "
+            "decisions and its small transport overhead is included in measured wall time."
+        )
     if not consistency["consistent"]:
         warnings.append("Fresh-process optimizer results were not repeat-consistent.")
     optimizer = config["optimization"]
@@ -860,6 +989,7 @@ def benchmark_modern_optimizer(
     warmup_runs: int = 0,
     destination: Path | str | None = None,
     overwrite: bool = False,
+    progress_callback: ModernOptimizerBenchmarkProgressCallback | None = None,
 ) -> Path:
     report = collect_modern_optimizer_benchmark(
         config_path,
@@ -867,6 +997,7 @@ def benchmark_modern_optimizer(
         max_cycles=max_cycles,
         repeats=repeats,
         warmup_runs=warmup_runs,
+        progress_callback=progress_callback,
     )
     output = (
         default_modern_optimizer_benchmark_path(config_path) if destination is None else destination

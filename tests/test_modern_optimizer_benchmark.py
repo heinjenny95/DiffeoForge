@@ -18,6 +18,7 @@ from diffeoforge.modern_optimizer_benchmark import (  # noqa: E402
     REPORT_HTML_NAME,
     REPORT_JSON_NAME,
     ModernOptimizerBenchmarkError,
+    ModernOptimizerBenchmarkProgressObserverError,
     _schema,
     _validate_report,
     collect_modern_optimizer_benchmark,
@@ -325,3 +326,53 @@ def test_cli_runs_one_real_fresh_process_optimizer_measurement(
     assert (output / REPORT_JSON_NAME).is_file()
     assert (output / REPORT_HTML_NAME).is_file()
     assert main(["modern-optimizer-benchmark-verify", str(output)]) == 0
+
+
+def test_real_fresh_process_streams_committed_progress_without_changing_counts() -> None:
+    observed = []
+    report = collect_modern_optimizer_benchmark(
+        EXAMPLE,
+        subject_count=1,
+        max_cycles=1,
+        repeats=1,
+        progress_callback=observed.append,
+    )
+    sample = report["samples"][0]
+
+    assert [event.record.status for event in observed] == [
+        "initial",
+        "accepted",
+        "accepted",
+        "accepted",
+    ]
+    assert [event.record.block for event in observed] == [
+        None,
+        "momenta",
+        "template",
+        "control_points",
+    ]
+    assert all(event.repeat == 1 and event.total_repeats == 1 for event in observed)
+    assert [event.optimizer_elapsed_ns for event in observed] == sorted(
+        event.optimizer_elapsed_ns for event in observed
+    )
+    assert sample["accepted_decisions"] == 3
+    assert sample["failed_decisions"] == 0
+    assert sample["final_objective"] == pytest.approx(observed[-1].record.objective)
+    assert any("transport overhead" in warning for warning in report["warnings"])
+
+
+def test_fresh_process_terminates_when_progress_observer_fails() -> None:
+    def fail(_event) -> None:
+        raise RuntimeError("observer broke")
+
+    with pytest.raises(
+        ModernOptimizerBenchmarkProgressObserverError,
+        match="observer broke",
+    ):
+        collect_modern_optimizer_benchmark(
+            EXAMPLE,
+            subject_count=1,
+            max_cycles=1,
+            repeats=1,
+            progress_callback=fail,
+        )
