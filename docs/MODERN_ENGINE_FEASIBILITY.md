@@ -312,7 +312,10 @@ gates. See
    all eight decisions and passed objective, trace, and memory thresholds, but
    used 65.71 minutes and failed its 48.64-minute time threshold by 35.1%.
    This localizes the next scaling target to serial full-cohort evaluation
-   rather than optimizer validity or sampled peak memory. See
+   rather than optimizer validity or sampled peak memory. A separate frozen
+   4/8/16-thread screen tests whether the current four-thread cap leaves safe
+   same-process CPU parallelism unused before a more invasive cohort-worker or
+   CUDA implementation is attempted. See
    [subject batching](MODERN_SUBJECT_BATCHING.md) and
    [shared-step scaling](MODERN_SHARED_STEP_SCALING.md), and
    [multi-rate atlas optimization](MODERN_MULTIRATE_OPTIMIZATION.md).
