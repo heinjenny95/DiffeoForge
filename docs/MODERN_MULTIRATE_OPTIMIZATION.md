@@ -66,6 +66,11 @@ ten-cycle Steepest baseline, this was 27.94% less optimizer time and a better
 objective than the required `-296.6588473308086`. See
 [the frozen Engine 1.3 gate](MODERN_ENGINE13_MULTIRATE_GATE.md).
 
+A second gate is frozen separately for two multi-rate cycles on all 236
+available real 5k-Trochanters against the strictly verified Engine 1.1
+three-cycle full-cohort baseline. See
+[the Engine 1.3 full-cohort gate](MODERN_ENGINE13_FULL_COHORT_GATE.md).
+
 That passing observation does not establish convergence, a universal schedule,
 improved biological correspondence, or suitability for 236/300 subjects. The
 optimizer stopped at the declared five-cycle cap. Larger-cohort scaling,
