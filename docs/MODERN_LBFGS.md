@@ -1,8 +1,9 @@
 # Experimental Modern L-BFGS direction
 
 Status: **single-block Engine 0.6 candidate prospectively qualified on five
-full-resolution Weevils; exact multi-block Engine 1.2 implementation complete
-but not yet real-cohort qualified**
+full-resolution Weevils; exact multi-block Engine 1.2 implementation is stable
+on a prospectively frozen 16-subject real 5k-mesh cohort, but no general speed
+or convergence claim is established**
 
 ## Configuration
 
@@ -91,9 +92,18 @@ closed.
 
 The 16-subject real 5k-Trochanter Steepest baseline improved monotonically
 through ten cycles (`30/30` accepted, objective `-296.658847331`) without
-reaching stationarity. This motivates the Engine 1.2 candidate but is not
-evidence that multi-block L-BFGS is faster or scientifically better. That claim
-requires a separately frozen same-cohort comparison.
+reaching stationarity. A separately frozen Engine 1.2 multi-block L-BFGS run
+used the same subject prefix, 210 controls, 20 time points, batching and ten
+cycles. It also accepted all `30/30` decisions with no failed block and improved
+the final objective to `-185.491921828`. Its attachment term improved from
+`-289.114990766` to `-173.764814864`, while the stronger deformation raised the
+regularity cost from `-7.543856565` to `-11.727106963`. Measured optimizer time
+was `912.739 s` rather than `753.033 s` and sampled peak RSS was `416.018 MiB`
+rather than `413.454 MiB`. Thus this one run supports numerical stability and
+greater progress per fixed cycle count, but not lower wall time, convergence,
+biological validity, or general superiority. Benchmark v0.2 now preserves the
+full per-decision trajectory so a prospectively selected shorter-cycle follow-up
+can test whether the quality gain offsets the per-run cost.
 
 The exact evidence directories are siblings below
 `DiffeoForge Weevil Tests 2026-08-17` and begin with

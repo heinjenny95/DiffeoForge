@@ -270,6 +270,10 @@ def _verify_condition_report(
         raise ModernOptimizerBenchmarkStudyError(
             "Optimizer condition source config differs from frozen design"
         )
+    if report["benchmark_version"] != design["software"]["optimizer_benchmark_version"]:
+        raise ModernOptimizerBenchmarkStudyError(
+            "Optimizer condition benchmark version differs from frozen design"
+        )
     if report["environment"].get("engine_implementation") != design["software"].get(
         "engine_implementation"
     ):

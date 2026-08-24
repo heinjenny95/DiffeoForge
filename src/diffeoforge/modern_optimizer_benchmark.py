@@ -46,7 +46,9 @@ from diffeoforge.modern_workflow import (
 )
 from diffeoforge.modern_workload import _mesh_record, _operation_model
 
-BENCHMARK_VERSION = "0.1"
+LEGACY_BENCHMARK_VERSION = "0.1"
+BENCHMARK_VERSION = "0.2"
+SUPPORTED_BENCHMARK_VERSIONS = (LEGACY_BENCHMARK_VERSION, BENCHMARK_VERSION)
 SCHEMA_NAME = "modern-optimizer-benchmark-v0.1.json"
 REPORT_JSON_NAME = "optimizer-benchmark.json"
 REPORT_CSV_NAME = "samples.csv"
@@ -138,8 +140,17 @@ def _tensor_sha256(tensor: torch.Tensor) -> str:
     return digest.hexdigest()
 
 
-def _history_sha256(result: AtlasOptimizationResult) -> str:
-    payload = [asdict(record) for record in result.history]
+def _history_payload(result: AtlasOptimizationResult) -> list[dict[str, Any]]:
+    return json.loads(
+        json.dumps(
+            [asdict(record) for record in result.history],
+            allow_nan=False,
+            ensure_ascii=False,
+        )
+    )
+
+
+def _history_payload_sha256(payload: list[dict[str, Any]]) -> str:
     serialized = json.dumps(
         payload,
         allow_nan=False,
@@ -148,6 +159,10 @@ def _history_sha256(result: AtlasOptimizationResult) -> str:
         sort_keys=True,
     ).encode("utf-8")
     return hashlib.sha256(serialized).hexdigest()
+
+
+def _history_sha256(result: AtlasOptimizationResult) -> str:
+    return _history_payload_sha256(_history_payload(result))
 
 
 def _optimizer_keywords(config: dict[str, Any], max_cycles: int) -> dict[str, Any]:
@@ -255,6 +270,7 @@ def _result_sample(result: AtlasOptimizationResult) -> dict[str, Any]:
         raise ModernOptimizerBenchmarkError(
             "Candidate-gradient count exceeds line-search evaluations"
         )
+    history = _history_payload(result)
     return {
         "termination_reason": result.termination_reason,
         "converged": result.converged,
@@ -271,7 +287,8 @@ def _result_sample(result: AtlasOptimizationResult) -> dict[str, Any]:
         "final_objective": final.objective,
         "final_attachment": final.attachment,
         "final_regularity": final.regularity,
-        "history_sha256": _history_sha256(result),
+        "history": history,
+        "history_sha256": _history_payload_sha256(history),
         "template_sha256": _tensor_sha256(result.template_vertices),
         "control_points_sha256": _tensor_sha256(result.control_points),
         "momenta_sha256": _tensor_sha256(result.momenta),
@@ -516,7 +533,121 @@ def _consistency(samples: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def _validate_sample_history(
+    report: dict[str, Any],
+    sample: dict[str, Any],
+    history: list[dict[str, Any]],
+) -> None:
+    if not history:
+        raise ModernOptimizerBenchmarkError("Optimizer decision history is empty")
+    initial = history[0]
+    if (
+        initial["cycle"] != 0
+        or initial["block"] is not None
+        or initial["status"] != "initial"
+        or initial["accepted_step_size"] is not None
+        or initial["line_search_evaluations"] != 0
+    ):
+        raise ModernOptimizerBenchmarkError("Optimizer decision history initial record is invalid")
+    selected_subjects = report["input"]["selected_subject_count"]
+    for record in history:
+        if (
+            len(record["residuals"]) != selected_subjects
+            or not all(math.isfinite(float(value)) for value in record["residuals"])
+            or not all(
+                math.isfinite(float(record[field]))
+                for field in ("objective", "attachment", "regularity")
+            )
+            or (
+                record["gradient_norm"] is not None
+                and not math.isfinite(float(record["gradient_norm"]))
+            )
+            or (
+                record["accepted_step_size"] is not None
+                and not math.isfinite(float(record["accepted_step_size"]))
+            )
+        ):
+            raise ModernOptimizerBenchmarkError("Optimizer decision history values are invalid")
+        if not math.isclose(
+            float(record["objective"]),
+            float(record["attachment"]) + float(record["regularity"]),
+            rel_tol=1e-12,
+            abs_tol=1e-12,
+        ):
+            raise ModernOptimizerBenchmarkError(
+                "Optimizer decision history objective components are inconsistent"
+            )
+        if (record["status"] == "accepted") != (
+            record["accepted_step_size"] is not None
+        ):
+            raise ModernOptimizerBenchmarkError(
+                "Optimizer decision history accepted step is inconsistent"
+            )
+    decisions = history[1:]
+    expected_decisions = (
+        sample["accepted_decisions"]
+        + sample["stationary_decisions"]
+        + sample["failed_decisions"]
+    )
+    if len(decisions) != expected_decisions:
+        raise ModernOptimizerBenchmarkError(
+            "Optimizer decision history length is inconsistent"
+        )
+    block_order = report["configuration"]["block_order"]
+    block_count = len(block_order)
+    for index, record in enumerate(decisions):
+        if (
+            record["cycle"] != index // block_count + 1
+            or record["block"] != block_order[index % block_count]
+            or record["status"] == "initial"
+        ):
+            raise ModernOptimizerBenchmarkError(
+                "Optimizer decision history order is inconsistent"
+            )
+    for status, field in (
+        ("accepted", "accepted_decisions"),
+        ("stationary", "stationary_decisions"),
+        ("failed", "failed_decisions"),
+    ):
+        if sum(record["status"] == status for record in decisions) != sample[field]:
+            raise ModernOptimizerBenchmarkError(
+                "Optimizer decision history status counts are inconsistent"
+            )
+    completed_cycles = (
+        (len(decisions) - 1) // block_count
+        if sample["failed_decisions"]
+        else len(decisions) // block_count
+    )
+    if sample["cycles_completed"] != completed_cycles:
+        raise ModernOptimizerBenchmarkError(
+            "Optimizer decision history cycle count is inconsistent"
+        )
+    if sum(record["line_search_evaluations"] for record in decisions) != sample[
+        "line_search_evaluations"
+    ]:
+        raise ModernOptimizerBenchmarkError(
+            "Optimizer decision history line-search count is inconsistent"
+        )
+    final = history[-1]
+    for history_field, sample_field in (
+        ("objective", "final_objective"),
+        ("attachment", "final_attachment"),
+        ("regularity", "final_regularity"),
+    ):
+        if float(final[history_field]) != float(sample[sample_field]):
+            raise ModernOptimizerBenchmarkError(
+                "Optimizer decision history final values are inconsistent"
+            )
+    if _history_payload_sha256(history) != sample["history_sha256"]:
+        raise ModernOptimizerBenchmarkError("Optimizer decision history hash differs")
+
+
 def _validate_report(report: dict[str, Any]) -> None:
+    benchmark_version = report.get("benchmark_version")
+    if benchmark_version not in SUPPORTED_BENCHMARK_VERSIONS:
+        raise ModernOptimizerBenchmarkError(
+            f"Unsupported optimizer benchmark version: {benchmark_version}"
+        )
     try:
         jsonschema.Draft202012Validator(_schema()).validate(report)
     except jsonschema.ValidationError as error:
@@ -532,6 +663,13 @@ def _validate_report(report: dict[str, Any]) -> None:
     if len(report["input"]["subjects"]) != report["input"]["selected_subject_count"]:
         raise ModernOptimizerBenchmarkError("Subject inventory differs from selected count")
     for sample in samples:
+        history = sample.get("history")
+        if benchmark_version == BENCHMARK_VERSION and history is None:
+            raise ModernOptimizerBenchmarkError(
+                "Optimizer benchmark v0.2 requires complete decision history"
+            )
+        if history is not None:
+            _validate_sample_history(report, sample, history)
         expected_delta = max(0, sample["sampled_peak_rss_bytes"] - sample["rss_before_bytes"])
         if sample["sampled_rss_delta_bytes"] != expected_delta:
             raise ModernOptimizerBenchmarkError("Sampled RSS delta is inconsistent")

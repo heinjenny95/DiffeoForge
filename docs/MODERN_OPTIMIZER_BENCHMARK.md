@@ -80,11 +80,18 @@ memory/runtime trade-off behind unchanged work counters.
 
 ## Repeatability evidence
 
-The report hashes the complete decision history and the final template,
-control-point, and momenta tensors. Fresh-process repeats are marked consistent
-only when these hashes and all discrete counters match exactly and final
-objective components agree within the declared `1e-12` absolute and relative
-tolerance.
+Report v0.2 stores the complete decision history, not only its hash. Every
+initial state and committed block decision retains its cycle, block, status,
+objective components, subject residuals, gradient norm, accepted step, and
+line-search count. The strict verifier reconstructs the frozen block order,
+status totals, completed-cycle count, line-search total, final values, and
+history SHA-256. A changed or omitted v0.2 record therefore fails closed.
+Historical v0.1 reports remain verifiable under their hash-only contract.
+
+The report also hashes the final template, control-point, and momenta tensors.
+Fresh-process repeats are marked consistent only when these hashes and all
+discrete counters match exactly and final objective components agree within the
+declared `1e-12` absolute and relative tolerance.
 
 The output directory contains:
 

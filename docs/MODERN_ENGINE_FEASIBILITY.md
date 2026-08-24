@@ -216,6 +216,12 @@ performance changes auditable without converting a limited pilot into a
 convergence, ETA, or Deformetrica-comparison claim. See
 [modern multi-cycle optimizer benchmark](MODERN_OPTIMIZER_BENCHMARK.md).
 
+Benchmark report v0.2 also stores that complete per-decision history directly.
+Its verifier reconstructs block order, cycle and status totals, line-search
+work, final objective components, and the history hash. This permits bounded
+cycle-to-quality comparisons without rerunning every possible cycle cap;
+historical v0.1 hash-only evidence remains readable.
+
 The separate immutable optimizer-scaling design freezes a full-factorial set of
 subject-prefix sizes and benchmark-only cycle caps before results exist. It
 hashes the complete input inventory and reviewed optimizer configuration,

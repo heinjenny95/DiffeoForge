@@ -129,6 +129,7 @@ The design itself contains no optimization, timing, memory sample, result,
 comparison, recommendation, or statistical inference. Nested subject prefixes
 are not independent cohorts; cycle caps are not proof of convergence; sampled
 RSS is not guaranteed peak memory. The executor verifies the design, source
-config, and complete input inventory before running and retains every raw v0.1
-optimizer benchmark separately. A future analysis layer must be designed and
-frozen independently; the executor does not infer one.
+config, and complete input inventory before running and retains every raw
+versioned optimizer benchmark separately. Benchmark v0.2 additionally preserves
+the strictly verified per-decision objective trajectory. A future analysis layer
+must be designed and frozen independently; the executor does not infer one.

@@ -12,6 +12,7 @@ pytest.importorskip("torch")
 
 from diffeoforge.cli import main  # noqa: E402
 from diffeoforge.engine.atlas_optimizer import AtlasOptimizationRecord  # noqa: E402
+from diffeoforge.modern_optimizer_benchmark import _history_payload_sha256  # noqa: E402
 from diffeoforge.modern_optimizer_benchmark_comparison import (  # noqa: E402
     COMPARISON_HTML_NAME,
     LEGACY_COMPARISON_VERSION,
@@ -42,7 +43,37 @@ FIXED_TIME = "2026-07-22T14:00:00+00:00"
 HASH = "a" * 64
 
 
-def _sample() -> dict:
+def _sample(subjects: int = 1) -> dict:
+    history = [
+        {
+            "cycle": 0,
+            "block": None,
+            "status": "initial",
+            "objective": -7.5,
+            "attachment": -7.0,
+            "regularity": -0.5,
+            "residuals": [1.0] * subjects,
+            "gradient_norm": 1.0,
+            "accepted_step_size": None,
+            "line_search_evaluations": 0,
+        }
+    ]
+    for index, block in enumerate(("momenta", "template", "control_points")):
+        objective = -6.5 + index
+        history.append(
+            {
+                "cycle": 1,
+                "block": block,
+                "status": "accepted",
+                "objective": objective,
+                "attachment": objective + 0.5,
+                "regularity": -0.5,
+                "residuals": [0.5] * subjects,
+                "gradient_norm": 0.5,
+                "accepted_step_size": 0.01,
+                "line_search_evaluations": 1,
+            }
+        )
     return {
         "target_preparation_wall_time_ns": 10,
         "optimizer_wall_time_ns": 100,
@@ -65,7 +96,8 @@ def _sample() -> dict:
         "final_objective": -4.5,
         "final_attachment": -4.0,
         "final_regularity": -0.5,
-        "history_sha256": HASH,
+        "history": history,
+        "history_sha256": _history_payload_sha256(history),
         "template_sha256": HASH,
         "control_points_sha256": HASH,
         "momenta_sha256": HASH,
@@ -90,7 +122,11 @@ def test_study_executes_verifies_and_is_idempotent(
 ) -> None:
     import diffeoforge.modern_optimizer_benchmark as benchmark_module
 
-    monkeypatch.setattr(benchmark_module, "_run_fresh_sample", lambda *_args: _sample())
+    monkeypatch.setattr(
+        benchmark_module,
+        "_run_fresh_sample",
+        lambda _path, subjects, *_args: _sample(subjects),
+    )
     design = _design(tmp_path, subjects=[1])
     progress: list[dict] = []
     run = run_modern_optimizer_benchmark_study(
@@ -159,7 +195,7 @@ def test_study_forwards_fresh_worker_decisions_with_exact_counts(
                 ),
                 (index + 1) * 1_000_000_000,
             )
-        return _sample()
+        return _sample(args[1])
 
     monkeypatch.setattr(benchmark_module, "_run_fresh_sample", fixed_worker)
     design = _design(tmp_path, subjects=[1])
@@ -244,7 +280,11 @@ def test_completed_studies_have_a_strict_descriptive_comparison(
 ) -> None:
     import diffeoforge.modern_optimizer_benchmark as benchmark_module
 
-    monkeypatch.setattr(benchmark_module, "_run_fresh_sample", lambda *_args: _sample())
+    monkeypatch.setattr(
+        benchmark_module,
+        "_run_fresh_sample",
+        lambda _path, subjects, *_args: _sample(subjects),
+    )
     design = _design(tmp_path, subjects=[1])
     run = run_modern_optimizer_benchmark_study(
         design,
@@ -304,7 +344,11 @@ def test_comparison_can_isolate_engine_implementation_and_verify_legacy_v01(
     import diffeoforge.modern_optimizer_benchmark as benchmark_module
     import diffeoforge.modern_optimizer_benchmark_design as design_module
 
-    monkeypatch.setattr(benchmark_module, "_run_fresh_sample", lambda *_args: _sample())
+    monkeypatch.setattr(
+        benchmark_module,
+        "_run_fresh_sample",
+        lambda _path, subjects, *_args: _sample(subjects),
+    )
 
     def versioned_run(version: str, name: str, config: Path = EXAMPLE) -> Path:
         monkeypatch.setattr(design_module, "ENGINE_IMPLEMENTATION_VERSION", version)
@@ -390,7 +434,11 @@ def test_interrupted_study_resumes_from_verified_report_prefix(
     import diffeoforge.modern_optimizer_benchmark as benchmark_module
     import diffeoforge.modern_optimizer_benchmark_study as study_module
 
-    monkeypatch.setattr(benchmark_module, "_run_fresh_sample", lambda *_args: _sample())
+    monkeypatch.setattr(
+        benchmark_module,
+        "_run_fresh_sample",
+        lambda _path, subjects, *_args: _sample(subjects),
+    )
     design = _design(tmp_path, subjects=[1, 2])
     original = study_module.benchmark_modern_optimizer
     calls = 0
@@ -430,7 +478,11 @@ def test_published_report_ahead_of_state_is_reported_and_reconciled(
     import diffeoforge.modern_optimizer_benchmark as benchmark_module
     import diffeoforge.modern_optimizer_benchmark_study as study_module
 
-    monkeypatch.setattr(benchmark_module, "_run_fresh_sample", lambda *_args: _sample())
+    monkeypatch.setattr(
+        benchmark_module,
+        "_run_fresh_sample",
+        lambda _path, subjects, *_args: _sample(subjects),
+    )
     design = _design(tmp_path, subjects=[1])
     original = study_module.benchmark_modern_optimizer
 
@@ -474,7 +526,11 @@ def test_verifier_rejects_changed_raw_report_and_cli_verifies(
 ) -> None:
     import diffeoforge.modern_optimizer_benchmark as benchmark_module
 
-    monkeypatch.setattr(benchmark_module, "_run_fresh_sample", lambda *_args: _sample())
+    monkeypatch.setattr(
+        benchmark_module,
+        "_run_fresh_sample",
+        lambda _path, subjects, *_args: _sample(subjects),
+    )
     design = _design(tmp_path, subjects=[1])
     run = tmp_path / "run"
     assert (

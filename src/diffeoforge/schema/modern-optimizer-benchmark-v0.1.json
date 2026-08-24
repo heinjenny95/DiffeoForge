@@ -116,6 +116,44 @@
         "float64_xyz_difference_tensor_bytes": {"type": "integer", "minimum": 24}
       }
     },
+    "optimizerHistoryRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cycle",
+        "block",
+        "status",
+        "objective",
+        "attachment",
+        "regularity",
+        "residuals",
+        "gradient_norm",
+        "accepted_step_size",
+        "line_search_evaluations"
+      ],
+      "properties": {
+        "cycle": {"type": "integer", "minimum": 0},
+        "block": {
+          "type": ["string", "null"],
+          "enum": [null, "momenta", "template", "control_points"]
+        },
+        "status": {"enum": ["initial", "accepted", "stationary", "failed"]},
+        "objective": {"type": "number"},
+        "attachment": {"type": "number"},
+        "regularity": {"type": "number"},
+        "residuals": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"type": "number"}
+        },
+        "gradient_norm": {"type": ["number", "null"], "minimum": 0},
+        "accepted_step_size": {
+          "type": ["number", "null"],
+          "exclusiveMinimum": 0
+        },
+        "line_search_evaluations": {"type": "integer", "minimum": 0}
+      }
+    },
     "sample": {
       "type": "object",
       "additionalProperties": false,
@@ -175,6 +213,11 @@
         "final_objective": {"type": "number"},
         "final_attachment": {"type": "number"},
         "final_regularity": {"type": "number"},
+        "history": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/optimizerHistoryRecord"}
+        },
         "history_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
         "template_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
         "control_points_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
@@ -183,7 +226,7 @@
     }
   },
   "properties": {
-    "benchmark_version": {"const": "0.1"},
+    "benchmark_version": {"enum": ["0.1", "0.2"]},
     "benchmark_id": {"const": "production_multi_cycle_optimizer"},
     "created_at": {"type": "string", "minLength": 1},
     "source_config": {

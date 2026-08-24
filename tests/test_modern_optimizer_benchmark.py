@@ -19,6 +19,7 @@ from diffeoforge.modern_optimizer_benchmark import (  # noqa: E402
     REPORT_JSON_NAME,
     ModernOptimizerBenchmarkError,
     ModernOptimizerBenchmarkProgressObserverError,
+    _history_payload_sha256,
     _schema,
     _validate_report,
     collect_modern_optimizer_benchmark,
@@ -33,7 +34,46 @@ FIXED_TIME = "2026-07-22T08:00:00+00:00"
 HASH = "a" * 64
 
 
-def _sample(number: int = 1) -> dict:
+def _history(subjects: int) -> list[dict]:
+    records = [
+        {
+            "cycle": 0,
+            "block": None,
+            "status": "initial",
+            "objective": -10.0,
+            "attachment": -9.0,
+            "regularity": -1.0,
+            "residuals": [1.0] * subjects,
+            "gradient_norm": 1.0,
+            "accepted_step_size": None,
+            "line_search_evaluations": 0,
+        }
+    ]
+    line_search_counts = (2, 1, 2, 1, 2, 1)
+    blocks = ("momenta", "template", "control_points")
+    objectives = (-9.0, -8.0, -7.0, -6.0, -5.0, -4.5)
+    for index, (evaluations, objective) in enumerate(
+        zip(line_search_counts, objectives, strict=True)
+    ):
+        records.append(
+            {
+                "cycle": index // len(blocks) + 1,
+                "block": blocks[index % len(blocks)],
+                "status": "accepted",
+                "objective": objective,
+                "attachment": objective + 0.5,
+                "regularity": -0.5,
+                "residuals": [0.5] * subjects,
+                "gradient_norm": 0.5,
+                "accepted_step_size": 0.01,
+                "line_search_evaluations": evaluations,
+            }
+        )
+    return records
+
+
+def _sample(number: int = 1, subjects: int = 2) -> dict:
+    history = _history(subjects)
     return {
         "target_preparation_wall_time_ns": number * 10,
         "optimizer_wall_time_ns": number * 100,
@@ -56,7 +96,8 @@ def _sample(number: int = 1) -> dict:
         "final_objective": -4.5,
         "final_attachment": -4.0,
         "final_regularity": -0.5,
-        "history_sha256": HASH,
+        "history": history,
+        "history_sha256": _history_payload_sha256(history),
         "template_sha256": HASH,
         "control_points_sha256": HASH,
         "momenta_sha256": HASH,
@@ -81,7 +122,7 @@ def test_collection_binds_declared_optimizer_scope_and_counts(
 
     def fixed_worker(*args):
         calls.append(args)
-        return _sample(len(calls))
+        return _sample(len(calls), subjects=args[1])
 
     monkeypatch.setattr(module, "_run_fresh_sample", fixed_worker)
     report = collect_modern_optimizer_benchmark(
@@ -93,7 +134,7 @@ def test_collection_binds_declared_optimizer_scope_and_counts(
         created_at=FIXED_TIME,
     )
 
-    assert report["benchmark_version"] == "0.1"
+    assert report["benchmark_version"] == "0.2"
     assert report["benchmark_id"] == "production_multi_cycle_optimizer"
     assert report["created_at"] == FIXED_TIME
     assert [subject["label"] for subject in report["input"]["subjects"]] == [
@@ -121,7 +162,11 @@ def test_one_block_scope_is_valid_and_decision_bound_tracks_declared_order(
 ) -> None:
     import diffeoforge.modern_optimizer_benchmark as module
 
-    monkeypatch.setattr(module, "_run_fresh_sample", lambda *_args: _sample())
+    monkeypatch.setattr(
+        module,
+        "_run_fresh_sample",
+        lambda _path, subjects, *_args: _sample(subjects=subjects),
+    )
     report = collect_modern_optimizer_benchmark(
         EXAMPLE,
         subject_count=1,
@@ -129,6 +174,7 @@ def test_one_block_scope_is_valid_and_decision_bound_tracks_declared_order(
         repeats=1,
         created_at=FIXED_TIME,
     )
+    report["benchmark_version"] = "0.1"
     report["configuration"]["block_order"] = ["momenta"]
     report["configuration"]["pairwise_evaluation"] = {
         "mode": "blockwise",
@@ -137,6 +183,7 @@ def test_one_block_scope_is_valid_and_decision_bound_tracks_declared_order(
         "autograd_strategy": "recompute",
     }
     sample = report["samples"][0]
+    sample.pop("history")
     sample.update(
         {
             "accepted_decisions": 2,
@@ -170,7 +217,11 @@ def test_subject_batched_scope_records_gradient_recomputation_objectives(
 ) -> None:
     import diffeoforge.modern_optimizer_benchmark as module
 
-    monkeypatch.setattr(module, "_run_fresh_sample", lambda *_args: _sample())
+    monkeypatch.setattr(
+        module,
+        "_run_fresh_sample",
+        lambda _path, subjects, *_args: _sample(subjects=subjects),
+    )
     report = collect_modern_optimizer_benchmark(
         EXAMPLE,
         subject_count=2,
@@ -195,7 +246,11 @@ def test_legacy_report_without_engine_revision_remains_valid(
 ) -> None:
     import diffeoforge.modern_optimizer_benchmark as module
 
-    monkeypatch.setattr(module, "_run_fresh_sample", lambda *_args: _sample())
+    monkeypatch.setattr(
+        module,
+        "_run_fresh_sample",
+        lambda _path, subjects, *_args: _sample(subjects=subjects),
+    )
     report = collect_modern_optimizer_benchmark(
         EXAMPLE,
         subject_count=1,
@@ -215,7 +270,11 @@ def test_report_is_atomic_escaped_and_strictly_verifiable(
 ) -> None:
     import diffeoforge.modern_optimizer_benchmark as module
 
-    monkeypatch.setattr(module, "_run_fresh_sample", lambda *_args: _sample())
+    monkeypatch.setattr(
+        module,
+        "_run_fresh_sample",
+        lambda _path, subjects, *_args: _sample(subjects=subjects),
+    )
     report = collect_modern_optimizer_benchmark(
         EXAMPLE,
         subject_count=1,
@@ -358,7 +417,15 @@ def test_real_fresh_process_streams_committed_progress_without_changing_counts()
     assert sample["accepted_decisions"] == 3
     assert sample["failed_decisions"] == 0
     assert sample["final_objective"] == pytest.approx(observed[-1].record.objective)
+    assert len(sample["history"]) == 4
+    assert sample["history"][-1]["objective"] == sample["final_objective"]
+    assert _history_payload_sha256(sample["history"]) == sample["history_sha256"]
     assert any("transport overhead" in warning for warning in report["warnings"])
+
+    tampered = json.loads(json.dumps(report))
+    tampered["samples"][0]["history"][0]["residuals"][0] += 0.1
+    with pytest.raises(ModernOptimizerBenchmarkError, match="history hash differs"):
+        _validate_report(tampered)
 
 
 def test_fresh_process_terminates_when_progress_observer_fails() -> None:
