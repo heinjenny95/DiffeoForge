@@ -1,7 +1,7 @@
 # Experimental multi-rate atlas optimization
 
-Status: **Engine 1.3 implementation complete; real-cohort candidate not yet
-qualified**
+Status: **Engine 1.3 implementation complete; first frozen real-cohort
+efficiency gate passed**
 
 ## Motivation
 
@@ -58,8 +58,16 @@ exactly.
 
 Unit and end-to-end tests establish deterministic ordering, monotone accepted
 objectives, exact work counters, progress bounds, strict artifacts, and exact
-complete-cycle resume. They do not establish that repeated Momenta visits are
-faster, converge, improve biological correspondence, or are suitable for 300
-subjects. The first real-cohort configuration must be frozen and evaluated
-against predeclared objective, time, validity, and trace gates before any
-efficiency statement is made.
+complete-cycle resume. The first frozen 16-subject real 5k-Trochanter gate used
+five cycles of `momenta, momenta, template, control_points`. It accepted all 20
+decisions, reached objective `-160.39978136827878` in 542.635 seconds, and used
+413,716,480 bytes sampled peak RSS. Against the gate-bound Engine 1.1
+ten-cycle Steepest baseline, this was 27.94% less optimizer time and a better
+objective than the required `-296.6588473308086`. See
+[the frozen Engine 1.3 gate](MODERN_ENGINE13_MULTIRATE_GATE.md).
+
+That passing observation does not establish convergence, a universal schedule,
+improved biological correspondence, or suitability for 236/300 subjects. The
+optimizer stopped at the declared five-cycle cap. Larger-cohort scaling,
+repeatability beyond the deterministic single repeat, and full atlas-output
+assessment remain separate gates.

@@ -303,8 +303,12 @@ gates. See
    seven-cycle L-BFGS efficiency gate was 12.1% faster but failed its objective
    threshold. Its verified v0.2 trace attributed 78.8% of objective gain to
    Momenta decisions. Engine 1.3 therefore adds an explicit multi-rate schedule
-   for repeated local Momenta visits per shared-parameter update; its real-data
-   gate remains separate. See
+   for repeated local Momenta visits per shared-parameter update. Its frozen
+   16-subject, five-cycle real-data gate accepted all 20 decisions, reached
+   objective `-160.400` in 9.044 minutes, and used 413.7 MB sampled peak RSS.
+   That passed the predeclared quality, time, memory, and trace gates against
+   the Engine 1.1 ten-cycle baseline, but stopped at its cycle cap and does not
+   establish convergence or large-cohort feasibility. See
    [subject batching](MODERN_SUBJECT_BATCHING.md) and
    [shared-step scaling](MODERN_SHARED_STEP_SCALING.md), and
    [multi-rate atlas optimization](MODERN_MULTIRATE_OPTIMIZATION.md).
