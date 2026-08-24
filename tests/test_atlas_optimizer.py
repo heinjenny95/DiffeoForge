@@ -350,7 +350,7 @@ def test_lbfgs_resume_state_reproduces_an_uninterrupted_trajectory_exactly() -> 
         initial_cycle_objective=checkpoint.initial_cycle_objective,
         current_cycle_objective=checkpoint.current_cycle_objective,
         next_step_sizes=checkpoint.next_step_sizes,
-        lbfgs_history=checkpoint.lbfgs_history,
+        lbfgs_histories=checkpoint.lbfgs_histories,
         reusable_gradient=checkpoint.reusable_gradient,
         completed_cycle_termination_reason=checkpoint.completed_cycle_termination_reason,
     )
@@ -370,6 +370,102 @@ def test_lbfgs_resume_state_reproduces_an_uninterrupted_trajectory_exactly() -> 
     assert resumed.history[0].objective == checkpoint.record.objective
     uninterrupted_tail = [
         replace(record, cycle=index) for index, record in enumerate(uninterrupted.history[6:], 1)
+    ]
+    assert uninterrupted_tail == list(resumed.history[1:])
+    assert torch.equal(resumed.template_vertices, uninterrupted.template_vertices)
+    assert torch.equal(resumed.control_points, uninterrupted.control_points)
+    assert torch.equal(resumed.momenta, uninterrupted.momenta)
+
+
+def test_multiblock_lbfgs_uses_separate_deterministic_curvature_histories() -> None:
+    arguments, keywords = _problem(subjects=2)
+    checkpoints = []
+    settings = {
+        "max_cycles": 5,
+        "gradient_tolerance": 0.0,
+        "step_initialization": "previous_accepted",
+        "direction_update": "lbfgs",
+        "lbfgs_history_size": 3,
+    }
+    first = optimize_atlas(
+        *arguments,
+        **keywords,
+        **settings,
+        checkpoint_callback=checkpoints.append,
+    )
+    second = optimize_atlas(*arguments, **keywords, **settings)
+
+    assert first.history == second.history
+    assert first.termination_reason == "max_cycles"
+    assert first.failed_block is None
+    assert all(
+        current.objective >= previous.objective
+        for previous, current in pairwise(first.history)
+    )
+    histories = checkpoints[-1].lbfgs_histories
+    assert set(histories) == {"momenta", "template", "control_points"}
+    assert all(1 <= len(history) <= 3 for history in histories.values())
+    expected_shapes = {
+        "momenta": tuple(arguments[4].shape),
+        "template": tuple(arguments[0].shape),
+        "control_points": tuple(arguments[3].shape),
+    }
+    for block, history in histories.items():
+        assert all(tuple(step.shape) == expected_shapes[block] for step, _ in history)
+        assert all(
+            tuple(gradient_delta.shape) == expected_shapes[block]
+            for _, gradient_delta in history
+        )
+
+
+def test_multiblock_lbfgs_resume_reproduces_uninterrupted_trajectory_exactly() -> None:
+    arguments, keywords = _problem(subjects=2)
+    settings = {
+        "gradient_tolerance": 0.0,
+        "step_initialization": "previous_accepted",
+        "direction_update": "lbfgs",
+        "lbfgs_history_size": 3,
+    }
+    uninterrupted = optimize_atlas(
+        *arguments,
+        **keywords,
+        **settings,
+        max_cycles=6,
+    )
+    checkpoints = []
+    first = optimize_atlas(
+        *arguments,
+        **keywords,
+        **settings,
+        max_cycles=3,
+        checkpoint_callback=checkpoints.append,
+    )
+    checkpoint = checkpoints[-1]
+    resumed = optimize_atlas(
+        checkpoint.template_vertices,
+        arguments[1],
+        arguments[2],
+        checkpoint.control_points,
+        checkpoint.momenta,
+        **keywords,
+        **settings,
+        max_cycles=3,
+        resume_state=engine.AtlasOptimizerResumeState(
+            initial_cycle_objective=checkpoint.initial_cycle_objective,
+            current_cycle_objective=checkpoint.current_cycle_objective,
+            next_step_sizes=checkpoint.next_step_sizes,
+            lbfgs_histories=checkpoint.lbfgs_histories,
+            reusable_gradient=checkpoint.reusable_gradient,
+            completed_cycle_termination_reason=(
+                checkpoint.completed_cycle_termination_reason
+            ),
+        ),
+    )
+
+    assert first.history == uninterrupted.history[:10]
+    uninterrupted_tail = [
+        replace(record, cycle=(index - 1) // 3 + 1)
+        for index, record in enumerate(uninterrupted.history[10:], 1)
     ]
     assert uninterrupted_tail == list(resumed.history[1:])
     assert torch.equal(resumed.template_vertices, uninterrupted.template_vertices)
@@ -411,7 +507,7 @@ def test_resume_state_preserves_a_completed_cycle_convergence_decision() -> None
             initial_cycle_objective=checkpoint.initial_cycle_objective,
             current_cycle_objective=checkpoint.current_cycle_objective,
             next_step_sizes=checkpoint.next_step_sizes,
-            lbfgs_history=checkpoint.lbfgs_history,
+            lbfgs_histories=checkpoint.lbfgs_histories,
             reusable_gradient=checkpoint.reusable_gradient,
             completed_cycle_termination_reason=checkpoint.completed_cycle_termination_reason,
         ),
@@ -822,7 +918,6 @@ def test_optimizer_remains_differentiable_internally_under_no_grad() -> None:
         ),
         ({"step_initialization": "automatic"}, "step_initialization"),
         ({"direction_update": "automatic"}, "direction_update"),
-        ({"direction_update": "lbfgs"}, "exactly one parameter block"),
         ({"line_search_condition": "automatic"}, "line_search_condition"),
         ({"line_search_condition": "strong_wolfe"}, "requires direction_update=lbfgs"),
         ({"lbfgs_history_size": 0}, "lbfgs_history_size"),

@@ -85,8 +85,9 @@ V0.4 can also initialize momenta from a canonical
 count, finite values, copied bytes, and SHA-256 are checked before execution and
 again during workflow verification.
 
-Configuration v0.5 may bind one verified checkpoint v0.2 and its exact parent
-effective configuration. This is reserved for immutable completed-run
+Configuration v0.5 may bind one verified exact-state checkpoint and its parent
+effective configuration. Current Engine 1.2 runs write checkpoint v0.3 with
+separate L-BFGS histories for every configured block. This is reserved for immutable completed-run
 continuation and guarded abandoned-run recovery. Preflight verifies exact
 Engine, runtime/thread, model, optimizer, subject, and numerical-state identity
 before deserializing the non-executable optimizer tensor store.
@@ -110,8 +111,8 @@ remain verifiable; prospective continuation plans bind the implementation
 revision expected for their successor.
 
 A completed, verified run that reaches its cycle cap without convergence can be
-continued through a separate hash-bound prospective successor. Engine 0.9
-copies the exact complete-cycle numerical state, including L-BFGS history and
+continued through a separate hash-bound prospective successor. Engine 1.2
+copies the exact complete-cycle numerical state, including per-block L-BFGS histories and
 relative-objective baselines; it never modifies or relabels the parent. See
 [verified Modern optimizer continuation](MODERN_CONTINUATION.md).
 

@@ -91,7 +91,7 @@ def test_cycle_checkpoint_is_atomic_bound_and_tamper_evident(tmp_path: Path) -> 
     manifest = verify_modern_cycle_checkpoint(destination, workflow_root=workflow_root)
 
     assert manifest["cycle"] == 2
-    assert manifest["checkpoint_version"] == "0.2"
+    assert manifest["checkpoint_version"] == "0.3"
     assert manifest["status"] == "private_complete_cycle_not_a_result"
     assert manifest["binding"] == binding
     assert manifest["state"]["momenta"]["subjects"] == 1
@@ -178,12 +178,12 @@ def test_lbfgs_checkpoint_round_trips_curvature_history_without_pickle(
     manifest = verify_modern_cycle_checkpoint(destination, workflow_root=workflow_root)
     loaded = load_modern_checkpoint_resume_state(destination)
 
-    assert len(loaded.lbfgs_history) == 3
+    assert len(loaded.lbfgs_histories["momenta"]) == 3
     assert len(manifest["optimizer_state"]["tensor_store"]["entries"]) == 7
     assert manifest["optimizer_state"]["tensor_store"]["dtype"] == "float64-le"
     for expected, actual in zip(
-        observed[-1].lbfgs_history,
-        loaded.lbfgs_history,
+        observed[-1].lbfgs_histories["momenta"],
+        loaded.lbfgs_histories["momenta"],
         strict=True,
     ):
         assert torch.equal(expected[0], actual[0])
@@ -193,3 +193,116 @@ def test_lbfgs_checkpoint_round_trips_curvature_history_without_pickle(
     tensor_store.write_bytes(tensor_store.read_bytes() + b"tamper")
     with pytest.raises(ModernCheckpointError, match="tensor store differs"):
         load_modern_checkpoint_resume_state(destination)
+
+
+def test_multiblock_lbfgs_checkpoint_round_trips_each_block_history(
+    tmp_path: Path,
+) -> None:
+    arguments = _problem()
+    observed = []
+    optimize_atlas(
+        *arguments,
+        deformation_kernel_width=0.8,
+        attachment_kernel_width=0.7,
+        noise_variance=0.1,
+        number_of_time_points=2,
+        max_cycles=4,
+        gradient_tolerance=0.0,
+        direction_update="lbfgs",
+        lbfgs_history_size=3,
+        checkpoint_callback=observed.append,
+    )
+    workflow_root = tmp_path / "private-workflow"
+    binding = _workflow_binding(workflow_root)
+    binding["block_order"] = ["momenta", "template", "control_points"]
+    binding["max_cycles"] = 4
+    destination = write_modern_cycle_checkpoint(
+        tmp_path / "multiblock-lbfgs-checkpoint",
+        observed[-1],
+        arguments[1],
+        ["subject.vtk"],
+        binding,
+    )
+    manifest = verify_modern_cycle_checkpoint(destination, workflow_root=workflow_root)
+    loaded = load_modern_checkpoint_resume_state(destination)
+
+    assert set(manifest["optimizer_state"]["lbfgs_histories"]) == set(
+        binding["block_order"]
+    )
+    assert set(loaded.lbfgs_histories) == set(binding["block_order"])
+    expected_pair_count = sum(
+        len(history) for history in observed[-1].lbfgs_histories.values()
+    )
+    assert len(manifest["optimizer_state"]["tensor_store"]["entries"]) == (
+        expected_pair_count * 2
+    )
+    for block in binding["block_order"]:
+        expected_history = observed[-1].lbfgs_histories[block]
+        actual_history = loaded.lbfgs_histories[block]
+        assert len(expected_history) == len(actual_history)
+        assert actual_history
+        for expected, actual in zip(expected_history, actual_history, strict=True):
+            assert torch.equal(expected[0], actual[0])
+            assert torch.equal(expected[1], actual[1])
+
+
+def test_legacy_v02_exact_checkpoint_remains_verifiable_and_loadable(
+    tmp_path: Path,
+) -> None:
+    arguments = _problem()
+    observed = []
+    optimize_atlas(
+        *arguments,
+        deformation_kernel_width=0.8,
+        attachment_kernel_width=0.7,
+        noise_variance=0.1,
+        number_of_time_points=2,
+        max_cycles=3,
+        block_order=("momenta",),
+        gradient_tolerance=0.0,
+        direction_update="lbfgs",
+        lbfgs_history_size=3,
+        checkpoint_callback=observed.append,
+    )
+    workflow_root = tmp_path / "private-workflow"
+    binding = _workflow_binding(workflow_root)
+    binding["max_cycles"] = 3
+    destination = write_modern_cycle_checkpoint(
+        tmp_path / "legacy-v02-checkpoint",
+        observed[-1],
+        arguments[1],
+        ["subject.vtk"],
+        binding,
+    )
+    manifest_path = destination / MANIFEST_NAME
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    optimizer_state = manifest["optimizer_state"]
+    histories = optimizer_state.pop("lbfgs_histories")
+    legacy_entries = []
+    renames = {}
+    for index, entry in enumerate(histories["momenta"]):
+        legacy = {
+            "step": f"lbfgs_step_{index:03d}",
+            "gradient_delta": f"lbfgs_gradient_delta_{index:03d}",
+        }
+        renames[entry["step"]] = legacy["step"]
+        renames[entry["gradient_delta"]] = legacy["gradient_delta"]
+        legacy_entries.append(legacy)
+    optimizer_state["lbfgs_history"] = legacy_entries
+    for entry in optimizer_state["tensor_store"]["entries"]:
+        entry["name"] = renames.get(entry["name"], entry["name"])
+    manifest["checkpoint_version"] = "0.2"
+    manifest_path.write_text(
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    (destination / SIDECAR_NAME).write_text(
+        f"{sha256_file(manifest_path)}  {MANIFEST_NAME}\n",
+        encoding="ascii",
+    )
+
+    verified = verify_modern_cycle_checkpoint(destination, workflow_root=workflow_root)
+    loaded = load_modern_checkpoint_resume_state(destination)
+
+    assert verified["checkpoint_version"] == "0.2"
+    assert len(loaded.lbfgs_histories["momenta"]) == len(legacy_entries)

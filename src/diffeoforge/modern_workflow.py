@@ -130,11 +130,6 @@ def validate_modern_workflow_config(config: Mapping[str, Any]) -> None:
         raise ConfigurationError(f"Invalid quality_control settings: {error}") from error
     optimizer = config["optimization"]
     direction_update = optimizer.get("direction_update", "steepest")
-    if direction_update == "lbfgs" and optimizer["block_order"] != ["momenta"]:
-        raise ConfigurationError(
-            "optimization.direction_update=lbfgs currently requires "
-            "optimization.block_order=[momenta]"
-        )
     line_search_condition = optimizer.get("line_search_condition", "armijo")
     if line_search_condition == "strong_wolfe" and direction_update != "lbfgs":
         raise ConfigurationError(

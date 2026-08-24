@@ -263,7 +263,10 @@ subject batching for memory-bounded large cohorts while preserving the complete
 cohort objective and frozen subject order; see
 [subject batching](docs/MODERN_SUBJECT_BATCHING.md). Engine 1.1 additionally
 makes shared template/control-point step initialization cohort invariant; see
-[shared-step scaling](docs/MODERN_SHARED_STEP_SCALING.md). The real source
+[shared-step scaling](docs/MODERN_SHARED_STEP_SCALING.md). Engine 1.2 adds
+separate bounded L-BFGS curvature histories for every configured optimizer
+block and checkpoint v0.3 for exact multi-block continuation; real-cohort
+qualification remains separate. The real source
 preparation worker also has suspended-process Windows
 hard-parent-death evidence before request delivery. For the Modern compute
 worker, Windows parent death terminates the contained worker tree and

@@ -16,9 +16,9 @@ diffeoforge modern-continuation-verify-run PLAN SUCCESSOR_RUN
 The initialization command does not run an optimizer. It first verifies the
 parent workflow and nested atlas bundle, then copies and SHA-256 binds:
 
-- the final complete-cycle checkpoint v0.2;
+- the final complete-cycle checkpoint v0.3;
 - the final estimated template, control points, and subject momenta;
-- retained L-BFGS curvature pairs and the reusable accepted gradient;
+- retained per-block L-BFGS curvature pairs and the reusable accepted gradient;
 - relative-objective baselines and any completed-cycle stop decision;
 - the exact effective subject meshes and their deterministic order;
 - the model, quality-control, analysis, runtime, and optimizer settings;

@@ -82,7 +82,9 @@ class AtlasCycleCheckpoint:
     initial_cycle_objective: float
     prior_cycle_objective: float
     current_cycle_objective: float
-    lbfgs_history: tuple[tuple[torch.Tensor, torch.Tensor], ...]
+    lbfgs_histories: dict[
+        AtlasParameterBlock, tuple[tuple[torch.Tensor, torch.Tensor], ...]
+    ]
     reusable_gradient: torch.Tensor | None
     completed_cycle_termination_reason: AtlasCompletedCycleTerminationReason | None
 
@@ -94,7 +96,9 @@ class AtlasOptimizerResumeState:
     initial_cycle_objective: float
     current_cycle_objective: float
     next_step_sizes: dict[AtlasParameterBlock, float]
-    lbfgs_history: tuple[tuple[torch.Tensor, torch.Tensor], ...] = ()
+    lbfgs_histories: dict[
+        AtlasParameterBlock, tuple[tuple[torch.Tensor, torch.Tensor], ...]
+    ]
     reusable_gradient: torch.Tensor | None = None
     completed_cycle_termination_reason: AtlasCompletedCycleTerminationReason | None = None
 
@@ -490,8 +494,6 @@ def optimize_atlas(
         lbfgs_initial_step_size,
         minimum=0.0,
     )
-    if direction_update == "lbfgs" and len(order) != 1:
-        raise ValueError("direction_update=lbfgs currently requires exactly one parameter block")
     if line_search_condition == "strong_wolfe" and direction_update != "lbfgs":
         raise ValueError(
             "line_search_condition=strong_wolfe currently requires direction_update=lbfgs"
@@ -842,7 +844,9 @@ def optimize_atlas(
         raise FloatingPointError("initial atlas parameters produced a non-finite objective")
     current = initial.state
     observed_initial_objective = float(current.objective)
-    normalized_resume_history: list[tuple[torch.Tensor, torch.Tensor]] = []
+    normalized_resume_histories: dict[
+        AtlasParameterBlock, list[tuple[torch.Tensor, torch.Tensor]]
+    ] = {block: [] for block in order}
     normalized_resume_gradient: torch.Tensor | None = None
     if resume_state is not None:
         for name, value in (
@@ -860,39 +864,51 @@ def optimize_atlas(
                 raise ValueError(f"resume next step for {block} must be finite")
             if float(value) <= 0.0:
                 raise ValueError(f"resume next step for {block} must be positive")
-        if len(resume_state.lbfgs_history) > history_size:
-            raise ValueError("resume L-BFGS history exceeds lbfgs_history_size")
-        expected_history_shape = tuple(
-            {
-                "template": initial_template_vertices,
-                "control_points": initial_control_points,
-                "momenta": initial_momenta,
-            }[order[0]].shape
-        )
-        for index, pair in enumerate(resume_state.lbfgs_history):
-            if not isinstance(pair, tuple) or len(pair) != 2:
-                raise TypeError("resume L-BFGS history must contain (step, gradient_delta) pairs")
-            step, gradient_delta = pair
-            for label, tensor in (("step", step), ("gradient_delta", gradient_delta)):
-                if not isinstance(tensor, torch.Tensor):
-                    raise TypeError(f"resume L-BFGS {label} {index} must be a torch.Tensor")
-                if (
-                    tuple(tensor.shape) != expected_history_shape
-                    or tensor.device.type != "cpu"
-                    or tensor.dtype != torch.float64
-                    or tensor.requires_grad
-                    or not bool(torch.isfinite(tensor).all())
-                ):
-                    raise ValueError(
-                        f"resume L-BFGS {label} {index} must be detached finite CPU float64 "
-                        "with the momenta shape"
+        if set(resume_state.lbfgs_histories) != set(order):
+            raise ValueError("resume L-BFGS history blocks differ from block_order")
+        history_shapes = {
+            "template": tuple(initial_template_vertices.shape),
+            "control_points": tuple(initial_control_points.shape),
+            "momenta": tuple(initial_momenta.shape),
+        }
+        for history_block in order:
+            block_history = resume_state.lbfgs_histories[history_block]
+            if len(block_history) > history_size:
+                raise ValueError(
+                    f"resume L-BFGS history for {history_block} exceeds lbfgs_history_size"
+                )
+            for index, pair in enumerate(block_history):
+                if not isinstance(pair, tuple) or len(pair) != 2:
+                    raise TypeError(
+                        "resume L-BFGS histories must contain "
+                        "(step, gradient_delta) pairs"
                     )
-            normalized_resume_history.append((step.clone(), gradient_delta.clone()))
-        if direction_update != "lbfgs" and normalized_resume_history:
+                step, gradient_delta = pair
+                for label, tensor in (("step", step), ("gradient_delta", gradient_delta)):
+                    if not isinstance(tensor, torch.Tensor):
+                        raise TypeError(
+                            f"resume L-BFGS {history_block} {label} {index} must be a "
+                            "torch.Tensor"
+                        )
+                    if (
+                        tuple(tensor.shape) != history_shapes[history_block]
+                        or tensor.device.type != "cpu"
+                        or tensor.dtype != torch.float64
+                        or tensor.requires_grad
+                        or not bool(torch.isfinite(tensor).all())
+                    ):
+                        raise ValueError(
+                            f"resume L-BFGS {history_block} {label} {index} must be detached "
+                            "finite CPU float64 with the optimized block shape"
+                        )
+                normalized_resume_histories[history_block].append(
+                    (step.clone(), gradient_delta.clone())
+                )
+        if direction_update != "lbfgs" and any(normalized_resume_histories.values()):
             raise ValueError("resume L-BFGS history requires direction_update=lbfgs")
         if resume_state.reusable_gradient is not None:
             candidate = resume_state.reusable_gradient
-            expected_gradient_shape = expected_history_shape if len(order) == 1 else ()
+            expected_gradient_shape = history_shapes[order[0]] if len(order) == 1 else ()
             if (
                 len(order) != 1
                 or not isinstance(candidate, torch.Tensor)
@@ -956,7 +972,7 @@ def optimize_atlas(
             gradient=normalized_resume_gradient,
             gradient_norm=torch.linalg.vector_norm(normalized_resume_gradient),
         )
-    lbfgs_history = normalized_resume_history
+    lbfgs_histories = normalized_resume_histories
 
     def emit_cycle_checkpoint(
         record: AtlasOptimizationRecord,
@@ -982,9 +998,13 @@ def optimize_atlas(
                 initial_cycle_objective=initial_cycle_objective,
                 prior_cycle_objective=prior_cycle_objective,
                 current_cycle_objective=current_cycle_objective,
-                lbfgs_history=tuple(
-                    (step.clone(), gradient_delta.clone()) for step, gradient_delta in lbfgs_history
-                ),
+                lbfgs_histories={
+                    block: tuple(
+                        (step.clone(), gradient_delta.clone())
+                        for step, gradient_delta in lbfgs_histories[block]
+                    )
+                    for block in order
+                },
                 reusable_gradient=reusable_gradient,
                 completed_cycle_termination_reason=completed_cycle_termination_reason,
             )
@@ -1025,6 +1045,7 @@ def optimize_atlas(
     for cycle in range(1, cycles + 1):
         stationary_blocks = 0
         for block in order:
+            lbfgs_history = lbfgs_histories[block]
             if cycle == 1 and block == order[0]:
                 evaluated = initial
                 initial = None

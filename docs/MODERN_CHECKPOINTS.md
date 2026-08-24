@@ -27,7 +27,7 @@ A checkpoint contains:
 - the complete committed optimizer record;
 - the next starter step for every configured parameter block;
 - original/current objective baselines and a completed-cycle stop decision;
-- the reusable accepted gradient and retained L-BFGS curvature pairs;
+- the reusable accepted gradient and retained per-block L-BFGS curvature pairs;
 - hashes of the source/effective configuration and every effective input mesh;
 - the Modern engine implementation revision;
 - a complete artifact inventory and manifest sidecar.
@@ -59,9 +59,12 @@ successor configuration. The source directory is never changed. See
 [guarded Modern checkpoint recovery](MODERN_CHECKPOINT_RECOVERY.md).
 
 Recovery deliberately discards a partial cycle and the transient in-memory
-autograd/line-search graph. Checkpoint v0.2 restores the committed parameters,
-next step, objective baselines, reusable gradient, and L-BFGS history exactly.
-Checkpoint v0.1 remains readable but cannot authorize an Engine 0.9 successor.
+autograd/line-search graph. Checkpoint v0.3 restores the committed parameters,
+next steps, objective baselines, reusable gradient, and every separate block
+L-BFGS history exactly. Checkpoint v0.2 remains verifiable and exactly loadable
+for its historical single-block contract; checkpoint v0.1 remains readable but
+cannot authorize a stateful successor. Engine identity remains bound, so an old
+checkpoint is never silently resumed under new optimizer semantics.
 The successor is a sequential run, not an independent replicate or a claim
 that the interrupted computation converged. This is guarded exact
 complete-cycle recovery, not transparent process resume.

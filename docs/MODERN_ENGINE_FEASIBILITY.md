@@ -288,9 +288,12 @@ gates. See
    multi-dimensional study and peak-memory characterization remain open. Engine
    1.0 now also has an opt-in deterministic subject-batch path; an initial
    16-subject observation reduced sampled peak RSS by 55.7% for a 7.8% wall-time
-   increase. Engine 1.1 subsequently completed one full three-block optimizer
-   cycle on 236 real 5k-face Trochanters at 503.41 MiB sampled peak RSS after
-   making shared-block starter steps cohort invariant. See
+   increase. Engine 1.1 subsequently completed three full three-block optimizer
+   cycles on 236 real 5k-face Trochanters in 48.64 minutes at 506.38 MiB sampled
+   peak RSS (`9/9` accepted, zero failures) after making shared-block starter
+   steps cohort invariant. A frozen 16-subject ten-cycle baseline completed in
+   12.55 minutes with `30/30` accepted decisions and no stationarity, motivating
+   the separate per-block L-BFGS candidate in Engine 1.2. See
    [subject batching](MODERN_SUBJECT_BATCHING.md) and
    [shared-step scaling](MODERN_SHARED_STEP_SCALING.md).
 9. Define evidence-derived tolerances before accepting a production backend.

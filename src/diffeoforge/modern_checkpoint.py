@@ -19,8 +19,8 @@ import torch
 from diffeoforge.engine import AtlasCycleCheckpoint, AtlasOptimizerResumeState
 from diffeoforge.mesh import read_vtk_polydata, sha256_file, write_vtk_polydata
 
-CHECKPOINT_VERSION = "0.2"
-SUPPORTED_CHECKPOINT_VERSIONS = {"0.1", CHECKPOINT_VERSION}
+CHECKPOINT_VERSION = "0.3"
+SUPPORTED_CHECKPOINT_VERSIONS = {"0.1", "0.2", CHECKPOINT_VERSION}
 MANIFEST_NAME = "checkpoint.json"
 SIDECAR_NAME = "checkpoint.sha256"
 SCIENTIFIC_BOUNDARY = (
@@ -317,34 +317,46 @@ def write_modern_cycle_checkpoint(
         and checkpoint.record.status != "stationary"
     ):
         raise ValueError("checkpoint gradient termination requires a stationary record")
-    optimized_shape = {
+    optimized_shapes = {
         "momenta": tuple(checkpoint.momenta.shape),
         "template": tuple(checkpoint.template_vertices.shape),
         "control_points": tuple(checkpoint.control_points.shape),
-    }[normalized_binding["block_order"][0]]
+    }
+    if set(checkpoint.lbfgs_histories) != set(normalized_binding["block_order"]):
+        raise ValueError("checkpoint L-BFGS history blocks differ from the binding")
     optimizer_tensors: list[tuple[str, torch.Tensor]] = []
     if checkpoint.reusable_gradient is not None:
         if not isinstance(checkpoint.reusable_gradient, torch.Tensor):
             raise TypeError("checkpoint reusable gradient must be a torch.Tensor or None")
         if len(normalized_binding["block_order"]) != 1:
             raise ValueError("checkpoint reusable gradient requires one optimized block")
-        if tuple(checkpoint.reusable_gradient.shape) != optimized_shape:
+        if tuple(checkpoint.reusable_gradient.shape) != optimized_shapes[
+            normalized_binding["block_order"][0]
+        ]:
             raise ValueError("checkpoint reusable gradient shape differs")
         optimizer_tensors.append(("reusable_gradient", checkpoint.reusable_gradient))
-    for index, pair in enumerate(checkpoint.lbfgs_history):
-        if not isinstance(pair, tuple) or len(pair) != 2:
-            raise TypeError("checkpoint L-BFGS history must contain tensor pairs")
-        step, gradient_delta = pair
-        if not isinstance(step, torch.Tensor) or not isinstance(gradient_delta, torch.Tensor):
-            raise TypeError("checkpoint L-BFGS history values must be torch.Tensor values")
-        if tuple(step.shape) != optimized_shape or tuple(gradient_delta.shape) != optimized_shape:
-            raise ValueError("checkpoint L-BFGS history shape differs")
-        optimizer_tensors.extend(
-            (
-                (f"lbfgs_step_{index:03d}", step),
-                (f"lbfgs_gradient_delta_{index:03d}", gradient_delta),
+    for block in normalized_binding["block_order"]:
+        for index, pair in enumerate(checkpoint.lbfgs_histories[block]):
+            if not isinstance(pair, tuple) or len(pair) != 2:
+                raise TypeError("checkpoint L-BFGS histories must contain tensor pairs")
+            step, gradient_delta = pair
+            if not isinstance(step, torch.Tensor) or not isinstance(
+                gradient_delta, torch.Tensor
+            ):
+                raise TypeError(
+                    "checkpoint L-BFGS history values must be torch.Tensor values"
+                )
+            if (
+                tuple(step.shape) != optimized_shapes[block]
+                or tuple(gradient_delta.shape) != optimized_shapes[block]
+            ):
+                raise ValueError(f"checkpoint L-BFGS history shape differs for {block}")
+            optimizer_tensors.extend(
+                (
+                    (f"lbfgs_{block}_step_{index:03d}", step),
+                    (f"lbfgs_{block}_gradient_delta_{index:03d}", gradient_delta),
+                )
             )
-        )
 
     timestamp = created_at or datetime.now(UTC).isoformat(timespec="seconds")
     if not isinstance(timestamp, str) or not timestamp:
@@ -401,13 +413,18 @@ def write_modern_cycle_checkpoint(
                 "reusable_gradient": (
                     "reusable_gradient" if checkpoint.reusable_gradient is not None else None
                 ),
-                "lbfgs_history": [
-                    {
-                        "step": f"lbfgs_step_{index:03d}",
-                        "gradient_delta": f"lbfgs_gradient_delta_{index:03d}",
-                    }
-                    for index in range(len(checkpoint.lbfgs_history))
-                ],
+                "lbfgs_histories": {
+                    block: [
+                        {
+                            "step": f"lbfgs_{block}_step_{index:03d}",
+                            "gradient_delta": (
+                                f"lbfgs_{block}_gradient_delta_{index:03d}"
+                            ),
+                        }
+                        for index in range(len(checkpoint.lbfgs_histories[block]))
+                    ]
+                    for block in normalized_binding["block_order"]
+                },
                 "tensor_store": optimizer_tensor_store,
             },
             "state": {
@@ -537,10 +554,9 @@ def verify_modern_cycle_checkpoint(
     if isinstance(evaluations, bool) or not isinstance(evaluations, int) or evaluations < 0:
         raise ModernCheckpointError("Modern checkpoint line-search count is invalid")
     optimizer_state = manifest["optimizer_state"]
-    expected_optimizer_fields = (
-        {"next_step_sizes"}
-        if checkpoint_version == "0.1"
-        else {
+    expected_optimizer_fields = {
+        "0.1": {"next_step_sizes"},
+        "0.2": {
             "next_step_sizes",
             "initial_cycle_objective",
             "prior_cycle_objective",
@@ -549,8 +565,18 @@ def verify_modern_cycle_checkpoint(
             "reusable_gradient",
             "lbfgs_history",
             "tensor_store",
-        }
-    )
+        },
+        CHECKPOINT_VERSION: {
+            "next_step_sizes",
+            "initial_cycle_objective",
+            "prior_cycle_objective",
+            "current_cycle_objective",
+            "completed_cycle_termination_reason",
+            "reusable_gradient",
+            "lbfgs_histories",
+            "tensor_store",
+        },
+    }[checkpoint_version]
     if not isinstance(optimizer_state, dict) or set(optimizer_state) != expected_optimizer_fields:
         raise ModernCheckpointError("Modern checkpoint optimizer state fields differ")
     steps = optimizer_state["next_step_sizes"]
@@ -562,7 +588,10 @@ def verify_modern_cycle_checkpoint(
     ):
         raise ModernCheckpointError("Modern checkpoint next steps are invalid")
     optimizer_tensors: dict[str, torch.Tensor] = {}
-    if checkpoint_version == CHECKPOINT_VERSION:
+    history_entries_by_block: dict[str, list[dict[str, str]]] = {
+        block: [] for block in binding["block_order"]
+    }
+    if checkpoint_version in {"0.2", CHECKPOINT_VERSION}:
         for name in (
             "initial_cycle_objective",
             "prior_cycle_objective",
@@ -587,18 +616,50 @@ def verify_modern_cycle_checkpoint(
         reusable_name = optimizer_state["reusable_gradient"]
         if reusable_name not in (None, "reusable_gradient"):
             raise ModernCheckpointError("Modern checkpoint reusable-gradient reference is invalid")
-        history_entries = optimizer_state["lbfgs_history"]
-        if not isinstance(history_entries, list):
-            raise ModernCheckpointError("Modern checkpoint L-BFGS history is invalid")
         expected_names = [] if reusable_name is None else [reusable_name]
-        for index, entry in enumerate(history_entries):
-            expected = {
-                "step": f"lbfgs_step_{index:03d}",
-                "gradient_delta": f"lbfgs_gradient_delta_{index:03d}",
-            }
-            if entry != expected:
+        if checkpoint_version == "0.2":
+            history_entries = optimizer_state["lbfgs_history"]
+            if not isinstance(history_entries, list):
                 raise ModernCheckpointError("Modern checkpoint L-BFGS history is invalid")
-            expected_names.extend((expected["step"], expected["gradient_delta"]))
+            history_entries_by_block[binding["block_order"][0]] = history_entries
+            for index, entry in enumerate(history_entries):
+                expected = {
+                    "step": f"lbfgs_step_{index:03d}",
+                    "gradient_delta": f"lbfgs_gradient_delta_{index:03d}",
+                }
+                if entry != expected:
+                    raise ModernCheckpointError(
+                        "Modern checkpoint L-BFGS history is invalid"
+                    )
+                expected_names.extend((expected["step"], expected["gradient_delta"]))
+        else:
+            histories = optimizer_state["lbfgs_histories"]
+            if (
+                not isinstance(histories, dict)
+                or set(histories) != set(binding["block_order"])
+            ):
+                raise ModernCheckpointError("Modern checkpoint L-BFGS histories are invalid")
+            for block in binding["block_order"]:
+                entries = histories[block]
+                if not isinstance(entries, list):
+                    raise ModernCheckpointError(
+                        "Modern checkpoint L-BFGS histories are invalid"
+                    )
+                history_entries_by_block[block] = entries
+                for index, entry in enumerate(entries):
+                    expected = {
+                        "step": f"lbfgs_{block}_step_{index:03d}",
+                        "gradient_delta": (
+                            f"lbfgs_{block}_gradient_delta_{index:03d}"
+                        ),
+                    }
+                    if entry != expected:
+                        raise ModernCheckpointError(
+                            "Modern checkpoint L-BFGS histories are invalid"
+                        )
+                    expected_names.extend(
+                        (expected["step"], expected["gradient_delta"])
+                    )
         if expected_names and optimizer_state["tensor_store"] is None:
             raise ModernCheckpointError("Modern checkpoint optimizer tensor store is missing")
         if not expected_names and optimizer_state["tensor_store"] is not None:
@@ -685,8 +746,8 @@ def verify_modern_cycle_checkpoint(
             raise ValueError
     except (OSError, UnicodeError, csv.Error, ValueError, IndexError) as error:
         raise ModernCheckpointError("Modern checkpoint momenta are invalid") from error
-    if checkpoint_version == CHECKPOINT_VERSION:
-        optimized_shape = {
+    if checkpoint_version in {"0.2", CHECKPOINT_VERSION}:
+        optimized_shapes = {
             "momenta": (
                 int(state["momenta"]["subjects"]),
                 int(state["momenta"]["control_points"]),
@@ -694,15 +755,28 @@ def verify_modern_cycle_checkpoint(
             ),
             "template": (int(state["template"]["points"]), 3),
             "control_points": (int(state["control_points"]["count"]), 3),
-        }[binding["block_order"][0]]
-        if any(tuple(tensor.shape) != optimized_shape for tensor in optimizer_tensors.values()):
-            raise ModernCheckpointError("Modern checkpoint optimizer tensor shape differs")
-        for entry in optimizer_state["lbfgs_history"]:
-            step = optimizer_tensors[entry["step"]]
-            gradient_delta = optimizer_tensors[entry["gradient_delta"]]
-            curvature = torch.sum(step * gradient_delta)
-            if not bool(torch.isfinite(curvature)) or float(curvature) <= 0.0:
-                raise ModernCheckpointError("Modern checkpoint L-BFGS curvature is invalid")
+        }
+        reusable_name = optimizer_state["reusable_gradient"]
+        if reusable_name is not None and tuple(
+            optimizer_tensors[reusable_name].shape
+        ) != optimized_shapes[binding["block_order"][0]]:
+            raise ModernCheckpointError("Modern checkpoint reusable-gradient shape differs")
+        for block, entries in history_entries_by_block.items():
+            for entry in entries:
+                step = optimizer_tensors[entry["step"]]
+                gradient_delta = optimizer_tensors[entry["gradient_delta"]]
+                if (
+                    tuple(step.shape) != optimized_shapes[block]
+                    or tuple(gradient_delta.shape) != optimized_shapes[block]
+                ):
+                    raise ModernCheckpointError(
+                        f"Modern checkpoint L-BFGS tensor shape differs for {block}"
+                    )
+                curvature = torch.sum(step * gradient_delta)
+                if not bool(torch.isfinite(curvature)) or float(curvature) <= 0.0:
+                    raise ModernCheckpointError(
+                        "Modern checkpoint L-BFGS curvature is invalid"
+                    )
     if workflow_root is not None:
         workflow = Path(workflow_root).expanduser().resolve()
         for name in ("source_config", "effective_config", "template_input"):
@@ -720,23 +794,35 @@ def verify_modern_cycle_checkpoint(
 def load_modern_checkpoint_resume_state(
     directory: Path | str,
 ) -> AtlasOptimizerResumeState:
-    """Load the non-executable, hash-verified optimizer state from checkpoint v0.2."""
+    """Load hash-verified exact optimizer state from checkpoint v0.2 or v0.3."""
 
     root = Path(directory).expanduser().resolve()
     manifest = verify_modern_cycle_checkpoint(root)
-    if manifest["checkpoint_version"] != CHECKPOINT_VERSION:
+    checkpoint_version = manifest["checkpoint_version"]
+    if checkpoint_version == "0.1":
         raise ModernCheckpointError(
             "Checkpoint predates exact optimizer-state serialization and cannot resume exactly"
         )
     optimizer_state = manifest["optimizer_state"]
     tensors = _read_optimizer_tensor_store(root, optimizer_state["tensor_store"])
-    history = tuple(
-        (
-            tensors[entry["step"]].clone(),
-            tensors[entry["gradient_delta"]].clone(),
+    block_order = manifest["binding"]["block_order"]
+    if checkpoint_version == "0.2":
+        history_entries = {
+            block: (optimizer_state["lbfgs_history"] if index == 0 else [])
+            for index, block in enumerate(block_order)
+        }
+    else:
+        history_entries = optimizer_state["lbfgs_histories"]
+    histories = {
+        block: tuple(
+            (
+                tensors[entry["step"]].clone(),
+                tensors[entry["gradient_delta"]].clone(),
+            )
+            for entry in history_entries[block]
         )
-        for entry in optimizer_state["lbfgs_history"]
-    )
+        for block in block_order
+    }
     reusable_name = optimizer_state["reusable_gradient"]
     return AtlasOptimizerResumeState(
         initial_cycle_objective=float(optimizer_state["initial_cycle_objective"]),
@@ -744,7 +830,7 @@ def load_modern_checkpoint_resume_state(
         next_step_sizes={
             block: float(value) for block, value in optimizer_state["next_step_sizes"].items()
         },
-        lbfgs_history=history,
+        lbfgs_histories=histories,
         reusable_gradient=(None if reusable_name is None else tensors[reusable_name].clone()),
         completed_cycle_termination_reason=optimizer_state["completed_cycle_termination_reason"],
     )

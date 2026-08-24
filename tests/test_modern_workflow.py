@@ -236,17 +236,16 @@ def test_schema_rejects_incoherent_pairwise_execution_before_work(
         workflow.validate_modern_workflow_config(invalid)
 
 
-def test_lbfgs_requires_explicit_momenta_only_configuration() -> None:
+def test_lbfgs_accepts_multiblock_configuration_and_requires_wolfe_coherence() -> None:
     invalid = _configuration()
-    invalid["optimization"]["direction_update"] = "lbfgs"
-
-    with pytest.raises(ConfigurationError, match=r"block_order=\[momenta\]"):
-        workflow.validate_modern_workflow_config(invalid)
-
-    invalid["optimization"]["block_order"] = ["momenta"]
-    invalid["optimization"]["lbfgs_history_size"] = 5
-    invalid["optimization"]["lbfgs_curvature_tolerance"] = 1e-12
-    invalid["optimization"]["lbfgs_initial_step_size"] = 1.0
+    invalid["optimization"].update(
+        {
+            "direction_update": "lbfgs",
+            "lbfgs_history_size": 5,
+            "lbfgs_curvature_tolerance": 1e-12,
+            "lbfgs_initial_step_size": 1.0,
+        }
+    )
     workflow.validate_modern_workflow_config(invalid)
 
     invalid["optimization"]["direction_update"] = "steepest"
@@ -484,6 +483,56 @@ def test_lbfgs_momenta_workflow_is_explicit_repeatable_and_verified(tmp_path: Pa
     assert first_bundle["optimizer"]["final_regularity"] == second_bundle["optimizer"][
         "final_regularity"
     ]
+
+
+def test_multiblock_lbfgs_workflow_writes_exact_v03_checkpoint(tmp_path: Path) -> None:
+    config_value = _configuration(output=str(tmp_path / "unused"))
+    config_value["optimization"].update(
+        {
+            "max_cycles": 3,
+            "direction_update": "lbfgs",
+            "lbfgs_history_size": 3,
+            "lbfgs_curvature_tolerance": 1e-12,
+            "lbfgs_initial_step_size": 1.0,
+            "step_initialization": "previous_accepted",
+            "gradient_tolerance": 0.0,
+            "checkpoint_interval_cycles": 1,
+            "checkpoint_retention": "latest",
+        }
+    )
+    config = tmp_path / "multiblock-lbfgs.yaml"
+    config.write_text(yaml.safe_dump(config_value, sort_keys=False), encoding="utf-8")
+
+    run = workflow.run_modern_workflow(
+        config,
+        destination=tmp_path / "multiblock-lbfgs-run",
+        created_at=FIXED_TIME,
+    )
+    manifest = workflow.verify_modern_workflow(run)
+    bundle = workflow.verify_modern_atlas_bundle(
+        run / manifest["result_bundle"]["path"]
+    )
+    checkpoint_path = run / manifest["optimizer_checkpoints"][0]["path"]
+    checkpoint = workflow.verify_modern_cycle_checkpoint(
+        checkpoint_path,
+        workflow_root=run,
+    )
+    resume_state = workflow.load_modern_checkpoint_resume_state(checkpoint_path)
+
+    assert bundle["optimizer"]["settings"]["block_order"] == [
+        "momenta",
+        "template",
+        "control_points",
+    ]
+    assert bundle["optimizer"]["settings"]["direction_update"] == "lbfgs"
+    assert checkpoint["checkpoint_version"] == "0.3"
+    assert checkpoint["binding"]["engine_implementation"] == "1.2"
+    assert set(resume_state.lbfgs_histories) == {
+        "momenta",
+        "template",
+        "control_points",
+    }
+    assert all(resume_state.lbfgs_histories.values())
 
 
 def test_subject_batched_workflow_is_explicit_and_numerically_matches_full_cohort(

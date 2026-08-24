@@ -1,8 +1,8 @@
 # Experimental Modern L-BFGS direction
 
-Status: **implemented and prospectively qualified as a materially better
-Engine 0.6 momenta-only candidate on five full-resolution Weevils; the declared
-absolute-gradient convergence gate is not yet met**
+Status: **single-block Engine 0.6 candidate prospectively qualified on five
+full-resolution Weevils; exact multi-block Engine 1.2 implementation complete
+but not yet real-cohort qualified**
 
 ## Configuration
 
@@ -11,18 +11,21 @@ configurations may declare:
 
 ```yaml
 optimization:
-  block_order: [momenta]
+  block_order: [momenta, template, control_points]
   direction_update: lbfgs
   lbfgs_history_size: 10
   lbfgs_curvature_tolerance: 1.0e-12
   lbfgs_initial_step_size: 1.0
 ```
 
-`lbfgs` is currently rejected for multi-block optimization. The first decision
-uses the declared momenta step because no curvature evidence exists yet.
-Subsequent directions use a limited-memory two-loop inverse-Hessian recursion
-for the equivalent minimization objective `-f`, then an ascent Armijo line
-search starting from the separately declared L-BFGS step.
+Engine 1.2 retains an independent curvature history for each configured block.
+The first visit to each block uses its declared starter step because that block
+has no curvature evidence yet. Subsequent visits use a limited-memory two-loop
+inverse-Hessian recursion for the equivalent minimization objective `-f`, then
+an ascent Armijo or Strong-Wolfe line search starting from the separately
+declared L-BFGS step. A pair is formed only from the accepted update and gradient
+change of the same block while the other blocks are fixed for that decision;
+histories are never mixed across incompatible tensor shapes.
 
 Only curvature pairs satisfying
 
@@ -31,8 +34,8 @@ s dot y > curvature_tolerance * ||s|| * ||y||
 ```
 
 are retained. A non-finite or non-ascent quasi-Newton direction fails closed to
-the ordinary gradient direction. The retained history is bounded by
-`lbfgs_history_size`; it does not grow with cycle count.
+the ordinary gradient direction. Each retained block history is bounded by
+`lbfgs_history_size`; storage does not grow with cycle count.
 
 ## Prospective full-resolution evidence
 
@@ -71,18 +74,26 @@ the default, so the Engine 0.6 trajectory stays available unchanged.
 ## Evidence boundary
 
 Automated tests establish deterministic repeatability, monotone accepted
-objectives, explicit schema and bundle provenance, bounded history, rejection
-of unsupported multi-block use, and a small reference problem on which L-BFGS
+objectives, explicit schema and bundle provenance, bounded separate block
+histories, exact split/resume equality, and a small reference problem on which L-BFGS
 reaches the predeclared gradient tolerance while steepest ascent does not.
 The frozen Weevil comparison establishes an engineering improvement on one
 five-subject cohort. It does not establish general superiority, biological
 validity, or readiness for 300-subject production.
 
-Completed-run continuation and crash recovery deliberately reject L-BFGS for
-now. Existing checkpoint formats store parameters and next step sizes but not
-the curvature-pair history required to reproduce an uninterrupted L-BFGS
-trajectory. A future format must serialize and verify that state before those
-features can be enabled.
+Checkpoint v0.3 serializes every block history in a non-executable float64
+tensor store with block-specific names, shapes, offsets, byte lengths, and
+hashes. Completed-run continuation and guarded crash recovery can therefore
+resume Engine 1.2 multi-block L-BFGS exactly at a committed cycle boundary.
+Checkpoint v0.1 remains evidence-only; v0.2 remains verifiable and loadable for
+its historical single-block contract. Cross-engine continuation still fails
+closed.
+
+The 16-subject real 5k-Trochanter Steepest baseline improved monotonically
+through ten cycles (`30/30` accepted, objective `-296.658847331`) without
+reaching stationarity. This motivates the Engine 1.2 candidate but is not
+evidence that multi-block L-BFGS is faster or scientifically better. That claim
+requires a separately frozen same-cohort comparison.
 
 The exact evidence directories are siblings below
 `DiffeoForge Weevil Tests 2026-08-17` and begin with
