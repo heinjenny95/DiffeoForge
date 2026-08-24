@@ -1,7 +1,7 @@
 # Engine 1.5 CUDA feasibility path
 
-Status: **implemented and passing synthetic, five-subject, and 16-subject
-full-resolution Weevil gates; not a production default**
+Status: **implemented and passing synthetic, five-subject, 16-subject, and
+54-of-67-subject full-resolution Weevil gates; not a production default**
 
 ## Scope
 
@@ -172,3 +172,45 @@ This gate establishes correct CUDA checkpoint continuation and reference
 non-inferiority at 16 full-resolution subjects. It authorizes a separately
 frozen 67-subject resource and repeatability screen. It does not establish
 biological validity or production readiness for 67, 236, or 300 subjects.
+
+## Passing 54-of-67-subject scaling gate
+
+Prospective screening found that 54 of the 67 protected reference subjects
+passed the declared Modern input-quality gates. Twelve excluded meshes had
+non-manifold edges, one had isolated vertices, and three of the non-manifold
+meshes also had multiple face-connected components. The gates were not relaxed:
+the excluded filenames and exact source-quality evidence remain frozen in the
+qualification design.
+
+The 54-subject one-cycle CUDA screen used two fresh processes. It was exactly
+repeat-consistent in optimizer history and final tensor hashes, with median
+optimizer time 185.434 seconds. Peak CUDA memory was 330,161,664 bytes allocated
+and 541,065,216 bytes reserved, leaving substantial RTX 4080 headroom.
+
+The three-cycle workflow passed strict verification and correctly assessed as
+`inconclusive_not_converged`. Its hash-bound exact-state successor reproduced
+the parent objective and converged after 40 successor cycles, corresponding to
+total cycle 43. The final objective was `-74.40282977836408`; termination was
+by `relative_objective_tolerance`.
+
+The independent fixed-reference assessment passed every predeclared gate:
+
+- Modern workflow verification: pass;
+- Modern optimizer convergence: pass;
+- subject pass fraction: `1.0` (gate at least `0.8`);
+- pooled Modern/reference external-residual ratio: `0.844014` (gate at most
+  `1.2`); and
+- cross-engine reconstruction p95/template diagonal: `0.0145351` (gate at
+  most `0.05`).
+
+Verified evidence directories:
+
+- `C:\Users\js7541\Desktop\DiffeoForge Weevil Tests 2026-08-17\modern-reference-qualification-v1.7-54-of-67-subject-engine15-cuda-tile2048-optimizer-benchmark`
+- `C:\Users\js7541\Desktop\DiffeoForge Weevil Tests 2026-08-17\modern-reference-qualification-v1.8-54-of-67-subject-engine15-cuda-continuation-100-cycles-modern-run`
+- `C:\Users\js7541\Desktop\DiffeoForge Weevil Tests 2026-08-17\modern-reference-qualification-v1.8-54-of-67-subject-engine15-cuda-continuation-100-cycles-assessment`
+
+This gate establishes verified CUDA execution, continuation, convergence, and
+reference non-inferiority for every quality-eligible subject in the protected
+67-subject cohort. It does not validate the 13 excluded topologies, biological
+interpretation, or production readiness for the separate 236- or 300-subject
+cohorts.
