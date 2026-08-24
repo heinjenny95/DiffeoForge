@@ -253,6 +253,7 @@ def collect_modern_benchmark_design(
             "selection": "first subjects in validated deterministic path order",
         },
         "configuration": {
+            "device": config["runtime"]["device"],
             "control_points": config["initialization"]["control_points"]["count"],
             "timepoints": deformation["timepoints"],
             "attachment_type": attachment["type"],

@@ -84,6 +84,13 @@ unchanged deterministic order. The benchmark records both batch size and worker
 count so a speed observation cannot be mistaken for the serial batching path.
 Historical reports omit the field and retain their original one-worker meaning.
 
+Engine 1.5 reports additionally bind `device`. CUDA reports synchronize the
+device around target preparation, warm-up, measured optimization, and progress
+timestamps; otherwise PyTorch's asynchronous launch behavior would understate
+wall time. They also record device identity, CUDA runtime and compute
+capability, plus allocated and reserved CUDA memory before and at the measured
+peak. Process RSS remains a separate host-memory observation.
+
 ## Repeatability evidence
 
 Report v0.2 stores the complete decision history, not only its hash. Every

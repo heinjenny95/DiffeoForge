@@ -83,15 +83,14 @@ def _write_optimizer_tensor_store(
             if re.fullmatch(r"[a-z0-9_]+", name) is None:
                 raise ValueError("optimizer tensor name is invalid")
             if (
-                tensor.device.type != "cpu"
-                or tensor.dtype != torch.float64
+                tensor.dtype != torch.float64
                 or tensor.requires_grad
                 or not bool(torch.isfinite(tensor).all())
             ):
-                raise ValueError("optimizer tensors must be detached finite CPU float64")
+                raise ValueError("optimizer tensors must be detached finite float64")
+            cpu_tensor = tensor.detach().cpu().contiguous()
             payload = (
-                tensor.detach()
-                .contiguous()
+                cpu_tensor
                 .numpy()
                 .astype(np.dtype("<f8"), copy=False)
                 .tobytes(order="C")
@@ -102,7 +101,7 @@ def _write_optimizer_tensor_store(
                     "name": name,
                     "offset_bytes": offset,
                     "bytes": len(payload),
-                    "shape": list(tensor.shape),
+                    "shape": list(cpu_tensor.shape),
                 }
             )
             offset += len(payload)
@@ -323,8 +322,8 @@ def write_modern_cycle_checkpoint(
         ("control points", checkpoint.control_points),
         ("momenta", checkpoint.momenta),
     ):
-        if tensor.device.type != "cpu" or tensor.dtype != torch.float64:
-            raise ValueError(f"checkpoint {name} must be CPU float64")
+        if tensor.dtype != torch.float64:
+            raise ValueError(f"checkpoint {name} must be float64")
         if tensor.requires_grad or not bool(torch.isfinite(tensor).all()):
             raise ValueError(f"checkpoint {name} must be detached and finite")
     for name, value in (
@@ -402,22 +401,26 @@ def write_modern_cycle_checkpoint(
     temporary = output.parent / f".{output.name}.tmp-{uuid.uuid4().hex}"
     temporary.mkdir()
     try:
+        template_cpu = checkpoint.template_vertices.detach().cpu()
+        triangles_cpu = template_triangles.detach().cpu()
+        controls_cpu = checkpoint.control_points.detach().cpu()
+        momenta_cpu = checkpoint.momenta.detach().cpu()
         template_path = write_vtk_polydata(
             temporary / "state" / "estimated-template.vtk",
-            checkpoint.template_vertices.tolist(),
-            template_triangles.tolist(),
+            template_cpu.tolist(),
+            triangles_cpu.tolist(),
             title=f"DiffeoForge private checkpoint cycle {checkpoint.record.cycle}",
         )
         controls_path = temporary / "state" / "control-points.txt"
         controls_path.parent.mkdir(parents=True, exist_ok=True)
         with controls_path.open("x", encoding="utf-8", newline="\n") as handle:
-            for point in checkpoint.control_points.tolist():
+            for point in controls_cpu.tolist():
                 handle.write(" ".join(_float(value) for value in point) + "\n")
         momenta_path = temporary / "state" / "momenta.csv"
         with momenta_path.open("x", encoding="utf-8", newline="") as handle:
             writer = csv.writer(handle, lineterminator="\n")
             writer.writerow(["subject_label", "control_point", "x", "y", "z"])
-            for label, values in zip(labels, checkpoint.momenta.tolist(), strict=True):
+            for label, values in zip(labels, momenta_cpu.tolist(), strict=True):
                 for index, point in enumerate(values):
                     writer.writerow([label, index, *(_float(value) for value in point)])
         optimizer_tensor_store = _write_optimizer_tensor_store(

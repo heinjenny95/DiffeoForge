@@ -525,10 +525,14 @@ def verify_modern_continuation(directory: Path | str) -> dict[str, Any]:
     except (OSError, UnicodeError, yaml.YAMLError, ConfigurationError) as error:
         raise ModernContinuationError(f"Modern continuation config is invalid: {error}") from error
     expected_schema_version = "0.5" if plan_version == PLAN_VERSION else "0.4"
+    configured_step_initialization = config["optimization"].get(
+        "step_initialization", "fixed"
+    )
     if (
         config["schema_version"] != expected_schema_version
         or config["preprocessing"]["procrustes"]["enabled"] is not False
-        or config["optimization"]["step_initialization"] != "previous_accepted"
+        or configured_step_initialization
+        != plan["continuation"]["step_initialization"]
         or config["output"]["directory"] != plan["config"]["expected_destination"]
     ):
         raise ModernContinuationError("Modern continuation config semantics differ")

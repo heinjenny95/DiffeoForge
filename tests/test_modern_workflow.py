@@ -275,6 +275,22 @@ def test_lbfgs_accepts_multiblock_configuration_and_requires_wolfe_coherence() -
     with pytest.raises(ConfigurationError, match="subject_batch_workers"):
         workflow.validate_modern_workflow_config(invalid)
 
+    invalid = _configuration()
+    invalid["runtime"]["device"] = "cuda"
+    invalid["optimization"]["subject_batch_size"] = 1
+    invalid["optimization"]["subject_batch_workers"] = 2
+    with pytest.raises(ConfigurationError, match="device=cuda.*subject_batch_workers=1"):
+        workflow.validate_modern_workflow_config(invalid)
+
+
+def test_cuda_request_never_silently_falls_back_to_cpu(monkeypatch) -> None:
+    runtime = _configuration()["runtime"]
+    runtime["device"] = "cuda"
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+
+    with pytest.raises(ConfigurationError, match="will not silently fall back"):
+        workflow.resolve_modern_torch_device(runtime)
+
 
 @pytest.mark.parametrize(
     ("name", "value"),
@@ -547,7 +563,7 @@ def test_multiblock_lbfgs_workflow_writes_exact_v03_checkpoint(tmp_path: Path) -
     assert bundle["optimizer"]["settings"]["direction_update"] == "lbfgs"
     assert bundle["optimizer"]["settings"]["momenta_updates_per_cycle"] == 2
     assert checkpoint["checkpoint_version"] == "0.3"
-    assert checkpoint["binding"]["engine_implementation"] == "1.4"
+    assert checkpoint["binding"]["engine_implementation"] == "1.5"
     assert checkpoint["binding"]["momenta_updates_per_cycle"] == 2
     assert checkpoint["binding"]["subject_batch_size"] is None
     assert checkpoint["binding"]["subject_batch_workers"] == 1

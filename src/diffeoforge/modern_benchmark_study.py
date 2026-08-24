@@ -303,6 +303,8 @@ def _verify_condition_report(
         "pairwise_evaluation": frozen["pairwise_evaluation"],
         "tile_autograd_strategy": condition["tile_autograd_strategy"],
     }
+    if "device" in frozen:
+        expected_configuration["device"] = frozen["device"]
     if config != expected_configuration:
         raise ModernBenchmarkStudyError("Condition protocol differs from the frozen design")
     return report

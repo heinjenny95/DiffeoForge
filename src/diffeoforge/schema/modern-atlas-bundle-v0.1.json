@@ -32,7 +32,7 @@
         "diffeoforge": {"type": "string", "minLength": 1},
         "pytorch": {"type": "string", "minLength": 1},
         "numpy": {"type": "string", "minLength": 1},
-        "device": {"const": "cpu"},
+        "device": {"enum": ["cpu", "cuda"]},
         "dtype": {"const": "float64"},
         "pairwise_evaluation": {"$ref": "#/$defs/pairwiseEvaluation"}
       },

@@ -19,6 +19,7 @@ from diffeoforge.modern_benchmark import (  # noqa: E402
     REPORT_HTML_NAME,
     REPORT_JSON_NAME,
     ModernBenchmarkError,
+    _prepare_problem,
     _schema,
     collect_modern_benchmark,
     render_modern_benchmark_html,
@@ -66,6 +67,39 @@ def _write_portable_config(path: Path, *, mode: str = "dense") -> Path:
         }
     path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
     return path
+
+
+def test_problem_preparation_honors_file_controls_and_subject_ordered_momenta(
+    tmp_path: Path,
+) -> None:
+    path = _write_portable_config(tmp_path / "file-initialization.yaml")
+    controls = tmp_path / "controls.txt"
+    controls.write_text("10 11 12\n20 21 22\n", encoding="utf-8")
+    momenta = tmp_path / "momenta.csv"
+    subject_labels = [f"subject-{index:02d}.vtk" for index in range(1, 6)]
+    with momenta.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.writer(handle, lineterminator="\n")
+        writer.writerow(["subject_label", "control_point", "x", "y", "z"])
+        for subject_index, label in enumerate(subject_labels):
+            for control_index in range(2):
+                value = subject_index * 10 + control_index
+                writer.writerow([label, control_index, value, value + 1, value + 2])
+    config = yaml.safe_load(path.read_text(encoding="utf-8"))
+    config["initialization"] = {
+        "control_points": {"method": "file", "count": 2, "path": controls.name},
+        "momenta": {"method": "file", "path": momenta.name},
+    }
+    path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+
+    _, problem = _prepare_problem(str(path), 2)
+    prepared_controls = problem[3]
+    prepared_momenta = problem[4]
+
+    assert prepared_controls.tolist() == [[10.0, 11.0, 12.0], [20.0, 21.0, 22.0]]
+    assert prepared_momenta.tolist() == [
+        [[0.0, 1.0, 2.0], [1.0, 2.0, 3.0]],
+        [[10.0, 11.0, 12.0], [11.0, 12.0, 13.0]],
+    ]
 
 
 def test_blockwise_collection_binds_configured_plan_to_worker_and_report(
@@ -190,7 +224,7 @@ def test_collection_binds_selection_operations_and_descriptive_samples(
     ]
     assert report["input"]["available_subject_count"] == 5
     assert report["operation_model"]["gaussian_calls_per_evaluation"] == 64
-    assert report["environment"]["engine_implementation"] == "1.4"
+    assert report["environment"]["engine_implementation"] == "1.5"
     assert report["operation_model"]["gaussian_pair_elements_per_evaluation"] == 641_130
     assert report["summary"]["wall_time_ns"] == {
         "minimum": 100,

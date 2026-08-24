@@ -318,6 +318,7 @@ def _verify_condition_report(
         ),
     }
     for name in (
+        "device",
         "momenta_updates_per_cycle",
         "step_initialization",
         "direction_update",

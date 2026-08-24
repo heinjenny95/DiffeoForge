@@ -165,6 +165,24 @@ def test_bundle_contains_verified_open_outputs_and_exact_subject_identity(
     assert momenta_rows[formula_row][0] == "'=formula specimen"
 
 
+def test_bundle_records_declared_cuda_execution_device(
+    tmp_path: Path,
+    optimized: tuple,
+) -> None:
+    result, triangles, model = optimized
+    bundle = write_modern_atlas_bundle(
+        tmp_path / "cuda-evidence",
+        result,
+        triangles,
+        LABELS,
+        model,
+        execution_device="cuda",
+        created_at=FIXED_TIME,
+    )
+
+    assert verify_modern_atlas_bundle(bundle)["engine"]["device"] == "cuda"
+
+
 def test_reconstructions_equal_direct_engine_endpoints(
     tmp_path: Path,
     optimized: tuple,

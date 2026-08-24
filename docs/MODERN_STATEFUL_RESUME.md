@@ -1,6 +1,6 @@
 # Exact complete-cycle optimizer continuation
 
-Status: **implemented through Modern Engine 1.4; exact at committed cycle boundaries**
+Status: **implemented through Modern Engine 1.5; exact at committed cycle boundaries**
 
 Engine 0.9 extended the private Modern checkpoint format from parameter-only
 state to exact single-block optimizer state. Engine 1.2 checkpoint v0.3 extends
@@ -19,6 +19,9 @@ means one, while a multi-rate successor must retain the exact expanded schedule.
 Engine 1.4 also binds `subject_batch_size` and `subject_batch_workers` so a
 checkpoint cannot cross into a different floating-point grouping or execution
 schedule. Historical absence means no finite batching and one worker.
+Engine 1.5 additionally binds the exact CPU/CUDA runtime device. Checkpoint
+bytes remain canonically CPU encoded, while resume restores them only onto the
+unchanged declared device.
 
 Optimizer tensors use a non-executable, little-endian float64 binary store with
 explicit names, shapes, byte offsets, byte lengths, and SHA-256 evidence. No
@@ -28,7 +31,7 @@ or any manifest/hash mismatch.
 
 Configuration v0.5 can bind one verified exact-state checkpoint plus the exact parent
 effective configuration as `optimization.resume_state`. Preflight requires the
-same Engine implementation, CPU/float64 runtime, thread count, model,
+same Engine implementation, declared-device/float64 runtime, thread count, model,
 optimizer settings, subject identity/order, template, control points, and
 momenta. Only the new cycle cap and immutable output destination may differ.
 

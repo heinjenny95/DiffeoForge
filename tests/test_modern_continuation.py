@@ -77,7 +77,7 @@ def test_completed_modern_run_can_continue_from_its_exact_final_state(
     assert plan["status"] == "prospective_no_successor_result"
     assert plan["parent"]["termination_reason"] == "max_cycles"
     assert plan["continuation"]["step_initialization"] == "previous_accepted"
-    assert plan["config"]["expected_engine_implementation"] == "1.4"
+    assert plan["config"]["expected_engine_implementation"] == "1.5"
     assert config["schema_version"] == "0.5"
     assert config["initialization"]["momenta"] == {
         "method": "file",
@@ -109,7 +109,7 @@ def test_completed_modern_run_can_continue_from_its_exact_final_state(
     assert "matches the parent final state within" in run_output.out
 
     assert verified["initial_objective_matches"] is True
-    assert verified["workflow"]["engine"]["implementation_version"] == "1.4"
+    assert verified["workflow"]["engine"]["implementation_version"] == "1.5"
     assert verified["initial_objective"] == pytest.approx(
         verified["parent_final_objective"], rel=1e-12, abs=1e-12
     )
@@ -130,6 +130,43 @@ def test_completed_modern_run_can_continue_from_its_exact_final_state(
     momenta.write_bytes(momenta.read_bytes() + b"tamper")
     with pytest.raises(ModernContinuationError, match="artifact differs"):
         verify_modern_continuation(plan_root)
+
+
+def test_fixed_step_parent_retains_its_historical_continuation_semantics(
+    tmp_path: Path,
+) -> None:
+    parent_config = initialize_modern_workflow(
+        MESH_DIRECTORY,
+        units="unitless",
+        config_path=tmp_path / "fixed-parent.yaml",
+        template=MESH_DIRECTORY / "template.vtk",
+        subject_pattern="subject-*.vtk",
+        attachment_kernel_width=0.45,
+        deformation_kernel_width=0.6,
+        noise_variance=0.01,
+        max_cycles=1,
+        threads=1,
+    )
+    value = yaml.safe_load(parent_config.read_text(encoding="utf-8"))
+    value["optimization"]["step_initialization"] = "fixed"
+    parent_config.write_text(yaml.safe_dump(value, sort_keys=False), encoding="utf-8")
+    parent_run = run_modern_workflow(
+        parent_config,
+        destination=tmp_path / "fixed-parent-run",
+        created_at=FIXED_TIME,
+    )
+
+    plan_root = create_modern_continuation(
+        parent_run,
+        tmp_path / "fixed-continuation-plan",
+        max_cycles=1,
+        created_at=FIXED_TIME,
+    )
+    plan = verify_modern_continuation(plan_root)
+    config = yaml.safe_load((plan_root / CONFIG_NAME).read_text(encoding="utf-8"))
+
+    assert plan["continuation"]["step_initialization"] == "fixed"
+    assert config["optimization"]["step_initialization"] == "fixed"
 
 
 def test_relative_objective_run_continues_with_serialized_baselines(

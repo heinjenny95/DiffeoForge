@@ -72,6 +72,11 @@ different schedule.
 Engine 1.4 additionally binds `subject_batch_size` and
 `subject_batch_workers`. Historical absence means an unbatched one-worker path;
 new continuation or recovery must retain both values exactly.
+Engine 1.5 permits live state tensors on CUDA but copies every published tensor
+to canonical CPU float64/int64 form before writing VTK, CSV, or the
+non-executable optimizer tensor store. Resume moves the verified CPU state back
+to the exactly declared runtime device; changing device across a continuation
+boundary remains forbidden.
 The successor is a sequential run, not an independent replicate or a claim
 that the interrupted computation converged. This is guarded exact
 complete-cycle recovery, not transparent process resume.

@@ -226,6 +226,7 @@
         "tile_autograd_strategy"
       ],
       "properties": {
+        "device": {"enum": ["cpu", "cuda"]},
         "gradient_block": {
           "enum": [
             "momenta",
@@ -308,12 +309,18 @@
         "parent_executable"
       ],
       "properties": {
+        "device": {"enum": ["cpu", "cuda"]},
+        "deterministic_algorithms": {"type": "boolean"},
+        "cuda_runtime": {"type": ["string", "null"]},
+        "cuda_device_name": {"type": "string", "minLength": 1},
+        "cuda_device_total_memory_bytes": {"type": "integer", "minimum": 1},
+        "cuda_compute_capability": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+$"},
         "diffeoforge": {
           "type": "string",
           "minLength": 1
         },
         "engine_implementation": {
-          "enum": ["0.3", "0.4", "0.5", "0.6", "0.7", "0.8", "0.9", "1.0", "1.1", "1.2", "1.3", "1.4"]
+          "enum": ["0.3", "0.4", "0.5", "0.6", "0.7", "0.8", "0.9", "1.0", "1.1", "1.2", "1.3", "1.4", "1.5"]
         },
         "python": {
           "type": "string",
@@ -522,7 +529,11 @@
           "gradient_norm": {
             "type": "number",
             "minimum": 0
-          }
+          },
+          "cuda_memory_allocated_before_bytes": {"type": "integer", "minimum": 0},
+          "cuda_memory_reserved_before_bytes": {"type": "integer", "minimum": 0},
+          "cuda_peak_memory_allocated_bytes": {"type": "integer", "minimum": 0},
+          "cuda_peak_memory_reserved_bytes": {"type": "integer", "minimum": 0}
         }
       }
     },

@@ -228,7 +228,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     modern_init_parser = subparsers.add_parser(
         "modern-init",
-        help="Create an explicit starter configuration for the modern CPU/float64 path.",
+        help="Create an explicit starter configuration for the modern float64 path.",
     )
     modern_init_parser.add_argument("mesh_directory", type=Path)
     modern_init_parser.add_argument("--template", type=Path)
@@ -248,6 +248,12 @@ def build_parser() -> argparse.ArgumentParser:
     modern_init_parser.add_argument("--noise-variance", type=float)
     modern_init_parser.add_argument("--max-cycles", type=int, default=3)
     modern_init_parser.add_argument("--threads", type=int)
+    modern_init_parser.add_argument(
+        "--device",
+        choices=("cpu", "cuda"),
+        default="cpu",
+        help="Exact execution device; CUDA never falls back to CPU (default: cpu).",
+    )
     modern_init_parser.add_argument("--random-seed", type=int, default=20260715)
     modern_init_parser.add_argument(
         "--pairwise-mode",
@@ -279,6 +285,12 @@ def build_parser() -> argparse.ArgumentParser:
     modern_reference_design_parser.add_argument("--subjects", type=int, default=5)
     modern_reference_design_parser.add_argument("--cycles", type=int, default=3)
     modern_reference_design_parser.add_argument("--threads", type=int, default=4)
+    modern_reference_design_parser.add_argument(
+        "--device",
+        choices=("cpu", "cuda"),
+        default="cpu",
+        help="Exact Modern Engine execution device; CUDA never falls back to CPU.",
+    )
     modern_reference_design_parser.add_argument(
         "--tile-size",
         type=int,
@@ -525,7 +537,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     modern_optimizer_benchmark_parser = subparsers.add_parser(
         "modern-optimizer-benchmark",
-        help="Measure declared multi-cycle optimizer runs in fresh CPU processes.",
+        help="Measure declared multi-cycle optimizer runs in fresh isolated processes.",
     )
     modern_optimizer_benchmark_parser.add_argument("config", type=Path)
     modern_optimizer_benchmark_parser.add_argument(
@@ -1461,6 +1473,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 strong_wolfe_curvature_constant=args.strong_wolfe_curvature_constant,
                 strong_wolfe_maximum_step_size=args.strong_wolfe_maximum_step_size,
                 subject_batch_size=args.subject_batch_size,
+                runtime_device=args.device,
             )
             design = verify_modern_reference_qualification_design(destination)
             print(f"Prospective fixed-reference qualification created: {destination}")
@@ -1740,6 +1753,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 noise_variance=args.noise_variance,
                 max_cycles=args.max_cycles,
                 threads=args.threads,
+                runtime_device=args.device,
                 random_seed=args.random_seed,
                 pairwise_mode=args.pairwise_mode,
                 query_tile_size=args.query_tile_size,
@@ -2011,6 +2025,17 @@ def main(argv: Sequence[str] | None = None) -> int:
                 benchmark_modern_optimizer,
             )
 
+            def show_optimizer_benchmark_progress(event) -> None:
+                record = event.record
+                block = "initial" if record.block is None else record.block
+                print(
+                    f"Benchmark repeat {event.repeat}/{event.total_repeats}: "
+                    f"cycle {record.cycle}, {block} {record.status}; "
+                    f"elapsed {event.optimizer_elapsed_ns / 1e9:.1f} s; "
+                    f"objective={record.objective:.12g}",
+                    flush=True,
+                )
+
             report_directory = benchmark_modern_optimizer(
                 args.config,
                 subject_count=args.subjects,
@@ -2019,6 +2044,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 warmup_runs=args.warmups,
                 destination=args.output,
                 overwrite=args.force,
+                progress_callback=show_optimizer_benchmark_progress,
             )
             report = json.loads((report_directory / REPORT_JSON_NAME).read_text(encoding="utf-8"))
             optimizer_seconds = report["summary"]["optimizer_wall_time_ns"]["median"] / 1e9

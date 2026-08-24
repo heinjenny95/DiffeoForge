@@ -85,7 +85,7 @@ def test_collection_freezes_full_factorial_adjacency_and_exact_v04_argv(
 
     assert first["matrix_design_version"] == "0.1"
     assert first["software"]["benchmark_version"] == "0.4"
-    assert first["software"]["engine_implementation"] == "1.4"
+    assert first["software"]["engine_implementation"] == "1.5"
     assert first["created_at"] == FIXED_TIME
     assert first["input"]["available_subject_count"] == 5
     assert first["configuration"]["source_pairwise_evaluation"] == {

@@ -376,6 +376,7 @@ def write_modern_atlas_bundle(
     subject_labels: tuple[str, ...] | list[str],
     model_settings: ModernAtlasModelSettings,
     *,
+    execution_device: Literal["cpu", "cuda"] = "cpu",
     pairwise_evaluation: PairwiseEvaluationPlan | None = None,
     pca_components: int | None = None,
     pca_deformation_standard_deviations: float = 2.0,
@@ -395,6 +396,8 @@ def write_modern_atlas_bundle(
         raise ValueError("template_triangles must have shape (triangles, 3)")
     if not isinstance(model_settings, ModernAtlasModelSettings):
         raise TypeError("model_settings must be ModernAtlasModelSettings")
+    if execution_device not in {"cpu", "cuda"}:
+        raise ValueError("execution_device must be cpu or cuda")
     resolved_pairwise_evaluation = (
         PairwiseEvaluationPlan() if pairwise_evaluation is None else pairwise_evaluation
     )
@@ -597,7 +600,7 @@ def write_modern_atlas_bundle(
                 "diffeoforge": __version__,
                 "pytorch": torch.__version__,
                 "numpy": np.__version__,
-                "device": "cpu",
+                "device": execution_device,
                 "dtype": "float64",
                 "pairwise_evaluation": resolved_pairwise_evaluation.as_manifest(),
             },

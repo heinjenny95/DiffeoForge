@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "DiffeoForge modern workflow configuration",
-  "description": "Explicit configuration for the experimental CPU/float64 mesh-folder atlas workflow.",
+  "description": "Explicit configuration for the experimental declared-device/float64 mesh-folder atlas workflow.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -297,7 +297,7 @@
       "additionalProperties": false,
       "required": ["device", "precision", "threads", "random_seed"],
       "properties": {
-        "device": {"const": "cpu"},
+        "device": {"enum": ["cpu", "cuda"]},
         "precision": {"const": "float64"},
         "threads": {"type": "integer", "minimum": 1},
         "random_seed": {"type": "integer", "minimum": 0},

@@ -1,6 +1,7 @@
 # Experimental modern mesh-folder workflow
 
-Status: **tested CPU/float64 engineering path; not scientifically validated or production-scaled**
+Status: **tested CPU/float64 path and five-subject-qualified CUDA/float64 path; not scientifically
+validated or production-scaled**
 
 Tracked prospectively by
 [engineering issue #28](https://github.com/heinjenny95/DiffeoForge/issues/28) and
@@ -86,7 +87,7 @@ count, finite values, copied bytes, and SHA-256 are checked before execution and
 again during workflow verification.
 
 Configuration v0.5 may bind one verified exact-state checkpoint and its parent
-effective configuration. Current Engine 1.4 runs write checkpoint v0.3 with
+effective configuration. Current Engine 1.5 runs write checkpoint v0.3 with
 separate L-BFGS histories for every configured block. This is reserved for immutable completed-run
 continuation and guarded abandoned-run recovery. Preflight verifies exact
 Engine, runtime/thread, model, optimizer, subject, and numerical-state identity
@@ -113,6 +114,16 @@ backward-compatible default. Workflow, bundle, workload, benchmark, and
 checkpoint evidence bind both settings; continuation cannot change either.
 See [parallel subject batching](MODERN_SUBJECT_BATCHING.md).
 
+Engine 1.5 adds an explicit experimental `runtime.device: cuda` path. It uses
+float64 throughout, disables TF32, requests deterministic PyTorch algorithms,
+requires one subject-batch worker, synchronizes CUDA before benchmark timing,
+records CUDA allocator telemetry, and serializes canonical CPU checkpoint and
+bundle artifacts. A requested CUDA run fails before computation if CUDA is not
+available; it never falls back silently. The generated default remains `cpu`.
+Pass `--device cuda` to `modern-init` only inside an explicitly reviewed CUDA
+environment; the choice is written into YAML rather than inferred from hardware.
+See [Engine 1.5 CUDA feasibility](MODERN_ENGINE15_CUDA.md).
+
 New starter configurations set `checkpoint_interval_cycles: 5` and
 `checkpoint_retention: latest`. A terminal cycle is always written. The
 workflow manifest binds the effective policy and retained cycle sequence;
@@ -125,7 +136,7 @@ remain verifiable; prospective continuation plans bind the implementation
 revision expected for their successor.
 
 A completed, verified run that reaches its cycle cap without convergence can be
-continued through a separate hash-bound prospective successor. Engine 1.4
+continued through a separate hash-bound prospective successor. Engine 1.5
 copies the exact complete-cycle numerical state, including per-block L-BFGS histories and
 relative-objective baselines; it never modifies or relabels the parent. See
 [verified Modern optimizer continuation](MODERN_CONTINUATION.md).

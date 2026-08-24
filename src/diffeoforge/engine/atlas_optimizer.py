@@ -923,6 +923,11 @@ def optimize_atlas(
             "control_points": tuple(initial_control_points.shape),
             "momenta": tuple(initial_momenta.shape),
         }
+        history_devices = {
+            "template": initial_template_vertices.device,
+            "control_points": initial_control_points.device,
+            "momenta": initial_momenta.device,
+        }
         for history_block in order:
             block_history = resume_state.lbfgs_histories[history_block]
             if len(block_history) > history_size:
@@ -944,14 +949,14 @@ def optimize_atlas(
                         )
                     if (
                         tuple(tensor.shape) != history_shapes[history_block]
-                        or tensor.device.type != "cpu"
+                        or tensor.device != history_devices[history_block]
                         or tensor.dtype != torch.float64
                         or tensor.requires_grad
                         or not bool(torch.isfinite(tensor).all())
                     ):
                         raise ValueError(
                             f"resume L-BFGS {history_block} {label} {index} must be detached "
-                            "finite CPU float64 with the optimized block shape"
+                            "finite float64 on the optimized block device with its shape"
                         )
                 normalized_resume_histories[history_block].append(
                     (step.clone(), gradient_delta.clone())
@@ -965,14 +970,14 @@ def optimize_atlas(
                 len(order) != 1
                 or not isinstance(candidate, torch.Tensor)
                 or tuple(candidate.shape) != expected_gradient_shape
-                or candidate.device.type != "cpu"
+                or candidate.device != history_devices[order[0]]
                 or candidate.dtype != torch.float64
                 or candidate.requires_grad
                 or not bool(torch.isfinite(candidate).all())
             ):
                 raise ValueError(
-                    "resume reusable_gradient must be detached finite CPU float64 with the "
-                    "single optimized block shape"
+                    "resume reusable_gradient must be detached finite float64 on the "
+                    "optimized block device with the single-block shape"
                 )
             if not torch.equal(candidate, initial.gradient):
                 raise ValueError("resume gradient differs from the recomputed initial gradient")

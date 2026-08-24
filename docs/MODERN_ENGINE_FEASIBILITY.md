@@ -334,6 +334,13 @@ gates. See
    time from 65.714 to 51.555 minutes (21.55%). Sampled peak RSS rose to 780.65
    MB, close to the predeclared 800 MB ceiling, so this remains a verified
    hardware-specific profile rather than a cross-machine default.
+   Engine 1.5 therefore introduces a separate, fail-closed CUDA/float64 path.
+   Its five-subject full-resolution Weevil qualification now passes numerical,
+   repeat-determinism, memory, speed, convergence, and fixed-reference gates;
+   the matched one-cycle CUDA screen was 10.175 times faster than CPU. The CPU
+   default and the passing Engine 1.4 parallel-batch profile remain intact
+   until a separately frozen larger-cohort CUDA gate passes. See
+   [Engine 1.5 CUDA feasibility](MODERN_ENGINE15_CUDA.md).
 9. Define evidence-derived tolerances before accepting a production backend.
    Provisional fixed-reference gates have now passed once prospectively; broader
    datasets and atlas-update tests are still needed before the tolerances can be

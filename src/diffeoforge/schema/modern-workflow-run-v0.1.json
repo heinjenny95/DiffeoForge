@@ -116,7 +116,7 @@
         "diffeoforge": {"type": "string", "minLength": 1},
         "pytorch": {"type": "string", "minLength": 1},
         "numpy": {"type": "string", "minLength": 1},
-        "device": {"const": "cpu"},
+          "device": {"enum": ["cpu", "cuda"]},
         "dtype": {"const": "float64"},
         "threads": {"type": "integer", "minimum": 1},
         "random_seed": {"type": "integer", "minimum": 0},

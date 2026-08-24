@@ -352,6 +352,7 @@ def create_modern_reference_qualification(
     strong_wolfe_curvature_constant: float = 0.9,
     strong_wolfe_maximum_step_size: float = 10.0,
     subject_batch_size: int | None = None,
+    runtime_device: str = "cpu",
     created_at: str | None = None,
 ) -> Path:
     """Freeze a no-results-yet comparison against one completed Deformetrica atlas."""
@@ -371,6 +372,8 @@ def create_modern_reference_qualification(
         or subject_batch_size < 1
     ):
         raise ValueError("subject_batch_size must be an integer of at least 1 or None")
+    if runtime_device not in {"cpu", "cuda"}:
+        raise ValueError("runtime_device must be cpu or cuda")
     if optimizer_direction not in {"steepest", "lbfgs"}:
         raise ValueError("optimizer_direction must be steepest or lbfgs")
     if line_search_condition not in {"armijo", "strong_wolfe"}:
@@ -603,7 +606,7 @@ def create_modern_reference_qualification(
                 "deformation_components": min(3, subject_count - 1),
             },
             "runtime": {
-                "device": "cpu",
+                "device": runtime_device,
                 "precision": "float64",
                 "threads": threads,
                 "random_seed": int(effective["runtime"]["random_seed"]),
