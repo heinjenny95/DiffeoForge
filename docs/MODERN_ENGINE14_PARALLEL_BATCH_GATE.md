@@ -1,6 +1,6 @@
 # Engine 1.4 parallel-subject-batch gate
 
-Status: **SCREEN PASS; two workers selected for prospective full-cohort confirmation**
+Status: **PASS; two workers passed the full-cohort confirmation**
 
 ## Question
 
@@ -101,6 +101,35 @@ Its strictly verified `optimizer-design.json` SHA-256 is
 It binds Engine `1.4`, two workers, 236 subjects, two cycles, one repeat, zero
 warm-ups, and order seed `20260727`; it contains no result.
 
+## Frozen full-cohort result
+
+The completed study and nested optimizer benchmark v0.2 report strictly
+verified. The raw report SHA-256 is
+`5431ec8dd42313ff22d92238ab9a4d6f0845f490ee2f633e85305fe07db95b29`.
+
+| Frozen gate | Required | Observed | Result |
+|---|---:|---:|---|
+| Strict design/study/report verification | pass | pass | PASS |
+| Accepted decisions | `8/8` | `8/8` | PASS |
+| Stationary / failed decisions | `0 / 0` | `0 / 0` | PASS |
+| Exact history and parameter hashes | match | exact match | PASS |
+| Exact objective/components | match | exact match | PASS |
+| Optimizer wall time | at most `3548572746120 ns` | `3093296929000 ns` | PASS |
+| Sampled peak RSS | at most `800000000 B` | `780652544 B` | PASS |
+
+The two-worker candidate used 51.555 minutes, 21.55% less than the bound
+65.714-minute serial reference. It retained the exact history SHA-256
+`f53b03b5344e681fc84b7654e7d8a2d8a14d4548a32d46997f847316969dbf13`
+and exact template, control-point, and Momenta hashes. Its final objective
+`-8545.854488271007` and both components matched exactly. Work also matched:
+41 objective evaluations, 16 gradient evaluations, eight accepted-candidate
+gradients, and 17 line-search evaluations. No block failed; termination was the
+declared two-cycle cap, not convergence.
+
+The candidate passed the time ceiling by 455.276 seconds. Memory had only
+19,347,456 bytes of headroom, so this result supports two workers for this
+128-GB Ryzen 9 7950X engineering workload but does not support four workers or
+a cross-machine default change.
+
 Passing permits the worker count only for this hardware-specific engineering
-path. It does not by itself change the cross-machine generated default. Failure
-is retained and cannot authorize a post-hoc weaker threshold.
+path. It does not by itself change the cross-machine generated default.

@@ -58,7 +58,13 @@ the former controls PyTorch work inside one batch, while the latter controls how
 many independent subject batches may be in flight. More workers are not assumed
 to be faster because nested CPU parallelism and memory bandwidth can dominate.
 Adoption therefore requires a prospective real-cohort screen and a separate
-full-cohort confirmation; until those pass, one worker remains the default.
+full-cohort confirmation. Engine 1.4 has passed both on the development Ryzen 9
+7950X: two workers were bit-exact and reduced the 236-subject/two-cycle optimizer
+time by 21.55%, from 65.714 to 51.555 minutes. Sampled peak RSS increased to
+780,652,544 bytes and four workers exceeded the predeclared screen memory gate.
+The result is hardware/workload-specific, so one worker remains the generated
+cross-machine default. See the
+[prospective gate](MODERN_ENGINE14_PARALLEL_BATCH_GATE.md).
 
 ## Real 16-subject engineering observation
 

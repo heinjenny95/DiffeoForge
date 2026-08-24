@@ -328,9 +328,12 @@ gates. See
    [multi-rate atlas optimization](MODERN_MULTIRATE_OPTIMIZATION.md).
    Engine 1.4 now implements the first such restructuring: deterministic
    concurrent execution across explicitly bounded subject batches, with frozen
-   reduction order and checkpoint-bound worker provenance. A prospective
-   real-16-subject worker screen and a separate 236-subject confirmation remain
-   required before changing the one-worker default.
+   reduction order and checkpoint-bound worker provenance. Its prospective
+   real-16-subject screen selected two workers, and the separate 236-subject
+   confirmation preserved every result hash while reducing two-cycle optimizer
+   time from 65.714 to 51.555 minutes (21.55%). Sampled peak RSS rose to 780.65
+   MB, close to the predeclared 800 MB ceiling, so this remains a verified
+   hardware-specific profile rather than a cross-machine default.
 9. Define evidence-derived tolerances before accepting a production backend.
    Provisional fixed-reference gates have now passed once prospectively; broader
    datasets and atlas-update tests are still needed before the tolerances can be

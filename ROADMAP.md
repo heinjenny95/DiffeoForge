@@ -126,7 +126,9 @@ This roadmap describes evidence gates rather than promised dates.
 - [x] Prospectively screen Engine 1.4 subject-batch worker counts on the frozen
   real 16-subject cohort; two workers passed with an exact result and 23.77%
   lower median optimizer time
-- [ ] Confirm the selected two-worker candidate on all 236 subjects
+- [x] Confirm the selected two-worker candidate on all 236 subjects; exact
+  result hashes, 21.55% lower optimizer time, and sampled peak RSS below the
+  predeclared ceiling
 
 ## Milestone 3: Accessible application
 

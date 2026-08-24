@@ -276,7 +276,10 @@ Momenta between shared template/control updates; see
 1.4 adds an opt-in deterministic CPU worker pool across already memory-bounded
 subject batches. It preserves the serial batch reduction order and records the
 worker count in bundles, benchmarks, and checkpoint bindings; the default stays
-at one until real-cohort gates pass. See
+at one across machines. A prospective Ryzen 9 7950X gate selected two workers
+and then preserved exact result hashes on 236 real 5k meshes while reducing the
+two-cycle optimizer time by 21.55%; its increased memory use keeps the result
+hardware-specific. See
 [parallel subject batching](docs/MODERN_SUBJECT_BATCHING.md). The real source
 preparation worker also has suspended-process Windows
 hard-parent-death evidence before request delivery. For the Modern compute
