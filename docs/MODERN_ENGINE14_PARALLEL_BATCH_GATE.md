@@ -89,6 +89,18 @@ report SHA-256
 Its optimizer time must be no more than `3548572746120 ns` (10% below the
 reference), and sampled peak RSS must not exceed `800000000` bytes.
 
+The selected prospective design was frozen before execution at:
+
+```text
+engine14-parallel-batches-workers02-full-cohort-design
+engine14-parallel-batches-workers02-full-cohort-study
+```
+
+Its strictly verified `optimizer-design.json` SHA-256 is
+`b0d33f3d2c75be30bcfe6eec7f0a530677dbab4c6876a6c1e05cddf56a87a6c4`.
+It binds Engine `1.4`, two workers, 236 subjects, two cycles, one repeat, zero
+warm-ups, and order seed `20260727`; it contains no result.
+
 Passing permits the worker count only for this hardware-specific engineering
 path. It does not by itself change the cross-machine generated default. Failure
 is retained and cannot authorize a post-hoc weaker threshold.
