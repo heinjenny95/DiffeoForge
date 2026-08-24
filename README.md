@@ -272,7 +272,12 @@ verifies every per-block objective record so shorter-cycle efficiency can be
 tested without hiding the trajectory. Engine 1.3 adds an explicit experimental
 `momenta_updates_per_cycle` schedule for allocating more work to subject-local
 Momenta between shared template/control updates; see
-[multi-rate atlas optimization](docs/MODERN_MULTIRATE_OPTIMIZATION.md). The real source
+[multi-rate atlas optimization](docs/MODERN_MULTIRATE_OPTIMIZATION.md). Engine
+1.4 adds an opt-in deterministic CPU worker pool across already memory-bounded
+subject batches. It preserves the serial batch reduction order and records the
+worker count in bundles, benchmarks, and checkpoint bindings; the default stays
+at one until real-cohort gates pass. See
+[parallel subject batching](docs/MODERN_SUBJECT_BATCHING.md). The real source
 preparation worker also has suspended-process Windows
 hard-parent-death evidence before request delivery. For the Modern compute
 worker, Windows parent death terminates the contained worker tree and

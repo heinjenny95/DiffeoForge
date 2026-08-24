@@ -264,6 +264,17 @@ def test_lbfgs_accepts_multiblock_configuration_and_requires_wolfe_coherence() -
     with pytest.raises(ConfigurationError, match="momenta_updates_per_cycle"):
         workflow.validate_modern_workflow_config(invalid)
 
+    invalid = _configuration()
+    invalid["optimization"]["subject_batch_workers"] = 2
+    with pytest.raises(ConfigurationError, match="subject_batch_size"):
+        workflow.validate_modern_workflow_config(invalid)
+
+    invalid = _configuration()
+    invalid["optimization"]["subject_batch_size"] = 1
+    invalid["optimization"]["subject_batch_workers"] = 65
+    with pytest.raises(ConfigurationError, match="subject_batch_workers"):
+        workflow.validate_modern_workflow_config(invalid)
+
 
 @pytest.mark.parametrize(
     ("name", "value"),
@@ -536,8 +547,10 @@ def test_multiblock_lbfgs_workflow_writes_exact_v03_checkpoint(tmp_path: Path) -
     assert bundle["optimizer"]["settings"]["direction_update"] == "lbfgs"
     assert bundle["optimizer"]["settings"]["momenta_updates_per_cycle"] == 2
     assert checkpoint["checkpoint_version"] == "0.3"
-    assert checkpoint["binding"]["engine_implementation"] == "1.3"
+    assert checkpoint["binding"]["engine_implementation"] == "1.4"
     assert checkpoint["binding"]["momenta_updates_per_cycle"] == 2
+    assert checkpoint["binding"]["subject_batch_size"] is None
+    assert checkpoint["binding"]["subject_batch_workers"] == 1
     assert set(resume_state.lbfgs_histories) == {
         "momenta",
         "template",
@@ -566,8 +579,15 @@ def test_subject_batched_workflow_is_explicit_and_numerically_matches_full_cohor
     full_value = _configuration(output=str(tmp_path / "unused-full"))
     full_config = tmp_path / "full.yaml"
     full_config.write_text(yaml.safe_dump(full_value, sort_keys=False), encoding="utf-8")
-    batched_value = copy.deepcopy(full_value)
-    batched_value["optimization"]["subject_batch_size"] = 2
+    serial_batched_value = copy.deepcopy(full_value)
+    serial_batched_value["optimization"]["subject_batch_size"] = 2
+    serial_batched_config = tmp_path / "serial-batched.yaml"
+    serial_batched_config.write_text(
+        yaml.safe_dump(serial_batched_value, sort_keys=False),
+        encoding="utf-8",
+    )
+    batched_value = copy.deepcopy(serial_batched_value)
+    batched_value["optimization"]["subject_batch_workers"] = 2
     batched_config = tmp_path / "batched.yaml"
     batched_config.write_text(
         yaml.safe_dump(batched_value, sort_keys=False),
@@ -579,29 +599,51 @@ def test_subject_batched_workflow_is_explicit_and_numerically_matches_full_cohor
         destination=tmp_path / "full-run",
         created_at=FIXED_TIME,
     )
+    serial_batched_run = workflow.run_modern_workflow(
+        serial_batched_config,
+        destination=tmp_path / "serial-batched-run",
+        created_at=FIXED_TIME,
+    )
     batched_run = workflow.run_modern_workflow(
         batched_config,
         destination=tmp_path / "batched-run",
         created_at=FIXED_TIME,
     )
     full_manifest = workflow.verify_modern_workflow(full_run)
+    serial_batched_manifest = workflow.verify_modern_workflow(serial_batched_run)
     batched_manifest = workflow.verify_modern_workflow(batched_run)
     full_bundle = workflow.verify_modern_atlas_bundle(
         full_run / full_manifest["result_bundle"]["path"]
+    )
+    serial_batched_bundle = workflow.verify_modern_atlas_bundle(
+        serial_batched_run / serial_batched_manifest["result_bundle"]["path"]
     )
     batched_bundle = workflow.verify_modern_atlas_bundle(
         batched_run / batched_manifest["result_bundle"]["path"]
     )
 
     assert batched_bundle["optimizer"]["settings"]["subject_batch_size"] == 2
+    assert batched_bundle["optimizer"]["settings"]["subject_batch_workers"] == 2
+    assert serial_batched_bundle["optimizer"]["settings"]["subject_batch_workers"] == 1
     assert full_bundle["optimizer"]["settings"]["subject_batch_size"] is None
+    assert full_bundle["optimizer"]["settings"]["subject_batch_workers"] == 1
     assert batched_bundle["optimizer"]["settings"]["shared_step_scaling"] == "none"
     for field in ("final_objective", "final_attachment", "final_regularity"):
-        assert batched_bundle["optimizer"][field] == pytest.approx(
+        assert batched_bundle["optimizer"][field] == serial_batched_bundle["optimizer"][field]
+        assert serial_batched_bundle["optimizer"][field] == pytest.approx(
             full_bundle["optimizer"][field],
             rel=1e-12,
             abs=1e-12,
         )
+    assert sha256_file(
+        batched_run
+        / batched_manifest["result_bundle"]["path"]
+        / batched_bundle["optimizer"]["history_path"]
+    ) == sha256_file(
+        serial_batched_run
+        / serial_batched_manifest["result_bundle"]["path"]
+        / serial_batched_bundle["optimizer"]["history_path"]
+    )
 
 
 def test_strong_wolfe_workflow_records_and_verifies_line_search(tmp_path: Path) -> None:

@@ -326,6 +326,11 @@ gates. See
    [subject batching](MODERN_SUBJECT_BATCHING.md) and
    [shared-step scaling](MODERN_SHARED_STEP_SCALING.md), and
    [multi-rate atlas optimization](MODERN_MULTIRATE_OPTIMIZATION.md).
+   Engine 1.4 now implements the first such restructuring: deterministic
+   concurrent execution across explicitly bounded subject batches, with frozen
+   reduction order and checkpoint-bound worker provenance. A prospective
+   real-16-subject worker screen and a separate 236-subject confirmation remain
+   required before changing the one-worker default.
 9. Define evidence-derived tolerances before accepting a production backend.
    Provisional fixed-reference gates have now passed once prospectively; broader
    datasets and atlas-update tests are still needed before the tolerances can be

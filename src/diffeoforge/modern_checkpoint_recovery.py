@@ -510,6 +510,10 @@ def verify_modern_checkpoint_recovery(directory: Path | str) -> dict[str, Any]:
         or config["optimization"]["block_order"] != list(blocks)
         or config["optimization"].get("momenta_updates_per_cycle", 1)
         != binding.get("momenta_updates_per_cycle", 1)
+        or config["optimization"].get("subject_batch_size")
+        != binding.get("subject_batch_size")
+        or config["optimization"].get("subject_batch_workers", 1)
+        != binding.get("subject_batch_workers", 1)
         or config["optimization"]["step_initialization"]
         != plan["continuation"]["step_initialization"]
         or declared_steps != checkpoint["optimizer_state"]["next_step_sizes"]

@@ -1,6 +1,7 @@
 # Modern Engine subject batching
 
-Status: **implemented as an explicit opt-in execution mode in Engine 1.0**
+Status: **serial memory-bounded execution implemented in Engine 1.0; explicit
+deterministic parallel batch execution implemented in Engine 1.4**
 
 ## Purpose
 
@@ -10,12 +11,22 @@ every subject. Modern Engine 1.0 therefore accepts:
 ```yaml
 optimization:
   subject_batch_size: 4
+  subject_batch_workers: 2
 ```
 
 The value is optional. `null` or an omitted key preserves the full-cohort Engine
 0.9 path. A positive value evaluates subjects in deterministic consecutive
 batches. Objective, attachment, regularity, residual, and gradient contributions
 are accumulated in frozen subject order.
+
+`subject_batch_workers` defaults to one. Engine 1.4 permits `2` through `64`
+only when a finite `subject_batch_size` is declared. Independent batches may
+then execute concurrently on CPU worker threads, but their results are always
+collected and reduced in the original batch order. Parallel and serial runs
+with the same batch grouping therefore retain the same floating-point reduction
+order; tests require exact optimizer histories and exact final tensors. Changing
+the batch size can still change last-order floating-point bits because it changes
+the grouping of the reductions.
 
 For a momenta block, batch gradients are concatenated back into the declared
 subject order. Template and control-point gradients are shared across subjects
@@ -35,6 +46,19 @@ The CLI fixed-reference design command exposes `--subject-batch-size`. The
 effective workflow configuration, optimizer settings, benchmark configuration,
 bundle, hashes, and continuation binding all retain the chosen value. Direct
 callers default to the legacy unbatched path.
+
+Engine 1.4 additionally stores the worker count in the effective configuration,
+optimizer settings, workload and benchmark evidence, result bundle, and
+complete-cycle checkpoint binding. Resume and guarded recovery reject a worker
+count or batch-size mismatch. Historical evidence without the worker field means
+one worker.
+
+The thread count in `runtime.threads` and `subject_batch_workers` are separate:
+the former controls PyTorch work inside one batch, while the latter controls how
+many independent subject batches may be in flight. More workers are not assumed
+to be faster because nested CPU parallelism and memory bandwidth can dominate.
+Adoption therefore requires a prospective real-cohort screen and a separate
+full-cohort confirmation; until those pass, one worker remains the default.
 
 ## Real 16-subject engineering observation
 

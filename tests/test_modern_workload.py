@@ -61,7 +61,9 @@ def test_example_workload_has_exact_public_dimensions_and_formulas() -> None:
     report = collect_modern_workload(EXAMPLE, host_observations=FIXED_HOST)
 
     assert report["input"]["subject_count"] == 5
-    assert report["engine"]["implementation_version"] == "1.3"
+    assert report["engine"]["implementation_version"] == "1.4"
+    assert report["configuration"]["subject_batch_size"] is None
+    assert report["configuration"]["subject_batch_workers"] == 1
     assert report["input"]["template"]["points"] == 162
     assert report["input"]["template"]["triangles"] == 320
     assert {subject["triangles"] for subject in report["input"]["subjects"]} == {320}
@@ -138,6 +140,19 @@ def test_multirate_momenta_updates_expand_the_declared_optimizer_bound(
     assert report["optimizer_bound"]["parameter_blocks"] == 3
     assert report["optimizer_bound"]["block_decisions_per_cycle"] == 4
     assert report["optimizer_bound"]["objective_gradient_evaluation_upper_bound"] == 253
+
+
+def test_parallel_subject_batches_are_declared_in_workload_evidence(tmp_path: Path) -> None:
+    path = _write_portable_config(tmp_path / "parallel-subjects.yaml")
+    config = yaml.safe_load(path.read_text(encoding="utf-8"))
+    config["optimization"]["subject_batch_size"] = 1
+    config["optimization"]["subject_batch_workers"] = 4
+    path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+
+    report = collect_modern_workload(path, host_observations=FIXED_HOST)
+
+    assert report["configuration"]["subject_batch_size"] == 1
+    assert report["configuration"]["subject_batch_workers"] == 4
 
 
 @pytest.mark.parametrize("attachment_type", ["current", "varifold"])

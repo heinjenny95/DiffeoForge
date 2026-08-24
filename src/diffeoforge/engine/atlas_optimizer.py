@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Callable, Sequence
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from numbers import Integral, Real
 from typing import Literal
@@ -131,6 +132,7 @@ class AtlasOptimizerSettings:
     strong_wolfe_maximum_step_size: float = 10.0
     relative_objective_tolerance: float | None = None
     subject_batch_size: int | None = None
+    subject_batch_workers: int = 1
     shared_step_scaling: AtlasSharedStepScaling = "none"
 
 
@@ -439,6 +441,7 @@ def optimize_atlas(
     strong_wolfe_maximum_step_size: float = 10.0,
     relative_objective_tolerance: float | None = None,
     subject_batch_size: int | None = None,
+    subject_batch_workers: int = 1,
     shared_step_scaling: AtlasSharedStepScaling = "none",
     resume_state: AtlasOptimizerResumeState | None = None,
     progress_callback: AtlasProgressCallback | None = None,
@@ -553,6 +556,15 @@ def optimize_atlas(
         if subject_batch_size is None
         else _integer("subject_batch_size", subject_batch_size, minimum=1)
     )
+    normalized_subject_batch_workers = _integer(
+        "subject_batch_workers",
+        subject_batch_workers,
+        minimum=1,
+    )
+    if normalized_subject_batch_workers > 64:
+        raise ValueError("subject_batch_workers must not exceed 64")
+    if normalized_subject_batch_workers > 1 and normalized_subject_batch_size is None:
+        raise ValueError("subject_batch_workers greater than 1 requires subject_batch_size")
     if shared_step_scaling not in ("none", "inverse_subject_count"):
         raise ValueError("shared_step_scaling must be none or inverse_subject_count")
     gradient_threshold = _finite_real(
@@ -586,6 +598,7 @@ def optimize_atlas(
         strong_wolfe_maximum_step_size=wolfe_maximum_step,
         relative_objective_tolerance=objective_change_tolerance,
         subject_batch_size=normalized_subject_batch_size,
+        subject_batch_workers=normalized_subject_batch_workers,
         shared_step_scaling=shared_step_scaling,
     )
     for name, value in (
@@ -675,18 +688,26 @@ def optimize_atlas(
 
     batch_slices = subject_slices()
 
+    def ordered_batch_map(function: Callable[[slice], object]) -> list[object]:
+        """Evaluate independent subject batches and retain their declared order."""
+
+        if normalized_subject_batch_workers == 1 or len(batch_slices) == 1:
+            return [function(subject_slice) for subject_slice in batch_slices]
+        with ThreadPoolExecutor(
+            max_workers=min(normalized_subject_batch_workers, len(batch_slices)),
+            thread_name_prefix="diffeoforge-atlas-batch",
+        ) as executor:
+            return list(executor.map(function, batch_slices))
+
     def evaluate_batched_objective(
         template_vertices: torch.Tensor,
         control_points: torch.Tensor,
         momenta: torch.Tensor,
     ) -> _State | None:
-        totals: list[torch.Tensor] = []
-        attachments: list[torch.Tensor] = []
-        regularities: list[torch.Tensor] = []
-        residuals: list[torch.Tensor] = []
-        with torch.no_grad():
-            for subject_slice in batch_slices:
-                check_cancellation()
+        def evaluate_batch(
+            subject_slice: slice,
+        ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor] | None:
+            with torch.no_grad():
                 objective = atlas_objective(
                     template_vertices,
                     template_triangles,
@@ -700,27 +721,34 @@ def optimize_atlas(
                 )
                 if not bool(torch.isfinite(objective.total)):
                     return None
-                totals.append(objective.total.detach())
-                attachments.append(objective.attachment.detach())
-                regularities.append(objective.regularity.detach())
-                residuals.append(objective.residuals.detach())
+                return (
+                    objective.total.detach(),
+                    objective.attachment.detach(),
+                    objective.regularity.detach(),
+                    objective.residuals.detach(),
+                )
+
+        check_cancellation()
+        batch_values = ordered_batch_map(evaluate_batch)
+        check_cancellation()
+        if any(value is None for value in batch_values):
+            return None
+        values = [value for value in batch_values if value is not None]
         return _State(
             template_vertices=template_vertices.detach(),
             control_points=control_points.detach(),
             momenta=momenta.detach(),
-            objective=torch.stack(totals).sum(),
-            attachment=torch.stack(attachments).sum(),
-            regularity=torch.stack(regularities).sum(),
-            residuals=torch.cat(residuals),
+            objective=torch.stack([value[0] for value in values]).sum(),
+            attachment=torch.stack([value[1] for value in values]).sum(),
+            regularity=torch.stack([value[2] for value in values]).sum(),
+            residuals=torch.cat([value[3] for value in values]),
         )
 
     def evaluate_batched_gradient(
         state: _State,
         block: AtlasParameterBlock,
     ) -> torch.Tensor | None:
-        gradients: list[torch.Tensor] = []
-        for subject_slice in batch_slices:
-            check_cancellation()
+        def evaluate_batch(subject_slice: slice) -> torch.Tensor | None:
             template_vertices = state.template_vertices.detach().clone()
             control_points = state.control_points.detach().clone()
             momenta = state.momenta[subject_slice].detach().clone()
@@ -748,7 +776,14 @@ def optimize_atlas(
                 (gradient,) = torch.autograd.grad(objective.total, variable)
             if not bool(torch.isfinite(gradient).all()):
                 return None
-            gradients.append(gradient.detach())
+            return gradient.detach()
+
+        check_cancellation()
+        batch_values = ordered_batch_map(evaluate_batch)
+        check_cancellation()
+        if any(value is None for value in batch_values):
+            return None
+        gradients = [value for value in batch_values if isinstance(value, torch.Tensor)]
         if block == "momenta":
             return torch.cat(gradients)
         return torch.stack(gradients).sum(dim=0)

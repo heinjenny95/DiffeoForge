@@ -314,10 +314,17 @@ def collect_modern_optimizer_benchmark_design(
                     "relative_objective_tolerance": optimizer.get(
                         "relative_objective_tolerance"
                     ),
-                    "subject_batch_size": optimizer.get("subject_batch_size"),
                     "shared_step_scaling": optimizer.get("shared_step_scaling", "none"),
                 }
                 if "direction_update" in optimizer
+                else {}
+            ),
+            **(
+                {
+                    "subject_batch_size": optimizer.get("subject_batch_size"),
+                    "subject_batch_workers": optimizer.get("subject_batch_workers", 1),
+                }
+                if "subject_batch_size" in optimizer or "subject_batch_workers" in optimizer
                 else {}
             ),
             "threads": config["runtime"]["threads"],

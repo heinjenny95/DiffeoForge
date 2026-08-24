@@ -214,8 +214,14 @@ def _optimizer_keywords(config: dict[str, Any], max_cycles: int) -> dict[str, An
                 "relative_objective_tolerance": optimizer.get(
                     "relative_objective_tolerance"
                 ),
-                "subject_batch_size": optimizer.get("subject_batch_size"),
                 "shared_step_scaling": optimizer.get("shared_step_scaling", "none"),
+            }
+        )
+    if "subject_batch_size" in optimizer or "subject_batch_workers" in optimizer:
+        keywords.update(
+            {
+                "subject_batch_size": optimizer.get("subject_batch_size"),
+                "subject_batch_workers": optimizer.get("subject_batch_workers", 1),
             }
         )
     return keywords
@@ -893,10 +899,17 @@ def collect_modern_optimizer_benchmark(
                     "relative_objective_tolerance": optimizer.get(
                         "relative_objective_tolerance"
                     ),
-                    "subject_batch_size": optimizer.get("subject_batch_size"),
                     "shared_step_scaling": optimizer.get("shared_step_scaling", "none"),
                 }
                 if "direction_update" in optimizer
+                else {}
+            ),
+            **(
+                {
+                    "subject_batch_size": optimizer.get("subject_batch_size"),
+                    "subject_batch_workers": optimizer.get("subject_batch_workers", 1),
+                }
+                if "subject_batch_size" in optimizer or "subject_batch_workers" in optimizer
                 else {}
             ),
             "threads": config["runtime"]["threads"],
@@ -1000,6 +1013,12 @@ def render_modern_optimizer_benchmark_html(report: dict[str, Any]) -> str:
         else "\n<li>Momenta updates per cycle: "
         f"{config['momenta_updates_per_cycle']}</li>"
     )
+    batch_workers_html = (
+        ""
+        if "subject_batch_workers" not in config
+        else "\n<li>Subject-batch workers: "
+        f"{config['subject_batch_workers']}</li>"
+    )
     return f"""{HTML_MARKER}
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width">
@@ -1020,7 +1039,8 @@ background:#fff6df}}</style></head><body>
 <li>Subjects: {report["input"]["selected_subject_count"]} of
 {report["input"]["available_subject_count"]}</li>
 <li>Cycles: {config["measured_max_cycles"]} (source config: {config["source_max_cycles"]})</li>
-<li>Block order: {html.escape(", ".join(config["block_order"]))}</li>{momenta_schedule_html}
+<li>Block order: {html.escape(", ".join(config["block_order"]))}</li>
+{momenta_schedule_html}{batch_workers_html}
 <li>Fresh-process repeats: {config["repeats"]}; warm-ups/repeat:
 {config["warmup_runs_per_repeat"]}</li>
 <li>Threads: {config["threads"]}; pairwise execution: {html.escape(pairwise["mode"])};

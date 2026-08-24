@@ -219,6 +219,38 @@ def test_subject_batched_gradients_match_full_cohort_for_every_parameter_block()
     assert batched.gradient_evaluations == full.gradient_evaluations
 
 
+def test_parallel_subject_batches_exactly_match_serial_batch_order() -> None:
+    arguments, keywords = _problem(subjects=2)
+    settings = {
+        "max_cycles": 2,
+        "gradient_tolerance": 0.0,
+        "step_initialization": "previous_accepted",
+        "direction_update": "lbfgs",
+        "subject_batch_size": 1,
+    }
+
+    serial = optimize_atlas(*arguments, **keywords, **settings)
+    parallel = optimize_atlas(
+        *arguments,
+        **keywords,
+        **settings,
+        subject_batch_workers=2,
+    )
+
+    assert serial.settings.subject_batch_workers == 1
+    assert parallel.settings.subject_batch_workers == 2
+    assert parallel.history == serial.history
+    assert parallel.termination_reason == serial.termination_reason
+    assert parallel.failed_block == serial.failed_block
+    assert parallel.cycles_completed == serial.cycles_completed
+    assert parallel.objective_evaluations == serial.objective_evaluations
+    assert parallel.gradient_evaluations == serial.gradient_evaluations
+    assert parallel.candidate_gradient_evaluations == serial.candidate_gradient_evaluations
+    assert torch.equal(parallel.template_vertices, serial.template_vertices)
+    assert torch.equal(parallel.control_points, serial.control_points)
+    assert torch.equal(parallel.momenta, serial.momenta)
+
+
 def test_lbfgs_direction_is_deterministic_monotone_and_improves_after_ten_cycles() -> None:
     arguments, keywords = _problem(subjects=1)
 
@@ -988,6 +1020,13 @@ def test_optimizer_remains_differentiable_internally_under_no_grad() -> None:
         ({"relative_objective_tolerance": 1.0}, "relative_objective_tolerance"),
         ({"subject_batch_size": 0}, "subject_batch_size"),
         ({"subject_batch_size": True}, "subject_batch_size"),
+        ({"subject_batch_workers": 0}, "subject_batch_workers"),
+        ({"subject_batch_workers": True}, "subject_batch_workers"),
+        (
+            {"subject_batch_size": 1, "subject_batch_workers": 65},
+            "subject_batch_workers",
+        ),
+        ({"subject_batch_workers": 2}, "requires subject_batch_size"),
         ({"shared_step_scaling": "automatic"}, "shared_step_scaling"),
         ({"momenta_updates_per_cycle": 0}, "momenta_updates_per_cycle"),
         ({"momenta_updates_per_cycle": True}, "momenta_updates_per_cycle"),

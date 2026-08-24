@@ -78,6 +78,12 @@ The verifier therefore additionally requires
 `objectives = ordinary objectives + gradient evaluations`; it does not hide the
 memory/runtime trade-off behind unchanged work counters.
 
+Engine 1.4 reports may also bind `subject_batch_workers`. More than one worker
+executes independent bounded batches concurrently while collecting them in the
+unchanged deterministic order. The benchmark records both batch size and worker
+count so a speed observation cannot be mistaken for the serial batching path.
+Historical reports omit the field and retain their original one-worker meaning.
+
 ## Repeatability evidence
 
 Report v0.2 stores the complete decision history, not only its hash. Every

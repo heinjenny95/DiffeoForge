@@ -531,6 +531,8 @@ def collect_modern_workload(
                 "momenta_updates_per_cycle", 1
             ),
             "max_line_search_iterations": optimizer["max_line_search_iterations"],
+            "subject_batch_size": optimizer.get("subject_batch_size"),
+            "subject_batch_workers": optimizer.get("subject_batch_workers", 1),
             "threads": config["runtime"]["threads"],
             "procrustes_enabled": config["preprocessing"]["procrustes"]["enabled"],
         },

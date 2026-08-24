@@ -136,6 +136,12 @@ def validate_modern_workflow_config(config: Mapping[str, Any]) -> None:
             "optimization.momenta_updates_per_cycle must be 1 when momenta is not "
             "in optimization.block_order"
         )
+    subject_batch_workers = optimizer.get("subject_batch_workers", 1)
+    if subject_batch_workers > 1 and optimizer.get("subject_batch_size") is None:
+        raise ConfigurationError(
+            "optimization.subject_batch_workers greater than 1 requires "
+            "optimization.subject_batch_size"
+        )
     line_search_condition = optimizer.get("line_search_condition", "armijo")
     if line_search_condition == "strong_wolfe" and direction_update != "lbfgs":
         raise ConfigurationError(
@@ -583,6 +589,7 @@ def initialize_modern_workflow(
             "strong_wolfe_maximum_step_size": 10.0,
             "relative_objective_tolerance": None,
             "subject_batch_size": None,
+            "subject_batch_workers": 1,
             "shared_step_scaling": "inverse_subject_count",
             "checkpoint_interval_cycles": 5,
             "checkpoint_retention": "latest",
@@ -1263,6 +1270,8 @@ def run_modern_workflow(
             "momenta_updates_per_cycle": optimizer.get(
                 "momenta_updates_per_cycle", 1
             ),
+            "subject_batch_size": optimizer.get("subject_batch_size"),
+            "subject_batch_workers": optimizer.get("subject_batch_workers", 1),
             "max_cycles": int(optimizer["max_cycles"]),
         }
         checkpoint_records: list[dict[str, Any]] = []
@@ -1387,6 +1396,7 @@ def run_modern_workflow(
                     ),
                     relative_objective_tolerance=optimizer.get("relative_objective_tolerance"),
                     subject_batch_size=optimizer.get("subject_batch_size"),
+                    subject_batch_workers=optimizer.get("subject_batch_workers", 1),
                     shared_step_scaling=optimizer.get("shared_step_scaling", "none"),
                     resume_state=optimizer_resume_state,
                     progress_callback=(

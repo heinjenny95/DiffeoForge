@@ -193,9 +193,15 @@ def _binding(value: dict[str, Any]) -> dict[str, Any]:
         "block_order",
         "max_cycles",
     }
-    if not isinstance(value, dict) or set(value) not in (
-        required_fields,
-        required_fields | {"momenta_updates_per_cycle"},
+    optional_fields = {
+        "momenta_updates_per_cycle",
+        "subject_batch_size",
+        "subject_batch_workers",
+    }
+    if (
+        not isinstance(value, dict)
+        or not required_fields <= set(value)
+        or not set(value) <= required_fields | optional_fields
     ):
         raise ValueError("binding fields differ from the Modern checkpoint contract")
     implementation = value["engine_implementation"]
@@ -224,6 +230,21 @@ def _binding(value: dict[str, Any]) -> dict[str, Any]:
         or ("momenta" not in blocks and momenta_updates != 1)
     ):
         raise ValueError("binding momenta_updates_per_cycle is invalid")
+    subject_batch_size = value.get("subject_batch_size")
+    if subject_batch_size is not None and (
+        isinstance(subject_batch_size, bool)
+        or not isinstance(subject_batch_size, int)
+        or subject_batch_size < 1
+    ):
+        raise ValueError("binding subject_batch_size is invalid")
+    subject_batch_workers = value.get("subject_batch_workers", 1)
+    if (
+        isinstance(subject_batch_workers, bool)
+        or not isinstance(subject_batch_workers, int)
+        or not 1 <= subject_batch_workers <= 64
+        or (subject_batch_workers > 1 and subject_batch_size is None)
+    ):
+        raise ValueError("binding subject_batch_workers is invalid")
     for name in ("source_config", "effective_config", "template_input"):
         record = value[name]
         if (

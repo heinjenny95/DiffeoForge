@@ -329,6 +329,7 @@ def _verify_condition_report(
         "strong_wolfe_maximum_step_size",
         "relative_objective_tolerance",
         "subject_batch_size",
+        "subject_batch_workers",
         "shared_step_scaling",
     ):
         if name in frozen:

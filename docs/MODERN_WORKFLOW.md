@@ -86,7 +86,7 @@ count, finite values, copied bytes, and SHA-256 are checked before execution and
 again during workflow verification.
 
 Configuration v0.5 may bind one verified exact-state checkpoint and its parent
-effective configuration. Current Engine 1.3 runs write checkpoint v0.3 with
+effective configuration. Current Engine 1.4 runs write checkpoint v0.3 with
 separate L-BFGS histories for every configured block. This is reserved for immutable completed-run
 continuation and guarded abandoned-run recovery. Preflight verifies exact
 Engine, runtime/thread, model, optimizer, subject, and numerical-state identity
@@ -106,6 +106,13 @@ history per unique block. Progress, workload bounds, bundles, benchmarks, and
 checkpoint bindings record the expanded schedule explicitly. See
 [experimental multi-rate atlas optimization](MODERN_MULTIRATE_OPTIMIZATION.md).
 
+Engine 1.4 may additionally declare `subject_batch_workers` when
+`subject_batch_size` is finite. Independent subject batches execute concurrently,
+then return to the main optimizer in frozen batch order. One worker is the
+backward-compatible default. Workflow, bundle, workload, benchmark, and
+checkpoint evidence bind both settings; continuation cannot change either.
+See [parallel subject batching](MODERN_SUBJECT_BATCHING.md).
+
 New starter configurations set `checkpoint_interval_cycles: 5` and
 `checkpoint_retention: latest`. A terminal cycle is always written. The
 workflow manifest binds the effective policy and retained cycle sequence;
@@ -118,7 +125,7 @@ remain verifiable; prospective continuation plans bind the implementation
 revision expected for their successor.
 
 A completed, verified run that reaches its cycle cap without convergence can be
-continued through a separate hash-bound prospective successor. Engine 1.3
+continued through a separate hash-bound prospective successor. Engine 1.4
 copies the exact complete-cycle numerical state, including per-block L-BFGS histories and
 relative-objective baselines; it never modifies or relabels the parent. See
 [verified Modern optimizer continuation](MODERN_CONTINUATION.md).

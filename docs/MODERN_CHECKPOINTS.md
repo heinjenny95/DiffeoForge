@@ -69,6 +69,9 @@ checkpoint is never silently resumed under new optimizer semantics.
 Historical bindings without `momenta_updates_per_cycle` mean one. Engine 1.3
 binds the value explicitly, so a multi-rate checkpoint cannot be resumed with a
 different schedule.
+Engine 1.4 additionally binds `subject_batch_size` and
+`subject_batch_workers`. Historical absence means an unbatched one-worker path;
+new continuation or recovery must retain both values exactly.
 The successor is a sequential run, not an independent replicate or a claim
 that the interrupted computation converged. This is guarded exact
 complete-cycle recovery, not transparent process resume.

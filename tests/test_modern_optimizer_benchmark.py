@@ -147,7 +147,7 @@ def test_collection_binds_declared_optimizer_scope_and_counts(
     assert report["configuration"]["momenta_updates_per_cycle"] == 1
     assert report["configuration"]["warmup_runs_per_repeat"] == 1
     assert report["configuration"]["pairwise_evaluation"]["mode"] == "dense"
-    assert report["environment"]["engine_implementation"] == "1.3"
+    assert report["environment"]["engine_implementation"] == "1.4"
     assert report["summary"]["optimizer_wall_time_ns"] == {
         "minimum": 100,
         "median": 200,
@@ -427,12 +427,14 @@ def test_real_fresh_process_streams_multirate_progress_without_changing_counts(
         (EXAMPLE.parent / value["input"]["template"]).resolve()
     )
     value["optimization"]["momenta_updates_per_cycle"] = 2
+    value["optimization"]["subject_batch_size"] = 1
+    value["optimization"]["subject_batch_workers"] = 2
     config = tmp_path / "multirate.yaml"
     config.write_text(yaml.safe_dump(value, sort_keys=False), encoding="utf-8")
     observed = []
     report = collect_modern_optimizer_benchmark(
         config,
-        subject_count=1,
+        subject_count=2,
         max_cycles=1,
         repeats=1,
         progress_callback=observed.append,
@@ -458,6 +460,8 @@ def test_real_fresh_process_streams_multirate_progress_without_changing_counts(
         event.optimizer_elapsed_ns for event in observed
     )
     assert report["configuration"]["momenta_updates_per_cycle"] == 2
+    assert report["configuration"]["subject_batch_size"] == 1
+    assert report["configuration"]["subject_batch_workers"] == 2
     assert sample["accepted_decisions"] == 4
     assert sample["failed_decisions"] == 0
     assert sample["final_objective"] == pytest.approx(observed[-1].record.objective)

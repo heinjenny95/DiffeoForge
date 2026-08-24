@@ -592,6 +592,7 @@ def create_modern_reference_qualification(
                 "strong_wolfe_maximum_step_size": float(strong_wolfe_maximum_step_size),
                 "relative_objective_tolerance": float(optimization["convergence_tolerance"]),
                 "subject_batch_size": subject_batch_size,
+                "subject_batch_workers": 1,
                 "shared_step_scaling": "none",
                 "checkpoint_interval_cycles": 5,
                 "checkpoint_retention": "latest",
@@ -1025,6 +1026,10 @@ def verify_modern_reference_qualification_design(
     if config["optimization"].get("momenta_updates_per_cycle", 1) != 1:
         raise ModernReferenceQualificationError(
             "Modern reference qualification requires one momenta update per cycle"
+        )
+    if config["optimization"].get("subject_batch_workers", 1) != 1:
+        raise ModernReferenceQualificationError(
+            "Modern reference qualification requires one subject-batch worker"
         )
     if design.get("design_version") == DESIGN_VERSION:
         expected_engine = design["modern_workflow"].get(

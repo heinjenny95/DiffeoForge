@@ -1,6 +1,6 @@
 # Exact complete-cycle optimizer continuation
 
-Status: **implemented through Modern Engine 1.3; exact at committed cycle boundaries**
+Status: **implemented through Modern Engine 1.4; exact at committed cycle boundaries**
 
 Engine 0.9 extended the private Modern checkpoint format from parameter-only
 state to exact single-block optimizer state. Engine 1.2 checkpoint v0.3 extends
@@ -16,6 +16,9 @@ stores and verifies:
 
 Engine 1.3 additionally binds `momenta_updates_per_cycle`; historical absence
 means one, while a multi-rate successor must retain the exact expanded schedule.
+Engine 1.4 also binds `subject_batch_size` and `subject_batch_workers` so a
+checkpoint cannot cross into a different floating-point grouping or execution
+schedule. Historical absence means no finite batching and one worker.
 
 Optimizer tensors use a non-executable, little-endian float64 binary store with
 explicit names, shapes, byte offsets, byte lengths, and SHA-256 evidence. No
