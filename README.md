@@ -269,7 +269,10 @@ block and checkpoint v0.3 for exact multi-block continuation; real-cohort
 evidence on 16 real 5k meshes shows stable, stronger fixed-cycle optimization
 but higher wall time. Optimizer benchmark v0.2 now persists and strictly
 verifies every per-block objective record so shorter-cycle efficiency can be
-tested without hiding the trajectory. The real source
+tested without hiding the trajectory. Engine 1.3 adds an explicit experimental
+`momenta_updates_per_cycle` schedule for allocating more work to subject-local
+Momenta between shared template/control updates; see
+[multi-rate atlas optimization](docs/MODERN_MULTIRATE_OPTIMIZATION.md). The real source
 preparation worker also has suspended-process Windows
 hard-parent-death evidence before request delivery. For the Modern compute
 worker, Windows parent death terminates the contained worker tree and
@@ -595,6 +598,7 @@ and workflow for another mesh directory.
 - [Fused recomputed Current tiles](docs/FUSED_RECOMPUTED_CURRENT_TILES.md)
 - [Modern optimizer convergence evidence](docs/MODERN_OPTIMIZER_CONVERGENCE.md)
 - [Experimental Modern L-BFGS direction](docs/MODERN_LBFGS.md)
+- [Experimental multi-rate atlas optimization](docs/MODERN_MULTIRATE_OPTIMIZATION.md)
 - [Experimental Strong-Wolfe line search](docs/MODERN_STRONG_WOLFE.md)
 - [Modern relative-objective stopping semantics](docs/MODERN_OBJECTIVE_STOPPING.md)
 - [Bounded-memory blockwise Gaussian primitives](docs/BLOCKWISE_GAUSSIAN.md)

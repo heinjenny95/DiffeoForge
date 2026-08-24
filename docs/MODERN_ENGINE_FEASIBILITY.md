@@ -299,9 +299,15 @@ gates. See
    peak RSS (`9/9` accepted, zero failures) after making shared-block starter
    steps cohort invariant. A frozen 16-subject ten-cycle baseline completed in
    12.55 minutes with `30/30` accepted decisions and no stationarity, motivating
-   the separate per-block L-BFGS candidate in Engine 1.2. See
+   the separate per-block L-BFGS candidate in Engine 1.2. A predeclared
+   seven-cycle L-BFGS efficiency gate was 12.1% faster but failed its objective
+   threshold. Its verified v0.2 trace attributed 78.8% of objective gain to
+   Momenta decisions. Engine 1.3 therefore adds an explicit multi-rate schedule
+   for repeated local Momenta visits per shared-parameter update; its real-data
+   gate remains separate. See
    [subject batching](MODERN_SUBJECT_BATCHING.md) and
-   [shared-step scaling](MODERN_SHARED_STEP_SCALING.md).
+   [shared-step scaling](MODERN_SHARED_STEP_SCALING.md), and
+   [multi-rate atlas optimization](MODERN_MULTIRATE_OPTIMIZATION.md).
 9. Define evidence-derived tolerances before accepting a production backend.
    Provisional fixed-reference gates have now passed once prospectively; broader
    datasets and atlas-update tests are still needed before the tolerances can be

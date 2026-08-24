@@ -113,6 +113,9 @@ failed objective quality (`-386.805709155` versus required
 about 78.8% of the total seven-cycle objective gain to Momenta decisions. A new
 multi-rate scheduling candidate may use that observation prospectively; simply
 renaming an eight- or nine-cycle retry as a success is not permitted.
+Engine 1.3 implements that schedule explicitly through
+`momenta_updates_per_cycle`; see
+[experimental multi-rate atlas optimization](MODERN_MULTIRATE_OPTIMIZATION.md).
 
 The exact evidence directories are siblings below
 `DiffeoForge Weevil Tests 2026-08-17` and begin with

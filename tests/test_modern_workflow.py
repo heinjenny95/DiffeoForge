@@ -258,6 +258,12 @@ def test_lbfgs_accepts_multiblock_configuration_and_requires_wolfe_coherence() -
     with pytest.raises(ConfigurationError, match="maximum_step_size"):
         workflow.validate_modern_workflow_config(invalid)
 
+    invalid = _configuration()
+    invalid["optimization"]["block_order"] = ["template"]
+    invalid["optimization"]["momenta_updates_per_cycle"] = 2
+    with pytest.raises(ConfigurationError, match="momenta_updates_per_cycle"):
+        workflow.validate_modern_workflow_config(invalid)
+
 
 @pytest.mark.parametrize(
     ("name", "value"),
@@ -490,6 +496,7 @@ def test_multiblock_lbfgs_workflow_writes_exact_v03_checkpoint(tmp_path: Path) -
     config_value["optimization"].update(
         {
             "max_cycles": 3,
+            "momenta_updates_per_cycle": 2,
             "direction_update": "lbfgs",
             "lbfgs_history_size": 3,
             "lbfgs_curvature_tolerance": 1e-12,
@@ -503,10 +510,12 @@ def test_multiblock_lbfgs_workflow_writes_exact_v03_checkpoint(tmp_path: Path) -
     config = tmp_path / "multiblock-lbfgs.yaml"
     config.write_text(yaml.safe_dump(config_value, sort_keys=False), encoding="utf-8")
 
+    progress = []
     run = workflow.run_modern_workflow(
         config,
         destination=tmp_path / "multiblock-lbfgs-run",
         created_at=FIXED_TIME,
+        progress_callback=progress.append,
     )
     manifest = workflow.verify_modern_workflow(run)
     bundle = workflow.verify_modern_atlas_bundle(
@@ -525,14 +534,30 @@ def test_multiblock_lbfgs_workflow_writes_exact_v03_checkpoint(tmp_path: Path) -
         "control_points",
     ]
     assert bundle["optimizer"]["settings"]["direction_update"] == "lbfgs"
+    assert bundle["optimizer"]["settings"]["momenta_updates_per_cycle"] == 2
     assert checkpoint["checkpoint_version"] == "0.3"
-    assert checkpoint["binding"]["engine_implementation"] == "1.2"
+    assert checkpoint["binding"]["engine_implementation"] == "1.3"
+    assert checkpoint["binding"]["momenta_updates_per_cycle"] == 2
     assert set(resume_state.lbfgs_histories) == {
         "momenta",
         "template",
         "control_points",
     }
     assert all(resume_state.lbfgs_histories.values())
+    bundle_root = run / manifest["result_bundle"]["path"]
+    with (bundle_root / bundle["optimizer"]["history_path"]).open(
+        encoding="utf-8", newline=""
+    ) as handle:
+        history = list(csv.DictReader(handle))
+    assert [record["block"] for record in history[1:]] == [
+        "momenta",
+        "momenta",
+        "template",
+        "control_points",
+    ] * 3
+    optimizer_progress = [event.optimizer for event in progress if event.optimizer is not None]
+    assert [item.completed_decisions for item in optimizer_progress] == list(range(13))
+    assert {item.maximum_decisions for item in optimizer_progress} == {12}
 
 
 def test_subject_batched_workflow_is_explicit_and_numerically_matches_full_cohort(

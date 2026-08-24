@@ -61,7 +61,7 @@ def test_example_workload_has_exact_public_dimensions_and_formulas() -> None:
     report = collect_modern_workload(EXAMPLE, host_observations=FIXED_HOST)
 
     assert report["input"]["subject_count"] == 5
-    assert report["engine"]["implementation_version"] == "1.2"
+    assert report["engine"]["implementation_version"] == "1.3"
     assert report["input"]["template"]["points"] == 162
     assert report["input"]["template"]["triangles"] == 320
     assert {subject["triangles"] for subject in report["input"]["subjects"]} == {320}
@@ -122,6 +122,22 @@ def test_blockwise_plan_separates_logical_pair_from_exact_execution_tile(
         report["payload_model"]["largest_single_execution_xyz_difference_tensor_bytes"]
         == 64 * 64 * 3 * 8
     )
+
+
+def test_multirate_momenta_updates_expand_the_declared_optimizer_bound(
+    tmp_path: Path,
+) -> None:
+    path = _write_portable_config(tmp_path / "multirate.yaml")
+    config = yaml.safe_load(path.read_text(encoding="utf-8"))
+    config["optimization"]["momenta_updates_per_cycle"] = 2
+    path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+
+    report = collect_modern_workload(path, host_observations=FIXED_HOST)
+
+    assert report["configuration"]["momenta_updates_per_cycle"] == 2
+    assert report["optimizer_bound"]["parameter_blocks"] == 3
+    assert report["optimizer_bound"]["block_decisions_per_cycle"] == 4
+    assert report["optimizer_bound"]["objective_gradient_evaluation_upper_bound"] == 253
 
 
 @pytest.mark.parametrize("attachment_type", ["current", "varifold"])

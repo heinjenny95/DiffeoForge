@@ -93,6 +93,7 @@ def test_every_accepted_block_monotonically_improves_the_objective() -> None:
     assert result.candidate_gradient_evaluations == accepted
     assert result.settings.max_cycles == 2
     assert result.settings.block_order == ("momenta", "template", "control_points")
+    assert result.settings.momenta_updates_per_cycle == 1
     assert result.settings.momenta_step_size == 0.1
     assert result.settings.step_initialization == "fixed"
     assert result.settings.direction_update == "steepest"
@@ -888,6 +889,61 @@ def test_declared_block_order_is_honored() -> None:
     ]
 
 
+def test_momenta_updates_per_cycle_are_explicit_repeatable_and_resumable() -> None:
+    arguments, keywords = _problem(subjects=2)
+    settings = {
+        "max_cycles": 2,
+        "momenta_updates_per_cycle": 3,
+        "gradient_tolerance": 0.0,
+        "step_initialization": "previous_accepted",
+        "direction_update": "lbfgs",
+        "lbfgs_history_size": 4,
+    }
+    checkpoints = []
+    uninterrupted = optimize_atlas(
+        *arguments,
+        **keywords,
+        **settings,
+        checkpoint_callback=checkpoints.append,
+    )
+    repeated = optimize_atlas(*arguments, **keywords, **settings)
+
+    expected_cycle = ["momenta", "momenta", "momenta", "template", "control_points"]
+    assert [record.block for record in uninterrupted.history[1:]] == expected_cycle * 2
+    assert uninterrupted.history == repeated.history
+    assert uninterrupted.settings.momenta_updates_per_cycle == 3
+    assert all(
+        current.objective >= previous.objective
+        for previous, current in pairwise(uninterrupted.history)
+    )
+
+    first_checkpoint = checkpoints[0]
+    resumed = optimize_atlas(
+        first_checkpoint.template_vertices,
+        arguments[1],
+        arguments[2],
+        first_checkpoint.control_points,
+        first_checkpoint.momenta,
+        **keywords,
+        **(settings | {"max_cycles": 1}),
+        resume_state=engine.AtlasOptimizerResumeState(
+            initial_cycle_objective=first_checkpoint.initial_cycle_objective,
+            current_cycle_objective=first_checkpoint.current_cycle_objective,
+            next_step_sizes=first_checkpoint.next_step_sizes,
+            lbfgs_histories=first_checkpoint.lbfgs_histories,
+            reusable_gradient=first_checkpoint.reusable_gradient,
+            completed_cycle_termination_reason=(
+                first_checkpoint.completed_cycle_termination_reason
+            ),
+        ),
+    )
+    expected_tail = [replace(record, cycle=1) for record in uninterrupted.history[6:]]
+    assert expected_tail == list(resumed.history[1:])
+    assert torch.equal(resumed.template_vertices, uninterrupted.template_vertices)
+    assert torch.equal(resumed.control_points, uninterrupted.control_points)
+    assert torch.equal(resumed.momenta, uninterrupted.momenta)
+
+
 def test_optimizer_remains_differentiable_internally_under_no_grad() -> None:
     arguments, keywords = _problem(subjects=1)
 
@@ -933,6 +989,12 @@ def test_optimizer_remains_differentiable_internally_under_no_grad() -> None:
         ({"subject_batch_size": 0}, "subject_batch_size"),
         ({"subject_batch_size": True}, "subject_batch_size"),
         ({"shared_step_scaling": "automatic"}, "shared_step_scaling"),
+        ({"momenta_updates_per_cycle": 0}, "momenta_updates_per_cycle"),
+        ({"momenta_updates_per_cycle": True}, "momenta_updates_per_cycle"),
+        (
+            {"block_order": ("template",), "momenta_updates_per_cycle": 2},
+            "momenta_updates_per_cycle",
+        ),
     ],
 )
 def test_invalid_optimizer_settings_fail_explicitly(override: dict, message: str) -> None:

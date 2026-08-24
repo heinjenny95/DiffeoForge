@@ -86,7 +86,7 @@ count, finite values, copied bytes, and SHA-256 are checked before execution and
 again during workflow verification.
 
 Configuration v0.5 may bind one verified exact-state checkpoint and its parent
-effective configuration. Current Engine 1.2 runs write checkpoint v0.3 with
+effective configuration. Current Engine 1.3 runs write checkpoint v0.3 with
 separate L-BFGS histories for every configured block. This is reserved for immutable completed-run
 continuation and guarded abandoned-run recovery. Preflight verifies exact
 Engine, runtime/thread, model, optimizer, subject, and numerical-state identity
@@ -98,6 +98,13 @@ the template and control-point starter steps by cohort size while preserving
 the complete summed objective and subject-specific momenta step. Legacy
 configurations retain `none`. See
 [cohort-invariant shared-parameter steps](MODERN_SHARED_STEP_SCALING.md).
+
+Engine 1.3 may additionally declare `momenta_updates_per_cycle`. Its default is
+one. A larger value deterministically visits subject-local Momenta repeatedly
+before the next configured shared block while preserving one separate L-BFGS
+history per unique block. Progress, workload bounds, bundles, benchmarks, and
+checkpoint bindings record the expanded schedule explicitly. See
+[experimental multi-rate atlas optimization](MODERN_MULTIRATE_OPTIMIZATION.md).
 
 New starter configurations set `checkpoint_interval_cycles: 5` and
 `checkpoint_retention: latest`. A terminal cycle is always written. The
@@ -111,7 +118,7 @@ remain verifiable; prospective continuation plans bind the implementation
 revision expected for their successor.
 
 A completed, verified run that reaches its cycle cap without convergence can be
-continued through a separate hash-bound prospective successor. Engine 1.2
+continued through a separate hash-bound prospective successor. Engine 1.3
 copies the exact complete-cycle numerical state, including per-block L-BFGS histories and
 relative-objective baselines; it never modifies or relabels the parent. See
 [verified Modern optimizer continuation](MODERN_CONTINUATION.md).

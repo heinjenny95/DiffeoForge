@@ -142,10 +142,21 @@ def _validate_report(report: dict[str, Any]) -> None:
     ):
         raise ModernWorkloadError("Known workload payload arithmetic is internally inconsistent")
     optimizer = report["optimizer_bound"]
-    expected_evaluations = 1 + report["configuration"]["max_cycles"] * len(
-        report["configuration"]["block_order"]
-    ) * (1 + report["configuration"]["max_line_search_iterations"])
+    expected_decisions_per_cycle = len(report["configuration"]["block_order"]) + (
+        report["configuration"].get("momenta_updates_per_cycle", 1) - 1
+        if "momenta" in report["configuration"]["block_order"]
+        else 0
+    )
+    expected_evaluations = (
+        1
+        + report["configuration"]["max_cycles"]
+        * expected_decisions_per_cycle
+        * (1 + report["configuration"]["max_line_search_iterations"])
+    )
     if (
+        optimizer.get("block_decisions_per_cycle", len(report["configuration"]["block_order"]))
+        != expected_decisions_per_cycle
+        or
         optimizer["objective_gradient_evaluation_upper_bound"] != expected_evaluations
         or optimizer["gaussian_pair_elements_upper_bound"]
         != expected_evaluations
@@ -448,7 +459,12 @@ def collect_modern_workload(
         operation["largest_execution_tile"],
     )
     optimizer = config["optimization"]
-    evaluation_upper_bound = 1 + optimizer["max_cycles"] * len(optimizer["block_order"]) * (
+    decisions_per_cycle = len(optimizer["block_order"]) + (
+        optimizer.get("momenta_updates_per_cycle", 1) - 1
+        if "momenta" in optimizer["block_order"]
+        else 0
+    )
+    evaluation_upper_bound = 1 + optimizer["max_cycles"] * decisions_per_cycle * (
         1 + optimizer["max_line_search_iterations"]
     )
     output = Path(config["output"]["directory"]).expanduser()
@@ -511,14 +527,21 @@ def collect_modern_workload(
             "attachment_type": config["model"]["attachment"]["type"],
             "max_cycles": optimizer["max_cycles"],
             "block_order": list(optimizer["block_order"]),
+            "momenta_updates_per_cycle": optimizer.get(
+                "momenta_updates_per_cycle", 1
+            ),
             "max_line_search_iterations": optimizer["max_line_search_iterations"],
             "threads": config["runtime"]["threads"],
             "procrustes_enabled": config["preprocessing"]["procrustes"]["enabled"],
         },
         "operation_model": operation,
         "optimizer_bound": {
-            "formula": "1 + max_cycles * parameter_blocks * (1 + max_line_search_iterations)",
+            "formula": (
+                "1 + max_cycles * block_decisions_per_cycle * "
+                "(1 + max_line_search_iterations)"
+            ),
             "parameter_blocks": len(optimizer["block_order"]),
+            "block_decisions_per_cycle": decisions_per_cycle,
             "objective_gradient_evaluation_upper_bound": evaluation_upper_bound,
             "gaussian_pair_elements_upper_bound": evaluation_upper_bound
             * operation["one_objective_forward"]["gaussian_pair_elements"],

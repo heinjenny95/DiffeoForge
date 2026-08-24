@@ -130,6 +130,12 @@ def validate_modern_workflow_config(config: Mapping[str, Any]) -> None:
         raise ConfigurationError(f"Invalid quality_control settings: {error}") from error
     optimizer = config["optimization"]
     direction_update = optimizer.get("direction_update", "steepest")
+    momenta_updates = optimizer.get("momenta_updates_per_cycle", 1)
+    if "momenta" not in optimizer["block_order"] and momenta_updates != 1:
+        raise ConfigurationError(
+            "optimization.momenta_updates_per_cycle must be 1 when momenta is not "
+            "in optimization.block_order"
+        )
     line_search_condition = optimizer.get("line_search_condition", "armijo")
     if line_search_condition == "strong_wolfe" and direction_update != "lbfgs":
         raise ConfigurationError(
@@ -558,6 +564,7 @@ def initialize_modern_workflow(
         "optimization": {
             "max_cycles": int(max_cycles),
             "block_order": ["momenta", "template", "control_points"],
+            "momenta_updates_per_cycle": 1,
             "momenta_step_size": 0.1,
             "template_step_size": 0.01,
             "control_points_step_size": 0.01,
@@ -1219,7 +1226,12 @@ def run_modern_workflow(
         if torch.get_num_threads() != runtime["threads"]:
             raise ModernWorkflowError("PyTorch did not apply the requested CPU thread count")
         optimizer_decisions = 0
-        maximum_optimizer_decisions = optimizer["max_cycles"] * len(optimizer["block_order"])
+        decisions_per_cycle = len(optimizer["block_order"]) + (
+            optimizer.get("momenta_updates_per_cycle", 1) - 1
+            if "momenta" in optimizer["block_order"]
+            else 0
+        )
+        maximum_optimizer_decisions = optimizer["max_cycles"] * decisions_per_cycle
         effective_input_paths = tuple(
             raw_path if aligned_path is None else aligned_path
             for raw_path, aligned_path in zip(raw_path_tuple, aligned_paths, strict=True)
@@ -1248,6 +1260,9 @@ def run_modern_workflow(
                 )
             ],
             "block_order": list(optimizer["block_order"]),
+            "momenta_updates_per_cycle": optimizer.get(
+                "momenta_updates_per_cycle", 1
+            ),
             "max_cycles": int(optimizer["max_cycles"]),
         }
         checkpoint_records: list[dict[str, Any]] = []
@@ -1347,6 +1362,9 @@ def run_modern_workflow(
                     gaussian_tile_plan=pairwise_evaluation.gaussian_tile_plan,
                     max_cycles=optimizer["max_cycles"],
                     block_order=optimizer["block_order"],
+                    momenta_updates_per_cycle=optimizer.get(
+                        "momenta_updates_per_cycle", 1
+                    ),
                     momenta_step_size=optimizer["momenta_step_size"],
                     template_step_size=optimizer["template_step_size"],
                     control_points_step_size=optimizer["control_points_step_size"],

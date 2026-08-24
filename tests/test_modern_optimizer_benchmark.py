@@ -6,6 +6,7 @@ from html.parser import HTMLParser
 from pathlib import Path
 
 import pytest
+import yaml
 
 pytest.importorskip("numpy")
 pytest.importorskip("psutil")
@@ -143,9 +144,10 @@ def test_collection_binds_declared_optimizer_scope_and_counts(
     ]
     assert report["configuration"]["source_max_cycles"] == 3
     assert report["configuration"]["measured_max_cycles"] == 2
+    assert report["configuration"]["momenta_updates_per_cycle"] == 1
     assert report["configuration"]["warmup_runs_per_repeat"] == 1
     assert report["configuration"]["pairwise_evaluation"]["mode"] == "dense"
-    assert report["environment"]["engine_implementation"] == "1.2"
+    assert report["environment"]["engine_implementation"] == "1.3"
     assert report["summary"]["optimizer_wall_time_ns"] == {
         "minimum": 100,
         "median": 200,
@@ -387,10 +389,22 @@ def test_cli_runs_one_real_fresh_process_optimizer_measurement(
     assert main(["modern-optimizer-benchmark-verify", str(output)]) == 0
 
 
-def test_real_fresh_process_streams_committed_progress_without_changing_counts() -> None:
+def test_real_fresh_process_streams_multirate_progress_without_changing_counts(
+    tmp_path: Path,
+) -> None:
+    value = yaml.safe_load(EXAMPLE.read_text(encoding="utf-8"))
+    value["input"]["directory"] = str(
+        (EXAMPLE.parent / value["input"]["directory"]).resolve()
+    )
+    value["input"]["template"] = str(
+        (EXAMPLE.parent / value["input"]["template"]).resolve()
+    )
+    value["optimization"]["momenta_updates_per_cycle"] = 2
+    config = tmp_path / "multirate.yaml"
+    config.write_text(yaml.safe_dump(value, sort_keys=False), encoding="utf-8")
     observed = []
     report = collect_modern_optimizer_benchmark(
-        EXAMPLE,
+        config,
         subject_count=1,
         max_cycles=1,
         repeats=1,
@@ -403,9 +417,11 @@ def test_real_fresh_process_streams_committed_progress_without_changing_counts()
         "accepted",
         "accepted",
         "accepted",
+        "accepted",
     ]
     assert [event.record.block for event in observed] == [
         None,
+        "momenta",
         "momenta",
         "template",
         "control_points",
@@ -414,10 +430,11 @@ def test_real_fresh_process_streams_committed_progress_without_changing_counts()
     assert [event.optimizer_elapsed_ns for event in observed] == sorted(
         event.optimizer_elapsed_ns for event in observed
     )
-    assert sample["accepted_decisions"] == 3
+    assert report["configuration"]["momenta_updates_per_cycle"] == 2
+    assert sample["accepted_decisions"] == 4
     assert sample["failed_decisions"] == 0
     assert sample["final_objective"] == pytest.approx(observed[-1].record.objective)
-    assert len(sample["history"]) == 4
+    assert len(sample["history"]) == 5
     assert sample["history"][-1]["objective"] == sample["final_objective"]
     assert _history_payload_sha256(sample["history"]) == sample["history_sha256"]
     assert any("transport overhead" in warning for warning in report["warnings"])

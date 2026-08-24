@@ -1022,6 +1022,10 @@ def verify_modern_reference_qualification_design(
         raise ModernReferenceQualificationError("Qualification must optimize only momenta")
     if config["runtime"]["pairwise_evaluation"].get("autograd_strategy") != "recompute":
         raise ModernReferenceQualificationError("Qualification must declare recompute autograd")
+    if config["optimization"].get("momenta_updates_per_cycle", 1) != 1:
+        raise ModernReferenceQualificationError(
+            "Modern reference qualification requires one momenta update per cycle"
+        )
     if design.get("design_version") == DESIGN_VERSION:
         expected_engine = design["modern_workflow"].get(
             "expected_engine_implementation"

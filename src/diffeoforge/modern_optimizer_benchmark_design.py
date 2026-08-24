@@ -280,6 +280,9 @@ def collect_modern_optimizer_benchmark_design(
             "pairwise_evaluation": pairwise_evaluation_from_config(config).as_manifest(),
             "source_max_cycles": optimizer["max_cycles"],
             "block_order": list(optimizer["block_order"]),
+            "momenta_updates_per_cycle": optimizer.get(
+                "momenta_updates_per_cycle", 1
+            ),
             "momenta_step_size": optimizer["momenta_step_size"],
             "template_step_size": optimizer["template_step_size"],
             "control_points_step_size": optimizer["control_points_step_size"],

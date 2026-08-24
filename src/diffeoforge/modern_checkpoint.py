@@ -184,7 +184,7 @@ def _read_optimizer_tensor_store(
 
 
 def _binding(value: dict[str, Any]) -> dict[str, Any]:
-    if not isinstance(value, dict) or set(value) != {
+    required_fields = {
         "engine_implementation",
         "source_config",
         "effective_config",
@@ -192,7 +192,11 @@ def _binding(value: dict[str, Any]) -> dict[str, Any]:
         "subjects",
         "block_order",
         "max_cycles",
-    }:
+    }
+    if not isinstance(value, dict) or set(value) not in (
+        required_fields,
+        required_fields | {"momenta_updates_per_cycle"},
+    ):
         raise ValueError("binding fields differ from the Modern checkpoint contract")
     implementation = value["engine_implementation"]
     if (
@@ -211,6 +215,15 @@ def _binding(value: dict[str, Any]) -> dict[str, Any]:
     maximum = value["max_cycles"]
     if isinstance(maximum, bool) or not isinstance(maximum, int) or maximum < 1:
         raise ValueError("binding max_cycles is invalid")
+    momenta_updates = value.get("momenta_updates_per_cycle", 1)
+    if (
+        isinstance(momenta_updates, bool)
+        or not isinstance(momenta_updates, int)
+        or momenta_updates < 1
+        or momenta_updates > 100
+        or ("momenta" not in blocks and momenta_updates != 1)
+    ):
+        raise ValueError("binding momenta_updates_per_cycle is invalid")
     for name in ("source_config", "effective_config", "template_input"):
         record = value[name]
         if (

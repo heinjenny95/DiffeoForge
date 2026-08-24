@@ -131,10 +131,10 @@ def test_optimizer_progress_accepts_momenta_only_decision_bound() -> None:
 
 
 def test_optimizer_progress_rejects_nonintegral_configured_block_count() -> None:
-    with pytest.raises(ValueError, match="one to three configured parameter blocks"):
+    with pytest.raises(ValueError, match="one to 102 configured block decisions"):
         ModernOptimizerProgress(
             completed_decisions=0,
-            maximum_decisions=4,
+            maximum_decisions=103,
             cycle=0,
             max_cycles=3,
             block=None,

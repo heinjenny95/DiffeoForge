@@ -318,6 +318,7 @@ def _verify_condition_report(
         ),
     }
     for name in (
+        "momenta_updates_per_cycle",
         "step_initialization",
         "direction_update",
         "lbfgs_history_size",
@@ -849,23 +850,29 @@ def run_modern_optimizer_benchmark_study(
             )
 
             block_order = tuple(design["configuration"]["block_order"])
-            maximum_decisions = condition["cycle_cap"] * len(block_order)
+            decisions_per_cycle = len(block_order) + (
+                design["configuration"].get("momenta_updates_per_cycle", 1) - 1
+                if "momenta" in block_order
+                else 0
+            )
+            maximum_decisions = condition["cycle_cap"] * decisions_per_cycle
+            observed_decisions_by_repeat: dict[int, int] = {}
 
             def observe_optimizer(
                 progress: ModernOptimizerBenchmarkProgress,
                 *,
-                observed_block_order: tuple[str, ...] = block_order,
                 observed_maximum_decisions: int = maximum_decisions,
                 observed_condition: dict[str, Any] = condition,
+                observed_decisions: dict[int, int] = observed_decisions_by_repeat,
             ) -> None:
                 record = progress.record
-                completed_decisions = (
-                    0
-                    if record.status == "initial"
-                    else (record.cycle - 1) * len(observed_block_order)
-                    + observed_block_order.index(record.block)
-                    + 1
-                )
+                if record.status == "initial":
+                    observed_decisions[progress.repeat] = 0
+                else:
+                    observed_decisions[progress.repeat] = (
+                        observed_decisions.get(progress.repeat, 0) + 1
+                    )
+                completed_decisions = observed_decisions[progress.repeat]
                 observation = OptimizerStudyProgressObservation(
                     repeat=progress.repeat,
                     total_repeats=progress.total_repeats,

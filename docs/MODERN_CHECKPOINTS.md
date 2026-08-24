@@ -30,6 +30,7 @@ A checkpoint contains:
 - the reusable accepted gradient and retained per-block L-BFGS curvature pairs;
 - hashes of the source/effective configuration and every effective input mesh;
 - the Modern engine implementation revision;
+- the declared Momenta-update count per complete optimizer cycle when present;
 - a complete artifact inventory and manifest sidecar.
 
 Checkpoint publication uses a fresh temporary directory and atomic rename. A
@@ -65,6 +66,9 @@ L-BFGS history exactly. Checkpoint v0.2 remains verifiable and exactly loadable
 for its historical single-block contract; checkpoint v0.1 remains readable but
 cannot authorize a stateful successor. Engine identity remains bound, so an old
 checkpoint is never silently resumed under new optimizer semantics.
+Historical bindings without `momenta_updates_per_cycle` mean one. Engine 1.3
+binds the value explicitly, so a multi-rate checkpoint cannot be resumed with a
+different schedule.
 The successor is a sequential run, not an independent replicate or a claim
 that the interrupted computation converged. This is guarded exact
 complete-cycle recovery, not transparent process resume.

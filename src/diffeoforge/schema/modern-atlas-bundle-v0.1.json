@@ -121,6 +121,7 @@
               "uniqueItems": true,
               "items": {"enum": ["momenta", "template", "control_points"]}
             },
+            "momenta_updates_per_cycle": {"type": "integer", "minimum": 1, "maximum": 100},
             "momenta_step_size": {"type": "number", "exclusiveMinimum": 0},
             "template_step_size": {"type": "number", "exclusiveMinimum": 0},
             "control_points_step_size": {"type": "number", "exclusiveMinimum": 0},

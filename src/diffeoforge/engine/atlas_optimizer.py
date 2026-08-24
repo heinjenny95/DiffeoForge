@@ -120,6 +120,7 @@ class AtlasOptimizerSettings:
     gradient_tolerance: float
     minimum_step_size: float
     max_line_search_iterations: int
+    momenta_updates_per_cycle: int = 1
     step_initialization: AtlasStepInitialization = "fixed"
     direction_update: AtlasDirectionUpdate = "steepest"
     lbfgs_history_size: int = 10
@@ -419,6 +420,7 @@ def optimize_atlas(
     prepared_targets: Sequence[PreparedSurfaceAttachmentTarget] | None = None,
     max_cycles: int = 10,
     block_order: Sequence[AtlasParameterBlock] = _ALL_BLOCKS,
+    momenta_updates_per_cycle: int = 1,
     momenta_step_size: float = 0.1,
     template_step_size: float = 0.01,
     control_points_step_size: float = 0.01,
@@ -476,6 +478,20 @@ def optimize_atlas(
         "max_line_search_iterations", max_line_search_iterations, minimum=1
     )
     order = _block_order(block_order)
+    momenta_updates = _integer(
+        "momenta_updates_per_cycle",
+        momenta_updates_per_cycle,
+        minimum=1,
+    )
+    if "momenta" not in order and momenta_updates != 1:
+        raise ValueError(
+            "momenta_updates_per_cycle must be 1 when momenta is not in block_order"
+        )
+    schedule = tuple(
+        block
+        for block in order
+        for _ in range(momenta_updates if block == "momenta" else 1)
+    )
     if step_initialization not in ("fixed", "previous_accepted"):
         raise ValueError("step_initialization must be fixed or previous_accepted")
     if direction_update not in ("steepest", "lbfgs"):
@@ -551,6 +567,7 @@ def optimize_atlas(
     optimizer_settings = AtlasOptimizerSettings(
         max_cycles=cycles,
         block_order=order,
+        momenta_updates_per_cycle=momenta_updates,
         momenta_step_size=step_sizes["momenta"],
         template_step_size=step_sizes["template"],
         control_points_step_size=step_sizes["control_points"],
@@ -1044,9 +1061,9 @@ def optimize_atlas(
 
     for cycle in range(1, cycles + 1):
         stationary_blocks = 0
-        for block in order:
+        for visit_index, block in enumerate(schedule):
             lbfgs_history = lbfgs_histories[block]
-            if cycle == 1 and block == order[0]:
+            if cycle == 1 and visit_index == 0:
                 evaluated = initial
                 initial = None
             elif len(order) == 1 and reusable_single_block_evaluation is not None:
@@ -1226,7 +1243,7 @@ def optimize_atlas(
                 progress_callback(record)
         current_cycle_objective = float(current.objective)
         completed_reason: AtlasCompletedCycleTerminationReason | None = None
-        if stationary_blocks == len(order):
+        if stationary_blocks == len(schedule):
             completed_reason = "gradient_tolerance"
         elif objective_change_tolerance is not None:
             latest_change = abs(current_cycle_objective - previous_cycle_objective)

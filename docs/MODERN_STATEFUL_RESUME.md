@@ -1,6 +1,6 @@
 # Exact complete-cycle optimizer continuation
 
-Status: **implemented through Modern Engine 1.2; exact at committed cycle boundaries**
+Status: **implemented through Modern Engine 1.3; exact at committed cycle boundaries**
 
 Engine 0.9 extended the private Modern checkpoint format from parameter-only
 state to exact single-block optimizer state. Engine 1.2 checkpoint v0.3 extends
@@ -13,6 +13,9 @@ stores and verifies:
 - the reusable accepted gradient;
 - every retained L-BFGS curvature pair in deterministic per-block order; and
 - a convergence decision made by the completed cycle, if one was triggered.
+
+Engine 1.3 additionally binds `momenta_updates_per_cycle`; historical absence
+means one, while a multi-rate successor must retain the exact expanded schedule.
 
 Optimizer tensors use a non-executable, little-endian float64 binary store with
 explicit names, shapes, byte offsets, byte lengths, and SHA-256 evidence. No
@@ -41,7 +44,7 @@ immutable workflow evidence; legacy configurations keep every cycle.
 
 ## Evidence
 
-The test contract compares uninterrupted single- and multi-block L-BFGS
+The test contract compares uninterrupted single-, multi-block, and multi-rate L-BFGS
 trajectories with split trajectories. After checkpoint serialization, plan
 verification, deserialization, and a public successor workflow, the final
 objective and canonical state are exactly equal. Core tests also exercise

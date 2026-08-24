@@ -182,6 +182,7 @@ def _optimizer_keywords(config: dict[str, Any], max_cycles: int) -> dict[str, An
         "gaussian_tile_plan": pairwise.gaussian_tile_plan,
         "max_cycles": max_cycles,
         "block_order": optimizer["block_order"],
+        "momenta_updates_per_cycle": optimizer.get("momenta_updates_per_cycle", 1),
         "momenta_step_size": optimizer["momenta_step_size"],
         "template_step_size": optimizer["template_step_size"],
         "control_points_step_size": optimizer["control_points_step_size"],
@@ -594,11 +595,17 @@ def _validate_sample_history(
             "Optimizer decision history length is inconsistent"
         )
     block_order = report["configuration"]["block_order"]
-    block_count = len(block_order)
+    momenta_updates = report["configuration"].get("momenta_updates_per_cycle", 1)
+    block_schedule = [
+        block
+        for block in block_order
+        for _ in range(momenta_updates if block == "momenta" else 1)
+    ]
+    block_count = len(block_schedule)
     for index, record in enumerate(decisions):
         if (
             record["cycle"] != index // block_count + 1
-            or record["block"] != block_order[index % block_count]
+            or record["block"] != block_schedule[index % block_count]
             or record["status"] == "initial"
         ):
             raise ModernOptimizerBenchmarkError(
@@ -702,8 +709,13 @@ def _validate_report(report: dict[str, Any]) -> None:
             raise ModernOptimizerBenchmarkError("Objective-evaluation count is inconsistent")
         if sample["gradient_evaluations"] != expected_gradient_evaluations:
             raise ModernOptimizerBenchmarkError("Gradient-evaluation count is inconsistent")
-        decision_bound = report["configuration"]["measured_max_cycles"] * len(
-            report["configuration"]["block_order"]
+        decisions_per_cycle = len(report["configuration"]["block_order"]) + (
+            report["configuration"].get("momenta_updates_per_cycle", 1) - 1
+            if "momenta" in report["configuration"]["block_order"]
+            else 0
+        )
+        decision_bound = (
+            report["configuration"]["measured_max_cycles"] * decisions_per_cycle
         )
         if decisions > decision_bound:
             raise ModernOptimizerBenchmarkError("Optimizer decision count exceeds cycle scope")
@@ -847,6 +859,9 @@ def collect_modern_optimizer_benchmark(
             "source_max_cycles": optimizer["max_cycles"],
             "measured_max_cycles": cycle_count,
             "block_order": optimizer["block_order"],
+            "momenta_updates_per_cycle": optimizer.get(
+                "momenta_updates_per_cycle", 1
+            ),
             "momenta_step_size": optimizer["momenta_step_size"],
             "template_step_size": optimizer["template_step_size"],
             "control_points_step_size": optimizer["control_points_step_size"],
@@ -1000,6 +1015,7 @@ background:#fff6df}}</style></head><body>
 {report["input"]["available_subject_count"]}</li>
 <li>Cycles: {config["measured_max_cycles"]} (source config: {config["source_max_cycles"]})</li>
 <li>Block order: {html.escape(", ".join(config["block_order"]))}</li>
+<li>Momenta updates per cycle: {config.get("momenta_updates_per_cycle", 1)}</li>
 <li>Fresh-process repeats: {config["repeats"]}; warm-ups/repeat:
 {config["warmup_runs_per_repeat"]}</li>
 <li>Threads: {config["threads"]}; pairwise execution: {html.escape(pairwise["mode"])};
