@@ -266,6 +266,33 @@ def test_legacy_report_without_engine_revision_remains_valid(
     assert "Modern engine implementation" not in render_modern_optimizer_benchmark_html(report)
 
 
+def test_legacy_report_html_does_not_gain_multi_rate_protocol_row(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import diffeoforge.modern_optimizer_benchmark as module
+
+    monkeypatch.setattr(
+        module,
+        "_run_fresh_sample",
+        lambda _path, subjects, *_args: _sample(subjects=subjects),
+    )
+    report = collect_modern_optimizer_benchmark(
+        EXAMPLE,
+        subject_count=1,
+        max_cycles=2,
+        repeats=1,
+        created_at=FIXED_TIME,
+    )
+    report["benchmark_version"] = "0.1"
+    report["configuration"].pop("momenta_updates_per_cycle")
+    for sample in report["samples"]:
+        sample.pop("history")
+
+    _validate_report(report)
+    rendered = render_modern_optimizer_benchmark_html(report)
+    assert "Momenta updates per cycle" not in rendered
+
+
 def test_report_is_atomic_escaped_and_strictly_verifiable(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

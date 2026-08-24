@@ -994,6 +994,12 @@ def render_modern_optimizer_benchmark_html(report: dict[str, Any]) -> str:
         else "\n<li>Modern engine implementation: "
         f"{html.escape(implementation)}</li>"
     )
+    momenta_schedule_html = (
+        ""
+        if "momenta_updates_per_cycle" not in config
+        else "\n<li>Momenta updates per cycle: "
+        f"{config['momenta_updates_per_cycle']}</li>"
+    )
     return f"""{HTML_MARKER}
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width">
@@ -1014,8 +1020,7 @@ background:#fff6df}}</style></head><body>
 <li>Subjects: {report["input"]["selected_subject_count"]} of
 {report["input"]["available_subject_count"]}</li>
 <li>Cycles: {config["measured_max_cycles"]} (source config: {config["source_max_cycles"]})</li>
-<li>Block order: {html.escape(", ".join(config["block_order"]))}</li>
-<li>Momenta updates per cycle: {config.get("momenta_updates_per_cycle", 1)}</li>
+<li>Block order: {html.escape(", ".join(config["block_order"]))}</li>{momenta_schedule_html}
 <li>Fresh-process repeats: {config["repeats"]}; warm-ups/repeat:
 {config["warmup_runs_per_repeat"]}</li>
 <li>Threads: {config["threads"]}; pairwise execution: {html.escape(pairwise["mode"])};
