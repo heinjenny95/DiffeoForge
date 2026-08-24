@@ -310,6 +310,21 @@ def _verify_condition_report(
             "target geometry and target self-term prepared once per fresh process"
         ),
     }
+    for name in (
+        "step_initialization",
+        "direction_update",
+        "lbfgs_history_size",
+        "lbfgs_curvature_tolerance",
+        "lbfgs_initial_step_size",
+        "line_search_condition",
+        "strong_wolfe_curvature_constant",
+        "strong_wolfe_maximum_step_size",
+        "relative_objective_tolerance",
+        "subject_batch_size",
+        "shared_step_scaling",
+    ):
+        if name in frozen:
+            expected_fixed[name] = frozen[name]
     if config != expected_fixed:
         raise ModernOptimizerBenchmarkStudyError(
             "Optimizer condition protocol differs from frozen design"

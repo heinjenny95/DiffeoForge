@@ -521,6 +521,7 @@ def test_subject_batched_workflow_is_explicit_and_numerically_matches_full_cohor
 
     assert batched_bundle["optimizer"]["settings"]["subject_batch_size"] == 2
     assert full_bundle["optimizer"]["settings"]["subject_batch_size"] is None
+    assert batched_bundle["optimizer"]["settings"]["shared_step_scaling"] == "none"
     for field in ("final_objective", "final_attachment", "final_regularity"):
         assert batched_bundle["optimizer"][field] == pytest.approx(
             full_bundle["optimizer"][field],

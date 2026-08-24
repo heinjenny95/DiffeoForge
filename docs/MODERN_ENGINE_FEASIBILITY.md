@@ -288,7 +288,11 @@ gates. See
    multi-dimensional study and peak-memory characterization remain open. Engine
    1.0 now also has an opt-in deterministic subject-batch path; an initial
    16-subject observation reduced sampled peak RSS by 55.7% for a 7.8% wall-time
-   increase. See [subject batching](MODERN_SUBJECT_BATCHING.md).
+   increase. Engine 1.1 subsequently completed one full three-block optimizer
+   cycle on 236 real 5k-face Trochanters at 503.41 MiB sampled peak RSS after
+   making shared-block starter steps cohort invariant. See
+   [subject batching](MODERN_SUBJECT_BATCHING.md) and
+   [shared-step scaling](MODERN_SHARED_STEP_SCALING.md).
 9. Define evidence-derived tolerances before accepting a production backend.
    Provisional fixed-reference gates have now passed once prospectively; broader
    datasets and atlas-update tests are still needed before the tolerances can be

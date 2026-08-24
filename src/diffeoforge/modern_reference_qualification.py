@@ -592,6 +592,7 @@ def create_modern_reference_qualification(
                 "strong_wolfe_maximum_step_size": float(strong_wolfe_maximum_step_size),
                 "relative_objective_tolerance": float(optimization["convergence_tolerance"]),
                 "subject_batch_size": subject_batch_size,
+                "shared_step_scaling": "none",
                 "checkpoint_interval_cycles": 5,
                 "checkpoint_retention": "latest",
             },

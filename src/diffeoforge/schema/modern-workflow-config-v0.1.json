@@ -18,7 +18,7 @@
     "output"
   ],
   "properties": {
-    "schema_version": {"enum": ["0.1", "0.2", "0.3", "0.4", "0.5"]},
+    "schema_version": {"enum": ["0.1", "0.2", "0.3", "0.4", "0.5", "0.6"]},
     "project": {
       "type": "object",
       "additionalProperties": false,
@@ -241,6 +241,7 @@
         "strong_wolfe_maximum_step_size": {"type": "number", "exclusiveMinimum": 0},
         "relative_objective_tolerance": {"type": ["number", "null"], "exclusiveMinimum": 0, "exclusiveMaximum": 1},
         "subject_batch_size": {"type": ["integer", "null"], "minimum": 1},
+        "shared_step_scaling": {"enum": ["none", "inverse_subject_count"]},
         "checkpoint_interval_cycles": {"type": "integer", "minimum": 1},
         "checkpoint_retention": {"enum": ["all", "latest"]},
         "resume_state": {
@@ -378,6 +379,18 @@
         "properties": {
           "runtime": {"required": ["pairwise_evaluation"]},
           "optimization": {"required": ["step_initialization"]}
+        }
+      }
+    },
+    {
+      "if": {
+        "required": ["schema_version"],
+        "properties": {"schema_version": {"const": "0.6"}}
+      },
+      "then": {
+        "properties": {
+          "runtime": {"required": ["pairwise_evaluation"]},
+          "optimization": {"required": ["step_initialization", "shared_step_scaling"]}
         }
       }
     }

@@ -166,6 +166,7 @@ def _optimizer_keywords(config: dict[str, Any], max_cycles: int) -> dict[str, An
                     "relative_objective_tolerance"
                 ),
                 "subject_batch_size": optimizer.get("subject_batch_size"),
+                "shared_step_scaling": optimizer.get("shared_step_scaling", "none"),
             }
         )
     return keywords
@@ -611,6 +612,7 @@ def collect_modern_optimizer_benchmark(
                         "relative_objective_tolerance"
                     ),
                     "subject_batch_size": optimizer.get("subject_batch_size"),
+                    "shared_step_scaling": optimizer.get("shared_step_scaling", "none"),
                 }
                 if "direction_update" in optimizer
                 else {}

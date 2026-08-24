@@ -138,7 +138,8 @@
             "strong_wolfe_curvature_constant": {"type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 1},
             "strong_wolfe_maximum_step_size": {"type": "number", "exclusiveMinimum": 0},
             "relative_objective_tolerance": {"type": ["number", "null"], "exclusiveMinimum": 0, "exclusiveMaximum": 1},
-            "subject_batch_size": {"type": ["integer", "null"], "minimum": 1}
+            "subject_batch_size": {"type": ["integer", "null"], "minimum": 1},
+            "shared_step_scaling": {"enum": ["none", "inverse_subject_count"]}
           }
         },
         "termination_reason": {"enum": ["gradient_tolerance", "relative_objective_tolerance", "max_cycles", "line_search_failed"]},

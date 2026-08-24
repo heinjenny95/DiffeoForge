@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 import pytest
+import yaml
 
 pytest.importorskip("numpy")
 pytest.importorskip("psutil")
@@ -129,6 +130,60 @@ def test_study_executes_verifies_and_is_idempotent(
         for path in run.rglob("*")
         if path.is_file()
     }
+
+
+def test_study_binds_explicit_optimizer_extensions(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import diffeoforge.modern_optimizer_benchmark as benchmark_module
+
+    sample = _sample()
+    sample["objective_evaluations"] += sample["gradient_evaluations"]
+    monkeypatch.setattr(benchmark_module, "_run_fresh_sample", lambda *_args: sample)
+    value = yaml.safe_load(EXAMPLE.read_text(encoding="utf-8"))
+    value["input"]["directory"] = str(
+        (EXAMPLE.parent / value["input"]["directory"]).resolve()
+    )
+    value["input"]["template"] = str(
+        (EXAMPLE.parent / value["input"]["template"]).resolve()
+    )
+    value["optimization"].update(
+        {
+            "step_initialization": "previous_accepted",
+            "direction_update": "steepest",
+            "lbfgs_history_size": 10,
+            "lbfgs_curvature_tolerance": 1e-12,
+            "lbfgs_initial_step_size": 1.0,
+            "line_search_condition": "armijo",
+            "strong_wolfe_curvature_constant": 0.9,
+            "strong_wolfe_maximum_step_size": 10.0,
+            "relative_objective_tolerance": None,
+            "subject_batch_size": 1,
+        }
+    )
+    config = tmp_path / "batched.yaml"
+    config.write_text(yaml.safe_dump(value, sort_keys=False), encoding="utf-8")
+    design_value = collect_modern_optimizer_benchmark_design(
+        config,
+        subject_counts=[1],
+        cycle_caps=[1],
+        repeats_per_condition=1,
+        warmup_runs=0,
+        order_seed=23,
+        created_at=FIXED_TIME,
+    )
+    design = write_modern_optimizer_benchmark_design(
+        design_value,
+        tmp_path / "batched-design",
+    )
+
+    run = run_modern_optimizer_benchmark_study(
+        design,
+        config,
+        destination=tmp_path / "batched-run",
+    )
+
+    assert verify_modern_optimizer_benchmark_study_run(run)["status"] == "complete"
 
 
 def test_completed_studies_have_a_strict_descriptive_comparison(

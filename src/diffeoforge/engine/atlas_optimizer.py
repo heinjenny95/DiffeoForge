@@ -26,6 +26,7 @@ AtlasParameterBlock = Literal["momenta", "template", "control_points"]
 AtlasStepInitialization = Literal["fixed", "previous_accepted"]
 AtlasDirectionUpdate = Literal["steepest", "lbfgs"]
 AtlasLineSearchCondition = Literal["armijo", "strong_wolfe"]
+AtlasSharedStepScaling = Literal["none", "inverse_subject_count"]
 AtlasAttemptStatus = Literal["initial", "accepted", "stationary", "failed"]
 AtlasTerminationReason = Literal[
     "gradient_tolerance",
@@ -125,6 +126,7 @@ class AtlasOptimizerSettings:
     strong_wolfe_maximum_step_size: float = 10.0
     relative_objective_tolerance: float | None = None
     subject_batch_size: int | None = None
+    shared_step_scaling: AtlasSharedStepScaling = "none"
 
 
 @dataclass(frozen=True)
@@ -431,6 +433,7 @@ def optimize_atlas(
     strong_wolfe_maximum_step_size: float = 10.0,
     relative_objective_tolerance: float | None = None,
     subject_batch_size: int | None = None,
+    shared_step_scaling: AtlasSharedStepScaling = "none",
     resume_state: AtlasOptimizerResumeState | None = None,
     progress_callback: AtlasProgressCallback | None = None,
     checkpoint_callback: AtlasCheckpointCallback | None = None,
@@ -532,6 +535,8 @@ def optimize_atlas(
         if subject_batch_size is None
         else _integer("subject_batch_size", subject_batch_size, minimum=1)
     )
+    if shared_step_scaling not in ("none", "inverse_subject_count"):
+        raise ValueError("shared_step_scaling must be none or inverse_subject_count")
     gradient_threshold = _finite_real(
         "gradient_tolerance",
         gradient_tolerance,
@@ -562,6 +567,7 @@ def optimize_atlas(
         strong_wolfe_maximum_step_size=wolfe_maximum_step,
         relative_objective_tolerance=objective_change_tolerance,
         subject_batch_size=normalized_subject_batch_size,
+        shared_step_scaling=shared_step_scaling,
     )
     for name, value in (
         ("initial_template_vertices", initial_template_vertices),
@@ -572,6 +578,18 @@ def optimize_atlas(
             raise TypeError(f"{name} must be a torch.Tensor")
 
     target_sequence = tuple(targets)
+    effective_initial_step_sizes = dict(step_sizes)
+    if shared_step_scaling == "inverse_subject_count":
+        if not target_sequence:
+            raise ValueError(
+                "shared_step_scaling=inverse_subject_count requires at least one subject"
+            )
+        for shared_block in ("template", "control_points"):
+            effective_initial_step_sizes[shared_block] /= len(target_sequence)
+        if any(minimum_step > effective_initial_step_sizes[block] for block in order):
+            raise ValueError(
+                "minimum_step_size must not exceed any effective cohort-scaled block step size"
+            )
     if prepared_targets is None:
         prepared_target_values = []
         for target_vertices, target_triangles in target_sequence:
@@ -927,7 +945,7 @@ def optimize_atlas(
         progress_callback(initial_record)
     total_line_search_evaluations = 0
     next_step_sizes = (
-        dict(step_sizes)
+        dict(effective_initial_step_sizes)
         if resume_state is None
         else {block: float(resume_state.next_step_sizes[block]) for block in order}
     )

@@ -99,6 +99,44 @@ def test_every_accepted_block_monotonically_improves_the_objective() -> None:
     assert result.settings.lbfgs_history_size == 10
     assert result.settings.lbfgs_initial_step_size == 1.0
     assert result.settings.relative_objective_tolerance is None
+    assert result.settings.shared_step_scaling == "none"
+
+
+def test_inverse_subject_count_scaling_preserves_shared_template_update() -> None:
+    arguments, keywords = _problem(subjects=1)
+    template, triangles, targets, control_points, momenta = arguments
+    repeated_targets = targets * 4
+    repeated_momenta = torch.zeros((4, *control_points.shape), dtype=DTYPE)
+    settings = {
+        "max_cycles": 1,
+        "block_order": ("template",),
+        "gradient_tolerance": 0.0,
+        "shared_step_scaling": "inverse_subject_count",
+    }
+
+    single = optimize_atlas(*arguments, **keywords, **settings)
+    repeated = optimize_atlas(
+        template,
+        triangles,
+        repeated_targets,
+        control_points,
+        repeated_momenta,
+        **keywords,
+        **settings,
+    )
+
+    assert repeated.settings.shared_step_scaling == "inverse_subject_count"
+    assert single.history[-1].status == "accepted"
+    assert repeated.history[-1].status == "accepted"
+    assert repeated.history[-1].accepted_step_size == pytest.approx(
+        single.history[-1].accepted_step_size / 4.0
+    )
+    assert torch.allclose(
+        repeated.template_vertices,
+        single.template_vertices,
+        rtol=1e-12,
+        atol=1e-12,
+    )
 
 
 def test_previous_accepted_step_avoids_repeating_rejected_candidates() -> None:
@@ -799,6 +837,7 @@ def test_optimizer_remains_differentiable_internally_under_no_grad() -> None:
         ({"relative_objective_tolerance": 1.0}, "relative_objective_tolerance"),
         ({"subject_batch_size": 0}, "subject_batch_size"),
         ({"subject_batch_size": True}, "subject_batch_size"),
+        ({"shared_step_scaling": "automatic"}, "shared_step_scaling"),
     ],
 )
 def test_invalid_optimizer_settings_fail_explicitly(override: dict, message: str) -> None:

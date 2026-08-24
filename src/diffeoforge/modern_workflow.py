@@ -85,7 +85,7 @@ from diffeoforge.private_runs import (
     discover_private_runs,
 )
 
-CONFIG_VERSION = "0.5"
+CONFIG_VERSION = "0.6"
 WORKFLOW_VERSION = "0.1"
 MANIFEST_NAME = "workflow-manifest.json"
 MANIFEST_SIDECAR_NAME = "workflow-manifest.sha256"
@@ -150,8 +150,10 @@ def validate_modern_workflow_config(config: Mapping[str, Any]) -> None:
         )
     resume = optimizer.get("resume_state")
     if resume is not None:
-        if config["schema_version"] != "0.5":
-            raise ConfigurationError("optimization.resume_state requires schema_version=0.5")
+        if config["schema_version"] not in {"0.5", "0.6"}:
+            raise ConfigurationError(
+                "optimization.resume_state requires schema_version=0.5 or 0.6"
+            )
         if config["preprocessing"]["procrustes"]["enabled"] is not False:
             raise ConfigurationError(
                 "optimization.resume_state requires preprocessing.procrustes.enabled=false"
@@ -579,6 +581,7 @@ def initialize_modern_workflow(
             "strong_wolfe_maximum_step_size": 10.0,
             "relative_objective_tolerance": None,
             "subject_batch_size": None,
+            "shared_step_scaling": "inverse_subject_count",
             "checkpoint_interval_cycles": 5,
             "checkpoint_retention": "latest",
         },
@@ -1371,6 +1374,7 @@ def run_modern_workflow(
                     ),
                     relative_objective_tolerance=optimizer.get("relative_objective_tolerance"),
                     subject_batch_size=optimizer.get("subject_batch_size"),
+                    shared_step_scaling=optimizer.get("shared_step_scaling", "none"),
                     resume_state=optimizer_resume_state,
                     progress_callback=(
                         observe_optimizer if progress_callback is not None else None
