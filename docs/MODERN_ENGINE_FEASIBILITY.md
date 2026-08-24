@@ -319,7 +319,10 @@ gates. See
    numerical histories and selected eight threads: its 96.772-second median was
    24.08% below the four-thread median, while 16 threads were slower than eight.
    A separately frozen 236-subject exact-result and 10%-speedup confirmation
-   remains required before adoption. See
+   failed: eight threads were only 5.21% faster and changed last-order float64
+   reduction bits, so the four-thread default remains unchanged. The next
+   acceleration target must restructure cohort execution or validate a GPU
+   path rather than only increasing intra-operation threads. See
    [subject batching](MODERN_SUBJECT_BATCHING.md) and
    [shared-step scaling](MODERN_SHARED_STEP_SCALING.md), and
    [multi-rate atlas optimization](MODERN_MULTIRATE_OPTIMIZATION.md).

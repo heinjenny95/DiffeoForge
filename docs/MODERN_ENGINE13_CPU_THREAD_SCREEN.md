@@ -77,3 +77,9 @@ with synchronization overhead for this workload. Eight threads therefore pass
 the predeclared selection rule. This supports only a separate 236-subject
 confirmation on this machine; it does not justify a global default or a
 general CPU scaling claim.
+
+The required full-cohort confirmation subsequently failed. Eight threads were
+only 5.21% faster on 236 subjects and changed last-order float64 reduction bits,
+so they did not meet either the exact-result or 10%-speedup gate. The generated
+default remains unchanged. See
+[the eight-thread full-cohort confirmation](MODERN_ENGINE13_THREADS8_FULL_COHORT_GATE.md).

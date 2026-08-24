@@ -1,6 +1,6 @@
 # Engine 1.3 eight-thread full-cohort confirmation
 
-Status: **frozen before the confirmation result exists**
+Status: **FAIL; exact-result and 10%-time gates failed without a retry**
 
 ## Question
 
@@ -58,3 +58,37 @@ The candidate passes only if all conditions hold:
 Failure is retained and does not authorize a post-hoc retry. Passing permits
 eight threads only as a hardware-specific candidate for subsequent development;
 it does not change the generated cross-machine default by itself.
+
+## Frozen result
+
+The prospective design, completed study, and nested benchmark v0.2 report
+verified strictly. The raw report SHA-256 is
+`4b6938ac8302e085914a5665609cdd7c973aadf34318f8ad3e821bed8866a026`.
+
+| Frozen gate | Required | Observed | Result |
+|---|---:|---:|---|
+| Strict design/study/report verification | pass | pass | PASS |
+| Accepted decisions | `8/8` | `8/8` | PASS |
+| Stationary / failed decisions | `0 / 0` | `0 / 0` | PASS |
+| Exact history and parameter hashes | match | differ | **FAIL** |
+| Exact objective/components | match | last-bit differences | **FAIL** |
+| Optimizer wall time | at most `3548572746120 ns` | `3737386864000 ns` | **FAIL** |
+| Sampled peak RSS | at most `650000000 B` | `545009664 B` | PASS |
+
+The eight-thread run used 62.290 minutes, only 5.21% less than the four-thread
+reference and 188,814,117,880 ns above the predeclared threshold. Work counts
+and termination matched exactly: 41 objective evaluations, 16 gradient
+evaluations, eight accepted-candidate gradients, 17 line-search evaluations,
+nine deferred rejected-candidate gradients, and the two-cycle cap.
+
+The numerical differences were tiny but nonzero. Final objective differed by
+`-1.8189894035458565e-12`, final regularity by
+`7.105427357601002e-14`, and accepted history objectives differed by at most
+`1.0913936421275139e-11`. Final attachment matched as a float. These reduction-
+order effects changed the complete history and all final parameter hashes, so
+the exact-result gate correctly rejected the candidate.
+
+Eight threads are not adopted. The 16-subject speedup did not transfer
+materially to the serial 236-subject batch loop. The next optimization must
+explicitly restructure cohort execution or introduce a separately validated
+GPU path rather than raising the global thread default.
