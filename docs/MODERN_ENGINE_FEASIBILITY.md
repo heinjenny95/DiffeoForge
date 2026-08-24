@@ -308,7 +308,11 @@ gates. See
    objective `-160.400` in 9.044 minutes, and used 413.7 MB sampled peak RSS.
    That passed the predeclared quality, time, memory, and trace gates against
    the Engine 1.1 ten-cycle baseline, but stopped at its cycle cap and does not
-   establish convergence or large-cohort feasibility. See
+   establish convergence. A separate two-cycle 236-subject gate then accepted
+   all eight decisions and passed objective, trace, and memory thresholds, but
+   used 65.71 minutes and failed its 48.64-minute time threshold by 35.1%.
+   This localizes the next scaling target to serial full-cohort evaluation
+   rather than optimizer validity or sampled peak memory. See
    [subject batching](MODERN_SUBJECT_BATCHING.md) and
    [shared-step scaling](MODERN_SHARED_STEP_SCALING.md), and
    [multi-rate atlas optimization](MODERN_MULTIRATE_OPTIMIZATION.md).

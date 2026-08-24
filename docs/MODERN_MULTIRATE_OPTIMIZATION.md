@@ -71,7 +71,16 @@ available real 5k-Trochanters against the strictly verified Engine 1.1
 three-cycle full-cohort baseline. See
 [the Engine 1.3 full-cohort gate](MODERN_ENGINE13_FULL_COHORT_GATE.md).
 
-That passing observation does not establish convergence, a universal schedule,
+That full-cohort gate accepted all eight decisions and passed its objective,
+trace, and memory thresholds, reaching objective `-8545.854488271007` with
+542,019,584 bytes sampled peak RSS. It failed the time threshold: 65.714
+minutes was 35.10% slower than the 48.640-minute Engine 1.1 baseline. Momenta
+supplied 93.0% of the total accepted objective gain, and the second Momenta
+visit of cycle two was the first record to exceed the baseline objective.
+Consequently, the schedule remains a useful quality candidate, but serial
+full-cohort evaluation is not an efficiency-qualified implementation.
+
+The 16-subject pass and 236-subject time failure do not establish convergence, a universal schedule,
 improved biological correspondence, or suitability for 236/300 subjects. The
 optimizer stopped at the declared five-cycle cap. Larger-cohort scaling,
 repeatability beyond the deterministic single repeat, and full atlas-output
