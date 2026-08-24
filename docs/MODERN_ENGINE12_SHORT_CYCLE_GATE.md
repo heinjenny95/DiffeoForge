@@ -1,6 +1,7 @@
 # Engine 1.2 shorter-cycle L-BFGS gate
 
-Status: **frozen before the seven-cycle result exists**
+Status: **completed; provisional shorter-cycle efficiency gate failed on the
+predeclared objective threshold**
 
 ## Question
 
@@ -71,3 +72,27 @@ post-hoc threshold, retry, or winner claim.
 
 Attachment, regularity, sampled RSS, exact work counters, and the per-decision
 trajectory remain mandatory diagnostics even when the binary gate passes.
+
+## Observed result
+
+The completed v0.2 report strictly verifies and has SHA-256
+`4b83070ce27f56da83c3df422a47969ac56e9f222d71f15cbda0abe7e8e73dba`.
+It recorded `21/21` accepted decisions, no failed block, 22 verified history
+records, and normal `max_cycles` termination.
+
+- validity gate: **pass**;
+- time gate: **pass**, `661986038500 ns` versus `753033437900 ns`;
+- objective gate: **fail**, `-386.80570915483656` versus the required
+  `-296.6588473308086`;
+- overall gate: **fail**.
+
+The candidate was `91.047 s` (`12.1%`) faster but did not match the baseline
+objective. The stored cycle-end objectives were `-2586.864`, `-1361.268`,
+`-965.907`, `-768.990`, `-651.230`, `-482.335`, and `-386.806`. No alternate
+cycle cap or retry is reclassified as this gate.
+
+Across the seven cycles, Momenta decisions supplied about `4387.959` objective
+gain, versus `580.012` from template decisions and `601.847` from control-point
+decisions. This descriptive trace motivates a separately versioned multi-rate
+candidate with more local Momenta visits per shared-parameter update. It is not
+itself evidence that such a candidate will pass.

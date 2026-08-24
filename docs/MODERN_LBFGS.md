@@ -105,6 +105,15 @@ biological validity, or general superiority. Benchmark v0.2 now preserves the
 full per-decision trajectory so a prospectively selected shorter-cycle follow-up
 can test whether the quality gain offsets the per-run cost.
 
+That follow-up was frozen at seven cycles with a binary requirement to match
+the ten-cycle Steepest objective within its measured optimizer time. It passed
+validity (`21/21` accepted) and time (`661.986 s`, 12.1% below the baseline) but
+failed objective quality (`-386.805709155` versus required
+`-296.658847331`). The overall gate therefore failed. Its v0.2 trace attributes
+about 78.8% of the total seven-cycle objective gain to Momenta decisions. A new
+multi-rate scheduling candidate may use that observation prospectively; simply
+renaming an eight- or nine-cycle retry as a success is not permitted.
+
 The exact evidence directories are siblings below
 `DiffeoForge Weevil Tests 2026-08-17` and begin with
 `modern-reference-qualification-v0.6-5-subject-`. See
