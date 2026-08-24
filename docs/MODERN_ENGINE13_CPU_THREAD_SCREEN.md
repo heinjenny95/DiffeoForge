@@ -1,6 +1,6 @@
 # Engine 1.3 CPU-thread screening gate
 
-Status: **frozen before screening results exist**
+Status: **PASS; 8 threads selected for full-cohort confirmation**
 
 ## Question
 
@@ -56,3 +56,24 @@ time; break an exact tie in favor of fewer threads.
 No unlisted thread count, extra repeat, warm-up, altered batch size, or post-hoc
 threshold is authorized by this screen. Raw operation counts, histories,
 memory, and timing remain mandatory diagnostics.
+
+## Frozen results
+
+All three prospective designs and completed studies verified strictly. Every
+repeat accepted `4/4` decisions with no stationarity or failure. All six runs
+produced exactly the same final objective `-1703.242991909793`, history SHA-256
+`c461cca2ac48ee660af224e1f47e0c255d4a4ccf6456eb93285e6c1e63e2295f`,
+and final template, control-point, and Momenta hashes.
+
+| Threads | Repeat times | Median | Maximum sampled RSS | Report SHA-256 |
+|---:|---:|---:|---:|---|
+| 4 | 124.050 s, 130.886 s | 127.468 s | 410,918,912 B | `7d93a0e167e8e764d8df65491592d4df2febf0f0f8a76ebd2aaea915f4c36d42` |
+| 8 | 103.665 s, 89.878 s | **96.772 s** | 413,085,696 B | `29061a1d1edabb27a1f0b87c13253d8a7ebec82c400a464b60c6dd5da6e5d6c4` |
+| 16 | 113.539 s, 106.457 s | 109.998 s | 414,806,016 B | `4d01b62dc17167c7ea20caba87f34e281b82900f80a7303edb0b79f14b5009b2` |
+
+Eight threads reduced median optimizer time by 24.08% relative to four. Sixteen
+threads reduced it by 13.71%, but were 13.67% slower than eight, consistent
+with synchronization overhead for this workload. Eight threads therefore pass
+the predeclared selection rule. This supports only a separate 236-subject
+confirmation on this machine; it does not justify a global default or a
+general CPU scaling claim.

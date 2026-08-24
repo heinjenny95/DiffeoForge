@@ -315,7 +315,10 @@ gates. See
    rather than optimizer validity or sampled peak memory. A separate frozen
    4/8/16-thread screen tests whether the current four-thread cap leaves safe
    same-process CPU parallelism unused before a more invasive cohort-worker or
-   CUDA implementation is attempted. See
+   CUDA implementation is attempted. That screen produced bit-identical
+   numerical histories and selected eight threads: its 96.772-second median was
+   24.08% below the four-thread median, while 16 threads were slower than eight.
+   A full-cohort confirmation remains required before adoption. See
    [subject batching](MODERN_SUBJECT_BATCHING.md) and
    [shared-step scaling](MODERN_SHARED_STEP_SCALING.md), and
    [multi-rate atlas optimization](MODERN_MULTIRATE_OPTIMIZATION.md).
