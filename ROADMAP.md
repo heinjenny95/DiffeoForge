@@ -123,8 +123,10 @@ This roadmap describes evidence gates rather than promised dates.
 - [x] Add deterministic parallel CPU execution across bounded subject batches,
   exact serial/parallel trajectory tests, provenance, and checkpoint binding in
   Engine 1.4
-- [ ] Prospectively screen Engine 1.4 subject-batch worker counts on the frozen
-  real 16-subject cohort and confirm any selected candidate on all 236 subjects
+- [x] Prospectively screen Engine 1.4 subject-batch worker counts on the frozen
+  real 16-subject cohort; two workers passed with an exact result and 23.77%
+  lower median optimizer time
+- [ ] Confirm the selected two-worker candidate on all 236 subjects
 
 ## Milestone 3: Accessible application
 
