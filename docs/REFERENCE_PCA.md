@@ -56,11 +56,10 @@ diffeoforge reference-pca-deformation-design-verify `
   --source-run RUN_DIRECTORY
 
 diffeoforge reference-pca-deformation-run `
-  C:\path\to\new-shooting-design `
-  --output C:\path\to\new-shooting-result
+  C:\path\to\new-shooting-design
 
 diffeoforge reference-pca-deformation-verify `
-  C:\path\to\new-shooting-result `
+  RUN_DIRECTORY\analysis\reference-pca-deformations-v0.1-result `
   --source-run RUN_DIRECTORY
 ```
 
@@ -76,7 +75,8 @@ publishes only after every final-timepoint surface has the source template's
 point and triangle counts. Its verifier rechecks the nested prospective design,
 source hashes, exact inventory, endpoint identities, file hashes, and VTK
 topology. Runtime completion remains engineering evidence, not biological
-validation. Desktop Results-viewer integration remains a separate step.
+validation. The default result location is detected by the desktop, which then
+adds the verified mean and ±PC surfaces to the existing native 3D viewer.
 
 Subject identity and order come from the immutable run manifest's subject input
 records. This is the same order used when DiffeoForge wrote Deformetrica's
@@ -132,8 +132,7 @@ convergence.
 This PCA is an exploratory coordinate summary. It does not prove adequate atlas
 registration, optimizer convergence, group separation, taxonomic structure,
 biological effect, or causality. The current reference result viewer does not
-yet expose executed mean/positive/negative PC deformation meshes. Their exact
-Deformetrica Shooting inputs and supervised result can be created and verified
-as described above; binding those artifacts into the native viewer remains
-separate. Covariate-aware plots and inferential statistics likewise require
-separate methods and validation decisions.
+exposes executed mean/positive/negative PC deformation meshes only when their
+separate Shooting result exists at the default location and passes full
+verification. Covariate-aware plots and inferential statistics likewise
+require separate methods and validation decisions.

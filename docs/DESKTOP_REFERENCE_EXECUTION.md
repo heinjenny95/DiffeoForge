@@ -122,8 +122,10 @@ keeps the window open until the parent reconciles a terminal outcome.
   recovery are guided desktop actions. Neither path can prove biological validity or
   exact optimizer-trajectory continuity.
 - Verified Deformetrica momenta and control points are imported into the shared
-  PCA/result screen. Reference mean/positive/negative PC deformation meshes and
-  registration renderings are not yet generated.
+  PCA/result screen. Exact mean/positive/negative PC Shooting designs and their
+  supervised CLI execution are available; a verified default-location result is
+  exposed automatically in the native mesh viewer. A dedicated desktop launch
+  action and richer registration renderings are not yet implemented.
 - Private-alpha builds can reuse an already verified same-owner WSL runtime.
   Public builds require the installer-managed runtime payload and its clean-host
   install/repair validation before release.

@@ -927,9 +927,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     reference_pca_deformation_run_parser.add_argument(
         "--output",
-        required=True,
         type=Path,
-        help="New immutable Shooting result directory.",
+        help=(
+            "New immutable Shooting result directory (default: the source run's "
+            "analysis/reference-pca-deformations-v0.1-result)."
+        ),
     )
     reference_pca_deformation_run_parser.add_argument(
         "--timeout-seconds",

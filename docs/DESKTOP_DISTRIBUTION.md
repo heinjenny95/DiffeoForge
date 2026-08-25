@@ -156,7 +156,10 @@ estimate as ETA to the configured iteration cap, not convergence. The prospectiv
 v0.4 freeze now gives this worker its own sibling executable, queued-cancel smoke,
 and hard-parent-death audit. Fresh clean-runner evidence and a rebuilt installer
 remain pending; recovery/resume and reference PC deformation rendering remain
-open. Source-level shared PCA import is connected. See
+open in the installed preview. Source builds can freeze and execute exact
+Deformetrica Shooting PC endpoints and display a verified default-location
+result; the installer has not yet been rebuilt with that path. Source-level
+shared PCA import is connected. See
 [supervised desktop Deformetrica execution](DESKTOP_REFERENCE_EXECUTION.md).
 
 A source-level nonnumerical harness consumes it over real stdin/stdout, rechecks

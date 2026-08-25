@@ -35,6 +35,7 @@ DESIGN_VERSION = "0.1"
 DESIGN_NAME = "reference-pca-deformation-design.json"
 DESIGN_SIDECAR = "reference-pca-deformation-design.sha256"
 DEFAULT_DIRECTORY_NAME = "reference-pca-deformations-v0.1"
+DEFAULT_RESULT_DIRECTORY = Path("analysis") / "reference-pca-deformations-v0.1-result"
 RESULT_VERSION = "0.1"
 RESULT_NAME = "reference-pca-deformation-result.json"
 RESULT_SIDECAR = "reference-pca-deformation-result.sha256"
@@ -543,7 +544,7 @@ def _final_shooting_output(
 
 def execute_reference_pca_deformation_design(
     design_directory: Path | str,
-    destination: Path | str,
+    destination: Path | str | None = None,
     *,
     timeout_seconds: int = 7_200,
     created_at: str | None = None,
@@ -564,7 +565,11 @@ def execute_reference_pca_deformation_design(
     config = inputs.run_report.manifest["effective_config"]
     ensure_launcher_available(config)
 
-    target = Path(destination).expanduser().resolve()
+    target = (
+        Path(destination).expanduser().resolve()
+        if destination is not None
+        else run / DEFAULT_RESULT_DIRECTORY
+    )
     if target.exists():
         raise FileExistsError(
             f"PCA deformation result destination already exists: {target}"
@@ -691,6 +696,15 @@ def execute_reference_pca_deformation_design(
                 "stdout_path": "logs/deformetrica-shooting.stdout.log",
                 "stderr_path": "logs/deformetrica-shooting.stderr.log",
             },
+            "shooting": {
+                "equation": shooting["equation"],
+                "standard_deviations": shooting["standard_deviations"],
+                "requested_components": shooting["requested_components"],
+                "skipped_zero_variance_components": shooting[
+                    "skipped_zero_variance_components"
+                ],
+                "endpoint_count": shooting["endpoint_count"],
+            },
             "endpoints": endpoint_records,
             "artifacts": artifacts,
             "scientific_boundary": SCIENTIFIC_BOUNDARY.replace(
@@ -789,6 +803,19 @@ def verify_reference_pca_deformation_result(
     endpoints = result.get("endpoints")
     shooting = design["shooting"]
     assert isinstance(shooting, Mapping)
+    expected_shooting = {
+        "equation": shooting["equation"],
+        "standard_deviations": shooting["standard_deviations"],
+        "requested_components": shooting["requested_components"],
+        "skipped_zero_variance_components": shooting[
+            "skipped_zero_variance_components"
+        ],
+        "endpoint_count": shooting["endpoint_count"],
+    }
+    if result.get("shooting") != expected_shooting:
+        raise ReferencePCADeformationError(
+            "Result Shooting summary differs from the design"
+        )
     expected_endpoints = shooting["endpoints"]
     if not isinstance(endpoints, list) or len(endpoints) != len(expected_endpoints):
         raise ReferencePCADeformationError("Result endpoint count differs from the design")

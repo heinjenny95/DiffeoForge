@@ -91,6 +91,7 @@ class ModernResultReview:
     execution_duration_seconds: float | None = None
     optimizer_stop_interpretation: str | None = None
     additional_artifact_roots: tuple[Path, ...] = ()
+    additional_manifest_bindings: tuple[tuple[Path, str], ...] = ()
     registration_qc: tuple[RegistrationQCItem, ...] = ()
 
     def artifact(self, key: str) -> ModernResultArtifact:
@@ -646,6 +647,17 @@ def verify_result_artifact(review: ModernResultReview, key: str) -> Path:
         raise ModernResultReviewError("Workflow manifest changed after result review")
     if bundle_sha256 != review.bundle_manifest_sha256:
         raise ModernResultReviewError("Bundle manifest changed after result review")
+    for manifest_path, expected_sha256 in review.additional_manifest_bindings:
+        try:
+            observed_sha256 = sha256_file(manifest_path)
+        except OSError as error:
+            raise ModernResultReviewError(
+                "An additional reviewed result manifest is no longer readable"
+            ) from error
+        if observed_sha256 != expected_sha256:
+            raise ModernResultReviewError(
+                "An additional reviewed result manifest changed after result review"
+            )
     try:
         artifact = review.artifact(key)
     except KeyError as error:

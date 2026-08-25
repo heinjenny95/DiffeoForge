@@ -31,6 +31,16 @@ from diffeoforge.reference_pca import (
     verify_reference_pca_bundle,
     write_reference_pca_bundle,
 )
+from diffeoforge.reference_pca_deformations import (
+    DEFAULT_RESULT_DIRECTORY as DEFAULT_PCA_DEFORMATION_RESULT_DIRECTORY,
+)
+from diffeoforge.reference_pca_deformations import (
+    RESULT_NAME as PCA_DEFORMATION_RESULT_NAME,
+)
+from diffeoforge.reference_pca_deformations import (
+    ReferencePCADeformationError,
+    verify_reference_pca_deformation_result,
+)
 from diffeoforge.result_report import collect_run_report
 
 _PCA_DISPLAY_LIMIT = 10
@@ -286,6 +296,25 @@ def review_reference_result(
         raise ModernResultReviewError(
             f"Deformetrica result and momenta PCA did not verify: {error}"
         ) from error
+
+    deformation_result_directory = run / DEFAULT_PCA_DEFORMATION_RESULT_DIRECTORY
+    deformation_result: Mapping[str, object] | None = None
+    if deformation_result_directory.exists():
+        try:
+            deformation_result = verify_reference_pca_deformation_result(
+                deformation_result_directory,
+                source_run=run,
+            )
+        except (
+            OSError,
+            RuntimeError,
+            TypeError,
+            ValueError,
+            ReferencePCADeformationError,
+        ) as error:
+            raise ModernResultReviewError(
+                f"Reference PCA deformation result did not verify: {error}"
+            ) from error
 
     qc_metrics: ReferenceCalibrationRunMetrics | None = None
     qc_unavailable_reason: str | None = None
@@ -608,6 +637,68 @@ def review_reference_result(
             "svg",
             "Static secondary score plot from the same verified PCA matrix.",
         )
+    if deformation_result is not None:
+        deformation_inventory = {
+            str(record["path"]): record
+            for record in deformation_result["artifacts"]
+            if isinstance(record, Mapping)
+        }
+        result_manifest_record = deformation_inventory.get(PCA_DEFORMATION_RESULT_NAME)
+        if result_manifest_record is not None:
+            raise ModernResultReviewError(
+                "Reference PCA deformation result inventories its own manifest"
+            )
+        for endpoint in deformation_result["endpoints"]:
+            if not isinstance(endpoint, Mapping):
+                raise ModernResultReviewError(
+                    "Reference PCA deformation endpoint record is invalid"
+                )
+            relative = str(endpoint["path"])
+            record = deformation_inventory.get(relative)
+            if record is None:
+                raise ModernResultReviewError(
+                    f"Reference PCA deformation endpoint is not inventoried: {relative}"
+                )
+            path = deformation_result_directory.joinpath(*PurePosixPath(relative).parts)
+            if (
+                path.is_symlink()
+                or not path.is_file()
+                or path.stat().st_size != int(endpoint["bytes"])
+                or sha256_file(path) != str(endpoint["sha256"])
+            ):
+                raise ModernResultReviewError(
+                    f"Reference PCA deformation endpoint changed: {relative}"
+                )
+            role = str(endpoint["role"])
+            if role == "mean":
+                key = "pca-mean-shape"
+                label = "PCA mean-momenta shape (Deformetrica VTK)"
+            else:
+                component = int(endpoint["component"])
+                direction = str(endpoint["direction"])
+                key = f"pc{component}-{direction}"
+                sign = "−" if direction == "minus" else "+"
+                result_shooting = deformation_result["shooting"]
+                if not isinstance(result_shooting, Mapping):
+                    raise ModernResultReviewError(
+                        "Reference PCA deformation Shooting summary is invalid"
+                    )
+                rendered_distance = f"{float(result_shooting['standard_deviations']):g}"
+                label = (
+                    f"PC{component} {sign}{rendered_distance} SD "
+                    "(Deformetrica VTK)"
+                )
+            artifacts.append(
+                ModernResultArtifact(
+                    key,
+                    label,
+                    path.resolve(),
+                    "vtk",
+                    int(endpoint["bytes"]),
+                    str(endpoint["sha256"]),
+                    "Verified final-timepoint surface from Deformetrica compute Shooting.",
+                )
+            )
 
     ratios = tuple(float(value) for value in verified.pca.explained_variance_ratio)
     backend = report.manifest["backend"]
@@ -688,6 +779,21 @@ def review_reference_result(
             "Copied raw parameters, open tables, static plots, hashes, and recomputation contract.",
         ),
     ]
+    quality_items.append(
+        ResultReviewItem(
+            "Reference PCA deformation meshes",
+            (
+                f"{len(deformation_result['endpoints'])} verified Shooting endpoints"
+                if deformation_result is not None
+                else "not generated"
+            ),
+            (
+                "Mean and ±PC surfaces were generated by the source Deformetrica runtime."
+                if deformation_result is not None
+                else "Create and execute a prospective reference PCA Shooting design to add them."
+            ),
+        )
+    )
     if qc_metrics is not None:
         quality_items.extend(
             (
@@ -761,6 +867,23 @@ def review_reference_result(
         additional_artifact_roots=(
             output_directory.resolve(),
             staged_input_directory.resolve(),
+            *(
+                (deformation_result_directory.resolve(),)
+                if deformation_result is not None
+                else ()
+            ),
+        ),
+        additional_manifest_bindings=(
+            (
+                (
+                    deformation_result_directory / PCA_DEFORMATION_RESULT_NAME,
+                    sha256_file(
+                        deformation_result_directory / PCA_DEFORMATION_RESULT_NAME
+                    ),
+                ),
+            )
+            if deformation_result is not None
+            else ()
         ),
         registration_qc=registration_qc,
     )

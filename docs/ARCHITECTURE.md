@@ -191,8 +191,10 @@ the complete source evidence is reverified before the GUI binds a new immutable
 checkpoint successor. The v0.4
 freeze contract adds a dedicated execution sibling with nonmutating queued-cancel
 and hard-parent-death gates; fresh clean-runner evidence remains pending. The
-path does not yet recover an abandoned nonterminal run or expose reference PC
-deformation meshes. See
+path does not yet recover an abandoned nonterminal run. Reference PC
+deformation endpoints use a separate hash-bound Deformetrica Shooting design
+and supervised CLI result; verified default-location results are exposed in the
+shared native mesh viewer, while a dedicated desktop launch action remains open. See
 [supervised desktop Deformetrica execution](DESKTOP_REFERENCE_EXECUTION.md).
 
 The Windows one-directory build freezes that same harness as a third sibling

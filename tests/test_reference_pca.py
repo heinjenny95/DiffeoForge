@@ -51,6 +51,7 @@ from diffeoforge.reference_pca import (
     write_reference_pca_bundle,
 )
 from diffeoforge.reference_pca_deformations import (
+    DEFAULT_RESULT_DIRECTORY,
     DESIGN_NAME,
     DESIGN_SIDECAR,
     RESULT_NAME,
@@ -424,10 +425,10 @@ def test_reference_pca_deformation_execution_publishes_verified_endpoints(
 
     result_path = execute_reference_pca_deformation_design(
         design,
-        tmp_path / "shooting-result",
         created_at="2026-07-19T10:00:00+00:00",
         process_runner=complete_shooting,
     )
+    assert result_path == run / DEFAULT_RESULT_DIRECTORY
     result = verify_reference_pca_deformation_result(result_path, source_run=run)
 
     assert result["status"] == "completed"
@@ -455,6 +456,34 @@ def test_reference_pca_deformation_execution_publishes_verified_endpoints(
         )
         == 0
     )
+    review = review_reference_result(run, create_pca_if_missing=False)
+    deformation_keys = {
+        artifact.key
+        for artifact in review.artifacts
+        if artifact.path.is_relative_to(result_path / "deformations")
+    }
+    assert deformation_keys == {
+        "pca-mean-shape",
+        "pc1-minus",
+        "pc1-plus",
+        "pc2-minus",
+        "pc2-plus",
+    }
+    assert verify_result_artifact(review, "pc1-plus").is_file()
+    assert any(
+        item.label == "Reference PCA deformation meshes"
+        and item.value == "5 verified Shooting endpoints"
+        for item in review.quality
+    )
+    result_manifest_path = result_path / RESULT_NAME
+    original_manifest = result_manifest_path.read_bytes()
+    result_manifest_path.write_bytes(original_manifest + b"\n")
+    with pytest.raises(
+        ModernResultReviewError,
+        match="additional reviewed result manifest changed",
+    ):
+        verify_result_artifact(review, "pc1-plus")
+    result_manifest_path.write_bytes(original_manifest)
 
     endpoint_path = result_path / result["endpoints"][0]["path"]
     endpoint_path.write_bytes(endpoint_path.read_bytes() + b"tampered")

@@ -230,7 +230,10 @@ but does not yet reconcile an abandoned nonterminal run after an already dead
 parent application. Its 3D landmark editor does not provide semilandmark sliding,
 automated homology, uncertainty estimates, symmetry constraints, or missing-data
 imputation. Verified Deformetrica momenta enter the shared PCA screen;
-reference PC deformation meshes and native registration renderings remain open.
+separately executed and verified Deformetrica Shooting PC endpoints are detected
+at their default result path and added to the native 3D viewer. Starting that
+Shooting operation from a dedicated desktop action and richer registration
+renderings remain open.
 Source-level Deformetrica supervision is connected and its dedicated execution
 worker is now in the prospective v0.4 Windows freeze contract. A clean-runner
 v0.4 observation and rebuilt installer remain pending. The projection preview is
