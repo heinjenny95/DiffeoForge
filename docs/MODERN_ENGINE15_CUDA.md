@@ -214,3 +214,52 @@ reference non-inferiority for every quality-eligible subject in the protected
 67-subject cohort. It does not validate the 13 excluded topologies, biological
 interpretation, or production readiness for the separate 236- or 300-subject
 cohorts.
+
+## Passing 236-subject 5k Trochanter qualification gate
+
+The prospective fixed-reference qualification bound all 236 GPA-aligned,
+approximately 5k-face Trochanter subjects, the selected Deformetrica reference
+template and reconstructions, and Engine `1.5` CUDA execution before observing
+Modern results. The frozen three-cycle workflow passed strict verification and
+correctly assessed as `inconclusive_not_converged`.
+
+Its separately frozen hash-bound successor reproduced the parent final
+objective exactly as its initial objective (`-10850.491093571543`) and retained
+Engine `1.5` on both sides of the continuation. It converged after 39 successor
+cycles, corresponding to 42 total cycles, with termination by
+`relative_objective_tolerance`. All 39 successor decisions were accepted, the
+objective trajectory was non-decreasing, and no optimizer decision failed. The
+final objective was `-341.43032459892913`, comprising attachment
+`-196.48908506444724` and regularity `-144.94123953448195`.
+
+The independently recomputed fixed-reference assessment passed every
+predeclared engineering gate:
+
+- Modern workflow verification: pass;
+- Modern optimizer convergence: pass (required true);
+- subject pass fraction: `1.0`, or 236/236 (gate at least `0.8`);
+- pooled Modern/reference external-residual ratio: `0.769669` (gate at most
+  `1.2`);
+- cross-engine reconstruction p95/template diagonal: `0.0260470` (gate at
+  most `0.05`); and
+- every individual subject passed the external-residual ratio gate of at most
+  `1.25`; the largest observed subject ratio was `0.964530`.
+
+The pooled Modern external-residual p95 was `0.0437297`, compared with
+`0.0568163` for the bound Deformetrica reference. These are external
+surface-distance engineering results under the frozen protocol; they do not
+establish biological validity or mathematical atlas equivalence.
+
+Verified evidence directories:
+
+- `C:\Users\js7541\Desktop\DiffeoForge Modern Engine 5k Scaling 2026-08-23\engine15-cuda-fixed-reference-qualification-v0.1-236-subject-modern-run`
+- `C:\Users\js7541\Desktop\DiffeoForge Modern Engine 5k Scaling 2026-08-23\engine15-cuda-fixed-reference-qualification-v0.1-236-subject-assessment`
+- `C:\Users\js7541\Desktop\DiffeoForge Modern Engine 5k Scaling 2026-08-23\engine15-cuda-fixed-reference-qualification-v0.2-236-subject-continuation-100-cycles`
+- `C:\Users\js7541\Desktop\DiffeoForge Modern Engine 5k Scaling 2026-08-23\engine15-cuda-fixed-reference-qualification-v0.2-236-subject-continuation-100-cycles-modern-run`
+- `C:\Users\js7541\Desktop\DiffeoForge Modern Engine 5k Scaling 2026-08-23\engine15-cuda-fixed-reference-qualification-v0.2-236-subject-continuation-100-cycles-assessment`
+
+This gate establishes verified CUDA execution, exact-state continuation,
+convergence, and Deformetrica-reference engineering non-inferiority at the full
+236-subject 5k Trochanter scale. It does not yet establish production readiness
+for an independent 300-subject cohort, biological interpretation, or a general
+safe preset across anatomies and mesh resolutions.
