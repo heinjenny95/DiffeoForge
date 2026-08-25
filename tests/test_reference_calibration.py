@@ -1,4 +1,5 @@
 from copy import deepcopy
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -528,6 +529,132 @@ def test_robust_boundary_winner_is_reported_as_search_range_not_bounded() -> Non
         stage for stage in second_successor.stages if stage.stage_id == "noise"
     )
     assert len(second_noise.candidates) == len(successor_noise.candidates) + 2
+
+
+def test_trochanter_236_selected_attachment_and_noise_edges_are_unbounded() -> None:
+    """Regression for the recorded 236-subject pilot search grid."""
+
+    plan = build_reference_calibration_plan(
+        _recommendation(),
+        coordinate_unit="unitless",
+        requested_pilot_subject_count=3,
+    )
+    attachment_stage = next(
+        stage for stage in plan.stages if stage.stage_id == "attachment"
+    )
+    attachment_widths = (
+        0.03544482253673162,
+        0.05274707660694372,
+        0.07849535958871082,
+        0.12934533,
+        0.17383417481003907,
+        0.25869065999999996,
+    )
+    deformation_widths = (
+        0.080328079501734,
+        0.321312318006936,
+        1.285249272027744,
+    )
+    attachment_candidates = tuple(
+        replace(
+            candidate,
+            parameter_values=(
+                ("attachment_kernel_width", attachment_widths[index // 3]),
+                ("deformation_kernel_width", deformation_widths[index % 3]),
+                ("initial_control_point_spacing", deformation_widths[index % 3]),
+            ),
+        )
+        for index, candidate in enumerate(attachment_stage.candidates)
+    )
+    attachment_stage = replace(
+        attachment_stage,
+        candidates=attachment_candidates,
+    )
+    trochanter_plan = replace(
+        plan,
+        stages=(attachment_stage, *plan.stages[1:]),
+    )
+    attachment_evidence = tuple(
+        CalibrationCandidateEvidence(
+            candidate_id=candidate.candidate_id,
+            completed=True,
+            converged=True,
+            invalid_face_count=0,
+            residual_p95=0.1 if candidate.candidate_id == "attachment-17" else 1.0,
+            resampling_sensitivity=(
+                0.1 if candidate.candidate_id == "attachment-17" else 1.0
+            ),
+            deformation_energy=(
+                0.1 if candidate.candidate_id == "attachment-17" else 1.0
+            ),
+            distortion_p95=(
+                0.1 if candidate.candidate_id == "attachment-17" else 1.0
+            ),
+            runtime_seconds=(
+                0.1 if candidate.candidate_id == "attachment-17" else 1.0
+            ),
+        )
+        for candidate in attachment_candidates
+    )
+    attachment_assessment = assess_calibration_stage(
+        trochanter_plan,
+        stage_id="attachment",
+        evidence=attachment_evidence,
+    )
+
+    assert attachment_candidates[16].values["attachment_kernel_width"] == pytest.approx(
+        0.25869066
+    )
+    assert attachment_assessment.balanced_candidate_id == "attachment-17"
+    assert attachment_assessment.search_range_status == "not_bounded"
+    assert attachment_assessment.search_boundary_parameters == (
+        "attachment_kernel_width:maximum",
+    )
+
+    noise_stage = next(stage for stage in plan.stages if stage.stage_id == "noise")
+    noise_values = (
+        0.008084083125,
+        0.01616816625,
+        0.0323363325,
+        0.064672665,
+        0.12934533,
+    )
+    noise_stage = replace(
+        noise_stage,
+        candidates=tuple(
+            replace(candidate, parameter_values=(("noise_std", noise_values[index]),))
+            for index, candidate in enumerate(noise_stage.candidates)
+        ),
+    )
+    trochanter_plan = replace(
+        plan,
+        stages=(*plan.stages[:2], noise_stage, plan.stages[3]),
+    )
+    noise_evidence = tuple(
+        CalibrationCandidateEvidence(
+            candidate_id=candidate.candidate_id,
+            completed=True,
+            converged=True,
+            invalid_face_count=0,
+            residual_p95=0.1 + index,
+            deformation_energy=0.1 + index,
+            distortion_p95=0.1 + index,
+            runtime_seconds=0.1 + index,
+        )
+        for index, candidate in enumerate(noise_stage.candidates)
+    )
+    noise_assessment = assess_calibration_stage(
+        trochanter_plan,
+        stage_id="noise",
+        evidence=noise_evidence,
+    )
+
+    assert noise_stage.candidates[0].values["noise_std"] == pytest.approx(
+        0.008084083125
+    )
+    assert noise_assessment.balanced_candidate_id == "noise-01"
+    assert noise_assessment.search_range_status == "not_bounded"
+    assert noise_assessment.search_boundary_parameters == ("noise_std:minimum",)
 
 
 def test_stage_assessment_fails_closed_on_missing_metrics_without_requiring_review() -> None:
