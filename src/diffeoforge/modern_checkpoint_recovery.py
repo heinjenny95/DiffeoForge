@@ -15,7 +15,7 @@ from typing import Any
 import yaml
 
 from diffeoforge.config import ConfigurationError
-from diffeoforge.engine.execution import ENGINE_IMPLEMENTATION_VERSION
+from diffeoforge.engine.execution import supports_exact_engine_resume
 from diffeoforge.mesh import sha256_file
 from diffeoforge.modern_bundle import verify_modern_atlas_bundle
 from diffeoforge.modern_checkpoint import (
@@ -187,7 +187,7 @@ def create_modern_checkpoint_recovery(
             "Checkpoint predates exact L-BFGS and objective-baseline serialization"
         )
     binding = checkpoint["binding"]
-    if binding["engine_implementation"] != ENGINE_IMPLEMENTATION_VERSION:
+    if not supports_exact_engine_resume(binding["engine_implementation"]):
         raise ModernCheckpointRecoveryError(
             "Recovery requires the same Modern engine implementation as the checkpoint"
         )

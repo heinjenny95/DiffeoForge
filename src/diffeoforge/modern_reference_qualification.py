@@ -22,7 +22,10 @@ import numpy as np
 import yaml
 
 from diffeoforge.config import ConfigurationError
-from diffeoforge.engine.execution import ENGINE_IMPLEMENTATION_VERSION
+from diffeoforge.engine.execution import (
+    ENGINE_IMPLEMENTATION_VERSION,
+    supports_exact_engine_resume,
+)
 from diffeoforge.mesh import inspect_vtk, read_vtk_polydata, sha256_file
 from diffeoforge.mesh_quality import (
     MeshQualitySettings,
@@ -925,7 +928,9 @@ def create_modern_reference_qualification_continuation(
         raise ModernReferenceQualificationError(
             "Parent checkpoint predates exact L-BFGS and objective-baseline serialization"
         )
-    if checkpoint["binding"]["engine_implementation"] != ENGINE_IMPLEMENTATION_VERSION:
+    if not supports_exact_engine_resume(
+        checkpoint["binding"]["engine_implementation"]
+    ):
         raise ModernReferenceQualificationError("Parent checkpoint engine differs")
     parent_effective_path = _safe_relative(
         parent_root,

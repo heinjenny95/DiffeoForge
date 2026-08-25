@@ -36,7 +36,10 @@ from diffeoforge.engine.atlas_optimizer import (
     AtlasOptimizerResumeState,
     optimize_atlas,
 )
-from diffeoforge.engine.execution import ENGINE_IMPLEMENTATION_VERSION
+from diffeoforge.engine.execution import (
+    ENGINE_IMPLEMENTATION_VERSION,
+    supports_exact_engine_resume,
+)
 from diffeoforge.initialization import SUPPORTED_UNITS, detect_template
 from diffeoforge.mesh import (
     MeshMetadata,
@@ -1008,9 +1011,8 @@ def run_modern_workflow(
             raise ConfigurationError("Resume source effective configuration is not an object")
         validate_modern_workflow_config(resume_source_effective)
         _validate_resume_semantics(config, resume_source_effective)
-        if (
+        if not supports_exact_engine_resume(
             resume_checkpoint_manifest["binding"]["engine_implementation"]
-            != ENGINE_IMPLEMENTATION_VERSION
         ):
             raise ConfigurationError("Resume checkpoint engine implementation differs")
         optimizer_resume_state = load_modern_checkpoint_resume_state(resume_checkpoint_source)

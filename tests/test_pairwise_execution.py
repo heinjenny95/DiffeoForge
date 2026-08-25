@@ -3,8 +3,22 @@ from __future__ import annotations
 import pytest
 
 engine = pytest.importorskip("diffeoforge.engine")
+from diffeoforge.engine.execution import (  # noqa: E402
+    ENGINE_IMPLEMENTATION_VERSION,
+    supports_exact_engine_resume,
+)
 
 PairwiseEvaluationPlan = engine.PairwiseEvaluationPlan
+
+
+def test_exact_resume_compatibility_is_explicit_and_fail_closed() -> None:
+    assert supports_exact_engine_resume(ENGINE_IMPLEMENTATION_VERSION) is True
+    assert supports_exact_engine_resume("1.4") is False
+    assert supports_exact_engine_resume(
+        ENGINE_IMPLEMENTATION_VERSION,
+        successor_implementation="99.0",
+    ) is False
+    assert supports_exact_engine_resume(None) is False
 
 
 def test_dense_plan_is_explicit_and_has_no_gaussian_tiles() -> None:

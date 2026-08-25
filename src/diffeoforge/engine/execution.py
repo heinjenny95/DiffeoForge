@@ -11,6 +11,35 @@ from diffeoforge.engine.dense import GaussianTilePlan
 
 ENGINE_IMPLEMENTATION_VERSION = "1.5"
 
+# Exact continuation is intentionally an allow-list, not a numerical-version
+# comparison. A future implementation may resume an older checkpoint only
+# after tests establish that its serialized optimizer state and objective
+# semantics are unchanged. Adding a new engine version therefore remains
+# fail-closed until that compatibility is declared explicitly.
+EXACT_RESUME_ENGINE_COMPATIBILITY: dict[str, frozenset[str]] = {
+    ENGINE_IMPLEMENTATION_VERSION: frozenset({ENGINE_IMPLEMENTATION_VERSION}),
+}
+
+
+def supports_exact_engine_resume(
+    parent_implementation: object,
+    *,
+    successor_implementation: str | None = None,
+) -> bool:
+    """Return whether a successor may consume a parent's exact optimizer state."""
+
+    successor = (
+        ENGINE_IMPLEMENTATION_VERSION
+        if successor_implementation is None
+        else successor_implementation
+    )
+    if not isinstance(parent_implementation, str) or not isinstance(successor, str):
+        return False
+    return parent_implementation in EXACT_RESUME_ENGINE_COMPATIBILITY.get(
+        successor,
+        frozenset(),
+    )
+
 
 @dataclass(frozen=True)
 class PairwiseEvaluationPlan:

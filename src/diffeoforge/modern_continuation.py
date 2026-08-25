@@ -16,7 +16,10 @@ from typing import Any
 import yaml
 
 from diffeoforge.config import ConfigurationError
-from diffeoforge.engine.execution import ENGINE_IMPLEMENTATION_VERSION
+from diffeoforge.engine.execution import (
+    ENGINE_IMPLEMENTATION_VERSION,
+    supports_exact_engine_resume,
+)
 from diffeoforge.mesh import sha256_file
 from diffeoforge.modern_bundle import MANIFEST_NAME as BUNDLE_MANIFEST_NAME
 from diffeoforge.modern_bundle import verify_modern_atlas_bundle
@@ -281,7 +284,9 @@ def create_modern_continuation(
         raise ModernContinuationError(
             "Parent checkpoint predates exact L-BFGS and objective-baseline serialization"
         )
-    if checkpoint["binding"]["engine_implementation"] != ENGINE_IMPLEMENTATION_VERSION:
+    if not supports_exact_engine_resume(
+        checkpoint["binding"]["engine_implementation"]
+    ):
         raise ModernContinuationError("Parent checkpoint engine implementation differs")
     last_steps = {
         block: float(value)
