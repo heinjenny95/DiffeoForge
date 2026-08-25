@@ -19,7 +19,10 @@ from diffeoforge.initialization import (
 )
 from diffeoforge.reference import compare_reference_run
 from diffeoforge.reference_approved_preparation import prepare_approved_reference_run
-from diffeoforge.reference_calibration import build_reference_calibration_plan
+from diffeoforge.reference_calibration import (
+    build_reference_calibration_plan,
+    read_pilot_subject_declarations,
+)
 from diffeoforge.reference_calibration_report import export_reference_calibration_plan
 from diffeoforge.reference_calibration_study import (
     ReferenceCalibrationStudyRunner,
@@ -954,6 +957,15 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=8,
         help="Requested deterministic pilot-cohort size (default: 8; minimum: 2).",
+    )
+    reference_calibration_parser.add_argument(
+        "--pilot-declarations",
+        type=Path,
+        help=(
+            "Optional CSV with exact filename,stratum,is_extreme columns. Every "
+            "declared extreme and at least one member of each stratum must fit in "
+            "--pilot-subjects."
+        ),
     )
     reference_calibration_parser.add_argument(
         "--output",
@@ -3560,6 +3572,11 @@ def main(argv: Sequence[str] | None = None) -> int:
                 coordinate_unit=args.units,
                 requested_pilot_subject_count=args.pilot_subjects,
                 smallest_relevant_feature=args.smallest_relevant_feature,
+                pilot_subject_declarations=(
+                    ()
+                    if args.pilot_declarations is None
+                    else read_pilot_subject_declarations(args.pilot_declarations)
+                ),
             )
             exported = export_reference_calibration_plan(
                 plan,

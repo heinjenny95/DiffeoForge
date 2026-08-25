@@ -8,12 +8,14 @@ from diffeoforge.config import ConfigurationError
 from diffeoforge.mesh import sha256_file
 from diffeoforge.reference_calibration import (
     CalibrationCandidateEvidence,
+    PilotSubjectDeclaration,
     assess_calibration_stage,
     bind_calibration_search_extension_plan,
     bind_reference_calibration_plan_to_inputs,
     build_reference_calibration_plan,
     calibration_plan_json,
     propose_calibration_search_extension,
+    read_pilot_subject_declarations,
     reference_calibration_plan_from_provenance,
     select_representative_pilot_subjects,
     verify_reference_calibration_plan_provenance,
@@ -107,6 +109,93 @@ def test_pilot_selection_caps_at_the_available_subject_count() -> None:
     )
 
     assert len(selected) == recommendation.subject_count
+
+
+def test_pilot_selection_guarantees_declared_extremes_and_strata() -> None:
+    recommendation = _recommendation()
+    names = [item.filename for item in recommendation.observations[1:5]]
+    declarations = (
+        PilotSubjectDeclaration(names[0], "small-bodied", False),
+        PilotSubjectDeclaration(names[1], "small-bodied", True),
+        PilotSubjectDeclaration(names[2], "large-bodied", False),
+        PilotSubjectDeclaration(names[3], "large-bodied", False),
+    )
+
+    selected = select_representative_pilot_subjects(
+        recommendation,
+        requested_count=3,
+        pilot_subject_declarations=declarations,
+    )
+
+    selected_names = {item.filename for item in selected}
+    assert names[1] in selected_names
+    assert selected_names & {names[2], names[3]}
+    assert any("biological extreme" in item.selection_role for item in selected)
+    assert any("large-bodied" in item.selection_role for item in selected)
+
+
+def test_pilot_selection_refuses_silent_declaration_omission() -> None:
+    recommendation = _recommendation()
+    names = [item.filename for item in recommendation.observations[1:4]]
+    declarations = tuple(
+        PilotSubjectDeclaration(name, None, True) for name in names
+    )
+
+    with pytest.raises(ConfigurationError, match="need 3, requested 2"):
+        select_representative_pilot_subjects(
+            recommendation,
+            requested_count=2,
+            pilot_subject_declarations=declarations,
+        )
+    with pytest.raises(ConfigurationError, match="unknown subject"):
+        select_representative_pilot_subjects(
+            recommendation,
+            requested_count=4,
+            pilot_subject_declarations=(
+                PilotSubjectDeclaration("absent.vtk", "unknown", False),
+            ),
+        )
+
+
+def test_pilot_declaration_csv_and_plan_provenance_are_hash_bound(
+    tmp_path: Path,
+) -> None:
+    recommendation = _recommendation()
+    names = [item.filename for item in recommendation.observations[1:4]]
+    csv_path = tmp_path / "pilot-declarations.csv"
+    csv_path.write_text(
+        "filename,stratum,is_extreme\n"
+        f"{names[0]},early-diverging,yes\n"
+        f"{names[1]},derived,no\n"
+        f"{names[2]},derived,false\n",
+        encoding="utf-8",
+    )
+
+    declarations = read_pilot_subject_declarations(csv_path)
+    plan = build_reference_calibration_plan(
+        recommendation,
+        coordinate_unit="unitless",
+        requested_pilot_subject_count=3,
+        pilot_subject_declarations=declarations,
+    )
+    rebound = reference_calibration_plan_from_provenance(plan.provenance)
+
+    assert plan.version == "0.5"
+    assert plan.pilot_subject_declarations == declarations
+    assert rebound == plan
+    assert "2 strata; 1 explicit extremes" in plan.summary_text()
+    assert verify_reference_calibration_plan_provenance(plan.provenance) == plan.fingerprint
+
+
+def test_pilot_declaration_csv_rejects_ambiguous_rows(tmp_path: Path) -> None:
+    source = tmp_path / "pilot-declarations.csv"
+    source.write_text(
+        "filename,stratum,is_extreme\nsubject.vtk,,maybe\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ConfigurationError, match="invalid is_extreme"):
+        read_pilot_subject_declarations(source)
 
 
 def test_calibration_plan_is_deterministic_staged_and_hash_bound() -> None:

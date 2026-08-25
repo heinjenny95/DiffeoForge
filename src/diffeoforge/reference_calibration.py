@@ -16,6 +16,7 @@ validated.
 
 from __future__ import annotations
 
+import csv
 import hashlib
 import json
 import math
@@ -34,6 +35,7 @@ from diffeoforge.reference_recommendation import (
 )
 
 CALIBRATION_PLAN_VERSION = "0.3"
+STRATIFIED_CALIBRATION_PLAN_VERSION = "0.5"
 CalibrationStageKind = Literal[
     "attachment_width",
     "deformation_width",
@@ -132,6 +134,83 @@ class RepresentativePilotSubject:
 
 
 @dataclass(frozen=True)
+class PilotSubjectDeclaration:
+    """One optional researcher declaration used only for pilot coverage."""
+
+    filename: str
+    stratum: str | None
+    is_extreme: bool
+
+    def as_manifest(self) -> dict[str, object]:
+        return {
+            "filename": self.filename,
+            "stratum": self.stratum,
+            "is_extreme": self.is_extreme,
+        }
+
+
+def read_pilot_subject_declarations(
+    path: Path | str,
+) -> tuple[PilotSubjectDeclaration, ...]:
+    """Read exact optional ``filename,stratum,is_extreme`` pilot declarations."""
+
+    source = Path(path).expanduser().resolve()
+    try:
+        handle = source.open("r", encoding="utf-8-sig", errors="strict", newline="")
+    except OSError as error:
+        raise ConfigurationError(
+            f"Could not open pilot-subject declarations: {source}: {error}"
+        ) from error
+    declarations: list[PilotSubjectDeclaration] = []
+    seen: set[str] = set()
+    with handle:
+        reader = csv.DictReader(handle)
+        expected = {"filename", "stratum", "is_extreme"}
+        if reader.fieldnames is None or set(reader.fieldnames) != expected:
+            raise ConfigurationError(
+                "Pilot-subject declarations must have exactly the columns "
+                "filename,stratum,is_extreme"
+            )
+        for row_number, row in enumerate(reader, start=2):
+            filename = str(row["filename"] or "").strip()
+            stratum_value = str(row["stratum"] or "").strip()
+            extreme_value = str(row["is_extreme"] or "").strip().casefold()
+            if not filename:
+                raise ConfigurationError(
+                    f"Pilot declaration row {row_number} has no filename"
+                )
+            if filename.casefold() in seen:
+                raise ConfigurationError(
+                    f"Pilot declarations contain duplicate filename {filename!r}"
+                )
+            if extreme_value in {"true", "yes", "1"}:
+                is_extreme = True
+            elif extreme_value in {"false", "no", "0", ""}:
+                is_extreme = False
+            else:
+                raise ConfigurationError(
+                    f"Pilot declaration row {row_number} has invalid is_extreme "
+                    f"value {row['is_extreme']!r}"
+                )
+            if not stratum_value and not is_extreme:
+                raise ConfigurationError(
+                    f"Pilot declaration row {row_number} declares neither a stratum "
+                    "nor an extreme"
+                )
+            seen.add(filename.casefold())
+            declarations.append(
+                PilotSubjectDeclaration(
+                    filename=filename,
+                    stratum=stratum_value or None,
+                    is_extreme=is_extreme,
+                )
+            )
+    if not declarations:
+        raise ConfigurationError("Pilot-subject declarations contain no data rows")
+    return tuple(sorted(declarations, key=lambda item: item.filename.casefold()))
+
+
+@dataclass(frozen=True)
 class CalibrationCandidate:
     """One predeclared candidate within a sequential calibration stage."""
 
@@ -202,6 +281,7 @@ class ReferenceCalibrationPlan:
     final_confirmation_required: tuple[str, ...]
     limitations: tuple[str, ...]
     expected_shape_disparity: str = "moderate"
+    pilot_subject_declarations: tuple[PilotSubjectDeclaration, ...] = ()
     search_extension_lineage: tuple[tuple[str, str], ...] = ()
 
     @property
@@ -247,6 +327,11 @@ class ReferenceCalibrationPlan:
             provenance["search_extension_lineage"] = dict(
                 self.search_extension_lineage
             )
+        if self.pilot_subject_declarations:
+            provenance["pilot_subject_declarations"] = [
+                declaration.as_manifest()
+                for declaration in self.pilot_subject_declarations
+            ]
         return provenance
 
     def as_manifest(self) -> dict[str, object]:
@@ -269,6 +354,29 @@ class ReferenceCalibrationPlan:
                 "range, independently of local/global deformation reach."
             ),
         ]
+        if self.pilot_subject_declarations:
+            strata = sorted(
+                {
+                    declaration.stratum
+                    for declaration in self.pilot_subject_declarations
+                    if declaration.stratum is not None
+                },
+                key=str.casefold,
+            )
+            extremes = sorted(
+                (
+                    declaration.filename
+                    for declaration in self.pilot_subject_declarations
+                    if declaration.is_extreme
+                ),
+                key=str.casefold,
+            )
+            lines.append(
+                "Researcher-declared pilot coverage: "
+                f"{len(strata)} strata; {len(extremes)} explicit extremes. "
+                "All declared strata are represented and all declared extremes are "
+                "included."
+            )
         if self.smallest_relevant_feature is None:
             lines.append(
                 "Smallest biologically relevant feature: not measured; the attachment "
@@ -360,10 +468,70 @@ def _descriptor_matrix(
     return normalized
 
 
+def _normalize_pilot_subject_declarations(
+    observations: tuple[MeshGeometryObservation, ...],
+    declarations: Sequence[PilotSubjectDeclaration],
+) -> tuple[PilotSubjectDeclaration, ...]:
+    if isinstance(declarations, (str, bytes)):
+        raise TypeError("pilot_subject_declarations must be a sequence of declarations")
+    known_by_casefold = {
+        observation.filename.casefold(): observation.filename
+        for observation in observations
+    }
+    if len(known_by_casefold) != len(observations):
+        raise ConfigurationError(
+            "Calibration subject filenames must be unique ignoring case"
+        )
+    normalized: list[PilotSubjectDeclaration] = []
+    seen: set[str] = set()
+    stratum_spellings: dict[str, str] = {}
+    for declaration in declarations:
+        if not isinstance(declaration, PilotSubjectDeclaration):
+            raise TypeError(
+                "pilot_subject_declarations must contain PilotSubjectDeclaration values"
+            )
+        filename = declaration.filename.strip()
+        key = filename.casefold()
+        if not filename or key not in known_by_casefold:
+            raise ConfigurationError(
+                f"Pilot declaration names an unknown subject: {declaration.filename!r}"
+            )
+        if key in seen:
+            raise ConfigurationError(
+                f"Pilot declarations contain duplicate subject {filename!r}"
+            )
+        if not isinstance(declaration.is_extreme, bool):
+            raise TypeError("pilot declaration is_extreme must be boolean")
+        stratum = None if declaration.stratum is None else declaration.stratum.strip()
+        if declaration.stratum is not None and not stratum:
+            stratum = None
+        if stratum is None and not declaration.is_extreme:
+            raise ConfigurationError(
+                f"Pilot declaration for {filename!r} has neither a stratum nor an extreme"
+            )
+        if stratum is not None:
+            stratum_key = stratum.casefold()
+            spelling = stratum_spellings.setdefault(stratum_key, stratum)
+            if spelling != stratum:
+                raise ConfigurationError(
+                    f"Pilot stratum {stratum!r} is spelled inconsistently as {spelling!r}"
+                )
+        seen.add(key)
+        normalized.append(
+            PilotSubjectDeclaration(
+                filename=known_by_casefold[key],
+                stratum=stratum,
+                is_extreme=declaration.is_extreme,
+            )
+        )
+    return tuple(sorted(normalized, key=lambda item: item.filename.casefold()))
+
+
 def select_representative_pilot_subjects(
     recommendation: ReferenceParameterRecommendation,
     *,
     requested_count: int = 8,
+    pilot_subject_declarations: Sequence[PilotSubjectDeclaration] = (),
 ) -> tuple[RepresentativePilotSubject, ...]:
     """Select a deterministic medoid plus farthest-first descriptor extremes.
 
@@ -383,6 +551,10 @@ def select_representative_pilot_subjects(
             "Recommendation observations do not match the declared subject count"
         )
     selected_count = min(requested_count, len(observations))
+    declarations = _normalize_pilot_subject_declarations(
+        observations,
+        pilot_subject_declarations,
+    )
     descriptors = _descriptor_matrix(observations)
     deltas = descriptors[:, None, :] - descriptors[None, :, :]
     distances = np.sqrt(np.sum(deltas * deltas, axis=2))
@@ -396,8 +568,60 @@ def select_representative_pilot_subjects(
         if math.isclose(float(value), medoid_value, rel_tol=1e-12, abs_tol=1e-15)
     ]
     medoid_index = min(medoid_candidates, key=lambda index: filenames[index])
-    selected = [medoid_index]
-    selected_distances = [0.0]
+    selected: list[int] = []
+    selection_roles: list[str] = []
+    if declarations:
+        index_by_filename = {
+            observation.filename.casefold(): index
+            for index, observation in enumerate(observations)
+        }
+        declaration_by_index = {
+            index_by_filename[declaration.filename.casefold()]: declaration
+            for declaration in declarations
+        }
+        for index in sorted(
+            (
+                index
+                for index, declaration in declaration_by_index.items()
+                if declaration.is_extreme
+            ),
+            key=lambda item: filenames[item],
+        ):
+            selected.append(index)
+            selection_roles.append("researcher-declared biological extreme")
+        strata: dict[str, tuple[str, list[int]]] = {}
+        for index, declaration in declaration_by_index.items():
+            if declaration.stratum is None:
+                continue
+            key = declaration.stratum.casefold()
+            strata.setdefault(key, (declaration.stratum, []))[1].append(index)
+        for key in sorted(strata):
+            label, members = strata[key]
+            if any(index in selected for index in members):
+                continue
+            group_distances = distances[np.ix_(members, members)]
+            group_sums = np.sum(group_distances, axis=1)
+            best = float(np.min(group_sums))
+            candidates = [
+                members[position]
+                for position, value in enumerate(group_sums)
+                if math.isclose(float(value), best, rel_tol=1e-12, abs_tol=1e-15)
+            ]
+            chosen = min(candidates, key=lambda index: filenames[index])
+            selected.append(chosen)
+            selection_roles.append(f"researcher-declared stratum representative: {label}")
+        if len(selected) > selected_count:
+            raise ConfigurationError(
+                "Requested pilot size cannot include every declared extreme and at "
+                f"least one subject from each declared stratum; need {len(selected)}, "
+                f"requested {selected_count}"
+            )
+        if len(selected) < selected_count and medoid_index not in selected:
+            selected.append(medoid_index)
+            selection_roles.append("geometry-descriptor medoid")
+    else:
+        selected.append(medoid_index)
+        selection_roles.append("geometry-descriptor medoid")
     while len(selected) < selected_count:
         remaining = [index for index in range(len(observations)) if index not in selected]
         minimum_to_selected = {
@@ -411,25 +635,25 @@ def select_representative_pilot_subjects(
         ]
         chosen = min(tied, key=lambda index: filenames[index])
         selected.append(chosen)
-        selected_distances.append(minimum_to_selected[chosen])
+        selection_roles.append("farthest-first geometry-descriptor extreme")
 
     result: list[RepresentativePilotSubject] = []
-    for selection_order, (subject_index, distance) in enumerate(
-        zip(selected, selected_distances, strict=True),
-        start=1,
+    for position, (subject_index, role) in enumerate(
+        zip(selected, selection_roles, strict=True)
     ):
+        distance = (
+            0.0
+            if position == 0
+            else float(np.min(distances[subject_index, selected[:position]]))
+        )
         observation = observations[subject_index]
         result.append(
             RepresentativePilotSubject(
                 filename=observation.filename,
                 sha256=observation.sha256,
                 source_subject_index=subject_index,
-                selection_order=selection_order,
-                selection_role=(
-                    "geometry-descriptor medoid"
-                    if selection_order == 1
-                    else "farthest-first geometry-descriptor extreme"
-                ),
+                selection_order=position + 1,
+                selection_role=role,
                 descriptor_distance=distance,
             )
         )
@@ -453,6 +677,7 @@ def _candidate(
 
 def _plan_payload(
     *,
+    version: str,
     recommendation: ReferenceParameterRecommendation,
     coordinate_unit: str,
     requested_pilot_subject_count: int,
@@ -464,9 +689,10 @@ def _plan_payload(
     stages: tuple[CalibrationStage, ...],
     final_confirmation_required: tuple[str, ...],
     limitations: tuple[str, ...],
+    pilot_subject_declarations: tuple[PilotSubjectDeclaration, ...],
 ) -> dict[str, object]:
-    return {
-        "version": CALIBRATION_PLAN_VERSION,
+    payload: dict[str, object] = {
+        "version": version,
         "recommendation_fingerprint": recommendation.fingerprint,
         "template_filename": recommendation.template_filename,
         "template_sha256": recommendation.template_sha256,
@@ -483,6 +709,12 @@ def _plan_payload(
         "final_confirmation_required": list(final_confirmation_required),
         "limitations": list(limitations),
     }
+    if pilot_subject_declarations:
+        payload["pilot_subject_declarations"] = [
+            declaration.as_manifest()
+            for declaration in pilot_subject_declarations
+        ]
+    return payload
 
 
 def build_reference_calibration_plan(
@@ -491,6 +723,7 @@ def build_reference_calibration_plan(
     coordinate_unit: str,
     requested_pilot_subject_count: int = 8,
     smallest_relevant_feature: float | None = None,
+    pilot_subject_declarations: Sequence[PilotSubjectDeclaration] = (),
 ) -> ReferenceCalibrationPlan:
     """Build a deterministic staged pilot plan from aligned-mesh evidence."""
 
@@ -501,9 +734,20 @@ def build_reference_calibration_plan(
         smallest_relevant_feature = _positive_finite(
             "smallest_relevant_feature", smallest_relevant_feature
         )
+    observations = recommendation.observations[1:]
+    declarations = _normalize_pilot_subject_declarations(
+        observations,
+        pilot_subject_declarations,
+    )
     selected = select_representative_pilot_subjects(
         recommendation,
         requested_count=requested_pilot_subject_count,
+        pilot_subject_declarations=declarations,
+    )
+    plan_version = (
+        STRATIFIED_CALIBRATION_PLAN_VERSION
+        if declarations
+        else CALIBRATION_PLAN_VERSION
     )
     diagonal = recommendation.template_diagonal
     sampling_diagnostic = recommendation.sampling_floor_ratio * diagonal
@@ -799,7 +1043,12 @@ def build_reference_calibration_plan(
         "Record the final researcher approval separately from this pilot plan.",
     )
     limitations = (
-        "Geometry descriptors do not establish biological group representativeness.",
+        (
+            "Researcher-declared strata/extremes establish pilot coverage only; they "
+            "do not prove biological representativeness, correspondence, or validity."
+            if declarations
+            else "Geometry descriptors do not establish biological group representativeness."
+        ),
         "A measured feature scale records researcher intent; it is not an automatically "
         "discovered anatomical truth.",
         "The conservative four-edge sampling diagnostic is not a universal scientific "
@@ -813,6 +1062,7 @@ def build_reference_calibration_plan(
         "full-resolution confirmation.",
     )
     payload = _plan_payload(
+        version=plan_version,
         recommendation=recommendation,
         coordinate_unit=normalized_unit,
         requested_pilot_subject_count=requested_pilot_subject_count,
@@ -824,9 +1074,10 @@ def build_reference_calibration_plan(
         stages=stages,
         final_confirmation_required=final_confirmation_required,
         limitations=limitations,
+        pilot_subject_declarations=declarations,
     )
     return ReferenceCalibrationPlan(
-        version=CALIBRATION_PLAN_VERSION,
+        version=plan_version,
         fingerprint=_canonical_hash(payload),
         recommendation_fingerprint=recommendation.fingerprint,
         template_filename=recommendation.template_filename,
@@ -843,6 +1094,7 @@ def build_reference_calibration_plan(
         final_confirmation_required=final_confirmation_required,
         limitations=limitations,
         expected_shape_disparity=recommendation.expected_shape_disparity,
+        pilot_subject_declarations=declarations,
     )
 
 
@@ -998,7 +1250,22 @@ def reference_calibration_plan_from_provenance(
         raise ConfigurationError(
             "Calibration search-extension lineage must be a mapping"
         )
+    declarations_value = provenance.get("pilot_subject_declarations", [])
+    if not isinstance(declarations_value, list):
+        raise ConfigurationError(
+            "Calibration pilot-subject declarations must be a list"
+        )
     try:
+        declarations = tuple(
+            PilotSubjectDeclaration(
+                filename=str(item["filename"]),
+                stratum=(None if item["stratum"] is None else str(item["stratum"])),
+                is_extreme=item["is_extreme"],
+            )
+            for item in declarations_value
+        )
+        if any(not isinstance(item.is_extreme, bool) for item in declarations):
+            raise TypeError("pilot-subject declaration is_extreme must be boolean")
         selected = tuple(
             RepresentativePilotSubject(
                 filename=str(item["filename"]),
@@ -1010,6 +1277,44 @@ def reference_calibration_plan_from_provenance(
             )
             for item in provenance["selected_pilot_subjects"]  # type: ignore[index]
         )
+        version = str(provenance["version"])
+        declares_coverage = version in {
+            STRATIFIED_CALIBRATION_PLAN_VERSION,
+            "0.6",
+        }
+        if bool(declarations) != declares_coverage:
+            raise ValueError(
+                "calibration plan version and pilot-subject declarations disagree"
+            )
+        declaration_names = [item.filename.casefold() for item in declarations]
+        if len(set(declaration_names)) != len(declaration_names):
+            raise ValueError("pilot-subject declaration filenames must be unique")
+        if any(
+            not item.filename.strip()
+            or (item.stratum is None and not item.is_extreme)
+            or (item.stratum is not None and not item.stratum.strip())
+            for item in declarations
+        ):
+            raise ValueError("pilot-subject declarations contain an empty declaration")
+        selected_names = {item.filename.casefold() for item in selected}
+        if any(
+            item.is_extreme and item.filename.casefold() not in selected_names
+            for item in declarations
+        ):
+            raise ValueError("a declared biological extreme is absent from the pilot")
+        strata = {
+            item.stratum.casefold()
+            for item in declarations
+            if item.stratum is not None
+        }
+        for stratum in strata:
+            if not any(
+                item.stratum is not None
+                and item.stratum.casefold() == stratum
+                and item.filename.casefold() in selected_names
+                for item in declarations
+            ):
+                raise ValueError("a declared biological stratum is absent from the pilot")
         stages = tuple(
             CalibrationStage(
                 stage_id=str(stage["stage_id"]),
@@ -1043,7 +1348,7 @@ def reference_calibration_plan_from_provenance(
         )
         feature = provenance["smallest_relevant_feature"]
         return ReferenceCalibrationPlan(
-            version=str(provenance["version"]),
+            version=version,
             fingerprint=str(provenance["fingerprint"]),
             recommendation_fingerprint=str(
                 provenance["recommendation_fingerprint"]
@@ -1080,6 +1385,7 @@ def reference_calibration_plan_from_provenance(
             expected_shape_disparity=str(
                 provenance.get("expected_shape_disparity", "moderate")
             ),
+            pilot_subject_declarations=declarations,
             search_extension_lineage=tuple(
                 (str(name), str(value))
                 for name, value in lineage_value.items()
@@ -1506,7 +1812,7 @@ def bind_calibration_search_extension_plan(
     )
     successor = replace(
         plan,
-        version="0.4",
+        version=("0.6" if plan.version == STRATIFIED_CALIBRATION_PLAN_VERSION else "0.4"),
         fingerprint="",
         stages=tuple(stages),
         search_extension_lineage=lineage,

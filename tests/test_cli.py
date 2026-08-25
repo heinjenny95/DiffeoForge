@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -142,6 +143,50 @@ def test_reference_calibration_plan_cli_exports_reproducible_methods_bundle(
     blocked = capsys.readouterr()
     assert blocked_code == 2
     assert "will not be overwritten" in blocked.err
+
+
+def test_reference_calibration_plan_cli_binds_pilot_declarations(
+    capsys,
+    tmp_path: Path,
+) -> None:
+    meshes = Path(__file__).parents[1] / "examples" / "synthetic" / "meshes"
+    subjects = sorted(meshes.glob("subject-*.vtk"), key=lambda path: path.name.casefold())
+    declarations = tmp_path / "pilot-declarations.csv"
+    declarations.write_text(
+        "filename,stratum,is_extreme\n"
+        f"{subjects[0].name},stratum-a,true\n"
+        f"{subjects[1].name},stratum-b,false\n",
+        encoding="utf-8",
+    )
+    output = tmp_path / "calibration-stratified"
+
+    return_code = main(
+        [
+            "reference-calibration-plan",
+            str(meshes),
+            "--units",
+            "unitless",
+            "--surface-detail",
+            "coarse",
+            "--deformation-scale",
+            "global",
+            "--pilot-subjects",
+            "3",
+            "--pilot-declarations",
+            str(declarations),
+            "--output",
+            str(output),
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert return_code == 0
+    assert "2 strata; 1 explicit extremes" in captured.out
+    plan = json.loads(
+        (output / "parameter-calibration-plan.json").read_text(encoding="utf-8")
+    )
+    assert plan["version"] == "0.5"
+    assert len(plan["pilot_subject_declarations"]) == 2
 
 
 def test_doctor_json_uses_distinct_blocked_exit_code(capsys, monkeypatch, tmp_path: Path) -> None:

@@ -145,3 +145,53 @@ def test_desktop_exports_complete_calibration_bundle(
     assert len(opened) == 1
     window.close()
     application.processEvents()
+
+
+def test_desktop_binds_optional_biological_pilot_coverage(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    application, window, queued = _prepared_window(monkeypatch, tmp_path)
+    from diffeoforge.desktop import widgets
+
+    window.analyze_reference_parameters_button.click()
+    queued[0].run()
+    application.processEvents()
+    assert window._reference_recommendation is not None
+    names = [
+        item.filename for item in window._reference_recommendation.observations[1:4]
+    ]
+    declarations = tmp_path / "pilot-declarations.csv"
+    declarations.write_text(
+        "filename,stratum,is_extreme\n"
+        f"{names[0]},stratum-a,true\n"
+        f"{names[1]},stratum-b,false\n"
+        f"{names[2]},stratum-b,false\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        widgets.QFileDialog,
+        "getOpenFileName",
+        lambda *_args, **_kwargs: (str(declarations), "CSV files (*.csv)"),
+    )
+
+    window.reference_pilot_subject_count_spin.setValue(3)
+    window.load_reference_pilot_declarations_button.click()
+    application.processEvents()
+    assert window.reference_pilot_declarations_edit.text() == str(declarations)
+    assert len(window._reference_pilot_subject_declarations) == 3
+    window.build_reference_calibration_button.click()
+    application.processEvents()
+
+    plan = window._reference_calibration_plan
+    assert plan is not None
+    assert plan.version == "0.5"
+    assert names[0] in {item.filename for item in plan.selected_pilot_subjects}
+    assert "Researcher-declared pilot coverage" in window.reference_calibration_status.text()
+    window.clear_reference_pilot_declarations_button.click()
+    application.processEvents()
+    assert window._reference_calibration_plan is None
+    assert window.reference_pilot_declarations_edit.text() == ""
+
+    window.close()
+    application.processEvents()

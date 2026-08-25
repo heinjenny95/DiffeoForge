@@ -68,7 +68,8 @@ correspondence.
 - bind the implemented sign/rotation-invariant PCA subspace and subject-score
   stability primitives into a newly versioned Validation Lab protocol and
   calibrate its thresholds prospectively;
-- support predeclared biological strata in pilot selection;
+- prospectively test the implemented researcher-declared pilot strata/extreme
+  coverage on independently labelled cohorts;
 - use independent homologous landmarks as target-registration-error evidence
   when available;
 - validate thresholds on synthetic surfaces with known deformations and on

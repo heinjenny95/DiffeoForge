@@ -145,8 +145,10 @@ from diffeoforge.preprocessing import (
     preview_landmark_alignment,
 )
 from diffeoforge.reference_calibration import (
+    PilotSubjectDeclaration,
     ReferenceCalibrationPlan,
     build_reference_calibration_plan,
+    read_pilot_subject_declarations,
     reference_calibration_plan_from_provenance,
 )
 from diffeoforge.reference_calibration_report import (
@@ -875,6 +877,10 @@ class DiffeoForgeWindow(QMainWindow):
         self._reference_recommendation: ReferenceParameterRecommendation | None = None
         self._reference_recommendation_paths: tuple[Path, ...] | None = None
         self._reference_calibration_plan: ReferenceCalibrationPlan | None = None
+        self._reference_pilot_subject_declarations: tuple[
+            PilotSubjectDeclaration, ...
+        ] = ()
+        self._reference_pilot_declarations_path: Path | None = None
         self._reference_calibration_export: CalibrationPlanExport | None = None
         self._reference_calibration_study_directory: Path | None = None
         self._reference_calibrated_config_path: Path | None = None
@@ -2910,6 +2916,38 @@ class DiffeoForgeWindow(QMainWindow):
             "Representative pilot subjects",
             self.reference_pilot_subject_count_spin,
         )
+
+        self.reference_pilot_declarations_edit = QLineEdit()
+        self.reference_pilot_declarations_edit.setObjectName(
+            "referencePilotDeclarationsEdit"
+        )
+        self.reference_pilot_declarations_edit.setReadOnly(True)
+        self.reference_pilot_declarations_edit.setPlaceholderText(
+            "optional CSV: filename, stratum, is_extreme"
+        )
+        self.reference_pilot_declarations_edit.setToolTip(
+            "Optional researcher declarations. DiffeoForge guarantees inclusion of "
+            "every declared extreme and coverage of every declared stratum, or refuses "
+            "to build an undersized pilot."
+        )
+        self.load_reference_pilot_declarations_button = QPushButton("Load CSV…")
+        self.load_reference_pilot_declarations_button.setObjectName("secondary")
+        self.load_reference_pilot_declarations_button.clicked.connect(
+            self._load_reference_pilot_declarations
+        )
+        self.clear_reference_pilot_declarations_button = QPushButton("Clear")
+        self.clear_reference_pilot_declarations_button.setObjectName("secondary")
+        self.clear_reference_pilot_declarations_button.clicked.connect(
+            self._clear_reference_pilot_declarations
+        )
+        declaration_row = QWidget()
+        declaration_layout = QHBoxLayout(declaration_row)
+        declaration_layout.setContentsMargins(0, 0, 0, 0)
+        declaration_layout.setSpacing(8)
+        declaration_layout.addWidget(self.reference_pilot_declarations_edit, 1)
+        declaration_layout.addWidget(self.load_reference_pilot_declarations_button)
+        declaration_layout.addWidget(self.clear_reference_pilot_declarations_button)
+        calibration_form.addRow("Biological strata / extremes", declaration_row)
         calibration_layout.addLayout(calibration_form)
 
         calibration_actions = QHBoxLayout()
@@ -3312,6 +3350,8 @@ class DiffeoForgeWindow(QMainWindow):
             and plan.requested_pilot_subject_count
             == self.reference_pilot_subject_count_spin.value()
             and plan.smallest_relevant_feature == self._current_reference_feature_scale()
+            and plan.pilot_subject_declarations
+            == self._reference_pilot_subject_declarations
         )
 
     def _invalidate_reference_calibration_plan(
@@ -3350,6 +3390,49 @@ class DiffeoForgeWindow(QMainWindow):
     @Slot()
     def _reference_calibration_inputs_changed(self) -> None:
         self._invalidate_reference_calibration_plan()
+
+    @Slot()
+    def _load_reference_pilot_declarations(self) -> None:
+        initial = self.mesh_edit.text().strip() or str(Path.cwd())
+        selected, _filter = QFileDialog.getOpenFileName(
+            self,
+            "Select biological pilot declarations",
+            initial,
+            "CSV files (*.csv);;All files (*)",
+        )
+        if not selected:
+            return
+        path = Path(selected).expanduser().resolve()
+        try:
+            declarations = read_pilot_subject_declarations(path)
+        except (OSError, RuntimeError, TypeError, ValueError) as error:
+            self.reference_calibration_summary_label.setObjectName("statusError")
+            self.reference_calibration_summary_label.setStyleSheet("")
+            self.reference_calibration_summary_label.setText(
+                "Biological pilot declarations could not be loaded."
+            )
+            self.reference_calibration_status.setObjectName("statusError")
+            self.reference_calibration_status.setStyleSheet("")
+            self.reference_calibration_status.setText(str(error))
+            return
+        self._reference_pilot_subject_declarations = declarations
+        self._reference_pilot_declarations_path = path
+        self.reference_pilot_declarations_edit.setText(str(path))
+        self._invalidate_reference_calibration_plan(
+            f"Loaded {len(declarations)} researcher declarations. Rebuild the pilot "
+            "plan to bind their strata/extreme coverage."
+        )
+
+    @Slot()
+    def _clear_reference_pilot_declarations(self) -> None:
+        if not self._reference_pilot_subject_declarations:
+            return
+        self._reference_pilot_subject_declarations = ()
+        self._reference_pilot_declarations_path = None
+        self.reference_pilot_declarations_edit.clear()
+        self._invalidate_reference_calibration_plan(
+            "Biological pilot declarations were cleared. Rebuild the pilot plan."
+        )
 
     @staticmethod
     def _set_action_emphasis(button: QPushButton, emphasized: bool) -> None:
@@ -3402,6 +3485,11 @@ class DiffeoForgeWindow(QMainWindow):
         self.measure_reference_feature_button.setEnabled(pilot_design_ready)
         self.reference_feature_scale_spin.setEnabled(pilot_design_ready)
         self.reference_pilot_subject_count_spin.setEnabled(pilot_design_ready)
+        self.reference_pilot_declarations_edit.setEnabled(pilot_design_ready)
+        self.load_reference_pilot_declarations_button.setEnabled(pilot_design_ready)
+        self.clear_reference_pilot_declarations_button.setEnabled(
+            pilot_design_ready and bool(self._reference_pilot_subject_declarations)
+        )
         self.build_reference_calibration_button.setEnabled(pilot_design_ready)
         self.export_reference_calibration_button.setEnabled(
             pilot_design_ready and self._reference_calibration_plan_matches_current_inputs()
@@ -3486,6 +3574,7 @@ class DiffeoForgeWindow(QMainWindow):
                 coordinate_unit=str(self.units_combo.currentData() or "unitless"),
                 requested_pilot_subject_count=(self.reference_pilot_subject_count_spin.value()),
                 smallest_relevant_feature=self._current_reference_feature_scale(),
+                pilot_subject_declarations=self._reference_pilot_subject_declarations,
             )
         except (OSError, RuntimeError, TypeError, ValueError) as error:
             self._reference_calibration_plan = None

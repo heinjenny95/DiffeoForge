@@ -33,7 +33,10 @@ therefore keeps three sources of information separate:
 4. Optionally select **Measure on 3D template** and click the two endpoints of
    the smallest feature that the atlas should preserve. The Euclidean distance
    is stored in the declared coordinate unit.
-5. Choose the requested pilot-subject count and build the calibration plan.
+5. Choose the requested pilot-subject count. Optionally load a CSV with the
+   exact columns `filename,stratum,is_extreme`, then build the calibration
+   plan. DiffeoForge refuses an undersized pilot rather than silently omitting
+   a declared extreme or stratum.
 6. Review or export the self-contained methods report.
 7. Create the project. The recommendation and calibration-plan fingerprints
    are embedded in `atlas.yaml`.
@@ -80,7 +83,8 @@ therefore keeps three sources of information separate:
     full-cohort confirmation run.
 
 Changing meshes, template, GPA evidence, units, research intent, feature
-measurement, or pilot count invalidates the current plan.
+measurement, pilot count, or biological pilot declarations invalidates the
+current plan.
 
 ## Representative pilot selection
 
@@ -93,9 +97,26 @@ count. Robustly scaled descriptors are used to select:
 
 Filename ordering resolves exact ties. The same bytes and settings therefore
 produce the same selection and fingerprint. This is deliberately described as
-a geometric-diversity heuristic. If sex, species, treatment, locality, or
-another manuscript factor matters, the study must additionally predeclare
-stratified representation.
+a geometric-diversity heuristic.
+
+When sex, species, treatment, locality, known morphology, or another manuscript
+factor matters, the optional declaration CSV adds researcher-authored evidence
+before selection. Every row names one exact subject and may assign a stratum,
+mark the subject as an explicit biological extreme, or both. Selection then:
+
+1. includes every declared extreme;
+2. adds a deterministic within-stratum medoid for each stratum not already
+   represented by an included extreme;
+3. adds the whole-cohort descriptor medoid when space remains; and
+4. fills remaining slots by the unchanged farthest-first geometry rule.
+
+The plan, fingerprint, JSON, HTML methods report, and eventual pilot study bind
+the normalized declarations and each subject's selection role. Unknown or
+duplicate filenames, inconsistent stratum spelling, invalid boolean values,
+and a pilot count too small for the declared coverage fail explicitly. A
+stratum declaration guarantees pilot inclusion coverage only; it does not
+prove biological representativeness or make the labels outcomes for automatic
+parameter scoring.
 
 ## Sequential stages
 

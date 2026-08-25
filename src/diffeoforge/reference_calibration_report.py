@@ -48,6 +48,37 @@ def render_reference_calibration_plan_html(plan: ReferenceCalibrationPlan) -> st
         )
         for subject in plan.selected_pilot_subjects
     )
+    selected_names = {item.filename for item in plan.selected_pilot_subjects}
+    if plan.pilot_subject_declarations:
+        pilot_description = (
+            "Researcher declarations are applied before geometric diversity filling. "
+            "Every declared biological extreme is included and every declared stratum "
+            "has at least one selected member; remaining slots use the deterministic "
+            "geometry medoid/farthest-first heuristic. Declarations establish coverage, "
+            "not biological validity."
+        )
+        declaration_rows = "".join(
+            "<tr>"
+            f"<td><code>{escape(item.filename)}</code></td>"
+            f"<td>{escape(item.stratum or 'not declared')}</td>"
+            f"<td>{'yes' if item.is_extreme else 'no'}</td>"
+            f"<td>{'yes' if item.filename in selected_names else 'no'}</td>"
+            "</tr>"
+            for item in plan.pilot_subject_declarations
+        )
+        declaration_section = f"""
+        <h3>Researcher-declared coverage</h3>
+        <table><thead><tr><th>Specimen</th><th>Stratum</th>
+        <th>Declared extreme</th><th>Selected</th></tr></thead>
+        <tbody>{declaration_rows}</tbody></table>
+        """
+    else:
+        pilot_description = (
+            "The first subject is the geometry-descriptor medoid; subsequent subjects "
+            "are farthest-first descriptor extremes. This is a reproducible geometric "
+            "diversity heuristic, not proof of biological group representation."
+        )
+        declaration_section = ""
     baseline_rows = "\n".join(
         (
             "<tr>"
@@ -184,14 +215,13 @@ def render_reference_calibration_plan_html(plan: ReferenceCalibrationPlan) -> st
 
   <section class="card">
     <h2>Deterministic pilot cohort</h2>
-    <p>The first subject is the geometry-descriptor medoid; subsequent subjects are
-    farthest-first descriptor extremes. This is a reproducible geometric diversity
-    heuristic, not proof of biological group representation.</p>
+    <p>{escape(pilot_description)}</p>
     <table>
       <thead><tr><th>#</th><th>Specimen</th><th>Selection role</th>
       <th>Descriptor distance</th><th>SHA-256</th></tr></thead>
       <tbody>{selected_rows}</tbody>
     </table>
+    {declaration_section}
   </section>
 
   <section class="card">
