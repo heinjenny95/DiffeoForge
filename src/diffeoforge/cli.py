@@ -917,6 +917,41 @@ def build_parser() -> argparse.ArgumentParser:
         help="Override and verify against this exact current source run.",
     )
 
+    reference_pca_deformation_run_parser = subparsers.add_parser(
+        "reference-pca-deformation-run",
+        help="Execute one verified reference PCA Shooting design exactly once.",
+    )
+    reference_pca_deformation_run_parser.add_argument(
+        "design_directory",
+        type=Path,
+    )
+    reference_pca_deformation_run_parser.add_argument(
+        "--output",
+        required=True,
+        type=Path,
+        help="New immutable Shooting result directory.",
+    )
+    reference_pca_deformation_run_parser.add_argument(
+        "--timeout-seconds",
+        type=int,
+        default=7_200,
+        help="Hard process timeout in seconds (default: 7200).",
+    )
+
+    reference_pca_deformation_result_verify_parser = subparsers.add_parser(
+        "reference-pca-deformation-verify",
+        help="Verify a completed Deformetrica PCA Shooting result.",
+    )
+    reference_pca_deformation_result_verify_parser.add_argument(
+        "result_directory",
+        type=Path,
+    )
+    reference_pca_deformation_result_verify_parser.add_argument(
+        "--source-run",
+        type=Path,
+        help="Also bind verification to this exact current Deformetrica run.",
+    )
+
     reference_pca_stability_parser = subparsers.add_parser(
         "reference-pca-stability",
         help="Create immutable sign/rotation-invariant evidence for two PCA bundles.",
@@ -2138,6 +2173,46 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"Reference PCA Shooting design verified: {args.design_directory.resolve()}")
             print(f"Endpoint momenta: {design['shooting']['endpoint_count']}")
             print("Exact PCA recomputation and source bindings match; no run is claimed.")
+        except (OSError, RuntimeError, TypeError, ValueError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
+
+    if args.command == "reference-pca-deformation-run":
+        try:
+            from diffeoforge.reference_pca_deformations import (
+                execute_reference_pca_deformation_design,
+                verify_reference_pca_deformation_result,
+            )
+
+            result_directory = execute_reference_pca_deformation_design(
+                args.design_directory,
+                args.output,
+                timeout_seconds=args.timeout_seconds,
+            )
+            result = verify_reference_pca_deformation_result(result_directory)
+            print(f"Verified reference PCA deformation result: {result_directory}")
+            print(f"Deformetrica Shooting endpoints: {len(result['endpoints'])}")
+            print(f"Elapsed: {result['execution']['duration_seconds']:.1f} seconds")
+            print("Endpoint meshes are structural visualizations, not biological validation.")
+        except (OSError, RuntimeError, TypeError, ValueError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
+
+    if args.command == "reference-pca-deformation-verify":
+        try:
+            from diffeoforge.reference_pca_deformations import (
+                verify_reference_pca_deformation_result,
+            )
+
+            result = verify_reference_pca_deformation_result(
+                args.result_directory,
+                source_run=args.source_run,
+            )
+            print(f"Reference PCA deformation result verified: {args.result_directory.resolve()}")
+            print(f"Deformetrica Shooting endpoints: {len(result['endpoints'])}")
+            print("Nested design, source bindings, inventory, hashes, and VTK topology match.")
         except (OSError, RuntimeError, TypeError, ValueError) as error:
             print(f"ERROR: {error}", file=sys.stderr)
             return 2

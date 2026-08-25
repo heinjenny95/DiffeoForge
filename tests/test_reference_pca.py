@@ -6,11 +6,13 @@ import math
 import shutil
 import xml.etree.ElementTree as ET
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
 import yaml
 
+import diffeoforge.reference_pca_deformations as deformation_module
 from diffeoforge.cli import main
 from diffeoforge.desktop.reference_result_review import (
     export_registration_qc_review,
@@ -51,9 +53,13 @@ from diffeoforge.reference_pca import (
 from diffeoforge.reference_pca_deformations import (
     DESIGN_NAME,
     DESIGN_SIDECAR,
+    RESULT_NAME,
     ReferencePCADeformationError,
+    ReferencePCADeformationExecutionError,
     create_reference_pca_deformation_design,
+    execute_reference_pca_deformation_design,
     verify_reference_pca_deformation_design,
+    verify_reference_pca_deformation_result,
 )
 from diffeoforge.runs import prepare_run
 
@@ -369,6 +375,128 @@ def test_reference_pca_deformation_design_recomputes_resigned_momenta(
         match="momenta differ from exact PCA recomputation",
     ):
         verify_reference_pca_deformation_design(design_path, source_run=run)
+
+
+def test_reference_pca_deformation_execution_publishes_verified_endpoints(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run = _completed_reference_run(tmp_path)
+    bundle = write_reference_pca_bundle(run)
+    design = create_reference_pca_deformation_design(
+        run,
+        pca_bundle=bundle,
+        components=2,
+    )
+    monkeypatch.setattr(
+        deformation_module,
+        "ensure_launcher_available",
+        lambda _config: None,
+    )
+
+    def complete_shooting(_argv, *, cwd, **_kwargs):
+        root = Path(cwd)
+        output = root / "output"
+        header = (root / "source" / "endpoint-momenta.txt").read_text(
+            encoding="utf-8"
+        ).splitlines()[0]
+        endpoint_count = int(header.split()[0])
+        timepoints = int(
+            ET.parse(root / "engine" / "model.xml")
+            .getroot()
+            .findtext("./deformation-parameters/number-of-timepoints")
+        )
+        source_template = root / "source" / "estimated-template.vtk"
+        for endpoint_index in range(endpoint_count):
+            shutil.copyfile(
+                source_template,
+                output
+                / (
+                    f"Shooting_{endpoint_index}__GeodesicFlow__surface__tp_"
+                    f"{timepoints - 1}__age_1.00.vtk"
+                ),
+            )
+        return SimpleNamespace(
+            returncode=0,
+            stdout="shooting completed\n",
+            stderr="",
+        )
+
+    result_path = execute_reference_pca_deformation_design(
+        design,
+        tmp_path / "shooting-result",
+        created_at="2026-07-19T10:00:00+00:00",
+        process_runner=complete_shooting,
+    )
+    result = verify_reference_pca_deformation_result(result_path, source_run=run)
+
+    assert result["status"] == "completed"
+    assert result["execution"]["return_code"] == 0
+    assert result["execution"]["argv"][1:3] == ["compute", "engine/model.xml"]
+    assert len(result["endpoints"]) == 5
+    assert [endpoint["path"] for endpoint in result["endpoints"]] == [
+        "deformations/mean-momenta.vtk",
+        "deformations/pc-0001-minus.vtk",
+        "deformations/pc-0001-plus.vtk",
+        "deformations/pc-0002-minus.vtk",
+        "deformations/pc-0002-plus.vtk",
+    ]
+    assert not (result_path / "output").exists()
+    assert (result_path / "design" / DESIGN_NAME).is_file()
+    assert (result_path / "logs" / "deformetrica-shooting.stdout.log").is_file()
+    assert (
+        main(
+            [
+                "reference-pca-deformation-verify",
+                str(result_path),
+                "--source-run",
+                str(run),
+            ]
+        )
+        == 0
+    )
+
+    endpoint_path = result_path / result["endpoints"][0]["path"]
+    endpoint_path.write_bytes(endpoint_path.read_bytes() + b"tampered")
+    with pytest.raises(ReferencePCADeformationError, match="artifact differs"):
+        verify_reference_pca_deformation_result(result_path, source_run=run)
+
+
+def test_reference_pca_deformation_execution_failure_is_not_published(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run = _completed_reference_run(tmp_path)
+    bundle = write_reference_pca_bundle(run)
+    design = create_reference_pca_deformation_design(
+        run,
+        pca_bundle=bundle,
+        components=2,
+    )
+    monkeypatch.setattr(
+        deformation_module,
+        "ensure_launcher_available",
+        lambda _config: None,
+    )
+    destination = tmp_path / "failed-shooting-result"
+
+    with pytest.raises(
+        ReferencePCADeformationExecutionError,
+        match="returned 17: synthetic engine failure",
+    ):
+        execute_reference_pca_deformation_design(
+            design,
+            destination,
+            process_runner=lambda *_args, **_kwargs: SimpleNamespace(
+                returncode=17,
+                stdout="",
+                stderr="synthetic engine failure",
+            ),
+        )
+
+    assert destination.exists() is False
+    assert list(tmp_path.glob(".failed-shooting-result.tmp-*")) == []
+    assert not (design / RESULT_NAME).exists()
 
 
 def test_reference_pca_rejects_source_output_tampering(tmp_path: Path) -> None:

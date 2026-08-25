@@ -54,6 +54,14 @@ diffeoforge reference-pca-deformation-design RUN_DIRECTORY `
 diffeoforge reference-pca-deformation-design-verify `
   C:\path\to\new-shooting-design `
   --source-run RUN_DIRECTORY
+
+diffeoforge reference-pca-deformation-run `
+  C:\path\to\new-shooting-design `
+  --output C:\path\to\new-shooting-result
+
+diffeoforge reference-pca-deformation-verify `
+  C:\path\to\new-shooting-result `
+  --source-run RUN_DIRECTORY
 ```
 
 The prospective design copies and binds the estimated Deformetrica template
@@ -61,9 +69,14 @@ and control points, derives exact mean and ±PC momenta from the verified PCA,
 changes only the source model type to `Shooting`, preserves the source
 deformation and integration settings, and records the exact source runtime.
 Its status is `prospective_not_executed`: creating or verifying it starts no
-process and makes no endpoint-mesh claim. A separate supervised
-`deformetrica compute` execution and result verifier are required before these
-designs can enter the Results viewer.
+process and makes no endpoint-mesh claim. The separate execution command uses
+the exact source launcher/thread/device contract for one `deformetrica compute`
+operation, captures stdout and stderr, refuses an existing destination, and
+publishes only after every final-timepoint surface has the source template's
+point and triangle counts. Its verifier rechecks the nested prospective design,
+source hashes, exact inventory, endpoint identities, file hashes, and VTK
+topology. Runtime completion remains engineering evidence, not biological
+validation. Desktop Results-viewer integration remains a separate step.
 
 Subject identity and order come from the immutable run manifest's subject input
 records. This is the same order used when DiffeoForge wrote Deformetrica's
@@ -120,7 +133,7 @@ This PCA is an exploratory coordinate summary. It does not prove adequate atlas
 registration, optimizer convergence, group separation, taxonomic structure,
 biological effect, or causality. The current reference result viewer does not
 yet expose executed mean/positive/negative PC deformation meshes. Their exact
-Deformetrica Shooting inputs can be frozen and independently verified as
-described above, while supervised execution/publication remains separate.
-Covariate-aware plots and inferential statistics likewise require separate
-methods and validation decisions.
+Deformetrica Shooting inputs and supervised result can be created and verified
+as described above; binding those artifacts into the native viewer remains
+separate. Covariate-aware plots and inferential statistics likewise require
+separate methods and validation decisions.

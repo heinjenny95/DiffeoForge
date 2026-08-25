@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import shutil
+import subprocess
+import time
 import uuid
 import xml.etree.ElementTree as ET
 from collections.abc import Mapping
@@ -13,7 +16,11 @@ from pathlib import Path, PurePosixPath
 
 import numpy as np
 
-from diffeoforge.mesh import sha256_file
+from diffeoforge.backends.deformetrica_reference import (
+    build_shooting_command,
+    ensure_launcher_available,
+)
+from diffeoforge.mesh import inspect_vtk, sha256_file
 from diffeoforge.reference_pca import (
     DEFAULT_REFERENCE_PCA_DIRECTORY,
     REFERENCE_PCA_MANIFEST,
@@ -28,6 +35,9 @@ DESIGN_VERSION = "0.1"
 DESIGN_NAME = "reference-pca-deformation-design.json"
 DESIGN_SIDECAR = "reference-pca-deformation-design.sha256"
 DEFAULT_DIRECTORY_NAME = "reference-pca-deformations-v0.1"
+RESULT_VERSION = "0.1"
+RESULT_NAME = "reference-pca-deformation-result.json"
+RESULT_SIDECAR = "reference-pca-deformation-result.sha256"
 DEFORMATION_EQUATION = (
     "mean_momenta +/- standard_deviations * sqrt(explained_variance) * "
     "component_loading"
@@ -43,6 +53,10 @@ SCIENTIFIC_BOUNDARY = (
 
 class ReferencePCADeformationError(RuntimeError):
     """Raised when a reference PCA deformation design is invalid."""
+
+
+class ReferencePCADeformationExecutionError(ReferencePCADeformationError):
+    """Raised when supervised Deformetrica Shooting does not produce a result."""
 
 
 def _positive_real(name: str, value: object) -> float:
@@ -483,3 +497,319 @@ def verify_reference_pca_deformation_design(
     ):
         raise ReferencePCADeformationError("Copied estimated template differs")
     return manifest
+
+
+def _endpoint_output_name(endpoint: Mapping[str, object]) -> str:
+    if endpoint["role"] == "mean":
+        return "mean-momenta.vtk"
+    component = int(endpoint["component"])
+    direction = str(endpoint["direction"])
+    return f"pc-{component:04d}-{direction}.vtk"
+
+
+def _number_of_time_points(model_path: Path) -> int:
+    try:
+        root = ET.parse(model_path).getroot()
+        value = int(root.findtext("./deformation-parameters/number-of-timepoints", ""))
+    except (ET.ParseError, OSError, TypeError, ValueError) as error:
+        raise ReferencePCADeformationExecutionError(
+            "Shooting model has no valid number of time points"
+        ) from error
+    if value < 2:
+        raise ReferencePCADeformationExecutionError(
+            "Shooting model requires at least two time points"
+        )
+    return value
+
+
+def _final_shooting_output(
+    output: Path,
+    *,
+    endpoint_index: int,
+    final_timepoint: int,
+) -> Path:
+    pattern = (
+        f"Shooting_{endpoint_index}__GeodesicFlow__surface__tp_"
+        f"{final_timepoint}__age_*.vtk"
+    )
+    matches = tuple(output.glob(pattern))
+    if len(matches) != 1:
+        raise ReferencePCADeformationExecutionError(
+            "Deformetrica Shooting must produce exactly one final surface for endpoint "
+            f"{endpoint_index}; found {len(matches)}"
+        )
+    return matches[0]
+
+
+def execute_reference_pca_deformation_design(
+    design_directory: Path | str,
+    destination: Path | str,
+    *,
+    timeout_seconds: int = 7_200,
+    created_at: str | None = None,
+    process_runner=subprocess.run,
+) -> Path:
+    """Execute one verified Shooting design once and atomically publish endpoints."""
+
+    if isinstance(timeout_seconds, bool) or not isinstance(timeout_seconds, int):
+        raise TypeError("timeout_seconds must be an integer")
+    if timeout_seconds < 1:
+        raise ValueError("timeout_seconds must be positive")
+    design_root = Path(design_directory).expanduser().resolve()
+    design = verify_reference_pca_deformation_design(design_root)
+    source = design["source"]
+    assert isinstance(source, Mapping)
+    run = Path(str(source["run_directory"])).expanduser().resolve()
+    inputs = load_reference_momenta(run)
+    config = inputs.run_report.manifest["effective_config"]
+    ensure_launcher_available(config)
+
+    target = Path(destination).expanduser().resolve()
+    if target.exists():
+        raise FileExistsError(
+            f"PCA deformation result destination already exists: {target}"
+        )
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temporary = target.with_name(f".{target.name}.tmp-{uuid.uuid4().hex}")
+    if temporary.exists():
+        raise FileExistsError(
+            f"Temporary PCA deformation result already exists: {temporary}"
+        )
+    try:
+        temporary.mkdir()
+        shutil.copytree(design_root, temporary / "design")
+        shutil.copytree(design_root / "engine", temporary / "engine")
+        shutil.copytree(design_root / "source", temporary / "source")
+        output = temporary / "output"
+        output.mkdir()
+        logs = temporary / "logs"
+        logs.mkdir()
+        command = build_shooting_command(config, temporary)
+        environment = os.environ.copy()
+        environment.update(command.environment)
+        started = time.perf_counter()
+        try:
+            completed = process_runner(
+                command.argv,
+                cwd=command.working_directory,
+                env=environment,
+                capture_output=True,
+                text=True,
+                timeout=timeout_seconds,
+                check=False,
+            )
+        except (OSError, subprocess.SubprocessError) as error:
+            raise ReferencePCADeformationExecutionError(
+                f"Deformetrica Shooting could not be executed: {error}"
+            ) from error
+        duration = time.perf_counter() - started
+        stdout = str(completed.stdout or "")
+        stderr = str(completed.stderr or "")
+        (logs / "deformetrica-shooting.stdout.log").write_text(
+            stdout,
+            encoding="utf-8",
+            newline="\n",
+        )
+        (logs / "deformetrica-shooting.stderr.log").write_text(
+            stderr,
+            encoding="utf-8",
+            newline="\n",
+        )
+        if completed.returncode != 0:
+            tail = (stderr or stdout)[-2_000:]
+            raise ReferencePCADeformationExecutionError(
+                "Deformetrica Shooting returned "
+                f"{completed.returncode}: {tail.strip()}"
+            )
+
+        shooting = design["shooting"]
+        assert isinstance(shooting, Mapping)
+        endpoints = shooting["endpoints"]
+        assert isinstance(endpoints, list)
+        final_timepoint = _number_of_time_points(temporary / "engine" / "model.xml") - 1
+        deformation_directory = temporary / "deformations"
+        deformation_directory.mkdir()
+        endpoint_records: list[dict[str, object]] = []
+        template_metadata = inspect_vtk(temporary / "source" / "estimated-template.vtk")
+        for endpoint in endpoints:
+            if not isinstance(endpoint, Mapping):
+                raise ReferencePCADeformationExecutionError(
+                    "Shooting endpoint definition is invalid"
+                )
+            endpoint_index = int(endpoint["index"])
+            generated = _final_shooting_output(
+                output,
+                endpoint_index=endpoint_index,
+                final_timepoint=final_timepoint,
+            )
+            published = deformation_directory / _endpoint_output_name(endpoint)
+            shutil.copyfile(generated, published)
+            metadata = inspect_vtk(published)
+            if (
+                metadata.points != template_metadata.points
+                or metadata.cells != template_metadata.cells
+            ):
+                raise ReferencePCADeformationExecutionError(
+                    f"Endpoint {endpoint_index} topology differs from the source template"
+                )
+            endpoint_records.append(
+                {
+                    **dict(endpoint),
+                    "path": published.relative_to(temporary).as_posix(),
+                    "bytes": published.stat().st_size,
+                    "sha256": sha256_file(published),
+                    "points": metadata.points,
+                    "triangles": metadata.cells,
+                }
+            )
+        shutil.rmtree(output)
+
+        artifact_paths = sorted(
+            path
+            for path in temporary.rglob("*")
+            if path.is_file()
+            and path.name not in {RESULT_NAME, RESULT_SIDECAR}
+        )
+        artifacts = [_artifact(temporary, path) for path in artifact_paths]
+        result = {
+            "result_version": RESULT_VERSION,
+            "created_at": created_at or datetime.now(UTC).isoformat(timespec="seconds"),
+            "status": "completed",
+            "source_design": {
+                "path": "design",
+                "manifest_sha256": sha256_file(design_root / DESIGN_NAME),
+                "sidecar_sha256": sha256_file(design_root / DESIGN_SIDECAR),
+            },
+            "execution": {
+                "engine": "Deformetrica 4.3 compute Shooting",
+                "argv": list(command.argv),
+                "environment": command.environment,
+                "return_code": int(completed.returncode),
+                "duration_seconds": duration,
+                "timeout_seconds": timeout_seconds,
+                "final_timepoint": final_timepoint,
+                "stdout_path": "logs/deformetrica-shooting.stdout.log",
+                "stderr_path": "logs/deformetrica-shooting.stderr.log",
+            },
+            "endpoints": endpoint_records,
+            "artifacts": artifacts,
+            "scientific_boundary": SCIENTIFIC_BOUNDARY.replace(
+                "No endpoint mesh exists until the separately supervised Shooting "
+                "execution completes and is verified.",
+                "These endpoint meshes completed the declared Deformetrica Shooting "
+                "operation and passed structural verification; this is not biological "
+                "validation.",
+            ),
+        }
+        _write_json_exclusive(temporary / RESULT_NAME, result)
+        (temporary / RESULT_SIDECAR).write_text(
+            f"{sha256_file(temporary / RESULT_NAME)}  {RESULT_NAME}\n",
+            encoding="ascii",
+            newline="\n",
+        )
+        verify_reference_pca_deformation_result(temporary, source_run=run)
+        publish_directory_exclusive(temporary, target)
+        verify_reference_pca_deformation_result(target, source_run=run)
+        return target
+    except Exception:
+        if temporary.exists() and temporary.parent == target.parent:
+            shutil.rmtree(temporary)
+        raise
+
+
+def verify_reference_pca_deformation_result(
+    result_directory: Path | str,
+    *,
+    source_run: Path | str | None = None,
+) -> Mapping[str, object]:
+    """Verify a completed Shooting result, nested design, inventory, and VTKs."""
+
+    root = Path(result_directory).expanduser().resolve()
+    if not root.is_dir() or root.is_symlink():
+        raise ReferencePCADeformationError(
+            f"PCA deformation result is missing or symbolic: {root}"
+        )
+    manifest_path = root / RESULT_NAME
+    sidecar_path = root / RESULT_SIDECAR
+    if not manifest_path.is_file() or not sidecar_path.is_file():
+        raise ReferencePCADeformationError("Result manifest or SHA-256 sidecar is missing")
+    sidecar = sidecar_path.read_text(encoding="ascii").strip().split()
+    if sidecar != [sha256_file(manifest_path), RESULT_NAME]:
+        raise ReferencePCADeformationError("Result manifest SHA-256 sidecar differs")
+    try:
+        result = load_strict_json_object(
+            manifest_path.read_bytes(),
+            manifest_path,
+            label="Reference PCA deformation result",
+        )
+    except (OSError, ValueError) as error:
+        raise ReferencePCADeformationError(str(error)) from error
+    if result.get("result_version") != RESULT_VERSION or result.get("status") != "completed":
+        raise ReferencePCADeformationError("PCA deformation result identity is invalid")
+    execution = result.get("execution")
+    if not isinstance(execution, Mapping) or execution.get("return_code") != 0:
+        raise ReferencePCADeformationError("PCA deformation execution did not complete")
+    records = result.get("artifacts")
+    if not isinstance(records, list) or not records:
+        raise ReferencePCADeformationError("PCA deformation artifact inventory is invalid")
+    declared: set[str] = set()
+    for record in records:
+        if not isinstance(record, Mapping):
+            raise ReferencePCADeformationError("PCA deformation artifact record is invalid")
+        relative = str(record.get("path", ""))
+        if relative in declared:
+            raise ReferencePCADeformationError(f"Duplicate result artifact: {relative}")
+        declared.add(relative)
+        path = _safe_design_path(root, relative)
+        if path.stat().st_size != int(record.get("bytes", -1)) or sha256_file(path) != str(
+            record.get("sha256", "")
+        ):
+            raise ReferencePCADeformationError(f"Result artifact differs: {relative}")
+    actual = {
+        path.relative_to(root).as_posix()
+        for path in root.rglob("*")
+        if path.is_file() and path.name not in {RESULT_NAME, RESULT_SIDECAR}
+    }
+    if actual != declared:
+        raise ReferencePCADeformationError("Result artifact inventory is incomplete")
+
+    nested_design = root / "design"
+    design = verify_reference_pca_deformation_design(
+        nested_design,
+        source_run=source_run,
+    )
+    source_design = result.get("source_design")
+    if not isinstance(source_design, Mapping) or (
+        source_design.get("manifest_sha256") != sha256_file(nested_design / DESIGN_NAME)
+        or source_design.get("sidecar_sha256") != sha256_file(
+            nested_design / DESIGN_SIDECAR
+        )
+    ):
+        raise ReferencePCADeformationError("Result source-design binding differs")
+    endpoints = result.get("endpoints")
+    shooting = design["shooting"]
+    assert isinstance(shooting, Mapping)
+    expected_endpoints = shooting["endpoints"]
+    if not isinstance(endpoints, list) or len(endpoints) != len(expected_endpoints):
+        raise ReferencePCADeformationError("Result endpoint count differs from the design")
+    template = inspect_vtk(root / "source" / "estimated-template.vtk")
+    for observed, expected in zip(endpoints, expected_endpoints, strict=True):
+        if not isinstance(observed, Mapping) or not isinstance(expected, Mapping):
+            raise ReferencePCADeformationError("Result endpoint definition is invalid")
+        identity = {key: observed.get(key) for key in expected}
+        if identity != dict(expected):
+            raise ReferencePCADeformationError("Result endpoint identity differs from design")
+        path = _safe_design_path(root, observed.get("path"))
+        metadata = inspect_vtk(path)
+        if (
+            observed.get("bytes") != path.stat().st_size
+            or observed.get("sha256") != sha256_file(path)
+            or observed.get("points") != metadata.points
+            or observed.get("triangles") != metadata.cells
+            or metadata.points != template.points
+            or metadata.cells != template.cells
+        ):
+            raise ReferencePCADeformationError(
+                f"Result endpoint geometry differs: {observed.get('path')}"
+            )
+    return result
