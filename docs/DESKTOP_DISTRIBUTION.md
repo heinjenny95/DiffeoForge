@@ -157,8 +157,9 @@ v0.4 freeze now gives this worker its own sibling executable, queued-cancel smok
 and hard-parent-death audit. Fresh clean-runner evidence and a rebuilt installer
 remain pending; recovery/resume and reference PC deformation rendering remain
 open in the installed preview. Source builds can freeze and execute exact
-Deformetrica Shooting PC endpoints and display a verified default-location
-result; the installer has not yet been rebuilt with that path. Source-level
+Deformetrica Shooting PC endpoints from a dedicated nonblocking result-screen
+action and display the verified default-location result; the installer has not
+yet been rebuilt with that path. Source-level
 shared PCA import is connected. See
 [supervised desktop Deformetrica execution](DESKTOP_REFERENCE_EXECUTION.md).
 

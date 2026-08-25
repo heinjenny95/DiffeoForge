@@ -78,6 +78,16 @@ topology. Runtime completion remains engineering evidence, not biological
 validation. The default result location is detected by the desktop, which then
 adds the verified mean and ±PC surfaces to the existing native 3D viewer.
 
+For a completed Deformetrica result, the source desktop also exposes this as
+`Generate verified PC shape meshes…`. The action first reuses and verifies an
+existing default design or creates a new immutable design for at most PC1–PC3 at
+±2 standard deviations, then runs the exact source runtime on a background
+worker. The window reports elapsed time, remains open until the subprocess has
+stopped, and reloads the complete result only after the new result inventory,
+hashes, endpoint identities, and VTK topology pass verification. Failure leaves
+the previously verified result loaded and never restarts automatically. The CLI
+remains the explicit interface for other component counts or endpoint distances.
+
 Subject identity and order come from the immutable run manifest's subject input
 records. This is the same order used when DiffeoForge wrote Deformetrica's
 dataset XML. Features are flattened in this declared order:
@@ -131,7 +141,7 @@ convergence.
 
 This PCA is an exploratory coordinate summary. It does not prove adequate atlas
 registration, optimizer convergence, group separation, taxonomic structure,
-biological effect, or causality. The current reference result viewer does not
+biological effect, or causality. The current reference result viewer
 exposes executed mean/positive/negative PC deformation meshes only when their
 separate Shooting result exists at the default location and passes full
 verification. Covariate-aware plots and inferential statistics likewise

@@ -269,6 +269,11 @@ def create_reference_pca_deformation_design(
         requested_components,
         resolved_deviations,
     )
+    if len(endpoints) == 1:
+        raise ReferencePCADeformationError(
+            "Selected reference PCA components all have zero variance; no distinct "
+            "Shooting endpoint can be defined"
+        )
     try:
         temporary.mkdir()
         source_directory = temporary / "source"

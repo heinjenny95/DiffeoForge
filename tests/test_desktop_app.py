@@ -2344,7 +2344,7 @@ def test_desktop_window_verifies_and_renders_step_five_before_artifact_handoff(
 ) -> None:
     pytest.importorskip("PySide6")
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
-    from PySide6.QtWidgets import QApplication, QLabel, QWidget
+    from PySide6.QtWidgets import QApplication, QLabel, QMessageBox, QWidget
 
     from diffeoforge.desktop.result_review import (
         ModernResultArtifact,
@@ -2354,6 +2354,7 @@ def test_desktop_window_verifies_and_renders_step_five_before_artifact_handoff(
     from diffeoforge.desktop.widgets import (
         DiffeoForgeWindow,
         _ArtifactWorker,
+        _ReferencePCADeformationWorker,
         _ResultReviewWorker,
     )
     from diffeoforge.desktop.worker_controller import DesktopWorkerControllerResult
@@ -2577,21 +2578,67 @@ def test_desktop_window_verifies_and_renders_step_five_before_artifact_handoff(
     )
     assert window.result_completion_label.objectName() == "statusSuccess"
     assert "optimizer converged" in window.result_completion_label.text()
-    window._result_review_succeeded(
-        replace(
-            review,
-            engine_route="deformetrica_reference",
-            optimizer_converged=None,
-            optimizer_termination_reason="tolerance_threshold",
-            optimizer_cycles_completed=65,
-            optimizer_max_cycles=150,
-            execution_duration_seconds=1394.469,
-        )
+    reference_review = replace(
+        review,
+        engine_route="deformetrica_reference",
+        optimizer_converged=None,
+        optimizer_termination_reason="tolerance_threshold",
+        optimizer_cycles_completed=65,
+        optimizer_max_cycles=150,
+        execution_duration_seconds=1394.469,
     )
+    window._result_review_succeeded(reference_review)
     assert window.result_completion_label.objectName() == "statusSuccess"
     assert "numerical tolerance criterion was met" in window.result_completion_label.text()
     assert "last visible logged iteration" in window.result_completion_label.text()
     assert "not proof" in window.result_completion_label.text()
+    assert window.reference_pca_deformation_card.isHidden() is False
+    assert window.generate_reference_pca_deformations_button.isEnabled() is True
+    assert "does not refit" in window.reference_pca_deformation_status_label.text()
+
+    monkeypatch.setattr(
+        QMessageBox,
+        "warning",
+        lambda *_args, **_kwargs: QMessageBox.StandardButton.Yes,
+    )
+    window.generate_reference_pca_deformations_button.click()
+
+    assert isinstance(window._worker, _ReferencePCADeformationWorker)
+    assert isinstance(queued[-1], _ReferencePCADeformationWorker)
+    assert window._reference_pca_deformation_timer.isActive() is True
+    assert window.generate_reference_pca_deformations_button.isEnabled() is False
+    assert "elapsed" in window.reference_pca_deformation_status_label.text()
+
+    window._reference_pca_deformation_failed("synthetic failure")
+    assert window._reference_pca_deformation_timer.isActive() is False
+    assert window.generate_reference_pca_deformations_button.isEnabled() is True
+    assert "Nothing was restarted automatically" in (
+        window.reference_pca_deformation_status_label.text()
+    )
+
+    window.generate_reference_pca_deformations_button.click()
+    window._reference_pca_deformation_succeeded(run / "analysis" / "shooting-result")
+    assert isinstance(window._worker, _ResultReviewWorker)
+    assert isinstance(queued[-1], _ResultReviewWorker)
+    assert queued[-1].reference is True
+    pca_mean_artifact = replace(
+        atlas_artifact,
+        key="pca-mean-shape",
+        label="PCA mean-momenta shape (Deformetrica VTK)",
+    )
+    window._result_review_succeeded(
+        replace(
+            reference_review,
+            artifacts=reference_review.artifacts + (pca_mean_artifact,),
+        )
+    )
+    assert window.generate_reference_pca_deformations_button.isEnabled() is False
+    assert window.generate_reference_pca_deformations_button.text() == (
+        "PC shape meshes generated"
+    )
+    assert "loaded in the atlas viewer" in (
+        window.reference_pca_deformation_status_label.text()
+    )
     window._show_run_page_from_results()
     assert window.page_stack.currentIndex() == 3
     window.start_atlas_button.click()
@@ -2648,6 +2695,73 @@ def test_desktop_can_select_a_saved_completed_run(monkeypatch, tmp_path) -> None
     assert "full verification failed" in window.status_label.text()
     window.close()
     application.processEvents()
+
+
+def test_reference_pca_deformation_worker_reuses_a_verified_design(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from types import SimpleNamespace
+
+    from PySide6.QtWidgets import QApplication
+
+    from diffeoforge.desktop.widgets import _ReferencePCADeformationWorker
+
+    application = QApplication.instance() or QApplication(
+        ["diffeoforge-reference-pca-shooting-worker-test"]
+    )
+    run = (tmp_path / "reference-run").resolve()
+    design = run / "analysis" / "reference-pca-deformations-v0.1"
+    result = run / "analysis" / "reference-pca-deformations-v0.1-result"
+    design.mkdir(parents=True)
+    calls: list[tuple[str, object]] = []
+
+    monkeypatch.setattr(
+        "diffeoforge.desktop.widgets.verify_reference_pca_bundle",
+        lambda *args, **kwargs: SimpleNamespace(
+            pca=SimpleNamespace(number_of_components=2)
+        ),
+    )
+    monkeypatch.setattr(
+        "diffeoforge.desktop.widgets.create_reference_pca_deformation_design",
+        lambda *args, **kwargs: pytest.fail("existing design must be reused"),
+    )
+    monkeypatch.setattr(
+        "diffeoforge.desktop.widgets.verify_reference_pca_deformation_design",
+        lambda path, **kwargs: calls.append(("design", path)),
+    )
+
+    def execute(path, destination):
+        calls.append(("execute", (path, destination)))
+        destination.mkdir()
+        return destination
+
+    monkeypatch.setattr(
+        "diffeoforge.desktop.widgets.execute_reference_pca_deformation_design",
+        execute,
+    )
+    monkeypatch.setattr(
+        "diffeoforge.desktop.widgets.verify_reference_pca_deformation_result",
+        lambda path, **kwargs: calls.append(("result", path)),
+    )
+    succeeded: list[Path] = []
+    failed: list[str] = []
+    worker = _ReferencePCADeformationWorker(run)
+    worker.signals.succeeded.connect(succeeded.append)
+    worker.signals.failed.connect(failed.append)
+
+    worker.run()
+    application.processEvents()
+
+    assert failed == []
+    assert succeeded == [result]
+    assert calls == [
+        ("design", design),
+        ("execute", (design, result)),
+        ("result", result),
+    ]
 
 
 def test_desktop_can_bind_interrupted_run_to_immutable_resume_successor(

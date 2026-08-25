@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import threading
+import time
 import uuid
 from dataclasses import replace
 from pathlib import Path
@@ -158,6 +159,23 @@ from diffeoforge.reference_calibration_report import (
 from diffeoforge.reference_calibration_study import (
     create_reference_calibration_study,
     load_reference_calibration_study,
+)
+from diffeoforge.reference_pca import (
+    DEFAULT_REFERENCE_PCA_DIRECTORY,
+    verify_reference_pca_bundle,
+)
+from diffeoforge.reference_pca_deformations import (
+    DEFAULT_DIRECTORY_NAME as DEFAULT_REFERENCE_PCA_DEFORMATION_DESIGN_DIRECTORY,
+)
+from diffeoforge.reference_pca_deformations import (
+    DEFAULT_RESULT_DIRECTORY as DEFAULT_REFERENCE_PCA_DEFORMATION_RESULT_DIRECTORY,
+)
+from diffeoforge.reference_pca_deformations import (
+    ReferencePCADeformationError,
+    create_reference_pca_deformation_design,
+    execute_reference_pca_deformation_design,
+    verify_reference_pca_deformation_design,
+    verify_reference_pca_deformation_result,
 )
 from diffeoforge.reference_recommendation import (
     ReferenceParameterRecommendation,
@@ -652,6 +670,57 @@ class _ResultReviewWorker(QRunnable):
         self.signals.succeeded.emit(review)
 
 
+class _ReferencePCADeformationWorker(QRunnable):
+    """Create, execute, and verify default reference PCA Shooting endpoints."""
+
+    def __init__(self, run_directory: Path) -> None:
+        super().__init__()
+        self.run_directory = run_directory.expanduser().resolve()
+        self.signals = _WorkerSignals()
+
+    @Slot()
+    def run(self) -> None:
+        try:
+            bundle = verify_reference_pca_bundle(
+                self.run_directory / DEFAULT_REFERENCE_PCA_DIRECTORY,
+                source_run=self.run_directory,
+            )
+            components = min(3, bundle.pca.number_of_components)
+            if components < 1:
+                raise ReferencePCADeformationError(
+                    "Reference PCA has no component available for Shooting"
+                )
+            design = (
+                self.run_directory
+                / "analysis"
+                / DEFAULT_REFERENCE_PCA_DEFORMATION_DESIGN_DIRECTORY
+            )
+            if design.exists():
+                verify_reference_pca_deformation_design(
+                    design,
+                    source_run=self.run_directory,
+                )
+            else:
+                create_reference_pca_deformation_design(
+                    self.run_directory,
+                    design,
+                    components=components,
+                    standard_deviations=2.0,
+                )
+            result = execute_reference_pca_deformation_design(
+                design,
+                self.run_directory / DEFAULT_REFERENCE_PCA_DEFORMATION_RESULT_DIRECTORY,
+            )
+            verify_reference_pca_deformation_result(
+                result,
+                source_run=self.run_directory,
+            )
+        except (OSError, RuntimeError, TypeError, ValueError) as error:
+            self.signals.failed.emit(str(error))
+            return
+        self.signals.succeeded.emit(result)
+
+
 class _AbandonedReferenceRecoveryWorker(QRunnable):
     """Finalize one user-confirmed unclean stop outside the GUI thread."""
 
@@ -862,6 +931,7 @@ class DiffeoForgeWindow(QMainWindow):
             | _ReferencePreparationStatusWorker
             | _SavedReferencePreparationStatusVerificationWorker
             | _ResultReviewWorker
+            | _ReferencePCADeformationWorker
             | _AbandonedReferenceRecoveryWorker
             | _ArtifactWorker
             | _AtlasWorker
@@ -898,6 +968,12 @@ class DiffeoForgeWindow(QMainWindow):
             DesktopWorkerControllerResult | ReferenceExecutionControllerResult | None
         ) = None
         self._result_review: ModernResultReview | None = None
+        self._reference_pca_deformation_started_at: float | None = None
+        self._reference_pca_deformation_timer = QTimer(self)
+        self._reference_pca_deformation_timer.setInterval(1_000)
+        self._reference_pca_deformation_timer.timeout.connect(
+            self._update_reference_pca_deformation_elapsed
+        )
         self._registration_qc_decisions: dict[str, str] = {}
         self._close_after_worker = False
         self._active_step = 0
@@ -2008,6 +2084,58 @@ class DiffeoForgeWindow(QMainWindow):
         pca_plots_layout.addWidget(pc2_pc3_panel)
         layout.addWidget(pca_plots)
         layout.addWidget(quality_card)
+
+        self.reference_pca_deformation_card = QFrame()
+        self.reference_pca_deformation_card.setObjectName("card")
+        reference_pca_deformation_layout = QVBoxLayout(
+            self.reference_pca_deformation_card
+        )
+        reference_pca_deformation_layout.setContentsMargins(24, 22, 24, 24)
+        reference_pca_deformation_layout.setSpacing(10)
+        reference_pca_deformation_title = QLabel("Deformetrica PC shape meshes")
+        reference_pca_deformation_title.setObjectName("sectionTitle")
+        reference_pca_deformation_summary = QLabel(
+            "Generate the mean-momenta shape and the negative and positive 2-SD "
+            "endpoints for up to the first three retained PCs. DiffeoForge uses the "
+            "exact verified source Deformetrica runtime and adds only fully verified "
+            "final-timepoint VTKs to the viewer above."
+        )
+        reference_pca_deformation_summary.setWordWrap(True)
+        self.reference_pca_deformation_status_label = QLabel(
+            "Load a completed Deformetrica result to inspect availability."
+        )
+        self.reference_pca_deformation_status_label.setObjectName("status")
+        self.reference_pca_deformation_status_label.setWordWrap(True)
+        self.generate_reference_pca_deformations_button = QPushButton(
+            "Generate verified PC shape meshes…"
+        )
+        self.generate_reference_pca_deformations_button.setObjectName("primary")
+        self.generate_reference_pca_deformations_button.clicked.connect(
+            self._start_reference_pca_deformations
+        )
+        self.generate_reference_pca_deformations_button.setEnabled(False)
+        reference_pca_deformation_layout.addWidget(reference_pca_deformation_title)
+        reference_pca_deformation_layout.addWidget(reference_pca_deformation_summary)
+        reference_pca_deformation_layout.addWidget(
+            InfoDisclosure(
+                "What this does and does not mean",
+                (
+                    "This runs one separate Deformetrica compute Shooting operation. It "
+                    "does not refit or modify the atlas. PCA signs are conventional and "
+                    "the endpoint meshes are visual aids, not observed specimens, "
+                    "confidence intervals, group effects, or biological validation."
+                ),
+                parent=self.reference_pca_deformation_card,
+            )
+        )
+        reference_pca_deformation_layout.addWidget(
+            self.reference_pca_deformation_status_label
+        )
+        reference_pca_deformation_layout.addWidget(
+            self.generate_reference_pca_deformations_button
+        )
+        self.reference_pca_deformation_card.hide()
+        layout.addWidget(self.reference_pca_deformation_card)
 
         validation_lab = QFrame()
         validation_lab.setObjectName("card")
@@ -5382,6 +5510,165 @@ class DiffeoForgeWindow(QMainWindow):
         self._sync_ready_state()
 
     @Slot()
+    def _start_reference_pca_deformations(self) -> None:
+        review = self._result_review
+        if (
+            review is None
+            or review.engine_route != "deformetrica_reference"
+            or self._worker is not None
+        ):
+            return
+        try:
+            review.artifact("pca-mean-shape")
+        except KeyError:
+            pass
+        else:
+            self._sync_reference_pca_deformation_action(review)
+            return
+        choice = QMessageBox.warning(
+            self,
+            "Run Deformetrica PC shape generation",
+            "DiffeoForge will run one separate Deformetrica compute Shooting operation "
+            "for the mean and the negative and positive 2-SD endpoints of up to the "
+            "first three retained PCs. It uses the exact source runtime, including its "
+            "configured CPU/GPU device, and may take substantial time.\n\n"
+            "The completed atlas and PCA remain unchanged. Only a new immutable result "
+            "directory is published, and only after every endpoint passes verification.\n\n"
+            "These shapes are visualizations, not biological validation. Start now?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.Cancel,
+        )
+        if choice != QMessageBox.StandardButton.Yes:
+            return
+        worker = _ReferencePCADeformationWorker(review.run_directory)
+        worker.signals.succeeded.connect(self._reference_pca_deformation_succeeded)
+        worker.signals.failed.connect(self._reference_pca_deformation_failed)
+        self._worker = worker
+        self._reference_pca_deformation_started_at = time.monotonic()
+        self._reference_pca_deformation_timer.start()
+        self._set_result_controls_enabled(False)
+        self.generate_reference_pca_deformations_button.setText(
+            "Generating PC shape meshes…"
+        )
+        self.reference_pca_deformation_status_label.setObjectName("status")
+        self.reference_pca_deformation_status_label.setStyleSheet("")
+        self.reference_pca_deformation_status_label.setText(
+            "Deformetrica Shooting is running in the background · elapsed 0 s. "
+            "No endpoint is exposed before atomic publication and full verification."
+        )
+        self.result_status_label.setObjectName("status")
+        self.result_status_label.setStyleSheet("")
+        self.result_status_label.setText(
+            "Generating verified Deformetrica PC shape meshes in the background…"
+        )
+        self._thread_pool.start(worker)
+
+    @Slot()
+    def _update_reference_pca_deformation_elapsed(self) -> None:
+        if self._reference_pca_deformation_started_at is None:
+            self._reference_pca_deformation_timer.stop()
+            return
+        elapsed = time.monotonic() - self._reference_pca_deformation_started_at
+        self.reference_pca_deformation_status_label.setText(
+            "Deformetrica Shooting is running in the background · elapsed "
+            f"{self._format_result_duration(elapsed)}. No endpoint is exposed before "
+            "atomic publication and full verification."
+        )
+
+    @Slot(object)
+    def _reference_pca_deformation_succeeded(self, _result: Path) -> None:
+        review = self._result_review
+        self._reference_pca_deformation_timer.stop()
+        self._reference_pca_deformation_started_at = None
+        if review is None:
+            self._reference_pca_deformation_failed(
+                "The source result review disappeared before final reverification"
+            )
+            return
+        worker = _ResultReviewWorker(review.run_directory, reference=True)
+        worker.signals.succeeded.connect(self._result_review_succeeded)
+        worker.signals.failed.connect(self._reference_pca_deformation_reload_failed)
+        self._worker = worker
+        self.reference_pca_deformation_status_label.setObjectName("status")
+        self.reference_pca_deformation_status_label.setStyleSheet("")
+        self.reference_pca_deformation_status_label.setText(
+            "Shooting completed. Rechecking the source run, PCA snapshot, new result "
+            "inventory, hashes, topology, and every endpoint before viewer reload…"
+        )
+        self.result_status_label.setObjectName("status")
+        self.result_status_label.setStyleSheet("")
+        self.result_status_label.setText(
+            "PC shapes were published; the complete result snapshot is being reverified…"
+        )
+        self._thread_pool.start(worker)
+
+    @Slot(str)
+    def _reference_pca_deformation_reload_failed(self, message: str) -> None:
+        self._reference_pca_deformation_failed(
+            f"Shooting completed, but the refreshed result did not verify: {message}"
+        )
+
+    @Slot(str)
+    def _reference_pca_deformation_failed(self, message: str) -> None:
+        self._worker = None
+        self._reference_pca_deformation_timer.stop()
+        self._reference_pca_deformation_started_at = None
+        self._set_result_controls_enabled(True)
+        if self._result_review is not None:
+            self._sync_reference_pca_deformation_action(self._result_review)
+        self.reference_pca_deformation_status_label.setObjectName("statusError")
+        self.reference_pca_deformation_status_label.setStyleSheet("")
+        self.reference_pca_deformation_status_label.setText(
+            f"PC shape generation did not produce a usable result: {message} "
+            "Nothing was restarted automatically."
+        )
+        self.result_status_label.setObjectName("statusError")
+        self.result_status_label.setStyleSheet("")
+        self.result_status_label.setText(
+            "PC shape generation failed closed; the previously verified result remains "
+            "loaded."
+        )
+        if self._close_after_worker:
+            self._close_after_worker = False
+            self.close()
+
+    def _sync_reference_pca_deformation_action(
+        self,
+        review: ModernResultReview | None,
+    ) -> None:
+        reference = review is not None and review.engine_route == "deformetrica_reference"
+        self.reference_pca_deformation_card.setVisible(reference)
+        if not reference or review is None:
+            self.generate_reference_pca_deformations_button.setEnabled(False)
+            return
+        try:
+            review.artifact("pca-mean-shape")
+        except KeyError:
+            generated = False
+        else:
+            generated = True
+        self.generate_reference_pca_deformations_button.setText(
+            "PC shape meshes generated"
+            if generated
+            else "Generate verified PC shape meshes…"
+        )
+        self.generate_reference_pca_deformations_button.setEnabled(
+            not generated and self._worker is None
+        )
+        self.reference_pca_deformation_status_label.setObjectName(
+            "statusSuccess" if generated else "status"
+        )
+        self.reference_pca_deformation_status_label.setStyleSheet("")
+        self.reference_pca_deformation_status_label.setText(
+            "Verified mean and ±PC endpoint meshes are loaded in the atlas viewer."
+            if generated
+            else (
+                "No endpoint meshes exist yet. Starting creates a separate immutable "
+                "Shooting result; it does not refit the atlas."
+            )
+        )
+
+    @Slot()
     def _open_validation_lab(self) -> None:
         review = self._result_review
         if review is None or review.engine_route != "deformetrica_reference":
@@ -7435,6 +7722,7 @@ class DiffeoForgeWindow(QMainWindow):
         self.open_validation_lab_button.setEnabled(
             review.engine_route == "deformetrica_reference"
         )
+        self._sync_reference_pca_deformation_action(review)
         self.result_status_label.setObjectName("statusSuccess")
         self.result_status_label.setStyleSheet("")
         self.result_status_label.setText(
@@ -7459,6 +7747,7 @@ class DiffeoForgeWindow(QMainWindow):
         self._worker = None
         self._result_review = None
         self.open_validation_lab_button.setEnabled(False)
+        self._sync_reference_pca_deformation_action(None)
         self.status_label.setObjectName("statusError")
         self.status_label.setStyleSheet("")
         self.status_label.setText(
@@ -7814,6 +8103,7 @@ class DiffeoForgeWindow(QMainWindow):
         self._worker = None
         self._result_review = None
         self.open_validation_lab_button.setEnabled(False)
+        self._sync_reference_pca_deformation_action(None)
         self.run_back_button.setEnabled(True)
         self.run_state_label.setObjectName("statusError")
         self.run_state_label.setStyleSheet("")
@@ -7909,6 +8199,15 @@ class DiffeoForgeWindow(QMainWindow):
         self.result_back_button.setEnabled(enabled)
         for button in self.result_artifact_buttons:
             button.setEnabled(enabled)
+        reference = (
+            self._result_review is not None
+            and self._result_review.engine_route == "deformetrica_reference"
+        )
+        self.open_validation_lab_button.setEnabled(enabled and reference)
+        if enabled:
+            self._sync_reference_pca_deformation_action(self._result_review)
+        else:
+            self.generate_reference_pca_deformations_button.setEnabled(False)
 
     @Slot()
     def _show_run_page_from_results(self) -> None:
@@ -8054,11 +8353,19 @@ class DiffeoForgeWindow(QMainWindow):
             )
             event.ignore()
             return
-        if isinstance(self._worker, (_ResultReviewWorker, _ArtifactWorker)):
+        if isinstance(
+            self._worker,
+            (_ResultReviewWorker, _ReferencePCADeformationWorker, _ArtifactWorker),
+        ):
             self._close_after_worker = True
             if isinstance(self._worker, _ResultReviewWorker):
                 self.run_state_label.setText(
                     "The window will remain open until result verification finishes."
+                )
+            elif isinstance(self._worker, _ReferencePCADeformationWorker):
+                self.reference_pca_deformation_status_label.setText(
+                    "The window will remain open until Deformetrica Shooting stops and "
+                    "the atomic result is either verified or rejected."
                 )
             else:
                 self.result_status_label.setText(
