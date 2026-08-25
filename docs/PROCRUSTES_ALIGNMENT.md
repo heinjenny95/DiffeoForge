@@ -97,6 +97,13 @@ configuration or aligned cohort is published. Step 2 then verifies the
 content-addressed aligned meshes and landmark copy against their recorded
 hashes before displaying the effective settings.
 
+The visual GPA review is a finite sequence. It reports both the current mesh
+number and the number of unique meshes viewed. **Next** stops at the final mesh
+and changes to **Last mesh reached**; it never silently wraps to the beginning.
+After every mesh has been visited, **Review again from first mesh** provides an
+explicit restart while preserving the completed unique-view count. Direct
+selection and highest-residual inspection remain available throughout.
+
 This remains a bounded surface-landmarking system. The code does not provide
 landmark uncertainty estimates, missing-landmark handling, semilandmark sliding,
 symmetry models, automated homology, or weights.

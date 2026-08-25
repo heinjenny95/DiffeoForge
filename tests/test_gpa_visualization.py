@@ -163,3 +163,59 @@ def test_gpa_review_dialog_can_inspect_and_complete_exact_visual(
     assert dialog.reviewed_fingerprint == preview.fingerprint
     dialog.close()
     application.processEvents()
+
+
+def test_gpa_review_navigation_stops_at_last_mesh_and_restarts_explicitly(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from diffeoforge.desktop.gpa_review_dialog import GpaAlignmentReviewDialog
+
+    application = QApplication.instance() or QApplication(
+        ["diffeoforge-gpa-review-navigation-test"]
+    )
+    landmarks = _write_landmarks(tmp_path / "landmarks.csv")
+    preview = preview_landmark_alignment(
+        MESH_DIRECTORY,
+        landmarks_file=landmarks,
+    )
+    visual = build_gpa_alignment_visual(preview)
+    dialog = GpaAlignmentReviewDialog(preview, visual)
+    dialog.show()
+    application.processEvents()
+
+    assert dialog.mesh_combo.currentIndex() == 0
+    assert dialog.previous_button.isEnabled() is False
+    assert dialog.restart_sequence_button.isVisible() is False
+    assert dialog.inspection_progress_label.text().startswith("Mesh 1 of 6")
+
+    for expected_index in range(1, len(visual.meshes)):
+        dialog.next_button.click()
+        application.processEvents()
+        assert dialog.mesh_combo.currentIndex() == expected_index
+
+    assert dialog.viewed_mesh_count == len(visual.meshes)
+    assert "unique viewed 6 / 6" in dialog.inspection_progress_label.text()
+    assert "All meshes viewed" in dialog.inspection_progress_label.text()
+    assert dialog.next_button.isEnabled() is False
+    assert dialog.next_button.text() == "Last mesh reached"
+    assert dialog.restart_sequence_button.isVisible() is True
+
+    dialog.next_button.click()
+    application.processEvents()
+    assert dialog.mesh_combo.currentIndex() == len(visual.meshes) - 1
+
+    dialog.restart_sequence_button.click()
+    application.processEvents()
+    assert dialog.mesh_combo.currentIndex() == 0
+    assert dialog.previous_button.isEnabled() is False
+    assert dialog.next_button.isEnabled() is True
+    assert dialog.next_button.text() == "Next"
+    assert dialog.viewed_mesh_count == len(visual.meshes)
+
+    dialog.close()
+    application.processEvents()

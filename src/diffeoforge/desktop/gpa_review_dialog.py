@@ -72,12 +72,19 @@ class GpaAlignmentReviewDialog(QDialog):
                 index,
             )
         self.mesh_combo.currentIndexChanged.connect(self._select_mesh)
-        previous_button = QPushButton("Previous")
-        previous_button.setObjectName("secondary")
-        previous_button.clicked.connect(lambda: self._move_mesh(-1))
-        next_button = QPushButton("Next")
-        next_button.setObjectName("secondary")
-        next_button.clicked.connect(lambda: self._move_mesh(1))
+        self.previous_button = QPushButton("Previous")
+        self.previous_button.setObjectName("secondary")
+        self.previous_button.clicked.connect(lambda: self._move_mesh(-1))
+        self.next_button = QPushButton("Next")
+        self.next_button.setObjectName("secondary")
+        self.next_button.clicked.connect(lambda: self._move_mesh(1))
+        self.restart_sequence_button = QPushButton("Review again from first mesh")
+        self.restart_sequence_button.setObjectName("secondary")
+        self.restart_sequence_button.setToolTip(
+            "Explicitly return to mesh 1 after the finite review sequence completed."
+        )
+        self.restart_sequence_button.clicked.connect(self._restart_sequence)
+        self.restart_sequence_button.hide()
         worst_button = QPushButton("Highest residual")
         worst_button.setObjectName("secondary")
         worst_button.setToolTip(
@@ -101,8 +108,9 @@ class GpaAlignmentReviewDialog(QDialog):
         reset_button.clicked.connect(self._reset_view)
         controls.addWidget(QLabel("Selected mesh"))
         controls.addWidget(self.mesh_combo, 2)
-        controls.addWidget(previous_button)
-        controls.addWidget(next_button)
+        controls.addWidget(self.previous_button)
+        controls.addWidget(self.next_button)
+        controls.addWidget(self.restart_sequence_button)
         controls.addWidget(worst_button)
         controls.addWidget(QLabel("View"))
         controls.addWidget(self.view_combo)
@@ -149,6 +157,7 @@ class GpaAlignmentReviewDialog(QDialog):
             Qt.TextInteractionFlag.TextSelectableByMouse
         )
         self.inspection_progress_label = QLabel()
+        self.inspection_progress_label.setObjectName("gpaReviewProgressLabel")
         self.inspection_progress_label.setAlignment(
             Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
         )
@@ -222,8 +231,21 @@ class GpaAlignmentReviewDialog(QDialog):
             f"GPA scale {mesh.applied_scale:.6g}"
         )
         self.inspection_progress_label.setText(
-            f"Individually viewed: {len(self._viewed_indices)} / "
-            f"{len(self.visual.meshes)}"
+            f"Mesh {index + 1} of {len(self.visual.meshes)} · unique viewed "
+            f"{len(self._viewed_indices)} / {len(self.visual.meshes)}"
+            + (
+                " · All meshes viewed"
+                if len(self._viewed_indices) == len(self.visual.meshes)
+                else ""
+            )
+        )
+        self.previous_button.setEnabled(index > 0)
+        self.next_button.setEnabled(index + 1 < len(self.visual.meshes))
+        self.next_button.setText(
+            "Last mesh reached" if index + 1 == len(self.visual.meshes) else "Next"
+        )
+        self.restart_sequence_button.setVisible(
+            len(self._viewed_indices) == len(self.visual.meshes)
         )
 
     @Slot()
@@ -236,10 +258,18 @@ class GpaAlignmentReviewDialog(QDialog):
 
     def _move_mesh(self, offset: int) -> None:
         count = self.mesh_combo.count()
-        if count:
-            self.mesh_combo.setCurrentIndex(
-                (self.mesh_combo.currentIndex() + offset) % count
-            )
+        if not count:
+            return
+        current = self.mesh_combo.currentIndex()
+        destination = max(0, min(count - 1, current + offset))
+        if destination != current:
+            self.mesh_combo.setCurrentIndex(destination)
+
+    @Slot()
+    def _restart_sequence(self) -> None:
+        if len(self._viewed_indices) != len(self.visual.meshes):
+            return
+        self.mesh_combo.setCurrentIndex(0)
 
     @Slot(int)
     def _change_view(self, _index: int) -> None:
