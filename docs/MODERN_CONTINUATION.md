@@ -24,13 +24,17 @@ parent workflow and nested atlas bundle, then copies and SHA-256 binds:
 - the model, quality-control, analysis, runtime, and optimizer settings;
 - the parent workflow and bundle manifest identities.
 
-The plan also freezes the expected Modern engine implementation revision. A
-successor produced by another revision fails lineage verification even if its
-human-readable configuration is otherwise identical.
+The plan freezes the parent checkpoint implementation and the expected
+successor implementation separately. They normally match. A cross-version
+resume is accepted only when the successor's explicit fail-closed
+compatibility table names the parent revision; Engine 1.6 currently permits
+Engine 1.5 only for its unchanged legacy Euclidean-gradient contract. The
+independent verifier binds both identities and rejects an undeclared pairing.
 
 The successor disables a second Procrustes alignment and uses the copied final
 state directly. Configuration v0.5 binds the checkpoint and parent effective
-configuration. Engine, CPU/float64 runtime, thread count, model, optimizer,
+configuration. Compatible engine semantics, declared CPU/CUDA float64 runtime,
+thread count, model, optimizer,
 subject order, and numerical initialization must remain identical; only the
 new cycle cap and output destination may change.
 
