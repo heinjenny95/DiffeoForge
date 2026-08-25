@@ -412,6 +412,9 @@ def create_modern_continuation(
                 "converged": False,
                 "cycles_completed": bundle["optimizer"]["cycles_completed"],
                 "final_objective": bundle["optimizer"]["final_objective"],
+                "engine_implementation": workflow["engine"].get(
+                    "implementation_version"
+                ),
             },
             "initial_state": {
                 "template": _artifact(temporary, template_copy),
@@ -562,11 +565,19 @@ def verify_modern_continuation(directory: Path | str) -> dict[str, Any]:
             directory=True,
         )
         checkpoint = verify_modern_cycle_checkpoint(checkpoint_root)
+        parent_implementation = plan["parent"].get(
+            "engine_implementation",
+            checkpoint["binding"]["engine_implementation"],
+        )
         if (
             checkpoint["checkpoint_version"] != CHECKPOINT_VERSION
             or sha256_file(checkpoint_root / CHECKPOINT_MANIFEST_NAME)
             != optimizer_state["checkpoint_manifest_sha256"]
-            or checkpoint["binding"]["engine_implementation"] != expected_implementation
+            or checkpoint["binding"]["engine_implementation"] != parent_implementation
+            or not supports_exact_engine_resume(
+                parent_implementation,
+                successor_implementation=expected_implementation,
+            )
         ):
             raise ModernContinuationError("Modern continuation checkpoint binding differs")
         source_effective_record = optimizer_state["source_effective_config"]

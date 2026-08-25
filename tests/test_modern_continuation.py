@@ -132,6 +132,65 @@ def test_completed_modern_run_can_continue_from_its_exact_final_state(
         verify_modern_continuation(plan_root)
 
 
+def test_engine16_exactly_continues_an_engine15_euclidean_checkpoint(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import diffeoforge.modern_bundle as bundle_module
+    import diffeoforge.modern_workflow as workflow_module
+
+    parent_config = initialize_modern_workflow(
+        MESH_DIRECTORY,
+        units="unitless",
+        config_path=tmp_path / "engine15-parent.yaml",
+        template=MESH_DIRECTORY / "template.vtk",
+        subject_pattern="subject-*.vtk",
+        attachment_kernel_width=0.45,
+        deformation_kernel_width=0.6,
+        noise_variance=0.01,
+        max_cycles=1,
+        threads=1,
+    )
+    legacy_config = yaml.safe_load(parent_config.read_text(encoding="utf-8"))
+    legacy_config["schema_version"] = "0.6"
+    legacy_config["optimization"].pop("template_gradient")
+    legacy_config["optimization"].pop("sobolev_kernel_width_ratio")
+    parent_config.write_text(
+        yaml.safe_dump(legacy_config, sort_keys=False),
+        encoding="utf-8",
+        newline="\n",
+    )
+    with monkeypatch.context() as legacy:
+        legacy.setattr(workflow_module, "ENGINE_IMPLEMENTATION_VERSION", "1.5")
+        legacy.setattr(bundle_module, "ENGINE_IMPLEMENTATION_VERSION", "1.5")
+        parent_run = run_modern_workflow(
+            parent_config,
+            destination=tmp_path / "engine15-parent-run",
+            created_at=FIXED_TIME,
+        )
+
+    plan_root = create_modern_continuation(
+        parent_run,
+        tmp_path / "engine16-successor-plan",
+        max_cycles=1,
+        threads=1,
+        created_at=FIXED_TIME,
+    )
+    plan = verify_modern_continuation(plan_root)
+    assert plan["parent"]["engine_implementation"] == "1.5"
+    assert plan["config"]["expected_engine_implementation"] == "1.6"
+
+    successor_run = run_modern_workflow(
+        plan_root / CONFIG_NAME,
+        destination=tmp_path / "engine16-successor-run",
+        created_at=FIXED_TIME,
+    )
+    verified = verify_modern_continuation_run(plan_root, successor_run)
+    assert verified["initial_objective_matches"] is True
+    assert verified["workflow"]["engine"]["implementation_version"] == "1.6"
+    assert verified["initial_objective"] == verified["parent_final_objective"]
+
+
 def test_fixed_step_parent_retains_its_historical_continuation_semantics(
     tmp_path: Path,
 ) -> None:
