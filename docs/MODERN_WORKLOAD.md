@@ -30,6 +30,20 @@ files succeed. It is never overwritten by default. `--force` replaces only a
 directory with exactly the two recognized generated report files; unrelated
 user directories are rejected.
 
+The reviewed configuration names the spatial scales explicitly:
+
+- **attachment surface-matching width** is the observation scale used by the
+  Current or Varifold surface comparison;
+- **deformation kernel width** is the spatial coupling scale of the
+  diffeomorphic deformation; and
+- **template update gradient** is either the raw Euclidean gradient or the
+  optional Sobolev-smoothed gradient. For Sobolev updates the report records
+  both the configured ratio and the effective smoothing width
+  `deformation kernel width * ratio`.
+
+The execution line is taken from the bound configuration and therefore says
+CPU or CUDA rather than describing every plan as CPU.
+
 The command reads the reviewed configuration and selected VTK metadata. It
 does not construct PyTorch tensors, evaluate the atlas objective, or start the
 optimizer.
@@ -83,6 +97,19 @@ logical pair-element count of one objective forward; it does not translate
 operations into seconds. This optimizer bound excludes final reconstruction
 and PCA-endpoint flows, PCA SVD, mesh-quality verification, reporting, and file
 I/O; the report states that exclusion as a warning.
+
+For a Sobolev template gradient, each evaluated template-block gradient adds
+one Gaussian convolution over all template vertices. The report therefore
+records separately:
+
+- the objective-forward pair-element upper bound;
+- the number of possible Sobolev template-gradient evaluations;
+- `template_points²` pair elements per Sobolev evaluation;
+- the Sobolev pair-element upper bound; and
+- their sum as the total optimizer pair-element upper bound.
+
+Euclidean runs record zero Sobolev work. This distinction changes planning
+evidence only; it does not modify the optimization mathematics.
 
 ## Logical pairs versus execution tiles
 
@@ -161,20 +188,21 @@ The JSON is validated against the bundled strict schema
 `modern-workload-v0.2.json`. Additional semantic validation rejects inconsistent
 inventory counts, pair and tile arithmetic, payload subtotals, or optimizer
 bounds. Configuration and input SHA-256 values tie the plan to reviewed bytes.
-New reports record the active Modern engine implementation (`0.3`, `0.4`, or `0.5`) and
+New reports record the active Modern engine implementation (through `1.6`) and
 bind the four-call RK2 formula; legacy reports without that optional provenance
-use the earlier six-call formula when semantically checked. Implementation
-`0.4` changes only the detached common origin used by centered Gaussian tiles;
-the workload counts and formulas are unchanged.
+use the earlier six-call formula when semantically checked. Engine 1.6 reports
+also expose and account for the selected Euclidean or Sobolev template-gradient
+mode. Existing workload 0.2 reports without those additive fields remain valid.
 Live host observations can change over time; operation counts remain
 deterministic for fixed configuration and mesh dimensions.
 
 ## Scientific boundary
 
-This plan describes the configured exact dense or blockwise CPU/float64
-implementation. It is not a benchmark, a wall-time forecast, a peak-RAM
-estimate, evidence that 300 specimens are feasible, a GPU model, or a
-Deformetrica resource model. A blockwise tile record is a conservative
+This plan describes the configured exact dense or blockwise float64
+implementation and records whether execution is bound to CPU or CUDA. It is
+not a benchmark, a wall-time forecast, a peak-RAM estimate, evidence that 300
+specimens are feasible, a device-performance model, or a Deformetrica resource
+model. A blockwise tile record is a conservative
 dense-equivalent payload, not proof of an allocation and not a bound on total
 live autograd memory. Measured scaling experiments on representative simplified
 meshes remain a separate prospective gate.

@@ -64,6 +64,11 @@ def test_example_workload_has_exact_public_dimensions_and_formulas() -> None:
     assert report["engine"]["implementation_version"] == "1.6"
     assert report["configuration"]["subject_batch_size"] is None
     assert report["configuration"]["subject_batch_workers"] == 1
+    assert report["configuration"]["attachment_kernel_width"] == 0.45
+    assert report["configuration"]["deformation_kernel_width"] == 0.6
+    assert report["configuration"]["template_gradient"] == "euclidean"
+    assert report["configuration"]["sobolev_kernel_width_ratio"] == 1.0
+    assert report["configuration"]["effective_sobolev_kernel_width"] is None
     assert report["input"]["template"]["points"] == 162
     assert report["input"]["template"]["triangles"] == 320
     assert {subject["triangles"] for subject in report["input"]["subjects"]} == {320}
@@ -85,6 +90,17 @@ def test_example_workload_has_exact_public_dimensions_and_formulas() -> None:
     assert largest["rows"] == largest["columns"] == 320
     assert largest["float64_xyz_difference_tensor_bytes"] == 2_457_600
     assert report["optimizer_bound"]["objective_gradient_evaluation_upper_bound"] == 190
+    assert (
+        report["optimizer_bound"]["objective_forward_gaussian_pair_elements_upper_bound"]
+        == 190 * 1_602_825
+    )
+    assert report["optimizer_bound"]["sobolev_template_gradient_evaluation_upper_bound"] == 0
+    assert (
+        report["optimizer_bound"][
+            "sobolev_template_gradient_gaussian_pair_elements_upper_bound"
+        ]
+        == 0
+    )
     assert report["optimizer_bound"]["gaussian_pair_elements_upper_bound"] == (190 * 1_602_825)
     assert report["output_bound"] == {
         "maximum_retained_components": 4,
@@ -153,6 +169,51 @@ def test_parallel_subject_batches_are_declared_in_workload_evidence(tmp_path: Pa
 
     assert report["configuration"]["subject_batch_size"] == 1
     assert report["configuration"]["subject_batch_workers"] == 4
+
+
+def test_sobolev_template_gradient_is_explicit_and_counted_in_workload(
+    tmp_path: Path,
+) -> None:
+    path = _write_portable_config(tmp_path / "sobolev.yaml")
+    config = yaml.safe_load(path.read_text(encoding="utf-8"))
+    config["optimization"]["template_gradient"] = "sobolev"
+    config["optimization"]["sobolev_kernel_width_ratio"] = 1.5
+    path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+
+    report = collect_modern_workload(path, host_observations=FIXED_HOST)
+
+    configuration = report["configuration"]
+    optimizer = report["optimizer_bound"]
+    assert configuration["template_gradient"] == "sobolev"
+    assert configuration["attachment_kernel_width"] == 0.45
+    assert configuration["deformation_kernel_width"] == 0.6
+    assert configuration["effective_sobolev_kernel_width"] == pytest.approx(0.9)
+    expected_gradient_evaluations = configuration["max_cycles"] * (
+        1 + configuration["max_line_search_iterations"]
+    )
+    expected_per_gradient = report["input"]["template"]["points"] ** 2
+    expected_sobolev_pairs = expected_gradient_evaluations * expected_per_gradient
+    assert (
+        optimizer["sobolev_template_gradient_evaluation_upper_bound"]
+        == expected_gradient_evaluations
+    )
+    assert (
+        optimizer["sobolev_template_gradient_gaussian_pair_elements_per_evaluation"]
+        == expected_per_gradient
+    )
+    assert (
+        optimizer["sobolev_template_gradient_gaussian_pair_elements_upper_bound"]
+        == expected_sobolev_pairs
+    )
+    assert optimizer["gaussian_pair_elements_upper_bound"] == (
+        optimizer["objective_forward_gaussian_pair_elements_upper_bound"]
+        + expected_sobolev_pairs
+    )
+    rendered = render_modern_workload_html(report)
+    assert "Attachment surface-matching width" in rendered
+    assert "Deformation kernel width" in rendered
+    assert "Sobolev (ratio 1.5; effective width 0.9)" in rendered
+    assert "Sobolev template-gradient pair-element upper bound" in rendered
 
 
 @pytest.mark.parametrize("attachment_type", ["current", "varifold"])

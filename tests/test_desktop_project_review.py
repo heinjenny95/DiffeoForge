@@ -175,6 +175,7 @@ def test_modern_review_publishes_existing_exact_workload_contract(tmp_path: Path
     report_json = review.report_path.with_name("workload.json")
     report = json.loads(report_json.read_text(encoding="utf-8"))
     assert values["Execution"].startswith("CPU · float64")
+    assert values["Template update gradient"] == "Euclidean · raw template gradient"
     assert values["Pairwise evaluation"].startswith("dense")
     assert values["Optimization blocks"].endswith("max. 3 cycles")
     assert values["Convergence rule"] == "every block gradient ≤ 1e-08"

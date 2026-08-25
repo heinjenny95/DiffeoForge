@@ -647,6 +647,15 @@ def _modern_review(config_path: Path, config_sha256: str) -> ProjectReviewResult
             f"blockwise · tiles {pairwise['query_tile_size']} × {pairwise['source_tile_size']}"
         )
     noise_std = math.sqrt(model["noise_variance"])
+    sobolev_ratio = optimization.get("sobolev_kernel_width_ratio", 1.0)
+    template_gradient_value = (
+        "Euclidean · raw template gradient"
+        if optimization.get("template_gradient", "euclidean") == "euclidean"
+        else (
+            f"Sobolev · ratio {_number(sobolev_ratio)} · effective width "
+            f"{_number(deformation['kernel_width'] * sobolev_ratio)}"
+        )
+    )
     parameters = (
         ReviewItem(
             "Coordinate unit",
@@ -665,6 +674,12 @@ def _modern_review(config_path: Path, config_sha256: str) -> ProjectReviewResult
             "Deformation kernel",
             _number(deformation["kernel_width"]),
             "Controls the spatial smoothness of the diffeomorphic deformation.",
+        ),
+        ReviewItem(
+            "Template update gradient",
+            template_gradient_value,
+            "The Sobolev option smooths template-vertex updates with a Gaussian whose "
+            "width is the deformation-kernel width times the displayed ratio.",
         ),
         ReviewItem(
             "Control points",
@@ -711,7 +726,8 @@ def _modern_review(config_path: Path, config_sha256: str) -> ProjectReviewResult
         ),
         ReviewItem(
             "Execution",
-            f"CPU · float64 · {runtime['threads']} Threads · Seed {runtime['random_seed']}",
+            f"{runtime['device'].upper()} · float64 · {runtime['threads']} Threads · "
+            f"Seed {runtime['random_seed']}",
             "Effective, reproducible execution contract for the experimental Modern engine.",
         ),
         ReviewItem(
