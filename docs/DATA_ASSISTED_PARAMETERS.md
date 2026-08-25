@@ -172,6 +172,18 @@ is available—wins at least 70% of the deterministic subject bootstraps. If
 these criteria are not met, DiffeoForge reports `sensitive` or `ambiguous` and
 refuses to invent a unique winner.
 
+Robustness inside the tested grid is not enough when the preferred candidate
+is its minimum or maximum attachment width, deformation width/control-point
+spacing, or noise standard deviation. The assessment records each boundary
+and reports `search range not bounded`. Such a candidate is not selected
+automatically as an enclosed optimum; the user must collect outward pilot
+evidence or explicitly retain the displayed boundary value as provisional.
+DiffeoForge derives one or two next logarithmic neighbors from the observed
+grid ratio and records a separate proposal fingerprint bound to the immutable
+plan and assessment. Merely deriving those values does not execute them or
+declare them feasible; a successor study must bind safety limits and reassess
+the combined evidence.
+
 The pilot-subject heuristic covers geometric diversity only. It cannot infer
 biological strata that are absent from mesh coordinates. A manuscript study
 must therefore confirm representation of relevant groups and may replace or

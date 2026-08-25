@@ -51,9 +51,13 @@ therefore keeps three sources of information separate:
     hand-set weighting. The same decision is repeated across predeclared weight
     perturbations, an independent weighted-rank aggregation, and deterministic
     pilot-subject bootstraps. Automatic selection is permitted only after the
-    robust gate passes. Otherwise the stage is explicitly `sensitive` or
-    `ambiguous` and requires additional evidence or a recorded researcher
-    decision.
+    robust gate passes and the preferred attachment, deformation,
+    control-spacing, and noise values are interior to their tested ranges. A
+    minimum/maximum winner is explicitly reported as `search range not
+    bounded`; it requires outward evidence or a recorded provisional researcher
+    decision even when its within-grid evidence grade is robust. Otherwise the
+    stage is explicitly `sensitive` or `ambiguous` and requires additional
+    evidence or a recorded researcher decision.
 11. After stage four, read the concise recommended values and open the complete
     HTML report. It explains what every parameter changes, how each stage was
     evaluated, all tested alternatives and scores, limitations, and the required
@@ -140,6 +144,23 @@ single score is never represented as automatic scientific validation.
 A candidate is ineligible if execution, convergence, mesh validity, or required
 metrics fail. Visual QC is optional, but an explicitly recorded visual failure
 also makes that candidate ineligible.
+
+For the attachment, deformation/control-spacing, and noise stages, DiffeoForge
+also compares the provisional winner with the exact minimum and maximum values
+present in the immutable plan. The assessment stores `bounded`, `not_bounded`,
+or `not_evaluated` plus machine-readable `parameter:minimum` and
+`parameter:maximum` flags. A boundary result can still be Pareto-optimal and
+robust within the tested grid, but it cannot be described or automatically
+used as an enclosed optimum.
+
+The **Collect more evidence** action deterministically derives up to two
+logarithmic neighbors beyond each winning boundary. Deformation width and
+control-point spacing remain coupled. The proposal has its own SHA-256
+fingerprint bound to the immutable source plan and assessment, and holds all
+other selected stage values fixed. It is deliberately a planning artifact:
+the displayed candidates have not been executed and are not represented as
+safe until a separately bound successor study declares feasibility limits,
+runs them, and combines their evidence with the preserved source pilot.
 
 ### 4. Numerical integration accuracy
 

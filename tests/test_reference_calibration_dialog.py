@@ -293,6 +293,12 @@ def test_staged_calibration_allows_selection_without_visual_qc(
         "load_reference_calibration_study",
         lambda _directory: snapshot,
     )
+    information_messages: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        dialog_module.QMessageBox,
+        "information",
+        lambda _parent, title, message: information_messages.append((title, message)),
+    )
 
     dialog = ReferenceCalibrationDialog(tmp_path)
     dialog.show()
@@ -304,6 +310,13 @@ def test_staged_calibration_allows_selection_without_visual_qc(
     assert dialog.compare_options_button.isVisible() is True
     assert dialog.collect_evidence_button.isVisible() is True
     assert "Paused checkpoint" in dialog.status.text()
+    assert "search range is not bounded" in dialog.status.text()
+    dialog.collect_evidence_button.click()
+    application.processEvents()
+    assert information_messages
+    assert information_messages[-1][0] == "Outward pilot evidence required"
+    assert "attachment_kernel_width=" in information_messages[-1][1]
+    assert "have not been run" in information_messages[-1][1]
     dialog.compare_options_button.click()
     application.processEvents()
     assert dialog.advanced_mode.isChecked() is True

@@ -535,6 +535,12 @@ def test_complete_automatic_pilot_runs_all_stages_and_writes_explainable_report(
         pilot_max_iterations=50,
     )
     call = 0
+    preferred_indices = {
+        "attachment": 8,
+        "deformation": 3,
+        "noise": 3,
+        "timepoints": 1,
+    }
 
     def collect(run: Path):
         nonlocal call
@@ -542,7 +548,9 @@ def test_complete_automatic_pilot_runs_all_stages_and_writes_explainable_report(
         atlas = run / "atlas.vtk"
         atlas.parent.mkdir(parents=True, exist_ok=True)
         atlas.write_text("placeholder", encoding="utf-8")
-        return _metrics(atlas, call / 1000)
+        stage_id, index_text = run.parents[1].name.rsplit("-", maxsplit=1)
+        offset = abs(int(index_text) - preferred_indices[stage_id]) / 1000
+        return _metrics(atlas, offset)
 
     monkeypatch.setattr(
         study_module,
@@ -583,6 +591,9 @@ def test_complete_automatic_pilot_runs_all_stages_and_writes_explainable_report(
     )
     assert report["status"] == "provisional_pilot_recommendation"
     assert len(report["stage_decisions"]) == 4
+    assert [
+        decision["search_range_status"] for decision in report["stage_decisions"]
+    ] == ["bounded", "bounded", "bounded", "not_applicable"]
     assert len(report["recommended_parameters"]) == 5
     assert report["full_cohort_confirmation_required"] is True
     assert {

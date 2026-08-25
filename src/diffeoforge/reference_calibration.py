@@ -1157,6 +1157,8 @@ class CalibrationStageAssessment:
     independent_rank_candidate_id: str | None
     weight_scenario_count: int
     subject_bootstrap_iterations: int
+    search_range_status: str
+    search_boundary_parameters: tuple[str, ...]
     sensitivity_flags: tuple[str, ...]
     pareto_candidate_ids: tuple[str, ...]
     metric_weights: tuple[tuple[str, float], ...]
@@ -1183,6 +1185,8 @@ class CalibrationStageAssessment:
             "independent_rank_candidate_id": self.independent_rank_candidate_id,
             "weight_scenario_count": self.weight_scenario_count,
             "subject_bootstrap_iterations": self.subject_bootstrap_iterations,
+            "search_range_status": self.search_range_status,
+            "search_boundary_parameters": list(self.search_boundary_parameters),
             "sensitivity_flags": list(self.sensitivity_flags),
             "pareto_candidate_ids": list(self.pareto_candidate_ids),
             "metric_weights": self.weights,
@@ -1191,7 +1195,224 @@ class CalibrationStageAssessment:
         }
 
 
-_ASSESSMENT_VERSION = "0.3"
+_ASSESSMENT_VERSION = "0.4"
+_SEARCH_PARAMETERS: dict[CalibrationStageKind, tuple[str, ...]] = {
+    "attachment_width": (
+        "attachment_kernel_width",
+        "deformation_kernel_width",
+        "initial_control_point_spacing",
+    ),
+    "deformation_width": (
+        "deformation_kernel_width",
+        "initial_control_point_spacing",
+    ),
+    "noise_weight": ("noise_std",),
+    "integration_accuracy": (),
+}
+_SEARCH_PARAMETER_LABELS = {
+    "attachment_kernel_width": "attachment surface-matching width",
+    "deformation_kernel_width": "deformation kernel width",
+    "initial_control_point_spacing": "control-point spacing",
+    "noise_std": "noise standard deviation",
+}
+_SEARCH_EXTENSION_GROUPS = (
+    ("attachment", ("attachment_kernel_width",)),
+    (
+        "deformation/control spacing",
+        ("deformation_kernel_width", "initial_control_point_spacing"),
+    ),
+    ("noise", ("noise_std",)),
+)
+
+
+@dataclass(frozen=True)
+class CalibrationSearchExtensionProposal:
+    """Hash-bound outward neighbors proposed from one unbounded assessment."""
+
+    version: str
+    fingerprint: str
+    plan_fingerprint: str
+    assessment_fingerprint: str
+    stage_id: str
+    source_candidate_id: str
+    boundary_parameters: tuple[str, ...]
+    candidates: tuple[CalibrationCandidate, ...]
+    limitations: tuple[str, ...]
+
+    def as_manifest(self) -> dict[str, object]:
+        return {
+            "version": self.version,
+            "fingerprint": self.fingerprint,
+            "plan_fingerprint": self.plan_fingerprint,
+            "assessment_fingerprint": self.assessment_fingerprint,
+            "stage_id": self.stage_id,
+            "source_candidate_id": self.source_candidate_id,
+            "boundary_parameters": list(self.boundary_parameters),
+            "candidates": [candidate.as_manifest() for candidate in self.candidates],
+            "limitations": list(self.limitations),
+        }
+
+
+def _search_boundary_parameters(
+    stage: CalibrationStage,
+    selected_candidate_id: str | None,
+) -> tuple[str, tuple[str, ...]]:
+    """Describe whether a provisional winner lies inside every searched range."""
+
+    parameters = _SEARCH_PARAMETERS[stage.kind]
+    if not parameters:
+        return "not_applicable", ()
+    if selected_candidate_id is None:
+        return "not_evaluated", ()
+    selected = next(
+        candidate
+        for candidate in stage.candidates
+        if candidate.candidate_id == selected_candidate_id
+    )
+    boundaries: list[str] = []
+    for parameter in parameters:
+        values = sorted(
+            _unique_positive(
+                tuple(
+                    candidate.values[parameter]
+                    for candidate in stage.candidates
+                    if parameter in candidate.values
+                )
+            )
+        )
+        if not values or parameter not in selected.values:
+            continue
+        value = selected.values[parameter]
+        at_minimum = math.isclose(value, values[0], rel_tol=1e-12, abs_tol=1e-15)
+        at_maximum = math.isclose(value, values[-1], rel_tol=1e-12, abs_tol=1e-15)
+        if at_minimum and at_maximum:
+            boundaries.append(f"{parameter}:only_tested_value")
+        elif at_minimum:
+            boundaries.append(f"{parameter}:minimum")
+        elif at_maximum:
+            boundaries.append(f"{parameter}:maximum")
+    return ("not_bounded" if boundaries else "bounded"), tuple(boundaries)
+
+
+def propose_calibration_search_extension(
+    plan: ReferenceCalibrationPlan,
+    assessment: CalibrationStageAssessment,
+    *,
+    outward_steps: int = 2,
+) -> CalibrationSearchExtensionProposal:
+    """Propose one or two logarithmic neighbors beyond every winning boundary.
+
+    This function only creates a hash-bound proposal. It does not mutate the
+    immutable pilot, execute Deformetrica, or represent the new values as safe.
+    A future successor study must bind and run the proposal before the search
+    can be reassessed.
+    """
+
+    if isinstance(outward_steps, bool) or not isinstance(outward_steps, int):
+        raise TypeError("outward_steps must be an integer")
+    if outward_steps not in {1, 2}:
+        raise ValueError("outward_steps must be one or two")
+    if assessment.plan_fingerprint != plan.fingerprint:
+        raise ValueError("assessment is bound to a different calibration plan")
+    if assessment.search_range_status != "not_bounded":
+        raise ValueError("search extension requires a not_bounded assessment")
+    if assessment.balanced_candidate_id is None:
+        raise ValueError("search extension requires a provisional candidate")
+    stage = next(
+        (stage for stage in plan.stages if stage.stage_id == assessment.stage_id),
+        None,
+    )
+    if stage is None:
+        raise ValueError("assessment stage is absent from the calibration plan")
+    source = next(
+        candidate
+        for candidate in stage.candidates
+        if candidate.candidate_id == assessment.balanced_candidate_id
+    )
+    boundary_by_parameter = dict(
+        boundary.split(":", maxsplit=1)
+        for boundary in assessment.search_boundary_parameters
+    )
+    additions: list[CalibrationCandidate] = []
+    for group_label, parameters in _SEARCH_EXTENSION_GROUPS:
+        active = [parameter for parameter in parameters if parameter in boundary_by_parameter]
+        if not active:
+            continue
+        directions = {boundary_by_parameter[parameter] for parameter in active}
+        if len(directions) != 1 or "only_tested_value" in directions:
+            raise ValueError(
+                f"cannot geometrically extend {group_label} without two ordered values"
+            )
+        direction = directions.pop()
+        primary = active[0]
+        values = sorted(
+            _unique_positive(
+                tuple(
+                    candidate.values[primary]
+                    for candidate in stage.candidates
+                    if primary in candidate.values
+                )
+            )
+        )
+        if len(values) < 2:
+            raise ValueError(
+                f"cannot geometrically extend {group_label} without two ordered values"
+            )
+        ratio = values[1] / values[0] if direction == "minimum" else values[-1] / values[-2]
+        if not math.isfinite(ratio) or ratio <= 1.0:
+            raise ValueError(f"cannot derive an outward logarithmic ratio for {group_label}")
+        for step in range(1, outward_steps + 1):
+            outward_value = (
+                source.values[primary] / ratio**step
+                if direction == "minimum"
+                else source.values[primary] * ratio**step
+            )
+            outward_value = _positive_finite("outward candidate value", outward_value)
+            proposed_values = source.values
+            for parameter in parameters:
+                if parameter in proposed_values:
+                    proposed_values[parameter] = outward_value
+            additions.append(
+                _candidate(
+                    f"{stage.stage_id}-outward",
+                    len(additions) + 1,
+                    f"{group_label} beyond tested {direction} · step {step}",
+                    proposed_values,
+                    (
+                        f"Extends the {group_label} logarithmic search one observed grid "
+                        f"ratio beyond the prior {direction}; all other selected stage "
+                        "values remain fixed."
+                    ),
+                )
+            )
+    limitations = (
+        "This is an unexecuted outward-neighbor proposal, not a safe parameter claim.",
+        "The immutable source pilot and its evidence remain unchanged.",
+        "A separately bound successor study must execute these candidates and reassess "
+        "the combined evidence before the search can be described as bounded.",
+        "Feasibility and safety limits must be declared by that successor before execution.",
+    )
+    payload = {
+        "version": "0.1",
+        "plan_fingerprint": plan.fingerprint,
+        "assessment_fingerprint": assessment.fingerprint,
+        "stage_id": stage.stage_id,
+        "source_candidate_id": source.candidate_id,
+        "boundary_parameters": list(assessment.search_boundary_parameters),
+        "candidates": [candidate.as_manifest() for candidate in additions],
+        "limitations": list(limitations),
+    }
+    return CalibrationSearchExtensionProposal(
+        version="0.1",
+        fingerprint=_canonical_hash(payload),
+        plan_fingerprint=plan.fingerprint,
+        assessment_fingerprint=assessment.fingerprint,
+        stage_id=stage.stage_id,
+        source_candidate_id=source.candidate_id,
+        boundary_parameters=assessment.search_boundary_parameters,
+        candidates=tuple(additions),
+        limitations=limitations,
+    )
 _STAGE_METRICS: dict[
     CalibrationStageKind,
     tuple[tuple[str, float], ...],
@@ -1517,6 +1738,8 @@ def assess_calibration_stage(
     score_margin: float | None = None
     weight_scenario_count = 0
     bootstrap_iterations = 0
+    search_range_status = "not_evaluated"
+    search_boundary_parameters: tuple[str, ...] = ()
     confidence = "none"
     automatic_selection_allowed = False
     sensitivity_flags: list[str] = []
@@ -1646,6 +1869,30 @@ def assess_calibration_stage(
                 "Many candidates remain Pareto-optimal; the evidence contains a broad trade-off."
             )
 
+    search_range_status, search_boundary_parameters = _search_boundary_parameters(
+        stage,
+        balanced_id,
+    )
+    if search_range_status == "not_bounded":
+        automatic_selection_allowed = False
+        rendered_boundaries = []
+        for boundary in search_boundary_parameters:
+            parameter, direction = boundary.split(":", maxsplit=1)
+            direction_text = {
+                "minimum": "minimum tested value",
+                "maximum": "maximum tested value",
+                "only_tested_value": "only tested value",
+            }[direction]
+            rendered_boundaries.append(
+                f"{_SEARCH_PARAMETER_LABELS[parameter]} is the {direction_text}"
+            )
+        sensitivity_flags.append(
+            "Search range not bounded: "
+            + "; ".join(rendered_boundaries)
+            + ". Test outward logarithmic neighbors before treating this as an "
+            "enclosed optimum."
+        )
+
     assessments = tuple(
         CalibrationCandidateAssessment(
             candidate_id=candidate_id,
@@ -1669,6 +1916,9 @@ def assess_calibration_stage(
         "not-performed status must remain explicit.",
         "A provisional stage recommendation becomes scientifically usable only after "
         "later full-cohort confirmation and researcher review.",
+        "A candidate on the minimum or maximum tested attachment, deformation, "
+        "control-spacing, or noise value leaves the search range not bounded and "
+        "cannot be selected automatically as an enclosed optimum.",
         (
             "Expected biological shape disparity was declared as "
             f"{getattr(plan, 'expected_shape_disparity', 'moderate')}. "
@@ -1691,6 +1941,8 @@ def assess_calibration_stage(
         "independent_rank_candidate_id": rank_id,
         "weight_scenario_count": weight_scenario_count,
         "subject_bootstrap_iterations": bootstrap_iterations,
+        "search_range_status": search_range_status,
+        "search_boundary_parameters": list(search_boundary_parameters),
         "sensitivity_flags": sensitivity_flags,
         "pareto_candidate_ids": list(pareto_ids),
         "metric_weights": dict(metric_weights),
@@ -1713,6 +1965,8 @@ def assess_calibration_stage(
         independent_rank_candidate_id=rank_id,
         weight_scenario_count=weight_scenario_count,
         subject_bootstrap_iterations=bootstrap_iterations,
+        search_range_status=search_range_status,
+        search_boundary_parameters=search_boundary_parameters,
         sensitivity_flags=tuple(sensitivity_flags),
         pareto_candidate_ids=pareto_ids,
         metric_weights=metric_weights,

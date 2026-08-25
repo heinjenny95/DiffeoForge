@@ -38,7 +38,10 @@ from diffeoforge.desktop.reference_calibration_presentation import (
     stage_guidance,
     technical_metric_text,
 )
-from diffeoforge.reference_calibration import CalibrationCandidate
+from diffeoforge.reference_calibration import (
+    CalibrationCandidate,
+    propose_calibration_search_extension,
+)
 from diffeoforge.reference_calibration_study import (
     CalibrationStudyCandidateState,
     ReferenceCalibrationStudyRunner,
@@ -918,13 +921,22 @@ class ReferenceCalibrationDialog(QDialog):
                     self.use_provisional_button.show()
                     self.compare_options_button.show()
                     self.collect_evidence_button.show()
-                    self.status.setText(
-                        "Paused checkpoint: the pilot evidence does not support one "
-                        "robust unique winner. Nothing was selected and Advanced mode "
-                        "was not enabled. You can explicitly use the displayed balanced "
-                        "recommendation provisionally, compare every option yourself, "
-                        "or collect more pilot evidence."
-                    )
+                    if assessment.search_range_status == "not_bounded":
+                        self.status.setText(
+                            "Paused checkpoint: the provisional winner is on a tested "
+                            "parameter boundary, so the search range is not bounded. "
+                            "Nothing was selected automatically. Collect outward pilot "
+                            "evidence before treating it as an enclosed optimum, or "
+                            "explicitly authorize the displayed value as provisional."
+                        )
+                    else:
+                        self.status.setText(
+                            "Paused checkpoint: the pilot evidence does not support one "
+                            "robust unique winner. Nothing was selected and Advanced mode "
+                            "was not enabled. You can explicitly use the displayed balanced "
+                            "recommendation provisionally, compare every option yourself, "
+                            "or collect more pilot evidence."
+                        )
             else:
                 self.status.setText(
                     "Next: click the green Run complete four-stage pilot button. You "
@@ -1320,7 +1332,14 @@ class ReferenceCalibrationDialog(QDialog):
     def _failed(self, message: str) -> None:
         self._worker = None
         self._render()
-        if "refused to invent a unique winner" in message:
+        if "Search range not bounded" in message:
+            self.status.setText(
+                "Paused checkpoint: the provisional winner is at a tested parameter "
+                "boundary, so the search range is not bounded. No option was selected "
+                "automatically; collect outward evidence or explicitly authorize the "
+                "displayed value as provisional."
+            )
+        elif "refused to invent a unique winner" in message:
             self.status.setText(
                 "Paused checkpoint: no robust unique winner was found. No option was "
                 "selected automatically; choose one of the explicit actions below."
@@ -1367,6 +1386,33 @@ class ReferenceCalibrationDialog(QDialog):
 
     @Slot()
     def _collect_more_evidence(self) -> None:
+        assessment = assess_reference_calibration_snapshot(
+            self._snapshot,
+            visual_approvals=self._visual_approvals(),
+        )
+        if assessment.search_range_status == "not_bounded":
+            proposal = propose_calibration_search_extension(
+                self._snapshot.plan,
+                assessment,
+            )
+            rendered = []
+            for candidate in proposal.candidates:
+                values = ", ".join(
+                    f"{name}={value:.6g}"
+                    for name, value in candidate.parameter_values
+                )
+                rendered.append(f"• {candidate.label}: {values}")
+            QMessageBox.information(
+                self,
+                "Outward pilot evidence required",
+                "The current search range is not bounded. DiffeoForge derived these "
+                "hash-bound logarithmic neighbors without changing the immutable pilot:\n\n"
+                + "\n".join(rendered)
+                + "\n\nThese values have not been run and are not declared safe. A separate "
+                "successor study must bind feasibility limits, execute them, and reassess "
+                "the combined evidence.",
+            )
+            return
         QMessageBox.information(
             self,
             "Collect more pilot evidence",

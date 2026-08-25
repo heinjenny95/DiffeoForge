@@ -11,6 +11,7 @@ from diffeoforge.reference_calibration import (
     bind_reference_calibration_plan_to_inputs,
     build_reference_calibration_plan,
     calibration_plan_json,
+    propose_calibration_search_extension,
     select_representative_pilot_subjects,
     verify_reference_calibration_plan_provenance,
 )
@@ -367,15 +368,15 @@ def test_stage_assessment_requires_stable_evidence_before_automatic_selection() 
             completed=True,
             converged=True,
             invalid_face_count=0,
-            residual_p95=0.1 + index,
-            deformation_energy=0.2 + index,
-            distortion_p95=0.3 + index,
-            runtime_seconds=10.0 + index,
+            residual_p95=0.1 + abs(index - 2),
+            deformation_energy=0.2 + abs(index - 2),
+            distortion_p95=0.3 + abs(index - 2),
+            runtime_seconds=10.0 + abs(index - 2),
             review_approved=None,
             subject_residual_p95=(
-                ("subject-a.vtk", 0.10 + index),
-                ("subject-b.vtk", 0.11 + index),
-                ("subject-c.vtk", 0.09 + index),
+                ("subject-a.vtk", 0.10 + abs(index - 2)),
+                ("subject-b.vtk", 0.11 + abs(index - 2)),
+                ("subject-c.vtk", 0.09 + abs(index - 2)),
             ),
         )
         for index, candidate in enumerate(stage.candidates)
@@ -389,6 +390,8 @@ def test_stage_assessment_requires_stable_evidence_before_automatic_selection() 
 
     assert assessment.recommendation_confidence == "robust"
     assert assessment.automatic_selection_allowed is True
+    assert assessment.search_range_status == "bounded"
+    assert assessment.search_boundary_parameters == ()
     assert assessment.weight_stability == pytest.approx(1.0)
     assert assessment.subject_bootstrap_stability == pytest.approx(1.0)
     assert assessment.subject_bootstrap_iterations == 256
@@ -399,6 +402,65 @@ def test_stage_assessment_requires_stable_evidence_before_automatic_selection() 
     )
     assert selected.weight_win_fraction == pytest.approx(1.0)
     assert selected.subject_bootstrap_win_fraction == pytest.approx(1.0)
+
+
+def test_robust_boundary_winner_is_reported_as_search_range_not_bounded() -> None:
+    plan = build_reference_calibration_plan(
+        _recommendation(),
+        coordinate_unit="unitless",
+        requested_pilot_subject_count=3,
+    )
+    stage = next(stage for stage in plan.stages if stage.stage_id == "noise")
+    evidence = tuple(
+        CalibrationCandidateEvidence(
+            candidate_id=candidate.candidate_id,
+            completed=True,
+            converged=True,
+            invalid_face_count=0,
+            residual_p95=0.1 + index,
+            deformation_energy=0.2 + index,
+            distortion_p95=0.3 + index,
+            runtime_seconds=10.0 + index,
+            subject_residual_p95=(
+                ("subject-a.vtk", 0.10 + index),
+                ("subject-b.vtk", 0.11 + index),
+                ("subject-c.vtk", 0.09 + index),
+            ),
+        )
+        for index, candidate in enumerate(stage.candidates)
+    )
+
+    assessment = assess_calibration_stage(plan, stage_id="noise", evidence=evidence)
+
+    assert assessment.balanced_candidate_id == stage.candidates[0].candidate_id
+    assert assessment.recommendation_confidence == "robust"
+    assert assessment.automatic_selection_allowed is False
+    assert assessment.search_range_status == "not_bounded"
+    assert assessment.search_boundary_parameters == ("noise_std:minimum",)
+    assert "search range not bounded" in " ".join(
+        assessment.sensitivity_flags
+    ).lower()
+    assert assessment.as_manifest()["search_boundary_parameters"] == [
+        "noise_std:minimum"
+    ]
+    extension = propose_calibration_search_extension(plan, assessment)
+    assert extension.plan_fingerprint == plan.fingerprint
+    assert extension.assessment_fingerprint == assessment.fingerprint
+    assert extension.source_candidate_id == stage.candidates[0].candidate_id
+    assert len(extension.fingerprint) == 64
+    assert len(extension.candidates) == 2
+    noise_values = [candidate.values["noise_std"] for candidate in stage.candidates]
+    ratio = noise_values[1] / noise_values[0]
+    assert extension.candidates[0].values["noise_std"] == pytest.approx(
+        noise_values[0] / ratio
+    )
+    assert extension.candidates[1].values["noise_std"] == pytest.approx(
+        noise_values[0] / ratio**2
+    )
+    assert all("outward" in candidate.candidate_id for candidate in extension.candidates)
+
+    with pytest.raises(ValueError, match="one or two"):
+        propose_calibration_search_extension(plan, assessment, outward_steps=3)
 
 
 def test_stage_assessment_fails_closed_on_missing_metrics_without_requiring_review() -> None:

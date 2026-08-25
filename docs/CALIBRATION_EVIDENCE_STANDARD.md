@@ -21,7 +21,9 @@ is dataset- and objective-specific:
 4. **Robust pilot** — at least three eligible candidates; base winner has a
    score margin of at least 0.05, wins at least 75% of weight scenarios, agrees
    with weighted ranks, and wins at least 70% of subject bootstraps when those
-   data are available.
+   data are available. Automatic continuation additionally requires that the
+   winner is interior to every searched attachment, deformation,
+   control-spacing, and noise range.
 5. **Validation-Lab robust** — frozen selected and neighboring finalists are
    compared on identical non-heldout cohorts with a parameter-independent
    vertex-to-triangle surface metric; the same finalist wins at least 80% of
@@ -37,7 +39,10 @@ is dataset- and objective-specific:
 Level 5 supports only the explicitly scoped phrase "robust within the tested
 finalist search space." Strong biological parameter-selection language
 requires level 7. Level 4 permits automatic continuation but remains a pilot
-result.
+result. A statistically robust winner at the minimum or maximum tested value
+is recorded as `search range not bounded`, not as an enclosed optimum, and
+automatic selection is withheld until outward evidence exists or a researcher
+explicitly authorizes the boundary value as provisional.
 
 ## Current pilot metrics
 

@@ -1386,6 +1386,12 @@ def _calibration_report_payload(
                 "independent_rank_candidate_id": assessment.get(
                     "independent_rank_candidate_id"
                 ),
+                "search_range_status": assessment.get(
+                    "search_range_status", "not_evaluated"
+                ),
+                "search_boundary_parameters": assessment.get(
+                    "search_boundary_parameters", []
+                ),
                 "sensitivity_flags": assessment.get("sensitivity_flags", []),
                 "metric_weights": assessment.get("metric_weights", {}),
                 "alternatives": alternatives,
