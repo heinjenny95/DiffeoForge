@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -826,3 +827,126 @@ def test_complete_automatic_pilot_runs_all_stages_and_writes_explainable_report(
     assert "What it changes" in completed.report_html_path.read_text(
         encoding="utf-8"
     )
+
+
+def test_automatic_pilot_pauses_on_subject_tail_ambiguity_then_continues(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    snapshot = create_reference_calibration_study(
+        _project(tmp_path),
+        tmp_path / "mixed-automatic-study",
+        pilot_max_iterations=50,
+    )
+    preferred_indices = {
+        "attachment": 8,
+        "deformation": 3,
+        "timepoints": 1,
+    }
+
+    def collect(run: Path) -> ReferenceCalibrationRunMetrics:
+        atlas = run / "atlas.vtk"
+        atlas.parent.mkdir(parents=True, exist_ok=True)
+        atlas.write_text("placeholder", encoding="utf-8")
+        stage_id, index_text = run.parents[1].name.rsplit("-", maxsplit=1)
+        candidate_index = int(index_text)
+        if stage_id == "noise":
+            subject_residuals = {
+                1: (("a.vtk", 0.1), ("b.vtk", 0.5), ("c.vtk", 0.5)),
+                2: (("a.vtk", 0.5), ("b.vtk", 0.1), ("c.vtk", 0.5)),
+                3: (("a.vtk", 0.5), ("b.vtk", 0.5), ("c.vtk", 0.1)),
+            }.get(
+                candidate_index,
+                (("a.vtk", 0.4), ("b.vtk", 0.4), ("c.vtk", 0.4)),
+            )
+            return replace(
+                _metrics(atlas),
+                subject_residual_p95=subject_residuals,
+            )
+        offset = abs(candidate_index - preferred_indices[stage_id]) / 1000
+        return replace(
+            _metrics(atlas, offset),
+            subject_residual_p95=(
+                ("a.vtk", 0.10 + offset),
+                ("b.vtk", 0.11 + offset),
+                ("c.vtk", 0.09 + offset),
+            ),
+        )
+
+    monkeypatch.setattr(
+        study_module,
+        "collect_reference_calibration_run_metrics",
+        collect,
+    )
+    monkeypatch.setattr(study_module, "atlas_rms_distance", lambda *_args: 0.001)
+    observed: list[dict[str, object]] = []
+    runner = ReferenceCalibrationStudyRunner(
+        snapshot.study_directory,
+        controller_factory=_CompletedController,
+    )
+
+    with pytest.raises(
+        ReferenceCalibrationStudyError,
+        match="refused to invent a unique winner",
+    ):
+        runner.run_complete_automatic_pilot(event_callback=observed.append)
+
+    paused = load_reference_calibration_study(snapshot.study_directory)
+    assert paused.status == "awaiting_review"
+    assert paused.current_stage is not None
+    assert paused.current_stage.stage_id == "noise"
+    assert set(paused.selected_candidate_ids) == {"attachment", "deformation"}
+    assessment = assess_reference_calibration_snapshot(paused)
+    assert assessment.recommendation_confidence == "ambiguous"
+    assert assessment.automatic_selection_allowed is False
+    assert assessment.subject_bootstrap_iterations == 256
+    assert assessment.subject_bootstrap_stability is not None
+    assert assessment.subject_bootstrap_stability < 0.70
+    assert any(
+        "pilot subjects are resampled" in flag
+        for flag in assessment.sensitivity_flags
+    )
+    assert assessment.balanced_candidate_id is not None
+
+    continued, recorded = record_reference_calibration_provisional_override(
+        paused.study_directory,
+        visual_approvals={},
+        selected_candidate_id=assessment.balanced_candidate_id,
+    )
+    assert recorded.fingerprint == assessment.fingerprint
+    assert continued.status == "ready"
+    assert continued.current_stage is not None
+    assert continued.current_stage.stage_id == "timepoints"
+
+    completed = runner.run_complete_automatic_pilot(event_callback=observed.append)
+    assert completed.status == "completed"
+    assert set(completed.selected_candidate_ids) == {
+        "attachment",
+        "deformation",
+        "noise",
+        "timepoints",
+    }
+    report = study_module.load_reference_calibration_report(
+        completed.study_directory
+    )
+    selection_modes = {
+        decision["stage_id"]: decision["selection_mode"]
+        for decision in report["stage_decisions"]
+    }
+    assert selection_modes == {
+        "attachment": "automatic_provisional_balanced_score",
+        "deformation": "automatic_provisional_balanced_score",
+        "noise": "researcher_provisional_balanced_override",
+        "timepoints": "automatic_provisional_balanced_score",
+    }
+    selection_events = [
+        event
+        for event in study_module._load_events(completed.study_directory)
+        if event["event"] == "stage_selected"
+    ]
+    assert [event["researcher_decision"] for event in selection_events] == [
+        False,
+        False,
+        True,
+        False,
+    ]
