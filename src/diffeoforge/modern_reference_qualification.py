@@ -103,6 +103,10 @@ FULL_ATLAS_CONFIG_NAME = "modern-full-atlas.yaml"
 ASSESSMENT_JSON_NAME = "modern-reference-qualification-assessment.json"
 ASSESSMENT_SIDECAR_NAME = "modern-reference-qualification-assessment.sha256"
 ASSESSMENT_HTML_NAME = "modern-reference-qualification-assessment.html"
+QUALIFICATION_CONFIG_SCHEMA_BY_ENGINE = {
+    "1.5": "0.6",
+    "1.6": "0.7",
+}
 
 
 class ModernReferenceQualificationError(RuntimeError):
@@ -1245,10 +1249,12 @@ def verify_modern_reference_qualification_design(
         FULL_ATLAS_DESIGN_VERSION,
     }:
         expected_engine = design["modern_workflow"].get("expected_engine_implementation")
+        expected_schema = QUALIFICATION_CONFIG_SCHEMA_BY_ENGINE.get(expected_engine)
         if (
             not isinstance(expected_engine, str)
             or re.fullmatch(r"[0-9]+\.[0-9]+", expected_engine) is None
-            or config["schema_version"] != CONFIG_VERSION
+            or expected_schema is None
+            or config["schema_version"] != expected_schema
         ):
             raise ModernReferenceQualificationError(
                 "Qualification expected-engine binding is invalid"

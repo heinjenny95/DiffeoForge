@@ -32,6 +32,7 @@ from diffeoforge.modern_reference_qualification import (
     DESIGN_SIDECAR_NAME,
     ModernReferenceQualificationError,
     _render_assessment_html,
+    _render_design_html,
     _screen_subject_candidates,
     assess_modern_reference_qualification,
     create_modern_reference_qualification,
@@ -376,6 +377,35 @@ def test_reference_pca_deformation_design_recomputes_resigned_momenta(
         match="momenta differ from exact PCA recomputation",
     ):
         verify_reference_pca_deformation_design(design_path, source_run=run)
+
+
+def test_reference_pca_deformation_design_rejects_only_zero_variance_endpoints(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run = _completed_reference_run(tmp_path)
+    bundle = write_reference_pca_bundle(run)
+    monkeypatch.setattr(
+        deformation_module,
+        "_endpoint_definition",
+        lambda _pca, _components, _deviations: (
+            np.zeros((1, 2, 3), dtype=np.float64),
+            [{"index": 0, "role": "mean"}],
+            [1, 2],
+        ),
+    )
+
+    with pytest.raises(
+        ReferencePCADeformationError,
+        match="all have zero variance",
+    ):
+        create_reference_pca_deformation_design(
+            run,
+            pca_bundle=bundle,
+            components=2,
+        )
+
+    assert not (run / "analysis" / "reference-pca-deformations-v0.1").exists()
 
 
 def test_reference_pca_deformation_execution_publishes_verified_endpoints(
@@ -970,6 +1000,51 @@ def test_modern_full_atlas_qualification_binds_initial_template_and_template_gat
     assert config["optimization"]["template_gradient"] == "sobolev"
     assert config["optimization"]["sobolev_kernel_width_ratio"] == 1.0
     assert design["modern_workflow"]["template_gradient"] == "sobolev"
+
+    historical = tmp_path / "engine15-full-atlas-design"
+    shutil.copytree(destination, historical)
+    historical_config_path = historical / design["modern_workflow"]["config_path"]
+    historical_config = yaml.safe_load(
+        historical_config_path.read_text(encoding="utf-8")
+    )
+    historical_config["schema_version"] = "0.6"
+    historical_config["optimization"].pop("template_gradient")
+    historical_config["optimization"].pop("sobolev_kernel_width_ratio")
+    historical_config_path.write_text(
+        yaml.safe_dump(historical_config, sort_keys=False),
+        encoding="utf-8",
+        newline="\n",
+    )
+    historical_design_path = historical / DESIGN_JSON_NAME
+    historical_design = json.loads(
+        historical_design_path.read_text(encoding="utf-8")
+    )
+    historical_design["modern_workflow"]["expected_engine_implementation"] = "1.5"
+    historical_design["modern_workflow"]["config_sha256"] = sha256_file(
+        historical_config_path
+    )
+    historical_html_path = historical / "modern-reference-qualification-design.html"
+    historical_html_path.write_text(
+        _render_design_html(historical_design),
+        encoding="utf-8",
+        newline="\n",
+    )
+    for record in historical_design["artifacts"]:
+        artifact_path = historical / record["path"]
+        record["bytes"] = artifact_path.stat().st_size
+        record["sha256"] = sha256_file(artifact_path)
+    historical_design_path.write_text(
+        json.dumps(historical_design, indent=2, ensure_ascii=False, sort_keys=True) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    (historical / DESIGN_SIDECAR_NAME).write_text(
+        f"{sha256_file(historical_design_path)}  {DESIGN_JSON_NAME}\n",
+        encoding="ascii",
+        newline="\n",
+    )
+    verified_historical = verify_modern_reference_qualification_design(historical)
+    assert verified_historical["modern_workflow"]["expected_engine_implementation"] == "1.5"
 
     modern_run = run_modern_workflow(
         config_path,
