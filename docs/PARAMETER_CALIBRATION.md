@@ -157,10 +157,14 @@ The **Collect more evidence** action deterministically derives up to two
 logarithmic neighbors beyond each winning boundary. Deformation width and
 control-point spacing remain coupled. The proposal has its own SHA-256
 fingerprint bound to the immutable source plan and assessment, and holds all
-other selected stage values fixed. It is deliberately a planning artifact:
-the displayed candidates have not been executed and are not represented as
-safe until a separately bound successor study declares feasibility limits,
-runs them, and combines their evidence with the preserved source pilot.
+other selected stage values fixed. The desktop asks the researcher to declare
+the feasible outward limit for every affected parameter, previews the new
+candidates and destination, and then creates a separately bound successor
+study. The proposal itself remains a planning artifact: its displayed
+candidates have not been executed and are not represented as safe until that
+successor runs them and combines their evidence with the preserved source
+pilot. Preserved candidates stay complete, so **Run complete four-stage
+pilot** executes only the newly added neighbors before reassessment.
 
 ### 4. Numerical integration accuracy
 

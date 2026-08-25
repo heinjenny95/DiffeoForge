@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QDialog,
     QFrame,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
     QMessageBox,
     QProgressBar,
@@ -47,6 +48,7 @@ from diffeoforge.reference_calibration_study import (
     ReferenceCalibrationStudyRunner,
     ReferenceCalibrationStudySnapshot,
     assess_reference_calibration_snapshot,
+    create_reference_calibration_search_extension_study,
     load_reference_calibration_report,
     load_reference_calibration_study,
     record_reference_calibration_provisional_override,
@@ -1402,15 +1404,103 @@ class ReferenceCalibrationDialog(QDialog):
                     for name, value in candidate.parameter_values
                 )
                 rendered.append(f"• {candidate.label}: {values}")
-            QMessageBox.information(
+            boundaries = dict(
+                boundary.split(":", maxsplit=1)
+                for boundary in assessment.search_boundary_parameters
+            )
+            limits: dict[str, tuple[float, float]] = {}
+            assert self._snapshot.current_stage is not None
+            for parameter, direction in boundaries.items():
+                tested = [
+                    candidate.values[parameter]
+                    for candidate in self._snapshot.current_stage.candidates
+                    if parameter in candidate.values
+                ]
+                proposed = [
+                    candidate.values[parameter]
+                    for candidate in proposal.candidates
+                    if parameter in candidate.values
+                ]
+                observed_low = min((*tested, *proposed))
+                observed_high = max((*tested, *proposed))
+                if direction == "minimum":
+                    outward_limit, accepted = QInputDialog.getDouble(
+                        self,
+                        "Declare lower feasibility limit",
+                        f"Minimum allowed {parameter} (must be ≤ {observed_low:.9g}):",
+                        observed_low,
+                        1e-15,
+                        1e15,
+                        12,
+                    )
+                    if not accepted:
+                        return
+                    limits[parameter] = (outward_limit, observed_high)
+                elif direction == "maximum":
+                    outward_limit, accepted = QInputDialog.getDouble(
+                        self,
+                        "Declare upper feasibility limit",
+                        f"Maximum allowed {parameter} (must be ≥ {observed_high:.9g}):",
+                        observed_high,
+                        1e-15,
+                        1e15,
+                        12,
+                    )
+                    if not accepted:
+                        return
+                    limits[parameter] = (observed_low, outward_limit)
+                else:
+                    QMessageBox.warning(
+                        self,
+                        "Cannot extend this grid",
+                        f"{parameter} has only one tested value, so no logarithmic "
+                        "outward step can be derived.",
+                    )
+                    return
+            extension_index = 1
+            while True:
+                destination = self.study_directory.with_name(
+                    f"{self.study_directory.name}-extension-{extension_index:02d}"
+                )
+                if not destination.exists():
+                    break
+                extension_index += 1
+            confirmation = QMessageBox.question(
                 self,
                 "Outward pilot evidence required",
                 "The current search range is not bounded. DiffeoForge derived these "
                 "hash-bound logarithmic neighbors without changing the immutable pilot:\n\n"
                 + "\n".join(rendered)
-                + "\n\nThese values have not been run and are not declared safe. A separate "
-                "successor study must bind feasibility limits, execute them, and reassess "
-                "the combined evidence.",
+                + "\n\nCreate the immutable successor here?\n"
+                + str(destination)
+                + "\n\nOnly these new candidates will run. The entered feasibility "
+                "limits and all source evidence will be hash-bound.",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if confirmation != QMessageBox.StandardButton.Yes:
+                return
+            try:
+                successor = create_reference_calibration_search_extension_study(
+                    self.study_directory,
+                    destination,
+                    safety_limits=limits,
+                )
+            except (OSError, RuntimeError, TypeError, ValueError) as error:
+                QMessageBox.warning(
+                    self,
+                    "Could not create outward successor",
+                    str(error),
+                )
+                return
+            self.study_directory = successor.study_directory
+            self._snapshot = successor
+            self._visually_reviewed_candidates.clear()
+            self._visually_approved_candidates.clear()
+            self._render()
+            self.status.setText(
+                "Outward successor created. Preserved candidates remain complete; "
+                "click Run complete four-stage pilot to execute only the new neighbors."
             )
             return
         QMessageBox.information(

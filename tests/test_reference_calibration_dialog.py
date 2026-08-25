@@ -200,7 +200,7 @@ def test_staged_calibration_allows_selection_without_visual_qc(
     from types import SimpleNamespace
 
     from PySide6.QtCore import QEvent, Qt
-    from PySide6.QtWidgets import QApplication, QLabel
+    from PySide6.QtWidgets import QApplication, QLabel, QMessageBox
 
     import diffeoforge.desktop.reference_calibration_dialog as dialog_module
     from diffeoforge.desktop.reference_calibration_dialog import (
@@ -293,11 +293,34 @@ def test_staged_calibration_allows_selection_without_visual_qc(
         "load_reference_calibration_study",
         lambda _directory: snapshot,
     )
-    information_messages: list[tuple[str, str]] = []
+    entered_limits: list[float] = []
+
+    def accept_limit(*args, **_kwargs):
+        entered_limits.append(float(args[3]))
+        return float(args[3]), True
+
     monkeypatch.setattr(
-        dialog_module.QMessageBox,
-        "information",
-        lambda _parent, title, message: information_messages.append((title, message)),
+        dialog_module.QInputDialog,
+        "getDouble",
+        accept_limit,
+    )
+    confirmations: list[tuple[str, str]] = []
+
+    def confirm_successor(_parent, title, message, *_args):
+        confirmations.append((title, message))
+        return QMessageBox.StandardButton.Yes
+
+    monkeypatch.setattr(dialog_module.QMessageBox, "question", confirm_successor)
+    successor_calls: list[tuple[Path, Path, dict[str, tuple[float, float]]]] = []
+
+    def create_successor(source, destination, *, safety_limits):
+        successor_calls.append((source, destination, safety_limits))
+        return snapshot
+
+    monkeypatch.setattr(
+        dialog_module,
+        "create_reference_calibration_search_extension_study",
+        create_successor,
     )
 
     dialog = ReferenceCalibrationDialog(tmp_path)
@@ -313,10 +336,19 @@ def test_staged_calibration_allows_selection_without_visual_qc(
     assert "search range is not bounded" in dialog.status.text()
     dialog.collect_evidence_button.click()
     application.processEvents()
-    assert information_messages
-    assert information_messages[-1][0] == "Outward pilot evidence required"
-    assert "attachment_kernel_width=" in information_messages[-1][1]
-    assert "have not been run" in information_messages[-1][1]
+    assert entered_limits
+    assert confirmations[-1][0] == "Outward pilot evidence required"
+    assert "attachment_kernel_width=" in confirmations[-1][1]
+    assert "Only these new candidates will run" in confirmations[-1][1]
+    assert successor_calls
+    assert successor_calls[-1][0] == tmp_path
+    assert successor_calls[-1][1] == tmp_path.with_name(
+        f"{tmp_path.name}-extension-01"
+    )
+    lower, upper = successor_calls[-1][2]["attachment_kernel_width"]
+    assert lower < 0.2
+    assert upper == 0.3
+    assert "Outward successor created" in dialog.status.text()
     dialog.compare_options_button.click()
     application.processEvents()
     assert dialog.advanced_mode.isChecked() is True
