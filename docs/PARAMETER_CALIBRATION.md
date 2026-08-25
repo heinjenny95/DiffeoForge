@@ -232,6 +232,32 @@ diffeoforge reference-calibration-study-review `
   --select attachment-02
 ```
 
+If an attachment/deformation/control-spacing winner remains on a tested
+boundary, freeze a successor only after declaring a positive feasibility
+interval for every reported boundary parameter:
+
+```powershell
+diffeoforge reference-calibration-study-extend `
+  "C:\project\calibration\pilot" `
+  --output "C:\project\calibration\pilot-attachment-extension-01" `
+  --limit attachment_kernel_width=0.001:0.6 `
+  --limit deformation_kernel_width=0.01:1.2 `
+  --limit initial_control_point_spacing=0.01:1.2 `
+  --outward-steps 2
+
+diffeoforge reference-calibration-study-run `
+  "C:\project\calibration\pilot-attachment-extension-01"
+```
+
+For a noise-boundary successor, supply only its reported parameter, for
+example `--limit noise_std=0.0001:0.5`. The command refuses missing, duplicate,
+unordered, or exceeded limits and never overwrites a destination. It copies
+the bound pilot inputs, imports completed source metrics with their event
+hashes, and prepares configs for the combined candidate set. The ordinary
+study runner skips preserved candidates and executes only the new outward
+neighbors. Loading or continuing the successor fails closed if the cited
+source manifest or event chain changes.
+
 `--complete` is the standard one-operation route. Omit it to run only the
 current stage, then use `reference-calibration-study-review` for the advanced
 manual route.

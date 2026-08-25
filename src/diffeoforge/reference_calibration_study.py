@@ -45,6 +45,8 @@ from diffeoforge.reference_calibration import (
     CalibrationStageAssessment,
     ReferenceCalibrationPlan,
     assess_calibration_stage,
+    bind_calibration_search_extension_plan,
+    propose_calibration_search_extension,
     reference_calibration_plan_from_provenance,
 )
 from diffeoforge.reference_calibration_metrics import (
@@ -506,6 +508,277 @@ def create_reference_calibration_study(
     return load_reference_calibration_study(root)
 
 
+def create_reference_calibration_search_extension_study(
+    source_study_directory: Path | str,
+    study_directory: Path | str,
+    *,
+    safety_limits: Mapping[str, tuple[float, float]],
+    outward_steps: int = 2,
+) -> ReferenceCalibrationStudySnapshot:
+    """Create an immutable successor that runs only new outward candidates.
+
+    Completed source-stage metrics are imported with their event hashes. The
+    successor prepares configs for the combined candidate set, marks preserved
+    source candidates complete, and leaves only the outward additions pending.
+    """
+
+    source_root = Path(source_study_directory).expanduser().resolve()
+    source_snapshot = load_reference_calibration_study(source_root)
+    if source_snapshot.status != "awaiting_review" or source_snapshot.current_stage is None:
+        raise ReferenceCalibrationStudyError(
+            "Search extension requires a completed stage awaiting review"
+        )
+    if any(candidate.status != "completed" for candidate in source_snapshot.candidates):
+        raise ReferenceCalibrationStudyError(
+            "Search extension requires every source candidate to be completed"
+        )
+    assessment = assess_reference_calibration_snapshot(source_snapshot)
+    if assessment.search_range_status != "not_bounded":
+        raise ReferenceCalibrationStudyError(
+            "Search extension requires a source assessment marked not_bounded"
+        )
+    proposal = propose_calibration_search_extension(
+        source_snapshot.plan,
+        assessment,
+        outward_steps=outward_steps,
+    )
+    normalized_limits: dict[str, tuple[float, float]] = {}
+    boundary_parameters = {
+        boundary.split(":", maxsplit=1)[0]
+        for boundary in proposal.boundary_parameters
+    }
+    if set(safety_limits) != boundary_parameters:
+        raise ReferenceCalibrationStudyError(
+            "Safety limits must match the boundary parameters exactly; expected="
+            f"{sorted(boundary_parameters)}, observed={sorted(safety_limits)}"
+        )
+    for parameter, bounds in safety_limits.items():
+        if (
+            not isinstance(bounds, (tuple, list))
+            or len(bounds) != 2
+            or isinstance(bounds[0], bool)
+            or isinstance(bounds[1], bool)
+        ):
+            raise ReferenceCalibrationStudyError(
+                f"Safety limits for {parameter} must contain two finite positive values"
+            )
+        lower, upper = float(bounds[0]), float(bounds[1])
+        if (
+            not math.isfinite(lower)
+            or not math.isfinite(upper)
+            or lower <= 0
+            or upper <= lower
+        ):
+            raise ReferenceCalibrationStudyError(
+                f"Safety limits for {parameter} must be finite, positive, and ordered"
+            )
+        normalized_limits[parameter] = (lower, upper)
+    for candidate in proposal.candidates:
+        for parameter, (lower, upper) in normalized_limits.items():
+            if parameter not in candidate.values:
+                continue
+            value = candidate.values[parameter]
+            if value < lower or value > upper:
+                raise ReferenceCalibrationStudyError(
+                    f"Safety limit reached before proposed {candidate.candidate_id}: "
+                    f"{parameter}={value:.12g} is outside [{lower:.12g}, {upper:.12g}]"
+                )
+    successor_plan = bind_calibration_search_extension_plan(
+        source_snapshot.plan,
+        assessment,
+        proposal,
+    )
+    source_manifest = _verify_manifest(source_root)
+    source_events = _load_events(source_root)
+    source_by_id = {
+        candidate.candidate_id: candidate for candidate in source_snapshot.candidates
+    }
+    source_completed_events = {
+        str(event["candidate_id"]): event
+        for event in source_events
+        if event.get("event") == "candidate_completed"
+        and event.get("stage_id") == source_snapshot.current_stage.stage_id
+    }
+    root = Path(study_directory).expanduser().resolve()
+    if root.exists():
+        raise ReferenceCalibrationStudyError(
+            f"Calibration study destination already exists: {root}"
+        )
+    root.mkdir(parents=True)
+    try:
+        source_config = load_config(
+            _safe_study_path(source_root, source_manifest["source_config"]["copy"])
+        )
+        source_config = copy.deepcopy(dict(source_config))
+        source_config["project"]["parameter_provenance"]["recommendation"][
+            "calibration_plan"
+        ] = successor_plan.provenance
+        validate_schema(source_config)
+        source_copy = root / "source" / "atlas.yaml"
+        source_copy.parent.mkdir(parents=True)
+        _write_yaml(source_copy, source_config, overwrite=False)
+
+        source_template = _safe_study_path(
+            source_root, source_manifest["inputs"]["template"]["copy"]
+        )
+        template_copy = root / "inputs" / "template" / source_template.name
+        _copy_bound(
+            source_template,
+            template_copy,
+            str(source_manifest["inputs"]["template"]["sha256"]),
+        )
+        subject_records: list[dict[str, object]] = []
+        for source_record in source_manifest["inputs"]["subjects"]:
+            source_subject = _safe_study_path(source_root, source_record["copy"])
+            destination = root / "inputs" / "subjects" / source_subject.name
+            _copy_bound(source_subject, destination, str(source_record["sha256"]))
+            subject_records.append(
+                {
+                    "filename": source_subject.name,
+                    "copy": _relative_path(root, destination),
+                    "sha256": str(source_record["sha256"]),
+                }
+            )
+        manifest: dict[str, object] = {
+            "study_version": STUDY_VERSION,
+            "study_id": f"reference-calibration-extension-{uuid4().hex[:12]}",
+            "plan_fingerprint": successor_plan.fingerprint,
+            "plan": successor_plan.provenance,
+            "pilot_max_iterations": int(source_manifest["pilot_max_iterations"]),
+            "template_diagonal": float(source_manifest["template_diagonal"]),
+            "launcher": dict(source_manifest["launcher"]),
+            "source_config": {
+                "original_path": str(source_copy),
+                "copy": _relative_path(root, source_copy),
+                "sha256": sha256_file(source_copy),
+            },
+            "inputs": {
+                "template": {
+                    "copy": _relative_path(root, template_copy),
+                    "sha256": sha256_file(template_copy),
+                },
+                "subject_directory": "inputs/subjects",
+                "subjects": subject_records,
+                "full_cohort": dict(source_manifest["inputs"]["full_cohort"]),
+            },
+            "search_extension_source": {
+                "study_directory": str(source_root),
+                "study_id": source_snapshot.study_id,
+                "manifest_sha256": sha256_file(source_root / STUDY_MANIFEST),
+                "terminal_event_hash": source_events[-1]["event_hash"],
+                "parent_plan_fingerprint": source_snapshot.plan.fingerprint,
+                "source_assessment_fingerprint": assessment.fingerprint,
+                "proposal": proposal.as_manifest(),
+                "safety_limits": {
+                    parameter: list(bounds)
+                    for parameter, bounds in normalized_limits.items()
+                },
+            },
+            "scientific_boundary": (
+                "This successor preserves source pilot evidence and runs only "
+                "hash-bound outward neighbors within explicit feasibility limits. "
+                "It remains a provisional pilot, not biological validation."
+            ),
+        }
+        _write_json(root / STUDY_MANIFEST, manifest, overwrite=False)
+        write_text_safely(
+            root / STUDY_DIGEST,
+            sha256_file(root / STUDY_MANIFEST) + "\n",
+            overwrite=False,
+        )
+        _append_event(
+            root,
+            "study_created",
+            {
+                "study_id": manifest["study_id"],
+                "plan_fingerprint": successor_plan.fingerprint,
+                "manifest_sha256": sha256_file(root / STUDY_MANIFEST),
+                "source_study_id": source_snapshot.study_id,
+                "source_terminal_event_hash": source_events[-1]["event_hash"],
+            },
+        )
+        control_keys = {
+            "event_version",
+            "sequence",
+            "previous_hash",
+            "event",
+            "event_hash",
+        }
+        for event in source_events:
+            if event.get("event") != "stage_selected":
+                continue
+            payload = {
+                key: value for key, value in event.items() if key not in control_keys
+            }
+            payload["imported_source_event_hash"] = event["event_hash"]
+            _append_event(root, "stage_selected", payload)
+        current_stage = successor_plan.stages[
+            len(source_snapshot.selected_candidate_ids)
+        ]
+        _prepare_stage(
+            root,
+            manifest,
+            successor_plan,
+            current_stage,
+            source_snapshot.selected_values,
+        )
+        prepared = _prepared_candidates(root, _load_events(root), current_stage.stage_id)
+        for candidate in source_snapshot.current_stage.candidates:
+            state = source_by_id[candidate.candidate_id]
+            source_event = source_completed_events.get(candidate.candidate_id)
+            if state.metrics is None or source_event is None:
+                raise ReferenceCalibrationStudyError(
+                    f"Completed source evidence is absent for {candidate.candidate_id}"
+                )
+            config_path = _safe_study_path(
+                root, prepared[candidate.candidate_id]["config"]
+            )
+            evidence_directory = config_path.parent / "source-evidence"
+            evidence_directory.mkdir()
+            evidence_record = {
+                "source_study_directory": str(source_root),
+                "source_event_hash": source_event["event_hash"],
+                "source_run_directory": (
+                    None if state.run_directory is None else str(state.run_directory)
+                ),
+                "metrics": dict(state.metrics),
+            }
+            _write_json(
+                evidence_directory / "evidence.json",
+                evidence_record,
+                overwrite=False,
+            )
+            run_relative = _relative_path(root, evidence_directory)
+            _append_event(
+                root,
+                "candidate_started",
+                {
+                    "stage_id": current_stage.stage_id,
+                    "candidate_id": candidate.candidate_id,
+                    "attempt": 1,
+                    "request_id": "imported-source-evidence",
+                    "run_directory": run_relative,
+                    "imported_source_event_hash": source_event["event_hash"],
+                },
+            )
+            _append_event(
+                root,
+                "candidate_completed",
+                {
+                    "stage_id": current_stage.stage_id,
+                    "candidate_id": candidate.candidate_id,
+                    "attempt": 1,
+                    "run_directory": run_relative,
+                    "metrics": dict(state.metrics),
+                    "imported_source_event_hash": source_event["event_hash"],
+                },
+            )
+    except BaseException:
+        shutil.rmtree(root, ignore_errors=True)
+        raise
+    return load_reference_calibration_study(root)
+
+
 def _verify_manifest(root: Path) -> dict[str, Any]:
     manifest_path = root / STUDY_MANIFEST
     manifest = _read_json(manifest_path, "calibration study manifest")
@@ -533,6 +806,48 @@ def _verify_manifest(root: Path) -> dict[str, Any]:
         raise ReferenceCalibrationStudyError(
             "Calibration study plan binding differs"
         )
+    extension_source = manifest.get("search_extension_source")
+    if extension_source is not None:
+        if not isinstance(extension_source, Mapping):
+            raise ReferenceCalibrationStudyError(
+                "Calibration search-extension source must be a mapping"
+            )
+        source_root = Path(
+            str(extension_source.get("study_directory", ""))
+        ).expanduser().resolve()
+        if source_root == root.resolve():
+            raise ReferenceCalibrationStudyError(
+                "Calibration search extension cannot cite itself as its source"
+            )
+        source_manifest_path = source_root / STUDY_MANIFEST
+        if (
+            not source_manifest_path.is_file()
+            or sha256_file(source_manifest_path)
+            != extension_source.get("manifest_sha256")
+        ):
+            raise ReferenceCalibrationStudyError(
+                "Calibration search-extension source manifest changed or is absent"
+            )
+        source_snapshot = load_reference_calibration_study(source_root)
+        source_events = _load_events(source_root)
+        lineage = dict(plan.search_extension_lineage)
+        proposal = extension_source.get("proposal")
+        if (
+            source_snapshot.study_id != extension_source.get("study_id")
+            or source_events[-1]["event_hash"]
+            != extension_source.get("terminal_event_hash")
+            or source_snapshot.plan.fingerprint
+            != extension_source.get("parent_plan_fingerprint")
+            or lineage.get("parent_plan_fingerprint")
+            != source_snapshot.plan.fingerprint
+            or not isinstance(proposal, Mapping)
+            or lineage.get("proposal_fingerprint") != proposal.get("fingerprint")
+            or lineage.get("source_assessment_fingerprint")
+            != extension_source.get("source_assessment_fingerprint")
+        ):
+            raise ReferenceCalibrationStudyError(
+                "Calibration search-extension lineage differs from its source evidence"
+            )
     bound_files = [
         manifest["source_config"],
         manifest["inputs"]["template"],
@@ -608,6 +923,21 @@ def load_reference_calibration_study(
         raise ReferenceCalibrationStudyError(
             "Calibration event ledger is bound to a different manifest"
         )
+    extension_source = manifest.get("search_extension_source")
+    if isinstance(extension_source, Mapping):
+        source_events = _load_events(
+            Path(str(extension_source["study_directory"])).expanduser().resolve()
+        )
+        source_hashes = {event["event_hash"] for event in source_events}
+        imported_hashes = {
+            event["imported_source_event_hash"]
+            for event in events
+            if "imported_source_event_hash" in event
+        }
+        if not imported_hashes or not imported_hashes.issubset(source_hashes):
+            raise ReferenceCalibrationStudyError(
+                "Imported calibration evidence is not bound to source event hashes"
+            )
     selected_values, selected_candidates = _selected_state(events)
     final_events = [event for event in events if event["event"] == "study_completed"]
     if final_events:

@@ -182,7 +182,10 @@ DiffeoForge derives one or two next logarithmic neighbors from the observed
 grid ratio and records a separate proposal fingerprint bound to the immutable
 plan and assessment. Merely deriving those values does not execute them or
 declare them feasible; a successor study must bind safety limits and reassess
-the combined evidence.
+the combined evidence. The `reference-calibration-study-extend` command creates
+that new immutable study, imports source metrics by event hash, and leaves only
+the outward candidates pending; it refuses any proposed value outside the
+explicitly declared limits.
 
 The pilot-subject heuristic covers geometric diversity only. It cannot infer
 biological strata that are absent from mesh coordinates. A manuscript study

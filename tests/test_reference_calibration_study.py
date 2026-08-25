@@ -20,6 +20,8 @@ from diffeoforge.reference_calibration_metrics import (
 from diffeoforge.reference_calibration_study import (
     ReferenceCalibrationStudyError,
     ReferenceCalibrationStudyRunner,
+    assess_reference_calibration_snapshot,
+    create_reference_calibration_search_extension_study,
     create_reference_calibration_study,
     load_reference_calibration_study,
     record_reference_calibration_provisional_override,
@@ -226,6 +228,218 @@ def test_runner_executes_every_candidate_then_pauses_for_review(
         assert config["model"]["attachment"]["kernel_width"] == pytest.approx(
             selected_value
         )
+
+
+def test_unbounded_stage_can_create_and_run_hash_bound_outward_successor(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    source = create_reference_calibration_study(
+        _project(tmp_path),
+        tmp_path / "source-study",
+        pilot_max_iterations=50,
+    )
+    call = 0
+
+    def collect(run: Path):
+        nonlocal call
+        call += 1
+        atlas = run / "atlas.vtk"
+        atlas.parent.mkdir(parents=True, exist_ok=True)
+        atlas.write_text("placeholder", encoding="utf-8")
+        return _metrics(atlas, call / 1000)
+
+    monkeypatch.setattr(
+        study_module,
+        "collect_reference_calibration_run_metrics",
+        collect,
+    )
+    source = ReferenceCalibrationStudyRunner(
+        source.study_directory,
+        controller_factory=_CompletedController,
+    ).run_current_stage()
+    source_assessment = assess_reference_calibration_snapshot(source)
+    assert source_assessment.search_range_status == "not_bounded"
+    assert source_assessment.search_boundary_parameters == (
+        "attachment_kernel_width:minimum",
+        "deformation_kernel_width:minimum",
+        "initial_control_point_spacing:minimum",
+    )
+
+    successor = create_reference_calibration_search_extension_study(
+        source.study_directory,
+        tmp_path / "successor-study",
+        safety_limits={
+            "attachment_kernel_width": (1e-8, 100.0),
+            "deformation_kernel_width": (1e-8, 100.0),
+            "initial_control_point_spacing": (1e-8, 100.0),
+        },
+    )
+
+    assert successor.status == "ready"
+    assert successor.current_stage is not None
+    assert successor.current_stage.stage_id == "attachment"
+    assert successor.plan.version == "0.4"
+    assert dict(successor.plan.search_extension_lineage)[
+        "parent_plan_fingerprint"
+    ] == source.plan.fingerprint
+    assert len(successor.candidates) == len(source.candidates) + 4
+    assert sum(candidate.status == "completed" for candidate in successor.candidates) == len(
+        source.candidates
+    )
+    assert sum(candidate.status == "pending" for candidate in successor.candidates) == 4
+
+    new_calls_before = call
+    successor = ReferenceCalibrationStudyRunner(
+        successor.study_directory,
+        controller_factory=_CompletedController,
+    ).run_current_stage()
+    assert call - new_calls_before == 4
+    assert successor.status == "awaiting_review"
+    assert {candidate.status for candidate in successor.candidates} == {"completed"}
+    combined = assess_reference_calibration_snapshot(successor)
+    assert combined.plan_fingerprint == successor.plan.fingerprint
+    assert combined.search_range_status == "bounded"
+    assert combined.search_boundary_parameters == ()
+
+    cli_successor = tmp_path / "cli-successor-study"
+    assert (
+        main(
+            [
+                "reference-calibration-study-extend",
+                str(source.study_directory),
+                "--output",
+                str(cli_successor),
+                "--limit",
+                "attachment_kernel_width=1e-8:100",
+                "--limit",
+                "deformation_kernel_width=1e-8:100",
+                "--limit",
+                "initial_control_point_spacing=1e-8:100",
+            ]
+        )
+        == 0
+    )
+    output = capsys.readouterr().out
+    assert "Calibration search successor created" in output
+    assert "new outward candidates: 4" in output
+    assert load_reference_calibration_study(cli_successor).status == "ready"
+
+    source_events = source.study_directory / study_module.STUDY_EVENTS
+    source_events.write_text(
+        source_events.read_text(encoding="utf-8") + "{}\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ReferenceCalibrationStudyError):
+        load_reference_calibration_study(cli_successor)
+
+
+def test_search_extension_refuses_candidates_past_declared_safety_limit(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = create_reference_calibration_study(
+        _project(tmp_path),
+        tmp_path / "source-study",
+        pilot_max_iterations=50,
+    )
+    call = 0
+
+    def collect(run: Path):
+        nonlocal call
+        call += 1
+        atlas = run / "atlas.vtk"
+        atlas.parent.mkdir(parents=True, exist_ok=True)
+        atlas.write_text("placeholder", encoding="utf-8")
+        return _metrics(atlas, call / 1000)
+
+    monkeypatch.setattr(
+        study_module,
+        "collect_reference_calibration_run_metrics",
+        collect,
+    )
+    source = ReferenceCalibrationStudyRunner(
+        source.study_directory,
+        controller_factory=_CompletedController,
+    ).run_current_stage()
+    stage = source.current_stage
+    assert stage is not None
+    minimum_attachment = min(
+        candidate.values["attachment_kernel_width"]
+        for candidate in stage.candidates
+    )
+
+    with pytest.raises(ReferenceCalibrationStudyError, match="Safety limit reached"):
+        create_reference_calibration_search_extension_study(
+            source.study_directory,
+            tmp_path / "rejected-successor",
+            safety_limits={
+                "attachment_kernel_width": (minimum_attachment, 100.0),
+                "deformation_kernel_width": (1e-8, 100.0),
+                "initial_control_point_spacing": (1e-8, 100.0),
+            },
+        )
+    assert not (tmp_path / "rejected-successor").exists()
+
+
+def test_noise_extension_preserves_prior_stage_selections(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = create_reference_calibration_study(
+        _project(tmp_path),
+        tmp_path / "source-study",
+        pilot_max_iterations=50,
+    )
+    call = 0
+
+    def collect(run: Path):
+        nonlocal call
+        call += 1
+        atlas = run / "atlas.vtk"
+        atlas.parent.mkdir(parents=True, exist_ok=True)
+        atlas.write_text("placeholder", encoding="utf-8")
+        return _metrics(atlas, call / 1000)
+
+    monkeypatch.setattr(
+        study_module,
+        "collect_reference_calibration_run_metrics",
+        collect,
+    )
+    for expected_stage in ("attachment", "deformation"):
+        source = ReferenceCalibrationStudyRunner(
+            source.study_directory,
+            controller_factory=_CompletedController,
+        ).run_current_stage()
+        assert source.current_stage is not None
+        assert source.current_stage.stage_id == expected_stage
+        source, _assessment = record_reference_calibration_stage_review(
+            source.study_directory,
+            visual_approvals={},
+            selected_candidate_id=source.candidates[0].candidate_id,
+        )
+    source = ReferenceCalibrationStudyRunner(
+        source.study_directory,
+        controller_factory=_CompletedController,
+    ).run_current_stage()
+    assert source.current_stage is not None
+    assert source.current_stage.stage_id == "noise"
+    assessment = assess_reference_calibration_snapshot(source)
+    assert assessment.search_boundary_parameters == ("noise_std:minimum",)
+
+    successor = create_reference_calibration_search_extension_study(
+        source.study_directory,
+        tmp_path / "noise-successor",
+        safety_limits={"noise_std": (1e-10, 100.0)},
+    )
+
+    assert successor.current_stage is not None
+    assert successor.current_stage.stage_id == "noise"
+    assert successor.selected_candidate_ids == source.selected_candidate_ids
+    assert successor.selected_values == source.selected_values
+    assert len(successor.candidates) == len(source.candidates) + 2
+    assert sum(candidate.status == "pending" for candidate in successor.candidates) == 2
 
 
 def test_study_verification_rejects_changed_candidate_configuration(

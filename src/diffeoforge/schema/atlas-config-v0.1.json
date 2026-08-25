@@ -233,7 +233,7 @@
                     "limitations"
                   ],
                   "properties": {
-                    "version": {"enum": ["0.1", "0.2", "0.3"]},
+                    "version": {"enum": ["0.1", "0.2", "0.3", "0.4"]},
                     "fingerprint": {
                       "type": "string",
                       "pattern": "^[0-9a-f]{64}$"
@@ -316,6 +316,33 @@
                     },
                     "expected_shape_disparity": {
                       "enum": ["low", "moderate", "high", "extreme"]
+                    },
+                    "search_extension_lineage": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "parent_plan_fingerprint",
+                        "source_assessment_fingerprint",
+                        "proposal_fingerprint",
+                        "stage_id"
+                      ],
+                      "properties": {
+                        "parent_plan_fingerprint": {
+                          "type": "string",
+                          "pattern": "^[0-9a-f]{64}$"
+                        },
+                        "source_assessment_fingerprint": {
+                          "type": "string",
+                          "pattern": "^[0-9a-f]{64}$"
+                        },
+                        "proposal_fingerprint": {
+                          "type": "string",
+                          "pattern": "^[0-9a-f]{64}$"
+                        },
+                        "stage_id": {
+                          "enum": ["attachment", "deformation", "noise"]
+                        }
+                      }
                     },
                     "baseline_parameter_ratios": {
                       "type": "object",

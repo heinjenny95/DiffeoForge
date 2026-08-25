@@ -488,6 +488,47 @@ def test_robust_boundary_winner_is_reported_as_search_range_not_bounded() -> Non
     )
     assert reference_calibration_plan_from_provenance(provenance) == successor
 
+    successor_evidence = tuple(
+        CalibrationCandidateEvidence(
+            candidate_id=candidate.candidate_id,
+            completed=True,
+            converged=True,
+            invalid_face_count=0,
+            residual_p95=float(len(successor_noise.candidates) - index),
+            deformation_energy=float(len(successor_noise.candidates) - index),
+            distortion_p95=float(len(successor_noise.candidates) - index),
+            runtime_seconds=float(len(successor_noise.candidates) - index),
+            subject_residual_p95=(
+                ("subject-a.vtk", float(len(successor_noise.candidates) - index)),
+                ("subject-b.vtk", float(len(successor_noise.candidates) - index)),
+                ("subject-c.vtk", float(len(successor_noise.candidates) - index)),
+            ),
+        )
+        for index, candidate in enumerate(successor_noise.candidates)
+    )
+    successor_assessment = assess_calibration_stage(
+        successor,
+        stage_id="noise",
+        evidence=successor_evidence,
+    )
+    assert successor_assessment.search_range_status == "not_bounded"
+    second_extension = propose_calibration_search_extension(
+        successor,
+        successor_assessment,
+    )
+    assert not {
+        candidate.candidate_id for candidate in extension.candidates
+    } & {candidate.candidate_id for candidate in second_extension.candidates}
+    second_successor = bind_calibration_search_extension_plan(
+        successor,
+        successor_assessment,
+        second_extension,
+    )
+    second_noise = next(
+        stage for stage in second_successor.stages if stage.stage_id == "noise"
+    )
+    assert len(second_noise.candidates) == len(successor_noise.candidates) + 2
+
 
 def test_stage_assessment_fails_closed_on_missing_metrics_without_requiring_review() -> None:
     plan = build_reference_calibration_plan(

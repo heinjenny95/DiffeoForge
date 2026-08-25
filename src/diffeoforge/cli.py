@@ -23,6 +23,7 @@ from diffeoforge.reference_calibration import build_reference_calibration_plan
 from diffeoforge.reference_calibration_report import export_reference_calibration_plan
 from diffeoforge.reference_calibration_study import (
     ReferenceCalibrationStudyRunner,
+    create_reference_calibration_search_extension_study,
     create_reference_calibration_study,
     load_reference_calibration_study,
     record_reference_calibration_stage_review,
@@ -961,6 +962,42 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=150,
         help="Iteration cap applied to every pilot candidate (default: 150).",
+    )
+
+    calibration_study_extend = subparsers.add_parser(
+        "reference-calibration-study-extend",
+        help=(
+            "Create a hash-bound successor for an unbounded calibration winner; "
+            "only new outward logarithmic neighbors remain pending."
+        ),
+    )
+    calibration_study_extend.add_argument(
+        "source_study_directory",
+        type=Path,
+        help="Completed source stage whose assessment reports search range not bounded.",
+    )
+    calibration_study_extend.add_argument(
+        "--output",
+        required=True,
+        type=Path,
+        help="New successor-study directory; it is never overwritten.",
+    )
+    calibration_study_extend.add_argument(
+        "--limit",
+        action="append",
+        required=True,
+        metavar="PARAMETER=LOW:HIGH",
+        help=(
+            "Explicit positive feasibility interval for each reported boundary "
+            "parameter; repeat once per parameter."
+        ),
+    )
+    calibration_study_extend.add_argument(
+        "--outward-steps",
+        type=int,
+        choices=(1, 2),
+        default=2,
+        help="Number of outward logarithmic neighbors per boundary (default: 2).",
     )
 
     calibration_study_run = subparsers.add_parser(
@@ -3138,6 +3175,57 @@ def main(argv: Sequence[str] | None = None) -> int:
                 f"{len(snapshot.plan.stages)} — {snapshot.current_stage.title}"
             )
             print(f"Prepared candidates: {len(snapshot.candidates)}; no atlas run started.")
+        except (ConfigurationError, OSError, TypeError, ValueError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
+
+    if args.command == "reference-calibration-study-extend":
+        try:
+            safety_limits: dict[str, tuple[float, float]] = {}
+            for declared in args.limit:
+                if "=" not in declared:
+                    raise ValueError(
+                        "Each --limit must use PARAMETER=LOW:HIGH syntax"
+                    )
+                parameter, rendered_bounds = declared.split("=", maxsplit=1)
+                if not parameter or ":" not in rendered_bounds:
+                    raise ValueError(
+                        "Each --limit must use PARAMETER=LOW:HIGH syntax"
+                    )
+                lower_text, upper_text = rendered_bounds.split(":", maxsplit=1)
+                if parameter in safety_limits:
+                    raise ValueError(f"Duplicate --limit for {parameter}")
+                safety_limits[parameter] = (float(lower_text), float(upper_text))
+            snapshot = create_reference_calibration_search_extension_study(
+                args.source_study_directory,
+                args.output,
+                safety_limits=safety_limits,
+                outward_steps=args.outward_steps,
+            )
+            assert snapshot.current_stage is not None
+            pending = [
+                candidate
+                for candidate in snapshot.candidates
+                if candidate.status == "pending"
+            ]
+            print(f"Calibration search successor created: {snapshot.study_directory}")
+            print(f"Successor plan: {snapshot.plan.fingerprint}")
+            print(
+                f"Preserved candidates: {len(snapshot.candidates) - len(pending)}; "
+                f"new outward candidates: {len(pending)}"
+            )
+            for candidate in pending:
+                planned = next(
+                    item
+                    for item in snapshot.current_stage.candidates
+                    if item.candidate_id == candidate.candidate_id
+                )
+                values = ", ".join(
+                    f"{name}={value:.9g}" for name, value in planned.parameter_values
+                )
+                print(f"  {candidate.candidate_id}: {values}")
+            print("No process was started. Run the successor with reference-calibration-study-run.")
         except (ConfigurationError, OSError, TypeError, ValueError) as error:
             print(f"ERROR: {error}", file=sys.stderr)
             return 2

@@ -1357,6 +1357,20 @@ def propose_calibration_search_extension(
         boundary.split(":", maxsplit=1)
         for boundary in assessment.search_boundary_parameters
     )
+    existing_rounds = []
+    round_prefix = f"{stage.stage_id}-outward-r"
+    legacy_prefix = f"{stage.stage_id}-outward-"
+    for candidate in stage.candidates:
+        if candidate.candidate_id.startswith(round_prefix):
+            rendered_round = candidate.candidate_id[
+                len(round_prefix) :
+            ].split("-", maxsplit=1)[0]
+            if rendered_round.isdigit():
+                existing_rounds.append(int(rendered_round))
+        elif candidate.candidate_id.startswith(legacy_prefix):
+            existing_rounds.append(1)
+    extension_round = max(existing_rounds, default=0) + 1
+    candidate_prefix = f"{stage.stage_id}-outward-r{extension_round:02d}"
     additions: list[CalibrationCandidate] = []
     for group_label, parameters in _SEARCH_EXTENSION_GROUPS:
         active = [parameter for parameter in parameters if parameter in boundary_by_parameter]
@@ -1398,7 +1412,7 @@ def propose_calibration_search_extension(
                     proposed_values[parameter] = outward_value
             additions.append(
                 _candidate(
-                    f"{stage.stage_id}-outward",
+                    candidate_prefix,
                     len(additions) + 1,
                     f"{group_label} beyond tested {direction} · step {step}",
                     proposed_values,
