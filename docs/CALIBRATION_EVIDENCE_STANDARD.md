@@ -65,8 +65,9 @@ correspondence.
 
 - execute and publish the fixed-template holdout protocol on independent real
   datasets and calibrate its predeclared support thresholds prospectively;
-- add PCA subspace and subject-score stability with sign/rotation-invariant
-  comparisons;
+- bind the implemented sign/rotation-invariant PCA subspace and subject-score
+  stability primitives into a newly versioned Validation Lab protocol and
+  calibrate its thresholds prospectively;
 - support predeclared biological strata in pilot selection;
 - use independent homologous landmarks as target-registration-error evidence
   when available;

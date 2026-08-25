@@ -2,6 +2,10 @@
 
 from diffeoforge.analysis.landmarks import LANDMARK_COLUMNS, read_landmark_csv
 from diffeoforge.analysis.pca import PCAResult, momenta_pca, principal_component_analysis
+from diffeoforge.analysis.pca_stability import (
+    PCAStabilityEvidence,
+    compare_pca_stability,
+)
 from diffeoforge.analysis.pca_visualization import (
     write_pca_score_pair_svg,
     write_pca_scores_svg,
@@ -18,8 +22,10 @@ __all__ = [
     "GeneralizedProcrustesResult",
     "LANDMARK_COLUMNS",
     "PCAResult",
+    "PCAStabilityEvidence",
     "ProcrustesIteration",
     "SimilarityTransform",
+    "compare_pca_stability",
     "generalized_procrustes",
     "momenta_pca",
     "principal_component_analysis",

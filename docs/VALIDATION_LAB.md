@@ -77,6 +77,28 @@ Even the strongest holdout state still requires an independent anatomy-specific
 criterion and a final locked full-cohort atlas before strong manuscript language
 is justified.
 
+## PCA stability evidence
+
+DiffeoForge provides `compare_pca_stability` as a versioned numerical building
+block for paired finalist or repeat analyses. It pairs specimens by their exact
+labels and reports two complementary score-geometry measures:
+
+- linear CKA, which is invariant to principal-component signs, orthogonal
+  rotations, and a common score-scale change; and
+- Spearman correlation of all paired inter-specimen score distances, which is
+  also insensitive to monotone distance rescaling.
+
+Direct loading-subspace principal angles are reported only when the declared
+feature space, named feature identities, and selected subspace dimension match.
+They are deliberately withheld when finalists use different control-point
+systems; similarly numbered momenta coordinates are not assumed homologous.
+Components are selected by a declared cumulative-variance target (90% by
+default) or an explicit fixed count. The result contains no automatic pass
+threshold and explicitly does not claim biological meaning or group
+separation. Binding these measurements into newly versioned Validation Lab
+study artifacts and prospectively calibrating thresholds remain separate work;
+existing immutable studies are not reinterpreted retroactively.
+
 ## Desktop workflow
 
 Open a verified Deformetrica result and choose **Open Validation Lab** on the
