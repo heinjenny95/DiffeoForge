@@ -50,6 +50,7 @@ from diffeoforge.engine.optimizer import (
     OptimizationRecord,
     optimize_momenta,
 )
+from diffeoforge.engine.sobolev import sobolev_template_gradient
 
 __all__ = [
     "ShootingTrajectory",
@@ -85,6 +86,7 @@ __all__ = [
     "optimize_momenta",
     "optimize_atlas",
     "shoot",
+    "sobolev_template_gradient",
     "surface_squared_distance_to_prepared_target",
     "subject_objective",
     "triangle_centers_and_area_normals",
