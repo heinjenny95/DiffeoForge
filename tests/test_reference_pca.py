@@ -690,6 +690,57 @@ def test_modern_full_atlas_qualification_binds_initial_template_and_template_gat
     assert assessment["metrics"]["cross_engine_template_p95_over_reference_diagonal"] >= 0.0
     assert "cross_engine_template_distance" in assessment["decision"]["gate_results"]
 
+    continuation_path = create_modern_reference_qualification_continuation(
+        destination,
+        modern_run,
+        tmp_path / "full-atlas-continuation",
+        max_cycles=1,
+        threads=1,
+        created_at="2026-08-25T03:00:00+00:00",
+    )
+    continuation = verify_modern_reference_qualification_design(continuation_path)
+    continuation_config_path = (
+        continuation_path / continuation["modern_workflow"]["config_path"]
+    )
+    continuation_config = yaml.safe_load(
+        continuation_config_path.read_text(encoding="utf-8")
+    )
+    assert continuation["design_version"] == "0.9"
+    assert continuation["protocol"]["qualification_scope"] == "full_atlas"
+    assert continuation_config["optimization"]["block_order"] == [
+        "momenta",
+        "template",
+        "control_points",
+    ]
+    assert continuation_config["optimization"]["momenta_updates_per_cycle"] == 2
+    assert continuation_config["initialization"]["control_points"]["method"] == "file"
+    assert continuation_config["initialization"]["momenta"]["method"] == "file"
+    assert "resume_state" in continuation_config["optimization"]
+
+    successor_run = run_modern_workflow(
+        continuation_config_path,
+        destination=tmp_path / "full-atlas-successor-run",
+        created_at="2026-08-25T04:00:00+00:00",
+    )
+    successor_assessment_path = assess_modern_reference_qualification(
+        continuation_path,
+        successor_run,
+        tmp_path / "full-atlas-successor-assessment",
+        created_at="2026-08-25T05:00:00+00:00",
+    )
+    successor_assessment = verify_modern_reference_qualification_assessment(
+        successor_assessment_path
+    )
+    assert successor_assessment["continuation_verification"][
+        "initial_objective_matches"
+    ] is True
+    assert (
+        successor_assessment["metrics"][
+            "cross_engine_template_p95_over_reference_diagonal"
+        ]
+        >= 0.0
+    )
+
 
 def test_reference_qualification_skips_quality_failure_in_prospective_order(
     tmp_path: Path,

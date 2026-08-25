@@ -60,6 +60,7 @@ from diffeoforge.result_report import collect_run_report
 LEGACY_DESIGN_VERSION = "0.2"
 DESIGN_VERSION = "0.6"
 FULL_ATLAS_DESIGN_VERSION = "0.8"
+FULL_ATLAS_CONTINUATION_DESIGN_VERSION = "0.9"
 LEGACY_CONTINUATION_DESIGN_VERSION = "0.3"
 PREVIOUS_CONTINUATION_DESIGN_VERSION = "0.4"
 PREVIOUS_EXACT_CONTINUATION_DESIGN_VERSION = "0.5"
@@ -69,15 +70,18 @@ CONTINUATION_DESIGN_VERSIONS = {
     PREVIOUS_CONTINUATION_DESIGN_VERSION,
     PREVIOUS_EXACT_CONTINUATION_DESIGN_VERSION,
     CONTINUATION_DESIGN_VERSION,
+    FULL_ATLAS_CONTINUATION_DESIGN_VERSION,
 }
 ENGINE_BOUND_CONTINUATION_VERSIONS = {
     PREVIOUS_CONTINUATION_DESIGN_VERSION,
     PREVIOUS_EXACT_CONTINUATION_DESIGN_VERSION,
     CONTINUATION_DESIGN_VERSION,
+    FULL_ATLAS_CONTINUATION_DESIGN_VERSION,
 }
 EXACT_CONTINUATION_DESIGN_VERSIONS = {
     PREVIOUS_EXACT_CONTINUATION_DESIGN_VERSION,
     CONTINUATION_DESIGN_VERSION,
+    FULL_ATLAS_CONTINUATION_DESIGN_VERSION,
 }
 SUPPORTED_DESIGN_VERSIONS = frozenset(
     {
@@ -859,6 +863,9 @@ def create_modern_reference_qualification_continuation(
         raise ValueError("threads must be an integer of at least 1 or None")
     source_root = Path(design_directory).expanduser().resolve()
     source_design = verify_modern_reference_qualification_design(source_root)
+    full_atlas = (
+        source_design.get("protocol", {}).get("qualification_scope") == "full_atlas"
+    )
     parent_root = Path(parent_modern_run).expanduser().resolve()
     parent_workflow = verify_modern_workflow(parent_root)
     parent_source_config = _safe_relative(
@@ -948,9 +955,10 @@ def create_modern_reference_qualification_continuation(
     temporary = destination_path.parent / f".{destination_path.name}.tmp-{uuid.uuid4().hex}"
     temporary.mkdir()
     try:
+        source_config_relative = str(source_design["modern_workflow"]["config_path"])
         for record in source_design["artifacts"]:
             relative = str(record["path"])
-            if relative in {CONFIG_NAME, DESIGN_HTML_NAME}:
+            if relative in {source_config_relative, DESIGN_HTML_NAME}:
                 continue
             source = _safe_relative(source_root, relative, "Source qualification artifact")
             _copy_exclusive(source, temporary / Path(*PurePosixPath(relative).parts))
@@ -1016,18 +1024,28 @@ def create_modern_reference_qualification_continuation(
         output = destination_path.parent / f"{destination_path.name}-modern-run"
         config["output"]["directory"] = str(output)
         validate_modern_workflow_config(config)
-        config_path = temporary / CONFIG_NAME
+        config_path = temporary / (
+            FULL_ATLAS_CONFIG_NAME if full_atlas else CONFIG_NAME
+        )
         with config_path.open("x", encoding="utf-8", newline="\n") as handle:
             handle.write(CONFIG_MARKER + "\n")
             yaml.safe_dump(config, handle, sort_keys=False, allow_unicode=True)
 
         design = copy.deepcopy(source_design)
-        design["design_version"] = CONTINUATION_DESIGN_VERSION
+        design["design_version"] = (
+            FULL_ATLAS_CONTINUATION_DESIGN_VERSION
+            if full_atlas
+            else CONTINUATION_DESIGN_VERSION
+        )
         design["created_at"] = created_at or datetime.now(UTC).isoformat()
         design["protocol"]["comparison"] = (
             source_design["protocol"]["comparison"]
             + " Continue from the exact parent complete-cycle optimizer state without "
-            "changing the fixed geometric reference."
+            + (
+                "changing the cohort, model, or initialization lineage."
+                if full_atlas
+                else "changing the fixed geometric reference."
+            )
         )
         design["protocol"]["continuation"] = {
             "parent_design_sha256": sha256_file(source_root / DESIGN_JSON_NAME),
@@ -1049,7 +1067,7 @@ def create_modern_reference_qualification_continuation(
         }
         design["modern_workflow"] = {
             **design["modern_workflow"],
-            "config_path": CONFIG_NAME,
+            "config_path": config_path.name,
             "config_sha256": sha256_file(config_path),
             "expected_destination": str(output),
             "max_cycles": max_cycles,
@@ -1144,25 +1162,36 @@ def verify_modern_reference_qualification_design(
             f"Modern workflow config is invalid: {error}"
         ) from error
     qualification_scope = design.get("protocol", {}).get("qualification_scope", "fixed_reference")
-    if design.get("design_version") == FULL_ATLAS_DESIGN_VERSION:
+    full_atlas = qualification_scope == "full_atlas"
+    if design.get("design_version") in {
+        FULL_ATLAS_DESIGN_VERSION,
+        FULL_ATLAS_CONTINUATION_DESIGN_VERSION,
+    }:
         if qualification_scope != "full_atlas":
             raise ModernReferenceQualificationError("Full-atlas qualification scope is missing")
         expected_blocks = ["momenta", "template", "control_points"]
-        if config["initialization"]["control_points"]["method"] != ("farthest_template_vertices"):
-            raise ModernReferenceQualificationError(
-                "Full-atlas qualification must initialize deterministic control points"
+        if design.get("design_version") == FULL_ATLAS_DESIGN_VERSION:
+            if config["initialization"]["control_points"]["method"] != (
+                "farthest_template_vertices"
+            ):
+                raise ModernReferenceQualificationError(
+                    "Full-atlas qualification must initialize deterministic control points"
+                )
+            initial_template = _safe_relative(
+                root,
+                design["initialization"]["template"]["path"],
+                "Full-atlas initial template",
             )
-        initial_template = _safe_relative(
-            root,
-            design["initialization"]["template"]["path"],
-            "Full-atlas initial template",
-        )
-        if (
-            Path(config["input"]["template"]).as_posix()
-            != initial_template.relative_to(root).as_posix()
-        ):
+            if (
+                Path(config["input"]["template"]).as_posix()
+                != initial_template.relative_to(root).as_posix()
+            ):
+                raise ModernReferenceQualificationError(
+                    "Full-atlas configuration does not use the frozen initial template"
+                )
+        elif config["initialization"]["control_points"].get("method") != "file":
             raise ModernReferenceQualificationError(
-                "Full-atlas configuration does not use the frozen initial template"
+                "Full-atlas continuation must initialize checkpoint control points"
             )
         if config["optimization"].get("shared_step_scaling") != "inverse_subject_count":
             raise ModernReferenceQualificationError(
@@ -1180,7 +1209,7 @@ def verify_modern_reference_qualification_design(
         )
     if config["runtime"]["pairwise_evaluation"].get("autograd_strategy") != "recompute":
         raise ModernReferenceQualificationError("Qualification must declare recompute autograd")
-    expected_momenta_updates = 2 if qualification_scope == "full_atlas" else 1
+    expected_momenta_updates = 2 if full_atlas else 1
     if config["optimization"].get("momenta_updates_per_cycle", 1) != expected_momenta_updates:
         raise ModernReferenceQualificationError(
             "Modern reference qualification momenta schedule differs from its scope"
@@ -1189,7 +1218,10 @@ def verify_modern_reference_qualification_design(
         raise ModernReferenceQualificationError(
             "Modern reference qualification requires one subject-batch worker"
         )
-    if design.get("design_version") in {DESIGN_VERSION, FULL_ATLAS_DESIGN_VERSION}:
+    if design.get("design_version") in {
+        DESIGN_VERSION,
+        FULL_ATLAS_DESIGN_VERSION,
+    }:
         expected_engine = design["modern_workflow"].get("expected_engine_implementation")
         if (
             not isinstance(expected_engine, str)
@@ -1202,6 +1234,7 @@ def verify_modern_reference_qualification_design(
     if design.get("design_version") in {
         LEGACY_DESIGN_VERSION,
         DESIGN_VERSION,
+        FULL_ATLAS_DESIGN_VERSION,
         *CONTINUATION_DESIGN_VERSIONS,
     }:
         quality_settings = MeshQualitySettings.from_mapping(config["quality_control"])
@@ -1263,11 +1296,19 @@ def verify_modern_reference_qualification_design(
                 "expected_engine_implementation"
             )
             if (
-                design.get("design_version") == CONTINUATION_DESIGN_VERSION
+                design.get("design_version")
+                in {
+                    CONTINUATION_DESIGN_VERSION,
+                    FULL_ATLAS_CONTINUATION_DESIGN_VERSION,
+                }
                 and workflow_expected_engine
                 != continuation["expected_engine_implementation"]
             ) or (
-                design.get("design_version") != CONTINUATION_DESIGN_VERSION
+                design.get("design_version")
+                not in {
+                    CONTINUATION_DESIGN_VERSION,
+                    FULL_ATLAS_CONTINUATION_DESIGN_VERSION,
+                }
                 and workflow_expected_engine
                 not in (None, continuation["expected_engine_implementation"])
             ):
@@ -1371,6 +1412,39 @@ def verify_modern_reference_qualification_design(
             if momenta_path != state_momenta:
                 raise ModernReferenceQualificationError(
                     "Continuation initial momenta differ from checkpoint state"
+                )
+            state_template = _safe_relative(
+                checkpoint_root,
+                checkpoint["state"]["template"]["path"],
+                "Continuation checkpoint template",
+            )
+            configured_template = _safe_relative(
+                root,
+                config["input"]["template"],
+                "Continuation configured template",
+            )
+            if configured_template != state_template:
+                raise ModernReferenceQualificationError(
+                    "Continuation initial template differs from checkpoint state"
+                )
+            state_controls = _safe_relative(
+                checkpoint_root,
+                checkpoint["state"]["control_points"]["path"],
+                "Continuation checkpoint control points",
+            )
+            control_config = config["initialization"]["control_points"]
+            if not isinstance(control_config, dict) or control_config.get("method") != "file":
+                raise ModernReferenceQualificationError(
+                    "Continuation must declare file control points"
+                )
+            configured_controls = _safe_relative(
+                root,
+                control_config["path"],
+                "Continuation configured control points",
+            )
+            if configured_controls != state_controls:
+                raise ModernReferenceQualificationError(
+                    "Continuation initial control points differ from checkpoint state"
                 )
     observed_html = (root / DESIGN_HTML_NAME).read_text(encoding="utf-8")
     expected_html = _render_design_html(design)
