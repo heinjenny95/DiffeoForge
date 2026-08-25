@@ -99,6 +99,23 @@ separation. Binding these measurements into newly versioned Validation Lab
 study artifacts and prospectively calibrating thresholds remain separate work;
 existing immutable studies are not reinterpreted retroactively.
 
+Two already verified Deformetrica PCA bundles can be compared and bound into a
+new immutable artifact now:
+
+```powershell
+diffeoforge reference-pca-stability `
+  "C:\result-a\analysis\reference-result-analysis-v0.2" `
+  "C:\result-b\analysis\reference-result-analysis-v0.2" `
+  --output "C:\comparison\pca-stability" `
+  --variance-target 0.90
+
+diffeoforge reference-pca-stability-verify `
+  "C:\comparison\pca-stability"
+```
+
+The verifier rechecks both complete PCA bundles, their source hashes, and the
+exact stability calculation. Existing destinations are never replaced.
+
 ## Desktop workflow
 
 Open a verified Deformetrica result and choose **Open Validation Lab** on the
