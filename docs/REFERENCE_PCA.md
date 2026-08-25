@@ -40,6 +40,31 @@ Only dimension three is accepted. The remaining finite numeric rows must match
 allowed; missing, extra, nonnumeric, or non-finite rows fail. The separate
 control-point file must contain exactly the declared number of finite XYZ rows.
 
+## Prospective PC deformation Shooting
+
+Reference PCA deformation meshes use Deformetrica itself rather than silently
+substituting the Modern Engine. The first step is deliberately non-executing:
+
+```powershell
+diffeoforge reference-pca-deformation-design RUN_DIRECTORY `
+  --output C:\path\to\new-shooting-design `
+  --components 3 `
+  --standard-deviations 2
+
+diffeoforge reference-pca-deformation-design-verify `
+  C:\path\to\new-shooting-design `
+  --source-run RUN_DIRECTORY
+```
+
+The prospective design copies and binds the estimated Deformetrica template
+and control points, derives exact mean and ±PC momenta from the verified PCA,
+changes only the source model type to `Shooting`, preserves the source
+deformation and integration settings, and records the exact source runtime.
+Its status is `prospective_not_executed`: creating or verifying it starts no
+process and makes no endpoint-mesh claim. A separate supervised
+`deformetrica compute` execution and result verifier are required before these
+designs can enter the Results viewer.
+
 Subject identity and order come from the immutable run manifest's subject input
 records. This is the same order used when DiffeoForge wrote Deformetrica's
 dataset XML. Features are flattened in this declared order:
@@ -93,7 +118,9 @@ convergence.
 
 This PCA is an exploratory coordinate summary. It does not prove adequate atlas
 registration, optimizer convergence, group separation, taxonomic structure,
-biological effect, or causality. The current reference path does not yet create
-mean/positive/negative PC deformation meshes, registration-quality renderings,
-covariate-aware plots, or inferential statistics. Those require separate
+biological effect, or causality. The current reference result viewer does not
+yet expose executed mean/positive/negative PC deformation meshes. Their exact
+Deformetrica Shooting inputs can be frozen and independently verified as
+described above, while supervised execution/publication remains separate.
+Covariate-aware plots and inferential statistics likewise require separate
 methods and validation decisions.

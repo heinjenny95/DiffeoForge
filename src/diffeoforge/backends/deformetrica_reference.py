@@ -292,6 +292,65 @@ def build_command(
     """Resolve the exact native or WSL command for a prepared run."""
 
     validate_reference_config(config)
+    arguments = (
+        "estimate",
+        "engine/model.xml",
+        "engine/data_set.xml",
+        "-p",
+        "engine/optimization_parameters.xml",
+        "--output=output",
+        "-v",
+        config["runtime"]["verbosity"],
+    )
+    return _build_launcher_command(
+        config,
+        run_directory,
+        arguments=arguments,
+        follow_run_directory_symlinks=follow_run_directory_symlinks,
+    )
+
+
+def build_shooting_command(
+    config: Mapping[str, Any],
+    run_directory: Path,
+    *,
+    follow_run_directory_symlinks: bool = True,
+) -> CommandSpec:
+    """Resolve an exact Deformetrica ``compute Shooting`` command.
+
+    The caller must prepare ``engine/model.xml`` with model type ``Shooting``,
+    an immutable momenta file, and the source run's optimization parameters.
+    This helper only applies the same verified launcher, device, compiler, and
+    thread contract used for atlas estimation.
+    """
+
+    validate_reference_config(config)
+    arguments = (
+        "compute",
+        "engine/model.xml",
+        "-p",
+        "engine/optimization_parameters.xml",
+        "--output=output",
+        "-v",
+        config["runtime"]["verbosity"],
+    )
+    return _build_launcher_command(
+        config,
+        run_directory,
+        arguments=arguments,
+        follow_run_directory_symlinks=follow_run_directory_symlinks,
+    )
+
+
+def _build_launcher_command(
+    config: Mapping[str, Any],
+    run_directory: Path,
+    *,
+    arguments: tuple[str, ...],
+    follow_run_directory_symlinks: bool,
+) -> CommandSpec:
+    """Apply one validated reference runtime to a prepared engine operation."""
+
     runtime = config["runtime"]
     launcher = runtime["launcher"]
     gpu_kernels = runtime["device"] == "cuda"
@@ -312,16 +371,6 @@ def build_command(
         )
     else:
         environment["USE_CUDA"] = "0"
-    arguments = (
-        "estimate",
-        "engine/model.xml",
-        "engine/data_set.xml",
-        "-p",
-        "engine/optimization_parameters.xml",
-        "--output=output",
-        "-v",
-        runtime["verbosity"],
-    )
     command_run_directory = _command_run_directory(
         run_directory,
         follow_symlinks=follow_run_directory_symlinks,

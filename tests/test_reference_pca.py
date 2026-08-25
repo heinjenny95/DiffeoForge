@@ -4,6 +4,7 @@ import csv
 import json
 import math
 import shutil
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import numpy as np
@@ -46,6 +47,13 @@ from diffeoforge.reference_pca import (
     read_deformetrica_momenta,
     verify_reference_pca_bundle,
     write_reference_pca_bundle,
+)
+from diffeoforge.reference_pca_deformations import (
+    DESIGN_NAME,
+    DESIGN_SIDECAR,
+    ReferencePCADeformationError,
+    create_reference_pca_deformation_design,
+    verify_reference_pca_deformation_design,
 )
 from diffeoforge.runs import prepare_run
 
@@ -237,6 +245,130 @@ def test_reference_pca_bundle_is_source_bound_recomputed_and_nonreplacing(
 
     with pytest.raises(FileExistsError, match="already exists"):
         write_reference_pca_bundle(run)
+
+
+def test_reference_pca_deformation_design_binds_exact_shooting_endpoints(
+    tmp_path: Path,
+) -> None:
+    run = _completed_reference_run(tmp_path)
+    bundle = write_reference_pca_bundle(
+        run,
+        created_at="2026-07-19T09:00:00+00:00",
+    )
+
+    design_path = create_reference_pca_deformation_design(
+        run,
+        pca_bundle=bundle,
+        components=2,
+        standard_deviations=2.0,
+        created_at="2026-07-19T09:05:00+00:00",
+    )
+    design = verify_reference_pca_deformation_design(design_path, source_run=run)
+
+    assert design["status"] == "prospective_not_executed"
+    assert design["shooting"]["endpoint_count"] == 5
+    assert [
+        (endpoint["component"], endpoint["direction"])
+        for endpoint in design["shooting"]["endpoints"]
+    ] == [
+        (None, None),
+        (1, "minus"),
+        (1, "plus"),
+        (2, "minus"),
+        (2, "plus"),
+    ]
+    model = ET.parse(design_path / "engine" / "model.xml").getroot()
+    assert model.findtext("model-type") == "Shooting"
+    assert model.findtext("initial-control-points") == "../source/control-points.txt"
+    assert model.findtext("initial-momenta") == "../source/endpoint-momenta.txt"
+    assert (
+        model.findtext("./template/object/filename")
+        == "../source/estimated-template.vtk"
+    )
+    assert design["runtime"] == json.loads(
+        (run / "manifest.json").read_text(encoding="utf-8")
+    )["effective_config"]["runtime"]
+    assert (
+        main(
+            [
+                "reference-pca-deformation-design-verify",
+                str(design_path),
+                "--source-run",
+                str(run),
+            ]
+        )
+        == 0
+    )
+
+    cli_design = tmp_path / "cli-shooting-design"
+    assert (
+        main(
+            [
+                "reference-pca-deformation-design",
+                str(run),
+                "--pca-bundle",
+                str(bundle),
+                "--output",
+                str(cli_design),
+                "--components",
+                "2",
+            ]
+        )
+        == 0
+    )
+    assert verify_reference_pca_deformation_design(cli_design, source_run=run)
+
+    with pytest.raises(FileExistsError, match="already exists"):
+        create_reference_pca_deformation_design(
+            run,
+            pca_bundle=bundle,
+        )
+
+
+def test_reference_pca_deformation_design_recomputes_resigned_momenta(
+    tmp_path: Path,
+) -> None:
+    run = _completed_reference_run(tmp_path)
+    bundle = write_reference_pca_bundle(run)
+    design_path = create_reference_pca_deformation_design(
+        run,
+        pca_bundle=bundle,
+    )
+    momenta_path = design_path / "source" / "endpoint-momenta.txt"
+    lines = momenta_path.read_text(encoding="utf-8").splitlines()
+    numeric_line = next(
+        index
+        for index, line in enumerate(lines[2:], start=2)
+        if line.strip()
+    )
+    values = lines[numeric_line].split()
+    values[0] = format(float(values[0]) + 1.0, ".17g")
+    lines[numeric_line] = " ".join(values)
+    momenta_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    manifest_path = design_path / DESIGN_NAME
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    record = next(
+        item
+        for item in manifest["artifacts"]
+        if item["path"] == "source/endpoint-momenta.txt"
+    )
+    record["bytes"] = momenta_path.stat().st_size
+    record["sha256"] = sha256_file(momenta_path)
+    manifest_path.write_text(
+        json.dumps(manifest, indent=2, ensure_ascii=False, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    (design_path / DESIGN_SIDECAR).write_text(
+        f"{sha256_file(manifest_path)}  {DESIGN_NAME}\n",
+        encoding="ascii",
+    )
+
+    with pytest.raises(
+        ReferencePCADeformationError,
+        match="momenta differ from exact PCA recomputation",
+    ):
+        verify_reference_pca_deformation_design(design_path, source_run=run)
 
 
 def test_reference_pca_rejects_source_output_tampering(tmp_path: Path) -> None:

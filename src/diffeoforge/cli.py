@@ -867,6 +867,56 @@ def build_parser() -> argparse.ArgumentParser:
         help="Also require an exact hash binding to this current Deformetrica run.",
     )
 
+    reference_pca_deformation_design_parser = subparsers.add_parser(
+        "reference-pca-deformation-design",
+        help=(
+            "Freeze exact mean/±PC momenta and a no-execution Deformetrica "
+            "Shooting design."
+        ),
+    )
+    reference_pca_deformation_design_parser.add_argument(
+        "run_directory",
+        type=Path,
+        help="Completed immutable Deformetrica run directory.",
+    )
+    reference_pca_deformation_design_parser.add_argument(
+        "--pca-bundle",
+        type=Path,
+        help="Verified reference PCA bundle (default: the run's v0.2 bundle).",
+    )
+    reference_pca_deformation_design_parser.add_argument(
+        "--output",
+        required=True,
+        type=Path,
+        help="New prospective Shooting design directory.",
+    )
+    reference_pca_deformation_design_parser.add_argument(
+        "--components",
+        type=int,
+        default=3,
+        help="Number of retained PCs to visualize (default: 3).",
+    )
+    reference_pca_deformation_design_parser.add_argument(
+        "--standard-deviations",
+        type=float,
+        default=2.0,
+        help="Endpoint distance from the mean along each PC (default: 2.0).",
+    )
+
+    reference_pca_deformation_verify_parser = subparsers.add_parser(
+        "reference-pca-deformation-design-verify",
+        help="Recompute and verify a prospective reference PCA Shooting design.",
+    )
+    reference_pca_deformation_verify_parser.add_argument(
+        "design_directory",
+        type=Path,
+    )
+    reference_pca_deformation_verify_parser.add_argument(
+        "--source-run",
+        type=Path,
+        help="Override and verify against this exact current source run.",
+    )
+
     reference_pca_stability_parser = subparsers.add_parser(
         "reference-pca-stability",
         help="Create immutable sign/rotation-invariant evidence for two PCA bundles.",
@@ -2041,6 +2091,53 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"Subjects: {verified.manifest['inputs']['subjects']}")
             print(f"Components: {verified.pca.number_of_components}")
             print("Raw parameter hashes and recomputed PCA tables match.")
+        except (OSError, RuntimeError, TypeError, ValueError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
+
+    if args.command == "reference-pca-deformation-design":
+        try:
+            from diffeoforge.reference_pca_deformations import (
+                create_reference_pca_deformation_design,
+                verify_reference_pca_deformation_design,
+            )
+
+            destination = create_reference_pca_deformation_design(
+                args.run_directory,
+                args.output,
+                pca_bundle=args.pca_bundle,
+                components=args.components,
+                standard_deviations=args.standard_deviations,
+            )
+            design = verify_reference_pca_deformation_design(
+                destination,
+                source_run=args.run_directory,
+            )
+            shooting = design["shooting"]
+            print(f"Prospective reference PCA Shooting design created: {destination}")
+            print(f"Endpoint momenta: {shooting['endpoint_count']}")
+            print(f"Requested PCs: {shooting['requested_components']}")
+            print(f"Endpoint distance: ±{shooting['standard_deviations']} SD")
+            print("No Deformetrica process was started and no endpoint mesh exists yet.")
+        except (OSError, RuntimeError, TypeError, ValueError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
+
+    if args.command == "reference-pca-deformation-design-verify":
+        try:
+            from diffeoforge.reference_pca_deformations import (
+                verify_reference_pca_deformation_design,
+            )
+
+            design = verify_reference_pca_deformation_design(
+                args.design_directory,
+                source_run=args.source_run,
+            )
+            print(f"Reference PCA Shooting design verified: {args.design_directory.resolve()}")
+            print(f"Endpoint momenta: {design['shooting']['endpoint_count']}")
+            print("Exact PCA recomputation and source bindings match; no run is claimed.")
         except (OSError, RuntimeError, TypeError, ValueError) as error:
             print(f"ERROR: {error}", file=sys.stderr)
             return 2
