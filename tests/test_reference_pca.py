@@ -409,7 +409,8 @@ def test_modern_reference_qualification_design_is_prospective_and_tamper_evident
         created_at="2026-08-22T00:00:00+00:00",
     )
     design = verify_modern_reference_qualification_design(destination)
-    config = yaml.safe_load((destination / CONFIG_NAME).read_text(encoding="utf-8"))
+    config_path = destination / design["modern_workflow"]["config_path"]
+    config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
 
     assert design["status"] == "prospective_no_modern_results"
     assert len(design["subjects"]) == 3
@@ -446,7 +447,7 @@ def test_modern_reference_qualification_design_is_prospective_and_tamper_evident
         verify_modern_reference_qualification_design(unbound)
 
     modern_run = run_modern_workflow(
-        destination / CONFIG_NAME,
+        config_path,
         destination=tmp_path / "modern-run",
         created_at="2026-08-22T01:00:00+00:00",
     )
@@ -632,6 +633,62 @@ def test_modern_reference_qualification_design_is_prospective_and_tamper_evident
     subject.write_bytes(subject.read_bytes() + b"tamper")
     with pytest.raises(ModernReferenceQualificationError, match="differs"):
         verify_modern_reference_qualification_design(destination)
+
+
+def test_modern_full_atlas_qualification_binds_initial_template_and_template_gate(
+    tmp_path: Path,
+) -> None:
+    run = _completed_reference_run(tmp_path / "reference")
+    destination = create_modern_reference_qualification(
+        run,
+        tmp_path / "full-atlas-design",
+        subject_count=5,
+        max_cycles=1,
+        threads=1,
+        tile_size=32,
+        optimizer_direction="lbfgs",
+        subject_batch_size=2,
+        qualification_scope="full_atlas",
+        created_at="2026-08-25T00:00:00+00:00",
+    )
+
+    design = verify_modern_reference_qualification_design(destination)
+    config_path = destination / design["modern_workflow"]["config_path"]
+    config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    assert design["design_version"] == "0.8"
+    assert design["protocol"]["qualification_scope"] == "full_atlas"
+    assert design["modern_workflow"]["optimized_blocks"] == [
+        "momenta",
+        "template",
+        "control_points",
+    ]
+    assert config["input"]["template"] == "inputs/initial-template.vtk"
+    assert config["initialization"]["control_points"] == {
+        "method": "farthest_template_vertices",
+        "count": design["fixed_reference"]["control_point_count"],
+    }
+    assert config["optimization"]["block_order"] == [
+        "momenta",
+        "template",
+        "control_points",
+    ]
+    assert config["optimization"]["momenta_updates_per_cycle"] == 2
+    assert config["optimization"]["shared_step_scaling"] == "inverse_subject_count"
+
+    modern_run = run_modern_workflow(
+        config_path,
+        destination=tmp_path / "full-atlas-modern-run",
+        created_at="2026-08-25T01:00:00+00:00",
+    )
+    assessment_path = assess_modern_reference_qualification(
+        destination,
+        modern_run,
+        tmp_path / "full-atlas-assessment",
+        created_at="2026-08-25T02:00:00+00:00",
+    )
+    assessment = verify_modern_reference_qualification_assessment(assessment_path)
+    assert assessment["metrics"]["cross_engine_template_p95_over_reference_diagonal"] >= 0.0
+    assert "cross_engine_template_distance" in assessment["decision"]["gate_results"]
 
 
 def test_reference_qualification_skips_quality_failure_in_prospective_order(

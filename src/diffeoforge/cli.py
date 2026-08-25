@@ -286,6 +286,15 @@ def build_parser() -> argparse.ArgumentParser:
     modern_reference_design_parser.add_argument("--cycles", type=int, default=3)
     modern_reference_design_parser.add_argument("--threads", type=int, default=4)
     modern_reference_design_parser.add_argument(
+        "--scope",
+        choices=("fixed_reference", "full_atlas"),
+        default="fixed_reference",
+        help=(
+            "Qualification scope: isolate momenta against a fixed reference or estimate "
+            "momenta, template, and control points together (default: fixed_reference)."
+        ),
+    )
+    modern_reference_design_parser.add_argument(
         "--device",
         choices=("cpu", "cuda"),
         default="cpu",
@@ -1452,7 +1461,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "modern-reference-qualification-init":
         try:
             from diffeoforge.modern_reference_qualification import (
-                CONFIG_NAME,
                 DESIGN_HTML_NAME,
                 DESIGN_JSON_NAME,
                 create_modern_reference_qualification,
@@ -1474,11 +1482,17 @@ def main(argv: Sequence[str] | None = None) -> int:
                 strong_wolfe_maximum_step_size=args.strong_wolfe_maximum_step_size,
                 subject_batch_size=args.subject_batch_size,
                 runtime_device=args.device,
+                qualification_scope=args.scope,
             )
             design = verify_modern_reference_qualification_design(destination)
-            print(f"Prospective fixed-reference qualification created: {destination}")
+            print(
+                f"Prospective {args.scope.replace('_', '-')} qualification created: {destination}"
+            )
             print(f"Subjects: {len(design['subjects'])}")
-            print(f"Frozen Modern config: {destination / CONFIG_NAME}")
+            print(
+                "Frozen Modern config: "
+                f"{destination / design['modern_workflow']['config_path']}"
+            )
             print(f"Machine-readable design: {destination / DESIGN_JSON_NAME}")
             print(f"Review page: {destination / DESIGN_HTML_NAME}")
             print("No Modern optimizer was run and no comparison result exists yet.")

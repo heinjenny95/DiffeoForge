@@ -59,6 +59,7 @@ from diffeoforge.result_report import collect_run_report
 
 LEGACY_DESIGN_VERSION = "0.2"
 DESIGN_VERSION = "0.6"
+FULL_ATLAS_DESIGN_VERSION = "0.8"
 LEGACY_CONTINUATION_DESIGN_VERSION = "0.3"
 PREVIOUS_CONTINUATION_DESIGN_VERSION = "0.4"
 PREVIOUS_EXACT_CONTINUATION_DESIGN_VERSION = "0.5"
@@ -83,6 +84,7 @@ SUPPORTED_DESIGN_VERSIONS = frozenset(
         "0.1",
         LEGACY_DESIGN_VERSION,
         DESIGN_VERSION,
+        FULL_ATLAS_DESIGN_VERSION,
         *CONTINUATION_DESIGN_VERSIONS,
     }
 )
@@ -90,6 +92,7 @@ DESIGN_JSON_NAME = "modern-reference-qualification-design.json"
 DESIGN_SIDECAR_NAME = "modern-reference-qualification-design.sha256"
 DESIGN_HTML_NAME = "modern-reference-qualification-design.html"
 CONFIG_NAME = "modern-fixed-reference.yaml"
+FULL_ATLAS_CONFIG_NAME = "modern-full-atlas.yaml"
 ASSESSMENT_JSON_NAME = "modern-reference-qualification-assessment.json"
 ASSESSMENT_SIDECAR_NAME = "modern-reference-qualification-assessment.sha256"
 ASSESSMENT_HTML_NAME = "modern-reference-qualification-assessment.html"
@@ -318,17 +321,31 @@ def _render_design_html(design: dict[str, Any]) -> str:
             f"<li>Parent final objective: {float(continuation['parent_final_objective']):.12g}</li>"
             "</ul>"
         )
+    full_atlas = design.get("protocol", {}).get("qualification_scope") == "full_atlas"
+    title = (
+        "Prospective Modern Engine full-atlas qualification"
+        if full_atlas
+        else "Prospective Modern Engine fixed-reference qualification"
+    )
+    parameter_statement = (
+        "Subject momenta, template vertices, and control points may change. The initial "
+        "template, selected cohort, numerical model, and final Deformetrica atlas evidence "
+        "are copied and hash-bound. Internal objective values are not treated as "
+        "cross-engine equivalents."
+        if full_atlas
+        else "Only subject momenta may change. The Deformetrica estimated template and "
+        "control points are copied, hashed, and fixed. Internal objective values are not "
+        "treated as cross-engine equivalents."
+    )
     return f"""<!doctype html>
 <html lang="en"><meta charset="utf-8"><title>Modern reference qualification</title>
 <style>body{{font:16px system-ui;max-width:980px;margin:2rem auto;line-height:1.45}}
 code{{background:#eef4f3;padding:.1rem .25rem}} .warning{{background:#fff4cf;padding:1rem}}</style>
-<h1>Prospective Modern Engine fixed-reference qualification</h1>
+<h1>{escape(title)}</h1>
 <p class="warning">No Modern Engine result existed when this design was frozen. These are
 engineering non-inferiority gates, not evidence of biological validity or production readiness.</p>
 <h2>Controlled comparison</h2><p>{escape(design["protocol"]["comparison"])}</p>
-<p>Only subject momenta may change. The Deformetrica estimated template and control points
-are copied, hashed, and fixed. Internal objective values are not treated as cross-engine
-equivalents.</p>
+<p>{escape(parameter_statement)}</p>
 <h2>Subjects ({len(design["subjects"])})</h2><ol>{subjects}</ol>{quality_section}\
 {continuation_section}
 <h2>Predeclared gates</h2><ul>{gates}</ul>
@@ -353,6 +370,7 @@ def create_modern_reference_qualification(
     strong_wolfe_maximum_step_size: float = 10.0,
     subject_batch_size: int | None = None,
     runtime_device: str = "cpu",
+    qualification_scope: str = "fixed_reference",
     created_at: str | None = None,
 ) -> Path:
     """Freeze a no-results-yet comparison against one completed Deformetrica atlas."""
@@ -374,6 +392,8 @@ def create_modern_reference_qualification(
         raise ValueError("subject_batch_size must be an integer of at least 1 or None")
     if runtime_device not in {"cpu", "cuda"}:
         raise ValueError("runtime_device must be cpu or cuda")
+    if qualification_scope not in {"fixed_reference", "full_atlas"}:
+        raise ValueError("qualification_scope must be fixed_reference or full_atlas")
     if optimizer_direction not in {"steepest", "lbfgs"}:
         raise ValueError("optimizer_direction must be steepest or lbfgs")
     if line_search_condition not in {"armijo", "strong_wolfe"}:
@@ -423,6 +443,11 @@ def create_modern_reference_qualification(
         raise ValueError(
             f"subject_count cannot exceed the {len(subject_inputs)} reference subjects"
         )
+    if qualification_scope == "full_atlas" and subject_count != len(subject_inputs):
+        raise ValueError(
+            "full_atlas qualification must use the complete Deformetrica reference cohort; "
+            f"requested {subject_count}, reference contains {len(subject_inputs)}"
+        )
     preferred = [
         name for name in _preferred_subject_names(dict(report.manifest)) if name in subject_inputs
     ]
@@ -450,6 +475,14 @@ def create_modern_reference_qualification(
         "__EstimatedParameters__Template_",
         "estimated template",
     )
+    initial_template_inputs = [
+        dict(record) for record in report.manifest["inputs"] if record.get("role") == "template"
+    ]
+    if len(initial_template_inputs) != 1:
+        raise ModernReferenceQualificationError(
+            "Completed reference run must contain exactly one staged initial template"
+        )
+    initial_template_input = initial_template_inputs[0]
     control_record = _one_inventory_record(
         report.inventory,
         "__EstimatedParameters__ControlPoints.txt",
@@ -495,6 +528,31 @@ def create_modern_reference_qualification(
             _output_artifact(run, template_record),
             temporary / "inputs" / "reference-template.vtk",
         )
+        initial_template_value = str(initial_template_input["staged_path"])
+        initial_template_relative = PurePosixPath(initial_template_value)
+        if (
+            "\\" in initial_template_value
+            or initial_template_relative.is_absolute()
+            or "." in initial_template_relative.parts
+            or ".." in initial_template_relative.parts
+        ):
+            raise ModernReferenceQualificationError(
+                "Protected reference initial template has an unsafe staged path"
+            )
+        initial_template_source = run / Path(*initial_template_relative.parts)
+        initial_template_hash = str(initial_template_input["geometry"]["sha256"])
+        if (
+            not initial_template_source.is_file()
+            or initial_template_source.is_symlink()
+            or sha256_file(initial_template_source) != initial_template_hash
+        ):
+            raise ModernReferenceQualificationError(
+                "Protected reference initial template differs from its manifest"
+            )
+        copied_initial_template = _copy_exclusive(
+            initial_template_source,
+            temporary / "inputs" / "initial-template.vtk",
+        )
         copied_controls = _copy_exclusive(
             _output_artifact(run, control_record),
             temporary / "inputs" / "reference-control-points.txt",
@@ -533,13 +591,22 @@ def create_modern_reference_qualification(
         optimization = effective["optimization"]
         noise_std = float(model["noise_std"])
         output = destination_path.parent / f"{destination_path.name}-modern-run"
+        full_atlas = qualification_scope == "full_atlas"
         config = {
             "schema_version": CONFIG_VERSION,
-            "project": {"name": f"{effective['project']['name']}-modern-fixed-reference"},
+            "project": {
+                "name": (
+                    f"{effective['project']['name']}-modern-full-atlas"
+                    if full_atlas
+                    else f"{effective['project']['name']}-modern-fixed-reference"
+                )
+            },
             "input": {
                 "directory": "inputs/subjects",
                 "subject_pattern": "*.vtk",
-                "template": "inputs/reference-template.vtk",
+                "template": (
+                    "inputs/initial-template.vtk" if full_atlas else "inputs/reference-template.vtk"
+                ),
                 "units": effective["input"]["units"],
             },
             "preprocessing": {
@@ -554,11 +621,18 @@ def create_modern_reference_qualification(
             },
             "quality_control": quality_settings.as_manifest(),
             "initialization": {
-                "control_points": {
-                    "method": "file",
-                    "count": control_count,
-                    "path": "inputs/reference-control-points.txt",
-                },
+                "control_points": (
+                    {
+                        "method": "farthest_template_vertices",
+                        "count": control_count,
+                    }
+                    if full_atlas
+                    else {
+                        "method": "file",
+                        "count": control_count,
+                        "path": "inputs/reference-control-points.txt",
+                    }
+                ),
                 "momenta": "zeros",
             },
             "model": {
@@ -576,7 +650,10 @@ def create_modern_reference_qualification(
             },
             "optimization": {
                 "max_cycles": max_cycles,
-                "block_order": ["momenta"],
+                "block_order": (
+                    ["momenta", "template", "control_points"] if full_atlas else ["momenta"]
+                ),
+                "momenta_updates_per_cycle": 2 if full_atlas else 1,
                 "momenta_step_size": float(optimization["initial_step_size"]),
                 "template_step_size": 0.01,
                 "control_points_step_size": 0.01,
@@ -596,7 +673,7 @@ def create_modern_reference_qualification(
                 "relative_objective_tolerance": float(optimization["convergence_tolerance"]),
                 "subject_batch_size": subject_batch_size,
                 "subject_batch_workers": 1,
-                "shared_step_scaling": "none",
+                "shared_step_scaling": ("inverse_subject_count" if full_atlas else "none"),
                 "checkpoint_interval_cycles": 5,
                 "checkpoint_retention": "latest",
             },
@@ -620,14 +697,14 @@ def create_modern_reference_qualification(
             "output": {"directory": str(output)},
         }
         validate_modern_workflow_config(config)
-        config_path = temporary / CONFIG_NAME
+        config_path = temporary / (FULL_ATLAS_CONFIG_NAME if full_atlas else CONFIG_NAME)
         with config_path.open("x", encoding="utf-8", newline="\n") as handle:
             handle.write(CONFIG_MARKER + "\n")
             yaml.safe_dump(config, handle, sort_keys=False, allow_unicode=True)
 
         timestamp = created_at or datetime.now(UTC).isoformat()
         design: dict[str, Any] = {
-            "design_version": DESIGN_VERSION,
+            "design_version": (FULL_ATLAS_DESIGN_VERSION if full_atlas else DESIGN_VERSION),
             "created_at": timestamp,
             "status": "prospective_no_modern_results",
             "source_reference": {
@@ -638,10 +715,21 @@ def create_modern_reference_qualification(
                 "reference_duration_seconds": float(report.result["duration_seconds"]),
             },
             "protocol": {
+                "qualification_scope": qualification_scope,
                 "comparison": (
-                    "Register the same preselected subjects to the completed Deformetrica "
-                    "estimated template, using its exact estimated control points; optimize "
-                    "Modern Engine momenta only."
+                    (
+                        "Estimate a complete Modern atlas from the same staged initial "
+                        "template and preselected cohort as the completed Deformetrica atlas; "
+                        "optimize subject momenta, template vertices, and shared control "
+                        "points, then compare externally observable templates and "
+                        "reconstructions."
+                    )
+                    if full_atlas
+                    else (
+                        "Register the same preselected subjects to the completed Deformetrica "
+                        "estimated template, using its exact estimated control points; optimize "
+                        "Modern Engine momenta only."
+                    )
                 ),
                 "subject_selection": (
                     "Reuse the pre-results geometry-diverse calibration pilot order when "
@@ -670,12 +758,29 @@ def create_modern_reference_qualification(
                 "control_points": _artifact(temporary, copied_controls),
                 "control_point_count": control_count,
             },
+            "initialization": {
+                "template": _artifact(temporary, copied_initial_template),
+                "control_points": (
+                    {
+                        "method": "farthest_template_vertices",
+                        "count": control_count,
+                    }
+                    if full_atlas
+                    else {
+                        "method": "fixed_deformetrica_estimate",
+                        "count": control_count,
+                    }
+                ),
+                "momenta": "zeros",
+            },
             "subjects": subject_rows,
             "modern_workflow": {
-                "config_path": CONFIG_NAME,
+                "config_path": config_path.name,
                 "config_sha256": sha256_file(config_path),
                 "expected_destination": str(output),
-                "optimized_blocks": ["momenta"],
+                "optimized_blocks": (
+                    ["momenta", "template", "control_points"] if full_atlas else ["momenta"]
+                ),
                 "max_cycles": max_cycles,
                 "pairwise_autograd_strategy": "recompute",
                 "expected_engine_implementation": ENGINE_IMPLEMENTATION_VERSION,
@@ -687,12 +792,28 @@ def create_modern_reference_qualification(
                 "subject_external_residual_ratio_maximum": 1.25,
                 "minimum_subject_pass_fraction": 0.80,
                 "cross_engine_reconstruction_p95_over_template_diagonal_maximum": 0.05,
+                **(
+                    {
+                        "cross_engine_template_p95_over_reference_diagonal_maximum": 0.05,
+                    }
+                    if full_atlas
+                    else {}
+                ),
             },
             "scientific_boundary": (
-                "This fixed-reference pilot isolates registration behavior. Its thresholds "
-                "are prospective engineering non-inferiority gates, not proof of optimizer "
-                "equivalence, atlas equivalence, biological validity, convergence, GPU "
-                "parity, or readiness for 300 specimens."
+                (
+                    "This full-atlas comparison is a prospective engineering non-inferiority "
+                    "gate for one initialization, cohort, and parameterization. It does not "
+                    "prove biological validity, global optimality, PCA stability, GPU parity, "
+                    "or readiness for 300 specimens."
+                )
+                if full_atlas
+                else (
+                    "This fixed-reference pilot isolates registration behavior. Its thresholds "
+                    "are prospective engineering non-inferiority gates, not proof of optimizer "
+                    "equivalence, atlas equivalence, biological validity, convergence, GPU "
+                    "parity, or readiness for 300 specimens."
+                )
             ),
         }
         html_path = temporary / DESIGN_HTML_NAME
@@ -1022,22 +1143,54 @@ def verify_modern_reference_qualification_design(
         raise ModernReferenceQualificationError(
             f"Modern workflow config is invalid: {error}"
         ) from error
-    if config["optimization"]["block_order"] != ["momenta"]:
-        raise ModernReferenceQualificationError("Qualification must optimize only momenta")
+    qualification_scope = design.get("protocol", {}).get("qualification_scope", "fixed_reference")
+    if design.get("design_version") == FULL_ATLAS_DESIGN_VERSION:
+        if qualification_scope != "full_atlas":
+            raise ModernReferenceQualificationError("Full-atlas qualification scope is missing")
+        expected_blocks = ["momenta", "template", "control_points"]
+        if config["initialization"]["control_points"]["method"] != ("farthest_template_vertices"):
+            raise ModernReferenceQualificationError(
+                "Full-atlas qualification must initialize deterministic control points"
+            )
+        initial_template = _safe_relative(
+            root,
+            design["initialization"]["template"]["path"],
+            "Full-atlas initial template",
+        )
+        if (
+            Path(config["input"]["template"]).as_posix()
+            != initial_template.relative_to(root).as_posix()
+        ):
+            raise ModernReferenceQualificationError(
+                "Full-atlas configuration does not use the frozen initial template"
+            )
+        if config["optimization"].get("shared_step_scaling") != "inverse_subject_count":
+            raise ModernReferenceQualificationError(
+                "Full-atlas qualification must scale shared starter steps by cohort size"
+            )
+    else:
+        if qualification_scope not in {None, "fixed_reference"}:
+            raise ModernReferenceQualificationError(
+                "Fixed-reference qualification scope is invalid"
+            )
+        expected_blocks = ["momenta"]
+    if config["optimization"]["block_order"] != expected_blocks:
+        raise ModernReferenceQualificationError(
+            "Qualification optimized blocks differ from its declared scope"
+        )
     if config["runtime"]["pairwise_evaluation"].get("autograd_strategy") != "recompute":
         raise ModernReferenceQualificationError("Qualification must declare recompute autograd")
-    if config["optimization"].get("momenta_updates_per_cycle", 1) != 1:
+    expected_momenta_updates = 2 if qualification_scope == "full_atlas" else 1
+    if config["optimization"].get("momenta_updates_per_cycle", 1) != expected_momenta_updates:
         raise ModernReferenceQualificationError(
-            "Modern reference qualification requires one momenta update per cycle"
+            "Modern reference qualification momenta schedule differs from its scope"
         )
     if config["optimization"].get("subject_batch_workers", 1) != 1:
         raise ModernReferenceQualificationError(
             "Modern reference qualification requires one subject-batch worker"
         )
-    if design.get("design_version") == DESIGN_VERSION:
-        expected_engine = design["modern_workflow"].get(
-            "expected_engine_implementation"
-        )
+    if design.get("design_version") in {DESIGN_VERSION, FULL_ATLAS_DESIGN_VERSION}:
+        expected_engine = design["modern_workflow"].get("expected_engine_implementation")
         if (
             not isinstance(expected_engine, str)
             or re.fullmatch(r"[0-9]+\.[0-9]+", expected_engine) is None
@@ -1460,6 +1613,17 @@ def _render_assessment_html(assessment: dict[str, Any]) -> str:
             "<li>Initial objective matches the hash-bound parent: true</li></ul>"
         )
     )
+    template_metric = assessment.get("metrics", {}).get(
+        "cross_engine_template_p95_over_reference_diagonal"
+    )
+    template_html = (
+        ""
+        if template_metric is None
+        else (
+            "<h2>Estimated-template comparison</h2><p>Symmetric surface-distance p95 "
+            f"/ reference-template diagonal: {float(template_metric):.6g}</p>"
+        )
+    )
     return f"""<!doctype html><html lang="en"><meta charset="utf-8">
 <title>Modern fixed-reference qualification assessment</title>
 <style>body{{font:16px system-ui;max-width:1080px;margin:2rem auto;line-height:1.45}}
@@ -1468,7 +1632,7 @@ table{{border-collapse:collapse}}td,th{{border:1px solid #ccd;padding:.4rem}}
 <h1>Modern Engine fixed-reference qualification assessment</h1>
 <p class="result">Engineering gate result: {escape(assessment["decision"]["status"])}</p>
 <p>{escape(assessment["scientific_boundary"])}</p>
-{optimizer_html}{continuation_html}
+{optimizer_html}{continuation_html}{template_html}
 <table><thead><tr><th>Subject</th><th>Reference p95</th><th>Modern p95</th>
 <th>ratio</th><th>subject gate</th></tr></thead><tbody>{rows}</tbody></table>
 </html>\n"""
@@ -1587,6 +1751,25 @@ def assess_modern_reference_qualification(
         "Fixed reference template",
     )
     template_diagonal = inspect_vtk(template_path).bounding_box_diagonal
+    qualification_scope = design.get("protocol", {}).get("qualification_scope", "fixed_reference")
+    cross_template_normalized: float | None = None
+    if qualification_scope == "full_atlas":
+        modern_template_path = _safe_relative(
+            bundle_root,
+            bundle["template"]["path"],
+            "Modern estimated template",
+        )
+        reference_template_mesh = read_vtk_polydata(template_path)
+        modern_template_mesh = read_vtk_polydata(modern_template_path)
+        cross_template_normalized = (
+            _quantile(
+                symmetric_vertex_to_surface_distances(
+                    reference_template_mesh,
+                    modern_template_mesh,
+                )
+            )
+            / template_diagonal
+        )
     subject_rows: list[dict[str, Any]] = []
     reference_parts: list[np.ndarray] = []
     modern_parts: list[np.ndarray] = []
@@ -1594,9 +1777,9 @@ def assess_modern_reference_qualification(
     subject_limit = float(design["decision_gates"]["subject_external_residual_ratio_maximum"])
     records = list(design["subjects"])
 
-    def measure(record: dict[str, Any]) -> tuple[
-        dict[str, Any], np.ndarray, np.ndarray, np.ndarray
-    ]:
+    def measure(
+        record: dict[str, Any],
+    ) -> tuple[dict[str, Any], np.ndarray, np.ndarray, np.ndarray]:
         return _qualification_subject_metrics(
             design_root,
             record,
@@ -1641,6 +1824,14 @@ def assess_modern_reference_qualification(
         >= float(gates["minimum_subject_pass_fraction"]),
         "cross_engine_reconstruction_distance": cross_normalized
         <= float(gates["cross_engine_reconstruction_p95_over_template_diagonal_maximum"]),
+        **(
+            {
+                "cross_engine_template_distance": cross_template_normalized
+                <= float(gates["cross_engine_template_p95_over_reference_diagonal_maximum"])
+            }
+            if cross_template_normalized is not None
+            else {}
+        ),
     }
     converged = gate_results["modern_optimizer_converged"]
     decision_status = (
@@ -1683,6 +1874,15 @@ def assess_modern_reference_qualification(
             "pooled_modern_to_reference_residual_ratio": pooled_ratio,
             "subject_pass_fraction": pass_fraction,
             "cross_engine_reconstruction_p95_over_template_diagonal": cross_normalized,
+            **(
+                {
+                    "cross_engine_template_p95_over_reference_diagonal": (
+                        cross_template_normalized
+                    ),
+                }
+                if cross_template_normalized is not None
+                else {}
+            ),
         },
         "subjects": subject_rows,
         "decision": {
