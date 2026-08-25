@@ -204,6 +204,28 @@ def test_config_v04_requires_declared_step_strategy_and_versions_file_momenta() 
         workflow.validate_modern_workflow_config(current)
 
 
+def test_config_v07_requires_explicit_template_gradient_provenance() -> None:
+    current = _configuration()
+    current["schema_version"] = "0.7"
+    current["optimization"].update(
+        {
+            "step_initialization": "previous_accepted",
+            "shared_step_scaling": "inverse_subject_count",
+        }
+    )
+
+    with pytest.raises(ConfigurationError, match="template_gradient"):
+        workflow.validate_modern_workflow_config(current)
+
+    current["optimization"].update(
+        {
+            "template_gradient": "sobolev",
+            "sobolev_kernel_width_ratio": 1.0,
+        }
+    )
+    workflow.validate_modern_workflow_config(current)
+
+
 def test_legacy_dense_manifest_without_pairwise_record_remains_verifiable() -> None:
     legacy = _configuration()
     del legacy["runtime"]["pairwise_evaluation"]
@@ -563,7 +585,7 @@ def test_multiblock_lbfgs_workflow_writes_exact_v03_checkpoint(tmp_path: Path) -
     assert bundle["optimizer"]["settings"]["direction_update"] == "lbfgs"
     assert bundle["optimizer"]["settings"]["momenta_updates_per_cycle"] == 2
     assert checkpoint["checkpoint_version"] == "0.3"
-    assert checkpoint["binding"]["engine_implementation"] == "1.5"
+    assert checkpoint["binding"]["engine_implementation"] == "1.6"
     assert checkpoint["binding"]["momenta_updates_per_cycle"] == 2
     assert checkpoint["binding"]["subject_batch_size"] is None
     assert checkpoint["binding"]["subject_batch_workers"] == 1

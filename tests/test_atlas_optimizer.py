@@ -101,6 +101,69 @@ def test_every_accepted_block_monotonically_improves_the_objective() -> None:
     assert result.settings.lbfgs_initial_step_size == 1.0
     assert result.settings.relative_objective_tolerance is None
     assert result.settings.shared_step_scaling == "none"
+    assert result.settings.template_gradient == "euclidean"
+    assert result.settings.sobolev_kernel_width_ratio == 1.0
+
+
+def test_explicit_euclidean_template_gradient_preserves_default_results_exactly() -> None:
+    arguments, keywords = _problem(subjects=1)
+
+    implicit = optimize_atlas(*arguments, **keywords, max_cycles=2)
+    explicit = optimize_atlas(
+        *arguments,
+        **keywords,
+        max_cycles=2,
+        template_gradient="euclidean",
+        sobolev_kernel_width_ratio=2.0,
+    )
+
+    assert explicit.history == implicit.history
+    assert torch.equal(explicit.template_vertices, implicit.template_vertices)
+    assert torch.equal(explicit.control_points, implicit.control_points)
+    assert torch.equal(explicit.momenta, implicit.momenta)
+
+
+def test_sobolev_template_update_uses_deformetrica_gradient_convolution() -> None:
+    arguments, keywords = _problem(subjects=1)
+    initial_template, triangles, targets, controls, momenta = arguments
+    differentiable_template = initial_template.clone().requires_grad_(True)
+    objective = engine.atlas_objective(
+        differentiable_template,
+        triangles,
+        targets,
+        controls,
+        momenta,
+        **keywords,
+    )
+    (euclidean_gradient,) = torch.autograd.grad(objective.total, differentiable_template)
+    sobolev_gradient = engine.sobolev_template_gradient(
+        initial_template,
+        euclidean_gradient,
+        deformation_kernel_width=keywords["deformation_kernel_width"],
+        kernel_width_ratio=1.25,
+    )
+
+    result = optimize_atlas(
+        *arguments,
+        **keywords,
+        max_cycles=1,
+        block_order=("template",),
+        gradient_tolerance=0.0,
+        template_gradient="sobolev",
+        sobolev_kernel_width_ratio=1.25,
+    )
+
+    assert result.history[-1].status == "accepted"
+    step = result.history[-1].accepted_step_size
+    assert step is not None
+    torch.testing.assert_close(
+        result.template_vertices,
+        initial_template + step * sobolev_gradient,
+        rtol=1e-13,
+        atol=1e-13,
+    )
+    assert result.settings.template_gradient == "sobolev"
+    assert result.settings.sobolev_kernel_width_ratio == 1.25
 
 
 def test_inverse_subject_count_scaling_preserves_shared_template_update() -> None:
@@ -171,12 +234,16 @@ def test_previous_accepted_step_avoids_repeating_rejected_candidates() -> None:
     assert reused.candidate_gradient_evaluations == accepted
 
 
-def test_subject_batched_gradients_match_full_cohort_for_every_parameter_block() -> None:
+@pytest.mark.parametrize("template_gradient", ["euclidean", "sobolev"])
+def test_subject_batched_gradients_match_full_cohort_for_every_parameter_block(
+    template_gradient: str,
+) -> None:
     arguments, keywords = _problem(subjects=2)
     settings = {
         "max_cycles": 1,
         "gradient_tolerance": 0.0,
         "step_initialization": "previous_accepted",
+        "template_gradient": template_gradient,
     }
 
     full = optimize_atlas(*arguments, **keywords, **settings)
@@ -451,13 +518,17 @@ def test_multiblock_lbfgs_uses_separate_deterministic_curvature_histories() -> N
         )
 
 
-def test_multiblock_lbfgs_resume_reproduces_uninterrupted_trajectory_exactly() -> None:
+@pytest.mark.parametrize("template_gradient", ["euclidean", "sobolev"])
+def test_multiblock_lbfgs_resume_reproduces_uninterrupted_trajectory_exactly(
+    template_gradient: str,
+) -> None:
     arguments, keywords = _problem(subjects=2)
     settings = {
         "gradient_tolerance": 0.0,
         "step_initialization": "previous_accepted",
         "direction_update": "lbfgs",
         "lbfgs_history_size": 3,
+        "template_gradient": template_gradient,
     }
     uninterrupted = optimize_atlas(
         *arguments,
@@ -1028,6 +1099,9 @@ def test_optimizer_remains_differentiable_internally_under_no_grad() -> None:
         ),
         ({"subject_batch_workers": 2}, "requires subject_batch_size"),
         ({"shared_step_scaling": "automatic"}, "shared_step_scaling"),
+        ({"template_gradient": "automatic"}, "template_gradient"),
+        ({"sobolev_kernel_width_ratio": 0.0}, "sobolev_kernel_width_ratio"),
+        ({"sobolev_kernel_width_ratio": True}, "sobolev_kernel_width_ratio"),
         ({"momenta_updates_per_cycle": 0}, "momenta_updates_per_cycle"),
         ({"momenta_updates_per_cycle": True}, "momenta_updates_per_cycle"),
         (

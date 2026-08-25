@@ -90,7 +90,7 @@ from diffeoforge.private_runs import (
     discover_private_runs,
 )
 
-CONFIG_VERSION = "0.6"
+CONFIG_VERSION = "0.7"
 WORKFLOW_VERSION = "0.1"
 MANIFEST_NAME = "workflow-manifest.json"
 MANIFEST_SIDECAR_NAME = "workflow-manifest.sha256"
@@ -167,9 +167,9 @@ def validate_modern_workflow_config(config: Mapping[str, Any]) -> None:
         )
     resume = optimizer.get("resume_state")
     if resume is not None:
-        if config["schema_version"] not in {"0.5", "0.6"}:
+        if config["schema_version"] not in {"0.5", "0.6", "0.7"}:
             raise ConfigurationError(
-                "optimization.resume_state requires schema_version=0.5 or 0.6"
+                "optimization.resume_state requires schema_version=0.5, 0.6, or 0.7"
             )
         if config["preprocessing"]["procrustes"]["enabled"] is not False:
             raise ConfigurationError(
@@ -475,6 +475,8 @@ def initialize_modern_workflow(
     pairwise_mode: str = "dense",
     query_tile_size: int | None = None,
     source_tile_size: int | None = None,
+    template_gradient: str = "euclidean",
+    sobolev_kernel_width_ratio: float = 1.0,
     overwrite: bool = False,
 ) -> Path:
     """Inspect a mesh directory and write an explicit modern-workflow starter YAML."""
@@ -493,6 +495,17 @@ def initialize_modern_workflow(
         raise ConfigurationError("threads must be a positive integer")
     if isinstance(random_seed, bool) or not isinstance(random_seed, int) or random_seed < 0:
         raise ConfigurationError("random_seed must be a nonnegative integer")
+    if template_gradient not in {"euclidean", "sobolev"}:
+        raise ConfigurationError("template_gradient must be euclidean or sobolev")
+    if (
+        isinstance(sobolev_kernel_width_ratio, bool)
+        or not isinstance(sobolev_kernel_width_ratio, (int, float))
+        or not math.isfinite(float(sobolev_kernel_width_ratio))
+        or float(sobolev_kernel_width_ratio) <= 0.0
+    ):
+        raise ConfigurationError(
+            "sobolev_kernel_width_ratio must be finite and greater than zero"
+        )
     if not isinstance(procrustes_scale_to_unit_centroid_size, bool):
         raise ConfigurationError("procrustes_scale_to_unit_centroid_size must be a boolean")
     if not isinstance(procrustes_allow_reflection, bool):
@@ -651,6 +664,8 @@ def initialize_modern_workflow(
             "subject_batch_size": None,
             "subject_batch_workers": 1,
             "shared_step_scaling": "inverse_subject_count",
+            "template_gradient": template_gradient,
+            "sobolev_kernel_width_ratio": float(sobolev_kernel_width_ratio),
             "checkpoint_interval_cycles": 5,
             "checkpoint_retention": "latest",
         },
@@ -1479,6 +1494,10 @@ def run_modern_workflow(
                     subject_batch_size=optimizer.get("subject_batch_size"),
                     subject_batch_workers=optimizer.get("subject_batch_workers", 1),
                     shared_step_scaling=optimizer.get("shared_step_scaling", "none"),
+                    template_gradient=optimizer.get("template_gradient", "euclidean"),
+                    sobolev_kernel_width_ratio=optimizer.get(
+                        "sobolev_kernel_width_ratio", 1.0
+                    ),
                     resume_state=optimizer_resume_state,
                     progress_callback=(
                         observe_optimizer if progress_callback is not None else None

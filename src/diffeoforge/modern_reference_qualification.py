@@ -378,6 +378,8 @@ def create_modern_reference_qualification(
     subject_batch_size: int | None = None,
     runtime_device: str = "cpu",
     qualification_scope: str = "fixed_reference",
+    template_gradient: str = "euclidean",
+    sobolev_kernel_width_ratio: float = 1.0,
     created_at: str | None = None,
 ) -> Path:
     """Freeze a no-results-yet comparison against one completed Deformetrica atlas."""
@@ -401,6 +403,17 @@ def create_modern_reference_qualification(
         raise ValueError("runtime_device must be cpu or cuda")
     if qualification_scope not in {"fixed_reference", "full_atlas"}:
         raise ValueError("qualification_scope must be fixed_reference or full_atlas")
+    if template_gradient not in {"euclidean", "sobolev"}:
+        raise ValueError("template_gradient must be euclidean or sobolev")
+    if template_gradient == "sobolev" and qualification_scope != "full_atlas":
+        raise ValueError("Sobolev template gradients require qualification_scope=full_atlas")
+    if (
+        isinstance(sobolev_kernel_width_ratio, bool)
+        or not isinstance(sobolev_kernel_width_ratio, (int, float))
+        or not math.isfinite(float(sobolev_kernel_width_ratio))
+        or float(sobolev_kernel_width_ratio) <= 0.0
+    ):
+        raise ValueError("sobolev_kernel_width_ratio must be finite and greater than zero")
     if optimizer_direction not in {"steepest", "lbfgs"}:
         raise ValueError("optimizer_direction must be steepest or lbfgs")
     if line_search_condition not in {"armijo", "strong_wolfe"}:
@@ -681,6 +694,8 @@ def create_modern_reference_qualification(
                 "subject_batch_size": subject_batch_size,
                 "subject_batch_workers": 1,
                 "shared_step_scaling": ("inverse_subject_count" if full_atlas else "none"),
+                "template_gradient": template_gradient,
+                "sobolev_kernel_width_ratio": float(sobolev_kernel_width_ratio),
                 "checkpoint_interval_cycles": 5,
                 "checkpoint_retention": "latest",
             },
@@ -790,6 +805,8 @@ def create_modern_reference_qualification(
                 ),
                 "max_cycles": max_cycles,
                 "pairwise_autograd_strategy": "recompute",
+                "template_gradient": template_gradient,
+                "sobolev_kernel_width_ratio": float(sobolev_kernel_width_ratio),
                 "expected_engine_implementation": ENGINE_IMPLEMENTATION_VERSION,
             },
             "decision_gates": {

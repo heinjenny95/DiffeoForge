@@ -46,6 +46,14 @@ block's last accepted step on its next visit, avoiding repeated rejected
 candidates while remaining deterministic and visible in history and settings.
 There is no stochastic batching, momentum term, or unrecorded optimizer state.
 
+Engine 1.6 also supports an explicit Sobolev template-gradient mode. It leaves
+the objective unchanged but replaces only the template block's Euclidean
+gradient by the Deformetrica-compatible Gaussian convolution declared in the
+workflow. The same transformation is applied to accepted and line-search
+candidate gradients, so gradient norms and L-BFGS curvature history remain
+internally coherent. The default remains the unchanged Euclidean mode; the
+mode and width ratio are serialized as optimizer settings.
+
 Candidate objectives are evaluated before their gradients. A rejected Armijo
 candidate releases its graph without an unused backward pass; an acceptable
 candidate requests the gradient from the same graph without repeating its

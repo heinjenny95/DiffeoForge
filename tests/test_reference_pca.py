@@ -416,8 +416,8 @@ def test_modern_reference_qualification_design_is_prospective_and_tamper_evident
     assert len(design["subjects"]) == 3
     assert design["protocol"]["modern_result_existed_at_freeze"] is False
     assert design["design_version"] == "0.6"
-    assert design["modern_workflow"]["expected_engine_implementation"] == "1.5"
-    assert config["schema_version"] == "0.6"
+    assert design["modern_workflow"]["expected_engine_implementation"] == "1.6"
+    assert config["schema_version"] == "0.7"
     assert design["protocol"]["quality_screening"]["excluded_candidates"] == []
     assert all("source_quality" in record for record in design["subjects"])
     assert config["optimization"]["block_order"] == ["momenta"]
@@ -427,6 +427,8 @@ def test_modern_reference_qualification_design_is_prospective_and_tamper_evident
     assert config["runtime"]["pairwise_evaluation"]["source_tile_size"] == 32
     assert config["optimization"]["subject_batch_size"] == 2
     assert config["optimization"]["subject_batch_workers"] == 1
+    assert config["optimization"]["template_gradient"] == "euclidean"
+    assert config["optimization"]["sobolev_kernel_width_ratio"] == 1.0
 
     unbound = tmp_path / "qualification-unbound-engine"
     shutil.copytree(destination, unbound)
@@ -503,7 +505,7 @@ def test_modern_reference_qualification_design_is_prospective_and_tamper_evident
     assert len(assessment["subjects"]) == 3
     assert assessment["metrics"]["pooled_modern_to_reference_residual_ratio"] >= 0
     assert assessment["assessment_version"] == "0.3"
-    assert assessment["optimizer"]["engine_implementation"] == "1.5"
+    assert assessment["optimizer"]["engine_implementation"] == "1.6"
     assert len(assessment["optimizer"]["history_sha256"]) == 64
     trajectory = assessment["optimizer"]["trajectory"]
     assert trajectory["initial_objective"] == pytest.approx(trajectory["records"][0]["objective"])
@@ -557,8 +559,8 @@ def test_modern_reference_qualification_design_is_prospective_and_tamper_evident
     )
     assert continuation["design_version"] == "0.7"
     assert continuation["protocol"]["continuation"]["parent_cycles_completed"] == 1
-    assert continuation["protocol"]["continuation"]["parent_engine_implementation"] == "1.5"
-    assert continuation["protocol"]["continuation"]["expected_engine_implementation"] == "1.5"
+    assert continuation["protocol"]["continuation"]["parent_engine_implementation"] == "1.6"
+    assert continuation["protocol"]["continuation"]["expected_engine_implementation"] == "1.6"
     assert math.isfinite(continuation["protocol"]["continuation"]["parent_final_objective"])
     assert continuation_config["schema_version"] == "0.5"
     assert continuation_config["initialization"]["momenta"] == {
@@ -626,7 +628,7 @@ def test_modern_reference_qualification_design_is_prospective_and_tamper_evident
     assert successor_assessment["continuation_verification"]["initial_objective_matches"] is True
     assert (
         successor_assessment["continuation_verification"]["successor_engine_implementation"]
-        == "1.5"
+        == "1.6"
     )
 
     subject = destination / design["subjects"][0]["source"]["path"]
@@ -649,6 +651,8 @@ def test_modern_full_atlas_qualification_binds_initial_template_and_template_gat
         optimizer_direction="lbfgs",
         subject_batch_size=2,
         qualification_scope="full_atlas",
+        template_gradient="sobolev",
+        sobolev_kernel_width_ratio=1.0,
         created_at="2026-08-25T00:00:00+00:00",
     )
 
@@ -674,6 +678,9 @@ def test_modern_full_atlas_qualification_binds_initial_template_and_template_gat
     ]
     assert config["optimization"]["momenta_updates_per_cycle"] == 2
     assert config["optimization"]["shared_step_scaling"] == "inverse_subject_count"
+    assert config["optimization"]["template_gradient"] == "sobolev"
+    assert config["optimization"]["sobolev_kernel_width_ratio"] == 1.0
+    assert design["modern_workflow"]["template_gradient"] == "sobolev"
 
     modern_run = run_modern_workflow(
         config_path,
@@ -713,6 +720,8 @@ def test_modern_full_atlas_qualification_binds_initial_template_and_template_gat
         "control_points",
     ]
     assert continuation_config["optimization"]["momenta_updates_per_cycle"] == 2
+    assert continuation_config["optimization"]["template_gradient"] == "sobolev"
+    assert continuation_config["optimization"]["sobolev_kernel_width_ratio"] == 1.0
     assert continuation_config["initialization"]["control_points"]["method"] == "file"
     assert continuation_config["initialization"]["momenta"]["method"] == "file"
     assert "resume_state" in continuation_config["optimization"]

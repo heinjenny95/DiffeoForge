@@ -141,7 +141,9 @@
             "relative_objective_tolerance": {"type": ["number", "null"], "exclusiveMinimum": 0, "exclusiveMaximum": 1},
             "subject_batch_size": {"type": ["integer", "null"], "minimum": 1},
             "subject_batch_workers": {"type": "integer", "minimum": 1, "maximum": 64},
-            "shared_step_scaling": {"enum": ["none", "inverse_subject_count"]}
+            "shared_step_scaling": {"enum": ["none", "inverse_subject_count"]},
+            "template_gradient": {"enum": ["euclidean", "sobolev"]},
+            "sobolev_kernel_width_ratio": {"type": "number", "exclusiveMinimum": 0}
           }
         },
         "termination_reason": {"enum": ["gradient_tolerance", "relative_objective_tolerance", "max_cycles", "line_search_failed"]},

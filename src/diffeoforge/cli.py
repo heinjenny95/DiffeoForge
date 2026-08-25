@@ -271,6 +271,24 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         help="Required positive source-row tile size for --pairwise-mode blockwise.",
     )
+    modern_init_parser.add_argument(
+        "--template-gradient",
+        choices=("euclidean", "sobolev"),
+        default="euclidean",
+        help=(
+            "Template optimizer gradient; Sobolev uses the Deformetrica-compatible "
+            "Gaussian convolution (default: euclidean)."
+        ),
+    )
+    modern_init_parser.add_argument(
+        "--sobolev-kernel-width-ratio",
+        type=float,
+        default=1.0,
+        help=(
+            "Sobolev smoothing width divided by deformation-kernel width "
+            "(default: 1.0)."
+        ),
+    )
     modern_init_parser.add_argument("--force", action="store_true")
 
     modern_reference_design_parser = subparsers.add_parser(
@@ -348,6 +366,24 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "Optional number of subjects retained per objective/gradient batch; "
             "smaller values trade extra forward work for bounded autograd memory."
+        ),
+    )
+    modern_reference_design_parser.add_argument(
+        "--template-gradient",
+        choices=("euclidean", "sobolev"),
+        default="euclidean",
+        help=(
+            "Template optimizer gradient for full-atlas scope; Sobolev uses the "
+            "Deformetrica-compatible Gaussian convolution (default: euclidean)."
+        ),
+    )
+    modern_reference_design_parser.add_argument(
+        "--sobolev-kernel-width-ratio",
+        type=float,
+        default=1.0,
+        help=(
+            "Sobolev smoothing width divided by deformation-kernel width "
+            "(default: 1.0)."
         ),
     )
 
@@ -1483,6 +1519,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 subject_batch_size=args.subject_batch_size,
                 runtime_device=args.device,
                 qualification_scope=args.scope,
+                template_gradient=args.template_gradient,
+                sobolev_kernel_width_ratio=args.sobolev_kernel_width_ratio,
             )
             design = verify_modern_reference_qualification_design(destination)
             print(
@@ -1772,6 +1810,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 pairwise_mode=args.pairwise_mode,
                 query_tile_size=args.query_tile_size,
                 source_tile_size=args.source_tile_size,
+                template_gradient=args.template_gradient,
+                sobolev_kernel_width_ratio=args.sobolev_kernel_width_ratio,
                 overwrite=args.force,
             )
             print(f"Modern workflow configuration created: {config_path}")

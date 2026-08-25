@@ -14,7 +14,7 @@ blockwise workflow provenance tracked by
 ## Purpose
 
 The modern numerical functions previously accepted only in-memory tensors.
-Configuration v0.6 and workflow manifest v0.1 connect a normal directory of
+Configuration v0.7 and workflow manifest v0.1 connect a normal directory of
 triangular legacy VTK PolyData
 meshes to the full atlas optimizer and the immutable atlas/PCA bundle without
 requiring a notebook, XML, or a special working directory.
@@ -70,7 +70,7 @@ editing YAML, pass `--pairwise-mode blockwise --query-tile-size N
 counts; dense mode requires both to remain null. There is no automatic size,
 threshold, environment override, or fallback. Legacy v0.1 configurations and
 manifests without this record remain readable only as dense; configuration
-v0.2 through v0.6 require it. Configuration v0.3 may additionally declare
+v0.2 through v0.7 require it. Configuration v0.3 may additionally declare
 `autograd_strategy: recompute` for blockwise execution. This preserves the
 exact forward and gradient result while recomputing pairwise intermediates
 during backward to reduce retained memory; the extra calculation is explicit
@@ -87,7 +87,7 @@ count, finite values, copied bytes, and SHA-256 are checked before execution and
 again during workflow verification.
 
 Configuration v0.5 may bind one verified exact-state checkpoint and its parent
-effective configuration. Current Engine 1.5 runs write checkpoint v0.3 with
+effective configuration. Current Engine 1.6 runs write checkpoint v0.3 with
 separate L-BFGS histories for every configured block. This is reserved for immutable completed-run
 continuation and guarded abandoned-run recovery. Preflight verifies exact
 Engine, runtime/thread, model, optimizer, subject, and numerical-state identity
@@ -124,6 +124,16 @@ Pass `--device cuda` to `modern-init` only inside an explicitly reviewed CUDA
 environment; the choice is written into YAML rather than inferred from hardware.
 See [Engine 1.5 CUDA feasibility](MODERN_ENGINE15_CUDA.md).
 
+Configuration v0.7 and Engine 1.6 additionally make the template-gradient
+geometry explicit. `template_gradient: euclidean` preserves the Engine 1.5
+default exactly. `template_gradient: sobolev` transforms every template-block
+gradient, including line-search candidate gradients, with
+`K(T,T; deformation_width * sobolev_kernel_width_ratio)`. The generated
+default remains Euclidean; Sobolev smoothing is never inferred. Both settings
+are recorded in the configuration and result bundle and must remain identical
+across an exact continuation. See
+[Sobolev template-gradient kernel](MODERN_SOBOLEV_TEMPLATE_GRADIENT.md).
+
 New starter configurations set `checkpoint_interval_cycles: 5` and
 `checkpoint_retention: latest`. A terminal cycle is always written. The
 workflow manifest binds the effective policy and retained cycle sequence;
@@ -136,7 +146,7 @@ remain verifiable; prospective continuation plans bind the implementation
 revision expected for their successor.
 
 A completed, verified run that reaches its cycle cap without convergence can be
-continued through a separate hash-bound prospective successor. Engine 1.5
+continued through a separate hash-bound prospective successor. Engine 1.6
 copies the exact complete-cycle numerical state, including per-block L-BFGS histories and
 relative-objective baselines; it never modifies or relabels the parent. See
 [verified Modern optimizer continuation](MODERN_CONTINUATION.md).

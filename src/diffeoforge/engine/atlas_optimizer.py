@@ -22,12 +22,14 @@ from diffeoforge.engine.objective import (
     ShootingIntegrator,
     atlas_objective,
 )
+from diffeoforge.engine.sobolev import sobolev_template_gradient
 
 AtlasParameterBlock = Literal["momenta", "template", "control_points"]
 AtlasStepInitialization = Literal["fixed", "previous_accepted"]
 AtlasDirectionUpdate = Literal["steepest", "lbfgs"]
 AtlasLineSearchCondition = Literal["armijo", "strong_wolfe"]
 AtlasSharedStepScaling = Literal["none", "inverse_subject_count"]
+AtlasTemplateGradient = Literal["euclidean", "sobolev"]
 AtlasAttemptStatus = Literal["initial", "accepted", "stationary", "failed"]
 AtlasTerminationReason = Literal[
     "gradient_tolerance",
@@ -134,6 +136,8 @@ class AtlasOptimizerSettings:
     subject_batch_size: int | None = None
     subject_batch_workers: int = 1
     shared_step_scaling: AtlasSharedStepScaling = "none"
+    template_gradient: AtlasTemplateGradient = "euclidean"
+    sobolev_kernel_width_ratio: float = 1.0
 
 
 @dataclass(frozen=True)
@@ -443,6 +447,8 @@ def optimize_atlas(
     subject_batch_size: int | None = None,
     subject_batch_workers: int = 1,
     shared_step_scaling: AtlasSharedStepScaling = "none",
+    template_gradient: AtlasTemplateGradient = "euclidean",
+    sobolev_kernel_width_ratio: float = 1.0,
     resume_state: AtlasOptimizerResumeState | None = None,
     progress_callback: AtlasProgressCallback | None = None,
     checkpoint_callback: AtlasCheckpointCallback | None = None,
@@ -567,6 +573,13 @@ def optimize_atlas(
         raise ValueError("subject_batch_workers greater than 1 requires subject_batch_size")
     if shared_step_scaling not in ("none", "inverse_subject_count"):
         raise ValueError("shared_step_scaling must be none or inverse_subject_count")
+    if template_gradient not in ("euclidean", "sobolev"):
+        raise ValueError("template_gradient must be euclidean or sobolev")
+    sobolev_width_ratio = _finite_real(
+        "sobolev_kernel_width_ratio",
+        sobolev_kernel_width_ratio,
+        minimum=0.0,
+    )
     gradient_threshold = _finite_real(
         "gradient_tolerance",
         gradient_tolerance,
@@ -600,6 +613,8 @@ def optimize_atlas(
         subject_batch_size=normalized_subject_batch_size,
         subject_batch_workers=normalized_subject_batch_workers,
         shared_step_scaling=shared_step_scaling,
+        template_gradient=template_gradient,
+        sobolev_kernel_width_ratio=sobolev_width_ratio,
     )
     for name, value in (
         ("initial_template_vertices", initial_template_vertices),
@@ -865,6 +880,16 @@ def optimize_atlas(
         check_cancellation()
         if not bool(torch.isfinite(gradient).all()):
             return None
+        if pending.block == "template" and template_gradient == "sobolev":
+            gradient = sobolev_template_gradient(
+                pending.state.template_vertices,
+                gradient,
+                deformation_kernel_width=deformation_kernel_width,
+                kernel_width_ratio=sobolev_width_ratio,
+                gaussian_tile_plan=gaussian_tile_plan,
+            )
+            if not bool(torch.isfinite(gradient).all()):
+                return None
         gradient_norm = torch.linalg.vector_norm(gradient)
         if not bool(torch.isfinite(gradient_norm)):
             return None
