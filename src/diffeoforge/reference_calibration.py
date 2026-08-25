@@ -202,6 +202,7 @@ class ReferenceCalibrationPlan:
     final_confirmation_required: tuple[str, ...]
     limitations: tuple[str, ...]
     expected_shape_disparity: str = "moderate"
+    search_extension_lineage: tuple[tuple[str, str], ...] = ()
 
     @property
     def pilot_subject_count(self) -> int:
@@ -219,7 +220,7 @@ class ReferenceCalibrationPlan:
     def provenance(self) -> dict[str, object]:
         """Return the complete compact record suitable for ``atlas.yaml``."""
 
-        return {
+        provenance: dict[str, object] = {
             "version": self.version,
             "fingerprint": self.fingerprint,
             "status": "planned_not_executed",
@@ -242,6 +243,11 @@ class ReferenceCalibrationPlan:
             "final_confirmation_required": list(self.final_confirmation_required),
             "limitations": list(self.limitations),
         }
+        if self.search_extension_lineage:
+            provenance["search_extension_lineage"] = dict(
+                self.search_extension_lineage
+            )
+        return provenance
 
     def as_manifest(self) -> dict[str, object]:
         return self.provenance
@@ -313,6 +319,13 @@ class ReferenceCalibrationPlan:
                 f"Plan fingerprint: {self.fingerprint}",
             )
         )
+        if self.search_extension_lineage:
+            lineage = dict(self.search_extension_lineage)
+            lines.append(
+                "Search extension: hash-bound successor of plan "
+                f"{lineage['parent_plan_fingerprint'][:12]}… from assessment "
+                f"{lineage['source_assessment_fingerprint'][:12]}…."
+            )
         return "\n".join(lines)
 
 
@@ -980,6 +993,11 @@ def reference_calibration_plan_from_provenance(
     """Reconstruct and verify a calibration plan stored in project provenance."""
 
     verify_reference_calibration_plan_provenance(provenance)
+    lineage_value = provenance.get("search_extension_lineage", {})
+    if not isinstance(lineage_value, Mapping):
+        raise ConfigurationError(
+            "Calibration search-extension lineage must be a mapping"
+        )
     try:
         selected = tuple(
             RepresentativePilotSubject(
@@ -1061,6 +1079,10 @@ def reference_calibration_plan_from_provenance(
             limitations=tuple(str(value) for value in provenance["limitations"]),
             expected_shape_disparity=str(
                 provenance.get("expected_shape_disparity", "moderate")
+            ),
+            search_extension_lineage=tuple(
+                (str(name), str(value))
+                for name, value in lineage_value.items()
             ),
         )
     except (KeyError, TypeError, ValueError) as error:
@@ -1235,6 +1257,7 @@ class CalibrationSearchExtensionProposal:
     assessment_fingerprint: str
     stage_id: str
     source_candidate_id: str
+    outward_steps: int
     boundary_parameters: tuple[str, ...]
     candidates: tuple[CalibrationCandidate, ...]
     limitations: tuple[str, ...]
@@ -1247,6 +1270,7 @@ class CalibrationSearchExtensionProposal:
             "assessment_fingerprint": self.assessment_fingerprint,
             "stage_id": self.stage_id,
             "source_candidate_id": self.source_candidate_id,
+            "outward_steps": self.outward_steps,
             "boundary_parameters": list(self.boundary_parameters),
             "candidates": [candidate.as_manifest() for candidate in self.candidates],
             "limitations": list(self.limitations),
@@ -1398,6 +1422,7 @@ def propose_calibration_search_extension(
         "assessment_fingerprint": assessment.fingerprint,
         "stage_id": stage.stage_id,
         "source_candidate_id": source.candidate_id,
+        "outward_steps": outward_steps,
         "boundary_parameters": list(assessment.search_boundary_parameters),
         "candidates": [candidate.as_manifest() for candidate in additions],
         "limitations": list(limitations),
@@ -1409,10 +1434,80 @@ def propose_calibration_search_extension(
         assessment_fingerprint=assessment.fingerprint,
         stage_id=stage.stage_id,
         source_candidate_id=source.candidate_id,
+        outward_steps=outward_steps,
         boundary_parameters=assessment.search_boundary_parameters,
         candidates=tuple(additions),
         limitations=limitations,
     )
+
+
+def bind_calibration_search_extension_plan(
+    plan: ReferenceCalibrationPlan,
+    assessment: CalibrationStageAssessment,
+    proposal: CalibrationSearchExtensionProposal,
+) -> ReferenceCalibrationPlan:
+    """Return a new immutable plan containing the bound outward candidates."""
+
+    if assessment.plan_fingerprint != plan.fingerprint:
+        raise ValueError("assessment is bound to a different calibration plan")
+    if proposal.plan_fingerprint != plan.fingerprint:
+        raise ValueError("extension proposal is bound to a different calibration plan")
+    if proposal.assessment_fingerprint != assessment.fingerprint:
+        raise ValueError("extension proposal is bound to a different assessment")
+    if proposal.stage_id != assessment.stage_id:
+        raise ValueError("extension proposal stage differs from its assessment")
+    expected_proposal = propose_calibration_search_extension(
+        plan,
+        assessment,
+        outward_steps=proposal.outward_steps,
+    )
+    if proposal != expected_proposal:
+        raise ValueError("extension proposal differs from its deterministic derivation")
+    stages = []
+    found = False
+    for stage in plan.stages:
+        if stage.stage_id != proposal.stage_id:
+            stages.append(stage)
+            continue
+        found = True
+        stages.append(
+            replace(
+                stage,
+                candidates=stage.candidates + proposal.candidates,
+                decision_rule=(
+                    stage.decision_rule
+                    + " Outward successor candidates were added because the prior "
+                    "provisional winner lay on a tested search boundary; reassess all "
+                    "preserved and successor evidence together."
+                ),
+            )
+        )
+    if not found:
+        raise ValueError("extension stage is absent from the calibration plan")
+    lineage = (
+        ("parent_plan_fingerprint", plan.fingerprint),
+        ("source_assessment_fingerprint", assessment.fingerprint),
+        ("proposal_fingerprint", proposal.fingerprint),
+        ("stage_id", proposal.stage_id),
+    )
+    successor = replace(
+        plan,
+        version="0.4",
+        fingerprint="",
+        stages=tuple(stages),
+        search_extension_lineage=lineage,
+        limitations=(
+            *plan.limitations,
+            "This successor adds hash-bound outward candidates; their values are not "
+            "scientifically usable until executed and assessed with the preserved "
+            "source evidence.",
+        ),
+    )
+    payload = successor.provenance
+    payload.pop("fingerprint")
+    payload.pop("status")
+    payload.pop("pilot_subject_count")
+    return replace(successor, fingerprint=_canonical_hash(payload))
 _STAGE_METRICS: dict[
     CalibrationStageKind,
     tuple[tuple[str, float], ...],

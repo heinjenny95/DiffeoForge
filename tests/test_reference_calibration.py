@@ -8,10 +8,12 @@ from diffeoforge.mesh import sha256_file
 from diffeoforge.reference_calibration import (
     CalibrationCandidateEvidence,
     assess_calibration_stage,
+    bind_calibration_search_extension_plan,
     bind_reference_calibration_plan_to_inputs,
     build_reference_calibration_plan,
     calibration_plan_json,
     propose_calibration_search_extension,
+    reference_calibration_plan_from_provenance,
     select_representative_pilot_subjects,
     verify_reference_calibration_plan_provenance,
 )
@@ -447,6 +449,7 @@ def test_robust_boundary_winner_is_reported_as_search_range_not_bounded() -> Non
     assert extension.plan_fingerprint == plan.fingerprint
     assert extension.assessment_fingerprint == assessment.fingerprint
     assert extension.source_candidate_id == stage.candidates[0].candidate_id
+    assert extension.outward_steps == 2
     assert len(extension.fingerprint) == 64
     assert len(extension.candidates) == 2
     noise_values = [candidate.values["noise_std"] for candidate in stage.candidates]
@@ -461,6 +464,29 @@ def test_robust_boundary_winner_is_reported_as_search_range_not_bounded() -> Non
 
     with pytest.raises(ValueError, match="one or two"):
         propose_calibration_search_extension(plan, assessment, outward_steps=3)
+
+    successor = bind_calibration_search_extension_plan(
+        plan,
+        assessment,
+        extension,
+    )
+    successor_noise = next(
+        stage for stage in successor.stages if stage.stage_id == "noise"
+    )
+    assert successor.version == "0.4"
+    assert successor.fingerprint != plan.fingerprint
+    assert successor_noise.candidates[-2:] == extension.candidates
+    assert dict(successor.search_extension_lineage) == {
+        "parent_plan_fingerprint": plan.fingerprint,
+        "source_assessment_fingerprint": assessment.fingerprint,
+        "proposal_fingerprint": extension.fingerprint,
+        "stage_id": "noise",
+    }
+    provenance = successor.provenance
+    assert verify_reference_calibration_plan_provenance(provenance) == (
+        successor.fingerprint
+    )
+    assert reference_calibration_plan_from_provenance(provenance) == successor
 
 
 def test_stage_assessment_fails_closed_on_missing_metrics_without_requiring_review() -> None:
