@@ -121,6 +121,16 @@ def _show_modern_progress(event) -> None:
     )
 
 
+def _remote_client_from_args(args):
+    from diffeoforge.remote_atlas_transport import RemoteAtlasClient, load_remote_token
+
+    return RemoteAtlasClient(
+        args.server,
+        load_remote_token(args.token_file),
+        ca_file=args.ca_file,
+    )
+
+
 def _tile_shape_argument(value: str) -> tuple[int, int]:
     parts = value.lower().split("x")
     if len(parts) != 2 or not all(parts):
@@ -553,6 +563,89 @@ def build_parser() -> argparse.ArgumentParser:
     )
     modern_remote_result_verify_parser.add_argument("job_directory", type=Path)
     modern_remote_result_verify_parser.add_argument("result_directory", type=Path)
+
+    modern_remote_token_parser = subparsers.add_parser(
+        "modern-remote-token-init",
+        help="Create a private high-entropy bearer-token file without printing its secret.",
+    )
+    modern_remote_token_parser.add_argument("output", type=Path)
+
+    modern_remote_server_parser = subparsers.add_parser(
+        "modern-remote-server",
+        help="Serve an authenticated persistent Modern atlas queue.",
+    )
+    modern_remote_server_parser.add_argument("--root", type=Path, required=True)
+    modern_remote_server_parser.add_argument("--token-file", type=Path, required=True)
+    modern_remote_server_parser.add_argument("--host", default="127.0.0.1")
+    modern_remote_server_parser.add_argument("--port", type=int, default=8787)
+    modern_remote_server_parser.add_argument("--tls-certificate", type=Path)
+    modern_remote_server_parser.add_argument("--tls-private-key", type=Path)
+    modern_remote_server_parser.add_argument("--workers", type=int, default=1)
+    modern_remote_server_parser.add_argument(
+        "--max-active-jobs",
+        type=int,
+        default=100,
+    )
+    modern_remote_server_parser.add_argument(
+        "--max-upload-bytes",
+        type=int,
+        default=8 * 1024**3,
+    )
+
+    def add_remote_client_arguments(command_parser: argparse.ArgumentParser) -> None:
+        command_parser.add_argument("--server", required=True)
+        command_parser.add_argument("--token-file", type=Path, required=True)
+        command_parser.add_argument("--ca-file", type=Path)
+
+    modern_remote_submit_parser = subparsers.add_parser(
+        "modern-remote-submit",
+        help="Explicitly upload one verified portable request to an authenticated server.",
+    )
+    modern_remote_submit_parser.add_argument("job_directory", type=Path)
+    add_remote_client_arguments(modern_remote_submit_parser)
+
+    modern_remote_status_parser = subparsers.add_parser(
+        "modern-remote-status",
+        help="Read one authenticated remote job status and optional progress events.",
+    )
+    modern_remote_status_parser.add_argument("job_id")
+    modern_remote_status_parser.add_argument("--events", action="store_true")
+    modern_remote_status_parser.add_argument("--after", type=int, default=-1)
+    modern_remote_status_parser.add_argument("--limit", type=int, default=100)
+    add_remote_client_arguments(modern_remote_status_parser)
+
+    modern_remote_wait_parser = subparsers.add_parser(
+        "modern-remote-wait",
+        help="Stream new progress until one authenticated remote job is terminal.",
+    )
+    modern_remote_wait_parser.add_argument("job_id")
+    modern_remote_wait_parser.add_argument("--poll-seconds", type=float, default=2.0)
+    modern_remote_wait_parser.add_argument("--download", type=Path)
+    modern_remote_wait_parser.add_argument("--job-directory", type=Path)
+    add_remote_client_arguments(modern_remote_wait_parser)
+
+    modern_remote_cancel_parser = subparsers.add_parser(
+        "modern-remote-cancel",
+        help="Request cooperative cancellation of one queued or running remote job.",
+    )
+    modern_remote_cancel_parser.add_argument("job_id")
+    add_remote_client_arguments(modern_remote_cancel_parser)
+
+    modern_remote_download_parser = subparsers.add_parser(
+        "modern-remote-download",
+        help="Download and request-bind a completed remote Modern result.",
+    )
+    modern_remote_download_parser.add_argument("job_id")
+    modern_remote_download_parser.add_argument("job_directory", type=Path)
+    modern_remote_download_parser.add_argument("--output", type=Path, required=True)
+    add_remote_client_arguments(modern_remote_download_parser)
+
+    modern_remote_delete_parser = subparsers.add_parser(
+        "modern-remote-delete",
+        help="Explicitly delete one terminal remote job and its server-side data.",
+    )
+    modern_remote_delete_parser.add_argument("job_id")
+    add_remote_client_arguments(modern_remote_delete_parser)
 
     modern_private_status_parser = subparsers.add_parser(
         "modern-private-status",
@@ -2153,6 +2246,177 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"       {error}", file=sys.stderr)
             return 2
         except (ConfigurationError, OSError, RuntimeError, ValueError, TypeError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
+
+    if args.command == "modern-remote-token-init":
+        try:
+            from diffeoforge.remote_atlas_transport import create_remote_token_file
+
+            token_file = create_remote_token_file(args.output)
+            print(f"Remote bearer-token file created: {token_file}")
+            print("The secret was not printed. Keep this file private and out of Git.")
+        except (OSError, RuntimeError, TypeError, ValueError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
+
+    if args.command == "modern-remote-server":
+        manager = None
+        server = None
+        try:
+            from diffeoforge.remote_atlas_server import (
+                RemoteAtlasJobManager,
+                create_remote_atlas_http_server,
+            )
+            from diffeoforge.remote_atlas_transport import load_remote_token
+
+            token = load_remote_token(args.token_file)
+            manager = RemoteAtlasJobManager(
+                args.root,
+                worker_count=args.workers,
+                max_active_jobs=args.max_active_jobs,
+            )
+            server = create_remote_atlas_http_server(
+                manager,
+                token,
+                host=args.host,
+                port=args.port,
+                tls_certificate=args.tls_certificate,
+                tls_private_key=args.tls_private_key,
+                max_upload_bytes=args.max_upload_bytes,
+            )
+            scheme = "https" if args.tls_certificate is not None else "http"
+            address, port = server.server_address[:2]
+            print(f"DiffeoForge remote atlas server listening on {scheme}://{address}:{port}")
+            print(f"Persistent server root: {manager.root}")
+            print("Raw meshes and specimen filenames remain server-side until explicit deletion.")
+            try:
+                server.serve_forever(poll_interval=0.5)
+            except KeyboardInterrupt:
+                print("Remote atlas server stopping; active jobs become interrupted on restart.")
+        except ImportError as error:
+            print(
+                "ERROR: Modern engine dependencies are missing; install "
+                "diffeoforge[modern-engine].",
+                file=sys.stderr,
+            )
+            print(f"       {error}", file=sys.stderr)
+            return 2
+        except (OSError, RuntimeError, TypeError, ValueError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        finally:
+            if server is not None:
+                server.server_close()
+            if manager is not None:
+                manager.close(wait=False)
+        return 0
+
+    if args.command == "modern-remote-submit":
+        try:
+            client = _remote_client_from_args(args)
+            state = client.submit(args.job_directory)
+            print(json.dumps(state, indent=2, ensure_ascii=False))
+            print(f"Remote job accepted: {state['job_id']}")
+        except (OSError, RuntimeError, TypeError, ValueError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
+
+    if args.command == "modern-remote-status":
+        try:
+            client = _remote_client_from_args(args)
+            state = client.status(args.job_id)
+            print(json.dumps(state, indent=2, ensure_ascii=False))
+            if args.events:
+                events = client.events(
+                    args.job_id,
+                    after=args.after,
+                    limit=args.limit,
+                )
+                print(json.dumps(events, indent=2, ensure_ascii=False))
+        except (OSError, RuntimeError, TypeError, ValueError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
+
+    if args.command == "modern-remote-wait":
+        try:
+            import time
+
+            if not 0.1 <= args.poll_seconds <= 3600:
+                raise ValueError("--poll-seconds must be between 0.1 and 3600")
+            if (args.download is None) != (args.job_directory is None):
+                raise ValueError(
+                    "--download and --job-directory must be supplied together"
+                )
+            client = _remote_client_from_args(args)
+            cursor = -1
+            terminal = {"completed", "failed", "cancelled", "interrupted"}
+            while True:
+                while True:
+                    event_page = client.events(args.job_id, after=cursor)
+                    for event in event_page["events"]:
+                        print(json.dumps(event, ensure_ascii=False), flush=True)
+                    cursor = event_page["next_after"]
+                    if not event_page["has_more"]:
+                        break
+                state = client.status(args.job_id)
+                if state["status"] in terminal:
+                    break
+                time.sleep(args.poll_seconds)
+            print(json.dumps(state, indent=2, ensure_ascii=False))
+            if state["status"] == "completed" and args.download is not None:
+                result = client.download(
+                    args.job_id,
+                    args.job_directory,
+                    args.download,
+                )
+                print(f"Remote result downloaded and request-bound: {result}")
+            if state["status"] == "completed":
+                return 0
+            if state["status"] == "cancelled":
+                return 130
+            return 3
+        except KeyboardInterrupt:
+            print(
+                "Wait stopped locally; the remote job was not cancelled.",
+                file=sys.stderr,
+            )
+            return 130
+        except (OSError, RuntimeError, TypeError, ValueError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+
+    if args.command == "modern-remote-cancel":
+        try:
+            state = _remote_client_from_args(args).cancel(args.job_id)
+            print(json.dumps(state, indent=2, ensure_ascii=False))
+        except (OSError, RuntimeError, TypeError, ValueError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
+
+    if args.command == "modern-remote-download":
+        try:
+            result = _remote_client_from_args(args).download(
+                args.job_id,
+                args.job_directory,
+                args.output,
+            )
+            print(f"Remote result downloaded and request-bound: {result}")
+        except (OSError, RuntimeError, TypeError, ValueError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
+
+    if args.command == "modern-remote-delete":
+        try:
+            result = _remote_client_from_args(args).delete(args.job_id)
+            print(json.dumps(result, indent=2, ensure_ascii=False))
+        except (OSError, RuntimeError, TypeError, ValueError) as error:
             print(f"ERROR: {error}", file=sys.stderr)
             return 2
         return 0

@@ -83,11 +83,12 @@ zero-area faces fail explicitly.
 
 This boundary now includes automatic template-vertex control-point initialization,
 bounded complete-cycle checkpoints, exact optimizer-state crash recovery, fail-closed
-CUDA/float64 execution, a desktop worker adapter, and transport-neutral portable
-server requests. Blockwise exact kernels and deterministic mesh-quality constraints
-are implemented. It does **not** yet include sparse or approximate kernels, automatic
-authenticated server upload/orchestration, a general cross-hardware CUDA qualification,
-or an anatomy-independent production preset.
+CUDA/float64 execution, a desktop worker adapter, transport-neutral portable server
+requests, and a private authenticated persistent server/client lifecycle. Blockwise
+exact kernels and deterministic mesh-quality constraints are implemented. It does
+**not** yet include sparse or approximate kernels, a managed or multi-tenant server
+deployment, per-job process isolation, automatic remote checkpoint recovery, a general
+cross-hardware CUDA qualification, or an anatomy-independent production preset.
 
 ## Evidence in this baseline
 
@@ -354,8 +355,8 @@ gates. See
     existing reference workflow.~~ Completed for the experimental CLI and desktop
     workflows, including strict nested verification, bounded complete-cycle
     checkpoints, exact recovery, and a separately hash-bound external CUDA runtime.
-    A contained CUDA distribution, authenticated server transport, public release,
-    and general scientific qualification remain separate.
+    A contained server CUDA distribution, managed multi-user deployment, desktop remote
+    orchestration, public release, and general scientific qualification remain separate.
 
 Modern results may be produced within these explicit evidence boundaries. Numerical
 convergence and engineering non-inferiority must still be kept separate from

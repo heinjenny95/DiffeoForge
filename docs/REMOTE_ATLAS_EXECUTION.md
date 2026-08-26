@@ -1,20 +1,34 @@
-# Portable Modern atlas execution on a server
+# Authenticated Modern atlas execution on a server
 
-Status: **implemented transport-neutral request, execution, and result-verification
-foundation; automatic network transport and desktop orchestration remain open**
+Status: **implemented private single-operator HTTP(S) service and client; managed
+deployment and desktop orchestration remain open**
 
-DiffeoForge can now separate the computer that prepares a Modern atlas from the
-computer that performs it. The first contract deliberately does not choose a cloud
-vendor or silently upload research data. It creates an immutable directory containing
-the reviewed configuration, every selected mesh, optional initialization inputs, an
-exact SHA-256 inventory, and explicit privacy and scientific boundaries.
+DiffeoForge can prepare a reviewed Modern atlas on one computer, execute it on a
+compatible CPU/CUDA server, reconnect to progress, cancel it cooperatively, and
+download a result that is cryptographically bound to the exact request. The transport
+is vendor-neutral and does not silently select a server, account, retention period, or
+billing plan.
 
-The package is useful with an SSH/SFTP transfer, an institutional file-transfer tool,
-an encrypted removable drive, a mounted server share, or a future DiffeoForge service.
-The transfer mechanism remains outside this v0.1 contract and requires explicit user
-authorization.
+This v0.1 service is intended for one trusted research operator or one trusted team
+inside an institutional security boundary. It is not a public multi-tenant service.
 
-## Client: create and verify the request
+## Server installation boundary
+
+Install the same reviewed DiffeoForge source revision and the Modern dependencies on the
+execution host before starting the service:
+
+```powershell
+python -m venv .venv-server
+.\.venv-server\Scripts\python.exe -m pip install ".[modern-engine]"
+```
+
+On Linux, use `.venv-server/bin/python` and `.venv-server/bin/pip`. A CUDA request
+also requires a server-side PyTorch/CUDA installation that passes DiffeoForge's exact
+CUDA/float64 preflight. The repository does not currently publish a qualified Modern
+CUDA server image; selecting a driver, PyTorch build, GPU host, and provider is an
+explicit deployment decision.
+
+## 1. Prepare the exact request
 
 ```powershell
 diffeoforge modern-remote-package `
@@ -26,79 +40,148 @@ diffeoforge modern-remote-package-verify `
 ```
 
 Creation performs the same configuration, subject-count, mesh parsing, and PCA-dimension
-preflight used by the Modern workflow. It copies only the selected template and subjects,
-plus any declared landmarks, initial control points, or initial momenta. Absolute client
-paths are replaced by package-relative paths. The packaged output path is deliberately
-`.` so an accidental plain `modern-run` without an explicit destination fails before
-compute instead of writing into the immutable request.
+preflight used by the Modern workflow. It copies only selected inputs and replaces
+absolute client paths with package-relative paths. The request records the required
+engine implementation, workflow version, CPU/CUDA device, float64 precision, subject
+order, mesh metadata, and an exact SHA-256 inventory.
 
-The request records the required Modern engine implementation, workflow version,
-CPU/CUDA device, float64 precision, source configuration hash, mesh metadata, and every
-file hash. A CUDA request can be prepared on a CPU-only client; availability is checked
-fail-closed on the execution host.
+A CUDA request can be prepared on a CPU-only client. CUDA availability is checked
+fail-closed on the execution host; there is no silent CPU fallback.
 
-The v0.1 request does not package an existing optimizer resume state. A crash during
-server execution retains the Modern workflow's private checkpoint state on that server,
-where the existing checkpoint-recovery workflow can create an immutable successor.
-Automatic cross-host recovery and job migration remain later work.
+## 2. Create the shared secret once
 
-## Server: verify and execute
-
-After an explicitly authorized transfer, run on the server:
+Create the token file on a trusted machine and transfer one private copy to each
+authorized client through an independently secured mechanism:
 
 ```powershell
-diffeoforge modern-remote-package-verify `
-  "D:\jobs\remote-request"
-
-diffeoforge modern-remote-run `
-  "D:\jobs\remote-request" `
-  --output "D:\results\atlas-001"
+diffeoforge modern-remote-token-init "D:\DiffeoForgeServer\server.token"
 ```
 
-`modern-remote-run` reverifies the complete package before allocating the atlas, requires
-the exact requested engine implementation, requires the requested device to be available,
-uses the existing immutable Modern workflow and progress events, and performs no CPU
-fallback for a CUDA request. The result must be outside the request package. A successful
-command finishes only after the complete workflow and nested atlas/PCA bundle verify and
-the result binds back to the request.
+The token is high entropy and is never printed by DiffeoForge. Keep it outside Git,
+project exports, logs, and diagnostic bundles. The current protocol uses one bearer
+token for the complete private service; it does not yet provide per-user identities,
+scopes, revocation lists, or audit attribution.
 
-## Client: verify the returned result
+## 3. Start the persistent service
 
-After downloading or otherwise retrieving the result directory:
+The safe default listens only on loopback:
 
 ```powershell
-diffeoforge modern-remote-result-verify `
+diffeoforge modern-remote-server `
+  --root "D:\DiffeoForgeServer" `
+  --token-file "D:\DiffeoForgeServer\server.token" `
+  --workers 1
+```
+
+The root stores verified requests, state, append-only progress events, private workflow
+state, and completed result archives. It must be on storage available only to the server
+operator. `--workers` bounds simultaneous executions; `--max-active-jobs` and
+`--max-upload-bytes` bound queue and upload admission.
+
+For a remote server, use either:
+
+- an authenticated SSH tunnel to the default loopback listener; or
+- an HTTPS listener with an explicit certificate and private key.
+
+Example HTTPS listener:
+
+```powershell
+diffeoforge modern-remote-server `
+  --root "D:\DiffeoForgeServer" `
+  --token-file "D:\DiffeoForgeServer\server.token" `
+  --host 0.0.0.0 `
+  --port 8787 `
+  --tls-certificate "D:\DiffeoForgeServer\tls\server.crt" `
+  --tls-private-key "D:\DiffeoForgeServer\tls\server.key"
+```
+
+DiffeoForge refuses a non-loopback plain-HTTP bind. Certificate provisioning, DNS,
+firewall rules, OS service supervision, and GPU/CUDA installation belong to the chosen
+institutional or cloud environment and are not silently configured by this command.
+
+## 4. Submit, reconnect, download, and delete
+
+```powershell
+$server = "https://atlas.example.edu:8787"
+$token = "C:\private\diffeoforge-server.token"
+$ca = "C:\private\institution-ca.pem"
+
+diffeoforge modern-remote-submit `
   "C:\project\remote-request" `
-  "C:\project\downloaded-atlas-001"
+  --server $server --token-file $token --ca-file $ca
+
+diffeoforge modern-remote-status JOB_ID `
+  --events --limit 100 --server $server --token-file $token --ca-file $ca
+
+diffeoforge modern-remote-wait JOB_ID `
+  --download "C:\project\downloaded-atlas-001" `
+  --job-directory "C:\project\remote-request" `
+  --server $server --token-file $token --ca-file $ca
 ```
 
-This rechecks the request, the result's exact inventory, every workflow and nested bundle
-hash, the packaged and effective configurations, engine/device identity, subject order,
-filenames, mesh counts, and mesh hashes. It does not trust a result merely because it came
-from the expected server path.
+`modern-remote-submit` reverifies the request before upload. The server streams the
+archive to bounded storage, checks its declared length and archive hash, safely extracts
+it without accepting traversal, links, duplicate entries, encryption, or unbounded
+expansion, and then reverifies the complete request before queueing it.
 
-## Privacy, trust, and cost boundary
+`modern-remote-status --events` returns a bounded event page and reports whether more
+pages remain. `modern-remote-wait` drains those reconnectable pages automatically.
+Stopping the local wait with
+Ctrl+C does not cancel computation. Cancellation is always explicit:
 
-- The request contains raw surface meshes and specimen filenames. Creating it is not
-  consent to transfer it.
-- DiffeoForge v0.1 performs no upload, download, authentication, telemetry, billing, or
-  server discovery.
-- Hash verification detects changed bytes; it does not prove that a server kept private
-  copies confidential or deleted them.
-- A future managed transport must add authenticated endpoints, encrypted transfer,
-  explicit destination/account review, quotas and cost estimates, resumable chunking,
-  retention/deletion controls, and an append-only remote job lifecycle without weakening
-  this request/result binding.
-- Numerical convergence and a verified download remain separate from reconstruction QC,
-  sensitivity analysis, and biological interpretation.
+```powershell
+diffeoforge modern-remote-cancel JOB_ID `
+  --server $server --token-file $token --ca-file $ca
+```
 
-## Next server slices
+Cancellation is cooperative and can take until the running numerical operation reaches
+its next cancellation check. A queued job is cancelled without starting it.
 
-1. Version an authenticated remote job lifecycle with queued/running/checkpointed/
-   completed/failed/cancelled states and reconnectable progress cursors.
-2. Add resumable content-addressed upload so unchanged mesh bytes are not retransmitted.
-3. Publish signed or mutually authenticated result descriptors before download.
-4. Add the server choice to desktop project review with visible privacy, retention, cost,
-   and expected-runtime controls.
-5. Qualify one institutional Linux/CUDA deployment independently from the current Windows
-   RTX 4080 evidence.
+After verification and any required scientific/QC review, delete terminal server data
+explicitly:
+
+```powershell
+diffeoforge modern-remote-delete JOB_ID `
+  --server $server --token-file $token --ca-file $ca
+```
+
+There is deliberately no automatic retention duration in v0.1. Active jobs cannot be
+deleted. Completed, failed, cancelled, or interrupted jobs remain until this authenticated
+delete request or an independently governed server-side retention procedure removes them.
+
+## Persistence and restart behavior
+
+- Queued jobs survive a clean or unclean service restart and return to the queue.
+- A job recorded as `running` or `cancel_requested` becomes `interrupted` after restart.
+  It is never silently rerun, because doing so could duplicate expensive computation.
+- Existing private Modern checkpoints remain in the server job directory for an explicit,
+  operator-reviewed recovery path. Automatic remote recovery and job migration are not
+  yet implemented.
+- Completed results are reverified when persistent state is loaded.
+
+The current worker executes the Modern workflow inside the server process. A fatal native
+or GPU failure can therefore stop the service; persistent state then applies the
+fail-closed interrupted behavior above. Per-job process isolation is a later production
+hardening step.
+
+## Result trust and scientific boundary
+
+Every download is streamed with a size limit and archive-hash check, safely extracted,
+and verified against the original local request. Verification covers the exact inventory,
+nested workflow and atlas/PCA bundles, effective configuration, engine/device identity,
+subject order, filenames, mesh counts, and mesh hashes. Archive hashes provide integrity,
+not proof that the server kept no private copy.
+
+Transport success and numerical convergence do not establish reconstruction quality,
+parameter suitability, sensitivity, PCA stability, or biological validity. The passing
+Modern Engine 236-subject gates remain cohort-, protocol-, and hardware-specific.
+
+## Remaining production layers
+
+1. Qualify and document one institutional Linux/CUDA deployment.
+2. Isolate each running job in a supervised process and expose explicit checkpoint recovery.
+3. Add per-user authentication, scoped authorization, audit logging, rate limiting, and
+   governed automatic retention for a multi-user service.
+4. Add resumable content-addressed upload and download for large cohorts.
+5. Add reviewed server selection, privacy, expected-runtime, retention, and cost controls
+   to the desktop application.

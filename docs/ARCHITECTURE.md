@@ -474,20 +474,30 @@ exact-state recovery, and fail-closed CUDA/float64 execution now exist. The pass
 they do not establish a general anatomy-independent preset, cross-hardware GPU
 parity, or biological validity.
 
-A transport-neutral remote-atlas contract can now copy one reviewed Modern request
-into a portable, exact-inventory directory, execute it explicitly on another host,
-and bind a returned workflow to that request. It deliberately performs no network
-operation. Authenticated upload, a durable server queue, reconnectable progress,
-remote cancellation, retention controls, and cost governance remain separate layers.
+The transport-neutral remote-atlas contract now has a private, authenticated HTTP(S)
+service. A client verifies and archives one exact request, streams it with a declared
+SHA-256 identity, follows reconnectable progress, requests cooperative cancellation,
+and downloads a result that is reverified against the local request. The server safely
+extracts and reverifies uploads, keeps a bounded persistent queue and append-only event
+log, defaults to one worker, and requires TLS for every non-loopback bind. Queued jobs
+survive restart; formerly running jobs become `interrupted` instead of being silently
+re-executed. Terminal data require explicit authenticated deletion.
+
+This v0.1 layer is intentionally a single-operator private service. Per-job process
+isolation, automatic checkpoint recovery, per-user authorization, governed automatic
+retention, resumable content-addressed transfer, provider deployment, cost governance,
+and desktop orchestration remain separate production layers.
 
 ## Security and privacy boundary
 
 The application is local-first. Ordinary runs do not upload meshes, metadata,
 logs, or telemetry. Creating a portable remote request still performs no network
-operation and explicitly records that automatic upload is unauthorized. The package
-contains raw meshes and specimen filenames, so its destination, account, retention,
-and transfer mechanism must be reviewed before an explicit transfer. Paths and specimen
-identifiers must also be reviewed before public diagnostic bundles are created.
+operation and explicitly records that automatic upload is unauthorized. Only the
+separate `modern-remote-submit` command performs an authenticated transfer to the exact
+operator-supplied endpoint. The package contains raw meshes and specimen filenames, so
+its destination, account, retention, and transfer mechanism must be reviewed before that
+explicit transfer. Paths and specimen identifiers must also be reviewed before public
+diagnostic bundles are created.
 
 ## Open questions
 

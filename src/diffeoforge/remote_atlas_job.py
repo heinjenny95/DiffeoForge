@@ -6,6 +6,7 @@ import json
 import os
 import shutil
 import uuid
+from collections.abc import Callable
 from copy import deepcopy
 from datetime import UTC, datetime
 from importlib.resources import files
@@ -605,6 +606,7 @@ def run_remote_atlas_job(
     destination: Path | str,
     *,
     progress_callback: ModernProgressCallback | None = None,
+    cancel_requested: Callable[[], bool] | None = None,
 ) -> Path:
     """Execute one verified request on the current host and bind its result."""
 
@@ -628,6 +630,7 @@ def run_remote_atlas_job(
         config_path,
         destination=result_root,
         progress_callback=progress_callback,
+        cancel_requested=cancel_requested,
     )
     verify_remote_atlas_result(job_root, completed)
     return completed

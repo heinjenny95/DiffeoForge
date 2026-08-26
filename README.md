@@ -93,9 +93,9 @@ the source run.
   should be detected before an expensive run starts.
 - **Immutable runs:** inputs, configuration, software versions, hashes, logs,
   and outputs are stored together and never silently overwritten.
-- **Explicit remote execution:** a portable server request can be created and
-  verified without uploading; transfer, credentials, retention, and cost require
-  separate explicit authorization.
+- **Explicit remote execution:** packaging never uploads; the separate remote client
+  uses an exact operator-selected endpoint, bearer authentication, TLS off-loopback,
+  and explicit terminal-data deletion. Retention policy and cost remain explicit.
 - **Scientific validation:** numerical plausibility is not treated as evidence
   of equivalence or correctness.
 - **No AI dependency:** AI tools may assist development, but users will never
@@ -150,9 +150,10 @@ This repository currently provides:
   Atlas/PCA/QC summary with embedded optimizer-convergence, PC1/PC2, and
   PC2/PC3 plots and
   inventory-bound artifact handoff;
-- a portable, exact-inventory Modern atlas request that can be transferred through
-  an explicitly chosen mechanism, executed on a compatible CPU/CUDA server, and
-  bound back to a fully verified downloaded workflow without silent local fallback;
+- a portable, exact-inventory Modern atlas request plus a private authenticated
+  HTTP(S) server/client with a bounded persistent queue, reconnectable progress,
+  cooperative cancellation, explicit terminal-data deletion, and fully verified
+  request-bound downloads without silent local fallback;
 - supervised source-level Deformetrica execution followed by strict momenta and
   control-point import, a source-bound deterministic linear-PCA bundle, and the
   shared verified Results & PCA screen;
