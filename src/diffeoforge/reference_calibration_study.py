@@ -193,6 +193,82 @@ class ReferenceCalibrationStudySnapshot:
     final_config_path: Path | None
     report_json_path: Path | None
     report_html_path: Path | None
+    search_extension_safety_limits: Mapping[str, tuple[float, float]] | None = None
+    search_extension_round: int = 0
+
+
+def _normalized_search_extension_safety_limits(
+    extension_source: Mapping[str, object],
+) -> dict[str, tuple[float, float]]:
+    raw_limits = extension_source.get("safety_limits")
+    if not isinstance(raw_limits, Mapping) or not raw_limits:
+        raise ReferenceCalibrationStudyError(
+            "Calibration search extension lacks explicit safety limits"
+        )
+    normalized: dict[str, tuple[float, float]] = {}
+    for raw_parameter, raw_bounds in raw_limits.items():
+        parameter = str(raw_parameter)
+        if (
+            not isinstance(raw_bounds, (tuple, list))
+            or len(raw_bounds) != 2
+            or isinstance(raw_bounds[0], bool)
+            or isinstance(raw_bounds[1], bool)
+        ):
+            raise ReferenceCalibrationStudyError(
+                f"Safety limits for {parameter} must contain two finite positive values"
+            )
+        lower, upper = float(raw_bounds[0]), float(raw_bounds[1])
+        if (
+            not math.isfinite(lower)
+            or not math.isfinite(upper)
+            or lower <= 0
+            or upper <= lower
+        ):
+            raise ReferenceCalibrationStudyError(
+                f"Safety limits for {parameter} must be finite, positive, and ordered"
+            )
+        normalized[parameter] = (lower, upper)
+    return normalized
+
+
+def _search_extension_series(root: Path) -> tuple[Path, int]:
+    """Return the immutable first study and the current successor depth."""
+
+    current = root.resolve()
+    visited: set[Path] = set()
+    depth = 0
+    while True:
+        if current in visited:
+            raise ReferenceCalibrationStudyError(
+                "Calibration search-extension lineage contains a cycle"
+            )
+        visited.add(current)
+        manifest = _read_json(current / STUDY_MANIFEST, "calibration study manifest")
+        extension_source = manifest.get("search_extension_source")
+        if not isinstance(extension_source, Mapping):
+            return current, depth
+        source = Path(str(extension_source.get("study_directory", ""))).expanduser().resolve()
+        if not source.is_dir():
+            raise ReferenceCalibrationStudyError(
+                "Calibration search-extension source directory is absent"
+            )
+        current = source
+        depth += 1
+
+
+def next_reference_calibration_search_extension_destination(
+    source_study_directory: Path | str,
+) -> Path:
+    """Return the deterministic non-overwriting sibling for the next extension."""
+
+    source_root = Path(source_study_directory).expanduser().resolve()
+    if not source_root.is_dir():
+        raise ReferenceCalibrationStudyError(
+            f"Calibration study directory does not exist: {source_root}"
+        )
+    _verify_manifest(source_root)
+    series_root, depth = _search_extension_series(source_root)
+    return series_root.with_name(f"{series_root.name}-extension-{depth + 1:02d}")
 
 
 def _load_events(root: Path) -> tuple[dict[str, Any], ...]:
@@ -542,7 +618,6 @@ def create_reference_calibration_search_extension_study(
         assessment,
         outward_steps=outward_steps,
     )
-    normalized_limits: dict[str, tuple[float, float]] = {}
     boundary_parameters = {
         boundary.split(":", maxsplit=1)[0]
         for boundary in proposal.boundary_parameters
@@ -552,27 +627,25 @@ def create_reference_calibration_search_extension_study(
             "Safety limits must match the boundary parameters exactly; expected="
             f"{sorted(boundary_parameters)}, observed={sorted(safety_limits)}"
         )
-    for parameter, bounds in safety_limits.items():
-        if (
-            not isinstance(bounds, (tuple, list))
-            or len(bounds) != 2
-            or isinstance(bounds[0], bool)
-            or isinstance(bounds[1], bool)
-        ):
+    normalized_limits = _normalized_search_extension_safety_limits(
+        {"safety_limits": safety_limits}
+    )
+    inherited_series_limits = source_snapshot.search_extension_safety_limits
+    if inherited_series_limits is None:
+        series_limits = dict(normalized_limits)
+    else:
+        series_limits = dict(inherited_series_limits)
+        missing_limits = boundary_parameters - set(series_limits)
+        changed_limits = {
+            parameter
+            for parameter, bounds in normalized_limits.items()
+            if parameter in series_limits and bounds != series_limits[parameter]
+        }
+        if missing_limits or changed_limits:
             raise ReferenceCalibrationStudyError(
-                f"Safety limits for {parameter} must contain two finite positive values"
+                "Search-extension safety limits differ from the declared series limits: "
+                f"missing={sorted(missing_limits)}, changed={sorted(changed_limits)}"
             )
-        lower, upper = float(bounds[0]), float(bounds[1])
-        if (
-            not math.isfinite(lower)
-            or not math.isfinite(upper)
-            or lower <= 0
-            or upper <= lower
-        ):
-            raise ReferenceCalibrationStudyError(
-                f"Safety limits for {parameter} must be finite, positive, and ordered"
-            )
-        normalized_limits[parameter] = (lower, upper)
     for candidate in proposal.candidates:
         for parameter, (lower, upper) in normalized_limits.items():
             if parameter not in candidate.values:
@@ -589,6 +662,8 @@ def create_reference_calibration_search_extension_study(
         proposal,
     )
     source_manifest = _verify_manifest(source_root)
+    series_root, source_extension_depth = _search_extension_series(source_root)
+    extension_round = source_extension_depth + 1
     source_events = _load_events(source_root)
     source_by_id = {
         candidate.candidate_id: candidate for candidate in source_snapshot.candidates
@@ -669,9 +744,15 @@ def create_reference_calibration_search_extension_study(
                 "parent_plan_fingerprint": source_snapshot.plan.fingerprint,
                 "source_assessment_fingerprint": assessment.fingerprint,
                 "proposal": proposal.as_manifest(),
+                "series_root_directory": str(series_root),
+                "extension_round": extension_round,
                 "safety_limits": {
                     parameter: list(bounds)
                     for parameter, bounds in normalized_limits.items()
+                },
+                "series_safety_limits": {
+                    parameter: list(bounds)
+                    for parameter, bounds in series_limits.items()
                 },
             },
             "scientific_boundary": (
@@ -832,6 +913,23 @@ def _verify_manifest(root: Path) -> dict[str, Any]:
         source_events = _load_events(source_root)
         lineage = dict(plan.search_extension_lineage)
         proposal = extension_source.get("proposal")
+        safety_limits = _normalized_search_extension_safety_limits(extension_source)
+        series_safety_limits = _normalized_search_extension_safety_limits(
+            {
+                "safety_limits": extension_source.get(
+                    "series_safety_limits",
+                    extension_source["safety_limits"],
+                )
+            }
+        )
+        proposal_boundaries = (
+            {
+                str(value).split(":", maxsplit=1)[0]
+                for value in proposal.get("boundary_parameters", [])
+            }
+            if isinstance(proposal, Mapping)
+            else set()
+        )
         if (
             source_snapshot.study_id != extension_source.get("study_id")
             or source_events[-1]["event_hash"]
@@ -844,9 +942,33 @@ def _verify_manifest(root: Path) -> dict[str, Any]:
             or lineage.get("proposal_fingerprint") != proposal.get("fingerprint")
             or lineage.get("source_assessment_fingerprint")
             != extension_source.get("source_assessment_fingerprint")
+            or set(safety_limits) != proposal_boundaries
+            or not set(safety_limits).issubset(series_safety_limits)
+            or any(
+                bounds != series_safety_limits[parameter]
+                for parameter, bounds in safety_limits.items()
+            )
         ):
             raise ReferenceCalibrationStudyError(
                 "Calibration search-extension lineage differs from its source evidence"
+            )
+        series_root, extension_depth = _search_extension_series(root)
+        recorded_round = extension_source.get("extension_round")
+        recorded_series_root = extension_source.get("series_root_directory")
+        if recorded_round is not None and (
+            isinstance(recorded_round, bool)
+            or not isinstance(recorded_round, int)
+            or recorded_round != extension_depth
+        ):
+            raise ReferenceCalibrationStudyError(
+                "Calibration search-extension round differs from its lineage"
+            )
+        if (
+            recorded_series_root is not None
+            and Path(str(recorded_series_root)).expanduser().resolve() != series_root
+        ):
+            raise ReferenceCalibrationStudyError(
+                "Calibration search-extension series root differs from its lineage"
             )
     bound_files = [
         manifest["source_config"],
@@ -924,7 +1046,18 @@ def load_reference_calibration_study(
             "Calibration event ledger is bound to a different manifest"
         )
     extension_source = manifest.get("search_extension_source")
+    extension_limits: dict[str, tuple[float, float]] | None = None
+    extension_round = 0
     if isinstance(extension_source, Mapping):
+        extension_limits = _normalized_search_extension_safety_limits(
+            {
+                "safety_limits": extension_source.get(
+                    "series_safety_limits",
+                    extension_source["safety_limits"],
+                )
+            }
+        )
+        _, extension_round = _search_extension_series(root)
         source_events = _load_events(
             Path(str(extension_source["study_directory"])).expanduser().resolve()
         )
@@ -981,6 +1114,8 @@ def load_reference_calibration_study(
             final_config_path=final_config,
             report_json_path=report_json,
             report_html_path=report_html,
+            search_extension_safety_limits=extension_limits,
+            search_extension_round=extension_round,
         )
     stage = plan.stages[len(selected_candidates)]
     prepared = _prepared_candidates(root, events, stage.stage_id)
@@ -1074,6 +1209,8 @@ def load_reference_calibration_study(
         final_config_path=None,
         report_json_path=None,
         report_html_path=None,
+        search_extension_safety_limits=extension_limits,
+        search_extension_round=extension_round,
     )
 
 
@@ -1317,6 +1454,72 @@ class ReferenceCalibrationStudyRunner:
                     + " Retry the pilot after reviewing: "
                     + ", ".join(candidate.candidate_id for candidate in incomplete)
                 )
+            assessment = assess_reference_calibration_snapshot(snapshot)
+            if (
+                not assessment.automatic_selection_allowed
+                and assessment.search_range_status == "not_bounded"
+                and snapshot.search_extension_safety_limits is not None
+            ):
+                boundary_parameters = {
+                    value.split(":", maxsplit=1)[0]
+                    for value in assessment.search_boundary_parameters
+                }
+                inherited_limits = dict(snapshot.search_extension_safety_limits)
+                missing = sorted(boundary_parameters - set(inherited_limits))
+                if missing:
+                    raise ReferenceCalibrationStudyError(
+                        "Search range not bounded: the preferred candidate reached new "
+                        "parameter boundaries without predeclared feasibility limits: "
+                        + ", ".join(missing)
+                        + ". Declare those limits before another outward successor runs."
+                    )
+                active_limits = {
+                    parameter: inherited_limits[parameter]
+                    for parameter in boundary_parameters
+                }
+                destination = next_reference_calibration_search_extension_destination(
+                    self.study_directory
+                )
+                if destination.exists():
+                    raise ReferenceCalibrationStudyError(
+                        "Search range not bounded: the deterministic outward-successor "
+                        f"destination already exists and was not reused: {destination}"
+                    )
+                try:
+                    successor = create_reference_calibration_search_extension_study(
+                        self.study_directory,
+                        destination,
+                        safety_limits=active_limits,
+                    )
+                except ReferenceCalibrationStudyError as error:
+                    if "Safety limit reached" not in str(error):
+                        raise
+                    raise ReferenceCalibrationStudyError(
+                        "Search range not bounded: the preferred candidate remains on "
+                        "the tested boundary, but the next outward candidates would "
+                        f"cross the declared feasibility limit. {error}"
+                    ) from error
+                source = self.study_directory
+                self.study_directory = successor.study_directory
+                if event_callback is not None:
+                    event_callback(
+                        {
+                            "event": "automatic_search_extended",
+                            "source_study_directory": str(source),
+                            "study_directory": str(successor.study_directory),
+                            "extension_round": successor.search_extension_round,
+                            "stage_id": assessment.stage_id,
+                            "boundary_parameters": list(
+                                assessment.search_boundary_parameters
+                            ),
+                            "pending_candidate_ids": [
+                                candidate.candidate_id
+                                for candidate in successor.candidates
+                                if candidate.status != "completed"
+                            ],
+                        }
+                    )
+                continue
             stage_id = snapshot.current_stage.stage_id if snapshot.current_stage else ""
             updated, assessment = select_reference_calibration_stage_automatically(
                 self.study_directory

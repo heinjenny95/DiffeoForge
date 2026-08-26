@@ -481,6 +481,10 @@ def test_desktop_window_exposes_required_project_controls(monkeypatch) -> None:
     assert window.findChild(QComboBox, "unitsCombo") is not None
     assert window.findChild(QComboBox, "pairwiseEvaluationCombo") is not None
     assert window.findChild(QComboBox, "optimizationEffortCombo") is not None
+    modern_device = window.findChild(QComboBox, "modernDeviceCombo")
+    modern_gradient = window.findChild(QComboBox, "modernTemplateGradientCombo")
+    assert modern_device is not None
+    assert modern_gradient is not None
     landmark_count = window.findChild(QSpinBox, "landmarkCountSpin")
     assert landmark_count is not None
     assert landmark_count.minimum() == 3
@@ -513,6 +517,13 @@ def test_desktop_window_exposes_required_project_controls(monkeypatch) -> None:
     assert blockwise_request.pairwise_mode == "blockwise"
     assert blockwise_request.query_tile_size == 256
     assert blockwise_request.source_tile_size == 256
+    modern_device.setCurrentIndex(1)
+    modern_gradient.setCurrentIndex(1)
+    window.modern_sobolev_ratio_spin.setValue(1.25)
+    cuda_request = window._request()
+    assert cuda_request.modern_runtime_device == "cuda"
+    assert cuda_request.modern_template_gradient == "sobolev"
+    assert cuda_request.modern_sobolev_kernel_width_ratio == 1.25
     window.engine_combo.setCurrentIndex(1)
     application.processEvents()
     assert "Deformetrica 4.3" in window.engine_hint.text()

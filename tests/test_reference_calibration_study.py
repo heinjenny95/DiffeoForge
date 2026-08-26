@@ -384,6 +384,134 @@ def test_search_extension_refuses_candidates_past_declared_safety_limit(
     assert not (tmp_path / "rejected-successor").exists()
 
 
+def test_automatic_pilot_reuses_declared_limits_until_boundary_is_interior(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source_directory = tmp_path / "pilot-extension-01"
+    source_directory.mkdir()
+    destination = tmp_path / "pilot-extension-02"
+    stage = SimpleNamespace(stage_id="attachment")
+    completed_candidate = SimpleNamespace(
+        candidate_id="attachment-01",
+        status="completed",
+    )
+    pending_candidate = SimpleNamespace(
+        candidate_id="attachment-outward-r02-01",
+        status="pending",
+    )
+    inherited_limits = {
+        "attachment_kernel_width": (0.01, 1.0),
+        "deformation_kernel_width": (0.01, 2.0),
+    }
+    source = SimpleNamespace(
+        study_directory=source_directory,
+        status="awaiting_review",
+        current_stage=stage,
+        candidates=(completed_candidate,),
+        search_extension_safety_limits=inherited_limits,
+    )
+    successor_ready = SimpleNamespace(
+        study_directory=destination,
+        status="ready",
+        current_stage=stage,
+        candidates=(completed_candidate, pending_candidate),
+        search_extension_safety_limits=inherited_limits,
+        search_extension_round=2,
+    )
+    successor_awaiting = SimpleNamespace(
+        **{
+            **successor_ready.__dict__,
+            "status": "awaiting_review",
+            "candidates": (completed_candidate,),
+        }
+    )
+    completed = SimpleNamespace(
+        study_directory=destination,
+        status="completed",
+        current_stage=None,
+        candidates=(),
+        selected_candidate_ids={"attachment": "attachment-02"},
+        plan=SimpleNamespace(stages=(stage,)),
+    )
+    boundary_assessment = SimpleNamespace(
+        automatic_selection_allowed=False,
+        search_range_status="not_bounded",
+        search_boundary_parameters=("attachment_kernel_width:maximum",),
+        stage_id="attachment",
+        balanced_candidate_id="attachment-01",
+    )
+    bounded_assessment = SimpleNamespace(
+        automatic_selection_allowed=True,
+        search_range_status="bounded",
+        search_boundary_parameters=(),
+        stage_id="attachment",
+        balanced_candidate_id="attachment-02",
+    )
+
+    monkeypatch.setattr(
+        study_module,
+        "load_reference_calibration_study",
+        lambda directory: source
+        if Path(directory).resolve() == source_directory
+        else successor_ready,
+    )
+    monkeypatch.setattr(
+        study_module,
+        "assess_reference_calibration_snapshot",
+        lambda snapshot: boundary_assessment
+        if snapshot is source
+        else bounded_assessment,
+    )
+    monkeypatch.setattr(
+        study_module,
+        "next_reference_calibration_search_extension_destination",
+        lambda _directory: destination,
+    )
+    created: list[tuple[Path, Path, dict[str, tuple[float, float]]]] = []
+
+    def create_successor(source_path, destination_path, *, safety_limits):
+        created.append((Path(source_path), Path(destination_path), dict(safety_limits)))
+        return successor_ready
+
+    monkeypatch.setattr(
+        study_module,
+        "create_reference_calibration_search_extension_study",
+        create_successor,
+    )
+    monkeypatch.setattr(
+        study_module,
+        "select_reference_calibration_stage_automatically",
+        lambda _directory: (completed, bounded_assessment),
+    )
+    runner = ReferenceCalibrationStudyRunner(source_directory)
+    monkeypatch.setattr(
+        runner,
+        "run_current_stage",
+        lambda *, event_callback=None: successor_awaiting,
+    )
+    observed: list[dict[str, object]] = []
+
+    result = runner.run_complete_automatic_pilot(event_callback=observed.append)
+
+    assert result is completed
+    assert runner.study_directory == destination
+    assert created == [
+        (
+            source_directory,
+            destination,
+            {"attachment_kernel_width": inherited_limits["attachment_kernel_width"]},
+        )
+    ]
+    extension_event = next(
+        event for event in observed if event["event"] == "automatic_search_extended"
+    )
+    assert extension_event["extension_round"] == 2
+    assert extension_event["pending_candidate_ids"] == [
+        "attachment-outward-r02-01"
+    ]
+
+
 def test_noise_extension_preserves_prior_stage_selections(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

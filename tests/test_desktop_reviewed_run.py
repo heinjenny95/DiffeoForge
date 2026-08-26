@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from diffeoforge.desktop.modern_cuda_runtime import ModernCudaRuntime
 from diffeoforge.desktop.project_review import ProjectReviewResult
 from diffeoforge.desktop.project_setup import DesktopEngine
 from diffeoforge.desktop.reviewed_run import (
@@ -49,7 +50,7 @@ def test_reviewed_run_rejects_reference_engine(tmp_path: Path) -> None:
     config = tmp_path / "atlas.yaml"
     config.write_text("reference\n", encoding="utf-8")
 
-    with pytest.raises(DesktopReviewedRunError, match="only for Modern CPU"):
+    with pytest.raises(DesktopReviewedRunError, match="only for Modern projects"):
         build_reviewed_worker_request(
             _review(config, engine=DesktopEngine.DEFORMETRICA_REFERENCE),
             request_id="desktop-test",
@@ -150,3 +151,52 @@ def test_reviewed_readiness_rejects_mismatched_request_and_discovery_targets(
             request=request,
             discovery=PrivateRunDiscovery((tmp_path / "other").resolve(), False, ()),
         )
+
+
+def test_reviewed_cuda_readiness_binds_external_worker_command(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    config = (tmp_path / "modern-atlas.yaml").resolve()
+    destination = (tmp_path / "cuda-result").resolve()
+    python = (tmp_path / "cuda-python.exe").resolve()
+    worker = (tmp_path / "worker.py").resolve()
+    package = (tmp_path / "diffeoforge.py").resolve()
+    config.write_text("reviewed bytes\n", encoding="utf-8")
+    python.write_bytes(b"cuda-python")
+    worker.write_text("# worker\n", encoding="utf-8")
+    package.write_text("# package\n", encoding="utf-8")
+    runtime = ModernCudaRuntime(
+        python_path=python,
+        python_sha256=sha256_file(python),
+        torch_version="2.11.0+cu128",
+        cuda_version="12.8",
+        device_name="NVIDIA GeForce RTX 4080",
+        device_capability=(8, 9),
+        diffeoforge_path=package,
+        diffeoforge_sha256=sha256_file(package),
+        worker_path=worker,
+        worker_sha256=sha256_file(worker),
+        engine_implementation_version="1.6",
+    )
+    review = ProjectReviewResult(
+        **{
+            **_review(config).__dict__,
+            "modern_cuda_runtime": runtime,
+        }
+    )
+    monkeypatch.setattr(
+        "diffeoforge.desktop.reviewed_run.build_worker_request",
+        lambda source, *, request_id: DesktopWorkerRequest(
+            request_id=request_id,
+            config_path=Path(source),
+            destination=destination,
+            expected_config_sha256=review.config_sha256,
+            runtime_device="cuda",
+        ),
+    )
+
+    readiness = check_reviewed_run_readiness(review, request_id="desktop-cuda")
+
+    assert readiness.request.engine == "modern_cuda"
+    assert readiness.worker_command == runtime.worker_command

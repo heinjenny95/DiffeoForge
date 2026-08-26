@@ -8,6 +8,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from diffeoforge.desktop.modern_cuda_runtime import (
+    ModernCudaRuntime,
+    discover_modern_cuda_runtime,
+)
 from diffeoforge.desktop.project_setup import DesktopEngine
 from diffeoforge.desktop.reference_production_readiness import (
     ReferenceProductionReadiness,
@@ -51,6 +55,7 @@ class ProjectReviewResult:
     scientific_boundary: str
     runtime_estimate: ReferenceRuntimeEstimate | None = None
     production_readiness: ReferenceProductionReadiness | None = None
+    modern_cuda_runtime: ModernCudaRuntime | None = None
 
 
 def _number(value: int | float) -> str:
@@ -639,6 +644,11 @@ def _modern_review(config_path: Path, config_sha256: str) -> ProjectReviewResult
     optimization = config["optimization"]
     analysis = config["analysis"]
     runtime = config["runtime"]
+    cuda_runtime = (
+        discover_modern_cuda_runtime()
+        if runtime["device"] == "cuda"
+        else None
+    )
     procrustes = config["preprocessing"]["procrustes"]
     pairwise = report["engine"]["pairwise_evaluation"]
     pairwise_value = "dense · complete pair matrices"
@@ -845,6 +855,15 @@ def _modern_review(config_path: Path, config_sha256: str) -> ProjectReviewResult
     warnings = (
         "Geometry-scaled starter values are exploratory and are not scientifically "
         "validated presets.",
+        *(
+            (
+                "CUDA execution uses a separately verified local runtime: "
+                f"{cuda_runtime.summary}. This is an engineering binding, not a "
+                "validated public GPU distribution.",
+            )
+            if cuda_runtime is not None
+            else ()
+        ),
         *high_detail_warning,
         *(str(warning) for warning in report["warnings"]),
     )
@@ -861,12 +880,14 @@ def _modern_review(config_path: Path, config_sha256: str) -> ProjectReviewResult
         warnings=warnings,
         scientific_boundary=(
             "This view shows exact all-pairs operation counts and conservative "
-            "dense-equivalent payload arithmetic for the configured CPU/float64 plan. It is "
+            "dense-equivalent payload arithmetic for the configured "
+            f"{runtime['device'].upper()}/float64 plan. It is "
             "not an allocation claim, peak-RAM forecast, computation-time prediction, "
             "benchmark measurement, or guarantee for 300 subjects. Autograd, memory "
             "management, BLAS threads, and operating-system load can change real resource "
             f"use. Original report contract: {SCIENTIFIC_BOUNDARY}"
         ),
+        modern_cuda_runtime=cuda_runtime,
     )
 
 

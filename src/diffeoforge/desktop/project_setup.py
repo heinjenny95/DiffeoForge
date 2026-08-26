@@ -53,6 +53,9 @@ class ProjectSetupRequest:
     query_tile_size: int | None = None
     source_tile_size: int | None = None
     max_cycles: int = 3
+    modern_runtime_device: str = "cpu"
+    modern_template_gradient: str = "euclidean"
+    modern_sobolev_kernel_width_ratio: float = 1.0
     reference_parameter_profile: str = "recommended"
     reference_parameter_ratios: dict[str, float] | None = None
     reference_parameter_recommendation: dict[str, object] | None = None
@@ -92,13 +95,15 @@ class ProjectSetupResult:
     report_path: Path | None
     notices: tuple[str, ...]
     preprocessing_report_path: Path | None = None
+    modern_runtime_device: str | None = None
 
     @property
     def engine_label(self) -> str:
         """Return a stable label suitable for the desktop result summary."""
 
         if self.engine is DesktopEngine.MODERN_CPU:
-            return "DiffeoForge Modern CPU (experimental)"
+            device = (self.modern_runtime_device or "cpu").upper()
+            return f"DiffeoForge Modern {device} (experimental)"
         return "Deformetrica 4.3 (recommended backend)"
 
 
@@ -147,6 +152,24 @@ def _normalize_request(request: ProjectSetupRequest) -> ProjectSetupRequest:
         or request.max_cycles < 1
     ):
         raise ConfigurationError("Desktop max_cycles must be a positive integer")
+    modern_runtime_device = str(request.modern_runtime_device).strip().lower()
+    if modern_runtime_device not in {"cpu", "cuda"}:
+        raise ConfigurationError("Modern runtime device must be 'cpu' or 'cuda'")
+    modern_template_gradient = str(request.modern_template_gradient).strip().lower()
+    if modern_template_gradient not in {"euclidean", "sobolev"}:
+        raise ConfigurationError(
+            "Modern template gradient must be 'euclidean' or 'sobolev'"
+        )
+    modern_sobolev_ratio = request.modern_sobolev_kernel_width_ratio
+    if (
+        isinstance(modern_sobolev_ratio, bool)
+        or not isinstance(modern_sobolev_ratio, (int, float))
+        or not math.isfinite(float(modern_sobolev_ratio))
+        or float(modern_sobolev_ratio) <= 0
+    ):
+        raise ConfigurationError(
+            "Modern Sobolev kernel-width ratio must be finite and positive"
+        )
     profile = str(request.reference_parameter_profile).strip().lower()
     if profile not in {*REFERENCE_PARAMETER_PROFILES, "advanced", "data_assisted"}:
         raise ConfigurationError(f"Unsupported Deformetrica parameter profile: {profile!r}")
@@ -310,6 +333,9 @@ def _normalize_request(request: ProjectSetupRequest) -> ProjectSetupRequest:
         query_tile_size=query_tile_size,
         source_tile_size=source_tile_size,
         max_cycles=request.max_cycles,
+        modern_runtime_device=modern_runtime_device,
+        modern_template_gradient=modern_template_gradient,
+        modern_sobolev_kernel_width_ratio=float(modern_sobolev_ratio),
         reference_parameter_profile=profile,
         reference_parameter_ratios=ratios,
         reference_parameter_recommendation=recommendation,
@@ -641,6 +667,9 @@ def _create_modern_project(request: ProjectSetupRequest) -> ProjectSetupResult:
         query_tile_size=request.query_tile_size,
         source_tile_size=request.source_tile_size,
         max_cycles=request.max_cycles,
+        runtime_device=request.modern_runtime_device,
+        template_gradient=request.modern_template_gradient,
+        sobolev_kernel_width_ratio=request.modern_sobolev_kernel_width_ratio,
         procrustes_scale_to_unit_centroid_size=(
             request.procrustes_scale_to_unit_centroid_size
         ),
@@ -656,6 +685,19 @@ def _create_modern_project(request: ProjectSetupRequest) -> ProjectSetupResult:
         "Project creation validated the supported meshes and quality gates but did not "
         "run an atlas.",
     ]
+    if request.modern_runtime_device == "cuda":
+        notices.insert(
+            0,
+            "Modern CUDA/float64 selected. Project review must bind a separate "
+            "CUDA-capable DiffeoForge runtime before execution; the CPU installer "
+            "does not silently emulate this route.",
+        )
+    if request.modern_template_gradient == "sobolev":
+        notices.insert(
+            0,
+            "Sobolev template-gradient smoothing is explicit and opt-in. Its recorded "
+            "width ratio does not establish superiority for a new anatomy.",
+        )
     if preprocessing_report_path is not None:
         notices.insert(
             0,
@@ -703,6 +745,7 @@ def _create_modern_project(request: ProjectSetupRequest) -> ProjectSetupResult:
         report_path=None,
         preprocessing_report_path=preprocessing_report_path,
         notices=tuple(notices),
+        modern_runtime_device=request.modern_runtime_device,
     )
 
 

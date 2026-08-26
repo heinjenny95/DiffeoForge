@@ -1683,7 +1683,7 @@ class DiffeoForgeWindow(QMainWindow):
         boundary_layout = QHBoxLayout(boundary)
         boundary_layout.setContentsMargins(13, 9, 13, 9)
         self.run_boundary_label = QLabel(
-            "Experimental Modern CPU route. Runtime, peak RAM, and percentage progress are "
+            "Experimental Modern route. Runtime, peak RAM, and percentage progress are "
             "not estimated. Cancellation acts only at designated safe points and runs are "
             "not currently resumable."
         )
@@ -2353,7 +2353,7 @@ class DiffeoForgeWindow(QMainWindow):
 
         self.engine_combo = QComboBox()
         self.engine_combo.setObjectName("engineCombo")
-        self.engine_combo.addItem("DiffeoForge Modern CPU (experimental)", DesktopEngine.MODERN_CPU)
+        self.engine_combo.addItem("DiffeoForge Modern (experimental)", DesktopEngine.MODERN_CPU)
         self.engine_combo.addItem(
             "Deformetrica 4.3 (recommended backend)",
             DesktopEngine.DEFORMETRICA_REFERENCE,
@@ -2417,6 +2417,62 @@ class DiffeoForgeWindow(QMainWindow):
         self.optimization_effort_hint.setWordWrap(True)
         optimization_effort_layout.addWidget(self.optimization_effort_hint)
         parameter_form.addRow("Optimization effort", optimization_effort_box)
+
+        self.modern_device_combo = QComboBox()
+        self.modern_device_combo.setObjectName("modernDeviceCombo")
+        self.modern_device_combo.addItem("CPU / float64 — built into this app", "cpu")
+        self.modern_device_combo.addItem(
+            "NVIDIA CUDA / float64 — verified external runtime",
+            "cuda",
+        )
+        self.modern_device_combo.currentIndexChanged.connect(
+            self._update_modern_execution_explanation
+        )
+        modern_device_box = QWidget()
+        self.modern_device_box = modern_device_box
+        modern_device_layout = QVBoxLayout(modern_device_box)
+        modern_device_layout.setContentsMargins(0, 0, 0, 0)
+        modern_device_layout.setSpacing(4)
+        modern_device_layout.addWidget(self.modern_device_combo)
+        self.modern_device_hint = QLabel()
+        self.modern_device_hint.setObjectName("hint")
+        self.modern_device_hint.setWordWrap(True)
+        modern_device_layout.addWidget(self.modern_device_hint)
+        parameter_form.addRow("Modern execution device", modern_device_box)
+
+        self.modern_template_gradient_combo = QComboBox()
+        self.modern_template_gradient_combo.setObjectName("modernTemplateGradientCombo")
+        self.modern_template_gradient_combo.addItem(
+            "Euclidean — established Modern baseline",
+            "euclidean",
+        )
+        self.modern_template_gradient_combo.addItem(
+            "Sobolev — smooth template updates (opt-in)",
+            "sobolev",
+        )
+        self.modern_template_gradient_combo.currentIndexChanged.connect(
+            self._update_modern_execution_explanation
+        )
+        self.modern_sobolev_ratio_spin = QDoubleSpinBox()
+        self.modern_sobolev_ratio_spin.setObjectName("modernSobolevRatioSpin")
+        self.modern_sobolev_ratio_spin.setDecimals(6)
+        self.modern_sobolev_ratio_spin.setRange(0.000001, 1000000.0)
+        self.modern_sobolev_ratio_spin.setValue(1.0)
+        self.modern_sobolev_ratio_spin.setToolTip(
+            "Sobolev smoothing width = deformation-kernel width × this ratio."
+        )
+        modern_gradient_box = QWidget()
+        self.modern_gradient_box = modern_gradient_box
+        modern_gradient_layout = QVBoxLayout(modern_gradient_box)
+        modern_gradient_layout.setContentsMargins(0, 0, 0, 0)
+        modern_gradient_layout.setSpacing(4)
+        modern_gradient_layout.addWidget(self.modern_template_gradient_combo)
+        modern_gradient_layout.addWidget(self.modern_sobolev_ratio_spin)
+        self.modern_gradient_hint = QLabel()
+        self.modern_gradient_hint.setObjectName("hint")
+        self.modern_gradient_hint.setWordWrap(True)
+        modern_gradient_layout.addWidget(self.modern_gradient_hint)
+        parameter_form.addRow("Template update gradient", modern_gradient_box)
 
         self.reference_parameter_box = QFrame()
         self.reference_parameter_box.setObjectName("parameterEditor")
@@ -4940,12 +4996,16 @@ class DiffeoForgeWindow(QMainWindow):
         self.landmarks_button.setEnabled(True)
         self.parameter_input_form.setRowVisible(self.pairwise_box, modern)
         self.parameter_input_form.setRowVisible(self.optimization_effort_box, modern)
+        self.parameter_input_form.setRowVisible(self.modern_device_box, modern)
+        self.parameter_input_form.setRowVisible(self.modern_gradient_box, modern)
         self.data_input_form.setRowVisible(self.already_gpa_check, not modern)
         self.parameter_input_form.setRowVisible(self.reference_guidance_box, not modern)
         self.parameter_input_form.setRowVisible(self.reference_parameter_box, not modern)
         if modern:
             self.engine_hint.setText(
-                "Current CPU/float64 engine; PCA is part of the later result bundle."
+                "Evidence-gated Modern engine. CPU/float64 is contained in the app; CUDA is "
+                "started only through a separately verified local runtime. PCA is part "
+                "of the verified result bundle."
             )
         else:
             self.engine_hint.setText(
@@ -4956,8 +5016,38 @@ class DiffeoForgeWindow(QMainWindow):
             )
         self._update_pairwise_explanation()
         self._update_optimization_explanation()
+        self._update_modern_execution_explanation()
         self._update_reference_parameter_profile()
         self._update_reference_guidance_controls()
+
+    @Slot()
+    def _update_modern_execution_explanation(self) -> None:
+        modern = self.engine_combo.currentData() == DesktopEngine.MODERN_CPU
+        sobolev = self.modern_template_gradient_combo.currentData() == "sobolev"
+        self.modern_sobolev_ratio_spin.setVisible(modern and sobolev)
+        if not modern:
+            return
+        if self.modern_device_combo.currentData() == "cuda":
+            self.modern_device_hint.setText(
+                "Requires a read-only verified CUDA-capable DiffeoForge runtime. "
+                "Project review blocks execution if CUDA, the device, or Engine 1.6 "
+                "cannot be verified; the CPU installer never pretends to provide CUDA."
+            )
+        else:
+            self.modern_device_hint.setText(
+                "Uses the contained CPU/float64 worker shipped with DiffeoForge."
+            )
+        if sobolev:
+            self.modern_gradient_hint.setText(
+                "Smooths each template update with the deformation-kernel Gaussian. "
+                "Ratio 1.0 passed the prospective 236-subject Trochanter engineering "
+                "gate, but remains anatomy-specific evidence rather than a universal preset."
+            )
+        else:
+            self.modern_gradient_hint.setText(
+                "Uses the raw template gradient and preserves the established Modern "
+                "baseline. The 236-subject Euclidean arm also passed its frozen gate."
+            )
 
     @Slot()
     def _update_pairwise_explanation(self) -> None:
@@ -5930,6 +6020,13 @@ class DiffeoForgeWindow(QMainWindow):
             query_tile_size=256 if blockwise else None,
             source_tile_size=256 if blockwise else None,
             max_cycles=int(self.optimization_effort_combo.currentData()),
+            modern_runtime_device=str(self.modern_device_combo.currentData()),
+            modern_template_gradient=str(
+                self.modern_template_gradient_combo.currentData()
+            ),
+            modern_sobolev_kernel_width_ratio=(
+                self.modern_sobolev_ratio_spin.value()
+            ),
             reference_parameter_profile=reference_profile,
             reference_parameter_ratios=reference_ratios,
             reference_parameter_recommendation=recommendation_provenance,
@@ -6123,7 +6220,11 @@ class DiffeoForgeWindow(QMainWindow):
         self._populate_review_rows(self.workload_review_layout, review.workload)
         self.review_boundary_label.setText(review.scientific_boundary)
         engine_label = (
-            "DiffeoForge Modern CPU (experimental)"
+            (
+                "DiffeoForge Modern CUDA (experimental)"
+                if review.modern_cuda_runtime is not None
+                else "DiffeoForge Modern CPU (experimental)"
+            )
             if review.engine is DesktopEngine.MODERN_CPU
             else "Deformetrica 4.3 (managed installation)"
         )
@@ -7142,7 +7243,8 @@ class DiffeoForgeWindow(QMainWindow):
             "workflow events."
         )
         self.run_boundary_label.setText(
-            "Experimental Modern CPU route. Runtime, peak RAM, and percentage progress are "
+            f"Experimental Modern {readiness.request.runtime_device.upper()} route. "
+            "Runtime, peak RAM, and percentage progress are "
             "not estimated. Cancellation acts only at designated safe points and runs are "
             "not currently resumable."
         )
@@ -7160,6 +7262,18 @@ class DiffeoForgeWindow(QMainWindow):
             f"Discovery-Status: {discovery.status}",
             f"Destination exists: {'yes' if discovery.destination_exists else 'no'}",
         ]
+        if readiness.worker_command is not None and self._review is not None:
+            runtime = self._review.modern_cuda_runtime
+            assert runtime is not None
+            details.extend(
+                (
+                    f"Verified CUDA runtime: {runtime.summary}",
+                    f"Worker Python: {self._wrappable_path(runtime.python_path)}",
+                    f"Worker Python SHA-256: {runtime.python_sha256}",
+                    f"Worker module: {self._wrappable_path(runtime.worker_path)}",
+                    f"Worker module SHA-256: {runtime.worker_sha256}",
+                )
+            )
         if discovery.candidates:
             details.append("Private unpublished candidates:")
             for candidate in discovery.candidates:
@@ -7241,7 +7355,12 @@ class DiffeoForgeWindow(QMainWindow):
             ):
                 return
             request = readiness.request
-            worker = _AtlasWorker(DesktopWorkerController(request))
+            worker = _AtlasWorker(
+                DesktopWorkerController(
+                    request,
+                    worker_command=readiness.worker_command,
+                )
+            )
         worker.signals.event.connect(self._atlas_event)
         worker.signals.succeeded.connect(self._atlas_succeeded)
         worker.signals.failed.connect(self._atlas_failed)

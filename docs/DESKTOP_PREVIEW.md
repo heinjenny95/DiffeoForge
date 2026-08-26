@@ -1,7 +1,8 @@
 # Desktop setup, review, and Modern compute preview
 
-Status: **five graphical steps with verified Modern CPU execution and result review;
-same-owner private-alpha installer available**
+Status: **five graphical steps with verified Modern CPU execution, an explicitly
+bound external Modern CUDA route, and result review; same-owner private-alpha
+installer available**
 
 Tracked by [engineering issue #75](https://github.com/heinjenny95/DiffeoForge/issues/75)
 and [engineering issue #77](https://github.com/heinjenny95/DiffeoForge/issues/77),
@@ -26,7 +27,9 @@ The distribution architecture and its stricter release gates remain in
 The optional PySide6 application provides one complete setup path without a
 terminal:
 
-1. choose the modern CPU or external Deformetrica 4.3 reference engine;
+1. choose the Modern engine or external Deformetrica 4.3 reference engine; for
+   Modern, explicitly select contained CPU/float64 or a separately verified
+   NVIDIA CUDA/float64 runtime;
 2. select a directory of triangular VTK, PLY, OBJ, or STL meshes and an
    explicit template, or allow one unambiguous file named `template` with a
    supported extension to be detected; non-VTK sources require the reviewed
@@ -38,7 +41,10 @@ terminal:
    the exact `256 × 256` blockwise high-face-count experiment;
 5. explicitly choose either a three-cycle technical pilot or a convergence
    attempt capped at 50 cycles, with early stopping only when every parameter
-   block reaches the declared gradient tolerance in one completed cycle;
+   block reaches the declared gradient tolerance in one completed cycle; retain
+   the established Euclidean template gradient or explicitly opt into Sobolev
+   smoothing with a recorded positive kernel-width ratio, without either mode
+   being presented as biologically superior;
 6. optionally import a labelled-landmark CSV or place arbitrary triangle-surface
    landmarks in a rotatable, zoomable native 3D view for either engine; choose
    the planned count before opening the editor and optionally disable automatic
@@ -193,6 +199,13 @@ python -m diffeoforge.desktop --smoke
 - Mesh inspection runs in a background GUI thread. Modern numerical work and
   Deformetrica execution use distinct child processes supervised by fail-closed
   parent controllers; Qt receives only validated events through queued signals.
+- A Modern CUDA project is blocked during review unless DiffeoForge discovers or
+  is explicitly pointed to a separate Python runtime that can access CUDA and
+  reports the exact current Modern engine implementation. The review records the
+  interpreter, PyTorch/CUDA/device identity, source locations, and interpreter,
+  package, and worker SHA-256 values. Launch rechecks those hashes and uses the bound external worker
+  command; it never silently falls back to CPU. The worker independently refuses
+  a request whose CPU/CUDA identity differs from the hash-bound configuration.
 - The launch must match the SHA-256 captured by the completed review. An edited
   configuration is refused until it is reviewed again.
 - Before a fresh launch, the compute page shows the exact destination, whether it
@@ -245,6 +258,13 @@ interpretation system. An unsigned same-owner private-alpha Inno Setup installer
 exists, but it is not a redistributable release. Public distribution, signing,
 clean-machine validation, and the remaining scientific release gates remain
 separate work.
+
+The private-alpha installer contains the CPU worker, not a CUDA-enabled PyTorch
+distribution. CUDA execution currently depends on a separately managed local
+runtime. The verified 236-subject Trochanter Euclidean and Sobolev arms establish
+prospective engineering non-inferiority for that cohort and protocol only; they
+do not establish a general biological preset, independent 300-subject production
+readiness, or equivalent behavior on another GPU/driver/runtime combination.
 
 ## Preliminary Qt licensing boundary
 

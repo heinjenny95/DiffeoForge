@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from diffeoforge.analysis.landmarks import LANDMARK_COLUMNS
+from diffeoforge.desktop.modern_cuda_runtime import ModernCudaRuntime
 from diffeoforge.desktop.project_review import review_project
 from diffeoforge.desktop.project_setup import (
     DesktopEngine,
@@ -216,3 +217,50 @@ def test_modern_review_refreshes_only_recognized_generated_report(tmp_path: Path
         review_project(setup.config_path, setup.engine)
 
     assert owned.read_text(encoding="utf-8") == "researcher owned\n"
+
+
+def test_modern_cuda_review_binds_verified_external_runtime(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    if importlib.util.find_spec("numpy") is None or importlib.util.find_spec("torch") is None:
+        pytest.skip("modern-engine dependencies are not installed")
+    setup = create_project(
+        ProjectSetupRequest(
+            mesh_directory=MESH_DIRECTORY,
+            project_directory=tmp_path / "modern cuda review",
+            units="unitless",
+            engine=DesktopEngine.MODERN_CPU,
+            modern_runtime_device="cuda",
+        )
+    )
+    python = tmp_path / "cuda-python.exe"
+    worker = tmp_path / "worker.py"
+    package = tmp_path / "diffeoforge.py"
+    python.write_bytes(b"cuda-python")
+    worker.write_text("# worker\n", encoding="utf-8")
+    package.write_text("# package\n", encoding="utf-8")
+    runtime = ModernCudaRuntime(
+        python_path=python.resolve(),
+        python_sha256=sha256_file(python),
+        torch_version="2.11.0+cu128",
+        cuda_version="12.8",
+        device_name="NVIDIA GeForce RTX 4080",
+        device_capability=(8, 9),
+        diffeoforge_path=package.resolve(),
+        diffeoforge_sha256=sha256_file(package),
+        worker_path=worker.resolve(),
+        worker_sha256=sha256_file(worker),
+        engine_implementation_version="1.6",
+    )
+    monkeypatch.setattr(
+        "diffeoforge.desktop.project_review.discover_modern_cuda_runtime",
+        lambda: runtime,
+    )
+
+    review = review_project(setup.config_path, setup.engine)
+
+    values = {item.label: item.value for item in review.parameters}
+    assert values["Execution"].startswith("CUDA · float64")
+    assert review.modern_cuda_runtime == runtime
+    assert any("RTX 4080" in warning for warning in review.warnings)

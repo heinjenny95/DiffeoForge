@@ -304,3 +304,23 @@ This is the prospectively frozen Euclidean baseline for the Engine 1.6 Sobolev
 comparison. It is engineering non-inferiority evidence for one cohort,
 initialization, and parameterization, not biological validation or a general
 claim that Euclidean template updates are scientifically preferable.
+
+## Desktop external-runtime binding
+
+The ordinary five-step desktop workflow can now create an explicit
+`runtime.device: cuda` Modern project. Project review discovers a separately
+managed CUDA-capable Python runtime (or the path declared by
+`DIFFEOFORGE_MODERN_CUDA_PYTHON`) and blocks unless it verifies CUDA access,
+PyTorch/CUDA/device identity, the current Modern engine implementation, and the
+desktop worker module. It records the interpreter SHA-256 and launch rechecks
+that hash plus the imported package and worker source hashes before using the
+external worker. The child worker also verifies that
+the request device matches the hash-bound configuration. No CPU fallback is
+performed.
+
+This integrates the qualified execution path without claiming that the private
+alpha installer contains CUDA. The verified RTX 4080 runtime currently uses
+PyTorch `2.11.0+cu128`, CUDA `12.8`, and Engine `1.6`. A different runtime must
+pass the same technical probe. The 236-subject evidence above remains specific
+to its declared Trochanter cohort, initialization, parameters, and prospective
+gates.

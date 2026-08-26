@@ -91,3 +91,10 @@ This establishes prospective engineering non-inferiority for the declared
 236-subject cohort and protocol. It does not establish biological validity,
 global optimality, PCA stability, a safe preset across anatomies, or production
 readiness for an independent 300-subject dataset.
+
+The desktop now exposes this mode as an explicit Modern-only choice alongside
+the Euclidean baseline. It writes `template_gradient: sobolev` and the visible
+positive width ratio into the reviewed configuration; the default remains
+Euclidean. Selecting Sobolev does not cause DiffeoForge to infer anatomical
+suitability from the Trochanter result, and the ordinary full-cohort and
+external biological validation requirements remain unchanged.

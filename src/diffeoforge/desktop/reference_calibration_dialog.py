@@ -51,6 +51,7 @@ from diffeoforge.reference_calibration_study import (
     create_reference_calibration_search_extension_study,
     load_reference_calibration_report,
     load_reference_calibration_study,
+    next_reference_calibration_search_extension_destination,
     record_reference_calibration_provisional_override,
     record_reference_calibration_stage_review,
 )
@@ -1322,12 +1323,20 @@ class ReferenceCalibrationDialog(QDialog):
                 f"completed. Provisional selection: {candidate_id}. Continuing "
                 "automatically with the next parameter family."
             )
+        elif kind == "automatic_search_extended":
+            self.study_directory = Path(str(event["study_directory"])).resolve()
+            self._render()
+            self.status.setText(
+                f"Search extension {event['extension_round']} created from verified "
+                "evidence. Running only the new outward candidates now."
+            )
         elif kind in {"candidate_failed", "candidate_interrupted"}:
             self.status.setText(f"{candidate_id}: {event['error']}")
 
     @Slot(object)
-    def _succeeded(self, _snapshot: ReferenceCalibrationStudySnapshot) -> None:
+    def _succeeded(self, snapshot: ReferenceCalibrationStudySnapshot) -> None:
         self._worker = None
+        self.study_directory = snapshot.study_directory
         self._render()
 
     @Slot(str)
@@ -1457,24 +1466,29 @@ class ReferenceCalibrationDialog(QDialog):
                         "outward step can be derived.",
                     )
                     return
-            extension_index = 1
-            while True:
-                destination = self.study_directory.with_name(
-                    f"{self.study_directory.name}-extension-{extension_index:02d}"
+            destination = next_reference_calibration_search_extension_destination(
+                self.study_directory
+            )
+            if destination.exists():
+                QMessageBox.warning(
+                    self,
+                    "Outward successor already exists",
+                    "The deterministic successor destination already exists and will "
+                    "not be reused or overwritten:\n" + str(destination),
                 )
-                if not destination.exists():
-                    break
-                extension_index += 1
+                return
             confirmation = QMessageBox.question(
                 self,
-                "Outward pilot evidence required",
+                "Create and start outward pilot evidence",
                 "The current search range is not bounded. DiffeoForge derived these "
                 "hash-bound logarithmic neighbors without changing the immutable pilot:\n\n"
                 + "\n".join(rendered)
-                + "\n\nCreate the immutable successor here?\n"
+                + "\n\nCreate the immutable successor and start it here?\n"
                 + str(destination)
                 + "\n\nOnly these new candidates will run. The entered feasibility "
-                "limits and all source evidence will be hash-bound.",
+                "limits and all source evidence will be hash-bound. If the winner "
+                "remains on the same boundary, DiffeoForge will continue outward "
+                "automatically until it becomes interior or reaches the limit.",
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 QMessageBox.StandardButton.No,
             )
@@ -1500,8 +1514,9 @@ class ReferenceCalibrationDialog(QDialog):
             self._render()
             self.status.setText(
                 "Outward successor created. Preserved candidates remain complete; "
-                "click Run complete four-stage pilot to execute only the new neighbors."
+                "starting only the new neighbors now."
             )
+            self._start()
             return
         QMessageBox.information(
             self,

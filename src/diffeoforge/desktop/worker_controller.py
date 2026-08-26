@@ -207,7 +207,7 @@ class _EventLedger:
 
 
 class DesktopWorkerController:
-    """Launch and fail-closed supervise one Modern CPU desktop worker."""
+    """Launch and fail-closed supervise one Modern desktop worker."""
 
     def __init__(
         self,

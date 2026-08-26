@@ -322,8 +322,15 @@ def test_staged_calibration_allows_selection_without_visual_qc(
         "create_reference_calibration_search_extension_study",
         create_successor,
     )
+    monkeypatch.setattr(
+        dialog_module,
+        "next_reference_calibration_search_extension_destination",
+        lambda source: source.with_name(f"{source.name}-extension-01"),
+    )
 
     dialog = ReferenceCalibrationDialog(tmp_path)
+    starts: list[bool] = []
+    monkeypatch.setattr(dialog, "_start", lambda: starts.append(True))
     dialog.show()
     application.processEvents()
 
@@ -337,7 +344,7 @@ def test_staged_calibration_allows_selection_without_visual_qc(
     dialog.collect_evidence_button.click()
     application.processEvents()
     assert entered_limits
-    assert confirmations[-1][0] == "Outward pilot evidence required"
+    assert confirmations[-1][0] == "Create and start outward pilot evidence"
     assert "attachment_kernel_width=" in confirmations[-1][1]
     assert "Only these new candidates will run" in confirmations[-1][1]
     assert successor_calls
@@ -348,7 +355,8 @@ def test_staged_calibration_allows_selection_without_visual_qc(
     lower, upper = successor_calls[-1][2]["attachment_kernel_width"]
     assert lower < 0.2
     assert upper == 0.3
-    assert "Outward successor created" in dialog.status.text()
+    assert starts == [True]
+    assert "starting only the new neighbors" in dialog.status.text()
     dialog.compare_options_button.click()
     application.processEvents()
     assert dialog.advanced_mode.isChecked() is True

@@ -181,11 +181,21 @@ fingerprint bound to the immutable source plan and assessment, and holds all
 other selected stage values fixed. The desktop asks the researcher to declare
 the feasible outward limit for every affected parameter, previews the new
 candidates and destination, and then creates a separately bound successor
-study. The proposal itself remains a planning artifact: its displayed
+study and starts it. The proposal itself remains a planning artifact: its displayed
 candidates have not been executed and are not represented as safe until that
 successor runs them and combines their evidence with the preserved source
-pilot. Preserved candidates stay complete, so **Run complete four-stage
-pilot** executes only the newly added neighbors before reassessment.
+pilot. Preserved candidates stay complete, so only the newly added neighbors
+execute before reassessment.
+
+The declared feasibility limits apply to the complete outward-search lineage,
+not just its first successor. If the preferred value remains on the new search
+boundary, the automatic route derives another deterministic immutable sibling,
+imports the already verified evidence, and runs only its new neighbors. This
+continues until the winner is interior or the declared safety limit prevents a
+further candidate. It fails closed rather than overwriting an existing sibling,
+crossing a safety limit, inventing a wider limit, or describing a boundary
+winner as an enclosed optimum. Every successor records its round number,
+lineage root, limits, hashes, and source event chain.
 
 ### 4. Numerical integration accuracy
 
@@ -280,8 +290,10 @@ unordered, or exceeded limits and never overwrites a destination. It copies
 the bound pilot inputs, imports completed source metrics with their event
 hashes, and prepares configs for the combined candidate set. The ordinary
 study runner skips preserved candidates and executes only the new outward
-neighbors. Loading or continuing the successor fails closed if the cited
-source manifest or event chain changes.
+neighbors. With `--complete`, it automatically creates further deterministic
+successors while the winner remains on a boundary and the inherited limits
+permit another outward step. Loading or continuing any successor fails closed
+if the cited source manifest or event chain changes.
 
 `--complete` is the standard one-operation route. Omit it to run only the
 current stage, then use `reference-calibration-study-review` for the advanced

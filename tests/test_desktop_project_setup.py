@@ -724,3 +724,30 @@ def test_modern_project_setup_records_an_explicit_blockwise_high_face_plan(
         "source_tile_size": 256,
     }
     assert any("not total RAM or computation time" in notice for notice in result.notices)
+
+
+def test_modern_project_setup_records_explicit_cuda_sobolev_plan(
+    tmp_path: Path,
+) -> None:
+    if importlib.util.find_spec("numpy") is None or importlib.util.find_spec("torch") is None:
+        pytest.skip("modern-engine dependencies are not installed")
+
+    result = create_project(
+        ProjectSetupRequest(
+            mesh_directory=MESH_DIRECTORY,
+            project_directory=tmp_path / "cuda sobolev project",
+            units="unitless",
+            engine=DesktopEngine.MODERN_CPU,
+            modern_runtime_device="cuda",
+            modern_template_gradient="sobolev",
+            modern_sobolev_kernel_width_ratio=1.25,
+        )
+    )
+    config = yaml.safe_load(result.config_path.read_text(encoding="utf-8"))
+
+    assert config["runtime"]["device"] == "cuda"
+    assert config["optimization"]["template_gradient"] == "sobolev"
+    assert config["optimization"]["sobolev_kernel_width_ratio"] == 1.25
+    assert result.modern_runtime_device == "cuda"
+    assert "CUDA" in result.engine_label
+    assert any("separate" in notice and "runtime" in notice for notice in result.notices)
