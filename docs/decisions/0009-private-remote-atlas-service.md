@@ -24,6 +24,8 @@ single-operator Modern atlas service:
 - plain HTTP is accepted only on loopback, enabling a separately authenticated SSH
   tunnel; every non-loopback bind requires an explicit TLS certificate and key;
 - uploads and downloads stream with byte limits and exact archive hashes;
+- a client-generated high-entropy submission ID is also the stable job ID; retrying the
+  same ID and archive returns the existing job, while different bytes fail closed;
 - archive extraction rejects traversal, symbolic entries, duplicates, encryption,
   unsupported compression, and configured expansion limits;
 - the server reverifies a request before queueing it and the client reverifies every

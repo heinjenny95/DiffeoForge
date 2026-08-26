@@ -197,7 +197,7 @@ class RemoteAtlasJobManager:
         self._queue: queue.Queue[str | None] = queue.Queue()
         self._cancel_events: dict[str, threading.Event] = {}
         self._workers: list[threading.Thread] = []
-        self._submissions_in_progress = 0
+        self._submissions_in_progress: set[str] = set()
         self._started = False
         self._closed = False
         self._recover_states()
@@ -387,9 +387,11 @@ class RemoteAtlasJobManager:
         self,
         archive_path: Path | str,
         *,
+        submission_id: str,
         archive_bytes: int,
         archive_sha256: str,
     ) -> dict[str, Any]:
+        job_id = _job_id(submission_id)
         archive = Path(archive_path).expanduser().resolve()
         if (
             not archive.is_file()
@@ -402,14 +404,28 @@ class RemoteAtlasJobManager:
         with self._lock:
             if self._closed:
                 raise RemoteAtlasServerError("Remote job manager is closed")
+            final = self._job_directory(job_id)
+            if final.exists() or final.is_symlink():
+                state = self._load_state_locked(job_id)
+                request = state["request"]
+                if (
+                    request["archive_bytes"] != archive_bytes
+                    or request["archive_sha256"] != archive_sha256
+                ):
+                    raise RemoteAtlasServerConflict(
+                        "Submission ID already binds a different request archive"
+                    )
+                return deepcopy(state)
+            if job_id in self._submissions_in_progress:
+                raise RemoteAtlasServerConflict(
+                    "Submission ID is currently being verified; retry its status shortly"
+                )
             if (
-                self._active_count_locked() + self._submissions_in_progress
+                self._active_count_locked() + len(self._submissions_in_progress)
                 >= self.max_active_jobs
             ):
                 raise RemoteAtlasServerCapacity("Remote atlas queue capacity is exhausted")
-            self._submissions_in_progress += 1
-        job_id = uuid.uuid4().hex
-        final = self._job_directory(job_id)
+            self._submissions_in_progress.add(job_id)
         staging = self.jobs_root / f".{job_id}.tmp-{uuid.uuid4().hex}"
         try:
             staging.mkdir()
@@ -481,7 +497,7 @@ class RemoteAtlasJobManager:
             raise
         finally:
             with self._lock:
-                self._submissions_in_progress -= 1
+                self._submissions_in_progress.discard(job_id)
         return self.get_state(job_id)
 
     def get_state(self, job_id: str) -> dict[str, Any]:
@@ -920,13 +936,17 @@ class _RemoteAtlasRequestHandler(BaseHTTPRequestHandler):
             raise RemoteAtlasServerError("Remote request media type differs")
         lengths = self.headers.get_all("Content-Length", failobj=[])
         hashes = self.headers.get_all("X-DiffeoForge-Archive-SHA256", failobj=[])
-        if len(lengths) != 1 or len(hashes) != 1:
-            raise RemoteAtlasServerError("Upload length and SHA-256 headers are required once")
+        submission_ids = self.headers.get_all("X-DiffeoForge-Submission-ID", failobj=[])
+        if len(lengths) != 1 or len(hashes) != 1 or len(submission_ids) != 1:
+            raise RemoteAtlasServerError(
+                "Upload length, SHA-256, and submission-ID headers are required once"
+            )
         try:
             length = int(lengths[0])
         except ValueError as error:
             raise RemoteAtlasServerError("Upload Content-Length is invalid") from error
         expected_hash = hashes[0]
+        submission_id = _job_id(submission_ids[0])
         if (
             not 1 <= length <= self.remote_server.max_upload_bytes
             or _ARCHIVE_SHA256.fullmatch(expected_hash) is None
@@ -952,6 +972,7 @@ class _RemoteAtlasRequestHandler(BaseHTTPRequestHandler):
                 raise RemoteAtlasServerError("Uploaded archive SHA-256 differs")
             state = self.remote_server.manager.submit_archive(
                 incoming,
+                submission_id=submission_id,
                 archive_bytes=length,
                 archive_sha256=expected_hash,
             )

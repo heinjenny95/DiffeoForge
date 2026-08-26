@@ -6,6 +6,7 @@ import argparse
 import hashlib
 import json
 import sys
+import uuid
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -602,6 +603,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="Explicitly upload one verified portable request to an authenticated server.",
     )
     modern_remote_submit_parser.add_argument("job_directory", type=Path)
+    modern_remote_submit_parser.add_argument(
+        "--submission-id",
+        help="Reuse a previously printed 32-character submission ID after an uncertain upload.",
+    )
     add_remote_client_arguments(modern_remote_submit_parser)
 
     modern_remote_status_parser = subparsers.add_parser(
@@ -2317,7 +2322,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "modern-remote-submit":
         try:
             client = _remote_client_from_args(args)
-            state = client.submit(args.job_directory)
+            submission_id = args.submission_id or uuid.uuid4().hex
+            print(f"Remote submission ID: {submission_id}", flush=True)
+            state = client.submit(
+                args.job_directory,
+                submission_id=submission_id,
+            )
             print(json.dumps(state, indent=2, ensure_ascii=False))
             print(f"Remote job accepted: {state['job_id']}")
         except (OSError, RuntimeError, TypeError, ValueError) as error:

@@ -629,9 +629,15 @@ class RemoteAtlasClient:
         finally:
             connection.close()
 
-    def submit(self, job_directory: Path | str) -> dict[str, Any]:
+    def submit(
+        self,
+        job_directory: Path | str,
+        *,
+        submission_id: str | None = None,
+    ) -> dict[str, Any]:
         job = _real_directory(job_directory, label="Remote atlas request")
         verify_remote_atlas_job(job)
+        identity = _validate_job_id(submission_id or uuid.uuid4().hex)
         with tempfile.TemporaryDirectory(
             prefix="diffeoforge-remote-submit-",
             dir=job.parent,
@@ -648,6 +654,7 @@ class RemoteAtlasClient:
                     "Content-Type": REQUEST_MEDIA_TYPE,
                     "Content-Length": str(archive_bytes),
                     "X-DiffeoForge-Archive-SHA256": archive_sha256,
+                    "X-DiffeoForge-Submission-ID": identity,
                 }
             )
             connection = self._connection()
@@ -660,7 +667,10 @@ class RemoteAtlasClient:
                     for chunk in iter(lambda: handle.read(ARCHIVE_CHUNK_BYTES), b""):
                         connection.send(chunk)
                 state = self._read_json_response(connection.getresponse())
-                return validate_remote_atlas_server_state(state)
+                return validate_remote_atlas_server_state(
+                    state,
+                    expected_job_id=identity,
+                )
             except (OSError, http.client.HTTPException) as error:
                 raise RemoteAtlasTransportError(f"Remote upload failed: {error}") from error
             finally:

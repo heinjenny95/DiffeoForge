@@ -119,7 +119,14 @@ diffeoforge modern-remote-wait JOB_ID `
   --server $server --token-file $token --ca-file $ca
 ```
 
-`modern-remote-submit` reverifies the request before upload. The server streams the
+`modern-remote-submit` prints a random 32-character submission ID before network
+transfer and reverifies the request before upload. The server uses that ID as the job ID
+and binds it permanently to the exact archive hash. If the connection fails after an
+uncertain acceptance, repeat the command with `--submission-id PRINTED_ID`: the same
+request returns the existing job, while different bytes fail with a conflict instead of
+starting duplicate expensive work.
+
+The server streams the
 archive to bounded storage, checks its declared length and archive hash, safely extracts
 it without accepting traversal, links, duplicate entries, encryption, or unbounded
 expansion, and then reverifies the complete request before queueing it.

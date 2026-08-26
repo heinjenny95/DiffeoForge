@@ -25,6 +25,7 @@ from diffeoforge.remote_atlas_job import (  # noqa: E402
 from diffeoforge.remote_atlas_server import (  # noqa: E402
     RemoteAtlasJobManager,
     RemoteAtlasServerCapacity,
+    RemoteAtlasServerConflict,
     RemoteAtlasServerError,
     create_remote_atlas_http_server,
 )
@@ -155,8 +156,10 @@ def test_remote_http_server_executes_and_returns_request_bound_result(
                 "0" * 32
             )
 
-        accepted = client.submit(job)
+        submission_id = "1" * 32
+        accepted = client.submit(job, submission_id=submission_id)
         job_id = accepted["job_id"]
+        assert job_id == submission_id
         assert accepted["status"] in {"queued", "running"}
         terminal = _wait_for_terminal(client, job_id)
         assert terminal["status"] == "completed", terminal
@@ -169,6 +172,11 @@ def test_remote_http_server_executes_and_returns_request_bound_result(
         assert events["events"][0]["status"] == "queued"
         assert events["events"][-1]["status"] == "completed"
         assert any(event["kind"] == "modern_progress" for event in events["events"])
+
+        repeated = client.submit(job, submission_id=submission_id)
+        assert repeated["job_id"] == job_id
+        assert repeated["status"] == "completed"
+        assert len(list(manager.jobs_root.iterdir())) == 1
 
         downloaded = client.download(job_id, job, tmp_path / "downloaded-result")
         verify_remote_atlas_result(job, downloaded)
@@ -204,6 +212,7 @@ def test_remote_http_server_rejects_unsafe_archive_as_json(tmp_path: Path) -> No
                 "Content-Type": REQUEST_MEDIA_TYPE,
                 "Content-Length": str(len(payload)),
                 "X-DiffeoForge-Archive-SHA256": hashlib.sha256(payload).hexdigest(),
+                "X-DiffeoForge-Submission-ID": "2" * 32,
             },
         )
         response = connection.getresponse()
@@ -242,6 +251,7 @@ def test_running_remote_job_can_be_cancelled_cooperatively(tmp_path: Path) -> No
     try:
         accepted = manager.submit_archive(
             archive,
+            submission_id="3" * 32,
             archive_bytes=archive.stat().st_size,
             archive_sha256=hashlib.sha256(archive.read_bytes()).hexdigest(),
         )
@@ -289,6 +299,7 @@ def test_server_state_is_persistent_for_queued_jobs(tmp_path: Path) -> None:
     first = RemoteAtlasJobManager(tmp_path / "server", autostart=False)
     accepted = first.submit_archive(
         archive,
+        submission_id="4" * 32,
         archive_bytes=archive.stat().st_size,
         archive_sha256=digest,
     )
@@ -327,6 +338,51 @@ def test_server_state_is_persistent_for_queued_jobs(tmp_path: Path) -> None:
     assert second.get_state(accepted["job_id"])["status"] == "cancelled"
 
 
+def test_submission_id_is_idempotent_and_request_bound(tmp_path: Path) -> None:
+    config = _write_config(tmp_path / "modern.yaml")
+    first_job = create_remote_atlas_job(
+        config,
+        tmp_path / "first-job",
+        created_at="2026-08-26T12:00:00+00:00",
+    )
+    second_job = create_remote_atlas_job(
+        config,
+        tmp_path / "second-job",
+        created_at="2026-08-26T12:00:01+00:00",
+    )
+    first_archive = create_remote_atlas_job_archive(first_job, tmp_path / "first.zip")
+    second_archive = create_remote_atlas_job_archive(second_job, tmp_path / "second.zip")
+    first_digest = hashlib.sha256(first_archive.read_bytes()).hexdigest()
+    second_digest = hashlib.sha256(second_archive.read_bytes()).hexdigest()
+    submission_id = "9" * 32
+    manager = RemoteAtlasJobManager(tmp_path / "server", autostart=False)
+    try:
+        accepted = manager.submit_archive(
+            first_archive,
+            submission_id=submission_id,
+            archive_bytes=first_archive.stat().st_size,
+            archive_sha256=first_digest,
+        )
+        repeated = manager.submit_archive(
+            first_archive,
+            submission_id=submission_id,
+            archive_bytes=first_archive.stat().st_size,
+            archive_sha256=first_digest,
+        )
+        assert repeated == accepted
+        assert accepted["job_id"] == submission_id
+        with pytest.raises(RemoteAtlasServerConflict, match="different request"):
+            manager.submit_archive(
+                second_archive,
+                submission_id=submission_id,
+                archive_bytes=second_archive.stat().st_size,
+                archive_sha256=second_digest,
+            )
+        assert len(list(manager.jobs_root.iterdir())) == 1
+    finally:
+        manager.close()
+
+
 def test_parallel_submission_reserves_bounded_queue_capacity(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -359,6 +415,7 @@ def test_parallel_submission_reserves_bounded_queue_capacity(
         accepted.append(
             manager.submit_archive(
                 archive,
+                submission_id="5" * 32,
                 archive_bytes=archive.stat().st_size,
                 archive_sha256=digest,
             )
@@ -371,6 +428,7 @@ def test_parallel_submission_reserves_bounded_queue_capacity(
         with pytest.raises(RemoteAtlasServerCapacity, match="capacity"):
             manager.submit_archive(
                 archive,
+                submission_id="6" * 32,
                 archive_bytes=archive.stat().st_size,
                 archive_sha256=digest,
             )
@@ -390,6 +448,7 @@ def test_server_restart_discards_only_uncommitted_event_tail(tmp_path: Path) -> 
     first = RemoteAtlasJobManager(tmp_path / "server", autostart=False)
     accepted = first.submit_archive(
         archive,
+        submission_id="7" * 32,
         archive_bytes=archive.stat().st_size,
         archive_sha256=hashlib.sha256(archive.read_bytes()).hexdigest(),
     )
@@ -415,6 +474,7 @@ def test_server_restart_marks_nonterminal_running_job_interrupted(tmp_path: Path
     first = RemoteAtlasJobManager(tmp_path / "server", autostart=False)
     accepted = first.submit_archive(
         archive,
+        submission_id="8" * 32,
         archive_bytes=archive.stat().st_size,
         archive_sha256=digest,
     )
