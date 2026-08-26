@@ -1,7 +1,8 @@
 # Engine 1.5 CUDA feasibility path
 
-Status: **implemented and passing synthetic, five-subject, 16-subject, and
-54-of-67-subject full-resolution Weevil gates; not a production default**
+Status: **implemented and passing synthetic, five-subject, 16-subject,
+54-of-67-subject full-resolution Weevil, and 236-subject 5k full-atlas gates;
+not a production default**
 
 ## Scope
 
@@ -263,3 +264,43 @@ convergence, and Deformetrica-reference engineering non-inferiority at the full
 236-subject 5k Trochanter scale. It does not yet establish production readiness
 for an independent 300-subject cohort, biological interpretation, or a general
 safe preset across anatomies and mesh resolutions.
+
+## Passing 236-subject prospective full-atlas baseline
+
+A separate prospective design froze a full atlas optimization of momenta,
+template, and control points for the same 236-subject cohort before either
+full-atlas arm was observed. Engine `1.5` used its unchanged Euclidean template
+gradient and CUDA/float64 execution. It converged without continuation after 24
+cycles by `relative_objective_tolerance`. All 96 optimizer decisions were
+accepted, the objective trajectory was non-decreasing, and the final objective
+was `-308.76096435388604` (attachment `-163.5395099025019`, regularity
+`-145.2214544513841`).
+
+The independently recomputed assessment passed every predeclared gate:
+
+- Modern workflow verification: pass;
+- optimizer convergence: pass;
+- subject pass fraction: `0.9957627119`, or 235/236 (gate at least `0.8`);
+- pooled Modern external-residual p95: `0.04276761930`, compared with
+  `0.05681627348` for Deformetrica;
+- pooled Modern/reference residual ratio: `0.7527353817` (gate at most `1.2`);
+- cross-engine reconstruction p95/template diagonal: `0.02665081061` (gate at
+  most `0.05`); and
+- cross-engine template p95/reference diagonal: `0.02775243205` (gate at most
+  `0.05`).
+
+The sole individual miss was `119.0_z_01_Trochanter.vtk`, with residual ratio
+`1.538894936`; the predeclared decision was based on the cohort pass fraction,
+not post-hoc exclusion of that subject. The largest passing ratio was
+`1.046211746` for
+`238_Mycetophagus_cf_atomarius_z_01_Trochanter.vtk`.
+
+Verified evidence directories:
+
+- `C:\Users\js7541\Desktop\DiffeoForge Modern Engine 5k Scaling 2026-08-23\engine15-cuda-full-atlas-qualification-v0.1-236-subject-modern-run`
+- `C:\Users\js7541\Desktop\DiffeoForge Modern Engine 5k Scaling 2026-08-23\engine15-cuda-full-atlas-qualification-v0.1-236-subject-assessment`
+
+This is the prospectively frozen Euclidean baseline for the Engine 1.6 Sobolev
+comparison. It is engineering non-inferiority evidence for one cohort,
+initialization, and parameterization, not biological validation or a general
+claim that Euclidean template updates are scientifically preferable.
