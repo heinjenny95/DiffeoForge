@@ -488,6 +488,12 @@ isolation, automatic checkpoint recovery, per-user authorization, governed autom
 retention, resumable content-addressed transfer, provider deployment, cost governance,
 and desktop orchestration remain separate production layers.
 
+A Qt-independent desktop remote controller now adds a persistent local session around
+this protocol. It packages before network access, stores no bearer token, records the
+client-known idempotent job ID and event cursor, and can reconnect and finish a strictly
+request-bound download after client interruption. Visible GUI controls and session
+selection remain a separate presentation step.
+
 ## Security and privacy boundary
 
 The application is local-first. Ordinary runs do not upload meshes, metadata,

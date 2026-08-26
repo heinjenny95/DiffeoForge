@@ -85,7 +85,8 @@ This boundary now includes automatic template-vertex control-point initializatio
 bounded complete-cycle checkpoints, exact optimizer-state crash recovery, fail-closed
 CUDA/float64 execution, a desktop worker adapter, transport-neutral portable server
 requests, and a private authenticated persistent server/client lifecycle. Blockwise
-exact kernels and deterministic mesh-quality constraints are implemented. It does
+exact kernels, a reconnectable Qt-independent desktop remote controller, and deterministic
+mesh-quality constraints are implemented. It does
 **not** yet include sparse or approximate kernels, a managed or multi-tenant server
 deployment, per-job process isolation, automatic remote checkpoint recovery, a general
 cross-hardware CUDA qualification, or an anatomy-independent production preset.

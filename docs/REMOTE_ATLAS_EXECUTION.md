@@ -1,7 +1,7 @@
 # Authenticated Modern atlas execution on a server
 
-Status: **implemented private single-operator HTTP(S) service and client; managed
-deployment and desktop orchestration remain open**
+Status: **implemented private single-operator HTTP(S) service, CLI, and persistent
+desktop controller; managed deployment and visible desktop controls remain open**
 
 DiffeoForge can prepare a reviewed Modern atlas on one computer, execute it on a
 compatible CPU/CUDA server, reconnect to progress, cancel it cooperatively, and
@@ -171,6 +171,20 @@ or GPU failure can therefore stop the service; persistent state then applies the
 fail-closed interrupted behavior above. Per-job process isolation is a later production
 hardening step.
 
+## Desktop persistence foundation
+
+The Qt-independent desktop controller creates a local session directory before upload.
+It contains the exact portable request, server URL, client-generated job ID, reconnectable
+event cursor, destination binding, and mutable remote status. It never stores the bearer
+token. If the application or network stops after submission, a new controller can reopen
+that directory with an explicitly supplied token file, resume event polling, and download
+the request-bound result. Closing a client is therefore not equivalent to cancelling a
+server job.
+
+The public desktop screens do not yet expose server URL, token/CA selection, privacy
+authorization, or session reopening; this controller is the tested non-Qt layer for that
+next UI slice.
+
 ## Result trust and scientific boundary
 
 Every download is streamed with a size limit and archive-hash check, safely extracted,
@@ -190,5 +204,5 @@ Modern Engine 236-subject gates remain cohort-, protocol-, and hardware-specific
 3. Add per-user authentication, scoped authorization, audit logging, rate limiting, and
    governed automatic retention for a multi-user service.
 4. Add resumable content-addressed upload and download for large cohorts.
-5. Add reviewed server selection, privacy, expected-runtime, retention, and cost controls
-   to the desktop application.
+5. Expose the persistent desktop controller through reviewed server selection, privacy,
+   expected-runtime, retention, and cost controls in the desktop application.
