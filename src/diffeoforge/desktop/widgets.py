@@ -975,6 +975,8 @@ class DiffeoForgeWindow(QMainWindow):
             self._update_reference_pca_deformation_elapsed
         )
         self._registration_qc_decisions: dict[str, str] = {}
+        self._result_atlas_mesh_total = 0
+        self._result_atlas_mesh_filtered = 0
         self._close_after_worker = False
         self._active_step = 0
         self.reference_parameter_help_panels: dict[str, _ExpandableParameterHelp] = {}
@@ -1900,6 +1902,23 @@ class DiffeoForgeWindow(QMainWindow):
         )
         atlas_viewer_hint.setObjectName("hint")
         atlas_viewer_hint.setWordWrap(True)
+        atlas_mesh_group_controls = QHBoxLayout()
+        atlas_mesh_group_controls.setSpacing(10)
+        atlas_mesh_group_controls.addWidget(QLabel("Content"))
+        self.result_atlas_mesh_group_combo = QComboBox()
+        self.result_atlas_mesh_group_combo.setObjectName("resultAtlasMeshGroupCombo")
+        self.result_atlas_mesh_group_combo.addItem(
+            "Template & PCA end forms",
+            "summary",
+        )
+        self.result_atlas_mesh_group_combo.addItem(
+            "All specimen meshes",
+            "specimens",
+        )
+        self.result_atlas_mesh_group_combo.currentIndexChanged.connect(
+            self._populate_selected_atlas_mesh_group
+        )
+        atlas_mesh_group_controls.addWidget(self.result_atlas_mesh_group_combo, 1)
         atlas_mesh_controls = QHBoxLayout()
         atlas_mesh_controls.setSpacing(10)
         atlas_mesh_controls.addWidget(QLabel("Mesh"))
@@ -1907,6 +1926,24 @@ class DiffeoForgeWindow(QMainWindow):
         self.result_atlas_mesh_combo.setObjectName("resultAtlasMeshCombo")
         self.result_atlas_mesh_combo.currentIndexChanged.connect(self._load_selected_atlas_mesh)
         atlas_mesh_controls.addWidget(self.result_atlas_mesh_combo, 1)
+        self.result_atlas_mesh_counter_label = QLabel("0 meshes")
+        self.result_atlas_mesh_counter_label.setObjectName("hint")
+        atlas_mesh_controls.addWidget(self.result_atlas_mesh_counter_label)
+        atlas_mesh_search_controls = QHBoxLayout()
+        atlas_mesh_search_controls.setSpacing(10)
+        self.result_atlas_mesh_search_label = QLabel("Find specimen")
+        self.result_atlas_mesh_search_edit = QLineEdit()
+        self.result_atlas_mesh_search_edit.setObjectName("resultAtlasMeshSearchEdit")
+        self.result_atlas_mesh_search_edit.setPlaceholderText(
+            "Type part of a specimen name or number"
+        )
+        self.result_atlas_mesh_search_edit.textChanged.connect(
+            self._populate_selected_atlas_mesh_group
+        )
+        atlas_mesh_search_controls.addWidget(self.result_atlas_mesh_search_label)
+        atlas_mesh_search_controls.addWidget(self.result_atlas_mesh_search_edit, 1)
+        self.result_atlas_mesh_search_label.hide()
+        self.result_atlas_mesh_search_edit.hide()
         atlas_view_controls = QHBoxLayout()
         atlas_view_controls.setSpacing(10)
         atlas_view_controls.addWidget(QLabel("View"))
@@ -1991,7 +2028,9 @@ class DiffeoForgeWindow(QMainWindow):
         self.result_registration_qc_canvas.hide()
         atlas_viewer_layout.addWidget(atlas_viewer_title)
         atlas_viewer_layout.addWidget(atlas_viewer_hint)
+        atlas_viewer_layout.addLayout(atlas_mesh_group_controls)
         atlas_viewer_layout.addLayout(atlas_mesh_controls)
+        atlas_viewer_layout.addLayout(atlas_mesh_search_controls)
         atlas_viewer_layout.addLayout(atlas_view_controls)
         atlas_viewer_layout.addLayout(overlay_controls)
         atlas_viewer_layout.addLayout(decision_controls)
@@ -7756,55 +7795,156 @@ class DiffeoForgeWindow(QMainWindow):
         self._sync_ready_state()
 
     def _populate_atlas_viewer(self, review: ModernResultReview) -> None:
-        vtk_artifacts = sorted(
-            (artifact for artifact in review.artifacts if artifact.kind == "vtk"),
-            key=lambda artifact: (
-                0 if artifact.key == "estimated-template" else 1,
-                0 if artifact.key.startswith("subject-reconstruction-") else 1,
-                artifact.label.casefold(),
-            ),
+        vtk_artifacts = tuple(
+            artifact for artifact in review.artifacts if artifact.kind == "vtk"
         )
-        self.result_atlas_mesh_combo.blockSignals(True)
-        self.result_atlas_mesh_combo.clear()
-        if review.registration_qc:
+        summary_count = sum(
+            1
+            for artifact in vtk_artifacts
+            if not artifact.key.startswith(
+                ("subject-original-", "subject-reconstruction-")
+            )
+        )
+        specimen_count = (
+            len(review.registration_qc)
+            if review.registration_qc
+            else sum(
+                1
+                for artifact in vtk_artifacts
+                if artifact.key.startswith("subject-reconstruction-")
+            )
+        )
+        self.result_atlas_mesh_group_combo.blockSignals(True)
+        self.result_atlas_mesh_group_combo.clear()
+        if summary_count:
+            self.result_atlas_mesh_group_combo.addItem(
+                f"Template & PCA end forms ({summary_count})",
+                "summary",
+            )
+        if specimen_count:
+            self.result_atlas_mesh_group_combo.addItem(
+                f"All specimen meshes ({specimen_count})",
+                "specimens",
+            )
+        self.result_atlas_mesh_group_combo.blockSignals(False)
+        self.result_atlas_mesh_group_combo.setEnabled(
+            self.result_atlas_mesh_group_combo.count() > 1
+        )
+        self.result_atlas_mesh_search_edit.clear()
+        self._populate_selected_atlas_mesh_group()
+
+    @Slot()
+    def _populate_selected_atlas_mesh_group(self, _unused: object = None) -> None:
+        review = self._result_review
+        if review is None:
+            return
+        group = self.result_atlas_mesh_group_combo.currentData()
+        is_specimen_group = group == "specimens"
+        self.result_atlas_mesh_search_label.setVisible(is_specimen_group)
+        self.result_atlas_mesh_search_edit.setVisible(is_specimen_group)
+        self.result_qc_export_button.setVisible(
+            is_specimen_group and bool(review.registration_qc)
+        )
+        current_key = self.result_atlas_mesh_combo.currentData()
+        entries: list[tuple[str, str]] = []
+        if is_specimen_group and review.registration_qc:
             for item in review.registration_qc:
                 decision = self._registration_qc_decisions.get(
                     item.subject_name,
                     "unreviewed",
                 )
-                self.result_atlas_mesh_combo.addItem(
+                entries.append(
                     (
-                        f"#{item.rank} · residual p95 {item.residual_p95:.6g} · "
-                        f"{item.subject_name} · {decision}"
-                    ),
-                    f"registration-qc:{item.subject_name}",
+                        (
+                            f"#{item.rank} · residual p95 {item.residual_p95:.6g} · "
+                            f"{item.subject_name} · {decision}"
+                        ),
+                        f"registration-qc:{item.subject_name}",
+                    )
                 )
-            for artifact in vtk_artifacts:
-                if artifact.key.startswith("estimated-template"):
-                    self.result_atlas_mesh_combo.addItem(artifact.label, artifact.key)
         else:
-            for artifact in vtk_artifacts:
-                if not artifact.key.startswith("subject-original-"):
-                    self.result_atlas_mesh_combo.addItem(artifact.label, artifact.key)
+            artifacts = tuple(
+                artifact
+                for artifact in review.artifacts
+                if artifact.kind == "vtk"
+                and (
+                    artifact.key.startswith("subject-reconstruction-")
+                    if is_specimen_group
+                    else not artifact.key.startswith(
+                        ("subject-original-", "subject-reconstruction-")
+                    )
+                )
+            )
+            artifacts = tuple(
+                sorted(
+                    artifacts,
+                    key=lambda artifact: (
+                        0 if artifact.key.startswith("estimated-template") else 1,
+                        0 if artifact.key == "pca-mean-shape" else 1,
+                        artifact.label.casefold(),
+                    ),
+                )
+            )
+            entries.extend((artifact.label, artifact.key) for artifact in artifacts)
+
+        self._result_atlas_mesh_total = len(entries)
+        query = (
+            self.result_atlas_mesh_search_edit.text().strip().casefold()
+            if is_specimen_group
+            else ""
+        )
+        if query:
+            entries = [entry for entry in entries if query in entry[0].casefold()]
+        self._result_atlas_mesh_filtered = len(entries)
+
+        self.result_atlas_mesh_combo.blockSignals(True)
+        self.result_atlas_mesh_combo.clear()
+        for label, key in entries:
+            self.result_atlas_mesh_combo.addItem(label, key)
+        selected_index = next(
+            (
+                index
+                for index in range(self.result_atlas_mesh_combo.count())
+                if self.result_atlas_mesh_combo.itemData(index) == current_key
+            ),
+            0,
+        )
+        if entries:
+            self.result_atlas_mesh_combo.setCurrentIndex(selected_index)
         self.result_atlas_mesh_combo.blockSignals(False)
         if self.result_atlas_mesh_combo.count() == 0:
             self.result_atlas_canvas.set_model(None)
             self.result_atlas_canvas.hide()
             self.result_registration_qc_canvas.hide()
             self.result_atlas_mesh_combo.setEnabled(False)
+            self._update_atlas_mesh_counter()
             self.result_atlas_status_label.setObjectName("statusWarning")
             self.result_atlas_status_label.setStyleSheet("")
             self.result_atlas_status_label.setText(
-                "No verified VTK atlas or reconstruction is available in this result."
+                "No specimen mesh matches the current search."
+                if query
+                else "No verified VTK mesh is available in this result section."
             )
             return
         self.result_atlas_mesh_combo.setEnabled(True)
-        self.result_qc_export_button.setVisible(bool(review.registration_qc))
-        self.result_atlas_mesh_combo.setCurrentIndex(0)
-        self._load_selected_atlas_mesh(0)
+        self._load_selected_atlas_mesh(selected_index)
+
+    def _update_atlas_mesh_counter(self) -> None:
+        current = self.result_atlas_mesh_combo.currentIndex() + 1
+        if self._result_atlas_mesh_filtered == 0:
+            current = 0
+        if self._result_atlas_mesh_filtered < self._result_atlas_mesh_total:
+            text = (
+                f"{current} of {self._result_atlas_mesh_filtered} matches · "
+                f"{self._result_atlas_mesh_total} total"
+            )
+        else:
+            text = f"{current} of {self._result_atlas_mesh_total}"
+        self.result_atlas_mesh_counter_label.setText(text)
 
     @Slot(int)
     def _load_selected_atlas_mesh(self, _index: int) -> None:
+        self._update_atlas_mesh_counter()
         if self._result_review is None:
             return
         key = self.result_atlas_mesh_combo.currentData()
@@ -7961,22 +8101,31 @@ class DiffeoForgeWindow(QMainWindow):
             except (ModernResultReviewError, OSError, TypeError, ValueError) as error:
                 autosave_error = str(error)
 
-        qc_indices = [
+        qc_items = self._result_review.registration_qc if self._result_review else ()
+        subject_order = [item.subject_name for item in qc_items]
+        current_position = subject_order.index(subject_name)
+        unreviewed_subjects = [
             candidate
-            for candidate in range(self.result_atlas_mesh_combo.count())
-            if isinstance(self.result_atlas_mesh_combo.itemData(candidate), str)
-            and self.result_atlas_mesh_combo.itemData(candidate).startswith("registration-qc:")
+            for candidate in subject_order[current_position + 1 :]
+            if candidate not in self._registration_qc_decisions
         ]
-        unreviewed = [
-            candidate
-            for candidate in qc_indices
-            if self.result_atlas_mesh_combo.itemData(candidate).split(":", 1)[1]
-            not in self._registration_qc_decisions
-        ]
-        later = [candidate for candidate in unreviewed if candidate > index]
-        next_index = later[0] if later else (unreviewed[0] if unreviewed else None)
-        if next_index is not None:
-            wrapped = next_index < index
+        wrapped = False
+        if not unreviewed_subjects:
+            unreviewed_subjects = [
+                candidate
+                for candidate in subject_order[:current_position]
+                if candidate not in self._registration_qc_decisions
+            ]
+            wrapped = bool(unreviewed_subjects)
+        next_subject = unreviewed_subjects[0] if unreviewed_subjects else None
+        if next_subject is not None:
+            next_key = f"registration-qc:{next_subject}"
+            next_index = self.result_atlas_mesh_combo.findData(next_key)
+            if next_index < 0 and self.result_atlas_mesh_search_edit.text():
+                self.result_atlas_mesh_search_edit.clear()
+                next_index = self.result_atlas_mesh_combo.findData(next_key)
+            if next_index < 0:
+                raise RuntimeError("The next verified registration-QC mesh is not selectable")
             self.result_atlas_mesh_combo.setCurrentIndex(next_index)
             if wrapped:
                 self.result_atlas_status_label.setText(
@@ -7989,7 +8138,7 @@ class DiffeoForgeWindow(QMainWindow):
             self.result_atlas_status_label.setObjectName("statusSuccess")
             self.result_atlas_status_label.setStyleSheet("")
             self.result_atlas_status_label.setText(
-                f"All {len(qc_indices)} registration-QC meshes have a decision. "
+                f"All {len(qc_items)} registration-QC meshes have a decision. "
                 "The review will not restart automatically. The current draft is saved; "
                 "use Export QC status for a timestamped immutable snapshot."
             )

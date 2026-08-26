@@ -132,6 +132,83 @@ def test_registration_qc_decision_advances_once_and_stops_after_last(
     application.processEvents()
 
 
+def test_result_viewer_separates_summary_from_searchable_specimen_meshes(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from diffeoforge.desktop.result_review import ModernResultArtifact, ModernResultReview
+    from diffeoforge.desktop.widgets import DiffeoForgeWindow
+    from diffeoforge.desktop.worker_protocol import sha256_file
+
+    application = QApplication.instance() or QApplication(["result-mesh-groups-test"])
+    mesh_path = ROOT / "examples" / "synthetic" / "meshes" / "template.vtk"
+
+    def artifact(key: str, label: str) -> ModernResultArtifact:
+        return ModernResultArtifact(
+            key=key,
+            label=label,
+            path=mesh_path,
+            kind="vtk",
+            bytes=mesh_path.stat().st_size,
+            sha256=sha256_file(mesh_path),
+            description="Verified viewer mesh.",
+        )
+
+    review = ModernResultReview(
+        run_directory=tmp_path,
+        bundle_directory=tmp_path,
+        project_name="Grouped viewer",
+        created_at="2026-08-26T00:00:00+00:00",
+        workflow_manifest_path=tmp_path / "workflow-manifest.json",
+        workflow_manifest_sha256="a" * 64,
+        bundle_manifest_path=tmp_path / "bundle-manifest.json",
+        bundle_manifest_sha256="b" * 64,
+        optimizer_converged=True,
+        optimizer_termination_reason="test",
+        optimizer_cycles_completed=1,
+        optimizer_max_cycles=1,
+        overview=(),
+        optimization=(),
+        pca=(),
+        quality=(),
+        artifacts=(
+            artifact("estimated-template", "Estimated template"),
+            artifact("pca-mean-shape", "PCA mean shape"),
+            artifact("pc1-minus", "PC1 minus"),
+            artifact("subject-reconstruction-1", "101 beetle A.vtk"),
+            artifact("subject-reconstruction-2", "202 beetle B.vtk"),
+        ),
+        scientific_boundaries=(),
+    )
+    window = DiffeoForgeWindow()
+    window._result_review = review
+    window._populate_atlas_viewer(review)
+
+    assert window.result_atlas_mesh_group_combo.count() == 2
+    assert window.result_atlas_mesh_group_combo.currentData() == "summary"
+    assert window.result_atlas_mesh_combo.count() == 3
+    assert window.result_atlas_mesh_search_edit.isHidden() is True
+
+    specimen_group = window.result_atlas_mesh_group_combo.findData("specimens")
+    window.result_atlas_mesh_group_combo.setCurrentIndex(specimen_group)
+    application.processEvents()
+
+    assert window.result_atlas_mesh_combo.count() == 2
+    assert window.result_atlas_mesh_search_edit.isHidden() is False
+    assert window.result_atlas_mesh_counter_label.text() == "1 of 2"
+
+    window.result_atlas_mesh_search_edit.setText("202")
+    application.processEvents()
+
+    assert window.result_atlas_mesh_combo.count() == 1
+    assert window.result_atlas_mesh_combo.currentData() == "subject-reconstruction-2"
+    assert window.result_atlas_mesh_counter_label.text() == "1 of 1 matches · 2 total"
+
+
 def _reference_preparation_status_fixture(
     *,
     config: Path,

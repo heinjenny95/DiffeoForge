@@ -391,6 +391,14 @@ def review_modern_result(directory: Path | str) -> ModernResultReview:
         "vtk",
         "Template surface estimated by the Modern atlas.",
     )
+    for position, subject in enumerate(bundle["subjects"], start=1):
+        add_artifact(
+            f"subject-reconstruction-{position}",
+            f"{subject['label']}",
+            subject["reconstruction_path"],
+            "vtk",
+            "Final subject-specific reconstruction for visual atlas quality control.",
+        )
     add_artifact(
         "optimizer-history",
         "Optimization history (CSV)",
@@ -510,7 +518,9 @@ def review_modern_result(directory: Path | str) -> ModernResultReview:
         ResultReviewItem("Project", str(workflow["project"]["name"]), "Manifested name."),
         ResultReviewItem(
             "Engine",
-            f"{workflow['engine']['id']} · {pairwise['mode']} · CPU/float64",
+            f"{workflow['engine']['id']} · {pairwise['mode']} · "
+            f"{str(workflow['engine']['device']).upper()}/"
+            f"{workflow['engine']['dtype']}",
             "Numerical route actually manifested by the workflow.",
         ),
         ResultReviewItem(

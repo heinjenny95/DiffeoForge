@@ -84,6 +84,21 @@ def test_verified_modern_result_exposes_bounded_summary_and_inventory(
         "mesh-quality-json",
         "mesh-quality-csv",
     }
+    reconstruction_artifacts = tuple(
+        artifact
+        for artifact in review.artifacts
+        if artifact.key.startswith("subject-reconstruction-")
+    )
+    assert len(reconstruction_artifacts) == 5
+    assert {artifact.label for artifact in reconstruction_artifacts} == {
+        "subject-01.vtk",
+        "subject-02.vtk",
+        "subject-03.vtk",
+        "subject-04.vtk",
+        "subject-05.vtk",
+    }
+    engine = next(item for item in review.overview if item.label == "Engine")
+    assert engine.value.endswith("CPU/float64")
     assert len({artifact.key for artifact in review.artifacts}) == len(review.artifacts)
     assert all(artifact.path.is_file() for artifact in review.artifacts)
     assert any("biological" in boundary.lower() for boundary in review.scientific_boundaries)
