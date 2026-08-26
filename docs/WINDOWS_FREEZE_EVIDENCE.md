@@ -301,6 +301,13 @@ artifact. Every clean-commit build records its own complete resolved package
 map, byte total, file count, and hashes in `freeze-evidence.json`; that manifest
 is authoritative for its directory.
 
+The Windows evidence wrapper resolves the reviewed Python and Git executables,
+then gives PyInstaller and every frozen smoke process a minimal `PATH` containing
+only that Python directory plus the Windows system directories. This prevents
+unrelated developer tools from contributing same-named native DLLs to the
+bundle. The caller's original `PATH` is restored in the wrapper's `finally`
+boundary, including after a failed build.
+
 ## First v0.4 developer-host observation
 
 A clean-worktree local build on 19 July 2026 froze commit
