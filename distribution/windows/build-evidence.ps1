@@ -16,8 +16,10 @@ param(
 $ErrorActionPreference = "Stop"
 $repository = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 $originalPath = $env:PATH
-$pythonExecutable = (Get-Command $Python -CommandType Application -ErrorAction Stop).Source
-$gitExecutable = (Get-Command git -CommandType Application -ErrorAction Stop).Source
+$pythonExecutable = (Get-Command $Python -CommandType Application -ErrorAction Stop |
+    Select-Object -First 1).Source
+$gitExecutable = (Get-Command git -CommandType Application -ErrorAction Stop |
+    Select-Object -First 1).Source
 $controlledPath = @(
     (Split-Path -Parent $pythonExecutable),
     [Environment]::SystemDirectory,
@@ -31,7 +33,7 @@ try {
     if (-not $windows -or -not [Environment]::Is64BitProcess) {
         throw "The evidence freeze requires a 64-bit Windows Python process."
     }
-    $dirty = & git status --porcelain=v1 --untracked-files=all
+    $dirty = & $gitExecutable status --porcelain=v1 --untracked-files=all
     if ($LASTEXITCODE -ne 0) {
         throw "Could not inspect the Git worktree."
     }

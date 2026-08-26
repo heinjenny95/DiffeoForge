@@ -90,7 +90,8 @@ def test_windows_freeze_has_separate_desktop_and_pipe_worker_entry_points() -> N
     assert "diffeoforge.desktop.reference_execution_worker import _process_main" in (
         execution_worker
     )
-    assert "git status --porcelain=v1 --untracked-files=all" in build
+    assert "$gitExecutable status --porcelain=v1 --untracked-files=all" in build
+    assert build.count("Select-Object -First 1") >= 2
     assert "$originalPath = $env:PATH" in build
     assert "$env:PATH = $controlledPath" in build
     assert "$env:PATH = $originalPath" in build
