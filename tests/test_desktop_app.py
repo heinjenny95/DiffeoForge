@@ -2448,6 +2448,59 @@ def test_desktop_remote_reconnect_rejects_different_ca(
     application.processEvents()
 
 
+def test_desktop_remote_server_copy_deletion_requires_confirmation_and_runs_off_ui(
+    monkeypatch, tmp_path
+) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QMessageBox
+
+    from diffeoforge.desktop.remote_atlas_controller import DesktopRemoteAtlasResult
+    from diffeoforge.desktop.widgets import (
+        DiffeoForgeWindow,
+        _RemoteAtlasDeletionWorker,
+    )
+
+    application = QApplication.instance() or QApplication(
+        ["diffeoforge-remote-delete-test"]
+    )
+    queued = []
+
+    class FakePool:
+        def start(self, worker) -> None:
+            queued.append(worker)
+
+    monkeypatch.setattr(
+        QMessageBox,
+        "warning",
+        lambda *_args, **_kwargs: QMessageBox.StandardButton.Yes,
+    )
+    session = (tmp_path / "remote-session").resolve()
+    window = DiffeoForgeWindow()
+    window._thread_pool = FakePool()  # type: ignore[assignment]
+    window._run_result = DesktopRemoteAtlasResult(
+        request_id="remote-" + "f" * 32,
+        submission_id="f" * 32,
+        status="downloaded",
+        session_directory=session,
+        destination=(tmp_path / "downloaded-result").resolve(),
+        remote_state={"status": "completed"},
+    )
+    window.remote_token_edit.setText(str(tmp_path / "operator.token"))
+
+    window._delete_remote_server_copy()
+
+    assert len(queued) == 1
+    assert isinstance(window._worker, _RemoteAtlasDeletionWorker)
+    assert window.delete_remote_server_copy_button.text() == "Deleting server copy…"
+    assert window.close() is False
+    assert "remain open" in window.run_state_label.text()
+    window._worker = None
+    window._close_after_worker = False
+    window.close()
+    application.processEvents()
+
+
 def test_successful_atlas_automatically_starts_verified_results_review(
     monkeypatch, tmp_path
 ) -> None:

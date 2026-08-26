@@ -192,7 +192,10 @@ runtime; the server still fails closed unless its own CUDA/float64 preflight pas
 Closing the desktop while it monitors a remote job detaches the local observer instead
 of cancelling the job. Reopening the recorded session resumes event polling and the
 verified download. The GUI reports that the server copy remains after download; terminal
-server deletion is currently an explicit CLI/operator action.
+server deletion is a separate confirmation-gated background action. It permanently
+removes the server request, workflow state, events, and result archive while retaining
+the verified local session, packaged request, and downloaded result. The successful
+deletion time is recorded locally so reopening the session does not issue it again.
 
 ## Result trust and scientific boundary
 
@@ -213,5 +216,5 @@ Modern Engine 236-subject gates remain cohort-, protocol-, and hardware-specific
 3. Add per-user authentication, scoped authorization, audit logging, rate limiting, and
    governed automatic retention for a multi-user service.
 4. Add resumable content-addressed upload and download for large cohorts.
-5. Add managed server discovery plus deployment-supplied retention, quota/cost evidence,
-   and an explicit nonblocking terminal-data deletion action to the desktop application.
+5. Add managed server discovery plus deployment-supplied retention and quota/cost
+   evidence to the desktop application.

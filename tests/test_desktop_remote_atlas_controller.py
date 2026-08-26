@@ -12,6 +12,8 @@ pytest.importorskip("torch")
 
 from diffeoforge.desktop.remote_atlas_controller import (  # noqa: E402
     DesktopRemoteAtlasController,
+    DesktopRemoteAtlasDeletionController,
+    DesktopRemoteAtlasError,
     create_desktop_remote_atlas_session,
     verify_desktop_remote_atlas_session,
 )
@@ -25,7 +27,6 @@ from diffeoforge.remote_atlas_server import (  # noqa: E402
     create_remote_atlas_http_server,
 )
 from diffeoforge.remote_atlas_transport import (  # noqa: E402
-    RemoteAtlasClient,
     create_remote_token_file,
     load_remote_token,
 )
@@ -78,6 +79,27 @@ def test_desktop_remote_session_packages_without_network_or_secret(
     assert not request.destination.exists()
 
 
+def test_desktop_remote_session_accepts_pre_deletion_field_state(
+    tmp_path: Path,
+) -> None:
+    request = _request(tmp_path)
+    session = create_desktop_remote_atlas_session(
+        request,
+        tmp_path / "remote-session",
+        server_url="http://127.0.0.1:8787",
+        submission_id="0" * 32,
+        created_at="2026-08-26T12:00:00+00:00",
+    )
+    state_path = session / "session.json"
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    state["remote"].pop("server_deleted_at")
+    state_path.write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
+
+    verified = verify_desktop_remote_atlas_session(session)
+
+    assert "server_deleted_at" not in verified["remote"]
+
+
 def test_desktop_remote_controller_executes_reconnectable_download(
     tmp_path: Path,
 ) -> None:
@@ -115,11 +137,22 @@ def test_desktop_remote_controller_executes_reconnectable_download(
         assert state["remote"]["event_cursor"] >= 0
         assert manager.get_state("b" * 32)["status"] == "completed"
 
-        client = RemoteAtlasClient(f"http://{host}:{port}", token)
-        assert client.delete("b" * 32)["status"] == "deleted"
-        assert verify_desktop_remote_atlas_session(session)["remote"]["status"] == (
-            "downloaded"
-        )
+        deletion = DesktopRemoteAtlasDeletionController(
+            session,
+            token_file=token_file,
+        ).run()
+        assert deletion.submission_id == "b" * 32
+        assert deletion.already_recorded is False
+        deleted_state = verify_desktop_remote_atlas_session(session)
+        assert deleted_state["remote"]["status"] == "downloaded"
+        assert deleted_state["remote"]["server_deleted_at"] == deletion.deleted_at
+
+        repeated = DesktopRemoteAtlasDeletionController(
+            session,
+            token_file=tmp_path / "no-longer-needed.token",
+        ).run()
+        assert repeated.already_recorded is True
+        assert repeated.deleted_at == deletion.deleted_at
     finally:
         server.shutdown()
         server.server_close()
@@ -178,3 +211,24 @@ def test_desktop_remote_controller_can_detach_without_network_or_cancel(
     assert result.cancelled is False
     assert verify_desktop_remote_atlas_session(session)["remote"]["status"] == "prepared"
     assert not request.destination.exists()
+
+
+def test_desktop_remote_deletion_rejects_unsubmitted_session(tmp_path: Path) -> None:
+    request = _request(tmp_path)
+    session = create_desktop_remote_atlas_session(
+        request,
+        tmp_path / "remote-session",
+        server_url="http://127.0.0.1:8787",
+        submission_id="e" * 32,
+        created_at="2026-08-26T12:00:00+00:00",
+    )
+
+    with pytest.raises(DesktopRemoteAtlasError, match="terminal submitted"):
+        DesktopRemoteAtlasDeletionController(
+            session,
+            token_file=tmp_path / "not-needed.token",
+        ).run()
+
+    state = verify_desktop_remote_atlas_session(session)
+    assert state["remote"]["status"] == "prepared"
+    assert state["remote"]["server_deleted_at"] is None

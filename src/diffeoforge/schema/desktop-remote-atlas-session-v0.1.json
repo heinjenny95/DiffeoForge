@@ -81,6 +81,7 @@
         },
         "event_cursor": { "type": "integer", "minimum": -1 },
         "last_server_update": { "type": ["string", "null"] },
+        "server_deleted_at": { "type": ["string", "null"], "format": "date-time" },
         "error": {
           "oneOf": [
             { "type": "null" },

@@ -155,7 +155,8 @@ This repository currently provides:
   cooperative cancellation, explicit terminal-data deletion, and fully verified
   request-bound downloads without silent local fallback, plus an explicit desktop
   server route with token/CA selection, raw-mesh upload authorization, persistent
-  session reconnection, and detach-without-cancel behavior;
+  session reconnection, detach-without-cancel behavior, and confirmation-gated terminal
+  server-copy deletion that retains local evidence;
 - supervised source-level Deformetrica execution followed by strict momenta and
   control-point import, a source-bound deterministic linear-PCA bundle, and the
   shared verified Results & PCA screen;

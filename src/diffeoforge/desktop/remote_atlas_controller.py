@@ -132,6 +132,18 @@ def _validate_state(state: dict[str, Any]) -> None:
     tls = state["tls"]
     if (tls["ca_file"] is None) != (tls["ca_sha256"] is None):
         raise DesktopRemoteAtlasError("Desktop remote TLS CA identity is incomplete")
+    deleted_at = state["remote"].get("server_deleted_at")
+    if deleted_at is not None:
+        try:
+            parsed = datetime.fromisoformat(deleted_at.replace("Z", "+00:00"))
+        except ValueError as error:
+            raise DesktopRemoteAtlasError(
+                "Desktop remote server deletion time is invalid"
+            ) from error
+        if parsed.tzinfo is None:
+            raise DesktopRemoteAtlasError(
+                "Desktop remote server deletion time lacks a timezone"
+            )
 
 
 def _read_state(root: Path) -> dict[str, Any]:
@@ -279,6 +291,7 @@ def create_desktop_remote_atlas_session(
                 "status": "prepared",
                 "event_cursor": -1,
                 "last_server_update": None,
+                "server_deleted_at": None,
                 "error": None,
             },
             "result": None,
@@ -328,6 +341,81 @@ class DesktopRemoteAtlasResult:
     @property
     def cancelled(self) -> bool:
         return self.status in {"cancelled", "cancelled_before_submit"}
+
+
+@dataclass(frozen=True)
+class DesktopRemoteAtlasDeletionResult:
+    """Recorded deletion of one terminal server copy."""
+
+    submission_id: str
+    session_directory: Path
+    deleted_at: str
+    already_recorded: bool
+
+
+class DesktopRemoteAtlasDeletionController:
+    """Delete terminal server state while retaining local request/result evidence."""
+
+    def __init__(
+        self,
+        session_directory: Path | str,
+        *,
+        token_file: Path | str,
+    ) -> None:
+        self.session_directory = Path(session_directory).expanduser().resolve()
+        self.token_file = Path(token_file).expanduser().absolute()
+
+    def run(self) -> DesktopRemoteAtlasDeletionResult:
+        state = verify_desktop_remote_atlas_session(self.session_directory)
+        recorded = state["remote"].get("server_deleted_at")
+        if recorded is not None:
+            return DesktopRemoteAtlasDeletionResult(
+                submission_id=state["submission_id"],
+                session_directory=self.session_directory,
+                deleted_at=recorded,
+                already_recorded=True,
+            )
+        if state["remote"]["status"] not in {
+            "completed",
+            "downloaded",
+            "failed",
+            "cancelled",
+            "interrupted",
+        }:
+            raise DesktopRemoteAtlasError(
+                "Only a terminal submitted remote job can be deleted from the server"
+            )
+        try:
+            client = RemoteAtlasClient(
+                state["server_url"],
+                load_remote_token(self.token_file),
+                ca_file=_verified_ca_file(state),
+            )
+            client.delete(state["submission_id"])
+        except (OSError, RuntimeError, TypeError, ValueError) as error:
+            if isinstance(error, DesktopRemoteAtlasError):
+                raise
+            raise DesktopRemoteAtlasError(
+                f"Remote atlas server copy could not be deleted: {error}"
+            ) from error
+        deleted_at = _now()
+        state["remote"]["server_deleted_at"] = deleted_at
+        try:
+            _write_state(self.session_directory, state)
+            verify_desktop_remote_atlas_session(self.session_directory)
+        except (OSError, RuntimeError, TypeError, ValueError) as error:
+            if isinstance(error, DesktopRemoteAtlasError):
+                raise
+            raise DesktopRemoteAtlasError(
+                "Server deletion succeeded, but its local session record could not be "
+                f"verified: {error}"
+            ) from error
+        return DesktopRemoteAtlasDeletionResult(
+            submission_id=state["submission_id"],
+            session_directory=self.session_directory,
+            deleted_at=deleted_at,
+            already_recorded=False,
+        )
 
 
 class DesktopRemoteAtlasController:

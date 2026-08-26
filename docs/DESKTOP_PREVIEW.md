@@ -225,7 +225,10 @@ python -m diffeoforge.desktop --smoke
   a separately selected bearer-token file, optional CA file, and explicit consent
   to upload packaged raw meshes and specimen filenames. The token is never copied
   into the project or persistent remote-session directory. An existing session can
-  be reopened to resume event polling and a strictly request-bound download.
+  be reopened to resume event polling and a strictly request-bound download. After
+  download, a separate confirmation-gated background action can delete the terminal
+  server copy while preserving local request/result evidence and recording the deletion
+  time in the session.
 - Normal window close during local or Deformetrica compute requests cooperative
   cancellation and keeps the window alive until the worker has a reconciled terminal
   state. During remote compute it only stops local monitoring; the server job continues

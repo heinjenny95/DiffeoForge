@@ -115,6 +115,8 @@ from diffeoforge.desktop.reference_validation_dialog import ReferenceValidationD
 from diffeoforge.desktop.reference_worker_protocol import DesktopReferenceWorkerEvent
 from diffeoforge.desktop.remote_atlas_controller import (
     DesktopRemoteAtlasController,
+    DesktopRemoteAtlasDeletionController,
+    DesktopRemoteAtlasDeletionResult,
     DesktopRemoteAtlasError,
     DesktopRemoteAtlasResult,
     create_desktop_remote_atlas_session,
@@ -869,6 +871,24 @@ class _RemoteAtlasWorker(QRunnable):
                 self._finished = True
 
 
+class _RemoteAtlasDeletionWorker(QRunnable):
+    """Run one explicit terminal server-copy deletion outside the Qt event loop."""
+
+    def __init__(self, controller: DesktopRemoteAtlasDeletionController) -> None:
+        super().__init__()
+        self.controller = controller
+        self.signals = _WorkerSignals()
+
+    @Slot()
+    def run(self) -> None:
+        try:
+            result = self.controller.run()
+        except DesktopRemoteAtlasError as error:
+            self.signals.failed.emit(str(error))
+        else:
+            self.signals.succeeded.emit(result)
+
+
 class _ReferenceAtlasWorker(QRunnable):
     """Bridge the contained Deformetrica controller into the Qt event loop."""
 
@@ -985,6 +1005,7 @@ class DiffeoForgeWindow(QMainWindow):
             | _ArtifactWorker
             | _AtlasWorker
             | _RemoteAtlasWorker
+            | _RemoteAtlasDeletionWorker
             | _ReferenceAtlasWorker
             | None
         ) = None
@@ -1915,8 +1936,15 @@ class DiffeoForgeWindow(QMainWindow):
         self.open_run_result_button = QPushButton("Open result folder")
         self.open_run_result_button.setObjectName("secondary")
         self.open_run_result_button.clicked.connect(self._open_run_result)
+        self.delete_remote_server_copy_button = QPushButton("Delete server copy…")
+        self.delete_remote_server_copy_button.setObjectName("danger")
+        self.delete_remote_server_copy_button.clicked.connect(
+            self._delete_remote_server_copy
+        )
+        self.delete_remote_server_copy_button.hide()
         result_button_row = QHBoxLayout()
         result_button_row.addWidget(self.open_run_result_button)
+        result_button_row.addWidget(self.delete_remote_server_copy_button)
         result_button_row.addStretch()
         result_layout.addWidget(result_title)
         result_layout.addWidget(self.run_result_label)
@@ -8004,6 +8032,7 @@ class DiffeoForgeWindow(QMainWindow):
         ),
     ) -> None:
         self._worker = None
+        self.delete_remote_server_copy_button.hide()
         self.cancel_atlas_button.setEnabled(False)
         self.refresh_run_readiness_button.setEnabled(True)
         self.run_back_button.setEnabled(True)
@@ -8046,6 +8075,83 @@ class DiffeoForgeWindow(QMainWindow):
         elif result.completed:
             self._review_run_result()
 
+    @Slot()
+    def _delete_remote_server_copy(self) -> None:
+        result = self._run_result
+        if not isinstance(result, DesktopRemoteAtlasResult) or self._worker is not None:
+            return
+        token_text = self.remote_token_edit.text().strip()
+        if not token_text:
+            self.run_state_label.setObjectName("statusError")
+            self.run_state_label.setStyleSheet("")
+            self.run_state_label.setText(
+                "Select the bearer-token file before deleting the terminal server copy."
+            )
+            return
+        choice = QMessageBox.warning(
+            self,
+            "Delete remote atlas server copy?",
+            "This permanently deletes the terminal request, server-side workflow state, "
+            "events, and result archive for this job. The verified local session, request, "
+            "and downloaded result remain unchanged.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.Cancel,
+        )
+        if choice != QMessageBox.StandardButton.Yes:
+            return
+        worker = _RemoteAtlasDeletionWorker(
+            DesktopRemoteAtlasDeletionController(
+                result.session_directory,
+                token_file=Path(token_text),
+            )
+        )
+        worker.signals.succeeded.connect(self._remote_server_copy_deleted)
+        worker.signals.failed.connect(self._remote_server_copy_delete_failed)
+        self._worker = worker
+        self.delete_remote_server_copy_button.setText("Deleting server copy…")
+        self.delete_remote_server_copy_button.setEnabled(False)
+        self.run_state_label.setObjectName("status")
+        self.run_state_label.setStyleSheet("")
+        self.run_state_label.setText(
+            "Authenticated terminal-data deletion is running on the exact bound server."
+        )
+        self._sync_ready_state()
+        self._thread_pool.start(worker)
+
+    @Slot(object)
+    def _remote_server_copy_deleted(
+        self,
+        result: DesktopRemoteAtlasDeletionResult,
+    ) -> None:
+        self._worker = None
+        self.delete_remote_server_copy_button.setText("Server copy deleted")
+        self.delete_remote_server_copy_button.setEnabled(False)
+        self.run_state_label.setObjectName("statusSuccess")
+        self.run_state_label.setStyleSheet("")
+        self.run_state_label.setText(
+            f"Server copy deletion recorded at {result.deleted_at}. The verified local "
+            "session, request, and downloaded result were retained."
+        )
+        self._sync_ready_state()
+        if self._close_after_worker:
+            self._close_after_worker = False
+            self.close()
+
+    @Slot(str)
+    def _remote_server_copy_delete_failed(self, message: str) -> None:
+        self._worker = None
+        self.delete_remote_server_copy_button.setText("Delete server copy…")
+        self.delete_remote_server_copy_button.setEnabled(True)
+        self.run_state_label.setObjectName("statusError")
+        self.run_state_label.setStyleSheet("")
+        self.run_state_label.setText(
+            f"Server copy deletion was not confirmed: {message} Local evidence was retained."
+        )
+        self._sync_ready_state()
+        if self._close_after_worker:
+            self._close_after_worker = False
+            self.close()
+
     def _remote_atlas_succeeded(self, result: DesktopRemoteAtlasResult) -> None:
         if result.detached:
             self._run_result = None
@@ -8057,12 +8163,17 @@ class DiffeoForgeWindow(QMainWindow):
             )
         elif result.completed:
             state = verify_desktop_remote_atlas_session(result.session_directory)
+            deleted_at = state["remote"].get("server_deleted_at")
             self._run_result = result
             self.run_state_label.setObjectName("statusSuccess")
             self.run_state_label.setStyleSheet("")
             self.run_state_label.setText(
                 "Remote atlas and PCA were downloaded, request-bound, and independently "
-                "verified. The server copy remains until explicit deletion."
+                + (
+                    f"verified. Server-copy deletion was recorded at {deleted_at}."
+                    if deleted_at is not None
+                    else "verified. The server copy remains until explicit deletion."
+                )
             )
             self.run_result_label.setText(
                 f"Destination: {self._wrappable_path(result.destination)}\n"
@@ -8073,6 +8184,13 @@ class DiffeoForgeWindow(QMainWindow):
                 f"Persistent session: {self._wrappable_path(result.session_directory)}"
             )
             self.run_result_card.show()
+            self.delete_remote_server_copy_button.setText(
+                "Server copy deleted"
+                if deleted_at is not None
+                else "Delete server copy…"
+            )
+            self.delete_remote_server_copy_button.setEnabled(deleted_at is None)
+            self.delete_remote_server_copy_button.show()
             self.start_atlas_button.setEnabled(False)
         else:
             self._run_result = None
@@ -9063,6 +9181,14 @@ class DiffeoForgeWindow(QMainWindow):
             self.run_state_label.setText(
                 "Stopping local monitoring. The remote job will continue and can be "
                 "reconnected from the persistent session folder."
+            )
+            event.ignore()
+            return
+        if isinstance(self._worker, _RemoteAtlasDeletionWorker):
+            self._close_after_worker = True
+            self.run_state_label.setText(
+                "The window will remain open until the authenticated server-copy deletion "
+                "is confirmed or rejected."
             )
             event.ignore()
             return

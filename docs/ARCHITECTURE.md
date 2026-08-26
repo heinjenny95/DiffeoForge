@@ -496,6 +496,8 @@ selection now bind the exact server URL, token file, optional CA file, explicit
 raw-mesh/specimen-name upload authorization, and existing-session directory. Closing
 the window detaches monitoring without implicitly cancelling the server job. A completed
 download is independently verified before entering the shared Results & PCA review.
+Terminal server-copy deletion is a distinct confirmation-gated Qt task; success is
+recorded in the persistent session without deleting the local request or result.
 
 ## Security and privacy boundary
 
