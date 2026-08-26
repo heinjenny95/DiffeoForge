@@ -1,6 +1,7 @@
 # Modern engine feasibility baseline
 
-Status: **experimental; not a production atlas backend**
+Status: **experimental opt-in backend with passing 236-subject CUDA full-atlas
+Euclidean and Sobolev engineering gates; not a production default**
 
 Tracked by [scientific-change issue #12](https://github.com/heinjenny95/DiffeoForge/issues/12).
 
@@ -80,12 +81,13 @@ matching dtype/device, finite positive kernel widths, and valid zero-based
 `int64` triangle connectivity. They do not silently cast inputs. Degenerate
 zero-area faces fail explicitly.
 
-This boundary does **not** yet include automatic control-point initialization,
-mid-run optimizer checkpoint/crash recovery, GPU execution, sparse kernels, or
-a workflow-backend adapter. A completed verified non-converged run can now be
-continued through a separately frozen, hash-bound successor; this is sequential
-optimization rather than restoration of an interrupted process. Blockwise exact
-kernels and deterministic mesh-quality constraints are implemented.
+This boundary now includes automatic template-vertex control-point initialization,
+bounded complete-cycle checkpoints, exact optimizer-state crash recovery, fail-closed
+CUDA/float64 execution, a desktop worker adapter, and transport-neutral portable
+server requests. Blockwise exact kernels and deterministic mesh-quality constraints
+are implemented. It does **not** yet include sparse or approximate kernels, automatic
+authenticated server upload/orchestration, a general cross-hardware CUDA qualification,
+or an anatomy-independent production preset.
 
 ## Evidence in this baseline
 
@@ -335,21 +337,26 @@ gates. See
    MB, close to the predeclared 800 MB ceiling, so this remains a verified
    hardware-specific profile rather than a cross-machine default.
    Engine 1.5 therefore introduces a separate, fail-closed CUDA/float64 path.
-   Its five-subject full-resolution Weevil qualification now passes numerical,
+   Its five-subject full-resolution Weevil qualification passes numerical,
    repeat-determinism, memory, speed, convergence, and fixed-reference gates;
-   the matched one-cycle CUDA screen was 10.175 times faster than CPU. The CPU
-   default and the passing Engine 1.4 parallel-batch profile remain intact
-   until a separately frozen larger-cohort CUDA gate passes. See
+   the matched one-cycle CUDA screen was 10.175 times faster than CPU. Later
+   16-subject, 54-of-67-subject, 236-subject fixed-reference, and prospectively
+   frozen 236-subject full-atlas CUDA gates also passed. Engine 1.6 adds an
+   opt-in Sobolev template gradient and passes its paired prospective 236-subject
+   full-atlas gate. The CPU default remains unchanged because these results are
+   cohort- and hardware-specific. See
    [Engine 1.5 CUDA feasibility](MODERN_ENGINE15_CUDA.md).
 9. Define evidence-derived tolerances before accepting a production backend.
    Provisional fixed-reference gates have now passed once prospectively; broader
    datasets and atlas-update tests are still needed before the tolerances can be
    treated as production acceptance criteria.
 10. ~~Integrate the engine through immutable run manifests without weakening the
-    existing reference workflow.~~ Completed for the experimental CLI workflow,
-    including strict nested verification, bounded complete-cycle checkpoints,
-    and exact Engine 0.9-or-later continuation. Desktop productization remains
-    separate.
+    existing reference workflow.~~ Completed for the experimental CLI and desktop
+    workflows, including strict nested verification, bounded complete-cycle
+    checkpoints, exact recovery, and a separately hash-bound external CUDA runtime.
+    A contained CUDA distribution, authenticated server transport, public release,
+    and general scientific qualification remain separate.
 
-No scientific atlas result should be produced or interpreted through this
-experimental module until these gates pass.
+Modern results may be produced within these explicit evidence boundaries. Numerical
+convergence and engineering non-inferiority must still be kept separate from
+reconstruction QC, sensitivity, PCA stability, and biological interpretation.

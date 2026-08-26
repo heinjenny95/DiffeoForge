@@ -467,19 +467,27 @@ processes, but a prospective representative study still has to establish the
 tradeoff;
 saved-tensor counts are not peak-RAM claims.
 
-This vertical path is not yet the common production backend shown above. Its
-child-process transport and source GUI supervision now exist, but it does not
-implement the reference lifecycle's checkpoint/resume operations, parent-death
-crash recovery, or reference-engine supervision.
-An optimized kernel or GPU path must reproduce the dense baseline before it can
-replace this correctness implementation.
+This vertical path remains experimental rather than a common production default.
+Its child-process transport, source GUI supervision, complete-cycle checkpoints,
+exact-state recovery, and fail-closed CUDA/float64 execution now exist. The passing
+236-subject Euclidean and Sobolev gates qualify one declared cohort and protocol;
+they do not establish a general anatomy-independent preset, cross-hardware GPU
+parity, or biological validity.
+
+A transport-neutral remote-atlas contract can now copy one reviewed Modern request
+into a portable, exact-inventory directory, execute it explicitly on another host,
+and bind a returned workflow to that request. It deliberately performs no network
+operation. Authenticated upload, a durable server queue, reconnectable progress,
+remote cancellation, retention controls, and cost governance remain separate layers.
 
 ## Security and privacy boundary
 
-The application is local-first. A run does not upload meshes, metadata, logs,
-or telemetry unless a future feature obtains explicit user consent. Paths and
-specimen identifiers must be reviewed before public diagnostic bundles are
-created.
+The application is local-first. Ordinary runs do not upload meshes, metadata,
+logs, or telemetry. Creating a portable remote request still performs no network
+operation and explicitly records that automatic upload is unauthorized. The package
+contains raw meshes and specimen filenames, so its destination, account, retention,
+and transfer mechanism must be reviewed before an explicit transfer. Paths and specimen
+identifiers must also be reviewed before public diagnostic bundles are created.
 
 ## Open questions
 

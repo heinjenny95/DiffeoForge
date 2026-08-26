@@ -101,6 +101,26 @@ def _write_stdout_bytes(payload: bytes) -> None:
     buffer.flush()
 
 
+def _show_modern_progress(event) -> None:
+    stage = f"{event.completed_stages}/{event.total_stages} stages"
+    if event.optimizer is None:
+        print(
+            f"Progress [{stage}] {event.phase} {event.status}: {event.message}",
+            flush=True,
+        )
+        return
+    optimizer = event.optimizer
+    decision = f"{optimizer.completed_decisions}/{optimizer.maximum_decisions} decisions"
+    block = "initial" if optimizer.block is None else optimizer.block
+    print(
+        f"Progress [{stage}; optimizer {decision}] cycle "
+        f"{optimizer.cycle}/{optimizer.max_cycles} {block} {optimizer.status}; "
+        f"objective={optimizer.objective:.12g}; "
+        f"line-search={optimizer.line_search_evaluations}",
+        flush=True,
+    )
+
+
 def _tile_shape_argument(value: str) -> tuple[int, int]:
     parts = value.lower().split("x")
     if len(parts) != 2 or not all(parts):
@@ -503,6 +523,36 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         help="Override the exact previously nonexistent run destination.",
     )
+
+    modern_remote_package_parser = subparsers.add_parser(
+        "modern-remote-package",
+        help=(
+            "Create a portable hash-bound Modern atlas request without uploading "
+            "or starting computation."
+        ),
+    )
+    modern_remote_package_parser.add_argument("config", type=Path)
+    modern_remote_package_parser.add_argument("--output", type=Path, required=True)
+
+    modern_remote_package_verify_parser = subparsers.add_parser(
+        "modern-remote-package-verify",
+        help="Verify one portable Modern atlas request without network or compute.",
+    )
+    modern_remote_package_verify_parser.add_argument("job_directory", type=Path)
+
+    modern_remote_run_parser = subparsers.add_parser(
+        "modern-remote-run",
+        help="Execute one verified portable Modern request on this server/host.",
+    )
+    modern_remote_run_parser.add_argument("job_directory", type=Path)
+    modern_remote_run_parser.add_argument("--output", type=Path, required=True)
+
+    modern_remote_result_verify_parser = subparsers.add_parser(
+        "modern-remote-result-verify",
+        help="Bind and verify a downloaded Modern result against its exact request.",
+    )
+    modern_remote_result_verify_parser.add_argument("job_directory", type=Path)
+    modern_remote_result_verify_parser.add_argument("result_directory", type=Path)
 
     modern_private_status_parser = subparsers.add_parser(
         "modern-private-status",
@@ -2020,6 +2070,93 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 2
         return 0 if discovery.ready_for_new_run else 1
 
+    if args.command == "modern-remote-package":
+        try:
+            from diffeoforge.remote_atlas_job import create_remote_atlas_job
+
+            job = create_remote_atlas_job(args.config, args.output)
+            print(f"Portable Modern atlas request created: {job}")
+            print("No upload, network request, authentication, or computation was performed.")
+            print("Review specimen filenames and privacy requirements before transfer.")
+        except ImportError as error:
+            print(
+                "ERROR: Modern engine dependencies are missing; install "
+                "diffeoforge[modern-engine].",
+                file=sys.stderr,
+            )
+            print(f"       {error}", file=sys.stderr)
+            return 2
+        except (ConfigurationError, OSError, RuntimeError, ValueError, TypeError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
+
+    if args.command == "modern-remote-package-verify":
+        try:
+            from diffeoforge.remote_atlas_job import verify_remote_atlas_job
+
+            manifest = verify_remote_atlas_job(args.job_directory)
+            print(f"Portable Modern atlas request verified: {args.job_directory.resolve()}")
+            print(f"Subject meshes: {len(manifest['input']['subjects'])}")
+            print(f"Requested device: {manifest['execution']['device']}")
+            print("No upload, network request, authentication, or computation was performed.")
+        except ImportError as error:
+            print(
+                "ERROR: Modern engine dependencies are missing; install "
+                "diffeoforge[modern-engine].",
+                file=sys.stderr,
+            )
+            print(f"       {error}", file=sys.stderr)
+            return 2
+        except (ConfigurationError, OSError, RuntimeError, ValueError, TypeError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
+
+    if args.command == "modern-remote-run":
+        try:
+            from diffeoforge.remote_atlas_job import run_remote_atlas_job
+
+            result = run_remote_atlas_job(
+                args.job_directory,
+                args.output,
+                progress_callback=_show_modern_progress,
+            )
+            print(f"Remote Modern atlas result completed and request-bound: {result}")
+        except ImportError as error:
+            print(
+                "ERROR: Modern engine dependencies are missing; install "
+                "diffeoforge[modern-engine].",
+                file=sys.stderr,
+            )
+            print(f"       {error}", file=sys.stderr)
+            return 2
+        except (ConfigurationError, OSError, RuntimeError, ValueError, TypeError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
+
+    if args.command == "modern-remote-result-verify":
+        try:
+            from diffeoforge.remote_atlas_job import verify_remote_atlas_result
+
+            result = verify_remote_atlas_result(args.job_directory, args.result_directory)
+            print(f"Remote Modern atlas result verified: {args.result_directory.resolve()}")
+            print(f"Subject meshes: {len(result['input']['subjects'])}")
+            print(f"Execution device: {result['engine']['device']}")
+        except ImportError as error:
+            print(
+                "ERROR: Modern engine dependencies are missing; install "
+                "diffeoforge[modern-engine].",
+                file=sys.stderr,
+            )
+            print(f"       {error}", file=sys.stderr)
+            return 2
+        except (ConfigurationError, OSError, RuntimeError, ValueError, TypeError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
+
     if args.command == "modern-run":
         try:
             from diffeoforge.modern_bundle import verify_modern_atlas_bundle
@@ -2028,31 +2165,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                 verify_modern_workflow,
             )
 
-            def show_progress(event) -> None:
-                stage = f"{event.completed_stages}/{event.total_stages} stages"
-                if event.optimizer is None:
-                    print(
-                        f"Progress [{stage}] {event.phase} {event.status}: {event.message}",
-                        flush=True,
-                    )
-                    return
-                optimizer = event.optimizer
-                decision = (
-                    f"{optimizer.completed_decisions}/{optimizer.maximum_decisions} decisions"
-                )
-                block = "initial" if optimizer.block is None else optimizer.block
-                print(
-                    f"Progress [{stage}; optimizer {decision}] cycle "
-                    f"{optimizer.cycle}/{optimizer.max_cycles} {block} {optimizer.status}; "
-                    f"objective={optimizer.objective:.12g}; "
-                    f"line-search={optimizer.line_search_evaluations}",
-                    flush=True,
-                )
-
             run_directory = run_modern_workflow(
                 args.config,
                 destination=args.output,
-                progress_callback=show_progress,
+                progress_callback=_show_modern_progress,
             )
             manifest = verify_modern_workflow(run_directory)
             print(f"Modern workflow completed: {run_directory}")
