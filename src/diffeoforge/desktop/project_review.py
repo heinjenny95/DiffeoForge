@@ -10,6 +10,7 @@ from typing import Any
 
 from diffeoforge.desktop.modern_cuda_runtime import (
     ModernCudaRuntime,
+    ModernCudaRuntimeError,
     discover_modern_cuda_runtime,
 )
 from diffeoforge.desktop.project_setup import DesktopEngine
@@ -644,11 +645,13 @@ def _modern_review(config_path: Path, config_sha256: str) -> ProjectReviewResult
     optimization = config["optimization"]
     analysis = config["analysis"]
     runtime = config["runtime"]
-    cuda_runtime = (
-        discover_modern_cuda_runtime()
-        if runtime["device"] == "cuda"
-        else None
-    )
+    cuda_runtime_error: str | None = None
+    cuda_runtime = None
+    if runtime["device"] == "cuda":
+        try:
+            cuda_runtime = discover_modern_cuda_runtime()
+        except ModernCudaRuntimeError as error:
+            cuda_runtime_error = str(error)
     procrustes = config["preprocessing"]["procrustes"]
     pairwise = report["engine"]["pairwise_evaluation"]
     pairwise_value = "dense · complete pair matrices"
@@ -862,6 +865,15 @@ def _modern_review(config_path: Path, config_sha256: str) -> ProjectReviewResult
                 "validated public GPU distribution.",
             )
             if cuda_runtime is not None
+            else ()
+        ),
+        *(
+            (
+                "No verified local CUDA runtime is currently bound. Local execution is "
+                f"blocked ({cuda_runtime_error}); a separately reviewed remote CUDA server "
+                "can still execute this exact request.",
+            )
+            if cuda_runtime_error is not None
             else ()
         ),
         *high_detail_warning,

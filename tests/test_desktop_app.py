@@ -2295,6 +2295,159 @@ def test_desktop_window_starts_bound_worker_and_shows_only_reconciled_result(
     application.processEvents()
 
 
+def test_desktop_window_starts_persistent_remote_worker(
+    monkeypatch, tmp_path
+) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from diffeoforge.desktop.project_review import ProjectReviewResult
+    from diffeoforge.desktop.project_setup import DesktopEngine
+    from diffeoforge.desktop.reviewed_run import DesktopReviewedRemoteRunReadiness
+    from diffeoforge.desktop.widgets import DiffeoForgeWindow, _RemoteAtlasWorker
+    from diffeoforge.desktop.worker_protocol import DesktopWorkerRequest, sha256_file
+    from diffeoforge.private_runs import PrivateRunDiscovery
+
+    application = QApplication.instance() or QApplication(["diffeoforge-remote-run-test"])
+    config = (tmp_path / "modern-atlas.yaml").resolve()
+    config.write_text("reviewed\n", encoding="utf-8")
+    destination = (tmp_path / "modern-result").resolve()
+    request = DesktopWorkerRequest(
+        request_id="desktop-remote-bound",
+        config_path=config,
+        destination=destination,
+        expected_config_sha256=sha256_file(config),
+        runtime_device="cuda",
+    )
+    review = ProjectReviewResult(
+        engine=DesktopEngine.MODERN_CPU,
+        project_name="Remote bound run",
+        config_path=config,
+        config_sha256=request.expected_config_sha256,
+        report_path=tmp_path / "workload.html",
+        report_label="Modern-Workload-Report",
+        subject_count=5,
+        parameters=(),
+        workload=(),
+        warnings=(),
+        scientific_boundary="boundary",
+    )
+    readiness = DesktopReviewedRemoteRunReadiness(
+        request=request,
+        discovery=PrivateRunDiscovery(destination, False, ()),
+    )
+    queued = []
+    created = []
+
+    class FakePool:
+        def start(self, worker) -> None:
+            queued.append(worker)
+
+    monkeypatch.setattr(
+        "diffeoforge.desktop.widgets.check_reviewed_remote_run_readiness",
+        lambda review, *, request_id: readiness,
+    )
+
+    def create_session(
+        supplied_request,
+        session,
+        *,
+        server_url,
+        ca_file,
+        submission_id,
+    ):
+        created.append(
+            (supplied_request, Path(session), server_url, ca_file, submission_id)
+        )
+        return Path(session).resolve()
+
+    monkeypatch.setattr(
+        "diffeoforge.desktop.widgets.create_desktop_remote_atlas_session",
+        create_session,
+    )
+    window = DiffeoForgeWindow()
+    window._thread_pool = FakePool()  # type: ignore[assignment]
+    window._review_succeeded(review)
+    window.execution_location_combo.setCurrentIndex(1)
+    window.remote_server_edit.setText("https://atlas.example.edu:8787")
+    window.remote_token_edit.setText(str(tmp_path / "operator.token"))
+    window.remote_upload_authorization.setChecked(True)
+    window._show_run_page()
+
+    window._start_atlas()
+
+    assert len(created) == 1
+    assert created[0][0] is request
+    assert created[0][2] == "https://atlas.example.edu:8787"
+    assert len(queued) == 1
+    assert isinstance(window._worker, _RemoteAtlasWorker)
+    assert window.remote_session_edit.text()
+    assert "Remote session:" in window.run_summary_label.text()
+    assert window.cancel_atlas_button.isEnabled()
+    assert window.close() is False
+    assert queued[0].request_detach() is False
+    assert "remote job will continue" in window.run_state_label.text()
+    window._worker = None
+    window._close_after_worker = False
+    window.close()
+    application.processEvents()
+
+
+def test_desktop_remote_reconnect_rejects_different_ca(
+    monkeypatch, tmp_path
+) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from diffeoforge.desktop.remote_atlas_controller import DesktopRemoteAtlasError
+    from diffeoforge.desktop.reviewed_run import DesktopReviewedRemoteRunReadiness
+    from diffeoforge.desktop.widgets import DiffeoForgeWindow
+    from diffeoforge.desktop.worker_protocol import DesktopWorkerRequest
+    from diffeoforge.private_runs import PrivateRunDiscovery
+
+    application = QApplication.instance() or QApplication(["diffeoforge-remote-ca-test"])
+    config = (tmp_path / "modern-atlas.yaml").resolve()
+    destination = (tmp_path / "modern-result").resolve()
+    session = (tmp_path / "remote-session").resolve()
+    stored_ca = (tmp_path / "stored-ca.pem").resolve()
+    other_ca = (tmp_path / "other-ca.pem").resolve()
+    request = DesktopWorkerRequest(
+        request_id="desktop-remote-ca",
+        config_path=config,
+        destination=destination,
+        expected_config_sha256="d" * 64,
+        runtime_device="cuda",
+    )
+    readiness = DesktopReviewedRemoteRunReadiness(
+        request=request,
+        discovery=PrivateRunDiscovery(destination, False, ()),
+    )
+    monkeypatch.setattr(
+        "diffeoforge.desktop.widgets.verify_desktop_remote_atlas_session",
+        lambda path: {
+            "server_url": "https://atlas.example.edu:8787",
+            "request": {
+                "original_config_sha256": request.expected_config_sha256,
+                "original_config_path": str(config),
+                "result_destination": str(destination),
+            },
+            "tls": {"ca_file": str(stored_ca)},
+        },
+    )
+    window = DiffeoForgeWindow()
+    window.remote_session_edit.setText(str(session))
+    window.remote_server_edit.setText("https://atlas.example.edu:8787")
+    window.remote_ca_edit.setText(str(other_ca))
+
+    with pytest.raises(DesktopRemoteAtlasError, match="different TLS CA"):
+        window._prepare_remote_session(readiness)
+
+    window.close()
+    application.processEvents()
+
+
 def test_successful_atlas_automatically_starts_verified_results_review(
     monkeypatch, tmp_path
 ) -> None:

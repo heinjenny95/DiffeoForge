@@ -150,3 +150,31 @@ def test_desktop_remote_controller_can_cancel_before_upload(tmp_path: Path) -> N
     state = json.loads((session / "session.json").read_text(encoding="utf-8"))
     assert state["remote"]["status"] == "cancelled_before_submit"
     assert not request.destination.exists()
+
+
+def test_desktop_remote_controller_can_detach_without_network_or_cancel(
+    tmp_path: Path,
+) -> None:
+    request = _request(tmp_path)
+    session = create_desktop_remote_atlas_session(
+        request,
+        tmp_path / "remote-session",
+        server_url="http://127.0.0.1:8787",
+        submission_id="d" * 32,
+        created_at="2026-08-26T12:00:00+00:00",
+    )
+    controller = DesktopRemoteAtlasController(
+        session,
+        token_file=tmp_path / "not-needed.token",
+        poll_seconds=0.1,
+    )
+
+    assert controller.request_detach() is True
+    assert controller.request_detach() is False
+    result = controller.run()
+
+    assert result.detached
+    assert result.status == "prepared"
+    assert result.cancelled is False
+    assert verify_desktop_remote_atlas_session(session)["remote"]["status"] == "prepared"
+    assert not request.destination.exists()

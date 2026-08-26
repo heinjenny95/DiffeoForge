@@ -1,7 +1,8 @@
 # Authenticated Modern atlas execution on a server
 
-Status: **implemented private single-operator HTTP(S) service, CLI, and persistent
-desktop controller; managed deployment and visible desktop controls remain open**
+Status: **implemented private single-operator HTTP(S) service, CLI, persistent
+desktop controller, and explicit desktop submission/reconnection controls; managed
+deployment remains open**
 
 DiffeoForge can prepare a reviewed Modern atlas on one computer, execute it on a
 compatible CPU/CUDA server, reconnect to progress, cancel it cooperatively, and
@@ -171,7 +172,7 @@ or GPU failure can therefore stop the service; persistent state then applies the
 fail-closed interrupted behavior above. Per-job process isolation is a later production
 hardening step.
 
-## Desktop persistence foundation
+## Desktop execution
 
 The Qt-independent desktop controller creates a local session directory before upload.
 It contains the exact portable request, server URL, client-generated job ID, reconnectable
@@ -181,9 +182,17 @@ that directory with an explicitly supplied token file, resume event polling, and
 the request-bound result. Closing a client is therefore not equivalent to cancelling a
 server job.
 
-The public desktop screens do not yet expose server URL, token/CA selection, privacy
-authorization, or session reopening; this controller is the tested non-Qt layer for that
-next UI slice.
+The Modern compute screen exposes an explicit **Private DiffeoForge server** execution
+location. It requires the exact server URL, a bearer-token file, an optional private CA
+file, and affirmative authorization to upload the packaged raw meshes and specimen
+filenames. It can also reopen an existing session directory. A CUDA request remains
+reviewable and remotely runnable even when the client has no compatible local CUDA
+runtime; the server still fails closed unless its own CUDA/float64 preflight passes.
+
+Closing the desktop while it monitors a remote job detaches the local observer instead
+of cancelling the job. Reopening the recorded session resumes event polling and the
+verified download. The GUI reports that the server copy remains after download; terminal
+server deletion is currently an explicit CLI/operator action.
 
 ## Result trust and scientific boundary
 
@@ -204,5 +213,5 @@ Modern Engine 236-subject gates remain cohort-, protocol-, and hardware-specific
 3. Add per-user authentication, scoped authorization, audit logging, rate limiting, and
    governed automatic retention for a multi-user service.
 4. Add resumable content-addressed upload and download for large cohorts.
-5. Expose the persistent desktop controller through reviewed server selection, privacy,
-   expected-runtime, retention, and cost controls in the desktop application.
+5. Add managed server discovery plus deployment-supplied retention, quota/cost evidence,
+   and an explicit nonblocking terminal-data deletion action to the desktop application.

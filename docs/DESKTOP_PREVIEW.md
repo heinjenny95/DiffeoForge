@@ -1,8 +1,8 @@
 # Desktop setup, review, and Modern compute preview
 
 Status: **five graphical steps with verified Modern CPU execution, an explicitly
-bound external Modern CUDA route, and result review; same-owner private-alpha
-installer available**
+bound local or private-server Modern CUDA route, persistent remote reconnection,
+and result review; same-owner private-alpha installer available**
 
 Tracked by [engineering issue #75](https://github.com/heinjenny95/DiffeoForge/issues/75)
 and [engineering issue #77](https://github.com/heinjenny95/DiffeoForge/issues/77),
@@ -199,13 +199,14 @@ python -m diffeoforge.desktop --smoke
 - Mesh inspection runs in a background GUI thread. Modern numerical work and
   Deformetrica execution use distinct child processes supervised by fail-closed
   parent controllers; Qt receives only validated events through queued signals.
-- A Modern CUDA project is blocked during review unless DiffeoForge discovers or
-  is explicitly pointed to a separate Python runtime that can access CUDA and
+- Local execution of a Modern CUDA project is blocked unless DiffeoForge discovers
+  or is explicitly pointed to a separate Python runtime that can access CUDA and
   reports the exact current Modern engine implementation. The review records the
   interpreter, PyTorch/CUDA/device identity, source locations, and interpreter,
-  package, and worker SHA-256 values. Launch rechecks those hashes and uses the bound external worker
-  command; it never silently falls back to CPU. The worker independently refuses
-  a request whose CPU/CUDA identity differs from the hash-bound configuration.
+  package, and worker SHA-256 values. Launch rechecks those hashes and uses the bound
+  external worker command; it never silently falls back to CPU. A missing local CUDA
+  runtime does not block the explicit private-server route; the server independently
+  enforces the request's CUDA/float64 identity and preflight.
 - The launch must match the SHA-256 captured by the completed review. An edited
   configuration is refused until it is reviewed again.
 - Before a fresh launch, the compute page shows the exact destination, whether it
@@ -220,14 +221,24 @@ python -m diffeoforge.desktop --smoke
   The Deformetrica page shows observed iterations and objective components. Its
   rolling estimate is labelled ETA to the configured iteration cap and explicitly
   not convergence.
-- Normal window close while compute is active requests cooperative cancellation
-  and keeps the window alive until the worker has a reconciled terminal state.
+- The same Modern page can instead target an exact private server URL. It requires
+  a separately selected bearer-token file, optional CA file, and explicit consent
+  to upload packaged raw meshes and specimen filenames. The token is never copied
+  into the project or persistent remote-session directory. An existing session can
+  be reopened to resume event polling and a strictly request-bound download.
+- Normal window close during local or Deformetrica compute requests cooperative
+  cancellation and keeps the window alive until the worker has a reconciled terminal
+  state. During remote compute it only stops local monitoring; the server job continues
+  and can be reconnected from the persistent session.
 - Result review and per-artifact verification also run outside the GUI event
   loop. A close request waits for those read-only checks to finish; it never
   opens an artifact after a close was requested.
 - Project files stay in the user-selected directory, separate from future
   application files.
-- The window performs no upload, telemetry, update check, or network request.
+- Ordinary local workflows perform no upload, telemetry, update check, or network
+  request. Only the explicitly selected private-server route transfers the reviewed
+  portable request to the exact operator-supplied endpoint after the separate privacy
+  authorization is checked.
 - A passed setup proves supported file/schema/geometry checks only. It does not
   establish biological validity, parameter suitability, Deformetrica
   equivalence, or production suitability for more than 300 specimens.

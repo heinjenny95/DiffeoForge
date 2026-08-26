@@ -153,7 +153,9 @@ This repository currently provides:
 - a portable, exact-inventory Modern atlas request plus a private authenticated
   HTTP(S) server/client with a bounded persistent queue, reconnectable progress,
   cooperative cancellation, explicit terminal-data deletion, and fully verified
-  request-bound downloads without silent local fallback;
+  request-bound downloads without silent local fallback, plus an explicit desktop
+  server route with token/CA selection, raw-mesh upload authorization, persistent
+  session reconnection, and detach-without-cancel behavior;
 - supervised source-level Deformetrica execution followed by strict momenta and
   control-point import, a source-bound deterministic linear-PCA bundle, and the
   shared verified Results & PCA screen;
@@ -235,7 +237,10 @@ can now create and review a starter project through the GUI preview, bind the
 launch to the reviewed configuration hash, show exact workflow/optimizer
 events, request cooperative cancellation, and expose a detailed result view
 only after the workflow, nested bundle, inventories, hashes, mesh QC, and SVG
-safety checks pass again. Before worker launch, step 4 now shows the exact
+safety checks pass again. It can alternatively submit the same exact reviewed
+portable request to an operator-selected private server, persist the reconnect state
+without storing the bearer token, and accept the downloaded result only after strict
+request-bound verification. Before worker launch, step 4 now shows the exact
 destination, existing-result state, and any private candidate status/path/reason;
 it checks again immediately before launch and never mutates recovery state.
 Each selected result artifact is rechecked by size

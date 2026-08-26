@@ -8,8 +8,10 @@ from diffeoforge.desktop.modern_cuda_runtime import ModernCudaRuntime
 from diffeoforge.desktop.project_review import ProjectReviewResult
 from diffeoforge.desktop.project_setup import DesktopEngine
 from diffeoforge.desktop.reviewed_run import (
+    DesktopReviewedRemoteRunReadiness,
     DesktopReviewedRunError,
     build_reviewed_worker_request,
+    check_reviewed_remote_run_readiness,
     check_reviewed_run_readiness,
 )
 from diffeoforge.desktop.worker_protocol import DesktopWorkerRequest, sha256_file
@@ -200,3 +202,32 @@ def test_reviewed_cuda_readiness_binds_external_worker_command(
 
     assert readiness.request.engine == "modern_cuda"
     assert readiness.worker_command == runtime.worker_command
+
+
+def test_reviewed_remote_cuda_readiness_does_not_require_local_runtime(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    config = (tmp_path / "modern-atlas.yaml").resolve()
+    destination = (tmp_path / "remote-cuda-result").resolve()
+    config.write_text("reviewed bytes\n", encoding="utf-8")
+    review = _review(config)
+    monkeypatch.setattr(
+        "diffeoforge.desktop.reviewed_run.build_worker_request",
+        lambda source, *, request_id: DesktopWorkerRequest(
+            request_id=request_id,
+            config_path=Path(source),
+            destination=destination,
+            expected_config_sha256=review.config_sha256,
+            runtime_device="cuda",
+        ),
+    )
+
+    readiness = check_reviewed_remote_run_readiness(
+        review,
+        request_id="desktop-remote-cuda",
+    )
+
+    assert isinstance(readiness, DesktopReviewedRemoteRunReadiness)
+    assert readiness.request.engine == "modern_cuda"
+    assert readiness.ready_for_worker

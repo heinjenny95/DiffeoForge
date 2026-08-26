@@ -319,6 +319,7 @@ class DesktopRemoteAtlasResult:
     session_directory: Path
     destination: Path
     remote_state: dict[str, Any] | None
+    detached: bool = False
 
     @property
     def completed(self) -> bool:
@@ -347,6 +348,7 @@ class DesktopRemoteAtlasController:
         self._lock = threading.RLock()
         self._wake = threading.Event()
         self._cancel_requested = False
+        self._detach_requested = False
         self._running = False
         self._finished = False
 
@@ -367,10 +369,22 @@ class DesktopRemoteAtlasController:
             self._wake.set()
             return True
 
+    def request_detach(self) -> bool:
+        """Stop local monitoring without cancelling or mutating the remote job."""
+
+        with self._lock:
+            if self._finished or self._detach_requested:
+                return False
+            self._detach_requested = True
+            self._wake.set()
+            return True
+
     def _result(
         self,
         state: dict[str, Any],
         remote_state: dict[str, Any] | None,
+        *,
+        detached: bool = False,
     ) -> DesktopRemoteAtlasResult:
         return DesktopRemoteAtlasResult(
             request_id=state["request_id"],
@@ -379,6 +393,7 @@ class DesktopRemoteAtlasController:
             session_directory=self.session_directory,
             destination=Path(state["request"]["result_destination"]),
             remote_state=remote_state,
+            detached=detached,
         )
 
     def run(
@@ -398,6 +413,8 @@ class DesktopRemoteAtlasController:
             status = state["remote"]["status"]
             if status in TERMINAL_REMOTE_STATUSES:
                 return self._result(state, None)
+            if self._detach_requested:
+                return self._result(state, None, detached=True)
             if self._cancel_requested and status == "prepared":
                 state["remote"]["status"] = "cancelled_before_submit"
                 _write_state(self.session_directory, state)
@@ -427,6 +444,8 @@ class DesktopRemoteAtlasController:
                 state["remote"]["last_server_update"] = remote_state["updated_at"]
                 state["remote"]["error"] = remote_state["error"]
                 _write_state(self.session_directory, state)
+                if self._detach_requested:
+                    return self._result(state, remote_state, detached=True)
             while True:
                 cursor = int(state["remote"]["event_cursor"])
                 while True:
@@ -476,6 +495,8 @@ class DesktopRemoteAtlasController:
                     _write_state(self.session_directory, state)
                     verify_desktop_remote_atlas_session(self.session_directory)
                     return self._result(state, remote_state)
+                if self._detach_requested:
+                    return self._result(state, remote_state, detached=True)
                 self._wake.wait(self.poll_seconds)
                 self._wake.clear()
         except (OSError, RuntimeError, TypeError, ValueError) as error:

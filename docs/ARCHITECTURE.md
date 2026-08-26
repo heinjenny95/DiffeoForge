@@ -486,24 +486,28 @@ re-executed. Terminal data require explicit authenticated deletion.
 This v0.1 layer is intentionally a single-operator private service. Per-job process
 isolation, automatic checkpoint recovery, per-user authorization, governed automatic
 retention, resumable content-addressed transfer, provider deployment, cost governance,
-and desktop orchestration remain separate production layers.
+and managed desktop deployment remain separate production layers.
 
 A Qt-independent desktop remote controller now adds a persistent local session around
 this protocol. It packages before network access, stores no bearer token, records the
 client-known idempotent job ID and event cursor, and can reconnect and finish a strictly
 request-bound download after client interruption. Visible GUI controls and session
-selection remain a separate presentation step.
+selection now bind the exact server URL, token file, optional CA file, explicit
+raw-mesh/specimen-name upload authorization, and existing-session directory. Closing
+the window detaches monitoring without implicitly cancelling the server job. A completed
+download is independently verified before entering the shared Results & PCA review.
 
 ## Security and privacy boundary
 
 The application is local-first. Ordinary runs do not upload meshes, metadata,
 logs, or telemetry. Creating a portable remote request still performs no network
 operation and explicitly records that automatic upload is unauthorized. Only the
-separate `modern-remote-submit` command performs an authenticated transfer to the exact
-operator-supplied endpoint. The package contains raw meshes and specimen filenames, so
-its destination, account, retention, and transfer mechanism must be reviewed before that
-explicit transfer. Paths and specimen identifiers must also be reviewed before public
-diagnostic bundles are created.
+separate `modern-remote-submit` command or the affirmatively authorized private-server
+desktop route performs an authenticated transfer to the exact operator-supplied endpoint.
+The package contains raw meshes and specimen filenames, so its destination, account,
+retention, and transfer mechanism must be reviewed before that explicit transfer. Paths
+and specimen identifiers must also be reviewed before public diagnostic bundles are
+created.
 
 ## Open questions
 

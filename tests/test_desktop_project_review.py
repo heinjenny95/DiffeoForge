@@ -8,7 +8,10 @@ from pathlib import Path
 import pytest
 
 from diffeoforge.analysis.landmarks import LANDMARK_COLUMNS
-from diffeoforge.desktop.modern_cuda_runtime import ModernCudaRuntime
+from diffeoforge.desktop.modern_cuda_runtime import (
+    ModernCudaRuntime,
+    ModernCudaRuntimeError,
+)
 from diffeoforge.desktop.project_review import review_project
 from diffeoforge.desktop.project_setup import (
     DesktopEngine,
@@ -264,3 +267,36 @@ def test_modern_cuda_review_binds_verified_external_runtime(
     assert values["Execution"].startswith("CUDA · float64")
     assert review.modern_cuda_runtime == runtime
     assert any("RTX 4080" in warning for warning in review.warnings)
+
+
+def test_modern_cuda_review_allows_remote_route_without_local_runtime(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    if importlib.util.find_spec("numpy") is None or importlib.util.find_spec("torch") is None:
+        pytest.skip("modern-engine dependencies are not installed")
+    setup = create_project(
+        ProjectSetupRequest(
+            mesh_directory=MESH_DIRECTORY,
+            project_directory=tmp_path / "remote cuda review",
+            units="unitless",
+            engine=DesktopEngine.MODERN_CPU,
+            modern_runtime_device="cuda",
+        )
+    )
+
+    def unavailable_runtime() -> ModernCudaRuntime:
+        raise ModernCudaRuntimeError("no compatible local GPU")
+
+    monkeypatch.setattr(
+        "diffeoforge.desktop.project_review.discover_modern_cuda_runtime",
+        unavailable_runtime,
+    )
+
+    review = review_project(setup.config_path, setup.engine)
+
+    assert review.modern_cuda_runtime is None
+    assert any(
+        "remote CUDA server can still execute" in warning
+        for warning in review.warnings
+    )

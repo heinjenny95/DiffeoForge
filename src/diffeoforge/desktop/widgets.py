@@ -113,6 +113,13 @@ from diffeoforge.desktop.reference_result_review import (
 )
 from diffeoforge.desktop.reference_validation_dialog import ReferenceValidationDialog
 from diffeoforge.desktop.reference_worker_protocol import DesktopReferenceWorkerEvent
+from diffeoforge.desktop.remote_atlas_controller import (
+    DesktopRemoteAtlasController,
+    DesktopRemoteAtlasError,
+    DesktopRemoteAtlasResult,
+    create_desktop_remote_atlas_session,
+    verify_desktop_remote_atlas_session,
+)
 from diffeoforge.desktop.result_review import (
     ModernResultReview,
     ModernResultReviewError,
@@ -129,8 +136,10 @@ from diffeoforge.desktop.resumable_results import (
     recover_abandoned_reference_run,
 )
 from diffeoforge.desktop.reviewed_run import (
+    DesktopReviewedRemoteRunReadiness,
     DesktopReviewedRunError,
     DesktopReviewedRunReadiness,
+    check_reviewed_remote_run_readiness,
     check_reviewed_run_readiness,
 )
 from diffeoforge.desktop.worker_controller import (
@@ -820,6 +829,46 @@ class _AtlasWorker(QRunnable):
                 self._finished = True
 
 
+class _RemoteAtlasWorker(QRunnable):
+    """Bridge one persistent remote controller into the Qt event loop."""
+
+    def __init__(self, controller: DesktopRemoteAtlasController) -> None:
+        super().__init__()
+        self.controller = controller
+        self.signals = _AtlasWorkerSignals()
+        self._lock = threading.Lock()
+        self._cancel_requested = False
+        self._finished = False
+
+    def request_cancel(self) -> bool:
+        with self._lock:
+            if self._finished or self._cancel_requested:
+                return False
+            self._cancel_requested = True
+        return self.controller.request_cancel()
+
+    def request_detach(self) -> bool:
+        with self._lock:
+            if self._finished:
+                return False
+        return self.controller.request_detach()
+
+    def _forward_event(self, event: dict[str, object]) -> None:
+        self.signals.event.emit(event)
+
+    @Slot()
+    def run(self) -> None:
+        try:
+            result = self.controller.run(event_callback=self._forward_event)
+        except DesktopRemoteAtlasError as error:
+            self.signals.failed.emit(str(error))
+        else:
+            self.signals.succeeded.emit(result)
+        finally:
+            with self._lock:
+                self._finished = True
+
+
 class _ReferenceAtlasWorker(QRunnable):
     """Bridge the contained Deformetrica controller into the Qt event loop."""
 
@@ -935,6 +984,7 @@ class DiffeoForgeWindow(QMainWindow):
             | _AbandonedReferenceRecoveryWorker
             | _ArtifactWorker
             | _AtlasWorker
+            | _RemoteAtlasWorker
             | _ReferenceAtlasWorker
             | None
         ) = None
@@ -962,11 +1012,17 @@ class DiffeoForgeWindow(QMainWindow):
         self._saved_reference_preparation_status_verification: (
             DesktopSavedReferencePreparationStatusVerification | None
         ) = None
-        self._run_readiness: DesktopReviewedRunReadiness | None = None
+        self._run_readiness: (
+            DesktopReviewedRunReadiness | DesktopReviewedRemoteRunReadiness | None
+        ) = None
         self._reference_run_request: DesktopReferenceLaunchRequest | None = None
         self._run_result: (
-            DesktopWorkerControllerResult | ReferenceExecutionControllerResult | None
+            DesktopWorkerControllerResult
+            | DesktopRemoteAtlasResult
+            | ReferenceExecutionControllerResult
+            | None
         ) = None
+        self._remote_session_directory: Path | None = None
         self._result_review: ModernResultReview | None = None
         self._reference_pca_deformation_started_at: float | None = None
         self._reference_pca_deformation_timer = QTimer(self)
@@ -1691,6 +1747,73 @@ class DiffeoForgeWindow(QMainWindow):
         self.run_boundary_label.setWordWrap(True)
         boundary_layout.addWidget(self.run_boundary_label)
         layout.addWidget(boundary)
+
+        self.execution_location_card = QFrame()
+        self.execution_location_card.setObjectName("card")
+        execution_location_layout = QVBoxLayout(self.execution_location_card)
+        execution_location_layout.setContentsMargins(24, 22, 24, 24)
+        execution_location_layout.setSpacing(10)
+        execution_location_title = QLabel("Execution location")
+        execution_location_title.setObjectName("sectionTitle")
+        self.execution_location_combo = QComboBox()
+        self.execution_location_combo.addItem("This computer", "local")
+        self.execution_location_combo.addItem("Private DiffeoForge server", "remote")
+        self.execution_location_combo.currentIndexChanged.connect(
+            self._execution_location_changed
+        )
+        execution_location_layout.addWidget(execution_location_title)
+        execution_location_layout.addWidget(self.execution_location_combo)
+
+        self.remote_execution_controls = QWidget()
+        remote_form = QFormLayout(self.remote_execution_controls)
+        remote_form.setContentsMargins(0, 6, 0, 0)
+        remote_form.setSpacing(9)
+        self.remote_server_edit = QLineEdit()
+        self.remote_server_edit.setPlaceholderText("https://atlas.example.edu:8787")
+        self.remote_server_edit.textChanged.connect(self._sync_ready_state)
+        remote_form.addRow("Server URL", self.remote_server_edit)
+        self.remote_token_edit = QLineEdit()
+        self.remote_token_edit.setPlaceholderText("Private bearer-token file")
+        self.remote_token_edit.textChanged.connect(self._sync_ready_state)
+        remote_token_button = QPushButton("Browse…")
+        remote_token_button.setObjectName("secondary")
+        remote_token_button.clicked.connect(self._choose_remote_token)
+        remote_form.addRow("Token file", _path_row(self.remote_token_edit, remote_token_button))
+        self.remote_ca_edit = QLineEdit()
+        self.remote_ca_edit.setPlaceholderText("Optional private CA PEM file")
+        self.remote_ca_edit.textChanged.connect(self._sync_ready_state)
+        remote_ca_button = QPushButton("Browse…")
+        remote_ca_button.setObjectName("secondary")
+        remote_ca_button.clicked.connect(self._choose_remote_ca)
+        remote_form.addRow("TLS CA file", _path_row(self.remote_ca_edit, remote_ca_button))
+        self.remote_session_edit = QLineEdit()
+        self.remote_session_edit.setPlaceholderText(
+            "Optional existing DiffeoForge remote-session folder"
+        )
+        self.remote_session_edit.textChanged.connect(self._sync_ready_state)
+        remote_session_button = QPushButton("Browse…")
+        remote_session_button.setObjectName("secondary")
+        remote_session_button.clicked.connect(self._choose_remote_session)
+        remote_form.addRow(
+            "Reconnect session",
+            _path_row(self.remote_session_edit, remote_session_button),
+        )
+        self.remote_upload_authorization = QCheckBox(
+            "I authorize uploading the packaged raw meshes and specimen filenames "
+            "to this exact private server."
+        )
+        self.remote_upload_authorization.toggled.connect(self._sync_ready_state)
+        remote_form.addRow("", self.remote_upload_authorization)
+        self.remote_execution_hint = QLabel(
+            "The token is read from the selected file and is never copied into the project "
+            "or remote-session folder. Closing this app does not implicitly cancel a server job."
+        )
+        self.remote_execution_hint.setObjectName("reviewDetail")
+        self.remote_execution_hint.setWordWrap(True)
+        remote_form.addRow("", self.remote_execution_hint)
+        execution_location_layout.addWidget(self.remote_execution_controls)
+        self.remote_execution_controls.hide()
+        layout.addWidget(self.execution_location_card)
 
         self.run_technical_toggle = QPushButton("+ Technical details")
         self.run_technical_toggle.setObjectName("secondary")
@@ -3279,6 +3402,67 @@ class DiffeoForgeWindow(QMainWindow):
         )
         if selected:
             self.landmarks_edit.setText(selected)
+
+    @Slot()
+    def _choose_remote_token(self) -> None:
+        selected, _ = QFileDialog.getOpenFileName(
+            self,
+            "Select DiffeoForge server token file",
+            filter="Token files (*.token *.txt);;All files (*)",
+        )
+        if selected:
+            self.remote_token_edit.setText(selected)
+
+    @Slot()
+    def _choose_remote_ca(self) -> None:
+        selected, _ = QFileDialog.getOpenFileName(
+            self,
+            "Select private TLS CA file",
+            filter="PEM certificates (*.pem *.crt);;All files (*)",
+        )
+        if selected:
+            self.remote_ca_edit.setText(selected)
+
+    @Slot()
+    def _choose_remote_session(self) -> None:
+        selected = QFileDialog.getExistingDirectory(
+            self,
+            "Select existing DiffeoForge remote session",
+        )
+        if selected:
+            self.remote_session_edit.setText(selected)
+
+    def _remote_execution_selected(self) -> bool:
+        return self.execution_location_combo.currentData() == "remote"
+
+    def _remote_controls_ready(self) -> bool:
+        if not self._remote_execution_selected():
+            return True
+        return bool(
+            self.remote_token_edit.text().strip()
+            and self.remote_upload_authorization.isChecked()
+            and (
+                self.remote_session_edit.text().strip()
+                or self.remote_server_edit.text().strip()
+            )
+        )
+
+    @Slot()
+    def _execution_location_changed(self) -> None:
+        remote = self._remote_execution_selected()
+        self.remote_execution_controls.setVisible(remote)
+        self.run_technical_toggle.setAccessibleDescription(
+            "Show configuration hashes, destination binding, and remote session details."
+            if remote
+            else "Show configuration hashes, destination binding, and runtime details."
+        )
+        if (
+            self._review is not None
+            and self._review.engine is DesktopEngine.MODERN_CPU
+            and self._worker is None
+        ):
+            self._refresh_run_readiness()
+        self._sync_ready_state()
 
     @Slot()
     def _place_landmarks(self) -> None:
@@ -5237,7 +5421,7 @@ class DiffeoForgeWindow(QMainWindow):
                 self.create_button.setEnabled(form_ready and self._worker is None)
 
     def _sync_run_primary_action(self) -> None:
-        if isinstance(self._worker, (_AtlasWorker, _ReferenceAtlasWorker)):
+        if isinstance(self._worker, (_AtlasWorker, _RemoteAtlasWorker, _ReferenceAtlasWorker)):
             self.start_atlas_button.setText("Atlas computation running…")
             self.start_atlas_button.setEnabled(False)
         elif isinstance(self._worker, _ResultReviewWorker):
@@ -5266,7 +5450,11 @@ class DiffeoForgeWindow(QMainWindow):
                 else (
                     "Start reviewed Deformetrica atlas"
                     if reference
-                    else "Start reviewed Modern atlas"
+                    else (
+                        "Submit or reconnect remote Modern atlas"
+                        if self._remote_execution_selected()
+                        else "Start reviewed Modern atlas"
+                    )
                 )
             )
             self.start_atlas_button.setEnabled(
@@ -5277,6 +5465,7 @@ class DiffeoForgeWindow(QMainWindow):
                         if reference
                         else self._run_readiness is not None
                         and self._run_readiness.ready_for_worker
+                        and self._remote_controls_ready()
                     )
                 )
             )
@@ -7094,17 +7283,28 @@ class DiffeoForgeWindow(QMainWindow):
     @Slot()
     def _refresh_run_readiness(
         self,
-    ) -> DesktopReviewedRunReadiness | DesktopReferenceLaunchRequest | None:
+    ) -> (
+        DesktopReviewedRunReadiness
+        | DesktopReviewedRemoteRunReadiness
+        | DesktopReferenceLaunchRequest
+        | None
+    ):
         review = self._review
         if review is None:
             return None
         if review.engine is DesktopEngine.DEFORMETRICA_REFERENCE:
             return self._refresh_reference_run_readiness(review)
         try:
-            readiness = check_reviewed_run_readiness(
-                review,
-                request_id=f"desktop-{uuid.uuid4().hex}",
-            )
+            if self._remote_execution_selected():
+                readiness = check_reviewed_remote_run_readiness(
+                    review,
+                    request_id=f"desktop-remote-{uuid.uuid4().hex}",
+                )
+            else:
+                readiness = check_reviewed_run_readiness(
+                    review,
+                    request_id=f"desktop-{uuid.uuid4().hex}",
+                )
         except (DesktopReviewedRunError, OSError, RuntimeError, TypeError, ValueError) as error:
             self._run_readiness = None
             self.run_summary_label.setText(
@@ -7140,6 +7340,7 @@ class DiffeoForgeWindow(QMainWindow):
         previous_request = self._reference_run_request
         self._run_readiness = None
         self._reference_run_request = None
+        self.execution_location_card.hide()
         self.run_title_label.setText("Compute Deformetrica atlas")
         self.run_subtitle_label.setText(
             "Run the exact reviewed configuration in a contained child process and observe "
@@ -7235,18 +7436,35 @@ class DiffeoForgeWindow(QMainWindow):
         self._sync_ready_state()
         return request
 
-    def _apply_run_readiness(self, readiness: DesktopReviewedRunReadiness) -> None:
+    def _apply_run_readiness(
+        self,
+        readiness: DesktopReviewedRunReadiness | DesktopReviewedRemoteRunReadiness,
+    ) -> None:
         self._reference_run_request = None
-        self.run_title_label.setText("Compute Modern atlas")
+        self.execution_location_card.show()
+        remote = isinstance(readiness, DesktopReviewedRemoteRunReadiness)
+        self.run_title_label.setText(
+            "Compute Modern atlas on a private server" if remote else "Compute Modern atlas"
+        )
         self.run_subtitle_label.setText(
-            "Run the exact reviewed configuration in a separate process and observe real "
-            "workflow events."
+            "Package the exact reviewed configuration, submit it explicitly, and reconnect "
+            "to verified server events and a request-bound download."
+            if remote
+            else "Run the exact reviewed configuration in a separate process and observe "
+            "real workflow events."
         )
         self.run_boundary_label.setText(
-            f"Experimental Modern {readiness.request.runtime_device.upper()} route. "
-            "Runtime, peak RAM, and percentage progress are "
-            "not estimated. Cancellation acts only at designated safe points and runs are "
-            "not currently resumable."
+            (
+                f"Experimental remote Modern {readiness.request.runtime_device.upper()} route. "
+                "The request contains raw meshes and specimen filenames. Closing this app "
+                "does not cancel the job; cancellation and terminal-data deletion are explicit."
+            )
+            if remote
+            else (
+                f"Experimental Modern {readiness.request.runtime_device.upper()} route. "
+                "Runtime, peak RAM, and percentage progress are not estimated. Cancellation "
+                "acts only at designated safe points and runs are not currently resumable."
+            )
         )
         self._run_readiness = readiness
         request = readiness.request
@@ -7262,7 +7480,19 @@ class DiffeoForgeWindow(QMainWindow):
             f"Discovery-Status: {discovery.status}",
             f"Destination exists: {'yes' if discovery.destination_exists else 'no'}",
         ]
-        if readiness.worker_command is not None and self._review is not None:
+        if remote:
+            details.extend(
+                (
+                    "Execution host: exact operator-supplied private server",
+                    "Local persistent session: created before upload; bearer token is not stored",
+                    "Reconnect behavior: server job continues across client interruption",
+                )
+            )
+        if (
+            isinstance(readiness, DesktopReviewedRunReadiness)
+            and readiness.worker_command is not None
+            and self._review is not None
+        ):
             runtime = self._review.modern_cuda_runtime
             assert runtime is not None
             details.extend(
@@ -7328,11 +7558,72 @@ class DiffeoForgeWindow(QMainWindow):
             "- Hide technical details" if expanded else "+ Technical details"
         )
 
+    def _prepare_remote_session(
+        self,
+        readiness: DesktopReviewedRemoteRunReadiness,
+    ) -> Path:
+        existing_text = self.remote_session_edit.text().strip()
+        if existing_text:
+            session = Path(existing_text).expanduser().resolve()
+            state = verify_desktop_remote_atlas_session(session)
+            request_state = state["request"]
+            if (
+                request_state["original_config_sha256"]
+                != readiness.request.expected_config_sha256
+                or Path(request_state["original_config_path"]).resolve()
+                != readiness.request.config_path.resolve()
+                or Path(request_state["result_destination"]).resolve()
+                != readiness.request.destination.resolve()
+            ):
+                raise DesktopRemoteAtlasError(
+                    "Selected remote session does not match the reviewed configuration "
+                    "and destination"
+                )
+            supplied_server = self.remote_server_edit.text().strip()
+            if supplied_server and supplied_server != state["server_url"]:
+                raise DesktopRemoteAtlasError(
+                    "Selected remote session is bound to a different server URL"
+                )
+            stored_ca = state["tls"]["ca_file"]
+            supplied_ca = self.remote_ca_edit.text().strip()
+            if supplied_ca and (
+                stored_ca is None
+                or Path(supplied_ca).expanduser().resolve()
+                != Path(stored_ca).resolve()
+            ):
+                raise DesktopRemoteAtlasError(
+                    "Selected remote session is bound to a different TLS CA file"
+                )
+            self.remote_server_edit.setText(state["server_url"])
+            self.remote_ca_edit.setText("" if stored_ca is None else stored_ca)
+        else:
+            server_url = self.remote_server_edit.text().strip()
+            if not server_url:
+                raise DesktopRemoteAtlasError("Enter the exact private server URL")
+            ca_text = self.remote_ca_edit.text().strip()
+            submission_id = uuid.uuid4().hex
+            session = (
+                readiness.request.config_path.parent
+                / ".diffeoforge-remote"
+                / submission_id
+            )
+            session = create_desktop_remote_atlas_session(
+                readiness.request,
+                session,
+                server_url=server_url,
+                ca_file=Path(ca_text) if ca_text else None,
+                submission_id=submission_id,
+            )
+            self.remote_session_edit.setText(str(session))
+        self._remote_session_directory = session
+        return session
+
     @Slot()
     def _start_atlas(self) -> None:
         if self._review is None or self._worker is not None or self._run_result is not None:
             return
         reference = self._review.engine is DesktopEngine.DEFORMETRICA_REFERENCE
+        remote = not reference and self._remote_execution_selected()
         resume_request = (
             self._reference_run_request
             if reference
@@ -7345,9 +7636,36 @@ class DiffeoForgeWindow(QMainWindow):
             if not isinstance(readiness, DesktopReferenceLaunchRequest):
                 return
             request = readiness
-            worker: _AtlasWorker | _ReferenceAtlasWorker = _ReferenceAtlasWorker(
-                ReferenceExecutionController(request)
+            worker: _AtlasWorker | _RemoteAtlasWorker | _ReferenceAtlasWorker = (
+                _ReferenceAtlasWorker(ReferenceExecutionController(request))
             )
+        elif remote:
+            if (
+                not isinstance(readiness, DesktopReviewedRemoteRunReadiness)
+                or not readiness.ready_for_worker
+                or not self._remote_controls_ready()
+            ):
+                return
+            request = readiness.request
+            try:
+                session = self._prepare_remote_session(readiness)
+                worker = _RemoteAtlasWorker(
+                    DesktopRemoteAtlasController(
+                        session,
+                        token_file=Path(self.remote_token_edit.text().strip()),
+                    )
+                )
+            except (OSError, RuntimeError, TypeError, ValueError) as error:
+                self.run_state_label.setObjectName("statusError")
+                self.run_state_label.setStyleSheet("")
+                self.run_state_label.setText(
+                    f"Remote atlas session could not be prepared: {error}"
+                )
+                self.run_event_log.appendPlainText(
+                    f"GUI: remote session preparation failed: {error}"
+                )
+                self._sync_ready_state()
+                return
         else:
             if (
                 not isinstance(readiness, DesktopReviewedRunReadiness)
@@ -7389,8 +7707,11 @@ class DiffeoForgeWindow(QMainWindow):
         self.run_state_label.setObjectName("status")
         self.run_state_label.setStyleSheet("")
         self.run_state_label.setText(
-            "Child process is starting; configuration binding and destination are being "
-            "checked again."
+            "Persistent session is starting; request, server identity, token file, and "
+            "destination are being checked again."
+            if remote
+            else "Child process is starting; configuration binding and destination are "
+            "being checked again."
         )
         self.run_summary_label.setText(
             f"Project: {self._review.project_name}\n"
@@ -7404,6 +7725,11 @@ class DiffeoForgeWindow(QMainWindow):
                 else ""
             )
             + f"Non-overwritable destination: {self._wrappable_path(request.destination)}"
+            + (
+                f"\nRemote session: {self._wrappable_path(self._remote_session_directory)}"
+                if remote and self._remote_session_directory is not None
+                else ""
+            )
         )
         self.start_atlas_button.setEnabled(False)
         self.refresh_run_readiness_button.setEnabled(False)
@@ -7416,7 +7742,7 @@ class DiffeoForgeWindow(QMainWindow):
     def _cancel_atlas(self) -> None:
         worker = self._worker
         if (
-            not isinstance(worker, (_AtlasWorker, _ReferenceAtlasWorker))
+            not isinstance(worker, (_AtlasWorker, _RemoteAtlasWorker, _ReferenceAtlasWorker))
             or not worker.request_cancel()
         ):
             return
@@ -7427,6 +7753,11 @@ class DiffeoForgeWindow(QMainWindow):
             self.run_state_label.setText(
                 "Cancellation requested. Deformetrica will be interrupted after the current "
                 "log/optimizer operation; terminal evidence and any checkpoint are preserved."
+            )
+        elif isinstance(worker, _RemoteAtlasWorker):
+            self.run_state_label.setText(
+                "Remote cancellation requested. The server may finish its current tensor "
+                "operation before confirming cancellation; no local fallback will start."
             )
         else:
             self.run_state_label.setText(
@@ -7449,8 +7780,11 @@ class DiffeoForgeWindow(QMainWindow):
     @Slot(object)
     def _atlas_event(
         self,
-        event: DesktopWorkerEvent | DesktopReferenceWorkerEvent,
+        event: DesktopWorkerEvent | DesktopReferenceWorkerEvent | dict[str, object],
     ) -> None:
+        if isinstance(event, dict):
+            self._remote_atlas_event(event)
+            return
         if isinstance(event, DesktopReferenceWorkerEvent):
             self._reference_atlas_event(event)
             return
@@ -7495,6 +7829,39 @@ class DiffeoForgeWindow(QMainWindow):
                 "Worker reports an error; the parent is reconciling process termination."
             )
         self.run_event_log.appendPlainText(f"#{event.sequence} {event.kind}: {message}")
+
+    def _remote_atlas_event(self, event: dict[str, object]) -> None:
+        index = int(event["index"])
+        kind = str(event["kind"])
+        status = str(event["status"])
+        message = str(event["message"])
+        progress = event["progress"]
+        if kind == "modern_progress" and isinstance(progress, dict):
+            completed = int(progress["completed_stages"])
+            total = int(progress["total_stages"])
+            self.run_progress_bar.setRange(0, total)
+            self.run_progress_bar.setValue(completed)
+            self.run_stage_label.setText(
+                f"Remote workflow: {progress['phase']} · {progress['status']} · {message}"
+            )
+            optimizer = progress["optimizer"]
+            if isinstance(optimizer, dict):
+                block = optimizer["block"] or "initial"
+                gradient = optimizer["gradient_norm"]
+                gradient_text = "not computed" if gradient is None else f"{gradient:.6g}"
+                self.run_optimizer_label.setText(
+                    "Remote optimization: "
+                    f"decision {optimizer['completed_decisions']} of "
+                    f"{optimizer['maximum_decisions']} · cycle {optimizer['cycle']} of "
+                    f"{optimizer['max_cycles']} · block {block} · "
+                    f"Objective {optimizer['objective']:.6g} · gradient norm {gradient_text}"
+                )
+        else:
+            self.run_stage_label.setText(f"Remote job: {status} · {message}")
+        self.run_state_label.setText(f"Remote server: {message}")
+        self.run_event_log.appendPlainText(
+            f"remote #{index} {kind}/{status}: {message}"
+        )
 
     def _reference_atlas_event(self, event: DesktopReferenceWorkerEvent) -> None:
         message: str
@@ -7630,7 +7997,11 @@ class DiffeoForgeWindow(QMainWindow):
     @Slot(object)
     def _atlas_succeeded(
         self,
-        result: DesktopWorkerControllerResult | ReferenceExecutionControllerResult,
+        result: (
+            DesktopWorkerControllerResult
+            | DesktopRemoteAtlasResult
+            | ReferenceExecutionControllerResult
+        ),
     ) -> None:
         self._worker = None
         self.cancel_atlas_button.setEnabled(False)
@@ -7638,6 +8009,9 @@ class DiffeoForgeWindow(QMainWindow):
         self.run_back_button.setEnabled(True)
         if isinstance(result, ReferenceExecutionControllerResult):
             self._reference_atlas_succeeded(result)
+            return
+        if isinstance(result, DesktopRemoteAtlasResult):
+            self._remote_atlas_succeeded(result)
             return
         terminal = result.terminal_event
         if result.completed:
@@ -7663,6 +8037,56 @@ class DiffeoForgeWindow(QMainWindow):
             self.run_state_label.setText(
                 "Cancelled safely: no destination was published. This Modern run has no "
                 "checkpoint and must be restarted if needed."
+            )
+            self.start_atlas_button.setEnabled(True)
+        self._sync_ready_state()
+        if self._close_after_worker:
+            self._close_after_worker = False
+            self.close()
+        elif result.completed:
+            self._review_run_result()
+
+    def _remote_atlas_succeeded(self, result: DesktopRemoteAtlasResult) -> None:
+        if result.detached:
+            self._run_result = None
+            self.run_state_label.setObjectName("status")
+            self.run_state_label.setStyleSheet("")
+            self.run_state_label.setText(
+                "Local monitoring stopped. The remote job was not cancelled; reopen the "
+                "persistent session to reconnect."
+            )
+        elif result.completed:
+            state = verify_desktop_remote_atlas_session(result.session_directory)
+            self._run_result = result
+            self.run_state_label.setObjectName("statusSuccess")
+            self.run_state_label.setStyleSheet("")
+            self.run_state_label.setText(
+                "Remote atlas and PCA were downloaded, request-bound, and independently "
+                "verified. The server copy remains until explicit deletion."
+            )
+            self.run_result_label.setText(
+                f"Destination: {self._wrappable_path(result.destination)}\n"
+                f"Subjects: {state['request']['subjects']}\n"
+                f"Workflow manifest SHA-256: "
+                f"{state['result']['workflow_manifest_sha256']}\n"
+                f"Remote job ID: {result.submission_id}\n"
+                f"Persistent session: {self._wrappable_path(result.session_directory)}"
+            )
+            self.run_result_card.show()
+            self.start_atlas_button.setEnabled(False)
+        else:
+            self._run_result = None
+            self.run_state_label.setObjectName(
+                "status" if result.cancelled else "statusError"
+            )
+            self.run_state_label.setStyleSheet("")
+            error = None if result.remote_state is None else result.remote_state.get("error")
+            detail = ""
+            if isinstance(error, dict):
+                detail = f" Server message: {error.get('message', 'unspecified failure')}"
+            self.run_state_label.setText(
+                f"Remote job ended as {result.status}.{detail} The persistent session "
+                "was preserved; clear its field only when deliberately starting a new job."
             )
             self.start_atlas_button.setEnabled(True)
         self._sync_ready_state()
@@ -7730,13 +8154,21 @@ class DiffeoForgeWindow(QMainWindow):
 
     @Slot(str)
     def _atlas_failed(self, message: str) -> None:
+        remote = isinstance(self._worker, _RemoteAtlasWorker)
         self._worker = None
         self.cancel_atlas_button.setEnabled(False)
         self.refresh_run_readiness_button.setEnabled(True)
         self.run_back_button.setEnabled(True)
         self.run_state_label.setObjectName("statusError")
         self.run_state_label.setStyleSheet("")
-        self.run_state_label.setText(f"Atlas run failed or was rejected: {message}")
+        suffix = (
+            " The persistent remote session was preserved for inspection or reconnection."
+            if remote
+            else ""
+        )
+        self.run_state_label.setText(
+            f"Atlas run failed or was rejected: {message}{suffix}"
+        )
         self.run_event_log.appendPlainText(f"Parent: error: {message}")
         self.start_atlas_button.setEnabled(True)
         self._sync_ready_state()
@@ -7749,13 +8181,21 @@ class DiffeoForgeWindow(QMainWindow):
         if (
             not isinstance(
                 self._run_result,
-                (DesktopWorkerControllerResult, ReferenceExecutionControllerResult),
+                (
+                    DesktopWorkerControllerResult,
+                    DesktopRemoteAtlasResult,
+                    ReferenceExecutionControllerResult,
+                ),
             )
             or not self._run_result.completed
             or self._worker is not None
         ):
             return
-        destination = Path(self._run_result.terminal_event.payload["destination"])
+        destination = (
+            self._run_result.destination
+            if isinstance(self._run_result, DesktopRemoteAtlasResult)
+            else Path(self._run_result.terminal_event.payload["destination"])
+        )
         reference = isinstance(self._run_result, ReferenceExecutionControllerResult)
         worker = _ResultReviewWorker(destination, reference=reference)
         worker.signals.succeeded.connect(self._result_review_succeeded)
@@ -8605,6 +9045,11 @@ class DiffeoForgeWindow(QMainWindow):
     def _open_run_result(self) -> None:
         if self._run_result is None:
             return
+        if isinstance(self._run_result, DesktopRemoteAtlasResult):
+            QDesktopServices.openUrl(
+                QUrl.fromLocalFile(str(self._run_result.destination))
+            )
+            return
         payload = self._run_result.terminal_event.payload
         if not bool(payload.get("destination_exists", True)):
             return
@@ -8612,6 +9057,15 @@ class DiffeoForgeWindow(QMainWindow):
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(destination)))
 
     def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802 - Qt API name
+        if isinstance(self._worker, _RemoteAtlasWorker):
+            self._close_after_worker = True
+            self._worker.request_detach()
+            self.run_state_label.setText(
+                "Stopping local monitoring. The remote job will continue and can be "
+                "reconnected from the persistent session folder."
+            )
+            event.ignore()
+            return
         if isinstance(self._worker, (_AtlasWorker, _ReferenceAtlasWorker)):
             self._close_after_worker = True
             self._cancel_atlas()

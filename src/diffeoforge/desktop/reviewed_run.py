@@ -40,6 +40,22 @@ class DesktopReviewedRunReadiness:
         return self.discovery.ready_for_new_run
 
 
+@dataclass(frozen=True)
+class DesktopReviewedRemoteRunReadiness:
+    """Reviewed Modern request and destination state without a local runtime binding."""
+
+    request: DesktopWorkerRequest
+    discovery: PrivateRunDiscovery
+
+    def __post_init__(self) -> None:
+        if self.request.destination.resolve() != self.discovery.destination.resolve():
+            raise ValueError("Reviewed request and private-run discovery target different paths")
+
+    @property
+    def ready_for_worker(self) -> bool:
+        return self.discovery.ready_for_new_run
+
+
 def build_reviewed_worker_request(
     review: ProjectReviewResult,
     *,
@@ -96,4 +112,18 @@ def check_reviewed_run_readiness(
         request=request,
         discovery=discovery,
         worker_command=worker_command,
+    )
+
+
+def check_reviewed_remote_run_readiness(
+    review: ProjectReviewResult,
+    *,
+    request_id: str,
+) -> DesktopReviewedRemoteRunReadiness:
+    """Bind reviewed bytes and destination without requiring a local CUDA runtime."""
+
+    request = build_reviewed_worker_request(review, request_id=request_id)
+    return DesktopReviewedRemoteRunReadiness(
+        request=request,
+        discovery=discover_private_runs(request.destination),
     )
