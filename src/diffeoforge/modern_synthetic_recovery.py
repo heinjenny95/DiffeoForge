@@ -1,4 +1,4 @@
-"""Prospective known-correspondence recovery studies for the Modern Engine."""
+"""Prospective analytic recovery studies for the Modern Engine."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ import yaml
 from diffeoforge.atomic_io import write_text_safely
 from diffeoforge.config import ConfigurationError
 from diffeoforge.engine.execution import ENGINE_IMPLEMENTATION_VERSION
-from diffeoforge.mesh import read_vtk_polydata, sha256_file
+from diffeoforge.mesh import TriangleMesh, read_vtk_polydata, sha256_file
 from diffeoforge.modern_bundle import (
     MANIFEST_NAME as BUNDLE_MANIFEST_NAME,
 )
@@ -29,6 +29,10 @@ from diffeoforge.modern_workflow import (
     initialize_modern_workflow,
     validate_modern_workflow_config,
     verify_modern_workflow,
+)
+from diffeoforge.reference_validation_metrics import (
+    VALIDATION_METRIC_VERSION,
+    symmetric_vertex_to_surface_distances,
 )
 from diffeoforge.reference_validation_synthetic import (
     SYNTHETIC_MANIFEST,
@@ -43,11 +47,21 @@ ASSESSMENT_NAME = "modern-synthetic-recovery-assessment.json"
 ASSESSMENT_SIDECAR_NAME = "modern-synthetic-recovery-assessment.sha256"
 ASSESSMENT_HTML_NAME = "modern-synthetic-recovery-assessment.html"
 ARM_IDS = ("euclidean", "sobolev")
+ORDERED_RECOVERY_METRIC = "ordered_vertex"
+SURFACE_RECOVERY_METRIC = "symmetric_vertex_to_triangle_surface"
+RECOVERY_METRICS = (ORDERED_RECOVERY_METRIC, SURFACE_RECOVERY_METRIC)
 SCIENTIFIC_BOUNDARY = (
     "This known-correspondence analytic benchmark tests one small, smooth, topology-preserving "
     "synthetic cohort. It is an engineering recovery and template-gradient sensitivity test; "
     "it cannot establish biological validity, performance on arbitrary anatomy or artifacts, "
     "or superiority of one template-gradient mode."
+)
+SURFACE_SCIENTIFIC_BOUNDARY = (
+    "This analytic benchmark tests one small, smooth, topology-preserving synthetic "
+    "cohort with a deterministic correspondence-independent surface metric. It is an "
+    "engineering surface-recovery and template-gradient sensitivity test; it cannot "
+    "establish biological validity, anatomical point homology, performance on arbitrary "
+    "anatomy or artifacts, or superiority of one template-gradient mode."
 )
 
 
@@ -112,6 +126,23 @@ def _positive_integer(name: str, value: int, *, maximum: int) -> int:
     return value
 
 
+def _resolve_recovery_metric(attachment_type: str, recovery_metric: str) -> str:
+    aliases = {
+        "attachment_native": (
+            ORDERED_RECOVERY_METRIC if attachment_type == "landmark" else SURFACE_RECOVERY_METRIC
+        ),
+        "ordered_vertex": ORDERED_RECOVERY_METRIC,
+        "surface": SURFACE_RECOVERY_METRIC,
+        "symmetric_vertex_to_triangle_surface": SURFACE_RECOVERY_METRIC,
+    }
+    try:
+        return aliases[recovery_metric]
+    except KeyError as error:
+        raise ValueError(
+            "recovery_metric must be attachment_native, ordered_vertex, or surface"
+        ) from error
+
+
 def _rewrite_optimizer_config(path: Path, *, max_cycles: int, gradient: str) -> None:
     lines = path.read_text(encoding="utf-8").splitlines()
     if not lines or lines[0] != CONFIG_MARKER:
@@ -149,6 +180,7 @@ def create_modern_synthetic_recovery_design(
     max_cycles: int = 100,
     control_point_count: int = 9,
     attachment_type: str = "current",
+    recovery_metric: str = "attachment_native",
     created_at: str | None = None,
 ) -> Path:
     """Freeze paired Euclidean/Sobolev full-atlas configs before results exist."""
@@ -157,6 +189,7 @@ def create_modern_synthetic_recovery_design(
     controls = _positive_integer("control_point_count", control_point_count, maximum=1_000)
     if attachment_type not in {"current", "varifold", "landmark"}:
         raise ValueError("attachment_type must be current, varifold, or landmark")
+    resolved_metric = _resolve_recovery_metric(attachment_type, recovery_metric)
     source = Path(benchmark_directory).expanduser().resolve()
     source_manifest = verify_synthetic_validation_benchmark(source)
     output = Path(destination).expanduser().resolve()
@@ -210,6 +243,27 @@ def create_modern_synthetic_recovery_design(
                 }
             )
 
+        if resolved_metric == SURFACE_RECOVERY_METRIC:
+            scope = "full_atlas_correspondence_independent_surface_recovery"
+            gates = {
+                "require_verified_workflow": True,
+                "require_optimizer_convergence": True,
+                "minimum_pooled_surface_rmse_reduction_fraction": 0.5,
+                "maximum_pooled_surface_reconstruction_p95_over_template_diagonal": 0.02,
+                "maximum_generating_template_surface_p95_over_template_diagonal": 0.02,
+            }
+            scientific_boundary = SURFACE_SCIENTIFIC_BOUNDARY
+        else:
+            scope = "full_atlas_known_correspondence_recovery"
+            gates = {
+                "require_verified_workflow": True,
+                "require_optimizer_convergence": True,
+                "minimum_pooled_vertex_error_reduction_fraction": 0.5,
+                "maximum_pooled_reconstruction_p95_over_template_diagonal": 0.02,
+                "maximum_generating_template_p95_over_template_diagonal": 0.02,
+            }
+            scientific_boundary = SCIENTIFIC_BOUNDARY
+
         design = {
             "design_version": DESIGN_VERSION,
             "created_at": _timestamp(created_at),
@@ -222,8 +276,14 @@ def create_modern_synthetic_recovery_design(
                 "subjects_per_family": copied_manifest["subjects_per_family"],
             },
             "protocol": {
-                "scope": "full_atlas_known_correspondence_recovery",
+                "scope": scope,
                 "paired_variable": "template_gradient",
+                "recovery_metric": resolved_metric,
+                "recovery_metric_version": (
+                    VALIDATION_METRIC_VERSION
+                    if resolved_metric == SURFACE_RECOVERY_METRIC
+                    else None
+                ),
                 "arms": arms,
                 "shared_settings": {
                     "max_cycles": cycles,
@@ -239,13 +299,7 @@ def create_modern_synthetic_recovery_design(
                     "precision": "float64",
                     "random_seed": 20260827,
                 },
-                "predeclared_arm_gates": {
-                    "require_verified_workflow": True,
-                    "require_optimizer_convergence": True,
-                    "minimum_pooled_vertex_error_reduction_fraction": 0.5,
-                    "maximum_pooled_reconstruction_p95_over_template_diagonal": 0.02,
-                    "maximum_generating_template_p95_over_template_diagonal": 0.02,
-                },
+                "predeclared_arm_gates": gates,
                 "comparison_policy": (
                     "Report paired Sobolev-minus-Euclidean deltas. No superiority gate or "
                     "winner is selected from this miniature benchmark."
@@ -256,7 +310,7 @@ def create_modern_synthetic_recovery_design(
                     "deformation centering make neither target universally canonical."
                 ),
             },
-            "scientific_boundary": SCIENTIFIC_BOUNDARY,
+            "scientific_boundary": scientific_boundary,
         }
         design_path = temporary / DESIGN_NAME
         design_path.write_bytes(_json_bytes(design))
@@ -286,6 +340,36 @@ def verify_modern_synthetic_recovery_design(directory: Path | str) -> dict[str, 
     protocol = design.get("protocol")
     if not isinstance(benchmark_record, dict) or not isinstance(protocol, dict):
         raise ModernSyntheticRecoveryError("Synthetic recovery design structure is invalid")
+    recovery_metric = protocol.get("recovery_metric", ORDERED_RECOVERY_METRIC)
+    if recovery_metric not in RECOVERY_METRICS:
+        raise ModernSyntheticRecoveryError("Synthetic recovery metric is invalid")
+    expected_metric_version = (
+        VALIDATION_METRIC_VERSION if recovery_metric == SURFACE_RECOVERY_METRIC else None
+    )
+    if "recovery_metric" in protocol and protocol.get("recovery_metric_version") != (
+        expected_metric_version
+    ):
+        raise ModernSyntheticRecoveryError("Synthetic recovery metric version differs")
+    gates = protocol.get("predeclared_arm_gates")
+    ordered_gate_names = {
+        "require_verified_workflow",
+        "require_optimizer_convergence",
+        "minimum_pooled_vertex_error_reduction_fraction",
+        "maximum_pooled_reconstruction_p95_over_template_diagonal",
+        "maximum_generating_template_p95_over_template_diagonal",
+    }
+    surface_gate_names = {
+        "require_verified_workflow",
+        "require_optimizer_convergence",
+        "minimum_pooled_surface_rmse_reduction_fraction",
+        "maximum_pooled_surface_reconstruction_p95_over_template_diagonal",
+        "maximum_generating_template_surface_p95_over_template_diagonal",
+    }
+    expected_gate_names = (
+        surface_gate_names if recovery_metric == SURFACE_RECOVERY_METRIC else ordered_gate_names
+    )
+    if not isinstance(gates, dict) or set(gates) != expected_gate_names:
+        raise ModernSyntheticRecoveryError("Synthetic recovery gate contract differs")
     benchmark = root / str(benchmark_record.get("path"))
     manifest = verify_synthetic_validation_benchmark(benchmark)
     if (
@@ -339,11 +423,16 @@ def verify_modern_synthetic_recovery_design(directory: Path | str) -> dict[str, 
     return design
 
 
-def _distance_summary(distances: np.ndarray, diagonal: float) -> dict[str, float | int]:
+def _distance_summary(
+    distances: np.ndarray,
+    diagonal: float,
+    *,
+    count_label: str = "vertices",
+) -> dict[str, float | int]:
     if distances.ndim != 1 or not distances.size or not np.all(np.isfinite(distances)):
         raise ModernSyntheticRecoveryError("Synthetic recovery distances are invalid")
     return {
-        "vertices": int(distances.size),
+        count_label: int(distances.size),
         "rmse": float(math.sqrt(float(np.mean(distances * distances)))),
         "p95": float(np.quantile(distances, 0.95, method="linear")),
         "maximum": float(np.max(distances)),
@@ -367,6 +456,21 @@ def _ordered_distances(recovered: Path, truth: Path) -> np.ndarray:
         - np.asarray(expected.vertices, dtype=np.float64),
         axis=1,
     )
+
+
+def _surface_distances(first: Path, second: Path) -> np.ndarray:
+    return symmetric_vertex_to_surface_distances(
+        read_vtk_polydata(first),
+        read_vtk_polydata(second),
+    )
+
+
+def _recovery_distances(first: Path, second: Path, recovery_metric: str) -> np.ndarray:
+    if recovery_metric == ORDERED_RECOVERY_METRIC:
+        return _ordered_distances(first, second)
+    if recovery_metric == SURFACE_RECOVERY_METRIC:
+        return _surface_distances(first, second)
+    raise ModernSyntheticRecoveryError("Synthetic recovery metric is invalid")
 
 
 def _arm_assessment(
@@ -403,8 +507,12 @@ def _arm_assessment(
     template_vertices = np.asarray(template_mesh.vertices, dtype=np.float64)
     extents = np.ptp(template_vertices, axis=0)
     diagonal = float(np.linalg.norm(extents))
+    recovery_metric = design["protocol"].get("recovery_metric", ORDERED_RECOVERY_METRIC)
+    count_label = "observations" if recovery_metric == SURFACE_RECOVERY_METRIC else "vertices"
     estimated_template = bundle_root / bundle["template"]["path"]
-    generating_template_distances = _ordered_distances(estimated_template, template_path)
+    generating_template_distances = _recovery_distances(
+        estimated_template, template_path, recovery_metric
+    )
 
     truth_vertices = []
     truth_by_name = {record["filename"]: record for record in subject_records}
@@ -419,8 +527,8 @@ def _arm_assessment(
             raise ModernSyntheticRecoveryError(f"Unexpected reconstruction label: {label}")
         truth_path = benchmark / label
         recovered_path = bundle_root / result_record["reconstruction_path"]
-        distances = _ordered_distances(recovered_path, truth_path)
-        baseline = _ordered_distances(template_path, truth_path)
+        distances = _recovery_distances(recovered_path, truth_path, recovery_metric)
+        baseline = _recovery_distances(template_path, truth_path, recovery_metric)
         reconstruction_distances.append(distances)
         baseline_distances.append(baseline)
         by_family[truth_record["family"]].append(distances)
@@ -430,8 +538,10 @@ def _arm_assessment(
                 "filename": label,
                 "family": truth_record["family"],
                 "signed_strength": truth_record["signed_strength"],
-                "reconstruction": _distance_summary(distances, diagonal),
-                "undeformed_template_baseline": _distance_summary(baseline, diagonal),
+                "reconstruction": _distance_summary(distances, diagonal, count_label=count_label),
+                "undeformed_template_baseline": _distance_summary(
+                    baseline, diagonal, count_label=count_label
+                ),
             }
         )
     if len(per_subject) != len(subject_records):
@@ -441,32 +551,63 @@ def _arm_assessment(
         read_vtk_polydata(estimated_template).vertices, dtype=np.float64
     )
     coordinate_mean = np.mean(np.stack(truth_vertices), axis=0)
-    coordinate_mean_distances = np.linalg.norm(estimated_vertices - coordinate_mean, axis=1)
+    if recovery_metric == ORDERED_RECOVERY_METRIC:
+        coordinate_mean_distances = np.linalg.norm(estimated_vertices - coordinate_mean, axis=1)
+    else:
+        coordinate_mean_mesh = TriangleMesh(
+            vertices=tuple(tuple(float(value) for value in row) for row in coordinate_mean),
+            triangles=template_mesh.triangles,
+        )
+        coordinate_mean_distances = symmetric_vertex_to_surface_distances(
+            read_vtk_polydata(estimated_template), coordinate_mean_mesh
+        )
     pooled = np.concatenate(reconstruction_distances)
     baseline_pooled = np.concatenate(baseline_distances)
-    pooled_summary = _distance_summary(pooled, diagonal)
-    baseline_summary = _distance_summary(baseline_pooled, diagonal)
+    pooled_summary = _distance_summary(pooled, diagonal, count_label=count_label)
+    baseline_summary = _distance_summary(baseline_pooled, diagonal, count_label=count_label)
     reduction = 1.0 - float(pooled_summary["rmse"]) / float(baseline_summary["rmse"])
     gates = design["protocol"]["predeclared_arm_gates"]
-    gate_results = {
-        "verified_workflow": True,
-        "optimizer_converged": bool(bundle["optimizer"]["converged"]),
-        "minimum_pooled_vertex_error_reduction_fraction": reduction
-        >= gates["minimum_pooled_vertex_error_reduction_fraction"],
-        "maximum_pooled_reconstruction_p95_over_template_diagonal": float(
-            pooled_summary["p95_over_template_diagonal"]
-        )
-        <= gates["maximum_pooled_reconstruction_p95_over_template_diagonal"],
-        "maximum_generating_template_p95_over_template_diagonal": float(
-            _distance_summary(generating_template_distances, diagonal)["p95_over_template_diagonal"]
-        )
-        <= gates["maximum_generating_template_p95_over_template_diagonal"],
-    }
+    if recovery_metric == SURFACE_RECOVERY_METRIC:
+        gate_results = {
+            "verified_workflow": True,
+            "optimizer_converged": bool(bundle["optimizer"]["converged"]),
+            "minimum_pooled_surface_rmse_reduction_fraction": reduction
+            >= gates["minimum_pooled_surface_rmse_reduction_fraction"],
+            "maximum_pooled_surface_reconstruction_p95_over_template_diagonal": float(
+                pooled_summary["p95_over_template_diagonal"]
+            )
+            <= gates["maximum_pooled_surface_reconstruction_p95_over_template_diagonal"],
+            "maximum_generating_template_surface_p95_over_template_diagonal": float(
+                _distance_summary(
+                    generating_template_distances,
+                    diagonal,
+                    count_label=count_label,
+                )["p95_over_template_diagonal"]
+            )
+            <= gates["maximum_generating_template_surface_p95_over_template_diagonal"],
+        }
+    else:
+        gate_results = {
+            "verified_workflow": True,
+            "optimizer_converged": bool(bundle["optimizer"]["converged"]),
+            "minimum_pooled_vertex_error_reduction_fraction": reduction
+            >= gates["minimum_pooled_vertex_error_reduction_fraction"],
+            "maximum_pooled_reconstruction_p95_over_template_diagonal": float(
+                pooled_summary["p95_over_template_diagonal"]
+            )
+            <= gates["maximum_pooled_reconstruction_p95_over_template_diagonal"],
+            "maximum_generating_template_p95_over_template_diagonal": float(
+                _distance_summary(generating_template_distances, diagonal)[
+                    "p95_over_template_diagonal"
+                ]
+            )
+            <= gates["maximum_generating_template_p95_over_template_diagonal"],
+        }
     if not gate_results["optimizer_converged"]:
         decision = "inconclusive_not_converged"
     else:
         decision = "pass" if all(gate_results.values()) else "fail"
-    return {
+    result = {
         "arm_id": arm["arm_id"],
         "run_directory": str(run_directory),
         "workflow_manifest_sha256": sha256_file(run_directory / "workflow-manifest.json"),
@@ -482,19 +623,26 @@ def _arm_assessment(
             "final_regularity": bundle["optimizer"]["final_regularity"],
         },
         "template_diagonal": diagonal,
-        "generating_template_error": _distance_summary(generating_template_distances, diagonal),
-        "cohort_coordinate_mean_error": _distance_summary(coordinate_mean_distances, diagonal),
+        "generating_template_error": _distance_summary(
+            generating_template_distances, diagonal, count_label=count_label
+        ),
+        "cohort_coordinate_mean_error": _distance_summary(
+            coordinate_mean_distances, diagonal, count_label=count_label
+        ),
         "pooled_reconstruction_error": pooled_summary,
         "undeformed_template_baseline_error": baseline_summary,
         "pooled_rmse_reduction_fraction": reduction,
         "per_family_reconstruction_error": {
-            family: _distance_summary(np.concatenate(values), diagonal)
+            family: _distance_summary(np.concatenate(values), diagonal, count_label=count_label)
             for family, values in by_family.items()
         },
         "subjects": per_subject,
         "gates": gate_results,
         "decision": decision,
     }
+    if "recovery_metric" in design["protocol"]:
+        result["recovery_metric"] = recovery_metric
+    return result
 
 
 def _assessment_payload(
@@ -513,7 +661,7 @@ def _assessment_payload(
         section, metric = path
         return float(sobolev[section][metric]) - float(euclidean[section][metric])
 
-    return {
+    payload = {
         "assessment_version": ASSESSMENT_VERSION,
         "created_at": created_at,
         "design": {
@@ -538,8 +686,12 @@ def _assessment_payload(
             - float(euclidean["pooled_rmse_reduction_fraction"]),
         },
         "comparison_decision": "descriptive_no_predeclared_superiority_gate",
-        "scientific_boundary": SCIENTIFIC_BOUNDARY,
+        "scientific_boundary": design.get("scientific_boundary", SCIENTIFIC_BOUNDARY),
     }
+    if "recovery_metric" in design["protocol"]:
+        payload["recovery_metric"] = design["protocol"]["recovery_metric"]
+        payload["recovery_metric_version"] = design["protocol"]["recovery_metric_version"]
+    return payload
 
 
 def _render_html(payload: dict[str, Any]) -> str:
@@ -555,6 +707,18 @@ def _render_html(payload: dict[str, Any]) -> str:
             f"<td>{arm['pooled_rmse_reduction_fraction']:.6g}</td>"
             "</tr>"
         )
+    if payload.get("recovery_metric") == SURFACE_RECOVERY_METRIC:
+        metric_description = (
+            "a predeclared deterministic symmetric vertex-to-triangle surface metric"
+        )
+        reconstruction_heading = "Surface reconstruction p95 / diagonal"
+        template_heading = "Template surface p95 / diagonal"
+        reduction_heading = "Surface RMSE reduction"
+    else:
+        metric_description = "exact analytic vertex correspondence"
+        reconstruction_heading = "Reconstruction p95 / diagonal"
+        template_heading = "Template p95 / diagonal"
+        reduction_heading = "RMSE reduction"
     return (
         """<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><title>Modern synthetic recovery</title>
@@ -565,10 +729,17 @@ th{background:#eef2f7}code{background:#eef2f7;padding:.1rem .25rem}</style></hea
 <h1>Modern synthetic recovery assessment</h1>
 <p>Paired Engine """
         + html.escape(str(payload["arms"][0]["engine_implementation"]))
-        + """ full-atlas runs with exact analytic vertex correspondence.</p>
-<table><thead><tr><th>Gradient</th><th>Decision</th><th>Cycles</th>
-<th>Reconstruction p95 / diagonal</th><th>Template p95 / diagonal</th>
-<th>RMSE reduction</th></tr></thead><tbody>"""
+        + " full-atlas runs with "
+        + html.escape(metric_description)
+        + ".</p>\n"
+        + """<table><thead><tr><th>Gradient</th><th>Decision</th><th>Cycles</th>
+<th>"""
+        + html.escape(reconstruction_heading)
+        + "</th><th>"
+        + html.escape(template_heading)
+        + "</th>\n<th>"
+        + html.escape(reduction_heading)
+        + "</th></tr></thead><tbody>"
         + "".join(rows)
         + """</tbody></table>
 <p><strong>Comparison:</strong> <code>descriptive_no_predeclared_superiority_gate</code>.</p>

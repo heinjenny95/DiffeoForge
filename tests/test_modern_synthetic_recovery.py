@@ -28,6 +28,7 @@ def _design(
     *,
     cycles: int = 1,
     attachment_type: str = "current",
+    recovery_metric: str = "attachment_native",
 ) -> Path:
     benchmark = tmp_path / "benchmark"
     write_synthetic_validation_benchmark(TEMPLATE, benchmark, subjects_per_family=3)
@@ -37,6 +38,7 @@ def _design(
         design,
         max_cycles=cycles,
         attachment_type=attachment_type,
+        recovery_metric=recovery_metric,
         created_at="2026-08-27T00:00:00+00:00",
     )
     return design
@@ -55,10 +57,11 @@ def test_recovery_design_is_self_contained_and_changes_only_template_gradient(
         "euclidean",
         "sobolev",
     ]
+    assert design["protocol"]["recovery_metric"] == "symmetric_vertex_to_triangle_surface"
     assert (design_root / "inputs" / "benchmark" / "template.vtk").is_file()
 
 
-def test_recovery_assessment_recomputes_exact_ordered_metrics(tmp_path: Path) -> None:
+def test_recovery_assessment_recomputes_native_surface_metrics(tmp_path: Path) -> None:
     design_root = _design(tmp_path)
     euclidean_run = run_modern_workflow(design_root / "modern-euclidean.yaml")
     sobolev_run = run_modern_workflow(design_root / "modern-sobolev.yaml")
@@ -74,6 +77,7 @@ def test_recovery_assessment_recomputes_exact_ordered_metrics(tmp_path: Path) ->
 
     assert assessment.name == ASSESSMENT_NAME
     assert value["comparison_decision"] == "descriptive_no_predeclared_superiority_gate"
+    assert value["recovery_metric"] == "symmetric_vertex_to_triangle_surface"
     assert [arm["arm_id"] for arm in value["arms"]] == ["euclidean", "sobolev"]
     assert all(len(arm["subjects"]) == 9 for arm in value["arms"])
     assert all(
@@ -92,3 +96,21 @@ def test_landmark_recovery_design_binds_correspondence_aware_attachment(
     design = verify_modern_synthetic_recovery_design(design_root)
 
     assert design["protocol"]["shared_settings"]["attachment_type"] == "landmark"
+    assert design["protocol"]["recovery_metric"] == "ordered_vertex"
+
+
+def test_current_recovery_can_explicitly_preserve_legacy_ordered_metric(
+    tmp_path: Path,
+) -> None:
+    design_root = _design(tmp_path, recovery_metric="ordered_vertex")
+
+    design = verify_modern_synthetic_recovery_design(design_root)
+
+    assert design["protocol"]["recovery_metric"] == "ordered_vertex"
+    assert set(design["protocol"]["predeclared_arm_gates"]) == {
+        "require_verified_workflow",
+        "require_optimizer_convergence",
+        "minimum_pooled_vertex_error_reduction_fraction",
+        "maximum_pooled_reconstruction_p95_over_template_diagonal",
+        "maximum_generating_template_p95_over_template_diagonal",
+    }

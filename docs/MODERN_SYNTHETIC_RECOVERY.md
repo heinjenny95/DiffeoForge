@@ -1,11 +1,12 @@
-# Modern synthetic known-correspondence recovery
+# Modern synthetic analytic recovery
 
-Status: **paired prospective workflow implemented; first 12-subject evidence run completed**
+Status: **paired prospective workflow implemented; ordered-point and surface recovery are explicit**
 
 DiffeoForge already generates independent analytic local, global, and mixed
-surface deformations with exact ordered vertex correspondence. The Modern
-synthetic-recovery workflow binds that ground truth to two full-atlas Engine
-1.6 configurations:
+surface deformations. The generator preserves exact ordered vertex
+correspondence, but the recovery assessment does not have to assume that
+correspondence. The Modern synthetic-recovery workflow binds the benchmark to
+two full-atlas configurations:
 
 - Euclidean template gradient;
 - Sobolev template gradient with width ratio `1.0`.
@@ -14,8 +15,16 @@ Both arms use the same copied benchmark, initial template, control-point
 selection, zero momenta, model, optimizer, seed, CPU/float64 runtime, and cycle
 cap. The design verifier requires the configurations to be identical except for
 the project/output labels and the declared template-gradient variable. A fresh
-Euclidean arm is described as Engine 1.6 in Euclidean mode; it is not relabeled
-as the historical Engine 1.5 implementation.
+Euclidean arm keeps the current Engine implementation version and is not
+relabeled as a historical implementation.
+
+Every new design freezes one recovery metric before either result exists.
+`attachment-native`, the default, selects deterministic symmetric
+vertex-to-triangle surface distance for Current or Varifold attachment and
+ordered-vertex error for landmark attachment. `--recovery-metric surface` and
+`--recovery-metric ordered-vertex` make either choice explicit. Existing v0.1
+designs without this field remain verifiable and retain their historical
+ordered-vertex interpretation.
 
 Create a known-correspondence benchmark and freeze the paired design before
 either result exists:
@@ -25,7 +34,8 @@ diffeoforge reference-validation-synthetic-create TEMPLATE.vtk \
   --output SYNTHETIC_BENCHMARK --subjects-per-family 4
 
 diffeoforge modern-synthetic-recovery-init SYNTHETIC_BENCHMARK \
-  --output RECOVERY_DESIGN --attachment-type current
+  --output RECOVERY_DESIGN --attachment-type current \
+  --recovery-metric surface
 
 diffeoforge modern-synthetic-recovery-design-verify RECOVERY_DESIGN
 ```
@@ -47,9 +57,29 @@ diffeoforge modern-synthetic-recovery-assess RECOVERY_DESIGN \
 diffeoforge modern-synthetic-recovery-assessment-verify RECOVERY_ASSESSMENT
 ```
 
-## Predeclared arm gates
+## Predeclared surface-recovery gates
 
-Each arm is assessed independently against the following engineering gates:
+For a Current/Varifold design using the native surface metric, each arm is
+assessed independently against:
+
+- verified immutable Modern workflow;
+- explicit optimizer convergence;
+- at least 50% pooled symmetric-surface RMSE reduction relative to leaving the
+  generating template undeformed;
+- pooled reconstruction symmetric-surface p95 no more than 2% of the generating
+  template diagonal; and
+- estimated-template symmetric-surface p95 no more than 2% of that diagonal.
+
+The metric concatenates deterministic vertex-to-triangle distances in both
+directions. It is correspondence-independent and insensitive to triangle row
+order, winding order, and vertex relabeling that leave the represented surface
+unchanged. It is not an exact continuous Hausdorff distance and can still depend
+on surface sampling. It evaluates geometric recovery without pretending that
+Current/Varifold observes point labels.
+
+## Historical ordered-vertex gates
+
+An explicit ordered-vertex design instead uses the following engineering gates:
 
 - verified immutable Modern workflow;
 - explicit optimizer convergence;
@@ -99,9 +129,9 @@ non-gating diagnostic using deterministic symmetric vertex-to-triangle distance
 showed that both arms did recover surface geometry well: pooled surface RMSE
 improved by `77.2019%` (Euclidean) and `77.2113%` (Sobolev), with surface p95 of
 approximately `0.00355` of the diagonal. Thus the observed failure is specific
-to exact point correspondence, not gross surface fitting. The next diagnostic
-must isolate fixed-template registration. It also motivated the separate,
-strictly opt-in Engine 1.7
+to exact point correspondence, not gross surface fitting. It motivated both a
+new prospective surface-metric design for the landmark-free atlas and the
+separate, strictly opt-in Engine 1.7
 [ordered-landmark attachment](MODERN_LANDMARK_ATTACHMENT.md), rather than
 silently interpreting a Current objective as a point-label objective. Any
 landmark-mode recovery run is a new prospective experiment, not a reinterpretation
@@ -132,7 +162,8 @@ Sobolev advantage. Full details and evidence paths are in
 ## Scientific boundary
 
 The benchmark is smooth, topology-preserving, unitless, and biologically
-meaningless. It can expose correspondence-recovery errors and quantify
-template-gradient sensitivity under a known construction. It cannot establish
-biological validity, generalize to arbitrary anatomical artifacts, replace the
-236-subject qualification evidence, or validate downstream biological traits.
+meaningless. Depending on the predeclared metric, it can expose point-
+correspondence errors or test geometric surface recovery and quantify template-
+gradient sensitivity under a known construction. It cannot establish biological
+validity, generalize to arbitrary anatomical artifacts, replace the 236-subject
+qualification evidence, or validate downstream biological traits.

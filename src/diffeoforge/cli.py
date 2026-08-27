@@ -1480,6 +1480,15 @@ def build_parser() -> argparse.ArgumentParser:
         choices=("current", "varifold", "landmark"),
         default="current",
     )
+    synthetic_recovery_init.add_argument(
+        "--recovery-metric",
+        choices=("attachment-native", "ordered-vertex", "surface"),
+        default="attachment-native",
+        help=(
+            "Assessment metric; attachment-native selects symmetric surface distance "
+            "for Current/Varifold and ordered vertices for landmark attachment."
+        ),
+    )
 
     synthetic_recovery_design_verify = subparsers.add_parser(
         "modern-synthetic-recovery-design-verify",
@@ -3699,6 +3708,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 max_cycles=args.cycles,
                 control_point_count=args.control_points,
                 attachment_type=args.attachment_type,
+                recovery_metric=args.recovery_metric.replace("-", "_"),
             )
             print(f"Prospective synthetic recovery design created: {design.parent}")
             print(f"Euclidean config: {design.parent / 'modern-euclidean.yaml'}")
@@ -3725,6 +3735,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             design = verify_modern_synthetic_recovery_design(args.design_directory)
             print("Synthetic recovery design verification: PASS")
             print(f"Subjects: {design['benchmark']['subjects']}")
+            print(
+                "Recovery metric: "
+                f"{design['protocol'].get('recovery_metric', 'ordered_vertex')}"
+            )
             print(
                 f"Engine implementation: {design['protocol']['arms'][0]['engine_implementation']}"
             )
