@@ -630,6 +630,7 @@ and workflow for another mesh directory.
 - [Post-pilot DiffeoForge Validation Lab](docs/VALIDATION_LAB.md)
 - [PCA of atlas-derived subject features](docs/ATLAS_PCA.md)
 - [Modern paired PCA stability evidence](docs/MODERN_PCA_STABILITY.md)
+- [Modern manual-curve validation](docs/MODERN_CURVE_VALIDATION.md)
 - [Verified PCA of Deformetrica momenta](docs/REFERENCE_PCA.md)
 - [Desktop executable and installer architecture](docs/DESKTOP_DISTRIBUTION.md)
 - [Reproducible Windows installer build contract](docs/WINDOWS_INSTALLER_CONTRACT.md)
