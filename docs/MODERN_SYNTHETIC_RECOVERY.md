@@ -1,6 +1,6 @@
 # Modern synthetic known-correspondence recovery
 
-Status: **paired prospective workflow implemented; small evidence run pending**
+Status: **paired prospective workflow implemented; first 12-subject evidence run completed**
 
 DiffeoForge already generates independent analytic local, global, and mixed
 surface deformations with exact ordered vertex correspondence. The Modern
@@ -67,6 +67,49 @@ targets makes the atlas-gauge and nonlinear-centering ambiguity explicit.
 Sobolev-minus-Euclidean deltas are descriptive. There is deliberately no
 predeclared superiority gate and the software selects no winner from this small
 benchmark.
+
+## First prospective result, 27 August 2026
+
+The first design used four subjects in each analytic family (12 total), Engine
+1.6, CPU/float64, nine control points, L-BFGS, and a 100-cycle cap. The design
+and gates above were committed before the dataset, runs, or assessment existed.
+Both immutable workflows and the independently recomputed assessment verify.
+
+Both arms converged by the declared relative-objective tolerance: Euclidean in
+21 cycles and Sobolev in 22. Both preserved the generating template accurately:
+template vertex-error p95 was `0.000613367` and `0.000666700` of the template
+diagonal respectively, comfortably inside the `0.02` gate.
+
+Both arms nevertheless failed the predeclared exact-correspondence recovery
+gates:
+
+- Euclidean pooled vertex RMSE fell by only `8.6003%` from the undeformed
+  baseline and its reconstruction p95 was `0.0334266` of the diagonal;
+- Sobolev pooled vertex RMSE fell by `8.4347%` and its reconstruction p95 was
+  `0.0335374` of the diagonal;
+- the required reduction was at least `50%` and the p95 ceiling was `0.02`.
+
+The paired differences were small: Sobolev minus Euclidean reconstruction RMSE
+and p95 were `+0.000028985` and `+0.000110774` of the diagonal. This supports no
+superiority claim.
+
+This negative gate result is informative. The configured Current attachment
+compares oriented surfaces and does not observe vertex labels. A post-result,
+non-gating diagnostic using deterministic symmetric vertex-to-triangle distance
+showed that both arms did recover surface geometry well: pooled surface RMSE
+improved by `77.2019%` (Euclidean) and `77.2113%` (Sobolev), with surface p95 of
+approximately `0.00355` of the diagonal. Thus the observed failure is specific
+to exact point correspondence, not gross surface fitting. The next diagnostic
+must isolate fixed-template registration, and exact point recovery ultimately
+requires an explicitly correspondence-aware attachment rather than silently
+interpreting a Current objective as a point-label objective.
+
+Verified evidence directories:
+
+- `C:\Users\js7541\Desktop\DiffeoForge Modern Synthetic Recovery 2026-08-27\engine16-paired-template-gradient-recovery-design-v0.1`
+- `C:\Users\js7541\Desktop\DiffeoForge Modern Synthetic Recovery 2026-08-27\engine16-paired-template-gradient-recovery-design-v0.1-euclidean-run`
+- `C:\Users\js7541\Desktop\DiffeoForge Modern Synthetic Recovery 2026-08-27\engine16-paired-template-gradient-recovery-design-v0.1-sobolev-run`
+- `C:\Users\js7541\Desktop\DiffeoForge Modern Synthetic Recovery 2026-08-27\engine16-paired-template-gradient-recovery-assessment-v0.1`
 
 ## Scientific boundary
 
