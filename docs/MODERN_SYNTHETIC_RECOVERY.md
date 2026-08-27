@@ -114,6 +114,21 @@ Verified evidence directories:
 - `C:\Users\js7541\Desktop\DiffeoForge Modern Synthetic Recovery 2026-08-27\engine16-paired-template-gradient-recovery-design-v0.1-sobolev-run`
 - `C:\Users\js7541\Desktop\DiffeoForge Modern Synthetic Recovery 2026-08-27\engine16-paired-template-gradient-recovery-assessment-v0.1`
 
+## Engine 1.7 ordered-landmark successor
+
+After the Current result exposed the intended surface/point distinction,
+Engine 1.7 added an explicit ordered-landmark attachment and froze a new design
+before its results existed. Both 12-subject full-atlas arms passed all original
+exact-correspondence gates. Euclidean and Sobolev reduced pooled vertex RMSE by
+`82.1042%` and `82.1388%`; reconstruction p95 was `0.00660297` and
+`0.00656287` of the diagonal. Both template p95 values were below `0.00590`.
+
+This successor validates the opt-in point-aware path on analytic known
+correspondence. It does not retroactively turn the Current result into a pass,
+show that empirical input vertices are homologous, or establish a meaningful
+Sobolev advantage. Full details and evidence paths are in
+[Modern ordered-landmark attachment](MODERN_LANDMARK_ATTACHMENT.md).
+
 ## Scientific boundary
 
 The benchmark is smooth, topology-preserving, unitless, and biologically
