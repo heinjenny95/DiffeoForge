@@ -103,3 +103,9 @@ positive width ratio into the reviewed configuration; the default remains
 Euclidean. Selecting Sobolev does not cause DiffeoForge to infer anatomical
 suitability from the Trochanter result, and the ordinary full-cohort and
 external biological validation requirements remain unchanged.
+
+Independent analytic known-correspondence recovery is specified separately in
+[Modern synthetic known-correspondence recovery](MODERN_SYNTHETIC_RECOVERY.md).
+That paired Engine 1.6 test isolates the template-gradient mode on a small
+synthetic cohort and does not use biological trait measurements as atlas ground
+truth.

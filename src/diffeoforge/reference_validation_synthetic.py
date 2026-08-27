@@ -33,6 +33,105 @@ class SyntheticCorrespondenceError:
     vertex_count: int
 
 
+def _read_manifest(path: Path) -> dict[str, object]:
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as error:
+        raise ConfigurationError(
+            f"Synthetic ground-truth manifest is unreadable: {path}"
+        ) from error
+    if not isinstance(value, dict):
+        raise ConfigurationError("Synthetic ground-truth manifest must be a JSON object")
+    return value
+
+
+def verify_synthetic_validation_benchmark(
+    directory: Path | str,
+) -> dict[str, object]:
+    """Verify one generated benchmark, its hashes, and ordered topology."""
+
+    root = Path(directory).expanduser().resolve()
+    if not root.is_dir():
+        raise ConfigurationError(f"Synthetic validation benchmark does not exist: {root}")
+    if any(path.is_symlink() for path in root.rglob("*")):
+        raise ConfigurationError("Synthetic validation benchmarks must not contain symbolic links")
+    manifest_path = root / SYNTHETIC_MANIFEST
+    payload = _read_manifest(manifest_path)
+    if payload.get("version") != SYNTHETIC_BENCHMARK_VERSION:
+        raise ConfigurationError("Unsupported synthetic ground-truth manifest version")
+    fingerprint = payload.get("fingerprint")
+    if not isinstance(fingerprint, str) or len(fingerprint) != 64:
+        raise ConfigurationError("Synthetic ground-truth fingerprint is invalid")
+    unsigned = dict(payload)
+    unsigned.pop("fingerprint", None)
+    canonical = json.dumps(
+        unsigned,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        allow_nan=False,
+    )
+    if hashlib.sha256(canonical.encode()).hexdigest() != fingerprint:
+        raise ConfigurationError("Synthetic ground-truth fingerprint does not match")
+
+    template_record = payload.get("template")
+    subject_records = payload.get("subjects")
+    count = payload.get("subjects_per_family")
+    if (
+        not isinstance(template_record, dict)
+        or not isinstance(subject_records, list)
+        or isinstance(count, bool)
+        or not isinstance(count, int)
+        or len(subject_records) != 3 * count
+    ):
+        raise ConfigurationError("Synthetic ground-truth inventory is inconsistent")
+
+    filenames: list[str] = []
+    records = [template_record, *subject_records]
+    for record in records:
+        if not isinstance(record, dict):
+            raise ConfigurationError("Synthetic ground-truth file record is invalid")
+        filename = record.get("filename")
+        digest = record.get("sha256")
+        if (
+            not isinstance(filename, str)
+            or not filename
+            or Path(filename).name != filename
+            or not isinstance(digest, str)
+            or len(digest) != 64
+        ):
+            raise ConfigurationError("Synthetic ground-truth file binding is invalid")
+        path = root / filename
+        if not path.is_file() or sha256_file(path) != digest:
+            raise ConfigurationError(f"Synthetic ground-truth file hash differs: {filename}")
+        filenames.append(filename)
+    if len(filenames) != len(set(filenames)):
+        raise ConfigurationError("Synthetic ground-truth inventory contains duplicate filenames")
+
+    expected = set(filenames) | {SYNTHETIC_MANIFEST}
+    actual = {path.relative_to(root).as_posix() for path in root.rglob("*") if path.is_file()}
+    if actual != expected:
+        raise ConfigurationError("Synthetic ground-truth exact file inventory differs")
+
+    template = read_vtk_polydata(root / str(template_record["filename"]))
+    family_counts = {"local": 0, "global": 0, "mixed": 0}
+    for record in subject_records:
+        if not isinstance(record, dict) or record.get("family") not in family_counts:
+            raise ConfigurationError("Synthetic ground-truth deformation family is invalid")
+        family = str(record["family"])
+        family_counts[family] += 1
+        subject = read_vtk_polydata(root / str(record["filename"]))
+        if subject.triangles != template.triangles or len(subject.vertices) != len(
+            template.vertices
+        ):
+            raise ConfigurationError(
+                "Synthetic ground-truth subjects must preserve exact ordered template topology"
+            )
+    if any(value != count for value in family_counts.values()):
+        raise ConfigurationError("Synthetic ground-truth family counts are inconsistent")
+    return payload
+
+
 def _vertex_normals(mesh: TriangleMesh) -> np.ndarray:
     vertices = np.asarray(mesh.vertices, dtype=np.float64)
     triangles = np.asarray(mesh.triangles, dtype=np.int64)

@@ -1458,6 +1458,36 @@ def build_parser() -> argparse.ArgumentParser:
     validation_synthetic_evaluate.add_argument("recovered", type=Path)
     validation_synthetic_evaluate.add_argument("truth", type=Path)
 
+    synthetic_recovery_init = subparsers.add_parser(
+        "modern-synthetic-recovery-init",
+        help="Freeze paired Euclidean/Sobolev full-atlas synthetic recovery configs.",
+    )
+    synthetic_recovery_init.add_argument("benchmark_directory", type=Path)
+    synthetic_recovery_init.add_argument("--output", required=True, type=Path)
+    synthetic_recovery_init.add_argument("--cycles", type=int, default=100)
+    synthetic_recovery_init.add_argument("--control-points", type=int, default=9)
+
+    synthetic_recovery_design_verify = subparsers.add_parser(
+        "modern-synthetic-recovery-design-verify",
+        help="Verify a prospective Modern synthetic recovery design.",
+    )
+    synthetic_recovery_design_verify.add_argument("design_directory", type=Path)
+
+    synthetic_recovery_assess = subparsers.add_parser(
+        "modern-synthetic-recovery-assess",
+        help="Assess paired Modern runs against exact synthetic ground truth.",
+    )
+    synthetic_recovery_assess.add_argument("design_directory", type=Path)
+    synthetic_recovery_assess.add_argument("euclidean_run", type=Path)
+    synthetic_recovery_assess.add_argument("sobolev_run", type=Path)
+    synthetic_recovery_assess.add_argument("--output", required=True, type=Path)
+
+    synthetic_recovery_assessment_verify = subparsers.add_parser(
+        "modern-synthetic-recovery-assessment-verify",
+        help="Recompute and verify a Modern synthetic recovery assessment.",
+    )
+    synthetic_recovery_assessment_verify.add_argument("assessment_directory", type=Path)
+
     validate_parser = subparsers.add_parser(
         "validate",
         help="Validate an atlas configuration before any computation starts.",
@@ -3638,6 +3668,113 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"Vertex error p95: {result.vertex_p95:.9g}")
             print(f"Vertex error maximum: {result.vertex_maximum:.9g}")
         except (ConfigurationError, OSError, RuntimeError, TypeError, ValueError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
+
+    if args.command == "modern-synthetic-recovery-init":
+        try:
+            from diffeoforge.modern_synthetic_recovery import (
+                create_modern_synthetic_recovery_design,
+            )
+
+            design = create_modern_synthetic_recovery_design(
+                args.benchmark_directory,
+                args.output,
+                max_cycles=args.cycles,
+                control_point_count=args.control_points,
+            )
+            print(f"Prospective synthetic recovery design created: {design.parent}")
+            print(f"Euclidean config: {design.parent / 'modern-euclidean.yaml'}")
+            print(f"Sobolev config: {design.parent / 'modern-sobolev.yaml'}")
+            print("No atlas optimization was started.")
+        except (
+            ConfigurationError,
+            ImportError,
+            OSError,
+            RuntimeError,
+            TypeError,
+            ValueError,
+        ) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
+
+    if args.command == "modern-synthetic-recovery-design-verify":
+        try:
+            from diffeoforge.modern_synthetic_recovery import (
+                verify_modern_synthetic_recovery_design,
+            )
+
+            design = verify_modern_synthetic_recovery_design(args.design_directory)
+            print("Synthetic recovery design verification: PASS")
+            print(f"Subjects: {design['benchmark']['subjects']}")
+            print(
+                f"Engine implementation: {design['protocol']['arms'][0]['engine_implementation']}"
+            )
+        except (
+            ConfigurationError,
+            ImportError,
+            OSError,
+            RuntimeError,
+            TypeError,
+            ValueError,
+        ) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
+
+    if args.command == "modern-synthetic-recovery-assess":
+        try:
+            from diffeoforge.modern_synthetic_recovery import (
+                assess_modern_synthetic_recovery,
+            )
+
+            assessment = assess_modern_synthetic_recovery(
+                args.design_directory,
+                args.euclidean_run,
+                args.sobolev_run,
+                args.output,
+            )
+            value = json.loads(assessment.read_text(encoding="utf-8"))
+            print(f"Synthetic recovery assessment created: {assessment.parent}")
+            for arm in value["arms"]:
+                print(
+                    f"{arm['arm_id']}: {arm['decision']}; "
+                    f"reconstruction p95/diagonal="
+                    f"{arm['pooled_reconstruction_error']['p95_over_template_diagonal']:.9g}"
+                )
+            print("Paired comparison is descriptive; no superiority winner is selected.")
+        except (
+            ConfigurationError,
+            ImportError,
+            OSError,
+            RuntimeError,
+            TypeError,
+            ValueError,
+        ) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
+
+    if args.command == "modern-synthetic-recovery-assessment-verify":
+        try:
+            from diffeoforge.modern_synthetic_recovery import (
+                verify_modern_synthetic_recovery_assessment,
+            )
+
+            value = verify_modern_synthetic_recovery_assessment(args.assessment_directory)
+            print("Synthetic recovery assessment verification: PASS")
+            for arm in value["arms"]:
+                print(f"{arm['arm_id']}: {arm['decision']}")
+        except (
+            ConfigurationError,
+            ImportError,
+            OSError,
+            RuntimeError,
+            TypeError,
+            ValueError,
+        ) as error:
             print(f"ERROR: {error}", file=sys.stderr)
             return 2
         return 0

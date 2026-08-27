@@ -9,6 +9,7 @@ from diffeoforge.config import ConfigurationError
 from diffeoforge.mesh import read_vtk_polydata, write_vtk_polydata
 from diffeoforge.reference_validation_synthetic import (
     evaluate_synthetic_correspondence_error,
+    verify_synthetic_validation_benchmark,
     write_synthetic_validation_benchmark,
 )
 
@@ -71,3 +72,15 @@ def test_synthetic_benchmark_never_overwrites(tmp_path: Path) -> None:
 
     with pytest.raises(ConfigurationError, match="already exists"):
         write_synthetic_validation_benchmark(TEMPLATE, destination, subjects_per_family=3)
+
+
+def test_synthetic_benchmark_verifier_rejects_changed_geometry(tmp_path: Path) -> None:
+    manifest = write_synthetic_validation_benchmark(
+        TEMPLATE, tmp_path / "benchmark", subjects_per_family=3
+    )
+    value = verify_synthetic_validation_benchmark(manifest.parent)
+    subject = manifest.parent / value["subjects"][0]["filename"]
+    subject.write_bytes(subject.read_bytes() + b"\n")
+
+    with pytest.raises(ConfigurationError, match="file hash differs"):
+        verify_synthetic_validation_benchmark(manifest.parent)
