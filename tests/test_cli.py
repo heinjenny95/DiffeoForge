@@ -61,8 +61,6 @@ def test_package_module_entrypoint_exposes_the_same_cli(tmp_path: Path) -> None:
     assert "modern-benchmark-study-verify" in help_result.stdout
     assert "modern-pca-stability" in help_result.stdout
     assert "modern-pca-stability-verify" in help_result.stdout
-    assert "modern-curve-validation" in help_result.stdout
-    assert "modern-curve-validation-verify" in help_result.stdout
     assert help_result.stderr == ""
 
 

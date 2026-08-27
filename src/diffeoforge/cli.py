@@ -1158,36 +1158,6 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
     )
 
-    modern_curve_validation_parser = subparsers.add_parser(
-        "modern-curve-validation",
-        help="Validate two Modern bundles against mapped manual surface curves.",
-    )
-    modern_curve_validation_parser.add_argument("reference_bundle", type=Path)
-    modern_curve_validation_parser.add_argument("comparison_bundle", type=Path)
-    modern_curve_validation_parser.add_argument("--mapping", required=True, type=Path)
-    modern_curve_validation_parser.add_argument(
-        "--curve-directory", required=True, type=Path
-    )
-    modern_curve_validation_parser.add_argument(
-        "--preprocessing", required=True, type=Path
-    )
-    modern_curve_validation_parser.add_argument("--output", required=True, type=Path)
-    modern_curve_validation_parser.add_argument(
-        "--samples",
-        type=int,
-        default=64,
-        help="Normalized-arclength samples per curve (default: 64).",
-    )
-
-    modern_curve_validation_verify_parser = subparsers.add_parser(
-        "modern-curve-validation-verify",
-        help="Reverify all sources and recompute one Modern manual-curve validation.",
-    )
-    modern_curve_validation_verify_parser.add_argument(
-        "artifact_directory",
-        type=Path,
-    )
-
     reference_calibration_parser = subparsers.add_parser(
         "reference-calibration-plan",
         help=(
@@ -2765,59 +2735,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             verified = verify_modern_pca_stability(args.artifact_directory)
             print(f"Modern PCA stability evidence verified: {verified.artifact_directory}")
             print("Both Modern bundles and the exact stability calculation match.")
-        except (OSError, RuntimeError, TypeError, ValueError) as error:
-            print(f"ERROR: {error}", file=sys.stderr)
-            return 2
-        return 0
-
-    if args.command == "modern-curve-validation":
-        try:
-            from diffeoforge.modern_curve_validation import (
-                MODERN_CURVE_VALIDATION_MANIFEST,
-                write_modern_curve_validation,
-            )
-
-            artifact = write_modern_curve_validation(
-                args.mapping,
-                args.curve_directory,
-                args.preprocessing,
-                args.reference_bundle,
-                args.comparison_bundle,
-                args.output,
-                sample_count=args.samples,
-            )
-            evidence = json.loads(
-                (artifact / MODERN_CURVE_VALIDATION_MANIFEST).read_text(encoding="utf-8")
-            )["evidence"]
-            print(f"Verified Modern manual-curve validation created: {artifact}")
-            print(f"Included subjects: {evidence['included_subject_count']}")
-            print(
-                "Reference median LOO curve RMS: "
-                f"{evidence['reference']['summary']['loo_curve_rms_normalized_median']:.9g}"
-            )
-            print(
-                "Comparison median LOO curve RMS: "
-                f"{evidence['comparison']['summary']['loo_curve_rms_normalized_median']:.9g}"
-            )
-            print(
-                "Paired subject-distance Spearman: "
-                f"{evidence['paired']['subject_curve_distance_spearman']:.9g}"
-            )
-            print("This is a retrospective pilot, not final biological validation.")
-        except (OSError, RuntimeError, TypeError, ValueError) as error:
-            print(f"ERROR: {error}", file=sys.stderr)
-            return 2
-        return 0
-
-    if args.command == "modern-curve-validation-verify":
-        try:
-            from diffeoforge.modern_curve_validation import (
-                verify_modern_curve_validation,
-            )
-
-            verified = verify_modern_curve_validation(args.artifact_directory)
-            print(f"Modern manual-curve validation verified: {verified.artifact_directory}")
-            print("All source bytes and the exact curve calculation match.")
         except (OSError, RuntimeError, TypeError, ValueError) as error:
             print(f"ERROR: {error}", file=sys.stderr)
             return 2
