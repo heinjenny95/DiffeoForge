@@ -27,8 +27,8 @@ parent workflow and nested atlas bundle, then copies and SHA-256 binds:
 The plan freezes the parent checkpoint implementation and the expected
 successor implementation separately. They normally match. A cross-version
 resume is accepted only when the successor's explicit fail-closed
-compatibility table names the parent revision; Engine 1.6 currently permits
-Engine 1.5 only for its unchanged legacy Euclidean-gradient contract. The
+compatibility table names the parent revision; Engine 1.7 currently permits
+Engine 1.5 and 1.6 for their unchanged existing objective contracts. The
 independent verifier binds both identities and rejects an undeclared pairing.
 
 The successor disables a second Procrustes alignment and uses the copied final

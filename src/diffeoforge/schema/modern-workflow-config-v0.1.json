@@ -181,7 +181,7 @@
           "additionalProperties": false,
           "required": ["type", "kernel_width"],
           "properties": {
-            "type": {"enum": ["current", "varifold"]},
+            "type": {"enum": ["current", "varifold", "landmark"]},
             "kernel_width": {"type": "number", "exclusiveMinimum": 0}
           }
         },

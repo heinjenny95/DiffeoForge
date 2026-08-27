@@ -346,7 +346,9 @@ gates. See
    16-subject, 54-of-67-subject, 236-subject fixed-reference, and prospectively
    frozen 236-subject full-atlas CUDA gates also passed. Engine 1.6 adds an
    opt-in Sobolev template gradient and passes its paired prospective 236-subject
-   full-atlas gate. The CPU default remains unchanged because these results are
+   full-atlas gate. Engine 1.7 adds a strictly opt-in ordered-landmark attachment
+   for independently known vertex correspondence; its synthetic qualification
+   remains separate. The CPU and Current defaults remain unchanged because these results are
    cohort- and hardware-specific. See
    [Engine 1.5 CUDA feasibility](MODERN_ENGINE15_CUDA.md).
 9. Define evidence-derived tolerances before accepting a production backend.

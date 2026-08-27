@@ -465,6 +465,7 @@ def initialize_modern_workflow(
     procrustes_tolerance: float = 1e-10,
     procrustes_max_iterations: int = 100,
     control_point_count: int = 9,
+    attachment_type: str = "current",
     attachment_kernel_width: float | None = None,
     deformation_kernel_width: float | None = None,
     noise_variance: float | None = None,
@@ -497,6 +498,10 @@ def initialize_modern_workflow(
         raise ConfigurationError("random_seed must be a nonnegative integer")
     if template_gradient not in {"euclidean", "sobolev"}:
         raise ConfigurationError("template_gradient must be euclidean or sobolev")
+    if attachment_type not in {"current", "varifold", "landmark"}:
+        raise ConfigurationError(
+            "attachment_type must be current, varifold, or landmark"
+        )
     if (
         isinstance(sobolev_kernel_width_ratio, bool)
         or not isinstance(sobolev_kernel_width_ratio, (int, float))
@@ -625,7 +630,7 @@ def initialize_modern_workflow(
         },
         "model": {
             "attachment": {
-                "type": "current",
+                "type": attachment_type,
                 "kernel_width": positive(
                     "attachment_kernel_width", attachment_kernel_width, 0.10 * diagonal
                 ),
@@ -1185,6 +1190,17 @@ def run_modern_workflow(
             raw_paths.append(raw_path)
         raw_path_tuple = tuple(raw_paths)
         geometries = tuple(read_vtk_polydata(path) for path in raw_path_tuple)
+        if config["model"]["attachment"]["type"] == "landmark":
+            template_geometry = geometries[0]
+            for source, geometry in zip(source_paths[1:], geometries[1:], strict=True):
+                if (
+                    geometry.triangles != template_geometry.triangles
+                    or len(geometry.vertices) != len(template_geometry.vertices)
+                ):
+                    raise ConfigurationError(
+                        "Landmark attachment requires every subject mesh to preserve the "
+                        f"template's exact ordered topology: {source.name}"
+                    )
         emit_progress("inputs", "completed", "Input meshes copied and parsed", 1)
         check_cancellation()
 

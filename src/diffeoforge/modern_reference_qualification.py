@@ -106,6 +106,7 @@ ASSESSMENT_HTML_NAME = "modern-reference-qualification-assessment.html"
 QUALIFICATION_CONFIG_SCHEMA_BY_ENGINE = {
     "1.5": "0.6",
     "1.6": "0.7",
+    "1.7": "0.7",
 }
 
 

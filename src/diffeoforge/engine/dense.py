@@ -1018,6 +1018,20 @@ def _surface_geometry(
     return geometry
 
 
+def landmark_squared_distance(
+    points_a: torch.Tensor,
+    points_b: torch.Tensor,
+) -> torch.Tensor:
+    """Return the ordered pointwise squared distance between two landmark sets."""
+
+    _validate_float_matrix("points_a", points_a, columns=3)
+    _validate_float_matrix("points_b", points_b, columns=3)
+    _validate_compatible("points_b", points_b, points_a)
+    if points_a.shape != points_b.shape:
+        raise ValueError("landmark point sets must have identical shape")
+    return torch.sum((points_a - points_b).square())
+
+
 def _current_inner_product(
     centers_a: torch.Tensor,
     normals_a: torch.Tensor,

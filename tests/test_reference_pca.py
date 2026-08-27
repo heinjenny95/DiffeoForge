@@ -735,7 +735,7 @@ def test_modern_reference_qualification_design_is_prospective_and_tamper_evident
     assert len(design["subjects"]) == 3
     assert design["protocol"]["modern_result_existed_at_freeze"] is False
     assert design["design_version"] == "0.6"
-    assert design["modern_workflow"]["expected_engine_implementation"] == "1.6"
+    assert design["modern_workflow"]["expected_engine_implementation"] == "1.7"
     assert config["schema_version"] == "0.7"
     assert design["protocol"]["quality_screening"]["excluded_candidates"] == []
     assert all("source_quality" in record for record in design["subjects"])
@@ -824,7 +824,7 @@ def test_modern_reference_qualification_design_is_prospective_and_tamper_evident
     assert len(assessment["subjects"]) == 3
     assert assessment["metrics"]["pooled_modern_to_reference_residual_ratio"] >= 0
     assert assessment["assessment_version"] == "0.3"
-    assert assessment["optimizer"]["engine_implementation"] == "1.6"
+    assert assessment["optimizer"]["engine_implementation"] == "1.7"
     assert len(assessment["optimizer"]["history_sha256"]) == 64
     trajectory = assessment["optimizer"]["trajectory"]
     assert trajectory["initial_objective"] == pytest.approx(trajectory["records"][0]["objective"])
@@ -878,8 +878,8 @@ def test_modern_reference_qualification_design_is_prospective_and_tamper_evident
     )
     assert continuation["design_version"] == "0.7"
     assert continuation["protocol"]["continuation"]["parent_cycles_completed"] == 1
-    assert continuation["protocol"]["continuation"]["parent_engine_implementation"] == "1.6"
-    assert continuation["protocol"]["continuation"]["expected_engine_implementation"] == "1.6"
+    assert continuation["protocol"]["continuation"]["parent_engine_implementation"] == "1.7"
+    assert continuation["protocol"]["continuation"]["expected_engine_implementation"] == "1.7"
     assert math.isfinite(continuation["protocol"]["continuation"]["parent_final_objective"])
     assert continuation_config["schema_version"] == "0.5"
     assert continuation_config["initialization"]["momenta"] == {
@@ -947,7 +947,7 @@ def test_modern_reference_qualification_design_is_prospective_and_tamper_evident
     assert successor_assessment["continuation_verification"]["initial_objective_matches"] is True
     assert (
         successor_assessment["continuation_verification"]["successor_engine_implementation"]
-        == "1.6"
+        == "1.7"
     )
 
     subject = destination / design["subjects"][0]["source"]["path"]

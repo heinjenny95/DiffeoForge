@@ -131,6 +131,19 @@ def test_full_subject_objective_and_gradients_match_deformetrica_reference(
         torch.testing.assert_close(gradient, _tensor(expected[name]), **options)
 
 
+def test_landmark_subject_objective_uses_ordered_endpoint_error(reference: dict) -> None:
+    inputs, result = _subject(reference, "landmark", requires_grad=True)
+
+    expected = torch.sum((result.endpoint_vertices - inputs["target"]).square())
+    gradients = torch.autograd.grad(
+        result.total,
+        (inputs["template"], inputs["control_points"], inputs["momenta"]),
+    )
+
+    torch.testing.assert_close(result.residual, expected, rtol=0, atol=0)
+    assert all(bool(torch.isfinite(gradient).all()) for gradient in gradients)
+
+
 def test_machine_readable_objective_reference_harness_passes(reference: dict) -> None:
     from diffeoforge.engine.reference import compare_reference_fixture
 

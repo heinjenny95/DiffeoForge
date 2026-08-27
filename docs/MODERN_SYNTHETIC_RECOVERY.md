@@ -25,7 +25,7 @@ diffeoforge reference-validation-synthetic-create TEMPLATE.vtk \
   --output SYNTHETIC_BENCHMARK --subjects-per-family 4
 
 diffeoforge modern-synthetic-recovery-init SYNTHETIC_BENCHMARK \
-  --output RECOVERY_DESIGN
+  --output RECOVERY_DESIGN --attachment-type current
 
 diffeoforge modern-synthetic-recovery-design-verify RECOVERY_DESIGN
 ```
@@ -100,9 +100,12 @@ showed that both arms did recover surface geometry well: pooled surface RMSE
 improved by `77.2019%` (Euclidean) and `77.2113%` (Sobolev), with surface p95 of
 approximately `0.00355` of the diagonal. Thus the observed failure is specific
 to exact point correspondence, not gross surface fitting. The next diagnostic
-must isolate fixed-template registration, and exact point recovery ultimately
-requires an explicitly correspondence-aware attachment rather than silently
-interpreting a Current objective as a point-label objective.
+must isolate fixed-template registration. It also motivated the separate,
+strictly opt-in Engine 1.7
+[ordered-landmark attachment](MODERN_LANDMARK_ATTACHMENT.md), rather than
+silently interpreting a Current objective as a point-label objective. Any
+landmark-mode recovery run is a new prospective experiment, not a reinterpretation
+of this completed result.
 
 Verified evidence directories:
 

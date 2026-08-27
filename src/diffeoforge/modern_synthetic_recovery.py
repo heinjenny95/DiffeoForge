@@ -148,12 +148,15 @@ def create_modern_synthetic_recovery_design(
     *,
     max_cycles: int = 100,
     control_point_count: int = 9,
+    attachment_type: str = "current",
     created_at: str | None = None,
 ) -> Path:
     """Freeze paired Euclidean/Sobolev full-atlas configs before results exist."""
 
     cycles = _positive_integer("max_cycles", max_cycles, maximum=1_000)
     controls = _positive_integer("control_point_count", control_point_count, maximum=1_000)
+    if attachment_type not in {"current", "varifold", "landmark"}:
+        raise ValueError("attachment_type must be current, varifold, or landmark")
     source = Path(benchmark_directory).expanduser().resolve()
     source_manifest = verify_synthetic_validation_benchmark(source)
     output = Path(destination).expanduser().resolve()
@@ -182,6 +185,7 @@ def create_modern_synthetic_recovery_design(
                 project_name=f"modern-synthetic-recovery-{arm_id}",
                 output_directory=run_output,
                 control_point_count=controls,
+                attachment_type=attachment_type,
                 attachment_kernel_width=0.45,
                 deformation_kernel_width=0.6,
                 noise_variance=0.01,
@@ -224,6 +228,7 @@ def create_modern_synthetic_recovery_design(
                 "shared_settings": {
                     "max_cycles": cycles,
                     "control_point_count": controls,
+                    "attachment_type": attachment_type,
                     "optimizer": "lbfgs",
                     "momenta_updates_per_cycle": 2,
                     "relative_objective_tolerance": 0.0001,
@@ -306,6 +311,8 @@ def verify_modern_synthetic_recovery_design(directory: Path | str) -> dict[str, 
             config["optimization"]["template_gradient"] != arm["arm_id"]
             or config["optimization"]["sobolev_kernel_width_ratio"] != 1.0
             or config["optimization"]["block_order"] != ["momenta", "template", "control_points"]
+            or config["model"]["attachment"]["type"]
+            != protocol["shared_settings"].get("attachment_type", "current")
         ):
             raise ModernSyntheticRecoveryError(
                 "Synthetic recovery paired-variable contract differs"
@@ -556,7 +563,9 @@ table{border-collapse:collapse;width:100%}
 th,td{border:1px solid #ccd3df;padding:.55rem;text-align:left}
 th{background:#eef2f7}code{background:#eef2f7;padding:.1rem .25rem}</style></head><body>
 <h1>Modern synthetic recovery assessment</h1>
-<p>Paired Engine 1.6 full-atlas runs with exact analytic vertex correspondence.</p>
+<p>Paired Engine """
+        + html.escape(str(payload["arms"][0]["engine_implementation"]))
+        + """ full-atlas runs with exact analytic vertex correspondence.</p>
 <table><thead><tr><th>Gradient</th><th>Decision</th><th>Cycles</th>
 <th>Reconstruction p95 / diagonal</th><th>Template p95 / diagonal</th>
 <th>RMSE reduction</th></tr></thead><tbody>"""

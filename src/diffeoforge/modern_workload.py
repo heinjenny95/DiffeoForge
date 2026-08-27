@@ -245,29 +245,38 @@ def _pair_candidates(
     template: dict[str, Any],
     subjects: list[dict[str, Any]],
     control_points: int,
+    attachment_type: str,
 ) -> list[tuple[str, str | None, int, int]]:
     candidates = [
         ("deformation_control_control", None, control_points, control_points),
         ("template_flow", None, template["points"], control_points),
-        ("template_attachment_self", None, template["triangles"], template["triangles"]),
     ]
-    for subject in subjects:
-        candidates.extend(
-            [
-                (
-                    "subject_attachment_self",
-                    subject["label"],
-                    subject["triangles"],
-                    subject["triangles"],
-                ),
-                (
-                    "template_subject_attachment_cross",
-                    subject["label"],
-                    template["triangles"],
-                    subject["triangles"],
-                ),
-            ]
+    if attachment_type != "landmark":
+        candidates.append(
+            (
+                "template_attachment_self",
+                None,
+                template["triangles"],
+                template["triangles"],
+            )
         )
+        for subject in subjects:
+            candidates.extend(
+                [
+                    (
+                        "subject_attachment_self",
+                        subject["label"],
+                        subject["triangles"],
+                        subject["triangles"],
+                    ),
+                    (
+                        "template_subject_attachment_cross",
+                        subject["label"],
+                        template["triangles"],
+                        subject["triangles"],
+                    ),
+                ]
+            )
     return candidates
 
 
@@ -353,13 +362,19 @@ def _operation_model(
     )
     flow_calls_per_step = 1 if deformation["flow_integrator"] == "euler" else 2
     extrapolation_calls = 4 if deformation["flow_integrator"] == "deformetrica_heun" else 0
-    attachment_pairs = sum(
-        template["triangles"] ** 2
-        + subject["triangles"] ** 2
-        + template["triangles"] * subject["triangles"]
-        for subject in subjects
+    attachment_type = config["model"]["attachment"]["type"]
+    surface_attachment = attachment_type != "landmark"
+    attachment_pairs = (
+        sum(
+            template["triangles"] ** 2
+            + subject["triangles"] ** 2
+            + template["triangles"] * subject["triangles"]
+            for subject in subjects
+        )
+        if surface_attachment
+        else 0
     )
-    attachment_calls = 3 * subject_count
+    attachment_calls = 3 * subject_count if surface_attachment else 0
     shooting_calls = subject_count * time_steps * shooting_calls_per_step
     shooting_pairs = shooting_calls * control_points**2
     flow_calls = subject_count * time_steps * flow_calls_per_step
@@ -382,12 +397,14 @@ def _operation_model(
         + extrapolation_pairs
         + energy_pairs
     )
-    candidates = _pair_candidates(template, subjects, control_points)
+    candidates = _pair_candidates(template, subjects, control_points, attachment_type)
     return {
         "definitions": {
             "pair_element": "one logical all-pairs Gaussian interaction",
             "attachment_per_subject": (
                 "template_faces^2 + subject_faces^2 + template_faces * subject_faces"
+                if surface_attachment
+                else "zero Gaussian pairs; ordered pointwise squared distance"
             ),
             "shooting_per_step": (
                 "2 * control_points^2 for Euler; "
@@ -406,7 +423,7 @@ def _operation_model(
                 "calls": attachment_calls,
                 "pair_elements": attachment_pairs,
                 "orientation_pair_elements": (
-                    attachment_pairs if config["model"]["attachment"]["type"] == "varifold" else 0
+                    attachment_pairs if attachment_type == "varifold" else 0
                 ),
             },
             "shooting": {"calls": shooting_calls, "pair_elements": shooting_pairs},
@@ -716,7 +733,11 @@ def render_modern_workload_html(report: dict[str, Any]) -> str:
             ("Time points", f"{configuration['timepoints']:,}"),
             ("Attachment", attachment),
             (
-                "Attachment surface-matching width",
+                (
+                    "Attachment kernel width (unused for landmark)"
+                    if attachment == "landmark"
+                    else "Attachment surface-matching width"
+                ),
                 f"{float(configuration['attachment_kernel_width']):g}",
             ),
             (

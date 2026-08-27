@@ -345,6 +345,71 @@ def test_farthest_template_initialization_is_repeatable_and_explicit() -> None:
         workflow.farthest_template_vertex_indices(vertices, vertices.shape[0] + 1)
 
 
+def test_landmark_workflow_is_explicit_and_preserves_ordered_topology(
+    tmp_path: Path,
+) -> None:
+    config_path = workflow.initialize_modern_workflow(
+        MESH_DIRECTORY,
+        units="unitless",
+        config_path=tmp_path / "landmark.yaml",
+        template=MESH_DIRECTORY / "template.vtk",
+        subject_pattern="subject-*.vtk",
+        attachment_type="landmark",
+        attachment_kernel_width=0.45,
+        deformation_kernel_width=0.6,
+        noise_variance=0.01,
+        max_cycles=1,
+        threads=1,
+    )
+
+    run = workflow.run_modern_workflow(
+        config_path,
+        destination=tmp_path / "landmark-run",
+        created_at=FIXED_TIME,
+    )
+    manifest = workflow.verify_modern_workflow(run)
+    bundle = workflow.verify_modern_atlas_bundle(run / manifest["result_bundle"]["path"])
+
+    assert manifest["engine"]["implementation_version"] == "1.7"
+    assert bundle["model"]["attachment_type"] == "landmark"
+    assert bundle["optimizer"]["cycles_completed"] == 1
+
+
+def test_landmark_workflow_rejects_different_ordered_topology_before_optimization(
+    tmp_path: Path,
+) -> None:
+    source = read_vtk_polydata(MESH_DIRECTORY / "template.vtk")
+    mesh_directory = tmp_path / "meshes"
+    mesh_directory.mkdir()
+    write_vtk_polydata(
+        mesh_directory / "template.vtk", source.vertices, source.triangles
+    )
+    write_vtk_polydata(
+        mesh_directory / "subject-01.vtk",
+        source.vertices,
+        tuple(reversed(source.triangles)),
+    )
+    write_vtk_polydata(
+        mesh_directory / "subject-02.vtk", source.vertices, source.triangles
+    )
+    config_path = workflow.initialize_modern_workflow(
+        mesh_directory,
+        units="unitless",
+        config_path=tmp_path / "landmark-mismatch.yaml",
+        template=mesh_directory / "template.vtk",
+        subject_pattern="subject-*.vtk",
+        attachment_type="landmark",
+        max_cycles=1,
+        threads=1,
+    )
+    output = tmp_path / "must-not-publish"
+
+    with pytest.raises(ConfigurationError, match="exact ordered topology"):
+        workflow.run_modern_workflow(config_path, destination=output)
+
+    assert not output.exists()
+
+
 def test_generated_checkpoint_policy_retains_only_the_latest_recovery_point(
     tmp_path: Path,
 ) -> None:
@@ -585,7 +650,7 @@ def test_multiblock_lbfgs_workflow_writes_exact_v03_checkpoint(tmp_path: Path) -
     assert bundle["optimizer"]["settings"]["direction_update"] == "lbfgs"
     assert bundle["optimizer"]["settings"]["momenta_updates_per_cycle"] == 2
     assert checkpoint["checkpoint_version"] == "0.3"
-    assert checkpoint["binding"]["engine_implementation"] == "1.6"
+    assert checkpoint["binding"]["engine_implementation"] == "1.7"
     assert checkpoint["binding"]["momenta_updates_per_cycle"] == 2
     assert checkpoint["binding"]["subject_batch_size"] is None
     assert checkpoint["binding"]["subject_batch_workers"] == 1

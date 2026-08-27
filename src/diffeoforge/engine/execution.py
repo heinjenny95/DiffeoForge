@@ -9,7 +9,7 @@ from typing import Any, Literal
 
 from diffeoforge.engine.dense import GaussianTilePlan
 
-ENGINE_IMPLEMENTATION_VERSION = "1.6"
+ENGINE_IMPLEMENTATION_VERSION = "1.7"
 
 # Exact continuation is intentionally an allow-list, not a numerical-version
 # comparison. A future implementation may resume an older checkpoint only
@@ -17,7 +17,9 @@ ENGINE_IMPLEMENTATION_VERSION = "1.6"
 # semantics are unchanged. Adding a new engine version therefore remains
 # fail-closed until that compatibility is declared explicitly.
 EXACT_RESUME_ENGINE_COMPATIBILITY: dict[str, frozenset[str]] = {
-    ENGINE_IMPLEMENTATION_VERSION: frozenset({"1.5", ENGINE_IMPLEMENTATION_VERSION}),
+    ENGINE_IMPLEMENTATION_VERSION: frozenset(
+        {"1.5", "1.6", ENGINE_IMPLEMENTATION_VERSION}
+    ),
 }
 
 

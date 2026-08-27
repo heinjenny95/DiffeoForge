@@ -23,7 +23,12 @@ ROOT = Path(__file__).parents[1]
 TEMPLATE = ROOT / "examples" / "synthetic" / "meshes" / "template.vtk"
 
 
-def _design(tmp_path: Path, *, cycles: int = 1) -> Path:
+def _design(
+    tmp_path: Path,
+    *,
+    cycles: int = 1,
+    attachment_type: str = "current",
+) -> Path:
     benchmark = tmp_path / "benchmark"
     write_synthetic_validation_benchmark(TEMPLATE, benchmark, subjects_per_family=3)
     design = tmp_path / "design"
@@ -31,6 +36,7 @@ def _design(tmp_path: Path, *, cycles: int = 1) -> Path:
         benchmark,
         design,
         max_cycles=cycles,
+        attachment_type=attachment_type,
         created_at="2026-08-27T00:00:00+00:00",
     )
     return design
@@ -76,3 +82,13 @@ def test_recovery_assessment_recomputes_exact_ordered_metrics(tmp_path: Path) ->
     )
     persisted = json.loads(assessment.read_text(encoding="utf-8"))
     assert persisted == value
+
+
+def test_landmark_recovery_design_binds_correspondence_aware_attachment(
+    tmp_path: Path,
+) -> None:
+    design_root = _design(tmp_path, attachment_type="landmark")
+
+    design = verify_modern_synthetic_recovery_design(design_root)
+
+    assert design["protocol"]["shared_settings"]["attachment_type"] == "landmark"
