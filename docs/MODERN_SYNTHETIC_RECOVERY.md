@@ -144,6 +144,37 @@ Verified evidence directories:
 - `C:\Users\js7541\Desktop\DiffeoForge Modern Synthetic Recovery 2026-08-27\engine16-paired-template-gradient-recovery-design-v0.1-sobolev-run`
 - `C:\Users\js7541\Desktop\DiffeoForge Modern Synthetic Recovery 2026-08-27\engine16-paired-template-gradient-recovery-assessment-v0.1`
 
+## Prospective Engine 1.7 Current surface result
+
+Commit `e0eebfd` added the correspondence-independent metric and froze its gate
+contract before the new design or results existed. The subsequent design used
+the same 12-subject analytic benchmark, Current attachment, CPU/float64, nine
+control points, L-BFGS, and a 100-cycle cap. Its design JSON has SHA-256
+`d1f4b0211f01947930c3080be1c38fb0ce6fcf8e34614d4a4d54fdc0bff78b14`.
+
+Both independently verified arms converged and passed every predeclared surface
+gate:
+
+- Euclidean converged in 21 cycles, reduced pooled surface RMSE by `77.2019%`,
+  and reached reconstruction p95 `0.00355468` of the template diagonal;
+- Sobolev converged in 22 cycles, reduced pooled surface RMSE by `77.2113%`,
+  and reached reconstruction p95 `0.00355445` of the diagonal;
+- generating-template surface p95 was `0.000591918` and `0.000642836` for
+  Euclidean and Sobolev, respectively, against the `0.02` ceiling.
+
+Sobolev minus Euclidean reconstruction RMSE and p95 were
+`-0.000000759345` and `-0.000000234081` of the diagonal. These negligible
+differences support no superiority claim. The independently recomputable
+assessment JSON has SHA-256
+`de1c23fd16e84cef9aac304d922551c22e9d83191f2296525339349a7cc90ee5`.
+
+Verified evidence directories:
+
+- `C:\Users\js7541\Desktop\DiffeoForge Modern Synthetic Recovery 2026-08-27\engine17-paired-current-surface-recovery-design-v0.1`
+- `C:\Users\js7541\Desktop\DiffeoForge Modern Synthetic Recovery 2026-08-27\engine17-paired-current-surface-recovery-design-v0.1-euclidean-run`
+- `C:\Users\js7541\Desktop\DiffeoForge Modern Synthetic Recovery 2026-08-27\engine17-paired-current-surface-recovery-design-v0.1-sobolev-run`
+- `C:\Users\js7541\Desktop\DiffeoForge Modern Synthetic Recovery 2026-08-27\engine17-paired-current-surface-recovery-assessment-v0.1`
+
 ## Engine 1.7 ordered-landmark successor
 
 After the Current result exposed the intended surface/point distinction,

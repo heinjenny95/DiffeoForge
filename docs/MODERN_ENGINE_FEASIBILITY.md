@@ -348,8 +348,12 @@ gates. See
    opt-in Sobolev template gradient and passes its paired prospective 236-subject
    full-atlas gate. Engine 1.7 adds a strictly opt-in ordered-landmark attachment
    for independently known vertex correspondence; its synthetic qualification
-   remains separate. The CPU and Current defaults remain unchanged because these results are
-   cohort- and hardware-specific. See
+   remains separate. A prospectively frozen Engine 1.7 Current study also passes
+   correspondence-independent analytic surface-recovery gates in both Euclidean
+   and Sobolev modes, with about 77.2% pooled surface-RMSE reduction. This tests
+   the landmark-free objective on synthetic geometry and is not biological
+   validation. The CPU and Current defaults remain unchanged because these
+   results are cohort- and hardware-specific. See
    [Engine 1.5 CUDA feasibility](MODERN_ENGINE15_CUDA.md).
 9. Define evidence-derived tolerances before accepting a production backend.
    Provisional fixed-reference gates have now passed once prospectively; broader
