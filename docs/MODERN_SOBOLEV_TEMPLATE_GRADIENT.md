@@ -92,6 +92,11 @@ This establishes prospective engineering non-inferiority for the declared
 global optimality, PCA stability, a safe preset across anatomies, or production
 readiness for an independent 300-subject dataset.
 
+Paired numerical PCA stability can now be assessed separately with the
+[Modern paired PCA stability](MODERN_PCA_STABILITY.md) artifact. That comparison
+is intentionally not folded into this already frozen qualification decision and
+does not turn score-space agreement into biological validation.
+
 The desktop now exposes this mode as an explicit Modern-only choice alongside
 the Euclidean baseline. It writes `template_gradient: sobolev` and the visible
 positive width ratio into the reviewed configuration; the default remains

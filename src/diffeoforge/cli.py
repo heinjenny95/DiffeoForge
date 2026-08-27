@@ -1130,6 +1130,34 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
     )
 
+    modern_pca_stability_parser = subparsers.add_parser(
+        "modern-pca-stability",
+        help="Create immutable sign/rotation-invariant evidence for two Modern bundles.",
+    )
+    modern_pca_stability_parser.add_argument("reference_bundle", type=Path)
+    modern_pca_stability_parser.add_argument("comparison_bundle", type=Path)
+    modern_pca_stability_parser.add_argument("--output", required=True, type=Path)
+    modern_pca_stability_parser.add_argument(
+        "--variance-target",
+        type=float,
+        default=0.90,
+        help="Cumulative variance target per PCA (default: 0.90).",
+    )
+    modern_pca_stability_parser.add_argument(
+        "--components",
+        type=int,
+        help="Use one explicit component count instead of target-selected counts.",
+    )
+
+    modern_pca_stability_verify_parser = subparsers.add_parser(
+        "modern-pca-stability-verify",
+        help="Reverify both Modern bundles and recompute one stability artifact.",
+    )
+    modern_pca_stability_verify_parser.add_argument(
+        "artifact_directory",
+        type=Path,
+    )
+
     reference_calibration_parser = subparsers.add_parser(
         "reference-calibration-plan",
         help=(
@@ -2656,6 +2684,57 @@ def main(argv: Sequence[str] | None = None) -> int:
             verified = verify_reference_pca_stability(args.artifact_directory)
             print(f"Paired PCA stability evidence verified: {verified.artifact_directory}")
             print("Both PCA bundles and the exact stability calculation match.")
+        except (OSError, RuntimeError, TypeError, ValueError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
+
+    if args.command == "modern-pca-stability":
+        try:
+            from diffeoforge.modern_pca_stability import (
+                verify_modern_pca_stability,
+                write_modern_pca_stability,
+            )
+
+            artifact = write_modern_pca_stability(
+                args.reference_bundle,
+                args.comparison_bundle,
+                args.output,
+                variance_target=args.variance_target,
+                component_count=args.components,
+            )
+            verified = verify_modern_pca_stability(artifact)
+            print(f"Verified Modern PCA stability evidence created: {artifact}")
+            print(f"Score linear CKA: {verified.evidence.score_linear_cka:.9g}")
+            print(
+                "Score distance-rank correlation: "
+                f"{verified.evidence.score_distance_rank_correlation:.9g}"
+            )
+            if verified.evidence.feature_subspace_available:
+                print(
+                    "Minimum principal cosine: "
+                    f"{verified.evidence.minimum_principal_cosine:.9g}"
+                )
+            else:
+                print(
+                    "Feature-subspace comparison unavailable: "
+                    f"{verified.evidence.feature_subspace_unavailable_reason}"
+                )
+            print("This is numerical stability evidence, not biological validation.")
+        except (OSError, RuntimeError, TypeError, ValueError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
+
+    if args.command == "modern-pca-stability-verify":
+        try:
+            from diffeoforge.modern_pca_stability import (
+                verify_modern_pca_stability,
+            )
+
+            verified = verify_modern_pca_stability(args.artifact_directory)
+            print(f"Modern PCA stability evidence verified: {verified.artifact_directory}")
+            print("Both Modern bundles and the exact stability calculation match.")
         except (OSError, RuntimeError, TypeError, ValueError) as error:
             print(f"ERROR: {error}", file=sys.stderr)
             return 2
