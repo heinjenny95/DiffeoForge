@@ -70,6 +70,8 @@ diffeoforge pca-metadata runs/pca-bundle metadata.csv --output runs/pca-metadata
 diffeoforge pca-metadata-verify runs/pca-metadata
 diffeoforge atlas-compare runs/first runs/second --output runs/comparison
 diffeoforge atlas-compare-verify runs/comparison
+diffeoforge publication-export runs/experiment-001
+diffeoforge publication-verify runs/experiment-001-publication
 
 # Or prepare and execute a new run in one command:
 diffeoforge run atlas.yaml --run-id experiment-002
@@ -205,6 +207,11 @@ This repository currently provides:
   subject-QC table, source-bound researcher decisions, exact methods draft,
   publication tables/figures, and optional Validation Lab, fixed-template
   holdout, and paired PCA-stability evidence;
+- an immutable publication bundle that reverifies the source atlas, creates the
+  scientific report, and copies exact SVG figures, open tables, the estimated
+  template, and available PCA endpoint meshes with captions and a recursive
+  SHA-256 inventory; raster DPI and deformation videos are never guessed from
+  endpoint meshes;
 - terminal interruption capture, explicit unclean-stop recovery, and
   provenance-bound checkpoint successors;
 - contribution and AI-usage policies suitable for public research software;
@@ -344,8 +351,7 @@ has completed its first real install/smoke/uninstall observation; a small
 retained-integrity-verifier refinement has also completed re-observation. No
 usable-installer or release claim follows from either compilation or lifecycle
 evidence.
-DiffeoForge still does not provide interactive native 3D atlas/result rendering,
-self-intersection detection, or promise
+DiffeoForge still does not provide triangle-triangle self-intersection detection or promise
 CPU/GPU equivalence or 300-specimen production performance. See the [modern-workflow
 documentation](docs/MODERN_WORKFLOW.md) and [reference-backend
 documentation](docs/REFERENCE_BACKEND.md) for the exact boundaries.
@@ -381,6 +387,13 @@ named `template.vtk` can be detected automatically; otherwise pass
 as exploratory, geometry-scaled starting values in both the YAML and report.
 See the [first-run workflow](docs/FIRST_RUN.md) for every check, parameter rule,
 override, and scientific boundary.
+
+Both engine routes expose the same deterministic structural mesh checks before
+expensive execution: duplicate faces, isolated vertices, non-manifold edges,
+inconsistent face orientation, and zero-area faces block the run. Open surfaces
+and disconnected components are reported for explicit study-level review rather
+than silently repaired. The exact limitations are documented in
+[Mesh quality](docs/MESH_QUALITY.md).
 
 For the experimental modern engine, no XML or historical Python environment is
 needed. Generate and review its separate explicit configuration, then create

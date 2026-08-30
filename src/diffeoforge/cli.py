@@ -26,6 +26,11 @@ from diffeoforge.pca_metadata import (
     verify_pca_metadata_analysis,
     write_pca_metadata_analysis,
 )
+from diffeoforge.publication_bundle import (
+    PublicationBundleError,
+    verify_publication_bundle,
+    write_publication_bundle,
+)
 from diffeoforge.reference import compare_reference_run
 from diffeoforge.reference_approved_preparation import prepare_approved_reference_run
 from diffeoforge.reference_calibration import (
@@ -1940,6 +1945,32 @@ def build_parser() -> argparse.ArgumentParser:
         help="Reverify a scientific report, its exact inventory, and all source hashes.",
     )
     scientific_report_verify_parser.add_argument("report_directory", type=Path)
+
+    publication_parser = subparsers.add_parser(
+        "publication-export",
+        help=(
+            "Package verified figures, tables, template/PCA endpoint meshes, and a "
+            "scientific report without rerunning the atlas."
+        ),
+    )
+    publication_parser.add_argument("run_directory", type=Path)
+    publication_parser.add_argument("--output", type=Path)
+    publication_parser.add_argument("--validation-study", type=Path)
+    publication_parser.add_argument("--sensitivity-assessment", type=Path)
+    publication_parser.add_argument("--template-robustness", type=Path)
+    publication_parser.add_argument("--holdout-study", type=Path)
+    publication_parser.add_argument("--pca-stability", type=Path)
+    publication_parser.add_argument("--decision-review", type=Path)
+    publication_parser.add_argument(
+        "--include-reconstructions",
+        action="store_true",
+        help="Also copy every verified subject reconstruction (can be large).",
+    )
+    publication_verify_parser = subparsers.add_parser(
+        "publication-verify",
+        help="Reverify a publication bundle, its nested report, source run, and hashes.",
+    )
+    publication_verify_parser.add_argument("publication_directory", type=Path)
 
     atlas_comparison_parser = subparsers.add_parser(
         "atlas-compare",
@@ -5098,6 +5129,37 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"ERROR: {error}", file=sys.stderr)
             return 2
         print(f"Scientific report verified: {artifact.directory}")
+        return 0
+
+    if args.command == "publication-export":
+        try:
+            artifact = write_publication_bundle(
+                args.run_directory,
+                args.output,
+                validation_study=args.validation_study,
+                sensitivity_assessment=args.sensitivity_assessment,
+                template_robustness=args.template_robustness,
+                holdout_study=args.holdout_study,
+                pca_stability=args.pca_stability,
+                decision_review=args.decision_review,
+                include_reconstructions=args.include_reconstructions,
+            )
+        except (OSError, RuntimeError, TypeError, ValueError, PublicationBundleError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        copied = artifact.manifest["selection"]["copied_artifacts"]
+        print(f"Publication bundle created and verified: {artifact.directory}")
+        print(f"Verified atlas artifacts copied: {len(copied)}")
+        print("No atlas, PCA, rasterization, or deformation animation was recomputed.")
+        return 0
+
+    if args.command == "publication-verify":
+        try:
+            artifact = verify_publication_bundle(args.publication_directory)
+        except (OSError, RuntimeError, TypeError, ValueError, PublicationBundleError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        print(f"Publication bundle verified: {artifact.directory}")
         return 0
 
     if args.command == "atlas-compare":

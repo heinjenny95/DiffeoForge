@@ -161,6 +161,12 @@ from diffeoforge.preprocessing import (
     LandmarkAlignmentPreview,
     preview_landmark_alignment,
 )
+from diffeoforge.publication_bundle import (
+    PUBLICATION_INDEX,
+    PublicationBundleArtifact,
+    default_publication_bundle_directory,
+    write_publication_bundle,
+)
 from diffeoforge.reference_calibration import (
     PilotSubjectDeclaration,
     ReferenceCalibrationPlan,
@@ -713,6 +719,25 @@ class _ScientificReportWorker(QRunnable):
         self.signals.succeeded.emit(artifact)
 
 
+class _PublicationBundleWorker(QRunnable):
+    """Package and reverify publication artifacts outside the GUI thread."""
+
+    def __init__(self, run_directory: Path, destination: Path) -> None:
+        super().__init__()
+        self.run_directory = run_directory
+        self.destination = destination
+        self.signals = _WorkerSignals()
+
+    @Slot()
+    def run(self) -> None:
+        try:
+            artifact = write_publication_bundle(self.run_directory, self.destination)
+        except (OSError, RuntimeError, TypeError, ValueError) as error:
+            self.signals.failed.emit(str(error))
+            return
+        self.signals.succeeded.emit(artifact)
+
+
 class _PCAMetadataWorker(QRunnable):
     """Join one CSV to a verified PCA outside the GUI thread."""
 
@@ -1065,6 +1090,8 @@ class DiffeoForgeWindow(QMainWindow):
             | _SavedReferencePreparationStatusVerificationWorker
             | _ResultReviewWorker
             | _ScientificReportWorker
+            | _PublicationBundleWorker
+            | _PCAMetadataWorker
             | _ReferencePCADeformationWorker
             | _AbandonedReferenceRecoveryWorker
             | _ArtifactWorker
@@ -2469,6 +2496,49 @@ class DiffeoForgeWindow(QMainWindow):
         scientific_report_layout.addWidget(self.scientific_report_status_label)
         scientific_report_layout.addWidget(self.create_scientific_report_button)
         layout.addWidget(scientific_report)
+
+        publication_card = QFrame()
+        publication_card.setObjectName("card")
+        publication_layout = QVBoxLayout(publication_card)
+        publication_layout.setContentsMargins(24, 22, 24, 24)
+        publication_layout.setSpacing(10)
+        publication_title = QLabel("Presentation and publication export")
+        publication_title.setObjectName("sectionTitle")
+        publication_summary = QLabel(
+            "Create one immutable folder with the scientific report, verified SVG "
+            "figures, open tables, the estimated template, and available PCA endpoint "
+            "meshes. The source atlas and PCA are not rerun or modified."
+        )
+        publication_summary.setWordWrap(True)
+        self.publication_status_label = QLabel(
+            "Load a verified atlas result before creating a publication bundle."
+        )
+        self.publication_status_label.setObjectName("status")
+        self.publication_status_label.setWordWrap(True)
+        self.create_publication_bundle_button = QPushButton("Create publication bundle")
+        self.create_publication_bundle_button.setObjectName("primary")
+        self.create_publication_bundle_button.clicked.connect(
+            self._create_publication_bundle
+        )
+        self.create_publication_bundle_button.setEnabled(False)
+        publication_layout.addWidget(publication_title)
+        publication_layout.addWidget(publication_summary)
+        publication_layout.addWidget(
+            InfoDisclosure(
+                "Exact export boundary",
+                (
+                    "SVG remains the canonical resolution-independent artwork. DiffeoForge "
+                    "does not guess journal DPI or synthesize a deformation video from PCA "
+                    "endpoint meshes, because endpoint interpolation is not a verified "
+                    "diffeomorphic path. Subject reconstructions stay in the source run by "
+                    "default to keep the export compact."
+                ),
+                parent=publication_card,
+            )
+        )
+        publication_layout.addWidget(self.publication_status_label)
+        publication_layout.addWidget(self.create_publication_bundle_button)
+        layout.addWidget(publication_card)
 
         metadata_card = QFrame()
         metadata_card.setObjectName("card")
@@ -8585,12 +8655,19 @@ class DiffeoForgeWindow(QMainWindow):
             review.engine_route == "deformetrica_reference"
         )
         self.create_scientific_report_button.setEnabled(True)
+        self.create_publication_bundle_button.setEnabled(True)
         self.create_pca_metadata_button.setEnabled(True)
         self.scientific_report_status_label.setObjectName("status")
         self.scientific_report_status_label.setStyleSheet("")
         self.scientific_report_status_label.setText(
             "Ready. The report will be written beside the immutable atlas run; missing "
             "sensitivity or biological evidence will remain explicitly unassessed."
+        )
+        self.publication_status_label.setObjectName("status")
+        self.publication_status_label.setStyleSheet("")
+        self.publication_status_label.setText(
+            "Ready. The export will copy only verified open artifacts beside the immutable "
+            "atlas run and will include a newly verified scientific report."
         )
         self.pca_metadata_status_label.setObjectName("status")
         self.pca_metadata_status_label.setStyleSheet("")
@@ -8623,6 +8700,7 @@ class DiffeoForgeWindow(QMainWindow):
         self._result_review = None
         self.open_validation_lab_button.setEnabled(False)
         self.create_scientific_report_button.setEnabled(False)
+        self.create_publication_bundle_button.setEnabled(False)
         self.create_pca_metadata_button.setEnabled(False)
         self._sync_reference_pca_deformation_action(None)
         self.status_label.setObjectName("statusError")
@@ -9069,6 +9147,70 @@ class DiffeoForgeWindow(QMainWindow):
             self.close()
 
     @Slot()
+    def _create_publication_bundle(self) -> None:
+        review = self._result_review
+        if review is None or self._worker is not None:
+            return
+        try:
+            if review.registration_qc and self._registration_qc_decisions:
+                export_registration_qc_review(
+                    review,
+                    self._registration_qc_decisions,
+                )
+            destination = default_publication_bundle_directory(review.run_directory)
+            if destination.exists():
+                timestamp = time.strftime("%Y%m%d-%H%M%S")
+                destination = destination.with_name(
+                    f"{destination.name}-{timestamp}-{uuid.uuid4().hex[:6]}"
+                )
+        except (ModernResultReviewError, OSError, RuntimeError, TypeError, ValueError) as error:
+            QMessageBox.warning(self, "Publication export could not start", str(error))
+            return
+        worker = _PublicationBundleWorker(review.run_directory, destination)
+        worker.signals.succeeded.connect(self._publication_bundle_succeeded)
+        worker.signals.failed.connect(self._publication_bundle_failed)
+        self._worker = worker
+        self._set_result_controls_enabled(False)
+        self.publication_status_label.setObjectName("status")
+        self.publication_status_label.setStyleSheet("")
+        self.publication_status_label.setText(
+            "Reverifying the atlas and packaging exact report, figure, table, and PCA "
+            "endpoint bytes…"
+        )
+        self._thread_pool.start(worker)
+
+    @Slot(object)
+    def _publication_bundle_succeeded(self, artifact: PublicationBundleArtifact) -> None:
+        self._worker = None
+        self._set_result_controls_enabled(True)
+        copied = artifact.manifest["selection"]["copied_artifacts"]
+        self.publication_status_label.setObjectName("statusSuccess")
+        self.publication_status_label.setStyleSheet("")
+        self.publication_status_label.setText(
+            f"Publication bundle created and independently reverified with "
+            f"{len(copied)} atlas artifacts: {artifact.directory}"
+        )
+        QDesktopServices.openUrl(
+            QUrl.fromLocalFile(str(artifact.directory / PUBLICATION_INDEX))
+        )
+        if self._close_after_worker:
+            self._close_after_worker = False
+            self.close()
+
+    @Slot(str)
+    def _publication_bundle_failed(self, message: str) -> None:
+        self._worker = None
+        self._set_result_controls_enabled(True)
+        self.publication_status_label.setObjectName("statusError")
+        self.publication_status_label.setStyleSheet("")
+        self.publication_status_label.setText(
+            f"Publication bundle was not created: {message}"
+        )
+        if self._close_after_worker:
+            self._close_after_worker = False
+            self.close()
+
+    @Slot()
     def _create_pca_metadata(self) -> None:
         review = self._result_review
         if review is None or self._worker is not None:
@@ -9227,6 +9369,7 @@ class DiffeoForgeWindow(QMainWindow):
         self._result_review = None
         self.open_validation_lab_button.setEnabled(False)
         self.create_scientific_report_button.setEnabled(False)
+        self.create_publication_bundle_button.setEnabled(False)
         self.create_pca_metadata_button.setEnabled(False)
         self._sync_reference_pca_deformation_action(None)
         self.run_back_button.setEnabled(True)
@@ -9323,6 +9466,9 @@ class DiffeoForgeWindow(QMainWindow):
     def _set_result_controls_enabled(self, enabled: bool) -> None:
         self.result_back_button.setEnabled(enabled)
         self.create_scientific_report_button.setEnabled(
+            enabled and self._result_review is not None
+        )
+        self.create_publication_bundle_button.setEnabled(
             enabled and self._result_review is not None
         )
         self.create_pca_metadata_button.setEnabled(
@@ -9511,6 +9657,8 @@ class DiffeoForgeWindow(QMainWindow):
             (
                 _ResultReviewWorker,
                 _ScientificReportWorker,
+                _PublicationBundleWorker,
+                _PCAMetadataWorker,
                 _ReferencePCADeformationWorker,
                 _ArtifactWorker,
             ),
@@ -9528,6 +9676,16 @@ class DiffeoForgeWindow(QMainWindow):
             elif isinstance(self._worker, _ScientificReportWorker):
                 self.scientific_report_status_label.setText(
                     "The window will remain open until report verification finishes."
+                )
+            elif isinstance(self._worker, _PublicationBundleWorker):
+                self.publication_status_label.setText(
+                    "The window will remain open until publication-bundle verification "
+                    "finishes."
+                )
+            elif isinstance(self._worker, _PCAMetadataWorker):
+                self.pca_metadata_status_label.setText(
+                    "The window will remain open until metadata-analysis verification "
+                    "finishes."
                 )
             else:
                 self.result_status_label.setText(
