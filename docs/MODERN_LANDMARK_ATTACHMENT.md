@@ -79,14 +79,3 @@ Verified evidence directories:
 This passes a miniature known-correspondence engineering test. It does not show
 that the empirical Trochanter meshes possess ordered vertex homology and does
 not authorize landmark attachment for them without independent evidence.
-
-The completed 236-subject Sobolev workflow was inspected read-only on August
-27, 2026. All subjects and the initial template contain 2,500 vertices and
-5,000 triangles, but 235/236 subject triangle-index arrays differ from the
-template. The mismatch remains for canonical face sets after ignoring triangle
-row order and winding; the 237 meshes contain 236 distinct indexed-connectivity
-signatures. Only `119.0_z_01_Trochanter.vtk` matches the template exactly.
-Therefore equal mesh dimensions do not satisfy the Engine 1.7 landmark
-precondition for this cohort, and a Trochanter landmark-mode atlas must not be
-started from these files. This observation does not weaken the valid
-Current/Sobolev surface-atlas evidence.
