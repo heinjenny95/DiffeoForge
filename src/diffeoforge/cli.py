@@ -11,6 +11,10 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from diffeoforge import __version__
+from diffeoforge.atlas_comparison import (
+    verify_atlas_comparison,
+    write_atlas_comparison,
+)
 from diffeoforge.config import ConfigurationError, load_config
 from diffeoforge.diagnostics import DEFAULT_CONTAINER_IMAGE, run_doctor
 from diffeoforge.initialization import (
@@ -1936,6 +1940,30 @@ def build_parser() -> argparse.ArgumentParser:
         help="Reverify a scientific report, its exact inventory, and all source hashes.",
     )
     scientific_report_verify_parser.add_argument("report_directory", type=Path)
+
+    atlas_comparison_parser = subparsers.add_parser(
+        "atlas-compare",
+        help=(
+            "Quantitatively compare two verified atlas/PCA results without selecting "
+            "an automatic winner."
+        ),
+    )
+    atlas_comparison_parser.add_argument("first_run", type=Path)
+    atlas_comparison_parser.add_argument("second_run", type=Path)
+    atlas_comparison_parser.add_argument("--output", required=True, type=Path)
+    atlas_comparison_parser.add_argument("--first-label", default="first")
+    atlas_comparison_parser.add_argument("--second-label", default="second")
+    atlas_comparison_parser.add_argument(
+        "--variance-target",
+        type=float,
+        default=0.90,
+        help="Cumulative variance target per paired PCA (default: 0.90).",
+    )
+    atlas_comparison_verify_parser = subparsers.add_parser(
+        "atlas-compare-verify",
+        help="Reverify both source runs and exactly recompute an atlas comparison.",
+    )
+    atlas_comparison_verify_parser.add_argument("comparison_directory", type=Path)
 
     compare_parser = subparsers.add_parser(
         "compare-reference",
@@ -5070,6 +5098,44 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"ERROR: {error}", file=sys.stderr)
             return 2
         print(f"Scientific report verified: {artifact.directory}")
+        return 0
+
+    if args.command == "atlas-compare":
+        try:
+            directory = write_atlas_comparison(
+                args.first_run,
+                args.second_run,
+                args.output,
+                first_label=args.first_label,
+                second_label=args.second_label,
+                variance_target=args.variance_target,
+            )
+            report = verify_atlas_comparison(directory)
+        except (ConfigurationError, OSError, RuntimeError, TypeError, ValueError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        print(f"Atlas comparison created and verified: {directory}")
+        print(
+            "Paired PCA stability: "
+            + (
+                f"CKA {report['pca_stability']['score_linear_cka']:.6g}; "
+                "distance-rank correlation "
+                f"{report['pca_stability']['score_distance_rank_correlation']:.6g}"
+                if report["pca_stability"]["available"]
+                else f"unavailable ({report['pca_stability']['unavailable_reason']})"
+            )
+        )
+        print("No automatic winner was selected.")
+        return 0
+
+    if args.command == "atlas-compare-verify":
+        try:
+            verify_atlas_comparison(args.comparison_directory)
+        except (ConfigurationError, OSError, RuntimeError, TypeError, ValueError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        print(f"Atlas comparison verified: {args.comparison_directory.resolve()}")
+        print("Both source runs and every comparison field were exactly recomputed.")
         return 0
 
     if args.command == "compare-reference":
