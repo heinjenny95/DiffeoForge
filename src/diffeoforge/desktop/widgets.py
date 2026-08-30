@@ -198,6 +198,13 @@ from diffeoforge.reference_validation_study import (
     load_reference_validation_study,
 )
 from diffeoforge.result_report import collect_run_report
+from diffeoforge.scientific_report import (
+    SCIENTIFIC_REPORT_HTML,
+    ScientificReportArtifact,
+    collect_scientific_atlas_report,
+    default_scientific_report_directory,
+    write_scientific_atlas_report,
+)
 from diffeoforge.surface_io import (
     SUPPORTED_SURFACE_EXTENSIONS,
     is_supported_surface_path,
@@ -681,6 +688,26 @@ class _ResultReviewWorker(QRunnable):
         self.signals.succeeded.emit(review)
 
 
+class _ScientificReportWorker(QRunnable):
+    """Create and reverify one report outside the immutable atlas run."""
+
+    def __init__(self, run_directory: Path, destination: Path) -> None:
+        super().__init__()
+        self.run_directory = run_directory
+        self.destination = destination
+        self.signals = _WorkerSignals()
+
+    @Slot()
+    def run(self) -> None:
+        try:
+            report = collect_scientific_atlas_report(self.run_directory)
+            artifact = write_scientific_atlas_report(report, self.destination)
+        except (OSError, RuntimeError, TypeError, ValueError) as error:
+            self.signals.failed.emit(str(error))
+            return
+        self.signals.succeeded.emit(artifact)
+
+
 class _ReferencePCADeformationWorker(QRunnable):
     """Create, execute, and verify default reference PCA Shooting endpoints."""
 
@@ -1000,6 +1027,7 @@ class DiffeoForgeWindow(QMainWindow):
             | _ReferencePreparationStatusWorker
             | _SavedReferencePreparationStatusVerificationWorker
             | _ResultReviewWorker
+            | _ScientificReportWorker
             | _ReferencePCADeformationWorker
             | _AbandonedReferenceRecoveryWorker
             | _ArtifactWorker
@@ -2363,6 +2391,47 @@ class DiffeoForgeWindow(QMainWindow):
         )
         validation_layout.addWidget(self.open_validation_lab_button)
         layout.addWidget(validation_lab)
+
+        scientific_report = QFrame()
+        scientific_report.setObjectName("card")
+        scientific_report_layout = QVBoxLayout(scientific_report)
+        scientific_report_layout.setContentsMargins(24, 22, 24, 24)
+        scientific_report_layout.setSpacing(10)
+        scientific_report_title = QLabel("Scientific atlas report")
+        scientific_report_title.setObjectName("sectionTitle")
+        scientific_report_summary = QLabel(
+            "Create a self-contained completion report with technical status, ranked "
+            "registration QC, recorded researcher decisions, a claim matrix, paper-ready "
+            "methods, tables, and verified figures. Missing robustness evidence is shown "
+            "explicitly instead of being inferred."
+        )
+        scientific_report_summary.setWordWrap(True)
+        self.scientific_report_status_label = QLabel(
+            "Load a verified atlas result before creating the report."
+        )
+        self.scientific_report_status_label.setObjectName("status")
+        self.scientific_report_status_label.setWordWrap(True)
+        self.create_scientific_report_button = QPushButton("Create scientific report")
+        self.create_scientific_report_button.setObjectName("primary")
+        self.create_scientific_report_button.clicked.connect(self._create_scientific_report)
+        self.create_scientific_report_button.setEnabled(False)
+        scientific_report_layout.addWidget(scientific_report_title)
+        scientific_report_layout.addWidget(scientific_report_summary)
+        scientific_report_layout.addWidget(
+            InfoDisclosure(
+                "How claims are bounded",
+                (
+                    "The report labels each claim as supported, partial, not assessed, or "
+                    "not supported. Residual extremes are visual-inspection priorities, "
+                    "never automatic biological outliers. GPA landmarks remain "
+                    "pre-alignment data and are not presented as atlas-validation evidence."
+                ),
+                parent=scientific_report,
+            )
+        )
+        scientific_report_layout.addWidget(self.scientific_report_status_label)
+        scientific_report_layout.addWidget(self.create_scientific_report_button)
+        layout.addWidget(scientific_report)
 
         artifacts = QFrame()
         artifacts.setObjectName("card")
@@ -8438,6 +8507,13 @@ class DiffeoForgeWindow(QMainWindow):
         self.open_validation_lab_button.setEnabled(
             review.engine_route == "deformetrica_reference"
         )
+        self.create_scientific_report_button.setEnabled(True)
+        self.scientific_report_status_label.setObjectName("status")
+        self.scientific_report_status_label.setStyleSheet("")
+        self.scientific_report_status_label.setText(
+            "Ready. The report will be written beside the immutable atlas run; missing "
+            "sensitivity or biological evidence will remain explicitly unassessed."
+        )
         self._sync_reference_pca_deformation_action(review)
         self.result_status_label.setObjectName("statusSuccess")
         self.result_status_label.setStyleSheet("")
@@ -8463,6 +8539,7 @@ class DiffeoForgeWindow(QMainWindow):
         self._worker = None
         self._result_review = None
         self.open_validation_lab_button.setEnabled(False)
+        self.create_scientific_report_button.setEnabled(False)
         self._sync_reference_pca_deformation_action(None)
         self.status_label.setObjectName("statusError")
         self.status_label.setStyleSheet("")
@@ -8846,6 +8923,67 @@ class DiffeoForgeWindow(QMainWindow):
             f"SHA-256 {exported.sha256}"
         )
 
+    @Slot()
+    def _create_scientific_report(self) -> None:
+        review = self._result_review
+        if review is None or self._worker is not None:
+            return
+        try:
+            if review.registration_qc and self._registration_qc_decisions:
+                export_registration_qc_review(
+                    review,
+                    self._registration_qc_decisions,
+                )
+            destination = default_scientific_report_directory(review.run_directory)
+            if destination.exists():
+                timestamp = time.strftime("%Y%m%d-%H%M%S")
+                destination = destination.with_name(
+                    f"{destination.name}-{timestamp}-{uuid.uuid4().hex[:6]}"
+                )
+        except (ModernResultReviewError, OSError, RuntimeError, TypeError, ValueError) as error:
+            QMessageBox.warning(self, "Scientific report could not start", str(error))
+            return
+        worker = _ScientificReportWorker(review.run_directory, destination)
+        worker.signals.succeeded.connect(self._scientific_report_succeeded)
+        worker.signals.failed.connect(self._scientific_report_failed)
+        self._worker = worker
+        self._set_result_controls_enabled(False)
+        self.scientific_report_status_label.setObjectName("status")
+        self.scientific_report_status_label.setStyleSheet("")
+        self.scientific_report_status_label.setText(
+            "Reverifying atlas, PCA, subject residuals, user decisions, and report bytes…"
+        )
+        self._thread_pool.start(worker)
+
+    @Slot(object)
+    def _scientific_report_succeeded(self, artifact: ScientificReportArtifact) -> None:
+        self._worker = None
+        self._set_result_controls_enabled(True)
+        self.scientific_report_status_label.setObjectName("statusSuccess")
+        self.scientific_report_status_label.setStyleSheet("")
+        self.scientific_report_status_label.setText(
+            "Scientific report created and independently reverified: "
+            f"{artifact.directory}"
+        )
+        report_path = artifact.directory / SCIENTIFIC_REPORT_HTML
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(report_path)))
+        if self._close_after_worker:
+            self._close_after_worker = False
+            self.close()
+
+    @Slot(str)
+    def _scientific_report_failed(self, message: str) -> None:
+        self._worker = None
+        self._set_result_controls_enabled(True)
+        self.scientific_report_status_label.setObjectName("statusError")
+        self.scientific_report_status_label.setStyleSheet("")
+        self.scientific_report_status_label.setText(
+            f"Scientific report was not created: {message}"
+        )
+        if self._close_after_worker:
+            self._close_after_worker = False
+            self.close()
+
     def _load_verified_optimizer_plot(self, review: ModernResultReview) -> None:
         try:
             review.artifact("optimizer-convergence-plot")
@@ -8929,6 +9067,7 @@ class DiffeoForgeWindow(QMainWindow):
         self._worker = None
         self._result_review = None
         self.open_validation_lab_button.setEnabled(False)
+        self.create_scientific_report_button.setEnabled(False)
         self._sync_reference_pca_deformation_action(None)
         self.run_back_button.setEnabled(True)
         self.run_state_label.setObjectName("statusError")
@@ -9023,6 +9162,9 @@ class DiffeoForgeWindow(QMainWindow):
 
     def _set_result_controls_enabled(self, enabled: bool) -> None:
         self.result_back_button.setEnabled(enabled)
+        self.create_scientific_report_button.setEnabled(
+            enabled and self._result_review is not None
+        )
         for button in self.result_artifact_buttons:
             button.setEnabled(enabled)
         reference = (
@@ -9203,7 +9345,12 @@ class DiffeoForgeWindow(QMainWindow):
             return
         if isinstance(
             self._worker,
-            (_ResultReviewWorker, _ReferencePCADeformationWorker, _ArtifactWorker),
+            (
+                _ResultReviewWorker,
+                _ScientificReportWorker,
+                _ReferencePCADeformationWorker,
+                _ArtifactWorker,
+            ),
         ):
             self._close_after_worker = True
             if isinstance(self._worker, _ResultReviewWorker):
@@ -9214,6 +9361,10 @@ class DiffeoForgeWindow(QMainWindow):
                 self.reference_pca_deformation_status_label.setText(
                     "The window will remain open until Deformetrica Shooting stops and "
                     "the atomic result is either verified or rejected."
+                )
+            elif isinstance(self._worker, _ScientificReportWorker):
+                self.scientific_report_status_label.setText(
+                    "The window will remain open until report verification finishes."
                 )
             else:
                 self.result_status_label.setText(

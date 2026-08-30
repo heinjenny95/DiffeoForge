@@ -86,6 +86,12 @@ from diffeoforge.runs import (
     recover_run,
     run_status,
 )
+from diffeoforge.scientific_report import (
+    ScientificReportError,
+    collect_scientific_atlas_report,
+    verify_scientific_atlas_report,
+    write_scientific_atlas_report,
+)
 from diffeoforge.surface_io import is_supported_surface_path
 
 _AUTO_REPORT = Path("__diffeoforge_auto_report__")
@@ -1748,6 +1754,49 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Explicitly replace an existing DiffeoForge result report.",
     )
+
+    scientific_report_parser = subparsers.add_parser(
+        "scientific-report",
+        help=(
+            "Create an evidence-bound scientific atlas report with methods, claim matrix, "
+            "subject QC, and optional robustness evidence."
+        ),
+    )
+    scientific_report_parser.add_argument("run_directory", type=Path)
+    scientific_report_parser.add_argument(
+        "--validation-study",
+        type=Path,
+        help="Completed neighboring-parameter Validation Lab directory.",
+    )
+    scientific_report_parser.add_argument(
+        "--holdout-study",
+        type=Path,
+        help="Completed fixed-template heldout-confirmation directory.",
+    )
+    scientific_report_parser.add_argument(
+        "--pca-stability",
+        type=Path,
+        help="Verified Reference or Modern PCA-stability artifact directory.",
+    )
+    scientific_report_parser.add_argument(
+        "--decision-review",
+        type=Path,
+        help=(
+            "Source-bound registration-QC review JSON. If omitted, the latest review "
+            "for the run is used when available."
+        ),
+    )
+    scientific_report_parser.add_argument(
+        "--output",
+        type=Path,
+        help="Absent output directory (default: sibling RUN-scientific-report).",
+    )
+
+    scientific_report_verify_parser = subparsers.add_parser(
+        "scientific-report-verify",
+        help="Reverify a scientific report, its exact inventory, and all source hashes.",
+    )
+    scientific_report_verify_parser.add_argument("report_directory", type=Path)
 
     compare_parser = subparsers.add_parser(
         "compare-reference",
@@ -4695,6 +4744,37 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"Run status: {report.result['status']}")
         print(f"Convergence observations: {len(report.convergence)}")
         print(f"Result report: {report_path}")
+        return 0
+
+    if args.command == "scientific-report":
+        try:
+            report = collect_scientific_atlas_report(
+                args.run_directory,
+                validation_study=args.validation_study,
+                holdout_study=args.holdout_study,
+                pca_stability=args.pca_stability,
+                decision_review=args.decision_review,
+            )
+            artifact = write_scientific_atlas_report(report, args.output)
+        except (OSError, RuntimeError, TypeError, ValueError, ScientificReportError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        supported = sum(claim.status == "supported" for claim in report.claims)
+        print(f"Scientific claims supported: {supported} of {len(report.claims)}")
+        print(
+            f"Subjects prioritized for inspection: "
+            f"{sum(item.inspection_priority for item in report.subjects)}"
+        )
+        print(f"Scientific report: {artifact.directory}")
+        return 0
+
+    if args.command == "scientific-report-verify":
+        try:
+            artifact = verify_scientific_atlas_report(args.report_directory)
+        except (OSError, RuntimeError, TypeError, ValueError, ScientificReportError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        print(f"Scientific report verified: {artifact.directory}")
         return 0
 
     if args.command == "compare-reference":

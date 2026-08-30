@@ -59,6 +59,9 @@ diffeoforge reference-prepare-approved experiment-001-approval.json --current-co
 diffeoforge execute runs/experiment-001
 diffeoforge status runs/experiment-001
 diffeoforge report runs/experiment-001
+# After the atlas PCA exists, compose the publication-facing evidence report:
+diffeoforge scientific-report runs/experiment-001
+diffeoforge scientific-report-verify runs/experiment-001-scientific-report
 
 # Or prepare and execute a new run in one command:
 diffeoforge run atlas.yaml --run-id experiment-002
@@ -190,6 +193,10 @@ This repository currently provides:
   presented as automatic scientific approval;
 - a self-contained HTML input-validation and parameter-scale report;
 - a self-contained HTML convergence, lifecycle, and result report;
+- an immutable scientific atlas completion report with a claim matrix, ranked
+  subject-QC table, source-bound researcher decisions, exact methods draft,
+  publication tables/figures, and optional Validation Lab, fixed-template
+  holdout, and paired PCA-stability evidence;
 - terminal interruption capture, explicit unclean-stop recovery, and
   provenance-bound checkpoint successors;
 - contribution and AI-usage policies suitable for public research software;
@@ -670,6 +677,7 @@ and workflow for another mesh directory.
 - [Frozen Deformetrica CPU container](docs/CONTAINER_REFERENCE.md)
 - [First-run workflow](docs/FIRST_RUN.md)
 - [Result-report interpretation](docs/RESULT_REPORT.md)
+- [Scientific atlas completion report](docs/SCIENTIFIC_ATLAS_REPORT.md)
 - [Checkpoint, interruption, and resume](docs/RESUME_AND_RECOVERY.md)
 - [Release checklist](docs/RELEASE_CHECKLIST.md)
 - [Validation strategy](docs/VALIDATION_STRATEGY.md)
