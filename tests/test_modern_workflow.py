@@ -585,7 +585,7 @@ def test_multiblock_lbfgs_workflow_writes_exact_v03_checkpoint(tmp_path: Path) -
     assert bundle["optimizer"]["settings"]["direction_update"] == "lbfgs"
     assert bundle["optimizer"]["settings"]["momenta_updates_per_cycle"] == 2
     assert checkpoint["checkpoint_version"] == "0.3"
-    assert checkpoint["binding"]["engine_implementation"] == "1.6"
+    assert checkpoint["binding"]["engine_implementation"] == "1.8"
     assert checkpoint["binding"]["momenta_updates_per_cycle"] == 2
     assert checkpoint["binding"]["subject_batch_size"] is None
     assert checkpoint["binding"]["subject_batch_workers"] == 1

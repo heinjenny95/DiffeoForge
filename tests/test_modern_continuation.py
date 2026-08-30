@@ -77,7 +77,7 @@ def test_completed_modern_run_can_continue_from_its_exact_final_state(
     assert plan["status"] == "prospective_no_successor_result"
     assert plan["parent"]["termination_reason"] == "max_cycles"
     assert plan["continuation"]["step_initialization"] == "previous_accepted"
-    assert plan["config"]["expected_engine_implementation"] == "1.6"
+    assert plan["config"]["expected_engine_implementation"] == "1.8"
     assert config["schema_version"] == "0.5"
     assert config["initialization"]["momenta"] == {
         "method": "file",
@@ -109,7 +109,7 @@ def test_completed_modern_run_can_continue_from_its_exact_final_state(
     assert "matches the parent final state within" in run_output.out
 
     assert verified["initial_objective_matches"] is True
-    assert verified["workflow"]["engine"]["implementation_version"] == "1.6"
+    assert verified["workflow"]["engine"]["implementation_version"] == "1.8"
     assert verified["initial_objective"] == pytest.approx(
         verified["parent_final_objective"], rel=1e-12, abs=1e-12
     )
@@ -132,7 +132,7 @@ def test_completed_modern_run_can_continue_from_its_exact_final_state(
         verify_modern_continuation(plan_root)
 
 
-def test_engine16_exactly_continues_an_engine15_euclidean_checkpoint(
+def test_engine18_exactly_continues_an_engine15_euclidean_checkpoint(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -171,23 +171,23 @@ def test_engine16_exactly_continues_an_engine15_euclidean_checkpoint(
 
     plan_root = create_modern_continuation(
         parent_run,
-        tmp_path / "engine16-successor-plan",
+        tmp_path / "engine18-successor-plan",
         max_cycles=1,
         threads=1,
         created_at=FIXED_TIME,
     )
     plan = verify_modern_continuation(plan_root)
     assert plan["parent"]["engine_implementation"] == "1.5"
-    assert plan["config"]["expected_engine_implementation"] == "1.6"
+    assert plan["config"]["expected_engine_implementation"] == "1.8"
 
     successor_run = run_modern_workflow(
         plan_root / CONFIG_NAME,
-        destination=tmp_path / "engine16-successor-run",
+        destination=tmp_path / "engine18-successor-run",
         created_at=FIXED_TIME,
     )
     verified = verify_modern_continuation_run(plan_root, successor_run)
     assert verified["initial_objective_matches"] is True
-    assert verified["workflow"]["engine"]["implementation_version"] == "1.6"
+    assert verified["workflow"]["engine"]["implementation_version"] == "1.8"
     assert verified["initial_objective"] == verified["parent_final_objective"]
 
 

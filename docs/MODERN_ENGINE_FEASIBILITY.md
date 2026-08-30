@@ -350,8 +350,10 @@ gates. See
    correspondence-independent analytic surface-recovery gates in both Euclidean
    and Sobolev modes, with about 77.2% pooled surface-RMSE reduction. This tests
    the landmark-free objective on synthetic geometry and is not biological
-   validation. The CPU and Current defaults remain unchanged because these
-   results are cohort- and hardware-specific. See
+   validation. Engine 1.8 removes the short-lived experimental ordered-point
+   attachment and restores the intended surface-only atlas contract; optional
+   landmarks remain confined to GPA preprocessing. The CPU and Current defaults
+   remain unchanged because these results are cohort- and hardware-specific. See
    [Engine 1.5 CUDA feasibility](MODERN_ENGINE15_CUDA.md).
 9. Define evidence-derived tolerances before accepting a production backend.
    Provisional fixed-reference gates have now passed once prospectively; broader

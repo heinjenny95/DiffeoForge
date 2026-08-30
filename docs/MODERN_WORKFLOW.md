@@ -87,7 +87,7 @@ count, finite values, copied bytes, and SHA-256 are checked before execution and
 again during workflow verification.
 
 Configuration v0.5 may bind one verified exact-state checkpoint and its parent
-effective configuration. Current Engine 1.6 runs write checkpoint v0.3 with
+effective configuration. Current Engine 1.8 runs write checkpoint v0.3 with
 separate L-BFGS histories for every configured block. This is reserved for immutable completed-run
 continuation and guarded abandoned-run recovery. Preflight verifies exact
 Engine, runtime/thread, model, optimizer, subject, and numerical-state identity
@@ -134,6 +134,11 @@ are recorded in the configuration and result bundle and must remain identical
 across an exact continuation. See
 [Sobolev template-gradient kernel](MODERN_SOBOLEV_TEMPLATE_GRADIENT.md).
 
+Engine 1.8 preserves the landmark-free atlas contract. Optional labelled
+landmarks are consumed only to estimate and record the GPA similarity
+transforms before atlas initialization; landmark coordinates are never passed
+to the Current/Varifold attachment or optimizer objective.
+
 New starter configurations set `checkpoint_interval_cycles: 5` and
 `checkpoint_retention: latest`. A terminal cycle is always written. The
 workflow manifest binds the effective policy and retained cycle sequence;
@@ -146,7 +151,7 @@ remain verifiable; prospective continuation plans bind the implementation
 revision expected for their successor.
 
 A completed, verified run that reaches its cycle cap without convergence can be
-continued through a separate hash-bound prospective successor. Engine 1.6
+continued through a separate hash-bound prospective successor. Engine 1.8
 copies the exact complete-cycle numerical state, including per-block L-BFGS histories and
 relative-objective baselines; it never modifies or relabels the parent. See
 [verified Modern optimizer continuation](MODERN_CONTINUATION.md).

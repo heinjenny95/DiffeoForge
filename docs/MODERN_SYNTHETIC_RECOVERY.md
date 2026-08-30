@@ -19,12 +19,12 @@ Euclidean arm keeps the current Engine implementation version and is not
 relabeled as a historical implementation.
 
 Every new design freezes one recovery metric before either result exists.
-`attachment-native`, the default, selects deterministic symmetric
-vertex-to-triangle surface distance for Current or Varifold attachment and
-ordered-vertex error for landmark attachment. `--recovery-metric surface` and
-`--recovery-metric ordered-vertex` make either choice explicit. Existing v0.1
-designs without this field remain verifiable and retain their historical
-ordered-vertex interpretation.
+The default `surface` metric uses deterministic symmetric vertex-to-triangle
+distance for the landmark-free Current workflow. `ordered-vertex` remains
+available only as an explicit analytic diagnostic when the synthetic generator
+provides known point correspondence; it never changes or steers the atlas
+objective. Existing v0.1 designs without this field remain verifiable and retain
+their historical ordered-vertex interpretation.
 
 Create a known-correspondence benchmark and freeze the paired design before
 either result exists:

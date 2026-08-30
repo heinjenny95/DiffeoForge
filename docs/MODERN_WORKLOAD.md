@@ -188,7 +188,7 @@ The JSON is validated against the bundled strict schema
 `modern-workload-v0.2.json`. Additional semantic validation rejects inconsistent
 inventory counts, pair and tile arithmetic, payload subtotals, or optimizer
 bounds. Configuration and input SHA-256 values tie the plan to reviewed bytes.
-New reports record the active Modern engine implementation (through `1.6`) and
+New reports record the active Modern engine implementation (through `1.8`) and
 bind the four-call RK2 formula; legacy reports without that optional provenance
 use the earlier six-call formula when semantically checked. Engine 1.6 reports
 also expose and account for the selected Euclidean or Sobolev template-gradient
