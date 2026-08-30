@@ -64,6 +64,10 @@ from diffeoforge.reference_preparation_verification import (
     write_reference_preparation_plan_verification,
 )
 from diffeoforge.reference_recommendation import recommend_reference_parameters
+from diffeoforge.reference_sensitivity_assessment import (
+    verify_reference_sensitivity_assessment,
+    write_reference_sensitivity_assessment,
+)
 from diffeoforge.reference_validation_study import (
     ReferenceValidationStudyRunner,
     create_reference_validation_study,
@@ -1411,6 +1415,56 @@ def build_parser() -> argparse.ArgumentParser:
     validation_study_status.add_argument("study_directory", type=Path)
     validation_study_status.add_argument("--json", action="store_true")
 
+    sensitivity_assess = subparsers.add_parser(
+        "reference-sensitivity-assess",
+        help=(
+            "Assess template, high-residual-subject, PCA, and search-boundary "
+            "sensitivity from completed Validation Lab runs without starting an atlas."
+        ),
+    )
+    sensitivity_assess.add_argument("study_directory", type=Path)
+    sensitivity_assess.add_argument(
+        "--output",
+        type=Path,
+        help="Absent output directory (default: sibling STUDY-sensitivity).",
+    )
+    sensitivity_assess.add_argument(
+        "--template-margin-multiplier",
+        type=float,
+        default=1.0,
+        help="Multiplier for the Validation Lab practical geometric margin (default: 1).",
+    )
+    sensitivity_assess.add_argument(
+        "--outlier-fraction",
+        type=float,
+        default=0.10,
+        help="Upper residual fraction compared between finalists (default: 0.10).",
+    )
+    sensitivity_assess.add_argument(
+        "--minimum-outlier-jaccard",
+        type=float,
+        default=0.50,
+        help="Engineering overlap gate for high-residual subjects (default: 0.50).",
+    )
+    sensitivity_assess.add_argument(
+        "--pca-variance-target",
+        type=float,
+        default=0.90,
+        help="Cumulative variance target used per paired PCA (default: 0.90).",
+    )
+    sensitivity_assess.add_argument(
+        "--minimum-pca-similarity",
+        type=float,
+        default=0.95,
+        help="Engineering gate for PCA CKA and distance-rank correlation (default: 0.95).",
+    )
+
+    sensitivity_verify = subparsers.add_parser(
+        "reference-sensitivity-verify",
+        help="Reverify and exactly recompute an existing sensitivity assessment.",
+    )
+    sensitivity_verify.add_argument("assessment_directory", type=Path)
+
     validation_study_run = subparsers.add_parser(
         "reference-validation-study-run",
         help="Run or resume every frozen Validation Lab comparison.",
@@ -1767,6 +1821,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--validation-study",
         type=Path,
         help="Completed neighboring-parameter Validation Lab directory.",
+    )
+    scientific_report_parser.add_argument(
+        "--sensitivity-assessment",
+        type=Path,
+        help="Verified automatic sensitivity assessment derived from the Validation Lab.",
     )
     scientific_report_parser.add_argument(
         "--holdout-study",
@@ -3916,6 +3975,42 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 2
         return 0
 
+    if args.command == "reference-sensitivity-assess":
+        try:
+            artifact = write_reference_sensitivity_assessment(
+                args.study_directory,
+                args.output,
+                template_margin_multiplier=args.template_margin_multiplier,
+                outlier_fraction=args.outlier_fraction,
+                minimum_outlier_jaccard=args.minimum_outlier_jaccard,
+                variance_target=args.pca_variance_target,
+                minimum_pca_similarity=args.minimum_pca_similarity,
+            )
+        except (ConfigurationError, OSError, RuntimeError, TypeError, ValueError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        print(f"Sensitivity status: {artifact.manifest['status']}")
+        print(
+            "Preferred parameter at tested boundary: "
+            f"{artifact.manifest['gates']['preferred_parameter_at_tested_boundary']}"
+        )
+        print(f"Sensitivity assessment: {artifact.artifact_directory}")
+        print("No atlas process was started.")
+        return 0
+
+    if args.command == "reference-sensitivity-verify":
+        try:
+            artifact = verify_reference_sensitivity_assessment(
+                args.assessment_directory
+            )
+        except (ConfigurationError, OSError, RuntimeError, TypeError, ValueError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        print(f"Sensitivity assessment verified: {artifact.artifact_directory}")
+        print(f"Sensitivity status: {artifact.manifest['status']}")
+        print("All full-training source runs and metrics were exactly recomputed.")
+        return 0
+
     if args.command == "reference-validation-study-run":
         try:
             before = load_reference_validation_study(args.study_directory)
@@ -4751,6 +4846,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             report = collect_scientific_atlas_report(
                 args.run_directory,
                 validation_study=args.validation_study,
+                sensitivity_assessment=args.sensitivity_assessment,
                 holdout_study=args.holdout_study,
                 pca_stability=args.pca_stability,
                 decision_review=args.decision_review,

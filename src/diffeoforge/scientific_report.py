@@ -34,6 +34,10 @@ from diffeoforge.reference_pca_stability import (
     REFERENCE_PCA_STABILITY_MANIFEST,
     verify_reference_pca_stability,
 )
+from diffeoforge.reference_sensitivity_assessment import (
+    SENSITIVITY_ASSESSMENT_JSON,
+    verify_reference_sensitivity_assessment,
+)
 from diffeoforge.reference_validation_study import load_reference_validation_study
 from diffeoforge.runs import publish_directory_exclusive
 
@@ -370,9 +374,25 @@ def _matches_finalist(config: Mapping[str, Any], expected: Mapping[str, float]) 
 def _validation_evidence(
     directory: Path | str | None,
     config: Mapping[str, Any],
-) -> tuple[dict[str, Any] | None, tuple[str, Path, str] | None]:
+    sensitivity_assessment: Path | str | None = None,
+) -> tuple[dict[str, Any] | None, tuple[tuple[str, Path, str], ...]]:
+    detailed = None
+    detailed_source = None
+    if sensitivity_assessment is not None:
+        artifact = verify_reference_sensitivity_assessment(sensitivity_assessment)
+        detailed = artifact.manifest
+        detailed_source = artifact.artifact_directory / SENSITIVITY_ASSESSMENT_JSON
+        detailed_study = Path(
+            str(detailed["source"]["validation_study_directory"])
+        ).resolve()
+        if directory is None:
+            directory = detailed_study
+        elif Path(directory).expanduser().resolve() != detailed_study:
+            raise ScientificReportError(
+                "Sensitivity assessment is not bound to the supplied Validation Lab study"
+            )
     if directory is None:
-        return None, None
+        return None, ()
     snapshot = load_reference_validation_study(directory)
     assessment = snapshot.assessment
     if snapshot.status != "completed" or assessment is None or snapshot.report_json_path is None:
@@ -386,6 +406,10 @@ def _validation_evidence(
         None,
     )
     matches = selected is not None and _matches_finalist(config, selected.values)
+    if detailed is not None and detailed["source"]["study_id"] != snapshot.study_id:
+        raise ScientificReportError(
+            "Sensitivity assessment study identity differs from the Validation Lab"
+        )
     value = {
         "study_id": snapshot.study_id,
         "status": assessment.status,
@@ -395,13 +419,34 @@ def _validation_evidence(
         "final_atlas_matches_recommendation": matches,
         "warnings": list(assessment.warnings),
         "remaining_gates": list(assessment.next_gates),
+        "automatic_assessment": (
+            None
+            if detailed is None
+            else {
+                "status": detailed["status"],
+                "gates": detailed["gates"],
+                "search_boundary": detailed["search_boundary"],
+                "pairwise_comparison_count": len(detailed["pairwise_comparisons"]),
+                "warnings": detailed["warnings"],
+                "next_step": detailed["next_step"],
+            }
+        ),
         "claim_boundary": (
             "Stability is limited to the frozen finalist search space and cohorts. "
             "It is not a universal parameter optimum."
         ),
     }
     source = snapshot.report_json_path
-    return value, ("sensitivity_study", source, sha256_file(source))
+    sources = [("sensitivity_study", source, sha256_file(source))]
+    if detailed_source is not None:
+        sources.append(
+            (
+                "automatic_sensitivity_assessment",
+                detailed_source,
+                sha256_file(detailed_source),
+            )
+        )
+    return value, tuple(sources)
 
 
 def _holdout_evidence(
@@ -545,16 +590,20 @@ def _claim_matrix(
     sensitivity_status: ClaimStatus = "not_assessed"
     sensitivity_evidence = "No verified neighboring-parameter study was supplied."
     if sensitivity is not None:
-        sensitivity_status = (
-            "supported"
-            if sensitivity["status"] == "robust_within_search_space"
+        automatic = sensitivity["automatic_assessment"]
+        sensitivity_status = "partial"
+        if (
+            sensitivity["status"] == "robust_within_search_space"
             and sensitivity["final_atlas_matches_recommendation"]
-            else "partial"
-        )
+            and automatic is not None
+            and automatic["status"] == "stable_within_tested_neighborhood"
+        ):
+            sensitivity_status = "supported"
         sensitivity_evidence = (
             f"Validation Lab status {sensitivity['status']}; winner support "
             f"{sensitivity['winner_support']}; final-atlas parameter match="
-            f"{sensitivity['final_atlas_matches_recommendation']}."
+            f"{sensitivity['final_atlas_matches_recommendation']}; automatic assessment="
+            f"{None if automatic is None else automatic['status']}."
         )
     holdout_status: ClaimStatus = "not_assessed"
     holdout_evidence = "No verified fixed-template heldout study was supplied."
@@ -638,6 +687,7 @@ def collect_scientific_atlas_report(
     run_directory: Path | str,
     *,
     validation_study: Path | str | None = None,
+    sensitivity_assessment: Path | str | None = None,
     holdout_study: Path | str | None = None,
     pca_stability: Path | str | None = None,
     decision_review: Path | str | None = None,
@@ -662,16 +712,21 @@ def collect_scientific_atlas_report(
         )
         for index, (name, value) in enumerate(ranked, start=1)
     )
-    sensitivity, sensitivity_source = _validation_evidence(validation_study, config)
+    sensitivity, sensitivity_sources = _validation_evidence(
+        validation_study,
+        config,
+        sensitivity_assessment,
+    )
     holdout, holdout_source = _holdout_evidence(holdout_study, sensitivity)
     stability, stability_source = _pca_stability_evidence(pca_stability)
     sources = [
         ("workflow_manifest", review.workflow_manifest_path, review.workflow_manifest_sha256),
         ("analysis_manifest", review.bundle_manifest_path, review.bundle_manifest_sha256),
     ]
+    sources.extend(sensitivity_sources)
     sources.extend(
         source
-        for source in (decision_source, sensitivity_source, holdout_source, stability_source)
+        for source in (decision_source, holdout_source, stability_source)
         if source is not None
     )
     claims = _claim_matrix(review, subjects, decisions, sensitivity, holdout, stability)
@@ -809,12 +864,20 @@ def render_scientific_report_html(report: ScientificAtlasReport) -> str:
         )
     evidence_cards = []
     if report.sensitivity is not None:
+        automatic = report.sensitivity["automatic_assessment"]
+        automatic_text = (
+            "not supplied"
+            if automatic is None
+            else str(automatic["status"])
+        )
         evidence_cards.append(
             "<div class='card'><h3>Neighboring-parameter sensitivity</h3>"
             f"<p>Status: <strong>{html.escape(str(report.sensitivity['status']))}</strong>; "
             f"winner support: {html.escape(str(report.sensitivity['winner_support']))}; "
             "final atlas matches recommendation: "
-            f"{html.escape(str(report.sensitivity['final_atlas_matches_recommendation']))}.</p></div>"
+            f"{html.escape(str(report.sensitivity['final_atlas_matches_recommendation']))}; "
+            f"automatic template/outlier/PCA assessment: "
+            f"<strong>{html.escape(automatic_text)}</strong>.</p></div>"
         )
     if report.holdout is not None:
         evidence_cards.append(
@@ -989,6 +1052,18 @@ def write_scientific_atlas_report(
                             path.parent.parent
                             for role, path, _ in report.evidence_sources
                             if role == "sensitivity_study"
+                        )
+                    )
+                ),
+                "sensitivity_assessment": (
+                    None
+                    if report.sensitivity is None
+                    or report.sensitivity["automatic_assessment"] is None
+                    else str(
+                        next(
+                            path.parent
+                            for role, path, _ in report.evidence_sources
+                            if role == "automatic_sensitivity_assessment"
                         )
                     )
                 ),

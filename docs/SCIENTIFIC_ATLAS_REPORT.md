@@ -25,6 +25,7 @@ Completed robustness evidence can be attached explicitly:
 ```powershell
 diffeoforge scientific-report C:\path\to\atlas-run `
   --validation-study C:\path\to\diffeoforge-validation-lab `
+  --sensitivity-assessment C:\path\to\diffeoforge-validation-lab-sensitivity `
   --holdout-study C:\path\to\heldout-confirmation `
   --pca-stability C:\path\to\pca-stability `
   --decision-review C:\path\to\registration-qc-review.json `
@@ -105,7 +106,9 @@ instead of rewriting prior evidence.
 
 ## Current boundary
 
-The report composes evidence that already exists. It does not itself launch sensitivity,
-multi-start template, bootstrap, or biological validation runs. Missing evidence stays
-visible in the claim matrix. That separation prevents a convenient document generator
-from becoming an undocumented scientific decision engine.
+The report composes evidence that already exists. The automatic sensitivity assessor can
+now extract template, high-residual-subject, PCA, and search-boundary evidence from
+completed Validation Lab runs without launching a new atlas. Multi-start template,
+bootstrap, and biological validation remain separate future evidence layers. Missing
+evidence stays visible in the claim matrix. That separation prevents a convenient
+document generator from becoming an undocumented scientific decision engine.
