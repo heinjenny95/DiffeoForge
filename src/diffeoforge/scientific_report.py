@@ -38,6 +38,9 @@ from diffeoforge.reference_sensitivity_assessment import (
     SENSITIVITY_ASSESSMENT_JSON,
     verify_reference_sensitivity_assessment,
 )
+from diffeoforge.reference_template_robustness import (
+    load_reference_template_robustness_study,
+)
 from diffeoforge.reference_validation_study import load_reference_validation_study
 from diffeoforge.runs import publish_directory_exclusive
 
@@ -111,6 +114,7 @@ class ScientificAtlasReport:
     decisions: tuple[tuple[str, str], ...]
     claims: tuple[ScientificClaim, ...]
     sensitivity: Mapping[str, Any] | None
+    template_robustness: Mapping[str, Any] | None
     holdout: Mapping[str, Any] | None
     pca_stability: Mapping[str, Any] | None
     evidence_sources: tuple[tuple[str, Path, str], ...]
@@ -171,6 +175,7 @@ class ScientificAtlasReport:
             },
             "user_decisions": dict(self.decisions),
             "sensitivity": self.sensitivity,
+            "template_robustness": self.template_robustness,
             "fixed_template_holdout": self.holdout,
             "pca_stability": self.pca_stability,
             "claim_matrix": [claim.as_manifest() for claim in self.claims],
@@ -480,6 +485,33 @@ def _holdout_evidence(
     return value, ("fixed_template_holdout", source, sha256_file(source))
 
 
+def _template_robustness_evidence(
+    directory: Path | str | None,
+) -> tuple[dict[str, Any] | None, tuple[str, Path, str] | None]:
+    if directory is None:
+        return None, None
+    snapshot = load_reference_template_robustness_study(directory)
+    if (
+        snapshot.status != "completed"
+        or snapshot.assessment is None
+        or snapshot.report_json_path is None
+    ):
+        raise ScientificReportError("Multi-start template-robustness study is not complete")
+    assessment = snapshot.assessment
+    value = {
+        "study_id": snapshot.study_id,
+        "status": assessment["status"],
+        "arm_count": assessment["arm_count"],
+        "subject_count": assessment["subject_count"],
+        "gates": assessment["gates"],
+        "warnings": assessment["warnings"],
+        "next_step": assessment["next_step"],
+        "claim_boundary": assessment["claim_scope"],
+    }
+    source = snapshot.report_json_path
+    return value, ("template_robustness", source, sha256_file(source))
+
+
 def _pca_stability_evidence(
     directory: Path | str | None,
 ) -> tuple[dict[str, Any] | None, tuple[str, Path, str] | None]:
@@ -568,6 +600,7 @@ def _claim_matrix(
     subjects: tuple[SubjectQC, ...],
     decisions: Mapping[str, str],
     sensitivity: Mapping[str, Any] | None,
+    template_robustness: Mapping[str, Any] | None,
     holdout: Mapping[str, Any] | None,
     pca_stability: Mapping[str, Any] | None,
 ) -> tuple[ScientificClaim, ...]:
@@ -669,8 +702,24 @@ def _claim_matrix(
         ScientificClaim(
             "template_robustness",
             "Robustness to starting template or bootstrap atlas",
-            "not_assessed",
-            "No verified multi-start or bootstrap-template study was supplied.",
+            (
+                "not_assessed"
+                if template_robustness is None
+                else (
+                    "supported"
+                    if template_robustness["status"]
+                    == "stable_across_tested_start_templates"
+                    else "partial"
+                )
+            ),
+            (
+                "No verified multi-start or bootstrap-template study was supplied."
+                if template_robustness is None
+                else (
+                    f"Multi-start status {template_robustness['status']} across "
+                    f"{template_robustness['arm_count']} initial templates."
+                )
+            ),
             "This report does not infer template independence from parameter sensitivity.",
         ),
         ScientificClaim(
@@ -688,6 +737,7 @@ def collect_scientific_atlas_report(
     *,
     validation_study: Path | str | None = None,
     sensitivity_assessment: Path | str | None = None,
+    template_robustness: Path | str | None = None,
     holdout_study: Path | str | None = None,
     pca_stability: Path | str | None = None,
     decision_review: Path | str | None = None,
@@ -718,6 +768,9 @@ def collect_scientific_atlas_report(
         sensitivity_assessment,
     )
     holdout, holdout_source = _holdout_evidence(holdout_study, sensitivity)
+    template_evidence, template_source = _template_robustness_evidence(
+        template_robustness
+    )
     stability, stability_source = _pca_stability_evidence(pca_stability)
     sources = [
         ("workflow_manifest", review.workflow_manifest_path, review.workflow_manifest_sha256),
@@ -726,10 +779,23 @@ def collect_scientific_atlas_report(
     sources.extend(sensitivity_sources)
     sources.extend(
         source
-        for source in (decision_source, holdout_source, stability_source)
+        for source in (
+            decision_source,
+            holdout_source,
+            template_source,
+            stability_source,
+        )
         if source is not None
     )
-    claims = _claim_matrix(review, subjects, decisions, sensitivity, holdout, stability)
+    claims = _claim_matrix(
+        review,
+        subjects,
+        decisions,
+        sensitivity,
+        template_evidence,
+        holdout,
+        stability,
+    )
     timestamp = created_at or datetime.now(UTC).isoformat(timespec="seconds")
     try:
         parsed = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
@@ -745,6 +811,7 @@ def collect_scientific_atlas_report(
         decisions=tuple(sorted(decisions.items())),
         claims=claims,
         sensitivity=sensitivity,
+        template_robustness=template_evidence,
         holdout=holdout,
         pca_stability=stability,
         evidence_sources=tuple(sources),
@@ -885,6 +952,14 @@ def render_scientific_report_html(report: ScientificAtlasReport) -> str:
             f"<p>Status: <strong>{html.escape(str(report.holdout['status']))}</strong>; "
             f"{report.holdout['subject_count']} subjects; paired support "
             f"{html.escape(str(report.holdout['subject_support']))}.</p></div>"
+        )
+    if report.template_robustness is not None:
+        evidence_cards.append(
+            "<div class='card'><h3>Initial-template robustness</h3>"
+            f"<p>Status: <strong>"
+            f"{html.escape(str(report.template_robustness['status']))}</strong>; "
+            f"{report.template_robustness['arm_count']} tested starts; "
+            f"{report.template_robustness['subject_count']} subjects per arm.</p></div>"
         )
     if report.pca_stability is not None:
         evidence_cards.append(
@@ -1064,6 +1139,17 @@ def write_scientific_atlas_report(
                             path.parent
                             for role, path, _ in report.evidence_sources
                             if role == "automatic_sensitivity_assessment"
+                        )
+                    )
+                ),
+                "template_robustness": (
+                    None
+                    if report.template_robustness is None
+                    else str(
+                        next(
+                            path.parent.parent
+                            for role, path, _ in report.evidence_sources
+                            if role == "template_robustness"
                         )
                     )
                 ),

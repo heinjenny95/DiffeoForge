@@ -64,6 +64,8 @@ diffeoforge scientific-report runs/experiment-001
 diffeoforge scientific-report-verify runs/experiment-001-scientific-report
 diffeoforge reference-sensitivity-assess runs/validation-study
 diffeoforge reference-sensitivity-verify runs/validation-study-sensitivity
+diffeoforge reference-template-robustness-init atlas.yaml --output runs/template-robustness
+diffeoforge reference-template-robustness-status runs/template-robustness
 
 # Or prepare and execute a new run in one command:
 diffeoforge run atlas.yaml --run-id experiment-002
@@ -638,6 +640,7 @@ and workflow for another mesh directory.
 - [Transparent Deformetrica parameter calibration](docs/PARAMETER_CALIBRATION.md)
 - [Post-pilot DiffeoForge Validation Lab](docs/VALIDATION_LAB.md)
 - [Automatic neighboring-parameter sensitivity](docs/AUTOMATIC_SENSITIVITY_ASSESSMENT.md)
+- [Multi-start template robustness](docs/TEMPLATE_ROBUSTNESS_STUDY.md)
 - [Scientific atlas completion report](docs/SCIENTIFIC_ATLAS_REPORT.md)
 - [PCA of atlas-derived subject features](docs/ATLAS_PCA.md)
 - [Modern paired PCA stability evidence](docs/MODERN_PCA_STABILITY.md)

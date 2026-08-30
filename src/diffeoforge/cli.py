@@ -68,6 +68,11 @@ from diffeoforge.reference_sensitivity_assessment import (
     verify_reference_sensitivity_assessment,
     write_reference_sensitivity_assessment,
 )
+from diffeoforge.reference_template_robustness import (
+    ReferenceTemplateRobustnessRunner,
+    create_reference_template_robustness_study,
+    load_reference_template_robustness_study,
+)
 from diffeoforge.reference_validation_study import (
     ReferenceValidationStudyRunner,
     create_reference_validation_study,
@@ -1465,6 +1470,45 @@ def build_parser() -> argparse.ArgumentParser:
     )
     sensitivity_verify.add_argument("assessment_directory", type=Path)
 
+    template_robustness_init = subparsers.add_parser(
+        "reference-template-robustness-init",
+        help=(
+            "Freeze baseline and geometry-diverse initial-template arms without "
+            "starting an atlas."
+        ),
+    )
+    template_robustness_init.add_argument("config", type=Path)
+    template_robustness_init.add_argument("--output", required=True, type=Path)
+    template_robustness_init.add_argument(
+        "--starts",
+        type=int,
+        default=3,
+        help="Total starts including the configured baseline (default: 3; maximum: 4).",
+    )
+    template_robustness_init.add_argument("--max-iterations", type=int)
+    template_robustness_init.add_argument(
+        "--template-p95-margin",
+        type=float,
+        help="Explicit template displacement gate; default is 0.5% of template diagonal.",
+    )
+    template_robustness_init.add_argument(
+        "--minimum-pca-similarity",
+        type=float,
+        default=0.95,
+        help="Engineering gate for PCA CKA and distance-rank correlation (default: 0.95).",
+    )
+    template_robustness_status = subparsers.add_parser(
+        "reference-template-robustness-status",
+        help="Verify and show one frozen multi-start template study.",
+    )
+    template_robustness_status.add_argument("study_directory", type=Path)
+    template_robustness_status.add_argument("--json", action="store_true")
+    template_robustness_run = subparsers.add_parser(
+        "reference-template-robustness-run",
+        help="Run or safely resume every frozen multi-start arm sequentially.",
+    )
+    template_robustness_run.add_argument("study_directory", type=Path)
+
     validation_study_run = subparsers.add_parser(
         "reference-validation-study-run",
         help="Run or resume every frozen Validation Lab comparison.",
@@ -1826,6 +1870,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--sensitivity-assessment",
         type=Path,
         help="Verified automatic sensitivity assessment derived from the Validation Lab.",
+    )
+    scientific_report_parser.add_argument(
+        "--template-robustness",
+        type=Path,
+        help="Completed multi-start initial-template robustness study.",
     )
     scientific_report_parser.add_argument(
         "--holdout-study",
@@ -4011,6 +4060,93 @@ def main(argv: Sequence[str] | None = None) -> int:
         print("All full-training source runs and metrics were exactly recomputed.")
         return 0
 
+    if args.command == "reference-template-robustness-init":
+        try:
+            snapshot = create_reference_template_robustness_study(
+                args.config,
+                args.output,
+                start_count=args.starts,
+                maximum_iterations=args.max_iterations,
+                template_p95_margin=args.template_p95_margin,
+                minimum_pca_similarity=args.minimum_pca_similarity,
+            )
+        except (ConfigurationError, OSError, RuntimeError, TypeError, ValueError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        print(f"Template-robustness study created: {snapshot.study_directory}")
+        print(f"Frozen initial-template arms: {len(snapshot.runs)}")
+        print("No atlas process was started.")
+        return 0
+
+    if args.command == "reference-template-robustness-status":
+        try:
+            snapshot = load_reference_template_robustness_study(args.study_directory)
+        except (ConfigurationError, OSError, RuntimeError, TypeError, ValueError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        value = {
+            "study_directory": str(snapshot.study_directory),
+            "study_id": snapshot.study_id,
+            "status": snapshot.status,
+            "completed_run_count": snapshot.completed_run_count,
+            "run_count": len(snapshot.runs),
+            "runs": [
+                {
+                    "arm_id": run.arm_id,
+                    "status": run.status,
+                    "attempts": run.attempts,
+                    "error": run.error,
+                }
+                for run in snapshot.runs
+            ],
+            "assessment": snapshot.assessment,
+            "report_html_path": (
+                None if snapshot.report_html_path is None else str(snapshot.report_html_path)
+            ),
+        }
+        if args.json:
+            print(json.dumps(value, indent=2, ensure_ascii=False, sort_keys=True))
+        else:
+            print(f"Template robustness: {snapshot.study_directory}")
+            print(f"Status: {snapshot.status}")
+            print(f"Runs: {snapshot.completed_run_count}/{len(snapshot.runs)} complete")
+            if snapshot.assessment is not None:
+                print(f"Evidence: {snapshot.assessment['status']}")
+            if snapshot.report_html_path is not None:
+                print(f"Report: {snapshot.report_html_path}")
+        return 0
+
+    if args.command == "reference-template-robustness-run":
+        try:
+            before = load_reference_template_robustness_study(args.study_directory)
+            run_order = {run.arm_id: index for index, run in enumerate(before.runs, start=1)}
+
+            def show_template_event(event) -> None:
+                kind = str(event["event"])
+                arm_id = str(event.get("arm_id", ""))
+                prefix = f"[arm {run_order.get(arm_id, '?')}/{len(before.runs)} {arm_id}]"
+                if kind == "run_started":
+                    print(f"{prefix} started", flush=True)
+                elif kind == "run_completed":
+                    print(f"{prefix} completed", flush=True)
+                elif kind in {"run_failed", "run_interrupted"}:
+                    print(f"{prefix} {kind}: {event['error']}", flush=True)
+
+            result = ReferenceTemplateRobustnessRunner(
+                args.study_directory
+            ).run_all(event_callback=show_template_event)
+        except (ConfigurationError, OSError, RuntimeError, TypeError, ValueError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        print(
+            f"Template-robustness status: {result.status}; "
+            f"{result.completed_run_count}/{len(result.runs)} runs complete"
+        )
+        if result.assessment is not None:
+            print(f"Evidence: {result.assessment['status']}")
+            print(f"Report: {result.report_html_path}")
+        return 0
+
     if args.command == "reference-validation-study-run":
         try:
             before = load_reference_validation_study(args.study_directory)
@@ -4847,6 +4983,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 args.run_directory,
                 validation_study=args.validation_study,
                 sensitivity_assessment=args.sensitivity_assessment,
+                template_robustness=args.template_robustness,
                 holdout_study=args.holdout_study,
                 pca_stability=args.pca_stability,
                 decision_review=args.decision_review,

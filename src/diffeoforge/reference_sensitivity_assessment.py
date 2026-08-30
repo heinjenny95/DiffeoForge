@@ -113,7 +113,12 @@ def _full_training_runs(snapshot: ReferenceValidationStudySnapshot):
     return tuple(sorted(runs, key=lambda run: run.finalist_id))
 
 
-def _atlas_record(inputs: ReferenceMomentaInput, atlas_path: str) -> tuple[Path, dict[str, Any]]:
+def verified_atlas_from_momenta_input(
+    inputs: ReferenceMomentaInput,
+    atlas_path: str,
+) -> tuple[Path, dict[str, Any]]:
+    """Resolve an atlas only when it matches the run's verified output inventory."""
+
     atlas = Path(atlas_path).expanduser().resolve()
     output = (inputs.run_directory / "output").resolve()
     if atlas.is_symlink() or not atlas.is_file() or not atlas.is_relative_to(output):
@@ -152,7 +157,9 @@ def _run_source(run, inputs: ReferenceMomentaInput, atlas: Path, atlas_record) -
     }
 
 
-def _template_comparison(first: Path, second: Path) -> dict[str, float]:
+def compare_ordered_atlas_templates(first: Path, second: Path) -> dict[str, float]:
+    """Compare corresponding vertices of two verified same-topology atlas templates."""
+
     left = read_vtk_polydata(first)
     right = read_vtk_polydata(second)
     if left.triangles != right.triangles or len(left.vertices) != len(right.vertices):
@@ -185,7 +192,9 @@ def _jaccard(first: tuple[str, ...], second: tuple[str, ...]) -> float:
     return float(len(left & right) / len(left | right))
 
 
-def _identity_bound_pca(inputs: ReferenceMomentaInput):
+def identity_bound_momenta_pca(inputs: ReferenceMomentaInput):
+    """Fit momenta PCA while binding feature identity to exact control-point bytes."""
+
     control_hash = str(inputs.control_points_record["sha256"])
     feature_labels = tuple(
         f"momenta:control_point_{point:06d}:{axis}"
@@ -300,11 +309,13 @@ def _assessment_payload(
             raise ReferenceSensitivityAssessmentError(
                 f"Full-training run {run.run_id} subjects differ from the frozen cohort"
             )
-        atlas, atlas_record = _atlas_record(inputs, run.evidence.atlas_path)
+        atlas, atlas_record = verified_atlas_from_momenta_input(
+            inputs, run.evidence.atlas_path
+        )
         loaded[run.finalist_id] = inputs
         atlases[run.finalist_id] = atlas
         sources.append(_run_source(run, inputs, atlas, atlas_record))
-        pcas[run.finalist_id] = _identity_bound_pca(inputs)
+        pcas[run.finalist_id] = identity_bound_momenta_pca(inputs)
         outliers[run.finalist_id] = _outlier_names(run, outlier_fraction)
 
     margin = float(snapshot.assessment.practical_error_margin) * float(
@@ -315,7 +326,9 @@ def _assessment_payload(
     finalist_ids = sorted(loaded)
     for index, first_id in enumerate(finalist_ids):
         for second_id in finalist_ids[index + 1 :]:
-            template = _template_comparison(atlases[first_id], atlases[second_id])
+            template = compare_ordered_atlas_templates(
+                atlases[first_id], atlases[second_id]
+            )
             pca = compare_pca_stability(
                 pcas[first_id],
                 pcas[second_id],
