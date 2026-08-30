@@ -152,6 +152,11 @@ from diffeoforge.desktop.worker_controller import (
 from diffeoforge.desktop.worker_protocol import DesktopWorkerEvent
 from diffeoforge.initialization import SUPPORTED_UNITS, detect_template
 from diffeoforge.mesh import sha256_file
+from diffeoforge.pca_metadata import (
+    PCA_METADATA_HTML,
+    PCAMetadataArtifact,
+    write_pca_metadata_analysis,
+)
 from diffeoforge.preprocessing import (
     LandmarkAlignmentPreview,
     preview_landmark_alignment,
@@ -702,6 +707,38 @@ class _ScientificReportWorker(QRunnable):
         try:
             report = collect_scientific_atlas_report(self.run_directory)
             artifact = write_scientific_atlas_report(report, self.destination)
+        except (OSError, RuntimeError, TypeError, ValueError) as error:
+            self.signals.failed.emit(str(error))
+            return
+        self.signals.succeeded.emit(artifact)
+
+
+class _PCAMetadataWorker(QRunnable):
+    """Join one CSV to a verified PCA outside the GUI thread."""
+
+    def __init__(
+        self,
+        pca_bundle: Path,
+        metadata_csv: Path,
+        destination: Path,
+        id_column: str = "subject",
+    ) -> None:
+        super().__init__()
+        self.pca_bundle = pca_bundle
+        self.metadata_csv = metadata_csv
+        self.destination = destination
+        self.id_column = id_column
+        self.signals = _WorkerSignals()
+
+    @Slot()
+    def run(self) -> None:
+        try:
+            artifact = write_pca_metadata_analysis(
+                self.pca_bundle,
+                self.metadata_csv,
+                self.destination,
+                id_column=self.id_column,
+            )
         except (OSError, RuntimeError, TypeError, ValueError) as error:
             self.signals.failed.emit(str(error))
             return
@@ -2432,6 +2469,46 @@ class DiffeoForgeWindow(QMainWindow):
         scientific_report_layout.addWidget(self.scientific_report_status_label)
         scientific_report_layout.addWidget(self.create_scientific_report_button)
         layout.addWidget(scientific_report)
+
+        metadata_card = QFrame()
+        metadata_card.setObjectName("card")
+        metadata_layout = QVBoxLayout(metadata_card)
+        metadata_layout.setContentsMargins(24, 22, 24, 24)
+        metadata_layout.setSpacing(10)
+        metadata_title = QLabel("Subject metadata after PCA")
+        metadata_title.setObjectName("sectionTitle")
+        metadata_summary = QLabel(
+            "Load a CSV with taxonomy, sex, body size, locality, or other subject "
+            "variables. DiffeoForge matches exact specimen IDs, colors verified PCA "
+            "scores, and exports descriptive group and continuous-variable tables."
+        )
+        metadata_summary.setWordWrap(True)
+        self.pca_metadata_status_label = QLabel(
+            "Load a verified PCA result before selecting metadata."
+        )
+        self.pca_metadata_status_label.setObjectName("status")
+        self.pca_metadata_status_label.setWordWrap(True)
+        self.create_pca_metadata_button = QPushButton("Load metadata CSV…")
+        self.create_pca_metadata_button.setObjectName("primary")
+        self.create_pca_metadata_button.clicked.connect(self._create_pca_metadata)
+        self.create_pca_metadata_button.setEnabled(False)
+        metadata_layout.addWidget(metadata_title)
+        metadata_layout.addWidget(metadata_summary)
+        metadata_layout.addWidget(
+            InfoDisclosure(
+                "No supervised shape fitting",
+                (
+                    "Metadata are joined only after the atlas PCA is fixed. Colors, "
+                    "correlations, group summaries, and score-radius flags are "
+                    "descriptive; they do not create clusters, change shape axes, "
+                    "validate registration, or exclude specimens."
+                ),
+                parent=metadata_card,
+            )
+        )
+        metadata_layout.addWidget(self.pca_metadata_status_label)
+        metadata_layout.addWidget(self.create_pca_metadata_button)
+        layout.addWidget(metadata_card)
 
         artifacts = QFrame()
         artifacts.setObjectName("card")
@@ -8508,11 +8585,17 @@ class DiffeoForgeWindow(QMainWindow):
             review.engine_route == "deformetrica_reference"
         )
         self.create_scientific_report_button.setEnabled(True)
+        self.create_pca_metadata_button.setEnabled(True)
         self.scientific_report_status_label.setObjectName("status")
         self.scientific_report_status_label.setStyleSheet("")
         self.scientific_report_status_label.setText(
             "Ready. The report will be written beside the immutable atlas run; missing "
             "sensitivity or biological evidence will remain explicitly unassessed."
+        )
+        self.pca_metadata_status_label.setObjectName("status")
+        self.pca_metadata_status_label.setStyleSheet("")
+        self.pca_metadata_status_label.setText(
+            "Ready for an exact-ID CSV join. Metadata will be applied after PCA only."
         )
         self._sync_reference_pca_deformation_action(review)
         self.result_status_label.setObjectName("statusSuccess")
@@ -8540,6 +8623,7 @@ class DiffeoForgeWindow(QMainWindow):
         self._result_review = None
         self.open_validation_lab_button.setEnabled(False)
         self.create_scientific_report_button.setEnabled(False)
+        self.create_pca_metadata_button.setEnabled(False)
         self._sync_reference_pca_deformation_action(None)
         self.status_label.setObjectName("statusError")
         self.status_label.setStyleSheet("")
@@ -8984,6 +9068,81 @@ class DiffeoForgeWindow(QMainWindow):
             self._close_after_worker = False
             self.close()
 
+    @Slot()
+    def _create_pca_metadata(self) -> None:
+        review = self._result_review
+        if review is None or self._worker is not None:
+            return
+        selected, _ = QFileDialog.getOpenFileName(
+            self,
+            "Select subject metadata CSV",
+            str(review.run_directory),
+            "CSV files (*.csv);;All files (*)",
+        )
+        if not selected:
+            return
+        id_column, accepted = QInputDialog.getText(
+            self,
+            "Metadata subject ID",
+            "CSV column that exactly matches the PCA specimen labels:",
+            text="subject",
+        )
+        if not accepted:
+            return
+        id_column = id_column.strip()
+        if not id_column:
+            QMessageBox.warning(
+                self,
+                "Metadata analysis could not start",
+                "The subject-ID column cannot be empty.",
+            )
+            return
+        timestamp = time.strftime("%Y%m%d-%H%M%S")
+        destination = review.run_directory.parent / (
+            f"{review.run_directory.name}-pca-metadata-{timestamp}-{uuid.uuid4().hex[:6]}"
+        )
+        worker = _PCAMetadataWorker(
+            review.bundle_manifest_path.parent,
+            Path(selected).resolve(),
+            destination,
+            id_column,
+        )
+        worker.signals.succeeded.connect(self._pca_metadata_succeeded)
+        worker.signals.failed.connect(self._pca_metadata_failed)
+        self._worker = worker
+        self._set_result_controls_enabled(False)
+        self.pca_metadata_status_label.setObjectName("status")
+        self.pca_metadata_status_label.setStyleSheet("")
+        self.pca_metadata_status_label.setText(
+            "Reverifying PCA and exact subject IDs, then creating post-PCA tables and figures…"
+        )
+        self._thread_pool.start(worker)
+
+    @Slot(object)
+    def _pca_metadata_succeeded(self, artifact: PCAMetadataArtifact) -> None:
+        self._worker = None
+        self._set_result_controls_enabled(True)
+        self.pca_metadata_status_label.setObjectName("statusSuccess")
+        self.pca_metadata_status_label.setStyleSheet("")
+        self.pca_metadata_status_label.setText(
+            f"Post-PCA metadata analysis created and reverified: {artifact.artifact_directory}"
+        )
+        QDesktopServices.openUrl(
+            QUrl.fromLocalFile(
+                str(artifact.artifact_directory / PCA_METADATA_HTML)
+            )
+        )
+
+    @Slot(str)
+    def _pca_metadata_failed(self, message: str) -> None:
+        self._worker = None
+        self._set_result_controls_enabled(True)
+        self.pca_metadata_status_label.setObjectName("statusError")
+        self.pca_metadata_status_label.setStyleSheet("")
+        self.pca_metadata_status_label.setText(
+            f"Metadata analysis was not created: {message}"
+        )
+
     def _load_verified_optimizer_plot(self, review: ModernResultReview) -> None:
         try:
             review.artifact("optimizer-convergence-plot")
@@ -9068,6 +9227,7 @@ class DiffeoForgeWindow(QMainWindow):
         self._result_review = None
         self.open_validation_lab_button.setEnabled(False)
         self.create_scientific_report_button.setEnabled(False)
+        self.create_pca_metadata_button.setEnabled(False)
         self._sync_reference_pca_deformation_action(None)
         self.run_back_button.setEnabled(True)
         self.run_state_label.setObjectName("statusError")
@@ -9163,6 +9323,9 @@ class DiffeoForgeWindow(QMainWindow):
     def _set_result_controls_enabled(self, enabled: bool) -> None:
         self.result_back_button.setEnabled(enabled)
         self.create_scientific_report_button.setEnabled(
+            enabled and self._result_review is not None
+        )
+        self.create_pca_metadata_button.setEnabled(
             enabled and self._result_review is not None
         )
         for button in self.result_artifact_buttons:

@@ -18,6 +18,10 @@ from diffeoforge.initialization import (
     detect_template,
     initialize_project,
 )
+from diffeoforge.pca_metadata import (
+    verify_pca_metadata_analysis,
+    write_pca_metadata_analysis,
+)
 from diffeoforge.reference import compare_reference_run
 from diffeoforge.reference_approved_preparation import prepare_approved_reference_run
 from diffeoforge.reference_calibration import (
@@ -1172,6 +1176,33 @@ def build_parser() -> argparse.ArgumentParser:
         "artifact_directory",
         type=Path,
     )
+
+    pca_metadata_parser = subparsers.add_parser(
+        "pca-metadata",
+        help=(
+            "Join a subject metadata CSV to an already verified PCA and export "
+            "descriptive plots and statistical tables without refitting shape axes."
+        ),
+    )
+    pca_metadata_parser.add_argument("pca_bundle", type=Path)
+    pca_metadata_parser.add_argument("metadata_csv", type=Path)
+    pca_metadata_parser.add_argument("--output", required=True, type=Path)
+    pca_metadata_parser.add_argument(
+        "--id-column",
+        default="subject",
+        help="CSV column exactly matching PCA subject labels (default: subject).",
+    )
+    pca_metadata_parser.add_argument(
+        "--components",
+        type=int,
+        default=10,
+        help="Maximum PCs used in descriptive tables (default: 10).",
+    )
+    pca_metadata_verify_parser = subparsers.add_parser(
+        "pca-metadata-verify",
+        help="Reverify and exactly recompute a post-PCA metadata artifact.",
+    )
+    pca_metadata_verify_parser.add_argument("analysis_directory", type=Path)
 
     reference_calibration_parser = subparsers.add_parser(
         "reference-calibration-plan",
@@ -2934,6 +2965,37 @@ def main(argv: Sequence[str] | None = None) -> int:
         except (OSError, RuntimeError, TypeError, ValueError) as error:
             print(f"ERROR: {error}", file=sys.stderr)
             return 2
+        return 0
+
+    if args.command == "pca-metadata":
+        try:
+            artifact = write_pca_metadata_analysis(
+                args.pca_bundle,
+                args.metadata_csv,
+                args.output,
+                id_column=args.id_column,
+                component_limit=args.components,
+            )
+        except (ConfigurationError, OSError, RuntimeError, TypeError, ValueError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        analysis = artifact.manifest["analysis"]
+        print(f"PCA metadata analysis created: {artifact.artifact_directory}")
+        print(
+            f"Matched subjects: {analysis['metadata']['subject_count']}; "
+            f"metadata variables: {len(analysis['metadata']['columns'])}"
+        )
+        print("Metadata were joined after PCA; no atlas or shape axis was refitted.")
+        return 0
+
+    if args.command == "pca-metadata-verify":
+        try:
+            artifact = verify_pca_metadata_analysis(args.analysis_directory)
+        except (ConfigurationError, OSError, RuntimeError, TypeError, ValueError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        print(f"PCA metadata analysis verified: {artifact.artifact_directory}")
+        print("Source PCA, metadata join, figures, tables, and hashes match.")
         return 0
 
     if args.command == "modern-plan":
