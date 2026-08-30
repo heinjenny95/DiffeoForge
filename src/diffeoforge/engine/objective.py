@@ -18,14 +18,13 @@ from diffeoforge.engine.dense import (
     current_squared_distance_blockwise,
     deformation_energy,
     flow_points,
-    landmark_squared_distance,
     shoot,
     surface_squared_distance_to_prepared_target,
     varifold_squared_distance,
     varifold_squared_distance_blockwise,
 )
 
-AttachmentType = Literal["current", "varifold", "landmark"]
+AttachmentType = Literal["current", "varifold"]
 ShootingIntegrator = Literal["euler", "rk2"]
 FlowIntegrator = Literal["euler", "heun", "deformetrica_heun"]
 
@@ -93,8 +92,8 @@ def subject_objective(
     """
 
     variance = _positive_scalar("noise_variance", noise_variance)
-    if attachment_type not in {"current", "varifold", "landmark"}:
-        raise ValueError("attachment_type must be 'current', 'varifold', or 'landmark'")
+    if attachment_type not in {"current", "varifold"}:
+        raise ValueError("attachment_type must be 'current' or 'varifold'")
     trajectory = shoot(
         control_points,
         momenta,
@@ -110,11 +109,7 @@ def subject_objective(
         integrator=flow_integrator,
         gaussian_tile_plan=gaussian_tile_plan,
     )
-    if attachment_type == "landmark":
-        if prepared_target is not None:
-            raise ValueError("landmark attachment does not use a prepared surface target")
-        residual = landmark_squared_distance(template_path[-1], target_vertices)
-    elif prepared_target is not None:
+    if prepared_target is not None:
         if not isinstance(prepared_target, PreparedSurfaceAttachmentTarget):
             raise TypeError("prepared_target must be a PreparedSurfaceAttachmentTarget or None")
         prepared_target.validate_target(target_vertices, target_triangles)
@@ -189,7 +184,7 @@ def atlas_objective(
     shooting_integrator: ShootingIntegrator = "rk2",
     flow_integrator: FlowIntegrator = "deformetrica_heun",
     gaussian_tile_plan: GaussianTilePlan | None = None,
-    prepared_targets: Sequence[PreparedSurfaceAttachmentTarget | None] | None = None,
+    prepared_targets: Sequence[PreparedSurfaceAttachmentTarget] | None = None,
 ) -> AtlasObjective:
     """Sum the objective over subjects without hidden averaging or reordering."""
 

@@ -126,11 +126,8 @@ def _positive_integer(name: str, value: int, *, maximum: int) -> int:
     return value
 
 
-def _resolve_recovery_metric(attachment_type: str, recovery_metric: str) -> str:
+def _resolve_recovery_metric(recovery_metric: str) -> str:
     aliases = {
-        "attachment_native": (
-            ORDERED_RECOVERY_METRIC if attachment_type == "landmark" else SURFACE_RECOVERY_METRIC
-        ),
         "ordered_vertex": ORDERED_RECOVERY_METRIC,
         "surface": SURFACE_RECOVERY_METRIC,
         "symmetric_vertex_to_triangle_surface": SURFACE_RECOVERY_METRIC,
@@ -139,7 +136,7 @@ def _resolve_recovery_metric(attachment_type: str, recovery_metric: str) -> str:
         return aliases[recovery_metric]
     except KeyError as error:
         raise ValueError(
-            "recovery_metric must be attachment_native, ordered_vertex, or surface"
+            "recovery_metric must be ordered_vertex or surface"
         ) from error
 
 
@@ -179,17 +176,14 @@ def create_modern_synthetic_recovery_design(
     *,
     max_cycles: int = 100,
     control_point_count: int = 9,
-    attachment_type: str = "current",
-    recovery_metric: str = "attachment_native",
+    recovery_metric: str = "surface",
     created_at: str | None = None,
 ) -> Path:
     """Freeze paired Euclidean/Sobolev full-atlas configs before results exist."""
 
     cycles = _positive_integer("max_cycles", max_cycles, maximum=1_000)
     controls = _positive_integer("control_point_count", control_point_count, maximum=1_000)
-    if attachment_type not in {"current", "varifold", "landmark"}:
-        raise ValueError("attachment_type must be current, varifold, or landmark")
-    resolved_metric = _resolve_recovery_metric(attachment_type, recovery_metric)
+    resolved_metric = _resolve_recovery_metric(recovery_metric)
     source = Path(benchmark_directory).expanduser().resolve()
     source_manifest = verify_synthetic_validation_benchmark(source)
     output = Path(destination).expanduser().resolve()
@@ -218,7 +212,6 @@ def create_modern_synthetic_recovery_design(
                 project_name=f"modern-synthetic-recovery-{arm_id}",
                 output_directory=run_output,
                 control_point_count=controls,
-                attachment_type=attachment_type,
                 attachment_kernel_width=0.45,
                 deformation_kernel_width=0.6,
                 noise_variance=0.01,
@@ -288,7 +281,6 @@ def create_modern_synthetic_recovery_design(
                 "shared_settings": {
                     "max_cycles": cycles,
                     "control_point_count": controls,
-                    "attachment_type": attachment_type,
                     "optimizer": "lbfgs",
                     "momenta_updates_per_cycle": 2,
                     "relative_objective_tolerance": 0.0001,
@@ -395,8 +387,6 @@ def verify_modern_synthetic_recovery_design(directory: Path | str) -> dict[str, 
             config["optimization"]["template_gradient"] != arm["arm_id"]
             or config["optimization"]["sobolev_kernel_width_ratio"] != 1.0
             or config["optimization"]["block_order"] != ["momenta", "template", "control_points"]
-            or config["model"]["attachment"]["type"]
-            != protocol["shared_settings"].get("attachment_type", "current")
         ):
             raise ModernSyntheticRecoveryError(
                 "Synthetic recovery paired-variable contract differs"

@@ -423,7 +423,7 @@ def optimize_atlas(
     shooting_integrator: ShootingIntegrator = "rk2",
     flow_integrator: FlowIntegrator = "deformetrica_heun",
     gaussian_tile_plan: GaussianTilePlan | None = None,
-    prepared_targets: Sequence[PreparedSurfaceAttachmentTarget | None] | None = None,
+    prepared_targets: Sequence[PreparedSurfaceAttachmentTarget] | None = None,
     max_cycles: int = 10,
     block_order: Sequence[AtlasParameterBlock] = _ALL_BLOCKS,
     momenta_updates_per_cycle: int = 1,
@@ -637,19 +637,7 @@ def optimize_atlas(
             raise ValueError(
                 "minimum_step_size must not exceed any effective cohort-scaled block step size"
             )
-    if attachment_type == "landmark":
-        if prepared_targets is not None:
-            supplied_targets = tuple(prepared_targets)
-            if len(supplied_targets) != len(target_sequence):
-                raise ValueError(
-                    "prepared_targets and targets must contain the same number of subjects"
-                )
-            if any(prepared_target is not None for prepared_target in supplied_targets):
-                raise ValueError(
-                    "landmark attachment does not accept prepared surface targets"
-                )
-        prepared_target_sequence = (None,) * len(target_sequence)
-    elif prepared_targets is None:
+    if prepared_targets is None:
         prepared_target_values = []
         for target_vertices, target_triangles in target_sequence:
             check_cancellation()

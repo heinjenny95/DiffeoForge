@@ -98,7 +98,7 @@
         "attachment_kernel_width": {"type": "number", "exclusiveMinimum": 0},
         "noise_variance": {"type": "number", "exclusiveMinimum": 0},
         "number_of_time_points": {"type": "integer", "minimum": 2},
-        "attachment_type": {"enum": ["current", "varifold", "landmark"]},
+        "attachment_type": {"enum": ["current", "varifold"]},
         "shooting_integrator": {"enum": ["euler", "rk2"]},
         "flow_integrator": {"enum": ["euler", "heun", "deformetrica_heun"]}
       }

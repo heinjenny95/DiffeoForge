@@ -16,7 +16,6 @@ flow_points = engine.flow_points
 gaussian_convolve = engine.gaussian_convolve
 gaussian_convolve_gradient = engine.gaussian_convolve_gradient
 gaussian_kernel = engine.gaussian_kernel
-landmark_squared_distance = engine.landmark_squared_distance
 shoot = engine.shoot
 triangle_centers_and_area_normals = engine.triangle_centers_and_area_normals
 varifold_squared_distance = engine.varifold_squared_distance
@@ -349,22 +348,6 @@ def test_deformation_energy_is_nonnegative_and_translation_invariant() -> None:
 
     assert float(original) >= 0.0
     torch.testing.assert_close(original, translated, rtol=1e-13, atol=1e-14)
-
-
-def test_landmark_distance_uses_exact_ordered_point_correspondence() -> None:
-    source, _ = _square_surface()
-    target = source[[1, 0, 2, 3]].clone()
-    source.requires_grad_(True)
-
-    distance = landmark_squared_distance(source, target)
-    (gradient,) = torch.autograd.grad(distance, source)
-
-    expected = torch.sum((source.detach() - target).square())
-    torch.testing.assert_close(distance, expected, rtol=0, atol=0)
-    torch.testing.assert_close(gradient, 2.0 * (source.detach() - target), rtol=0, atol=0)
-    assert float(distance.detach()) > 0.0
-    with pytest.raises(ValueError, match="identical shape"):
-        landmark_squared_distance(source, target[:-1])
 
 
 def test_surface_geometry_matches_triangle_centers_and_area() -> None:

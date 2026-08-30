@@ -77,7 +77,7 @@
         "gradient_block": {"enum": ["momenta", "template", "control_points"]},
         "control_points": {"type": "integer", "minimum": 1},
         "timepoints": {"type": "integer", "minimum": 2},
-        "attachment_type": {"enum": ["current", "varifold", "landmark"]},
+        "attachment_type": {"enum": ["current", "varifold"]},
         "shooting_integrator": {"enum": ["euler", "rk2"]},
         "flow_integrator": {"enum": ["euler", "heun", "deformetrica_heun"]},
         "threads": {"type": "integer", "minimum": 1},

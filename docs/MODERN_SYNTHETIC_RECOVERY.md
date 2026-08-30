@@ -34,7 +34,7 @@ diffeoforge reference-validation-synthetic-create TEMPLATE.vtk \
   --output SYNTHETIC_BENCHMARK --subjects-per-family 4
 
 diffeoforge modern-synthetic-recovery-init SYNTHETIC_BENCHMARK \
-  --output RECOVERY_DESIGN --attachment-type current \
+  --output RECOVERY_DESIGN \
   --recovery-metric surface
 
 diffeoforge modern-synthetic-recovery-design-verify RECOVERY_DESIGN
@@ -129,13 +129,10 @@ non-gating diagnostic using deterministic symmetric vertex-to-triangle distance
 showed that both arms did recover surface geometry well: pooled surface RMSE
 improved by `77.2019%` (Euclidean) and `77.2113%` (Sobolev), with surface p95 of
 approximately `0.00355` of the diagonal. Thus the observed failure is specific
-to exact point correspondence, not gross surface fitting. It motivated both a
-new prospective surface-metric design for the landmark-free atlas and the
-separate, strictly opt-in Engine 1.7
-[ordered-landmark attachment](MODERN_LANDMARK_ATTACHMENT.md), rather than
-silently interpreting a Current objective as a point-label objective. Any
-landmark-mode recovery run is a new prospective experiment, not a reinterpretation
-of this completed result.
+to exact point correspondence, not gross surface fitting. That mismatch
+motivated the new prospective surface-metric design for the landmark-free atlas
+rather than interpreting a Current objective as a point-label objective. The
+resulting Current surface study is reported below.
 
 Verified evidence directories:
 

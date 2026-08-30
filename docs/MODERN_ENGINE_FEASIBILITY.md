@@ -346,9 +346,7 @@ gates. See
    16-subject, 54-of-67-subject, 236-subject fixed-reference, and prospectively
    frozen 236-subject full-atlas CUDA gates also passed. Engine 1.6 adds an
    opt-in Sobolev template gradient and passes its paired prospective 236-subject
-   full-atlas gate. Engine 1.7 adds a strictly opt-in ordered-landmark attachment
-   for independently known vertex correspondence; its synthetic qualification
-   remains separate. A prospectively frozen Engine 1.7 Current study also passes
+   full-atlas gate. A prospectively frozen Engine 1.7 Current study also passes
    correspondence-independent analytic surface-recovery gates in both Euclidean
    and Sobolev modes, with about 77.2% pooled surface-RMSE reduction. This tests
    the landmark-free objective on synthetic geometry and is not biological

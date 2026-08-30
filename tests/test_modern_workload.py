@@ -61,7 +61,7 @@ def test_example_workload_has_exact_public_dimensions_and_formulas() -> None:
     report = collect_modern_workload(EXAMPLE, host_observations=FIXED_HOST)
 
     assert report["input"]["subject_count"] == 5
-    assert report["engine"]["implementation_version"] == "1.7"
+    assert report["engine"]["implementation_version"] == "1.6"
     assert report["configuration"]["subject_batch_size"] is None
     assert report["configuration"]["subject_batch_workers"] == 1
     assert report["configuration"]["attachment_kernel_width"] == 0.45
@@ -216,7 +216,7 @@ def test_sobolev_template_gradient_is_explicit_and_counted_in_workload(
     assert "Sobolev template-gradient pair-element upper bound" in rendered
 
 
-@pytest.mark.parametrize("attachment_type", ["current", "varifold", "landmark"])
+@pytest.mark.parametrize("attachment_type", ["current", "varifold"])
 @pytest.mark.parametrize("shooting_integrator", ["euler", "rk2"])
 @pytest.mark.parametrize("flow_integrator", ["euler", "heun", "deformetrica_heun"])
 def test_predicted_gaussian_pairs_equal_instrumented_dense_objective(

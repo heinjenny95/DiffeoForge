@@ -142,7 +142,7 @@ def optimize_momenta(
     attachment_type: AttachmentType = "current",
     shooting_integrator: ShootingIntegrator = "rk2",
     flow_integrator: FlowIntegrator = "deformetrica_heun",
-    prepared_targets: Sequence[PreparedSurfaceAttachmentTarget | None] | None = None,
+    prepared_targets: Sequence[PreparedSurfaceAttachmentTarget] | None = None,
     max_iterations: int = 25,
     initial_step_size: float = 0.1,
     backtracking_factor: float = 0.5,
@@ -178,19 +178,7 @@ def optimize_momenta(
         raise TypeError("initial_momenta must be a torch.Tensor")
 
     target_sequence = tuple(targets)
-    if attachment_type == "landmark":
-        if prepared_targets is not None:
-            supplied_targets = tuple(prepared_targets)
-            if len(supplied_targets) != len(target_sequence):
-                raise ValueError(
-                    "prepared_targets and targets must contain the same number of subjects"
-                )
-            if any(prepared_target is not None for prepared_target in supplied_targets):
-                raise ValueError(
-                    "landmark attachment does not accept prepared surface targets"
-                )
-        prepared_target_sequence = (None,) * len(target_sequence)
-    elif prepared_targets is None:
+    if prepared_targets is None:
         prepared_target_sequence = tuple(
             prepare_surface_attachment_target(
                 target_vertices,

@@ -5242,7 +5242,7 @@ class DiffeoForgeWindow(QMainWindow):
         if self.modern_device_combo.currentData() == "cuda":
             self.modern_device_hint.setText(
                 "Requires a read-only verified CUDA-capable DiffeoForge runtime. "
-                "Project review blocks execution if CUDA, the device, or Engine 1.7 "
+                "Project review blocks execution if CUDA, the device, or Engine 1.6 "
                 "cannot be verified; the CPU installer never pretends to provide CUDA."
             )
         else:

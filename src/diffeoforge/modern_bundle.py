@@ -72,7 +72,7 @@ class ModernAtlasModelSettings:
     attachment_kernel_width: float
     noise_variance: float
     number_of_time_points: int
-    attachment_type: Literal["current", "varifold", "landmark"] = "current"
+    attachment_type: Literal["current", "varifold"] = "current"
     shooting_integrator: Literal["euler", "rk2"] = "rk2"
     flow_integrator: Literal["euler", "heun", "deformetrica_heun"] = "deformetrica_heun"
 
@@ -93,10 +93,8 @@ class ModernAtlasModelSettings:
             raise TypeError("number_of_time_points must be an integer")
         if self.number_of_time_points < 2:
             raise ValueError("number_of_time_points must be at least 2")
-        if self.attachment_type not in {"current", "varifold", "landmark"}:
-            raise ValueError(
-                "attachment_type must be 'current', 'varifold', or 'landmark'"
-            )
+        if self.attachment_type not in {"current", "varifold"}:
+            raise ValueError("attachment_type must be 'current' or 'varifold'")
         if self.shooting_integrator not in {"euler", "rk2"}:
             raise ValueError("shooting_integrator must be 'euler' or 'rk2'")
         if self.flow_integrator not in {"euler", "heun", "deformetrica_heun"}:

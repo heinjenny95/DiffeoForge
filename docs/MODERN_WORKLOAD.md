@@ -176,7 +176,7 @@ running an expensive atlas only to fail during final bundle creation.
 
 ## Evidence and maintenance rule
 
-Tests cover every supported combination of Current/Varifold/Landmark, Euler/RK2
+Tests cover every supported combination of Current/Varifold, Euler/RK2
 shooting, and Euler/Heun/Deformetrica-Heun flow. They instrument both centered
 matrix-kernel and explicit analytical-gradient paths, count every observed
 logical pair dimension during an actual objective forward, and require exact
@@ -188,13 +188,11 @@ The JSON is validated against the bundled strict schema
 `modern-workload-v0.2.json`. Additional semantic validation rejects inconsistent
 inventory counts, pair and tile arithmetic, payload subtotals, or optimizer
 bounds. Configuration and input SHA-256 values tie the plan to reviewed bytes.
-New reports record the active Modern engine implementation (through `1.7`) and
+New reports record the active Modern engine implementation (through `1.6`) and
 bind the four-call RK2 formula; legacy reports without that optional provenance
 use the earlier six-call formula when semantically checked. Engine 1.6 reports
 also expose and account for the selected Euclidean or Sobolev template-gradient
 mode. Existing workload 0.2 reports without those additive fields remain valid.
-Engine 1.7 reports zero attachment Gaussian calls for ordered-landmark
-attachment while retaining deformation shooting, flow, and energy counts.
 Live host observations can change over time; operation counts remain
 deterministic for fixed configuration and mesh dimensions.
 

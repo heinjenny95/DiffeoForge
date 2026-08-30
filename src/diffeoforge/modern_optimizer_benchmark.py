@@ -234,8 +234,6 @@ def _prepare_targets(
     targets: tuple[tuple[torch.Tensor, torch.Tensor], ...],
 ) -> tuple[Any, ...]:
     attachment = config["model"]["attachment"]
-    if attachment["type"] == "landmark":
-        return (None,) * len(targets)
     tile_plan = pairwise_evaluation_from_config(config).gaussian_tile_plan
     return tuple(
         prepare_surface_attachment_target(

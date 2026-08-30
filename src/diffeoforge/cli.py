@@ -278,15 +278,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="Optional labelled landmark CSV; enables recorded Procrustes alignment.",
     )
     modern_init_parser.add_argument("--control-points", type=int, default=9)
-    modern_init_parser.add_argument(
-        "--attachment-type",
-        choices=("current", "varifold", "landmark"),
-        default="current",
-        help=(
-            "Data attachment; landmark requires exact ordered mesh topology "
-            "(default: current)."
-        ),
-    )
     modern_init_parser.add_argument("--attachment-kernel-width", type=float)
     modern_init_parser.add_argument("--deformation-kernel-width", type=float)
     modern_init_parser.add_argument("--noise-variance", type=float)
@@ -1476,17 +1467,12 @@ def build_parser() -> argparse.ArgumentParser:
     synthetic_recovery_init.add_argument("--cycles", type=int, default=100)
     synthetic_recovery_init.add_argument("--control-points", type=int, default=9)
     synthetic_recovery_init.add_argument(
-        "--attachment-type",
-        choices=("current", "varifold", "landmark"),
-        default="current",
-    )
-    synthetic_recovery_init.add_argument(
         "--recovery-metric",
-        choices=("attachment-native", "ordered-vertex", "surface"),
-        default="attachment-native",
+        choices=("ordered-vertex", "surface"),
+        default="surface",
         help=(
-            "Assessment metric; attachment-native selects symmetric surface distance "
-            "for Current/Varifold and ordered vertices for landmark attachment."
+            "Assessment metric for the landmark-free Current workflow "
+            "(default: surface)."
         ),
     )
 
@@ -2193,7 +2179,6 @@ def main(argv: Sequence[str] | None = None) -> int:
                 output_directory=args.output_directory,
                 landmarks_file=args.landmarks,
                 control_point_count=args.control_points,
-                attachment_type=args.attachment_type,
                 attachment_kernel_width=args.attachment_kernel_width,
                 deformation_kernel_width=args.deformation_kernel_width,
                 noise_variance=args.noise_variance,
@@ -3707,7 +3692,6 @@ def main(argv: Sequence[str] | None = None) -> int:
                 args.output,
                 max_cycles=args.cycles,
                 control_point_count=args.control_points,
-                attachment_type=args.attachment_type,
                 recovery_metric=args.recovery_metric.replace("-", "_"),
             )
             print(f"Prospective synthetic recovery design created: {design.parent}")

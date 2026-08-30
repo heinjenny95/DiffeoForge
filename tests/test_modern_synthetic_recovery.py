@@ -27,8 +27,7 @@ def _design(
     tmp_path: Path,
     *,
     cycles: int = 1,
-    attachment_type: str = "current",
-    recovery_metric: str = "attachment_native",
+    recovery_metric: str = "surface",
 ) -> Path:
     benchmark = tmp_path / "benchmark"
     write_synthetic_validation_benchmark(TEMPLATE, benchmark, subjects_per_family=3)
@@ -37,7 +36,6 @@ def _design(
         benchmark,
         design,
         max_cycles=cycles,
-        attachment_type=attachment_type,
         recovery_metric=recovery_metric,
         created_at="2026-08-27T00:00:00+00:00",
     )
@@ -86,17 +84,6 @@ def test_recovery_assessment_recomputes_native_surface_metrics(tmp_path: Path) -
     )
     persisted = json.loads(assessment.read_text(encoding="utf-8"))
     assert persisted == value
-
-
-def test_landmark_recovery_design_binds_correspondence_aware_attachment(
-    tmp_path: Path,
-) -> None:
-    design_root = _design(tmp_path, attachment_type="landmark")
-
-    design = verify_modern_synthetic_recovery_design(design_root)
-
-    assert design["protocol"]["shared_settings"]["attachment_type"] == "landmark"
-    assert design["protocol"]["recovery_metric"] == "ordered_vertex"
 
 
 def test_current_recovery_can_explicitly_preserve_legacy_ordered_metric(

@@ -54,12 +54,6 @@ candidate gradients, so gradient norms and L-BFGS curvature history remain
 internally coherent. The default remains the unchanged Euclidean mode; the
 mode and width ratio are serialized as optimizer settings.
 
-Engine 1.7 additionally supports an opt-in ordered-landmark attachment for
-meshes with independently known exact vertex correspondence. The Current
-default and Varifold mode are unchanged; landmark mode fails before optimization
-when ordered topology differs. See
-[Modern ordered-landmark attachment](MODERN_LANDMARK_ATTACHMENT.md).
-
 Candidate objectives are evaluated before their gradients. A rejected Armijo
 candidate releases its graph without an unused backward pass; an acceptable
 candidate requests the gradient from the same graph without repeating its

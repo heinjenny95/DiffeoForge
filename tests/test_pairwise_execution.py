@@ -13,7 +13,6 @@ PairwiseEvaluationPlan = engine.PairwiseEvaluationPlan
 
 def test_exact_resume_compatibility_is_explicit_and_fail_closed() -> None:
     assert supports_exact_engine_resume(ENGINE_IMPLEMENTATION_VERSION) is True
-    assert supports_exact_engine_resume("1.6") is True
     assert supports_exact_engine_resume("1.5") is True
     assert supports_exact_engine_resume("1.4") is False
     assert supports_exact_engine_resume(
