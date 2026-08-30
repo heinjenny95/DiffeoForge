@@ -7,7 +7,7 @@ import os
 import sys
 import threading
 import time
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from typing import Protocol, TextIO
 
 from diffeoforge.config import load_config
@@ -280,6 +280,7 @@ def run_reference_execution_worker(
         )
         started = time.monotonic()
         last_iteration: int | None = None
+        latest_resources: Mapping[str, object] | None = None
 
         def observe_line(line: str) -> None:
             nonlocal last_iteration
@@ -315,14 +316,20 @@ def run_reference_execution_worker(
                     ),
                     "log_source": log_source,
                     "last_iteration": last_iteration,
+                    "resources": latest_resources,
                 },
             )
+
+        def observe_resources(resources: Mapping[str, object]) -> None:
+            nonlocal latest_resources
+            latest_resources = dict(resources)
 
         with contextlib.redirect_stdout(stderr):
             return_code = execute_run(
                 run_directory,
                 line_callback=observe_line,
                 activity_callback=observe_activity,
+                resource_callback=observe_resources,
                 cancel_requested=cancel_event.is_set,
             )
 

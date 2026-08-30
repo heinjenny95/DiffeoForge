@@ -240,6 +240,12 @@ This repository currently provides:
   cancellation; a Qt-independent parent controller validates event identity,
   sequence, lifecycle, exit status, bounded diagnostics, and completed results
   without invented percent-complete or ETA claims;
+- a desktop run-management path with completed-run discovery, independently
+  verified interrupted-run checkpoints, explicit crash reconciliation,
+  immutable resume successors, remote reconnect state, observed-rate ETA
+  bounds, and live reference-backend CPU/RAM process-tree telemetry; optional
+  CUDA telemetry is labelled device-wide and never attributed solely to one
+  WSL/container run;
 - an opt-in fresh-process objective/gradient benchmark with explicit subject
   selection, raw repeats, sampled process RSS, exact provenance, explicit
   standard/recompute blockwise measurement, separately recorded benchmark-only

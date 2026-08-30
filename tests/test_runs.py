@@ -799,6 +799,7 @@ def test_execute_run_tails_native_deformetrica_log_and_reports_activity(
     )
     observed_lines: list[str] = []
     activities: list[tuple[float, str | None, str | None]] = []
+    resources: list[dict[str, object]] = []
 
     assert (
         execute_run(
@@ -807,6 +808,7 @@ def test_execute_run_tails_native_deformetrica_log_and_reports_activity(
             activity_callback=lambda elapsed, latest, source: activities.append(
                 (elapsed, latest, source)
             ),
+            resource_callback=lambda value: resources.append(dict(value)),
         )
         == 0
     )
@@ -815,6 +817,9 @@ def test_execute_run_tails_native_deformetrica_log_and_reports_activity(
     assert any("Log-likelihood = -8.0" in line for line in observed_lines)
     assert activities
     assert activities[-1][2] == "output/test_info.log"
+    assert resources
+    assert resources[-1]["requested_device"] == "cpu"
+    assert resources[-1]["gpu"]["status"] == "not_requested"
     assert parse_convergence(
         run_directory / "logs" / "deformetrica.log",
         run_directory / "logs" / "test-convergence.csv",

@@ -80,9 +80,16 @@ objective, attachment, regularity, and elapsed time. It does not claim that the
 iteration count is a convergence percentage.
 
 While Deformetrica is active but has not completed another logged iteration,
-the worker emits a heartbeat every ten seconds. The first-iteration state is
+the worker emits a heartbeat at a bounded cadence (currently 30 seconds). The first-iteration state is
 shown explicitly with elapsed time and the latest native log message, so an
 expensive initial objective and gradient evaluation does not look frozen.
+
+At the same cadence, the worker observes summed CPU and resident memory for the
+visible backend launcher process tree plus system RAM pressure. When CUDA was
+requested and `nvidia-smi` is available, it also reports whole-device GPU load
+and memory with an explicit warning that WSL/container attribution to this one
+run is not established. Missing telemetry never fails the atlas and no value is
+presented as peak-memory evidence. See [Run management](RUN_MANAGER.md).
 
 After at least three measured iteration intervals, the tracker takes the median
 seconds per iteration from a rolling ten-observation window and computes:

@@ -117,10 +117,36 @@ def test_reference_execution_worker_runs_full_lifecycle_and_emits_eta_progress(
         *,
         line_callback,
         activity_callback,
+        resource_callback,
         cancel_requested,
     ):
         assert run_directory == request.destination
         assert cancel_requested() is False
+        resource_callback(
+            {
+                "backend_process_id": 42,
+                "requested_device": "cpu",
+                "process_tree": {
+                    "status": "observed",
+                    "reason": None,
+                    "process_count": 1,
+                    "cpu_percent": 50.0,
+                    "rss_bytes": 1024,
+                    "system_memory_percent": 25.0,
+                    "system_memory_available_bytes": 3072,
+                    "system_memory_total_bytes": 4096,
+                },
+                "gpu": {
+                    "status": "not_requested",
+                    "scope": "none",
+                    "utilization_percent": None,
+                    "memory_used_bytes": None,
+                    "memory_total_bytes": None,
+                    "reason": "CPU execution was selected",
+                },
+                "boundary": "Observed process tree only.",
+            }
+        )
         activity_callback(
             5.0,
             "Started estimator: GradientAscent",
@@ -167,6 +193,8 @@ def test_reference_execution_worker_runs_full_lifecycle_and_emits_eta_progress(
         "terminal",
     )
     progress = tuple(event for event in events if event.kind == "progress")
+    activity = next(event for event in events if event.kind == "activity")
+    assert activity.payload["resources"]["process_tree"]["rss_bytes"] == 1024
     assert progress[-1].payload["iteration"] == 3
     assert progress[-1].payload["estimate_status"] == "observed_rate_to_iteration_cap"
     assert progress[-1].payload["eta_to_iteration_cap_seconds"] == pytest.approx(97 * 6)

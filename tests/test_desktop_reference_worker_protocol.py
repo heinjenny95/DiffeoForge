@@ -95,7 +95,7 @@ def _progress(sequence: int, iteration: int):
     )
 
 
-def _activity(sequence: int, elapsed_seconds: float):
+def _activity(sequence: int, elapsed_seconds: float, *, resources=None):
     return DesktopReferenceWorkerEvent(
         request_id=REQUEST_ID,
         sequence=sequence,
@@ -107,6 +107,7 @@ def _activity(sequence: int, elapsed_seconds: float):
             "latest_message": "Started estimator: GradientAscent",
             "log_source": "output/reference_info.log",
             "last_iteration": None,
+            **({} if resources is None else {"resources": resources}),
         },
     )
 
@@ -174,6 +175,37 @@ def test_reference_worker_accepts_increasing_activity_only_during_execute() -> N
     before_execute = _ledger_with_phases("verify_request", "preflight", "prepare")
     with pytest.raises(DesktopReferenceWorkerProtocolError, match="execute phase"):
         before_execute.accept(_activity(4, 10.0))
+
+
+def test_reference_worker_accepts_bounded_resource_observation() -> None:
+    resources = {
+        "backend_process_id": 42,
+        "requested_device": "cuda",
+        "process_tree": {
+            "status": "observed",
+            "reason": None,
+            "process_count": 3,
+            "cpu_percent": 175.0,
+            "rss_bytes": 123456,
+            "system_memory_percent": 61.5,
+            "system_memory_available_bytes": 1000,
+            "system_memory_total_bytes": 2000,
+        },
+        "gpu": {
+            "status": "observed",
+            "scope": "device_total_not_attributed_to_run",
+            "utilization_percent": 80.0,
+            "memory_used_bytes": 3000,
+            "memory_total_bytes": 8000,
+            "reason": "device-wide only",
+        },
+        "boundary": "Observation, not a peak-memory guarantee.",
+    }
+    ledger = _ledger_with_phases("verify_request", "preflight", "prepare", "execute")
+
+    ledger.accept(_activity(5, 10.0, resources=resources))
+
+    assert ledger.events[-1].payload["resources"]["gpu"]["utilization_percent"] == 80.0
 
 
 def test_reference_worker_progress_rejects_nonfinite_json_numbers() -> None:

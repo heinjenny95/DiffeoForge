@@ -145,7 +145,75 @@
         "maximum_iterations": {"type": "integer", "minimum": 1},
         "latest_message": {"type": "string", "minLength": 1},
         "log_source": {"type": ["string", "null"]},
-        "last_iteration": {"type": ["integer", "null"], "minimum": 0}
+        "last_iteration": {"type": ["integer", "null"], "minimum": 0},
+        "resources": {
+          "oneOf": [
+            {"type": "null"},
+            {"$ref": "#/$defs/resources"}
+          ]
+        }
+      }
+    },
+    "resources": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "backend_process_id",
+        "requested_device",
+        "process_tree",
+        "gpu",
+        "boundary"
+      ],
+      "properties": {
+        "backend_process_id": {"type": "integer", "minimum": 1},
+        "requested_device": {"enum": ["cpu", "cuda"]},
+        "process_tree": {"$ref": "#/$defs/process_tree_resources"},
+        "gpu": {"$ref": "#/$defs/gpu_resources"},
+        "boundary": {"type": "string", "minLength": 1}
+      }
+    },
+    "process_tree_resources": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "reason",
+        "process_count",
+        "cpu_percent",
+        "rss_bytes",
+        "system_memory_percent",
+        "system_memory_available_bytes",
+        "system_memory_total_bytes"
+      ],
+      "properties": {
+        "status": {"enum": ["observed", "unavailable"]},
+        "reason": {"type": ["string", "null"]},
+        "process_count": {"type": ["integer", "null"], "minimum": 1},
+        "cpu_percent": {"type": ["number", "null"], "minimum": 0},
+        "rss_bytes": {"type": ["integer", "null"], "minimum": 0},
+        "system_memory_percent": {"type": ["number", "null"], "minimum": 0},
+        "system_memory_available_bytes": {"type": ["integer", "null"], "minimum": 0},
+        "system_memory_total_bytes": {"type": ["integer", "null"], "minimum": 0}
+      }
+    },
+    "gpu_resources": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "scope",
+        "utilization_percent",
+        "memory_used_bytes",
+        "memory_total_bytes",
+        "reason"
+      ],
+      "properties": {
+        "status": {"enum": ["observed", "unavailable", "not_requested"]},
+        "scope": {"enum": ["none", "device_total_not_attributed_to_run"]},
+        "utilization_percent": {"type": ["number", "null"], "minimum": 0},
+        "memory_used_bytes": {"type": ["integer", "null"], "minimum": 0},
+        "memory_total_bytes": {"type": ["integer", "null"], "minimum": 0},
+        "reason": {"type": ["string", "null"]}
       }
     },
     "terminal": {

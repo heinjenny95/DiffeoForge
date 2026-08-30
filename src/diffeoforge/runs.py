@@ -48,6 +48,7 @@ from diffeoforge.config import (
 )
 from diffeoforge.mesh import MeshMetadata, inspect_inputs, sha256_file
 from diffeoforge.reference_runtime import probe_reference_gpu
+from diffeoforge.resource_monitor import ProcessResourceMonitor
 from diffeoforge.subprocess_policy import hidden_windows_process_kwargs
 
 RUN_MANIFEST_VERSION = "0.1"
@@ -1253,6 +1254,7 @@ def execute_run(
     *,
     line_callback: Callable[[str], None] | None = None,
     activity_callback: Callable[[float, str | None, str | None], None] | None = None,
+    resource_callback: Callable[[Mapping[str, object]], None] | None = None,
     cancel_requested: Callable[[], bool] | None = None,
 ) -> int:
     """Execute a prepared run exactly once and record append-only lifecycle evidence."""
@@ -1261,6 +1263,8 @@ def execute_run(
         raise TypeError("line_callback must be callable or None")
     if activity_callback is not None and not callable(activity_callback):
         raise TypeError("activity_callback must be callable or None")
+    if resource_callback is not None and not callable(resource_callback):
+        raise TypeError("resource_callback must be callable or None")
     if cancel_requested is not None and not callable(cancel_requested):
         raise TypeError("cancel_requested must be callable or None")
 
@@ -1323,6 +1327,14 @@ def execute_run(
                 **hidden_windows_process_kwargs(
                     creationflags=process_group_creationflags
                 ),
+            )
+            resource_monitor = (
+                None
+                if resource_callback is None
+                else ProcessResourceMonitor(
+                    process.pid,
+                    requested_device=str(config["runtime"]["device"]),
+                )
             )
             assert process.stdout is not None
             output_queue: queue.Queue[tuple[str, object]] = queue.Queue()
@@ -1408,15 +1420,18 @@ def execute_run(
                     raise KeyboardInterrupt
                 now = time.monotonic()
                 if (
-                    activity_callback is not None
+                    (activity_callback is not None or resource_callback is not None)
                     and now - last_activity_emit
                     >= REFERENCE_ACTIVITY_INTERVAL_SECONDS
                 ):
-                    activity_callback(
-                        now - start_time,
-                        latest_message,
-                        latest_source,
-                    )
+                    if resource_callback is not None and resource_monitor is not None:
+                        resource_callback(resource_monitor.sample())
+                    if activity_callback is not None:
+                        activity_callback(
+                            now - start_time,
+                            latest_message,
+                            latest_source,
+                        )
                     last_activity_emit = now
                 if process.poll() is not None and stdout_eof and output_queue.empty():
                     observe_native_logs()

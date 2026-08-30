@@ -5,6 +5,7 @@ from __future__ import annotations
 import threading
 import time
 import uuid
+from collections.abc import Mapping
 from dataclasses import replace
 from pathlib import Path
 
@@ -1136,6 +1137,9 @@ class DiffeoForgeWindow(QMainWindow):
             | None
         ) = None
         self._remote_session_directory: Path | None = None
+        self._latest_reference_resource_text = (
+            "Live resources: waiting for the first backend-process sample."
+        )
         self._result_review: ModernResultReview | None = None
         self._reference_pca_deformation_started_at: float | None = None
         self._reference_pca_deformation_timer = QTimer(self)
@@ -8107,6 +8111,47 @@ class DiffeoForgeWindow(QMainWindow):
             f"remote #{index} {kind}/{status}: {message}"
         )
 
+    @staticmethod
+    def _format_resource_bytes(value: object) -> str:
+        amount = max(0.0, float(value))
+        for unit in ("B", "KiB", "MiB", "GiB", "TiB"):
+            if amount < 1024.0 or unit == "TiB":
+                return f"{amount:.3g} {unit}"
+            amount /= 1024.0
+        raise AssertionError("unreachable resource unit")
+
+    @classmethod
+    def _reference_resource_text(cls, value: object) -> str:
+        if not isinstance(value, Mapping):
+            return "Live resources: telemetry is not available yet."
+        process = value.get("process_tree")
+        gpu = value.get("gpu")
+        parts: list[str] = []
+        if isinstance(process, Mapping) and process.get("status") == "observed":
+            cpu = process.get("cpu_percent")
+            rss = process.get("rss_bytes")
+            system = process.get("system_memory_percent")
+            process_count = process.get("process_count")
+            parts.append(
+                "backend tree "
+                f"{float(cpu):.1f}% CPU, {cls._format_resource_bytes(rss)} RSS, "
+                f"{int(process_count)} visible processes"
+            )
+            if system is not None:
+                parts.append(f"system RAM {float(system):.1f}% used")
+        elif isinstance(process, Mapping):
+            parts.append(f"CPU/RAM unavailable ({process.get('reason')})")
+        if isinstance(gpu, Mapping) and gpu.get("status") == "observed":
+            parts.append(
+                f"GPU device {float(gpu['utilization_percent']):.1f}% busy, "
+                f"{cls._format_resource_bytes(gpu['memory_used_bytes'])} / "
+                f"{cls._format_resource_bytes(gpu['memory_total_bytes'])} used"
+            )
+            parts.append("GPU values are device-wide, not attributed solely to this run")
+        elif isinstance(gpu, Mapping) and gpu.get("status") == "unavailable":
+            parts.append(f"GPU telemetry unavailable ({gpu.get('reason')})")
+        return "Live resources: " + (" · ".join(parts) if parts else "not observed")
+
     def _reference_atlas_event(self, event: DesktopReferenceWorkerEvent) -> None:
         message: str
         if event.kind == "accepted":
@@ -8124,12 +8169,18 @@ class DiffeoForgeWindow(QMainWindow):
             else:
                 self.run_progress_bar.setRange(0, 0)
                 self.run_progress_bar.setFormat("Computing first iteration")
+                self._latest_reference_resource_text = (
+                    "Live resources: waiting for the first backend-process sample."
+                )
             self.run_state_label.setText(message)
         elif event.kind == "activity":
             elapsed = float(event.payload["elapsed_seconds"])
             state = str(event.payload["state"])
             latest_message = str(event.payload["latest_message"])
             source = event.payload["log_source"]
+            self._latest_reference_resource_text = self._reference_resource_text(
+                event.payload.get("resources")
+            )
             if state == "computing_first_iteration":
                 message = (
                     "Deformetrica is active and computing its first complete objective and "
@@ -8145,7 +8196,8 @@ class DiffeoForgeWindow(QMainWindow):
                 self.run_optimizer_label.setText(
                     f"{self._reference_runtime_estimate_text(self._review)}\n"
                     f"Live activity: {self._format_duration(elapsed)} elapsed; no complete "
-                    f"iteration logged yet. Latest Deformetrica message: {latest_message}"
+                    f"iteration logged yet. Latest Deformetrica message: {latest_message}\n"
+                    f"{self._latest_reference_resource_text}"
                 )
             else:
                 last_iteration = event.payload["last_iteration"]
@@ -8156,7 +8208,8 @@ class DiffeoForgeWindow(QMainWindow):
                 self.run_optimizer_label.setText(
                     f"Live activity: {self._format_duration(elapsed)} elapsed | last logged "
                     f"iteration {last_iteration} of {event.payload['maximum_iterations']} | "
-                    f"latest message: {latest_message}"
+                    f"latest message: {latest_message}\n"
+                    f"{self._latest_reference_resource_text}"
                 )
             self.run_state_label.setText(message)
             source_text = "Deformetrica log" if source is None else str(source)
@@ -8227,7 +8280,8 @@ class DiffeoForgeWindow(QMainWindow):
                 f"{float(event.payload['regularity']):.6g}\n"
                 f"Elapsed: {self._format_duration(elapsed)} · observed rate: {rate_text} · "
                 f"Time to iteration cap: {eta_text} (live upper bound, not convergence)\n"
-                f"{convergence_text}{contention_text}"
+                f"{convergence_text}{contention_text}\n"
+                f"{self._latest_reference_resource_text}"
             )
             self.run_state_label.setText(message)
         else:
