@@ -285,18 +285,18 @@ def test_unbounded_stage_can_create_and_run_hash_bound_outward_successor(
     assert dict(successor.plan.search_extension_lineage)[
         "parent_plan_fingerprint"
     ] == source.plan.fingerprint
-    assert len(successor.candidates) == len(source.candidates) + 4
+    assert len(successor.candidates) == len(source.candidates) + 6
     assert sum(candidate.status == "completed" for candidate in successor.candidates) == len(
         source.candidates
     )
-    assert sum(candidate.status == "pending" for candidate in successor.candidates) == 4
+    assert sum(candidate.status == "pending" for candidate in successor.candidates) == 6
 
     new_calls_before = call
     successor = ReferenceCalibrationStudyRunner(
         successor.study_directory,
         controller_factory=_CompletedController,
     ).run_current_stage()
-    assert call - new_calls_before == 4
+    assert call - new_calls_before == 6
     assert successor.status == "awaiting_review"
     assert {candidate.status for candidate in successor.candidates} == {"completed"}
     combined = assess_reference_calibration_snapshot(successor)
@@ -324,7 +324,7 @@ def test_unbounded_stage_can_create_and_run_hash_bound_outward_successor(
     )
     output = capsys.readouterr().out
     assert "Calibration search successor created" in output
-    assert "new outward candidates: 4" in output
+    assert "new outward candidates: 6" in output
     assert load_reference_calibration_study(cli_successor).status == "ready"
 
     source_events = source.study_directory / study_module.STUDY_EVENTS

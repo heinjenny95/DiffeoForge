@@ -1545,10 +1545,8 @@ _SEARCH_PARAMETER_LABELS = {
 }
 _SEARCH_EXTENSION_GROUPS = (
     ("attachment", ("attachment_kernel_width",)),
-    (
-        "deformation/control spacing",
-        ("deformation_kernel_width", "initial_control_point_spacing"),
-    ),
+    ("deformation", ("deformation_kernel_width",)),
+    ("control spacing", ("initial_control_point_spacing",)),
     ("noise", ("noise_std",)),
 )
 
