@@ -44,6 +44,19 @@ def test_reference_progress_ignores_unpaired_and_regressing_iterations() -> None
     assert tracker.observe(_objective(-8), elapsed_seconds=5) is None
 
 
+def test_reference_progress_keeps_zero_duration_flushes_in_warmup() -> None:
+    tracker = ReferenceProgressTracker(50)
+    final = None
+    for iteration in range(5):
+        assert tracker.observe(_iteration(iteration), elapsed_seconds=1.0) is None
+        final = tracker.observe(_objective(-10 + iteration), elapsed_seconds=1.0)
+
+    assert final is not None
+    assert final.estimate_status == "warming_up"
+    assert final.seconds_per_iteration is None
+    assert final.eta_to_iteration_cap_seconds is None
+
+
 def test_reference_progress_reports_likely_convergence_window_from_decay() -> None:
     tracker = ReferenceProgressTracker(100, convergence_tolerance=0.0001)
     final = None

@@ -182,7 +182,11 @@ class ReferenceProgressTracker:
                 rate_samples[1:],
                 strict=False,
             )
-            if later_iteration > earlier_iteration and later_elapsed >= earlier_elapsed
+            # Very small demo runs can flush several completed iterations in one
+            # scheduler tick.  A zero wall-time delta is not a measured rate and
+            # must remain in warm-up instead of violating the worker protocol's
+            # strictly-positive seconds-per-iteration contract.
+            if later_iteration > earlier_iteration and later_elapsed > earlier_elapsed
         ]
         seconds_per_iteration: float | None = None
         eta: float | None = None
