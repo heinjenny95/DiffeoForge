@@ -187,6 +187,20 @@ that new immutable study, imports source metrics by event hash, and leaves only
 the outward candidates pending; it refuses any proposed value outside the
 explicitly declared limits.
 
+When a completed Validation Lab sensitivity assessment instead finds that its
+preferred full-training finalist is simultaneously at the minimum attachment
+width, deformation width, and control-point spacing, DiffeoForge does not keep
+moving those three controls together. The
+`reference-width-refinement-study-init` command revalidates the Validation Lab
+and sensitivity artifact, then freezes a seven-candidate local pilot on the
+original calibration subjects. It reruns the exact boundary center and changes
+only one width at a time to the nearest lower or upper neighbor. Where the
+original pilot grid has no lower neighbor, it permits exactly one derived
+logarithmic step; it does not recursively expand. This axis-separated screen
+distinguishes surface-detail scale, deformation reach, and control density
+before any additional full-cohort comparison is authorized. Its result remains
+pilot evidence and cannot replace heldout or anatomical validation.
+
 The pilot-subject heuristic covers geometric diversity only. It cannot infer
 biological strata that are absent from mesh coordinates. A manuscript study
 must therefore confirm representation of relevant groups and may replace or

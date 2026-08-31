@@ -1583,6 +1583,239 @@ class CalibrationSearchExtensionProposal:
         }
 
 
+@dataclass(frozen=True)
+class AxisSeparatedWidthRefinementProposal:
+    """One local pilot grid that changes only one width parameter at a time."""
+
+    version: str
+    fingerprint: str
+    parent_plan_fingerprint: str
+    source_assessment_fingerprint: str
+    center_values: tuple[tuple[str, float], ...]
+    candidates: tuple[CalibrationCandidate, ...]
+    limitations: tuple[str, ...]
+
+    @property
+    def center(self) -> dict[str, float]:
+        return dict(self.center_values)
+
+    def as_manifest(self) -> dict[str, object]:
+        return {
+            "version": self.version,
+            "fingerprint": self.fingerprint,
+            "parent_plan_fingerprint": self.parent_plan_fingerprint,
+            "source_assessment_fingerprint": self.source_assessment_fingerprint,
+            "center_values": self.center,
+            "candidates": [candidate.as_manifest() for candidate in self.candidates],
+            "limitations": list(self.limitations),
+        }
+
+
+_WIDTH_REFINEMENT_PARAMETERS = (
+    "attachment_kernel_width",
+    "deformation_kernel_width",
+    "initial_control_point_spacing",
+)
+_WIDTH_REFINEMENT_LABELS = {
+    "attachment_kernel_width": "attachment",
+    "deformation_kernel_width": "deformation",
+    "initial_control_point_spacing": "control spacing",
+}
+
+
+def _width_refinement_neighbors(
+    plan: ReferenceCalibrationPlan,
+    *,
+    parameter: str,
+    selected: float,
+) -> tuple[float, float]:
+    observed = sorted(
+        _unique_positive(
+            tuple(
+                candidate.values[parameter]
+                for stage in plan.stages
+                for candidate in stage.candidates
+                if parameter in candidate.values
+            )
+        )
+    )
+    lower = [
+        value for value in observed if value < selected * (1.0 - 1e-10)
+    ]
+    upper = [
+        value for value in observed if value > selected * (1.0 + 1e-10)
+    ]
+    if lower:
+        lower_value = lower[-1]
+    elif upper:
+        ratio = upper[0] / selected
+        if not math.isfinite(ratio) or ratio <= 1.0:
+            raise ValueError(f"cannot derive a lower neighbor for {parameter}")
+        lower_value = selected / ratio
+    else:
+        raise ValueError(f"cannot derive a lower neighbor for {parameter}")
+    if upper:
+        upper_value = upper[0]
+    elif lower:
+        ratio = selected / lower[-1]
+        if not math.isfinite(ratio) or ratio <= 1.0:
+            raise ValueError(f"cannot derive an upper neighbor for {parameter}")
+        upper_value = selected * ratio
+    else:
+        raise ValueError(f"cannot derive an upper neighbor for {parameter}")
+    return (
+        _positive_finite(f"lower {parameter} neighbor", lower_value),
+        _positive_finite(f"upper {parameter} neighbor", upper_value),
+    )
+
+
+def propose_axis_separated_width_refinement(
+    plan: ReferenceCalibrationPlan,
+    *,
+    selected_values: Mapping[str, float],
+    source_assessment_fingerprint: str,
+) -> AxisSeparatedWidthRefinementProposal:
+    """Derive a bounded one-axis-at-a-time pilot around a Validation Lab winner.
+
+    Existing calibration candidates are reused as the nearest neighbors.  Only
+    when the selected value is already the outermost calibration value is one
+    logarithmic step extrapolated.  This proposal never starts an atlas.
+    """
+
+    if (
+        len(source_assessment_fingerprint) != 64
+        or any(
+            character not in "0123456789abcdef"
+            for character in source_assessment_fingerprint
+        )
+    ):
+        raise ValueError("source assessment fingerprint must be a lowercase SHA-256")
+    missing = sorted(set(_WIDTH_REFINEMENT_PARAMETERS) - set(selected_values))
+    if missing:
+        raise ValueError(
+            "width-refinement center is missing parameters: " + ", ".join(missing)
+        )
+    center = {
+        name: _positive_finite(name, float(selected_values[name]))
+        for name in _WIDTH_REFINEMENT_PARAMETERS
+    }
+    candidates = [
+        CalibrationCandidate(
+            candidate_id="width-center",
+            label="Current Validation Lab boundary candidate",
+            parameter_values=tuple(sorted(center.items())),
+            rationale=(
+                "Re-runs the exact preferred Validation Lab widths on the immutable "
+                "pilot cohort as the local comparison center."
+            ),
+        )
+    ]
+    for parameter in _WIDTH_REFINEMENT_PARAMETERS:
+        lower, upper = _width_refinement_neighbors(
+            plan,
+            parameter=parameter,
+            selected=center[parameter],
+        )
+        for direction, value in (("lower", lower), ("upper", upper)):
+            values = dict(center)
+            values[parameter] = value
+            label = _WIDTH_REFINEMENT_LABELS[parameter]
+            candidates.append(
+                CalibrationCandidate(
+                    candidate_id=f"width-{label.replace(' ', '-')}-{direction}",
+                    label=f"{direction.title()} {label} only",
+                    parameter_values=tuple(sorted(values.items())),
+                    rationale=(
+                        f"Changes only {parameter} from the local center so attachment "
+                        "detail, deformation reach, and control density are not confounded."
+                    ),
+                )
+            )
+    limitations = (
+        "This is an eight-subject numerical screening pilot, not full-cohort confirmation.",
+        "Each candidate changes at most one width parameter from the local center.",
+        "One logarithmic outward step is proposed when the prior calibration grid has no "
+        "lower neighbor; no recursive or unbounded expansion is authorized.",
+        "Landmarks and biological metadata are not used to fit or rank these atlas candidates.",
+    )
+    payload = {
+        "version": "0.1",
+        "parent_plan_fingerprint": plan.fingerprint,
+        "source_assessment_fingerprint": source_assessment_fingerprint,
+        "center_values": center,
+        "candidates": [candidate.as_manifest() for candidate in candidates],
+        "limitations": list(limitations),
+    }
+    return AxisSeparatedWidthRefinementProposal(
+        version="0.1",
+        fingerprint=_canonical_hash(payload),
+        parent_plan_fingerprint=plan.fingerprint,
+        source_assessment_fingerprint=source_assessment_fingerprint,
+        center_values=tuple(sorted(center.items())),
+        candidates=tuple(candidates),
+        limitations=limitations,
+    )
+
+
+def bind_axis_separated_width_refinement_plan(
+    plan: ReferenceCalibrationPlan,
+    proposal: AxisSeparatedWidthRefinementProposal,
+) -> ReferenceCalibrationPlan:
+    """Bind a width-refinement proposal as the first stage of a new pilot plan."""
+
+    if proposal.parent_plan_fingerprint != plan.fingerprint:
+        raise ValueError("width-refinement proposal is bound to another calibration plan")
+    expected = propose_axis_separated_width_refinement(
+        plan,
+        selected_values=proposal.center,
+        source_assessment_fingerprint=proposal.source_assessment_fingerprint,
+    )
+    if proposal != expected:
+        raise ValueError("width-refinement proposal differs from its deterministic derivation")
+    attachment = next(
+        (stage for stage in plan.stages if stage.stage_id == "attachment"),
+        None,
+    )
+    if attachment is None:
+        raise ValueError("calibration plan has no attachment stage")
+    refinement = replace(
+        attachment,
+        title="Axis-separated local width refinement",
+        candidates=proposal.candidates,
+        decision_rule=(
+            "Compare the exact local center with one lower and one upper neighbor per "
+            "width axis. Reject incomplete, nonconverged, or geometrically invalid runs; "
+            "do not interpret residual improvement alone as anatomical validity."
+        ),
+    )
+    stages = tuple(
+        refinement if stage.stage_id == "attachment" else stage
+        for stage in plan.stages
+    )
+    effective = plan.effective_values
+    effective.update(proposal.center)
+    lineage = (
+        ("parent_plan_fingerprint", plan.fingerprint),
+        ("source_assessment_fingerprint", proposal.source_assessment_fingerprint),
+        ("proposal_fingerprint", proposal.fingerprint),
+        ("stage_id", "attachment"),
+    )
+    successor = replace(
+        plan,
+        version=("0.6" if plan.pilot_subject_declarations else "0.4"),
+        fingerprint="",
+        baseline_effective_values=tuple(sorted(effective.items())),
+        stages=stages,
+        search_extension_lineage=lineage,
+        limitations=(*plan.limitations, *proposal.limitations),
+    )
+    payload = successor.provenance
+    payload.pop("fingerprint")
+    payload.pop("status")
+    payload.pop("pilot_subject_count")
+    return replace(successor, fingerprint=_canonical_hash(payload))
+
+
 def _search_boundary_parameters(
     stage: CalibrationStage,
     selected_candidate_id: str | None,

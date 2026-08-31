@@ -95,6 +95,9 @@ from diffeoforge.reference_validation_synthetic import (
     evaluate_synthetic_correspondence_error,
     write_synthetic_validation_benchmark,
 )
+from diffeoforge.reference_width_refinement import (
+    create_reference_width_refinement_study,
+)
 from diffeoforge.report import (
     collect_preflight,
     default_preflight_report_path,
@@ -1509,6 +1512,23 @@ def build_parser() -> argparse.ArgumentParser:
         help="Reverify and exactly recompute an existing sensitivity assessment.",
     )
     sensitivity_verify.add_argument("assessment_directory", type=Path)
+
+    width_refinement_init = subparsers.add_parser(
+        "reference-width-refinement-study-init",
+        help=(
+            "Freeze an axis-separated seven-candidate pilot around a preferred "
+            "Validation Lab width boundary without starting an atlas."
+        ),
+    )
+    width_refinement_init.add_argument("validation_study_directory", type=Path)
+    width_refinement_init.add_argument("sensitivity_assessment_directory", type=Path)
+    width_refinement_init.add_argument("--output", required=True, type=Path)
+    width_refinement_init.add_argument(
+        "--pilot-max-iterations",
+        type=int,
+        default=150,
+        help="Iteration cap for each local pilot candidate (default: 150).",
+    )
 
     template_robustness_init = subparsers.add_parser(
         "reference-template-robustness-init",
@@ -4179,6 +4199,35 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"Sensitivity assessment verified: {artifact.artifact_directory}")
         print(f"Sensitivity status: {artifact.manifest['status']}")
         print("All full-training source runs and metrics were exactly recomputed.")
+        return 0
+
+    if args.command == "reference-width-refinement-study-init":
+        try:
+            snapshot = create_reference_width_refinement_study(
+                args.validation_study_directory,
+                args.sensitivity_assessment_directory,
+                args.output,
+                pilot_max_iterations=args.pilot_max_iterations,
+            )
+        except (ConfigurationError, OSError, RuntimeError, TypeError, ValueError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        assert snapshot.current_stage is not None
+        print(f"Width-refinement pilot created: {snapshot.study_directory}")
+        print(
+            f"Frozen design: {len(snapshot.current_stage.candidates)} axis-separated "
+            f"candidates; {snapshot.plan.pilot_subject_count} pilot subjects"
+        )
+        for candidate in snapshot.current_stage.candidates:
+            values = ", ".join(
+                f"{name}={value:.9g}"
+                for name, value in candidate.parameter_values
+            )
+            print(f"  {candidate.candidate_id}: {values}")
+        print(
+            "No atlas process was started. Run the nested study with "
+            "reference-calibration-study-run."
+        )
         return 0
 
     if args.command == "reference-template-robustness-init":

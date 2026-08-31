@@ -10,10 +10,12 @@ from diffeoforge.reference_calibration import (
     CalibrationCandidateEvidence,
     PilotSubjectDeclaration,
     assess_calibration_stage,
+    bind_axis_separated_width_refinement_plan,
     bind_calibration_search_extension_plan,
     bind_reference_calibration_plan_to_inputs,
     build_reference_calibration_plan,
     calibration_plan_json,
+    propose_axis_separated_width_refinement,
     propose_calibration_search_extension,
     read_pilot_subject_declarations,
     reference_calibration_plan_from_provenance,
@@ -79,6 +81,87 @@ def test_calibration_plan_can_bind_published_effective_input_bytes(
     )
 
 
+def test_axis_separated_width_refinement_brackets_each_parameter_independently() -> None:
+    plan = build_reference_calibration_plan(
+        _recommendation(),
+        coordinate_unit="unitless",
+        requested_pilot_subject_count=3,
+    )
+    attachment_values = sorted(
+        {
+            candidate.values["attachment_kernel_width"]
+            for stage in plan.stages
+            for candidate in stage.candidates
+            if "attachment_kernel_width" in candidate.values
+        }
+    )
+    deformation_values = sorted(
+        {
+            candidate.values["deformation_kernel_width"]
+            for stage in plan.stages
+            for candidate in stage.candidates
+            if "deformation_kernel_width" in candidate.values
+        }
+    )
+    spacing_values = sorted(
+        {
+            candidate.values["initial_control_point_spacing"]
+            for stage in plan.stages
+            for candidate in stage.candidates
+            if "initial_control_point_spacing" in candidate.values
+        }
+    )
+    center = {
+        "attachment_kernel_width": attachment_values[-2],
+        "deformation_kernel_width": deformation_values[0],
+        "initial_control_point_spacing": spacing_values[0],
+    }
+
+    proposal = propose_axis_separated_width_refinement(
+        plan,
+        selected_values=center,
+        source_assessment_fingerprint="a" * 64,
+    )
+
+    assert len(proposal.candidates) == 7
+    assert proposal.candidates[0].candidate_id == "width-center"
+    assert proposal.candidates[1].values["attachment_kernel_width"] == pytest.approx(
+        attachment_values[-3]
+    )
+    assert proposal.candidates[2].values["attachment_kernel_width"] == pytest.approx(
+        attachment_values[-1]
+    )
+    ratio = deformation_values[1] / deformation_values[0]
+    assert proposal.candidates[3].values["deformation_kernel_width"] == pytest.approx(
+        deformation_values[0] / ratio
+    )
+    assert proposal.candidates[4].values["deformation_kernel_width"] == pytest.approx(
+        deformation_values[1]
+    )
+    spacing_ratio = spacing_values[1] / spacing_values[0]
+    assert proposal.candidates[5].values[
+        "initial_control_point_spacing"
+    ] == pytest.approx(spacing_values[0] / spacing_ratio)
+    assert proposal.candidates[6].values[
+        "initial_control_point_spacing"
+    ] == pytest.approx(spacing_values[1])
+    for candidate in proposal.candidates[1:]:
+        changed = [
+            name
+            for name, value in candidate.values.items()
+            if value != pytest.approx(center[name])
+        ]
+        assert len(changed) == 1
+
+    successor = bind_axis_separated_width_refinement_plan(plan, proposal)
+    refinement = next(stage for stage in successor.stages if stage.stage_id == "attachment")
+    assert refinement.candidates == proposal.candidates
+    assert dict(successor.search_extension_lineage)["proposal_fingerprint"] == (
+        proposal.fingerprint
+    )
+    assert verify_reference_calibration_plan_provenance(successor.provenance) == (
+        successor.fingerprint
+    )
 def test_pilot_selection_is_deterministic_unique_and_excludes_template() -> None:
     recommendation = _recommendation()
 
