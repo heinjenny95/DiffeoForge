@@ -997,7 +997,7 @@ def test_desktop_analyzes_user_declared_gpa_meshes_before_project_creation(
     window.create_button.click()
     application.processEvents()
     assert window._reference_calibration_plan is not None
-    assert window.create_button.text() == "Prepare & start pilot calibration"
+    assert window.create_button.text() == "Prepare pilot calibration (recommended)"
     assert window.open_reference_calibration_button.isEnabled() is True
     assert window.open_reference_calibration_button.objectName() == "primary"
     guidance_row, _guidance_role = window.parameter_input_form.getWidgetPosition(
@@ -1022,6 +1022,81 @@ def test_desktop_analyzes_user_declared_gpa_meshes_before_project_creation(
     assert window.reference_parameter_profile_combo.currentData() == "pending"
     assert window.create_button.isEnabled() is True
     assert window.create_button.text() == "Analyze aligned meshes"
+    window.close()
+    application.processEvents()
+
+
+def test_desktop_can_use_current_reference_parameters_without_pilot(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from diffeoforge.desktop.project_setup import DesktopEngine
+    from diffeoforge.desktop.widgets import DiffeoForgeWindow, _ReferenceParameterWorker
+
+    application = QApplication.instance() or QApplication(
+        ["diffeoforge-explicit-pilot-bypass-test"]
+    )
+    queued = []
+
+    class FakePool:
+        def start(self, worker) -> None:
+            queued.append(worker)
+
+    window = DiffeoForgeWindow()
+    window._thread_pool = FakePool()  # type: ignore[assignment]
+    window.engine_combo.setCurrentIndex(
+        window.engine_combo.findData(DesktopEngine.DEFORMETRICA_REFERENCE)
+    )
+    window.mesh_edit.setText(str(ROOT / "examples" / "synthetic" / "meshes"))
+    window.project_edit.setText(str(tmp_path / "project"))
+    window.units_combo.setCurrentIndex(window.units_combo.findData("unitless"))
+    window.already_gpa_check.setChecked(True)
+    window.analyze_reference_parameters_button.click()
+    assert isinstance(queued[0], _ReferenceParameterWorker)
+    queued[0].run()
+    application.processEvents()
+
+    widths_before = (
+        window.reference_attachment_ratio_spin.value(),
+        window.reference_deformation_ratio_spin.value(),
+        window.reference_control_spacing_ratio_spin.value(),
+        window.reference_noise_ratio_spin.value(),
+    )
+    assert window.reference_parameter_profile_combo.currentData() == "data_assisted"
+    assert window.skip_reference_pilot_button.isHidden() is False
+    assert window.skip_reference_pilot_button.isEnabled() is True
+    assert window.skip_reference_pilot_button.text() == (
+        "Use current parameters & skip pilot"
+    )
+
+    create_calls: list[dict[str, bool]] = []
+    monkeypatch.setattr(
+        window,
+        "_create_project",
+        lambda **kwargs: create_calls.append(kwargs),
+    )
+    window.skip_reference_pilot_button.click()
+    application.processEvents()
+
+    assert create_calls == [{"overwrite_existing_configuration_confirmed": False}]
+    assert window.reference_parameter_profile_combo.currentData() == "advanced"
+    assert window.skip_reference_pilot_button.isHidden() is True
+    assert widths_before == (
+        window.reference_attachment_ratio_spin.value(),
+        window.reference_deformation_ratio_spin.value(),
+        window.reference_control_spacing_ratio_spin.value(),
+        window.reference_noise_ratio_spin.value(),
+    )
+    request = window._request()
+    assert request.reference_parameter_profile == "advanced"
+    assert request.reference_parameter_recommendation is None
+    assert "pilot calibration will be skipped" in (
+        window.reference_parameter_section_label.text()
+    )
     window.close()
     application.processEvents()
 

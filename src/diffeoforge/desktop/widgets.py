@@ -1394,6 +1394,19 @@ class DiffeoForgeWindow(QMainWindow):
         self.status_label.setObjectName("status")
         self.status_label.setWordWrap(True)
         footer_layout.addWidget(self.status_label, 1)
+        self.skip_reference_pilot_button = QPushButton(
+            "Use current parameters & skip pilot"
+        )
+        self.skip_reference_pilot_button.setObjectName("secondary")
+        self.skip_reference_pilot_button.setToolTip(
+            "Create the project with the parameter values currently shown, record them "
+            "as an explicit manual choice, and continue without pilot calibration."
+        )
+        self.skip_reference_pilot_button.clicked.connect(
+            self._use_current_reference_parameters_without_pilot
+        )
+        self.skip_reference_pilot_button.hide()
+        footer_layout.addWidget(self.skip_reference_pilot_button)
         self.create_button = QPushButton("Validate data & create project")
         self.create_button.setObjectName("primary")
         self.create_button.clicked.connect(self._setup_primary_action)
@@ -5589,6 +5602,18 @@ class DiffeoForgeWindow(QMainWindow):
         )
 
     def _sync_setup_primary_action(self, *, form_ready: bool) -> None:
+        current_reference_values_can_skip_pilot = bool(
+            self.engine_combo.currentData() == DesktopEngine.DEFORMETRICA_REFERENCE
+            and self.reference_parameter_profile_combo.currentData() == "data_assisted"
+            and self._reference_recommendation_matches_current_inputs()
+            and not self._reference_calibration_completed()
+        )
+        self.skip_reference_pilot_button.setVisible(
+            current_reference_values_can_skip_pilot
+        )
+        self.skip_reference_pilot_button.setEnabled(
+            current_reference_values_can_skip_pilot and self._worker is None
+        )
         if isinstance(self._worker, _ProjectWorker):
             self.create_button.setText("Validating data…")
             self.create_button.setEnabled(False)
@@ -5597,7 +5622,7 @@ class DiffeoForgeWindow(QMainWindow):
             self.create_button.setEnabled(False)
         elif self._review is not None:
             if self._reference_calibration_pending():
-                self.create_button.setText("Run or continue pilot calibration")
+                self.create_button.setText(self._reference_calibration_action_text())
                 self.create_button.setEnabled(
                     self._worker is None
                     and self._reference_readiness is not None
@@ -5651,7 +5676,7 @@ class DiffeoForgeWindow(QMainWindow):
             elif guided_reference:
                 plan_ready = self._reference_calibration_plan_matches_current_inputs()
                 self.create_button.setText(
-                    "Prepare & start pilot calibration"
+                    "Prepare pilot calibration (recommended)"
                     if plan_ready
                     else "Build pilot calibration plan"
                 )
@@ -6377,6 +6402,46 @@ class DiffeoForgeWindow(QMainWindow):
                 self._create_project()
 
     @Slot()
+    def _use_current_reference_parameters_without_pilot(self) -> None:
+        """Turn the values on screen into an explicit manual atlas configuration."""
+
+        if (
+            self._worker is not None
+            or self.engine_combo.currentData() != DesktopEngine.DEFORMETRICA_REFERENCE
+            or self.reference_parameter_profile_combo.currentData() != "data_assisted"
+            or not self._reference_recommendation_matches_current_inputs()
+            or self._reference_calibration_completed()
+        ):
+            return
+        config_path = self._configuration_path(self._request())
+        overwrite_confirmed = False
+        if config_path.exists():
+            if not self._confirm_configuration_overwrite(config_path):
+                self.status_label.setObjectName("status")
+                self.status_label.setStyleSheet("")
+                self.status_label.setText(
+                    "Pilot bypass cancelled; the existing project configuration and "
+                    "calibration study remain unchanged."
+                )
+                return
+            overwrite_confirmed = True
+        advanced_index = self.reference_parameter_profile_combo.findData("advanced")
+        if advanced_index < 0:
+            return
+        self._guided_reference_calibration_requested = False
+        self.reference_parameter_profile_combo.setCurrentIndex(advanced_index)
+        self.status_label.setObjectName("statusWarning")
+        self.status_label.setStyleSheet("")
+        self.status_label.setText(
+            "Pilot calibration is being skipped explicitly. The parameter values shown "
+            "on this page will be recorded as manual choices and reviewed before the "
+            "full-cohort atlas can start."
+        )
+        self._create_project(
+            overwrite_existing_configuration_confirmed=overwrite_confirmed
+        )
+
+    @Slot()
     def _run_primary_action(self) -> None:
         if self._worker is not None:
             return
@@ -6526,7 +6591,11 @@ class DiffeoForgeWindow(QMainWindow):
         return dialog.clickedButton() is overwrite_button
 
     @Slot()
-    def _create_project(self) -> None:
+    def _create_project(
+        self,
+        *,
+        overwrite_existing_configuration_confirmed: bool = False,
+    ) -> None:
         if (
             self.landmarks_edit.text().strip()
             and self.procrustes_apply_check.isChecked()
@@ -6543,7 +6612,10 @@ class DiffeoForgeWindow(QMainWindow):
         request = self._request()
         config_path = self._configuration_path(request)
         if config_path.exists():
-            if not self._confirm_configuration_overwrite(config_path):
+            if (
+                not overwrite_existing_configuration_confirmed
+                and not self._confirm_configuration_overwrite(config_path)
+            ):
                 self._guided_reference_calibration_requested = False
                 self.status_label.setObjectName("status")
                 self.status_label.setStyleSheet("")
@@ -6884,6 +6956,23 @@ class DiffeoForgeWindow(QMainWindow):
             return True
         return snapshot.status != "completed"
 
+    def _reference_calibration_action_text(self) -> str:
+        """Describe whether the next pilot action runs work or reviews finished work."""
+
+        context = self._reference_calibration_context()
+        if context is None:
+            return "Prepare pilot calibration (recommended)"
+        _plan, directory = context
+        if not directory.exists():
+            return "Run pilot calibration (recommended)"
+        try:
+            snapshot = load_reference_calibration_study(directory)
+        except (OSError, RuntimeError, TypeError, ValueError):
+            return "Inspect pilot calibration issue"
+        if snapshot.status == "awaiting_review":
+            return "Review pilot results & choose parameters"
+        return "Continue pilot calibration"
+
     def _refresh_reference_calibration_execution_card(self) -> None:
         reference = self.engine_combo.currentData() == DesktopEngine.DEFORMETRICA_REFERENCE
         if not reference:
@@ -6958,7 +7047,7 @@ class DiffeoForgeWindow(QMainWindow):
         )
         self.open_reference_calibration_button.setEnabled(ready)
         self.open_reference_calibration_button.setText(
-            "Run or continue pilot calibration…"
+            "Run pilot calibration (recommended)…"
         )
         if not directory.exists():
             self.reference_calibration_execution_status.setObjectName("status")
@@ -6989,7 +7078,22 @@ class DiffeoForgeWindow(QMainWindow):
                 "Calibration complete · selected full-cohort configuration: "
                 f"{snapshot.final_config_path}"
             )
+        elif snapshot.status == "awaiting_review":
+            assert snapshot.current_stage is not None
+            self.open_reference_calibration_button.setText(
+                "Review pilot results & choose parameters…"
+            )
+            complete = sum(candidate.status == "completed" for candidate in snapshot.candidates)
+            message = (
+                f"Stage {snapshot.current_stage.order}/"
+                f"{len(snapshot.plan.stages)} finished running · {complete}/"
+                f"{len(snapshot.candidates)} candidates complete. No candidate will be "
+                "rerun: open the review to choose the parameter set and continue."
+            )
         else:
+            self.open_reference_calibration_button.setText(
+                "Continue pilot calibration…"
+            )
             assert snapshot.current_stage is not None
             complete = sum(candidate.status == "completed" for candidate in snapshot.candidates)
             message = (
