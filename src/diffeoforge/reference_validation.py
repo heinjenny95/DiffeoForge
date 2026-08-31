@@ -15,7 +15,7 @@ import json
 import math
 from collections import Counter
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Literal
 
@@ -189,6 +189,60 @@ class ReferenceValidationPlan:
             "required_future_evidence": list(self.required_future_evidence),
             "limitations": list(self.limitations),
         }
+
+
+def extend_reference_validation_plan(
+    plan: ReferenceValidationPlan,
+    finalist: ValidationFinalist,
+) -> ReferenceValidationPlan:
+    """Return a full plan that adds one finalist to every frozen parent cohort."""
+
+    if any(item.finalist_id == finalist.finalist_id for item in plan.finalists):
+        raise ReferenceValidationError(
+            f"Validation finalist already exists: {finalist.finalist_id}"
+        )
+    if not finalist.finalist_id or any(
+        character not in "abcdefghijklmnopqrstuvwxyz0123456789-"
+        for character in finalist.finalist_id
+    ):
+        raise ReferenceValidationError(
+            "Extended finalist ID must contain lowercase letters, digits, or hyphens"
+        )
+    expected_parameters = set(plan.finalists[0].values)
+    if set(finalist.values) != expected_parameters:
+        raise ReferenceValidationError(
+            "Extended finalist parameters differ from the frozen Validation Lab schema"
+        )
+    if any(not math.isfinite(value) or value <= 0 for value in finalist.values.values()):
+        raise ReferenceValidationError(
+            "Extended finalist parameters must be finite and positive"
+        )
+    new_runs = tuple(
+        ValidationRunSpec(
+            run_id=f"{cohort.cohort_id}--{finalist.finalist_id}",
+            phase=cohort.phase,
+            cohort_id=cohort.cohort_id,
+            finalist_id=finalist.finalist_id,
+            subject_filenames=cohort.subject_filenames,
+        )
+        for cohort in plan.cohorts
+    )
+    successor = replace(
+        plan,
+        fingerprint="",
+        finalists=(*plan.finalists, finalist),
+        run_specs=(*plan.run_specs, *new_runs),
+        limitations=(
+            *plan.limitations,
+            "This successor reuses the verified parent finalists and adds one "
+            "pilot-derived candidate to every identical frozen cohort.",
+        ),
+    )
+    payload = successor.as_manifest()
+    payload.pop("fingerprint")
+    payload.pop("status")
+    payload.pop("subject_count")
+    return replace(successor, fingerprint=_canonical_hash(payload))
 
 
 def _parameter_values(config: Mapping[str, object]) -> dict[str, float]:

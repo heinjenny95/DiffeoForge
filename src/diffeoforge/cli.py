@@ -89,6 +89,7 @@ from diffeoforge.reference_template_robustness import (
 from diffeoforge.reference_validation_study import (
     ReferenceValidationStudyRunner,
     create_reference_validation_study,
+    create_reference_validation_width_refinement_extension_study,
     load_reference_validation_study,
 )
 from diffeoforge.reference_validation_synthetic import (
@@ -1454,6 +1455,35 @@ def build_parser() -> argparse.ArgumentParser:
         "--max-iterations",
         type=int,
         help="Optional validation override; default is the calibrated config value.",
+    )
+
+    validation_width_extension = subparsers.add_parser(
+        "reference-validation-width-refinement-extend",
+        help=(
+            "Add one bounded width-refinement finalist to a completed Validation Lab "
+            "while reusing all verified parent runs."
+        ),
+    )
+    validation_width_extension.add_argument(
+        "parent_study_directory",
+        type=Path,
+        help="Completed parent Validation Lab directory.",
+    )
+    validation_width_extension.add_argument(
+        "refinement_study_directory",
+        type=Path,
+        help="Completed bounded calibration search-extension study directory.",
+    )
+    validation_width_extension.add_argument(
+        "--output",
+        required=True,
+        type=Path,
+        help="New Validation Lab extension directory; it is never overwritten.",
+    )
+    validation_width_extension.add_argument(
+        "--max-iterations",
+        type=int,
+        help="Optional override for only the new finalist runs.",
     )
 
     validation_study_status = subparsers.add_parser(
@@ -4107,6 +4137,40 @@ def main(argv: Sequence[str] | None = None) -> int:
                 f"{len(snapshot.plan.training_subjects)} training subjects; "
                 f"{len(snapshot.plan.heldout_subjects)} untouched heldout subjects; "
                 f"{len(snapshot.runs)} atlas runs."
+            )
+            print(f"Plan fingerprint: {snapshot.plan.fingerprint}")
+            print("No process was started.")
+        except (ConfigurationError, OSError, RuntimeError, TypeError, ValueError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
+
+    if args.command == "reference-validation-width-refinement-extend":
+        try:
+            snapshot = create_reference_validation_width_refinement_extension_study(
+                args.parent_study_directory,
+                args.refinement_study_directory,
+                args.output,
+                maximum_iterations=args.max_iterations,
+            )
+            inherited = sum(run.status == "completed" for run in snapshot.runs)
+            pending = sum(run.status == "pending" for run in snapshot.runs)
+            finalist = next(
+                item
+                for item in snapshot.plan.finalists
+                if item.finalist_id == "width-refined"
+            )
+            print(f"Validation Lab extension created: {snapshot.study_directory}")
+            print(
+                f"Verified reuse: {inherited} parent runs; "
+                f"new atlas runs pending: {pending}."
+            )
+            print(
+                "Width-refined finalist: "
+                + ", ".join(
+                    f"{name}={value:.12g}"
+                    for name, value in finalist.parameter_values
+                )
             )
             print(f"Plan fingerprint: {snapshot.plan.fingerprint}")
             print("No process was started.")

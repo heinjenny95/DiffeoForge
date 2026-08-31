@@ -26,15 +26,18 @@ from diffeoforge.reference_holdout_study import (
 from diffeoforge.reference_recommendation import recommend_reference_parameters
 from diffeoforge.reference_validation import (
     ReferenceValidationError,
+    ValidationFinalist,
     ValidationRunEvidence,
     assess_reference_validation,
     build_reference_validation_plan,
+    extend_reference_validation_plan,
     validation_plan_json,
 )
 from diffeoforge.reference_validation_study import (
     ReferenceValidationStudyError,
     ReferenceValidationStudyRunner,
     create_reference_validation_study,
+    create_reference_validation_width_refinement_extension_study,
     load_reference_validation_study,
 )
 from diffeoforge.runs import prepare_run, verify_prepared_run
@@ -142,6 +145,33 @@ def test_validation_plan_requires_completed_calibration(tmp_path: Path) -> None:
 
     with pytest.raises(ReferenceValidationError, match="completed"):
         build_reference_validation_plan(config)
+
+
+def test_validation_plan_extension_adds_one_run_per_frozen_cohort(
+    tmp_path: Path,
+) -> None:
+    plan = build_reference_validation_plan(
+        _calibrated_project(tmp_path), resample_count=2
+    )
+    values = plan.finalists[0].values
+    values["deformation_kernel_width"] *= 1.5
+    finalist = ValidationFinalist(
+        finalist_id="width-refined",
+        label="Width refined",
+        parameter_values=tuple(sorted(values.items())),
+        relationship_to_pilot="Test refinement.",
+    )
+
+    extended = extend_reference_validation_plan(plan, finalist)
+
+    assert extended.fingerprint != plan.fingerprint
+    assert extended.finalists[:-1] == plan.finalists
+    assert extended.finalists[-1] == finalist
+    assert extended.run_specs[: len(plan.run_specs)] == plan.run_specs
+    assert len(extended.run_specs) == len(plan.run_specs) + len(plan.cohorts)
+    assert {run.finalist_id for run in extended.run_specs[-len(plan.cohorts) :]} == {
+        "width-refined"
+    }
 
 
 def _evidence(plan, winner: str) -> tuple[ValidationRunEvidence, ...]:
@@ -376,6 +406,92 @@ def test_validation_runner_resumes_runs_and_publishes_scoped_report(
     assert events[-1]["event"] == "validation_completed"
     reloaded = load_reference_validation_study(completed.study_directory)
     assert reloaded == completed
+
+
+def test_width_refinement_extension_reuses_parent_and_runs_only_new_finalist(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    parent_snapshot = create_reference_validation_study(
+        _calibrated_project(tmp_path),
+        tmp_path / "parent-validation",
+        resample_count=1,
+    )
+    parent_winner = parent_snapshot.plan.finalists[0].finalist_id
+    collected_run_ids: list[str] = []
+
+    def collect(run_directory: Path, *, run_id: str, finalist_id: str, cohort_id: str):
+        collected_run_ids.append(run_id)
+        winning = finalist_id in {parent_winner, "width-refined"}
+        return ValidationRunEvidence(
+            run_id=run_id,
+            finalist_id=finalist_id,
+            cohort_id=cohort_id,
+            completed=True,
+            converged=True,
+            invalid_face_count=0,
+            external_residual_p95=0.05 if winning else 0.25,
+            distortion_p95=0.04 if winning else 0.15,
+            runtime_seconds=10.0,
+            atlas_path=str(run_directory / "atlas.vtk"),
+        )
+
+    monkeypatch.setattr(
+        validation_study_module,
+        "collect_reference_validation_run_evidence",
+        collect,
+    )
+    parent = ReferenceValidationStudyRunner(
+        parent_snapshot.study_directory,
+        controller_factory=_CompletedController,
+    ).run_all()
+    for run in parent.runs:
+        assert run.run_directory is not None
+        for name in ("manifest.json", "result.json", "output-inventory.json"):
+            (run.run_directory / name).write_text("{}\n", encoding="utf-8")
+    parent_run_count = len(parent.runs)
+    collected_run_ids.clear()
+
+    def refinement(parent_study, refinement_directory):
+        values = parent_study.plan.finalists[0].values
+        values["deformation_kernel_width"] *= 1.5
+        return (
+            ValidationFinalist(
+                finalist_id="width-refined",
+                label="Axis-refined width finalist",
+                parameter_values=tuple(sorted(values.items())),
+                relationship_to_pilot="Synthetic bounded refinement.",
+            ),
+            {
+                "study_directory": str(Path(refinement_directory).resolve()),
+                "study_id": "synthetic-refinement",
+            },
+        )
+
+    monkeypatch.setattr(validation_study_module, "_refinement_finalist", refinement)
+    extension = create_reference_validation_width_refinement_extension_study(
+        parent.study_directory,
+        tmp_path / "refinement",
+        tmp_path / "validation-extension",
+    )
+
+    assert extension.completed_run_count == parent_run_count
+    assert len(extension.runs) == parent_run_count + len(parent.plan.cohorts)
+    assert {run.status for run in extension.runs if run.finalist_id == "width-refined"} == {
+        "pending"
+    }
+    assert not collected_run_ids
+
+    completed = ReferenceValidationStudyRunner(
+        extension.study_directory,
+        controller_factory=_CompletedController,
+    ).run_all()
+
+    assert completed.status == "completed"
+    assert completed.completed_run_count == len(completed.runs)
+    assert set(collected_run_ids) == {
+        run.run_id for run in completed.runs if run.finalist_id == "width-refined"
+    }
 
 
 def _completed_parent_validation(

@@ -25,14 +25,26 @@ from diffeoforge.desktop.reference_execution_controller import (
 from diffeoforge.desktop.reference_prelaunch import DesktopReferenceLaunchRequest
 from diffeoforge.desktop.reference_worker_protocol import DesktopReferenceWorkerEvent
 from diffeoforge.mesh import sha256_file
+from diffeoforge.reference_calibration_study import (
+    STUDY_EVENTS as CALIBRATION_EVENTS,
+)
+from diffeoforge.reference_calibration_study import (
+    STUDY_MANIFEST as CALIBRATION_MANIFEST,
+)
+from diffeoforge.reference_calibration_study import (
+    assess_reference_calibration_snapshot,
+    load_reference_calibration_study,
+)
 from diffeoforge.reference_runtime import launcher_identity
 from diffeoforge.reference_validation import (
     ReferenceValidationAssessment,
     ReferenceValidationError,
     ReferenceValidationPlan,
+    ValidationFinalist,
     ValidationRunEvidence,
     assess_reference_validation,
     build_reference_validation_plan,
+    extend_reference_validation_plan,
     reference_validation_plan_from_manifest,
 )
 from diffeoforge.reference_validation_metrics import (
@@ -47,6 +59,11 @@ VALIDATION_EVENTS = "events.jsonl"
 VALIDATION_REPORT_JSON = "report/validation-report.json"
 VALIDATION_REPORT_HTML = "report/validation-report.html"
 ValidationEventCallback = Callable[[Mapping[str, object]], None]
+_INHERITED_RUN_CORE_ARTIFACTS = (
+    "manifest.json",
+    "result.json",
+    "output-inventory.json",
+)
 
 
 class ReferenceValidationStudyError(ReferenceValidationError):
@@ -428,6 +445,289 @@ def create_reference_validation_study(
     return load_reference_validation_study(root)
 
 
+def _run_core_artifact_hashes(run_directory: Path) -> dict[str, str]:
+    hashes: dict[str, str] = {}
+    for relative in _INHERITED_RUN_CORE_ARTIFACTS:
+        path = run_directory / relative
+        if not path.is_file():
+            raise ReferenceValidationStudyError(
+                f"Inherited validation run lacks {relative}: {run_directory}"
+            )
+        hashes[relative] = sha256_file(path)
+    return hashes
+
+
+def _refinement_finalist(
+    parent: ReferenceValidationStudySnapshot,
+    refinement_study_directory: Path | str,
+) -> tuple[ValidationFinalist, dict[str, object]]:
+    refinement = load_reference_calibration_study(refinement_study_directory)
+    assessment = assess_reference_calibration_snapshot(refinement)
+    if (
+        not assessment.automatic_selection_allowed
+        or assessment.search_range_status != "bounded"
+        or assessment.balanced_candidate_id is None
+    ):
+        raise ReferenceValidationStudyError(
+            "Width refinement must have an automatic, bounded pilot preference"
+        )
+    assert refinement.current_stage is not None
+    candidate = next(
+        (
+            item
+            for item in refinement.current_stage.candidates
+            if item.candidate_id == assessment.balanced_candidate_id
+        ),
+        None,
+    )
+    if candidate is None:
+        raise ReferenceValidationStudyError(
+            "Preferred width-refinement candidate is absent from its frozen stage"
+        )
+    if parent.assessment is None or parent.assessment.recommended_finalist_id is None:
+        raise ReferenceValidationStudyError(
+            "Parent Validation Lab has no preferred finalist to refine"
+        )
+    base = next(
+        (
+            item
+            for item in parent.plan.finalists
+            if item.finalist_id == parent.assessment.recommended_finalist_id
+        ),
+        None,
+    )
+    if base is None or not set(candidate.values).issubset(base.values):
+        raise ReferenceValidationStudyError(
+            "Width refinement parameters do not match the parent finalist schema"
+        )
+    values = base.values
+    values.update({name: float(value) for name, value in candidate.values.items()})
+    finalist = ValidationFinalist(
+        finalist_id="width-refined",
+        label="Axis-refined width finalist",
+        parameter_values=tuple(sorted(values.items())),
+        relationship_to_pilot=(
+            f"Pilot candidate {candidate.candidate_id} from a bounded, axis-separated "
+            f"width refinement of parent finalist {base.finalist_id}."
+        ),
+    )
+    refinement_root = refinement.study_directory
+    source = {
+        "study_directory": str(refinement_root),
+        "study_id": refinement.study_id,
+        "plan_fingerprint": refinement.plan.fingerprint,
+        "assessment_fingerprint": assessment.fingerprint,
+        "balanced_candidate_id": candidate.candidate_id,
+        "candidate_values": dict(sorted(candidate.values.items())),
+        "manifest_sha256": sha256_file(refinement_root / CALIBRATION_MANIFEST),
+        "events_sha256": sha256_file(refinement_root / CALIBRATION_EVENTS),
+    }
+    return finalist, source
+
+
+def create_reference_validation_width_refinement_extension_study(
+    parent_study_directory: Path | str,
+    refinement_study_directory: Path | str,
+    study_directory: Path | str,
+    *,
+    maximum_iterations: int | None = None,
+) -> ReferenceValidationStudySnapshot:
+    """Reuse a completed Validation Lab and add only one pilot-refined finalist."""
+
+    parent = load_reference_validation_study(parent_study_directory)
+    if parent.status != "completed" or parent.assessment is None:
+        raise ReferenceValidationStudyError(
+            "Width-refinement validation requires a completed parent Validation Lab"
+        )
+    parent_root = parent.study_directory
+    parent_manifest = _verify_manifest(parent_root)
+    parent_events = _load_events(parent_root)
+    finalist, refinement_source = _refinement_finalist(
+        parent, refinement_study_directory
+    )
+    plan = extend_reference_validation_plan(parent.plan, finalist)
+    iterations = (
+        int(parent_manifest["maximum_iterations"])
+        if maximum_iterations is None
+        else maximum_iterations
+    )
+    if isinstance(iterations, bool) or not isinstance(iterations, int) or iterations < 1:
+        raise ReferenceValidationStudyError("maximum_iterations must be positive")
+    root = Path(study_directory).expanduser().resolve()
+    if root.exists():
+        raise ReferenceValidationStudyError(
+            f"Validation study destination already exists: {root}"
+        )
+    root.mkdir(parents=True)
+    try:
+        source_record = parent_manifest["source_config"]
+        source_path = _safe_path(parent_root, source_record["copy"])
+        source_copy = root / "source" / "atlas-calibrated.yaml"
+        _copy_bound(source_path, source_copy, str(source_record["sha256"]))
+        source_config = load_config(source_copy)
+
+        template_record = parent_manifest["inputs"]["template"]
+        template_path = _safe_path(parent_root, template_record["copy"])
+        template_copy = root / "inputs" / "template" / template_path.name
+        _copy_bound(template_path, template_copy, str(template_record["sha256"]))
+
+        subject_records: list[dict[str, object]] = []
+        for record in parent_manifest["inputs"]["subjects"]:
+            source_subject = _safe_path(parent_root, record["copy"])
+            destination = root / "inputs" / "subjects" / str(record["filename"])
+            _copy_bound(source_subject, destination, str(record["sha256"]))
+            subject_records.append(
+                {
+                    "filename": record["filename"],
+                    "copy": _relative(root, destination),
+                    "sha256": record["sha256"],
+                    "role": record["role"],
+                }
+            )
+
+        subject_by_name = {
+            str(record["filename"]): record for record in subject_records
+        }
+        cohort_directories: dict[str, Path] = {}
+        for cohort in plan.cohorts:
+            cohort_directory = root / "cohorts" / cohort.cohort_id
+            cohort_directories[cohort.cohort_id] = cohort_directory
+            for name in cohort.subject_filenames:
+                record = subject_by_name[name]
+                _link_or_copy_bound(
+                    _safe_path(root, record["copy"]),
+                    cohort_directory / name,
+                    str(record["sha256"]),
+                )
+
+        parent_run_records = {
+            str(record["run_id"]): record for record in parent_manifest["runs"]
+        }
+        parent_run_states = {run.run_id: run for run in parent.runs}
+        parent_completion_events = {
+            str(event["run_id"]): event
+            for event in parent_events
+            if event["event"] == "run_completed"
+        }
+        finalist_by_id = {item.finalist_id: item for item in plan.finalists}
+        run_records: list[dict[str, object]] = []
+        inherited_runs: list[dict[str, object]] = []
+        for spec in plan.run_specs:
+            config_directory = root / "run-specs" / spec.run_id
+            config_directory.mkdir(parents=True)
+            candidate_config = config_directory / "atlas.yaml"
+            if spec.run_id in parent_run_records:
+                parent_record = parent_run_records[spec.run_id]
+                _copy_bound(
+                    _safe_path(parent_root, parent_record["config"]),
+                    candidate_config,
+                    str(parent_record["config_sha256"]),
+                )
+                state = parent_run_states[spec.run_id]
+                completion = parent_completion_events[spec.run_id]
+                if state.run_directory is None or state.evidence is None:
+                    raise ReferenceValidationStudyError(
+                        f"Parent validation run is not reusable: {spec.run_id}"
+                    )
+                inherited_runs.append(
+                    {
+                        "run_id": spec.run_id,
+                        "source_run_directory": str(state.run_directory),
+                        "source_event_hash": completion["event_hash"],
+                        "core_artifact_sha256": _run_core_artifact_hashes(
+                            state.run_directory
+                        ),
+                        "evidence": state.evidence.as_manifest(),
+                    }
+                )
+            else:
+                config = _validation_configuration(
+                    source_config,
+                    root=root,
+                    config_directory=config_directory,
+                    template_copy=template_copy,
+                    cohort_directory=cohort_directories[spec.cohort_id],
+                    finalist_values=finalist_by_id[spec.finalist_id].values,
+                    run_id=spec.run_id,
+                    maximum_iterations=iterations,
+                    template_diagonal=plan.template_diagonal,
+                )
+                _write_yaml(candidate_config, config, overwrite=False)
+            run_records.append(
+                {
+                    **spec.as_manifest(),
+                    "config": _relative(root, candidate_config),
+                    "config_sha256": sha256_file(candidate_config),
+                }
+            )
+
+        manifest = {
+            "study_version": VALIDATION_STUDY_VERSION,
+            "study_id": f"reference-validation-extension-{uuid4().hex[:12]}",
+            "plan_fingerprint": plan.fingerprint,
+            "plan": plan.as_manifest(),
+            "maximum_iterations": iterations,
+            "launcher": parent_manifest["launcher"],
+            "source_config": {
+                "original_path": str(source_path),
+                "copy": _relative(root, source_copy),
+                "sha256": sha256_file(source_copy),
+            },
+            "inputs": {
+                "template": {
+                    "copy": _relative(root, template_copy),
+                    "sha256": sha256_file(template_copy),
+                },
+                "subjects": subject_records,
+            },
+            "runs": run_records,
+            "extension_source": {
+                "study_directory": str(parent_root),
+                "study_id": parent.study_id,
+                "plan_fingerprint": parent.plan.fingerprint,
+                "manifest_sha256": sha256_file(parent_root / VALIDATION_MANIFEST),
+                "events_sha256": sha256_file(parent_root / VALIDATION_EVENTS),
+            },
+            "pilot_refinement_source": refinement_source,
+            "inherited_runs": inherited_runs,
+            "scientific_boundary": (
+                "This successor compares one bounded pilot-derived width finalist "
+                "against the unchanged parent finalists on the identical frozen "
+                "training and resampling cohorts. Heldout confirmation remains separate."
+            ),
+        }
+        _write_json(root / VALIDATION_MANIFEST, manifest, overwrite=False)
+        write_text_safely(
+            root / VALIDATION_DIGEST,
+            sha256_file(root / VALIDATION_MANIFEST) + "\n",
+            overwrite=False,
+        )
+        _append_event(
+            root,
+            "study_created",
+            {
+                "study_id": manifest["study_id"],
+                "plan_fingerprint": plan.fingerprint,
+                "manifest_sha256": sha256_file(root / VALIDATION_MANIFEST),
+                "run_count": len(plan.run_specs),
+                "inherited_run_count": len(inherited_runs),
+            },
+        )
+        for inherited in inherited_runs:
+            _append_event(
+                root,
+                "run_inherited",
+                {
+                    "run_id": inherited["run_id"],
+                    "source_event_hash": inherited["source_event_hash"],
+                },
+            )
+    except BaseException:
+        shutil.rmtree(root, ignore_errors=True)
+        raise
+    return load_reference_validation_study(root)
+
+
 def _verify_manifest(root: Path) -> dict[str, Any]:
     try:
         manifest = json.loads((root / VALIDATION_MANIFEST).read_text(encoding="utf-8"))
@@ -474,6 +774,91 @@ def _verify_manifest(root: Path) -> dict[str, Any]:
                 raise ReferenceValidationStudyError(
                     f"Validation cohort input changed or is absent: {path}"
                 )
+    extension_source = manifest.get("extension_source")
+    refinement_source = manifest.get("pilot_refinement_source")
+    inherited = manifest.get("inherited_runs")
+    extension_fields = (extension_source, refinement_source, inherited)
+    if any(value is not None for value in extension_fields):
+        if (
+            not isinstance(extension_source, Mapping)
+            or not isinstance(refinement_source, Mapping)
+            or not isinstance(inherited, list)
+        ):
+            raise ReferenceValidationStudyError(
+                "Validation extension provenance is incomplete"
+            )
+        parent_root = Path(
+            str(extension_source.get("study_directory", ""))
+        ).expanduser().resolve()
+        if parent_root == root:
+            raise ReferenceValidationStudyError(
+                "Validation extension cannot inherit from itself"
+            )
+        parent = load_reference_validation_study(parent_root)
+        expected_extension_source = {
+            "study_directory": str(parent.study_directory),
+            "study_id": parent.study_id,
+            "plan_fingerprint": parent.plan.fingerprint,
+            "manifest_sha256": sha256_file(parent_root / VALIDATION_MANIFEST),
+            "events_sha256": sha256_file(parent_root / VALIDATION_EVENTS),
+        }
+        if dict(extension_source) != expected_extension_source:
+            raise ReferenceValidationStudyError(
+                "Parent Validation Lab provenance differs from the frozen extension"
+            )
+        expected_finalist, expected_refinement_source = _refinement_finalist(
+            parent, str(refinement_source.get("study_directory", ""))
+        )
+        if dict(refinement_source) != expected_refinement_source:
+            raise ReferenceValidationStudyError(
+                "Width-refinement pilot provenance differs from the frozen extension"
+            )
+        if plan != extend_reference_validation_plan(parent.plan, expected_finalist):
+            raise ReferenceValidationStudyError(
+                "Validation extension plan differs from its verified parent and pilot"
+            )
+        parent_runs = {run.run_id: run for run in parent.runs}
+        parent_events = {
+            str(event["run_id"]): event
+            for event in _load_events(parent_root)
+            if event["event"] == "run_completed"
+        }
+        inherited_by_id = {
+            str(record.get("run_id")): record
+            for record in inherited
+            if isinstance(record, Mapping)
+        }
+        if len(inherited_by_id) != len(inherited) or set(inherited_by_id) != set(
+            parent_runs
+        ):
+            raise ReferenceValidationStudyError(
+                "Inherited validation-run set differs from the completed parent"
+            )
+        for run_id, record in inherited_by_id.items():
+            parent_state = parent_runs[run_id]
+            parent_event = parent_events.get(run_id)
+            if (
+                parent_state.status != "completed"
+                or parent_state.evidence is None
+                or parent_state.run_directory is None
+                or parent_event is None
+                or record.get("source_event_hash") != parent_event["event_hash"]
+                or record.get("evidence") != parent_state.evidence.as_manifest()
+                or Path(str(record.get("source_run_directory", ""))).resolve()
+                != parent_state.run_directory.resolve()
+            ):
+                raise ReferenceValidationStudyError(
+                    f"Inherited validation evidence differs for {run_id}"
+                )
+            recorded_hashes = record.get("core_artifact_sha256")
+            if (
+                not isinstance(recorded_hashes, Mapping)
+                or dict(recorded_hashes)
+                != _run_core_artifact_hashes(parent_state.run_directory)
+            ):
+                raise ReferenceValidationStudyError(
+                    f"Inherited validation run artifacts changed for {run_id}"
+                )
     return manifest
 
 
@@ -517,6 +902,35 @@ def load_reference_validation_study(
     manifest = _verify_manifest(root)
     plan = reference_validation_plan_from_manifest(manifest["plan"])
     events = _load_events(root)
+    if (
+        events[0].get("study_id") != manifest["study_id"]
+        or events[0].get("manifest_sha256")
+        != sha256_file(root / VALIDATION_MANIFEST)
+    ):
+        raise ReferenceValidationStudyError(
+            "Validation event ledger is bound to a different manifest"
+        )
+    inherited_by_id = {
+        str(record["run_id"]): record
+        for record in manifest.get("inherited_runs", [])
+    }
+    inherited_events = [event for event in events if event["event"] == "run_inherited"]
+    if inherited_by_id:
+        inherited_event_by_id = {
+            str(event.get("run_id")): event for event in inherited_events
+        }
+        if (
+            len(inherited_event_by_id) != len(inherited_events)
+            or set(inherited_event_by_id) != set(inherited_by_id)
+            or any(
+                inherited_event_by_id[run_id].get("source_event_hash")
+                != record["source_event_hash"]
+                for run_id, record in inherited_by_id.items()
+            )
+        ):
+            raise ReferenceValidationStudyError(
+                "Inherited validation event ledger differs from its manifest"
+            )
     run_states: list[ValidationStudyRunState] = []
     for record in manifest["runs"]:
         run_id = str(record["run_id"])
@@ -540,7 +954,19 @@ def load_reference_validation_study(
                 or starts[-1]["sequence"] > terminals[-1]["sequence"]
             )
         )
-        if completed:
+        inherited_record = inherited_by_id.get(run_id)
+        if inherited_record is not None:
+            if starts or terminals:
+                raise ReferenceValidationStudyError(
+                    f"Inherited validation run has local execution events: {run_id}"
+                )
+            status = "completed"
+            evidence = _evidence_from_manifest(inherited_record["evidence"])
+            error = None
+            run_directory = Path(
+                str(inherited_record["source_run_directory"])
+            ).resolve()
+        elif completed:
             status = "completed"
             evidence = _evidence_from_manifest(completed[-1]["evidence"])
             error = None
