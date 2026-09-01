@@ -50,7 +50,9 @@ terminal:
    triangle-surface landmarks in a rotatable, zoomable native 3D view for either
    engine; TXT import matches files to the exact current cohort by filename stem
    and creates `landmarks.csv` automatically in the project folder without a
-   second CSV-selection dialog or any change to the source coordinates; choose the planned
+   second CSV-selection dialog; when that generated working CSV already exists,
+   DiffeoForge asks before replacing it atomically. Source TXT coordinates are
+   never changed; choose the planned
    count before opening the editor and optionally disable automatic next-mesh
    loading after the final planned point; recover the count, navigation
    preference, and placements from a hash-validated autosaved draft; then

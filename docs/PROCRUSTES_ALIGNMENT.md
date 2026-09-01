@@ -104,7 +104,9 @@ read-only GPA preview remains mandatory after import. Desktop users may use
 **Select CSV/TXT...** and choose any one matching TXT, or use **Import TXT
 folder...**. Both routes import the complete matched folder and create the
 canonical `landmarks.csv` automatically in the project folder; no second CSV
-input or save selection is required. The equivalent CLI command is:
+input or save selection is required. If that working CSV already exists, the
+desktop asks whether to replace it atomically; declining preserves it byte for
+byte. The equivalent CLI command is:
 
 ```powershell
 diffeoforge landmarks-import-txt C:\study\meshes C:\study\landmarks `

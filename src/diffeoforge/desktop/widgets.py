@@ -3711,10 +3711,26 @@ class DiffeoForgeWindow(QMainWindow):
                 else Path(self.mesh_edit.text().strip()).expanduser().parent
             )
             output = output_parent / "landmarks.csv"
+            overwrite = False
+            if output.exists():
+                answer = QMessageBox.question(
+                    self,
+                    "Replace existing landmark CSV?",
+                    f"A landmark working CSV already exists at:\n{output.resolve()}\n\n"
+                    "Replace it with a fresh import from the currently selected TXT "
+                    "folder? The replacement is written atomically; the original TXT "
+                    "files are not changed.",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.No,
+                )
+                if answer != QMessageBox.StandardButton.Yes:
+                    return
+                overwrite = True
             result = import_landmark_txt_folder(
                 selected_directory,
                 cohort,
                 output,
+                overwrite=overwrite,
             )
             self.landmark_count_spin.setValue(len(result.landmark_labels))
             self.landmarks_edit.setText(str(result.csv_path))

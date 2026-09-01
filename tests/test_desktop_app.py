@@ -800,6 +800,8 @@ def test_desktop_landmark_browser_accepts_txt_and_imports_its_folder(
     txt_directory = tmp_path / "txt"
     txt_directory.mkdir()
     output = tmp_path / "project" / "landmarks.csv"
+    output.parent.mkdir()
+    output.write_text("incomplete prior import\n", encoding="utf-8")
     cohort = (mesh_directory / "template.vtk", *sorted(mesh_directory.glob("subject-*.vtk")))
     selected_txt: Path | None = None
     for mesh_index, mesh in enumerate(cohort):
@@ -817,6 +819,14 @@ def test_desktop_landmark_browser_accepts_txt_and_imports_its_folder(
         lambda *_args, **_kwargs: (str(selected_txt), "Tagged TXT (*.txt)"),
     )
     monkeypatch.setattr(QMessageBox, "information", lambda *_args, **_kwargs: None)
+    replacement_questions: list[str] = []
+    monkeypatch.setattr(
+        QMessageBox,
+        "question",
+        lambda _parent, _title, message, *_args, **_kwargs: (
+            replacement_questions.append(message) or QMessageBox.StandardButton.Yes
+        ),
+    )
     window = DiffeoForgeWindow()
     window.mesh_edit.setText(str(mesh_directory))
     window.project_edit.setText(str(tmp_path / "project"))
@@ -827,6 +837,41 @@ def test_desktop_landmark_browser_accepts_txt_and_imports_its_folder(
     assert labels == ("LM1", "LM2", "LM3")
     assert values.shape == (len(cohort), 3, 3)
     assert window.landmarks_edit.text() == str(output.resolve())
+    assert replacement_questions and "written atomically" in replacement_questions[0]
+    window.close()
+    application.processEvents()
+
+
+def test_desktop_txt_import_preserves_existing_csv_when_replacement_is_declined(
+    monkeypatch, tmp_path: Path
+) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QMessageBox
+
+    from diffeoforge.desktop.widgets import DiffeoForgeWindow
+
+    application = QApplication.instance() or QApplication(["diffeoforge-txt-decline-test"])
+    mesh_directory = ROOT / "examples" / "synthetic" / "meshes"
+    txt_directory = tmp_path / "txt"
+    txt_directory.mkdir()
+    output = tmp_path / "project" / "landmarks.csv"
+    output.parent.mkdir()
+    original = b"existing user-reviewed landmark table\n"
+    output.write_bytes(original)
+    monkeypatch.setattr(
+        QMessageBox,
+        "question",
+        lambda *_args, **_kwargs: QMessageBox.StandardButton.No,
+    )
+    window = DiffeoForgeWindow()
+    window.mesh_edit.setText(str(mesh_directory))
+    window.project_edit.setText(str(tmp_path / "project"))
+
+    window._complete_landmark_txt_import(txt_directory)
+
+    assert output.read_bytes() == original
+    assert window.landmarks_edit.text() == ""
     window.close()
     application.processEvents()
 
