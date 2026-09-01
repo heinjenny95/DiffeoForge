@@ -45,11 +45,12 @@ terminal:
    the established Euclidean template gradient or explicitly opt into Sobolev
    smoothing with a recorded positive kernel-width ratio, without either mode
    being presented as biologically superior;
-6. optionally select a labelled-landmark CSV, import a folder containing one
-   tagged landmark TXT per mesh, or place arbitrary triangle-surface landmarks
-   in a rotatable, zoomable native 3D view for either engine; TXT import matches
-   files to the exact current cohort by filename stem and creates a new canonical
-   CSV without changing or rescaling the source coordinates; choose the planned
+6. optionally select a labelled-landmark CSV, select any one tagged per-mesh TXT
+   to import its complete folder, import that folder directly, or place arbitrary
+   triangle-surface landmarks in a rotatable, zoomable native 3D view for either
+   engine; TXT import matches files to the exact current cohort by filename stem
+   and creates `landmarks.csv` automatically in the project folder without a
+   second CSV-selection dialog or any change to the source coordinates; choose the planned
    count before opening the editor and optionally disable automatic next-mesh
    loading after the final planned point; recover the count, navigation
    preference, and placements from a hash-validated autosaved draft; then

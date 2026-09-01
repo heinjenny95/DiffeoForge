@@ -3174,8 +3174,12 @@ class DiffeoForgeWindow(QMainWindow):
             "optional: landmark CSV, or import a per-mesh TXT folder"
         )
         self.landmarks_edit.textChanged.connect(self._update_procrustes_visibility)
-        landmarks_button = QPushButton("Browse…")
+        landmarks_button = QPushButton("Select CSV/TXT…")
         landmarks_button.setObjectName("secondary")
+        landmarks_button.setToolTip(
+            "Select a canonical cohort CSV or any one tagged per-mesh TXT file. "
+            "Selecting TXT imports every matching TXT in that folder automatically."
+        )
         landmarks_button.clicked.connect(self._choose_landmarks)
         self.landmarks_button = landmarks_button
         self.import_landmark_txt_button = QPushButton("Import TXT folder…")
@@ -3668,42 +3672,49 @@ class DiffeoForgeWindow(QMainWindow):
     def _choose_landmarks(self) -> None:
         selected, _ = QFileDialog.getOpenFileName(
             self,
-            "Select canonical landmark CSV",
+            "Select landmark CSV or one tagged TXT file",
             self.mesh_edit.text().strip(),
-            "CSV files (*.csv)",
+            "Landmark files (*.csv *.txt);;Canonical CSV (*.csv);;Tagged TXT (*.txt)",
         )
-        if selected:
+        if not selected:
+            return
+        selected_path = Path(selected).expanduser()
+        if selected_path.suffix.casefold() == ".csv":
             self.landmarks_edit.setText(selected)
+            return
+        if selected_path.suffix.casefold() == ".txt":
+            self._complete_landmark_txt_import(selected_path.parent)
+            return
+        QMessageBox.warning(
+            self,
+            "Unsupported landmark file",
+            "Select a canonical .csv file or a tagged per-mesh .txt file.",
+        )
 
     @Slot()
     def _import_landmark_txt_folder(self) -> None:
+        selected_directory = QFileDialog.getExistingDirectory(
+            self,
+            "Select folder with one landmark TXT per mesh",
+            self.mesh_edit.text().strip(),
+        )
+        if selected_directory:
+            self._complete_landmark_txt_import(Path(selected_directory))
+
+    def _complete_landmark_txt_import(self, selected_directory: Path) -> None:
         try:
             cohort = self._current_surface_cohort()
-            selected_directory = QFileDialog.getExistingDirectory(
-                self,
-                "Select folder with one landmark TXT per mesh",
-                self.mesh_edit.text().strip(),
-            )
-            if not selected_directory:
-                return
             project_text = self.project_edit.text().strip()
-            default_parent = (
+            output_parent = (
                 Path(project_text).expanduser()
                 if project_text
                 else Path(self.mesh_edit.text().strip()).expanduser().parent
             )
-            selected_output, _ = QFileDialog.getSaveFileName(
-                self,
-                "Create canonical landmark CSV",
-                str(default_parent / "landmarks.csv"),
-                "CSV files (*.csv)",
-            )
-            if not selected_output:
-                return
+            output = output_parent / "landmarks.csv"
             result = import_landmark_txt_folder(
                 selected_directory,
                 cohort,
-                selected_output,
+                output,
             )
             self.landmark_count_spin.setValue(len(result.landmark_labels))
             self.landmarks_edit.setText(str(result.csv_path))
@@ -3717,8 +3728,11 @@ class DiffeoForgeWindow(QMainWindow):
                 "Landmark TXT import complete",
                 f"Imported {len(result.txt_files)} TXT files with "
                 f"{len(result.landmark_labels)} ordered 3D landmarks each.\n\n"
-                "The original TXT files and coordinate values were not changed. "
-                "No unit conversion or semilandmark sliding was applied."
+                f"DiffeoForge created the working CSV automatically at:\n"
+                f"{result.csv_path}\n\n"
+                "You do not need to select a CSV separately. The original TXT files "
+                "and coordinate values were not changed. No unit conversion or "
+                "semilandmark sliding was applied."
                 f"{ignored}",
             )
         except (OSError, TypeError, ValueError) as error:

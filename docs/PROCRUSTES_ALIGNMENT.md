@@ -100,9 +100,11 @@ TXT files but does not interpret them.
 
 The importer never edits source TXT files, changes coordinate values, infers
 units, applies a scale factor, or interprets curve/sliding metadata. The normal
-read-only GPA preview remains mandatory after import. Desktop users select
-**Import TXT folder...** next to the landmark field. The equivalent CLI command
-is:
+read-only GPA preview remains mandatory after import. Desktop users may use
+**Select CSV/TXT...** and choose any one matching TXT, or use **Import TXT
+folder...**. Both routes import the complete matched folder and create the
+canonical `landmarks.csv` automatically in the project folder; no second CSV
+input or save selection is required. The equivalent CLI command is:
 
 ```powershell
 diffeoforge landmarks-import-txt C:\study\meshes C:\study\landmarks `
