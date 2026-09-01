@@ -144,10 +144,13 @@ This repository currently provides:
 - versioned Deformetrica outputs and a tolerance-based reference comparator;
 - a read-only environment doctor and transparent mesh-directory initializer;
 - an asynchronous read-only desktop input preflight that inventories selected
-  surface workload, warns about unusually dense or large meshes, detects strongly
-  separated relative coordinate scales, compares mesh and landmark extents when a
-  canonical landmark CSV is present, and blocks clear scale incompatibilities before
-  GPA without silently rescaling, decimating, or asserting an absolute unit;
+  surface workload, estimates template-to-all-target attachment work from combined
+  face counts instead of treating a fixed per-mesh face count as a defect, reports
+  individual density only as context, distinguishes biological size variation from
+  unresolved units according to the active GPA scaling policy, compares each mesh
+  with its own landmarks when a canonical CSV is present, and blocks only clear
+  mesh-to-landmark coordinate-frame incompatibilities before GPA without silently
+  rescaling, decimating, or asserting an absolute unit;
 - an optional PySide6 desktop preview for non-overwriting mesh-folder
   validation, modern/reference project creation, effective-parameter review,
   hash-bound reference-environment and future-prelaunch inspection plus

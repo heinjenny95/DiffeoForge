@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from diffeoforge.input_preflight import (
-    DENSE_MESH_FACE_COUNT,
+    HEAVY_COHORT_FACE_COUNT,
     assess_mesh_input_metadata,
 )
 from diffeoforge.surface_io import SurfaceMeshMetadata
@@ -48,7 +48,7 @@ def _ready_window(tmp_path: Path, monkeypatch):
     return application, window, paths, signature
 
 
-def test_coordinate_scale_blocker_disables_setup_progress(tmp_path: Path, monkeypatch) -> None:
+def test_mesh_size_group_warning_allows_setup_progress(tmp_path: Path, monkeypatch) -> None:
     application, window, paths, signature = _ready_window(tmp_path, monkeypatch)
     metadata = tuple(
         _metadata(path, diagonal=(1.0 if index < 3 else 1_000.0))
@@ -58,9 +58,9 @@ def test_coordinate_scale_blocker_disables_setup_progress(tmp_path: Path, monkey
     window._input_preflight_signature = signature
     window._sync_ready_state()
 
-    assert window._data_inputs_ready() is False
-    assert window.continue_parameter_button.isEnabled() is False
-    assert "incompatible coordinate scales" in window.data_status_label.text()
+    assert window._data_inputs_ready() is True
+    assert window.continue_parameter_button.isEnabled() is True
+    assert "advisory workload or size-policy findings" in window.data_status_label.text()
 
     window.close()
     application.processEvents()
@@ -68,13 +68,14 @@ def test_coordinate_scale_blocker_disables_setup_progress(tmp_path: Path, monkey
 
 def test_large_mesh_warning_allows_reviewed_progress(tmp_path: Path, monkeypatch) -> None:
     application, window, paths, signature = _ready_window(tmp_path, monkeypatch)
+    faces_per_mesh = (HEAVY_COHORT_FACE_COUNT + len(paths) - 1) // len(paths)
     metadata = tuple(
         _metadata(
             path,
             diagonal=1.0,
-            triangles=(DENSE_MESH_FACE_COUNT if index == 0 else 4),
+            triangles=faces_per_mesh,
         )
-        for index, path in enumerate(paths)
+        for path in paths
     )
     window._input_preflight = assess_mesh_input_metadata(metadata)
     window._input_preflight_signature = signature
@@ -82,7 +83,24 @@ def test_large_mesh_warning_allows_reviewed_progress(tmp_path: Path, monkeypatch
 
     assert window._data_inputs_ready() is True
     assert window.continue_parameter_button.isEnabled() is True
-    assert "unusually heavy mesh workload" in window.data_status_label.text()
+    assert "advisory workload or size-policy findings" in window.data_status_label.text()
+
+    window.close()
+    application.processEvents()
+
+
+def test_alignment_scale_policy_is_part_of_preflight_signature(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    application, window, _paths, initial_signature = _ready_window(tmp_path, monkeypatch)
+
+    window.procrustes_scale_check.blockSignals(True)
+    window.procrustes_scale_check.setChecked(False)
+    window.procrustes_scale_check.blockSignals(False)
+    _paths, _landmarks, changed_signature = window._input_preflight_request()
+
+    assert changed_signature != initial_signature
 
     window.close()
     application.processEvents()
@@ -118,7 +136,7 @@ def test_mesh_folder_selection_runs_read_only_preflight_automatically(
     assert window._input_preflight is not None
     assert window._input_preflight.ready
     assert window._input_preflight_worker is None
-    assert "No unusual workload" in window.input_preflight_status_label.text()
+    assert "No exceptional combined workload" in window.input_preflight_status_label.text()
     assert window.project_edit.text() == str(directory.parent / "diffeoforge-project")
 
     window.close()

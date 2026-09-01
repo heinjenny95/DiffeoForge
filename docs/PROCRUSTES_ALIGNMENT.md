@@ -140,6 +140,18 @@ configuration or aligned cohort is published. Step 2 then verifies the
 content-addressed aligned meshes and landmark copy against their recorded
 hashes before displaying the effective settings.
 
+The input preflight interprets scale in the context of those choices. When GPA
+and unit-centroid-size scaling are active, large proportional size differences
+between specimens are expected to be removed by the landmark-derived
+similarity transforms; they are not classified as unit errors merely because
+the raw meshes form size groups. The fail-closed check is instead within each
+specimen: its mesh and landmarks must occupy a compatible coordinate frame so
+that the same transform can legitimately be applied to both. When GPA is off,
+or centroid-size scaling is disabled, large mesh-size groups are reported only
+as an advisory review item. Geometry alone cannot decide whether such a group
+represents biology, life stage, acquisition units, or preprocessing history,
+and DiffeoForge neither rescales nor rejects it automatically.
+
 The visual GPA review is a finite sequence. It reports both the current mesh
 number and the number of unique meshes viewed. **Next** stops at the final mesh
 and changes to **Last mesh reached**; it never silently wraps to the beginning.

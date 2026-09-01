@@ -48,6 +48,18 @@ The command reads the reviewed configuration and selected VTK metadata. It
 does not construct PyTorch tensors, evaluate the atlas objective, or start the
 optimizer.
 
+The earlier desktop input preflight uses a deliberately simpler cohort-level
+screen before configuration exists. It reports the combined face and file
+volume and estimates the dominant template-to-target attachment scale as
+`template faces * sum(target faces)`. Thus one high-resolution mesh is not
+rejected by a fixed per-file triangle limit, while a small cohort of very dense
+meshes can still trigger an advisory workload warning. The largest individual
+mesh remains useful context, but is not the verdict. This estimate is neither
+a runtime prediction nor a recommendation to reduce every specimen to a fixed
+face count; scientific surface resolution must be chosen and validated for the
+study. Blockwise execution reduces the largest temporary pairwise tile, not
+the total logical interactions described below.
+
 ## Exact all-pairs operation model
 
 One *pair element* is one logical entry of the exact Gaussian all-pairs

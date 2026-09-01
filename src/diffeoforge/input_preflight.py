@@ -19,9 +19,9 @@ from diffeoforge.surface_io import SurfaceMeshMetadata, inspect_surface_mesh
 
 InputPreflightSeverity = Literal["warning", "blocker"]
 
-DENSE_MESH_FACE_COUNT = 100_000
-HEAVY_COHORT_FACE_COUNT = 2_000_000
-LARGE_MESH_FILE_BYTES = 20 * 1024**2
+HEAVY_COHORT_FACE_COUNT = 5_000_000
+HEAVY_ATTACHMENT_INTERACTION_COUNT = 25_000_000_000
+HEAVY_COHORT_FILE_BYTES = 1024**3
 SCALE_WARNING_GAP = 8.0
 SCALE_BLOCKER_GAP = 100.0
 EXTREME_LANDMARK_MESH_RATIO = 50.0
@@ -47,6 +47,12 @@ class MeshInputPreflight:
     landmark_path: Path | None
     landmark_sha256: str | None
     landmark_count: int | None
+    template_name: str
+    subject_count: int
+    template_triangles: int
+    estimated_attachment_interactions: int
+    procrustes_enabled: bool
+    scale_to_unit_centroid_size: bool
     total_bytes: int
     total_points: int
     total_triangles: int
@@ -93,69 +99,84 @@ def _largest_scale_gap(
     return gaps[split], ordered[: split + 1], ordered[split + 1 :]
 
 
-def _workload_issue(metadata: Sequence[SurfaceMeshMetadata]) -> InputPreflightIssue | None:
-    dense = tuple(item for item in metadata if item.triangles >= DENSE_MESH_FACE_COUNT)
-    large = tuple(item for item in metadata if item.bytes >= LARGE_MESH_FILE_BYTES)
+def _workload_issue(
+    metadata: Sequence[SurfaceMeshMetadata],
+    *,
+    template_index: int,
+) -> InputPreflightIssue | None:
     total_faces = sum(item.triangles for item in metadata)
-    if not dense and not large and total_faces < HEAVY_COHORT_FACE_COUNT:
+    total_bytes = sum(item.bytes for item in metadata)
+    template = metadata[template_index]
+    target_faces = total_faces - template.triangles
+    estimated_interactions = template.triangles * target_faces
+    if (
+        total_faces < HEAVY_COHORT_FACE_COUNT
+        and total_bytes < HEAVY_COHORT_FILE_BYTES
+        and estimated_interactions < HEAVY_ATTACHMENT_INTERACTION_COUNT
+    ):
         return None
     largest = max(metadata, key=lambda item: item.triangles)
-    ascii_dense = sum(
-        item.source_format == "ply"
-        and item.encoding == "ascii"
-        and item.triangles >= DENSE_MESH_FACE_COUNT
+    ascii_meshes = tuple(
+        item
         for item in metadata
-    )
-    affected = tuple(
-        item.path
-        for item in sorted(
-            set((*dense, *large)),
-            key=lambda item: (item.triangles, item.bytes),
-            reverse=True,
-        )
+        if item.source_format == "ply" and item.encoding.casefold() == "ascii"
     )
     ascii_note = (
-        f" {ascii_dense} dense PLY files are ASCII and will load especially slowly."
-        if ascii_dense
+        f" {len(ascii_meshes)} PLY files are ASCII and add parsing overhead."
+        if ascii_meshes
         else ""
     )
     return InputPreflightIssue(
         code="large_mesh_workload",
         severity="warning",
-        title="Unusually large or dense meshes",
+        title="High combined atlas workload",
         summary=(
-            f"The selected cohort contains {_number(total_faces)} triangles in total; "
-            f"{len(dense)} meshes have at least {_number(DENSE_MESH_FACE_COUNT)} faces. "
-            f"The largest is {Path(largest.path).name} with "
-            f"{_number(largest.triangles)} faces ({_mib(largest.bytes)})."
-            f"{ascii_note} Consider documented simplified working copies before pilot "
-            "calibration or atlasing. DiffeoForge will not decimate inputs silently."
+            f"The template has {_number(template.triangles)} faces and the "
+            f"{len(metadata) - 1} targets contain {_number(target_faces)} faces in total. "
+            "One full template-to-target attachment sweep therefore represents about "
+            f"{_number(estimated_interactions)} face-pair interactions before tiling, "
+            "timepoints, and optimizer iterations. The complete cohort contains "
+            f"{_number(total_faces)} faces ({_mib(total_bytes)}); the largest single mesh "
+            f"is {Path(largest.path).name} with {_number(largest.triangles)} faces."
+            f"{ascii_note} This is an engineering workload estimate, not evidence that "
+            "the scientific resolution is unnecessary. Keep required detail; use server "
+            "execution or validated multiresolution working copies only when needed. "
+            "DiffeoForge will not decimate inputs silently."
         ),
-        affected_meshes=tuple(Path(path).name for path in affected),
     )
 
 
-def _mesh_scale_issue(metadata: Sequence[SurfaceMeshMetadata]) -> InputPreflightIssue | None:
+def _mesh_scale_issue(
+    metadata: Sequence[SurfaceMeshMetadata],
+    *,
+    procrustes_enabled: bool,
+    scale_to_unit_centroid_size: bool,
+) -> InputPreflightIssue | None:
     values = tuple((Path(item.path).name, item.bounding_box_diagonal) for item in metadata)
     gap, smaller, larger = _largest_scale_gap(values)
     if gap < SCALE_WARNING_GAP or not larger:
         return None
-    severity: InputPreflightSeverity = (
-        "blocker" if gap >= SCALE_BLOCKER_GAP else "warning"
-    )
     smaller_center = _geometric_median(tuple(value for _name, value in smaller))
     larger_center = _geometric_median(tuple(value for _name, value in larger))
     separation = larger_center / smaller_center
+    alignment_note = (
+        "GPA is active but centroid-size scaling is disabled, so this size difference "
+        "will remain in the atlas."
+        if procrustes_enabled and not scale_to_unit_centroid_size
+        else "No active unit-centroid-size GPA will remove this size difference before "
+        "atlasing."
+    )
     return InputPreflightIssue(
         code="mixed_mesh_coordinate_scales",
-        severity=severity,
-        title="Different mesh coordinate scales detected",
+        severity="warning",
+        title="Separated mesh-size groups need review",
         summary=(
             f"Mesh bounding-box sizes form two separated groups: {len(smaller)} smaller "
             f"and {len(larger)} larger meshes, with typical sizes differing by about "
-            f"{separation:.3g}x. This is consistent with mixed coordinate units. "
-            "DiffeoForge cannot determine the correct absolute unit from geometry alone "
-            "and will not rescale files automatically."
+            f"{separation:.3g}x. Geometry alone cannot distinguish biological size "
+            f"variation from mixed coordinate units. {alignment_note} Confirm that this "
+            "is the intended size-and-shape policy. DiffeoForge cannot infer an absolute "
+            "unit and will not rescale files automatically."
         ),
         affected_meshes=tuple(name for name, _value in smaller),
     )
@@ -180,11 +201,7 @@ def _landmark_scale_issue(
     gap, lower, upper = _largest_scale_gap(ratios)
     all_ratios = tuple(value for _name, value in ratios)
     typical_ratio = _geometric_median(all_ratios)
-    if gap < SCALE_WARNING_GAP and (
-        1.0 / EXTREME_LANDMARK_MESH_RATIO
-        <= typical_ratio
-        <= EXTREME_LANDMARK_MESH_RATIO
-    ):
+    if gap < SCALE_WARNING_GAP and typical_ratio <= EXTREME_LANDMARK_MESH_RATIO:
         return None
 
     lower_center = _geometric_median(tuple(value for _name, value in lower))
@@ -205,7 +222,6 @@ def _landmark_scale_issue(
         "blocker"
         if gap >= SCALE_BLOCKER_GAP
         or typical_ratio >= EXTREME_LANDMARK_MESH_RATIO
-        or typical_ratio <= 1.0 / EXTREME_LANDMARK_MESH_RATIO
         else "warning"
     )
     group_note = (
@@ -231,10 +247,13 @@ def _landmark_scale_issue(
 def assess_mesh_input_metadata(
     metadata: Sequence[SurfaceMeshMetadata],
     *,
+    template_path: Path | str | None = None,
     landmark_path: Path | None = None,
     landmark_sha256: str | None = None,
     landmark_labels: Sequence[str] | None = None,
     landmark_values: np.ndarray | None = None,
+    procrustes_enabled: bool = True,
+    scale_to_unit_centroid_size: bool = True,
 ) -> MeshInputPreflight:
     """Assess already inspected metadata, primarily for reuse and deterministic tests."""
 
@@ -243,18 +262,49 @@ def assess_mesh_input_metadata(
         raise ConfigurationError("Mesh input preflight requires at least two meshes")
     if len({Path(item.path).name.casefold() for item in items}) != len(items):
         raise ConfigurationError("Mesh filenames must be unique for input preflight")
-    issues: list[InputPreflightIssue] = []
-    if workload := _workload_issue(items):
-        issues.append(workload)
-    if landmark_values is None:
-        if scale_issue := _mesh_scale_issue(items):
-            issues.append(scale_issue)
-        landmark_count = None
+    if not isinstance(procrustes_enabled, bool):
+        raise TypeError("procrustes_enabled must be a boolean")
+    if not isinstance(scale_to_unit_centroid_size, bool):
+        raise TypeError("scale_to_unit_centroid_size must be a boolean")
+    if template_path is None:
+        template_index = 0
     else:
+        expected_template = Path(template_path).expanduser().resolve()
+        matches = tuple(
+            index
+            for index, item in enumerate(items)
+            if Path(item.path).expanduser().resolve() == expected_template
+        )
+        if len(matches) != 1:
+            raise ConfigurationError(
+                "Template path must identify exactly one inspected mesh"
+            )
+        template_index = matches[0]
+    template = items[template_index]
+    total_triangles = sum(item.triangles for item in items)
+    estimated_attachment_interactions = template.triangles * (
+        total_triangles - template.triangles
+    )
+    effective_procrustes = procrustes_enabled and landmark_values is not None
+    issues: list[InputPreflightIssue] = []
+    if workload := _workload_issue(items, template_index=template_index):
+        issues.append(workload)
+    if landmark_values is not None:
         if landmark_labels is None:
             raise TypeError("landmark_labels are required with landmark_values")
         landmark_count = len(tuple(landmark_labels))
-        if scale_issue := _landmark_scale_issue(items, landmark_values):
+        if effective_procrustes and (
+            scale_issue := _landmark_scale_issue(items, landmark_values)
+        ):
+            issues.append(scale_issue)
+    else:
+        landmark_count = None
+    if not (effective_procrustes and scale_to_unit_centroid_size):
+        if scale_issue := _mesh_scale_issue(
+            items,
+            procrustes_enabled=effective_procrustes,
+            scale_to_unit_centroid_size=scale_to_unit_centroid_size,
+        ):
             issues.append(scale_issue)
 
     payload = {
@@ -262,6 +312,12 @@ def assess_mesh_input_metadata(
         "landmark_path": str(landmark_path) if landmark_path is not None else None,
         "landmark_sha256": landmark_sha256,
         "landmark_count": landmark_count,
+        "template": str(template.path),
+        "estimated_attachment_interactions": estimated_attachment_interactions,
+        "procrustes_enabled": effective_procrustes,
+        "scale_to_unit_centroid_size": (
+            scale_to_unit_centroid_size if effective_procrustes else False
+        ),
         "issues": [issue.__dict__ for issue in issues],
     }
     fingerprint = hashlib.sha256(
@@ -273,9 +329,17 @@ def assess_mesh_input_metadata(
         landmark_path=landmark_path,
         landmark_sha256=landmark_sha256,
         landmark_count=landmark_count,
+        template_name=Path(template.path).name,
+        subject_count=len(items) - 1,
+        template_triangles=template.triangles,
+        estimated_attachment_interactions=estimated_attachment_interactions,
+        procrustes_enabled=effective_procrustes,
+        scale_to_unit_centroid_size=(
+            scale_to_unit_centroid_size if effective_procrustes else False
+        ),
         total_bytes=sum(item.bytes for item in items),
         total_points=sum(item.points for item in items),
-        total_triangles=sum(item.triangles for item in items),
+        total_triangles=total_triangles,
         issues=tuple(issues),
     )
 
@@ -283,7 +347,10 @@ def assess_mesh_input_metadata(
 def inspect_mesh_input_cohort(
     mesh_paths: Sequence[Path | str],
     *,
+    template_path: Path | str | None = None,
     landmark_csv: Path | str | None = None,
+    procrustes_enabled: bool = True,
+    scale_to_unit_centroid_size: bool = True,
 ) -> MeshInputPreflight:
     """Inspect an exact surface cohort and optional canonical landmark CSV read-only."""
 
@@ -292,16 +359,24 @@ def inspect_mesh_input_cohort(
         raise ConfigurationError("Mesh input preflight requires at least two meshes")
     metadata = tuple(inspect_surface_mesh(path) for path in paths)
     if landmark_csv is None:
-        return assess_mesh_input_metadata(metadata)
+        return assess_mesh_input_metadata(
+            metadata,
+            template_path=template_path,
+            procrustes_enabled=False,
+            scale_to_unit_centroid_size=scale_to_unit_centroid_size,
+        )
     landmark_path = Path(landmark_csv).expanduser().resolve()
     landmark_sha256 = hashlib.sha256(landmark_path.read_bytes()).hexdigest()
     labels, values = read_landmark_csv(landmark_path, tuple(path.name for path in paths))
     return assess_mesh_input_metadata(
         metadata,
+        template_path=template_path,
         landmark_path=landmark_path,
         landmark_sha256=landmark_sha256,
         landmark_labels=labels,
         landmark_values=values,
+        procrustes_enabled=procrustes_enabled,
+        scale_to_unit_centroid_size=scale_to_unit_centroid_size,
     )
 
 
@@ -309,16 +384,33 @@ def format_mesh_input_preflight(report: MeshInputPreflight) -> str:
     """Return concise user-facing English desktop copy for one report."""
 
     lines = [
-        f"Checked {len(report.metadata)} meshes: {_number(report.total_points)} vertices, "
-        f"{_number(report.total_triangles)} triangles, {_mib(report.total_bytes)}.",
+        f"Checked {len(report.metadata)} meshes (template {report.template_name} + "
+        f"{report.subject_count} targets): {_number(report.total_points)} vertices, "
+        f"{_number(report.total_triangles)} triangles, {_mib(report.total_bytes)}. "
+        "Estimated template-to-target face pairs per full attachment sweep: "
+        f"{_number(report.estimated_attachment_interactions)}.",
     ]
     if report.landmark_count is not None:
-        lines.append(
-            f"Compared {report.landmark_count} landmarks per mesh with the surface "
-            "coordinate scale."
-        )
+        if report.procrustes_enabled:
+            scaling = (
+                "with unit-centroid-size scaling"
+                if report.scale_to_unit_centroid_size
+                else "without centroid-size scaling"
+            )
+            lines.append(
+                f"Checked {report.landmark_count} landmarks per mesh against its surface "
+                f"coordinate frame; GPA is active {scaling}."
+            )
+        else:
+            lines.append(
+                f"Matched {report.landmark_count} landmarks per mesh, but GPA is disabled; "
+                "the landmarks will not transform atlas surfaces."
+            )
     if not report.issues:
-        lines.append("No unusual workload or relative coordinate-scale split was detected.")
+        lines.append(
+            "No exceptional combined workload or unresolved coordinate-scale mismatch "
+            "was detected. Individual face counts alone are not treated as a problem."
+        )
         return "\n".join(lines)
     for issue in report.issues:
         label = "BLOCKER" if issue.severity == "blocker" else "WARNING"

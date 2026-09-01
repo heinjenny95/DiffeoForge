@@ -498,11 +498,17 @@ class _InputPreflightWorker(QRunnable):
         self,
         mesh_paths: tuple[Path, ...],
         landmark_csv: Path | None,
+        template_path: Path,
+        procrustes_enabled: bool,
+        scale_to_unit_centroid_size: bool,
         signature: tuple[object, ...],
     ) -> None:
         super().__init__()
         self.mesh_paths = mesh_paths
         self.landmark_csv = landmark_csv
+        self.template_path = template_path
+        self.procrustes_enabled = procrustes_enabled
+        self.scale_to_unit_centroid_size = scale_to_unit_centroid_size
         self.signature = signature
         self.signals = _WorkerSignals()
 
@@ -511,7 +517,10 @@ class _InputPreflightWorker(QRunnable):
         try:
             report = inspect_mesh_input_cohort(
                 self.mesh_paths,
+                template_path=self.template_path,
                 landmark_csv=self.landmark_csv,
+                procrustes_enabled=self.procrustes_enabled,
+                scale_to_unit_centroid_size=self.scale_to_unit_centroid_size,
             )
         except (OSError, RuntimeError, TypeError, ValueError) as error:
             self.signals.failed.emit(str(error))
@@ -3281,10 +3290,10 @@ class DiffeoForgeWindow(QMainWindow):
             "Apply generalized Procrustes before atlas computation"
         )
         self.procrustes_apply_check.setChecked(True)
-        self.procrustes_apply_check.toggled.connect(self._procrustes_inputs_changed)
+        self.procrustes_apply_check.toggled.connect(self._alignment_policy_changed)
         self.procrustes_scale_check = QCheckBox("Scale to unit centroid size")
         self.procrustes_scale_check.setChecked(True)
-        self.procrustes_scale_check.toggled.connect(self._procrustes_inputs_changed)
+        self.procrustes_scale_check.toggled.connect(self._alignment_policy_changed)
         self.procrustes_reflection_check = QCheckBox("Allow reflections")
         self.procrustes_reflection_check.toggled.connect(self._procrustes_inputs_changed)
         procrustes_settings = QHBoxLayout()
@@ -3740,7 +3749,12 @@ class DiffeoForgeWindow(QMainWindow):
                 landmark_stat.st_size,
                 landmark_stat.st_mtime_ns,
             )
-        signature: tuple[object, ...] = (mesh_state, landmark_state)
+        signature: tuple[object, ...] = (
+            mesh_state,
+            landmark_state,
+            self.procrustes_apply_check.isChecked(),
+            self.procrustes_scale_check.isChecked(),
+        )
         return mesh_paths, landmark_csv, signature
 
     @Slot()
@@ -3791,7 +3805,14 @@ class DiffeoForgeWindow(QMainWindow):
             and self._input_preflight_signature == signature
         ):
             return
-        worker = _InputPreflightWorker(mesh_paths, landmark_csv, signature)
+        worker = _InputPreflightWorker(
+            mesh_paths,
+            landmark_csv,
+            mesh_paths[0],
+            landmark_csv is not None and self.procrustes_apply_check.isChecked(),
+            self.procrustes_scale_check.isChecked(),
+            signature,
+        )
         worker.signals.succeeded.connect(self._input_preflight_succeeded)
         worker.signals.failed.connect(self._input_preflight_failed)
         self._input_preflight = None
@@ -4080,6 +4101,12 @@ class DiffeoForgeWindow(QMainWindow):
     @Slot()
     def _procrustes_inputs_changed(self) -> None:
         self._invalidate_procrustes_preview()
+
+    @Slot()
+    def _alignment_policy_changed(self) -> None:
+        self._procrustes_inputs_changed()
+        self._invalidate_input_preflight()
+        self._start_input_preflight()
 
     @Slot()
     def _invalidate_procrustes_preview(self) -> None:
@@ -6118,8 +6145,8 @@ class DiffeoForgeWindow(QMainWindow):
         ):
             self.data_status_label.setObjectName("statusError")
             self.data_status_label.setText(
-                "Data preflight found incompatible coordinate scales. Use corrected working "
-                "copies before continuing."
+                "Data preflight found incompatible mesh and landmark coordinate frames. "
+                "Use corrected working copies before continuing with GPA."
             )
         elif (
             raw_data_ready
@@ -6129,7 +6156,7 @@ class DiffeoForgeWindow(QMainWindow):
         ):
             self.data_status_label.setObjectName("statusWarning")
             self.data_status_label.setText(
-                "Data preflight found an unusually heavy mesh workload. Review the warning; "
+                "Data preflight has advisory workload or size-policy findings. Review them; "
                 "continuing is allowed."
             )
         elif data_ready:
