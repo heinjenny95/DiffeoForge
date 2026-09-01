@@ -59,11 +59,14 @@ no supported format is treated as a reliable unit source.
 
 ## Workflow boundary
 
-PLY, OBJ, and STL are accepted only when a landmark CSV is selected or created,
-generalized Procrustes is enabled, and the exact read-only preview is approved.
-Without that reviewed conversion, project setup remains VTK-only. This keeps
-format conversion visible and prevents a non-VTK mesh from reaching an engine
-through an undocumented implicit operation.
+PLY, OBJ, and STL are accepted only when a canonical landmark CSV is selected
+or created, generalized Procrustes is enabled, and the exact read-only preview
+is approved. The CSV may be created by DiffeoForge's tagged-TXT folder importer;
+that importer matches one TXT to each selected mesh by filename stem and never
+modifies or rescales the source coordinates. Without that reviewed conversion,
+project setup remains VTK-only. This keeps format conversion visible and
+prevents a non-VTK mesh from reaching an engine through an undocumented implicit
+operation.
 
 Format support establishes readable geometry and reproducible conversion. It
 does not establish biological landmark homology, acceptable registration,

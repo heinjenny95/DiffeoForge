@@ -36,6 +36,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from diffeoforge.analysis.landmarks import import_landmark_txt_folder
 from diffeoforge.config import load_config
 from diffeoforge.desktop.aspect_svg_widget import AspectRatioSvgWidget
 from diffeoforge.desktop.calibration_comparison_widget import (
@@ -3169,12 +3170,21 @@ class DiffeoForgeWindow(QMainWindow):
 
         self.landmarks_edit = QLineEdit()
         self.landmarks_edit.setObjectName("landmarksEdit")
-        self.landmarks_edit.setPlaceholderText("optional: homologous landmarks as CSV")
+        self.landmarks_edit.setPlaceholderText(
+            "optional: landmark CSV, or import a per-mesh TXT folder"
+        )
         self.landmarks_edit.textChanged.connect(self._update_procrustes_visibility)
         landmarks_button = QPushButton("Browse…")
         landmarks_button.setObjectName("secondary")
         landmarks_button.clicked.connect(self._choose_landmarks)
         self.landmarks_button = landmarks_button
+        self.import_landmark_txt_button = QPushButton("Import TXT folder…")
+        self.import_landmark_txt_button.setObjectName("importLandmarkTxtButton")
+        self.import_landmark_txt_button.setToolTip(
+            "Match one tagged TXT file to each selected mesh by filename stem and "
+            "create a new canonical CSV without changing the TXT files."
+        )
+        self.import_landmark_txt_button.clicked.connect(self._import_landmark_txt_folder)
         self.place_landmarks_button = QPushButton("Place landmarks…")
         self.place_landmarks_button.setObjectName("secondary")
         self.place_landmarks_button.clicked.connect(self._place_landmarks)
@@ -3183,6 +3193,7 @@ class DiffeoForgeWindow(QMainWindow):
         landmarks_row.setSpacing(8)
         landmarks_row.addWidget(self.landmarks_edit, 1)
         landmarks_row.addWidget(landmarks_button)
+        landmarks_row.addWidget(self.import_landmark_txt_button)
         landmarks_row.addWidget(self.place_landmarks_button)
         data_form.addRow("Landmarks", landmarks_row)
 
@@ -3657,12 +3668,61 @@ class DiffeoForgeWindow(QMainWindow):
     def _choose_landmarks(self) -> None:
         selected, _ = QFileDialog.getOpenFileName(
             self,
-            "Select landmark file",
+            "Select canonical landmark CSV",
             self.mesh_edit.text().strip(),
             "CSV files (*.csv)",
         )
         if selected:
             self.landmarks_edit.setText(selected)
+
+    @Slot()
+    def _import_landmark_txt_folder(self) -> None:
+        try:
+            cohort = self._current_surface_cohort()
+            selected_directory = QFileDialog.getExistingDirectory(
+                self,
+                "Select folder with one landmark TXT per mesh",
+                self.mesh_edit.text().strip(),
+            )
+            if not selected_directory:
+                return
+            project_text = self.project_edit.text().strip()
+            default_parent = (
+                Path(project_text).expanduser()
+                if project_text
+                else Path(self.mesh_edit.text().strip()).expanduser().parent
+            )
+            selected_output, _ = QFileDialog.getSaveFileName(
+                self,
+                "Create canonical landmark CSV",
+                str(default_parent / "landmarks.csv"),
+                "CSV files (*.csv)",
+            )
+            if not selected_output:
+                return
+            result = import_landmark_txt_folder(
+                selected_directory,
+                cohort,
+                selected_output,
+            )
+            self.landmark_count_spin.setValue(len(result.landmark_labels))
+            self.landmarks_edit.setText(str(result.csv_path))
+            ignored = (
+                f"\n\nUnmatched TXT files ignored: {len(result.ignored_txt_files)}."
+                if result.ignored_txt_files
+                else ""
+            )
+            QMessageBox.information(
+                self,
+                "Landmark TXT import complete",
+                f"Imported {len(result.txt_files)} TXT files with "
+                f"{len(result.landmark_labels)} ordered 3D landmarks each.\n\n"
+                "The original TXT files and coordinate values were not changed. "
+                "No unit conversion or semilandmark sliding was applied."
+                f"{ignored}",
+            )
+        except (OSError, TypeError, ValueError) as error:
+            QMessageBox.warning(self, "Landmark TXT import unavailable", str(error))
 
     @Slot()
     def _choose_remote_token(self) -> None:

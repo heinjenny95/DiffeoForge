@@ -58,7 +58,7 @@ reason.
 
 ## Workflow integration and scientific limitations
 
-The shared preprocessing layer defines a strict long-form CSV with
+The shared preprocessing layer uses a strict canonical long-form CSV with
 `mesh_file,landmark,x,y,z`, requires identical ordered labels for the template
 and every subject, reads triangular VTK, PLY, OBJ, or STL source surfaces,
 writes transformed full-mesh copies in one canonical VTK representation, and
@@ -69,6 +69,45 @@ original-format files under `raw/` from transformed products under
 project setup or the [experimental modern workflow](MODERN_WORKFLOW.md);
 identical verified requests reuse the same immutable aligned cohort. See the
 [format and conversion contract](SURFACE_INPUT_FORMATS.md).
+
+## Per-mesh tagged TXT import
+
+DiffeoForge can create the canonical cohort CSV from a folder containing one
+tagged TXT file per selected mesh. Matching is case-insensitive by filename stem:
+`specimen-01.ply` is paired with `specimen-01.txt`. Every mesh in the exact
+selected cohort must have one unique match. Each TXT must describe one individual
+and declare these sections:
+
+```text
+[individuals]
+1
+[dimensions]
+3
+[landmarks]
+3
+[rawpoints]
+'#1
+1.0 2.0 3.0
+4.0 5.0 6.0
+7.0 8.0 9.0
+```
+
+The declared count must equal the number of finite whitespace-delimited `x y z`
+rows, and every file in the cohort must contain the same count. Because this TXT
+format does not carry landmark names, row order is the homology contract and the
+importer assigns deterministic labels `LM1` through `LMN`. It reports unmatched
+TXT files but does not interpret them.
+
+The importer never edits source TXT files, changes coordinate values, infers
+units, applies a scale factor, or interprets curve/sliding metadata. The normal
+read-only GPA preview remains mandatory after import. Desktop users select
+**Import TXT folder...** next to the landmark field. The equivalent CLI command
+is:
+
+```powershell
+diffeoforge landmarks-import-txt C:\study\meshes C:\study\landmarks `
+  --mesh-pattern "*.ply" --output C:\study\project\landmarks.csv
+```
 
 The desktop can create the strict CSV by rotating, panning, and zooming each
 mesh, then clicking the visible surface. Each click is resolved by barycentric

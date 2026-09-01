@@ -45,14 +45,17 @@ terminal:
    the established Euclidean template gradient or explicitly opt into Sobolev
    smoothing with a recorded positive kernel-width ratio, without either mode
    being presented as biologically superior;
-6. optionally import a labelled-landmark CSV or place arbitrary triangle-surface
-   landmarks in a rotatable, zoomable native 3D view for either engine; choose
-   the planned count before opening the editor and optionally disable automatic
-   next-mesh loading after the final planned point; recover the count,
-   navigation preference, and placements from a hash-validated autosaved draft;
-   then explicitly configure the GPA scaling, reflection, tolerance, and
-   iteration policy, run a read-only numerical alignment preview, and approve
-   its exact converged fingerprint;
+6. optionally select a labelled-landmark CSV, import a folder containing one
+   tagged landmark TXT per mesh, or place arbitrary triangle-surface landmarks
+   in a rotatable, zoomable native 3D view for either engine; TXT import matches
+   files to the exact current cohort by filename stem and creates a new canonical
+   CSV without changing or rescaling the source coordinates; choose the planned
+   count before opening the editor and optionally disable automatic next-mesh
+   loading after the final planned point; recover the count, navigation
+   preference, and placements from a hash-validated autosaved draft; then
+   explicitly configure the GPA scaling, reflection, tolerance, and iteration
+   policy, run a read-only numerical alignment preview, and approve its exact
+   converged fingerprint;
 7. for the Deformetrica route, either confirm that the selected coordinates
    were already GPA aligned outside DiffeoForge or use the exact approved
    DiffeoForge GPA transforms; then choose the anatomical surface-detail scale
@@ -179,7 +182,7 @@ python -m diffeoforge.desktop --smoke
   arbitrary ten-point cap. The editor advances to the next label after every
   click; automatic loading of the next mesh after the last label is a visible
   option that can be changed during placement and is retained in draft recovery.
-- Procrustes preview hashes the exact selected meshes and landmark CSV before
+- Procrustes preview hashes the exact selected meshes and canonical landmark CSV before
   and after computation, writes nothing, and reports convergence, residual,
   scale, and fingerprint diagnostics. Project creation is disabled until the
   exact converged preview is explicitly approved. Form edits clear that

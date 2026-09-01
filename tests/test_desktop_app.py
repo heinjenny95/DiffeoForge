@@ -495,6 +495,7 @@ def test_desktop_window_exposes_required_project_controls(monkeypatch) -> None:
     assert auto_advance.isChecked() is True
     assert "next mesh" in auto_advance.text()
     assert window.place_landmarks_button.text().startswith("Place landmarks")
+    assert window.import_landmark_txt_button.text().startswith("Import TXT folder")
     assert window.create_button.isEnabled() is False
     assert all(isinstance(step, QPushButton) for step in window.rail_steps)
     assert window.rail_steps[0].isEnabled() is True
@@ -732,6 +733,59 @@ def test_desktop_passes_landmark_plan_to_editor(monkeypatch, tmp_path: Path) -> 
     assert observed["auto_advance_mesh"] is False
     assert len(observed["mesh_paths"]) >= 2  # type: ignore[arg-type]
     assert observed["output_path"] == (tmp_path / "project" / "landmarks.csv")
+    window.close()
+    application.processEvents()
+
+
+def test_desktop_imports_matching_landmark_txt_folder(monkeypatch, tmp_path: Path) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QFileDialog, QMessageBox
+
+    from diffeoforge.analysis.landmarks import read_landmark_csv
+    from diffeoforge.desktop.widgets import DiffeoForgeWindow
+
+    application = QApplication.instance() or QApplication(["diffeoforge-txt-import-test"])
+    mesh_directory = ROOT / "examples" / "synthetic" / "meshes"
+    txt_directory = tmp_path / "txt"
+    txt_directory.mkdir()
+    output = tmp_path / "project" / "landmarks.csv"
+    cohort = (mesh_directory / "template.vtk", *sorted(mesh_directory.glob("subject-*.vtk")))
+    for mesh_index, mesh in enumerate(cohort):
+        (txt_directory / f"{mesh.stem}.txt").write_text(
+            "[individuals]\n1\n[dimensions]\n3\n[landmarks]\n3\n"
+            "[rawpoints]\n'#1\n"
+            f"{mesh_index + 1} 0 0\n0 {mesh_index + 2} 0\n0 0 {mesh_index + 3}\n",
+            encoding="utf-8",
+        )
+    messages: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        QFileDialog,
+        "getExistingDirectory",
+        lambda *_args, **_kwargs: str(txt_directory),
+    )
+    monkeypatch.setattr(
+        QFileDialog,
+        "getSaveFileName",
+        lambda *_args, **_kwargs: (str(output), "CSV files (*.csv)"),
+    )
+    monkeypatch.setattr(
+        QMessageBox,
+        "information",
+        lambda _parent, title, message: messages.append((title, message)),
+    )
+    window = DiffeoForgeWindow()
+    window.mesh_edit.setText(str(mesh_directory))
+    window.project_edit.setText(str(tmp_path / "project"))
+
+    window._import_landmark_txt_folder()
+
+    labels, values = read_landmark_csv(output, tuple(path.name for path in cohort))
+    assert labels == ("LM1", "LM2", "LM3")
+    assert values.shape == (len(cohort), 3, 3)
+    assert window.landmarks_edit.text() == str(output.resolve())
+    assert window.landmark_count_spin.value() == 3
+    assert messages and "original TXT files" in messages[0][1]
     window.close()
     application.processEvents()
 

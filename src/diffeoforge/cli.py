@@ -188,6 +188,37 @@ def build_parser() -> argparse.ArgumentParser:
 
     subparsers = parser.add_subparsers(dest="command", required=True)
 
+    landmark_txt_parser = subparsers.add_parser(
+        "landmarks-import-txt",
+        help="Import one tagged landmark TXT per mesh into a canonical cohort CSV.",
+    )
+    landmark_txt_parser.add_argument(
+        "mesh_directory",
+        type=Path,
+        help="Directory containing the exact mesh cohort to match by filename stem.",
+    )
+    landmark_txt_parser.add_argument(
+        "txt_directory",
+        type=Path,
+        help="Directory containing one tagged TXT file per selected mesh.",
+    )
+    landmark_txt_parser.add_argument(
+        "--mesh-pattern",
+        default="*",
+        help="Glob selecting the exact mesh cohort (default: all supported surfaces).",
+    )
+    landmark_txt_parser.add_argument(
+        "--output",
+        type=Path,
+        default=Path("landmarks.csv"),
+        help="Canonical landmark CSV to create (default: ./landmarks.csv).",
+    )
+    landmark_txt_parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Explicitly replace an existing generated CSV atomically.",
+    )
+
     doctor_parser = subparsers.add_parser(
         "doctor",
         help="Check whether the host and frozen reference backend are ready.",
@@ -2109,6 +2140,43 @@ def _execution_outcome(run_directory: Path, return_code: int) -> int:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+
+    if args.command == "landmarks-import-txt":
+        try:
+            from diffeoforge.analysis.landmarks import import_landmark_txt_folder
+
+            mesh_directory = args.mesh_directory.expanduser().resolve()
+            if not mesh_directory.is_dir():
+                raise ConfigurationError(f"Mesh folder does not exist: {mesh_directory}")
+            mesh_files = tuple(
+                path.resolve()
+                for path in sorted(
+                    mesh_directory.glob(args.mesh_pattern),
+                    key=lambda path: path.name.casefold(),
+                )
+                if path.is_file() and is_supported_surface_path(path)
+            )
+            if len(mesh_files) < 2:
+                raise ConfigurationError(
+                    "Landmark TXT import requires at least two supported meshes matching "
+                    f"{args.mesh_pattern!r}"
+                )
+            result = import_landmark_txt_folder(
+                args.txt_directory,
+                mesh_files,
+                args.output,
+                overwrite=args.force,
+            )
+        except (OSError, ConfigurationError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        print(f"Landmark CSV created: {result.csv_path}")
+        print(f"Matched meshes/TXT files: {len(result.mesh_files)}")
+        print(f"Ordered landmarks per mesh: {len(result.landmark_labels)}")
+        if result.ignored_txt_files:
+            print(f"Unmatched TXT files ignored: {len(result.ignored_txt_files)}")
+        print("Coordinates were preserved exactly; no unit conversion or sliding was applied.")
+        return 0
 
     if args.command == "doctor":
         report = run_doctor(args.workspace, engine=args.engine, image=args.image)

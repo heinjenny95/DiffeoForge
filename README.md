@@ -176,7 +176,9 @@ This repository currently provides:
 - interactive native 3D surface-landmark placement with rotation, zoom, pan,
   arbitrary triangle-point interpolation, a researcher-selected landmark count,
   optional automatic next-mesh loading after the final planned point,
-  hash-validated resumable drafts, strict reusable landmark CSV output,
+  hash-validated resumable drafts, strict reusable landmark CSV output, and a
+  validated per-mesh tagged-TXT folder importer that matches mesh stems and
+  preserves coordinate values without implicit unit conversion or sliding,
   configurable generalized Procrustes alignment for either engine, read-only
   convergence/residual/scale preview with exact fingerprint approval, immutable
   content-addressed aligned mesh copies, and hash-verified alignment evidence

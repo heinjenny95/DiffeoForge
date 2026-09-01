@@ -5,7 +5,10 @@ import subprocess
 import sys
 from pathlib import Path
 
+import numpy as np
+
 from diffeoforge import __version__, cli
+from diffeoforge.analysis.landmarks import read_landmark_csv
 from diffeoforge.cli import main
 from diffeoforge.diagnostics import DoctorCheck, DoctorReport
 
@@ -91,6 +94,43 @@ def test_package_module_can_be_imported_without_executing_cli(tmp_path: Path) ->
     assert result.returncode == 0
     assert result.stdout == "imported\n"
     assert result.stderr == ""
+
+
+def test_landmark_txt_import_cli_creates_canonical_csv(capsys, tmp_path: Path) -> None:
+    meshes = tmp_path / "meshes"
+    txt = tmp_path / "txt"
+    meshes.mkdir()
+    txt.mkdir()
+    for name, offset in (("first", 0), ("second", 10)):
+        (meshes / f"{name}.ply").write_text("placeholder\n", encoding="utf-8")
+        (txt / f"{name}.txt").write_text(
+            "[individuals]\n1\n[dimensions]\n3\n[landmarks]\n3\n"
+            "[rawpoints]\n'#1\n"
+            f"{offset + 1} 2 3\n{offset + 4} 5 6\n{offset + 7} 8 9\n",
+            encoding="utf-8",
+        )
+    output = tmp_path / "landmarks.csv"
+
+    return_code = main(
+        [
+            "landmarks-import-txt",
+            str(meshes),
+            str(txt),
+            "--mesh-pattern",
+            "*.ply",
+            "--output",
+            str(output),
+        ]
+    )
+
+    captured = capsys.readouterr()
+    labels, values = read_landmark_csv(output, ("first.ply", "second.ply"))
+    assert return_code == 0
+    assert labels == ("LM1", "LM2", "LM3")
+    assert values.dtype == np.float64
+    assert values[1, 0].tolist() == [11.0, 2.0, 3.0]
+    assert "Matched meshes/TXT files: 2" in captured.out
+    assert "no unit conversion or sliding" in captured.out
 
 
 def test_reference_calibration_plan_cli_exports_reproducible_methods_bundle(
