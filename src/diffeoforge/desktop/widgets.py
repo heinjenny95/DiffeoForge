@@ -153,6 +153,11 @@ from diffeoforge.desktop.worker_controller import (
 )
 from diffeoforge.desktop.worker_protocol import DesktopWorkerEvent
 from diffeoforge.initialization import SUPPORTED_UNITS, detect_template
+from diffeoforge.input_preflight import (
+    MeshInputPreflight,
+    format_mesh_input_preflight,
+    inspect_mesh_input_cohort,
+)
 from diffeoforge.mesh import sha256_file
 from diffeoforge.pca_metadata import (
     PCA_METADATA_HTML,
@@ -484,6 +489,34 @@ class _TemplatePreviewWorker(QRunnable):
             self.signals.failed.emit(str(error))
             return
         self.signals.succeeded.emit(model)
+
+
+class _InputPreflightWorker(QRunnable):
+    """Inspect selected meshes and optional landmarks without blocking the GUI."""
+
+    def __init__(
+        self,
+        mesh_paths: tuple[Path, ...],
+        landmark_csv: Path | None,
+        signature: tuple[object, ...],
+    ) -> None:
+        super().__init__()
+        self.mesh_paths = mesh_paths
+        self.landmark_csv = landmark_csv
+        self.signature = signature
+        self.signals = _WorkerSignals()
+
+    @Slot()
+    def run(self) -> None:
+        try:
+            report = inspect_mesh_input_cohort(
+                self.mesh_paths,
+                landmark_csv=self.landmark_csv,
+            )
+        except (OSError, RuntimeError, TypeError, ValueError) as error:
+            self.signals.failed.emit(str(error))
+            return
+        self.signals.succeeded.emit(report)
 
 
 class _ProcrustesPreviewWorker(QRunnable):
@@ -1106,6 +1139,11 @@ class DiffeoForgeWindow(QMainWindow):
         self._result: ProjectSetupResult | None = None
         self._review: ProjectReviewResult | None = None
         self._template_preview: MeshPreviewModel | None = None
+        self._input_preflight: MeshInputPreflight | None = None
+        self._input_preflight_signature: tuple[object, ...] | None = None
+        self._input_preflight_failed_signature: tuple[object, ...] | None = None
+        self._input_preflight_worker: _InputPreflightWorker | None = None
+        self._shown_input_preflight_fingerprints: set[str] = set()
         self._procrustes_preview: LandmarkAlignmentPreview | None = None
         self._procrustes_visual: GpaAlignmentVisual | None = None
         self._procrustes_visual_reviewed_fingerprint: str | None = None
@@ -3112,8 +3150,10 @@ class DiffeoForgeWindow(QMainWindow):
         self.mesh_edit.setObjectName("meshDirectoryEdit")
         self.mesh_edit.setPlaceholderText(r"e.g. C:\Data\Beetles\meshes")
         self.mesh_edit.textChanged.connect(self._sync_ready_state)
+        self.mesh_edit.textChanged.connect(self._invalidate_input_preflight)
         self.mesh_edit.textChanged.connect(self._invalidate_procrustes_preview)
         self.mesh_edit.editingFinished.connect(self._detect_template_from_text)
+        self.mesh_edit.editingFinished.connect(self._start_input_preflight)
         mesh_button = QPushButton("Browse…")
         mesh_button.setObjectName("secondary")
         mesh_button.clicked.connect(self._choose_mesh_directory)
@@ -3122,7 +3162,9 @@ class DiffeoForgeWindow(QMainWindow):
         self.template_edit = QLineEdit()
         self.template_edit.setObjectName("templateEdit")
         self.template_edit.setPlaceholderText("automatic: template.vtk/.ply/.obj/.stl")
+        self.template_edit.textChanged.connect(self._invalidate_input_preflight)
         self.template_edit.textChanged.connect(self._invalidate_procrustes_preview)
+        self.template_edit.editingFinished.connect(self._start_input_preflight)
         template_button = QPushButton("Browse…")
         template_button.setObjectName("secondary")
         template_button.clicked.connect(self._choose_template)
@@ -3135,8 +3177,16 @@ class DiffeoForgeWindow(QMainWindow):
             "and STL inputs require reviewed landmark Procrustes preprocessing and are "
             "then converted to canonical VTK copies."
         )
+        self.pattern_edit.textChanged.connect(self._invalidate_input_preflight)
         self.pattern_edit.textChanged.connect(self._invalidate_procrustes_preview)
+        self.pattern_edit.editingFinished.connect(self._start_input_preflight)
         data_form.addRow("File pattern", self.pattern_edit)
+
+        self.input_preflight_status_label = _ReadOnlyStatusText(
+            "Select a mesh folder to check workload and relative coordinate scales."
+        )
+        self.input_preflight_status_label.setObjectName("status")
+        data_form.addRow("Data preflight", self.input_preflight_status_label)
 
         self.project_edit = QLineEdit()
         self.project_edit.setObjectName("projectDirectoryEdit")
@@ -3173,7 +3223,9 @@ class DiffeoForgeWindow(QMainWindow):
         self.landmarks_edit.setPlaceholderText(
             "optional: landmark CSV, or import a per-mesh TXT folder"
         )
+        self.landmarks_edit.textChanged.connect(self._invalidate_input_preflight)
         self.landmarks_edit.textChanged.connect(self._update_procrustes_visibility)
+        self.landmarks_edit.editingFinished.connect(self._start_input_preflight)
         landmarks_button = QPushButton("Select CSV/TXT…")
         landmarks_button.setObjectName("secondary")
         landmarks_button.setToolTip(
@@ -3649,6 +3701,166 @@ class DiffeoForgeWindow(QMainWindow):
             mesh_directory = Path(selected)
             self.project_edit.setText(str(mesh_directory.parent / "diffeoforge-project"))
         self._detect_template_from_text()
+        self._start_input_preflight()
+
+    def _input_preflight_request(
+        self,
+    ) -> tuple[tuple[Path, ...], Path | None, tuple[object, ...]]:
+        mesh_text = self.mesh_edit.text().strip()
+        if not mesh_text:
+            raise ValueError("Select a mesh folder first.")
+        directory = Path(mesh_text).expanduser().resolve()
+        if not directory.is_dir():
+            raise ValueError(f"Mesh folder does not exist: {directory}")
+        try:
+            mesh_paths = self._current_surface_cohort()
+        except (OSError, TypeError, ValueError):
+            mesh_paths = tuple(
+                path.resolve()
+                for path in sorted(directory.iterdir())
+                if path.is_file() and is_supported_surface_path(path)
+            )
+        if len(mesh_paths) < 2:
+            raise ValueError("Select a folder containing at least two supported meshes.")
+        landmark_text = self.landmarks_edit.text().strip()
+        landmark_csv: Path | None = None
+        if landmark_text:
+            candidate = Path(landmark_text).expanduser().resolve()
+            if candidate.suffix.casefold() == ".csv" and candidate.is_file():
+                landmark_csv = candidate
+        mesh_state = tuple(
+            (str(path), path.stat().st_size, path.stat().st_mtime_ns)
+            for path in mesh_paths
+        )
+        landmark_state: tuple[object, ...] | None = None
+        if landmark_csv is not None:
+            landmark_stat = landmark_csv.stat()
+            landmark_state = (
+                str(landmark_csv),
+                landmark_stat.st_size,
+                landmark_stat.st_mtime_ns,
+            )
+        signature: tuple[object, ...] = (mesh_state, landmark_state)
+        return mesh_paths, landmark_csv, signature
+
+    @Slot()
+    def _invalidate_input_preflight(self) -> None:
+        self._input_preflight = None
+        self._input_preflight_signature = None
+        self._input_preflight_failed_signature = None
+        if hasattr(self, "input_preflight_status_label"):
+            self.input_preflight_status_label.setObjectName("status")
+            self.input_preflight_status_label.setStyleSheet("")
+            self.input_preflight_status_label.setText(
+                "Mesh or landmark inputs changed. Run the automatic data preflight again."
+            )
+        if hasattr(self, "continue_parameter_button"):
+            self._sync_ready_state()
+
+    def _current_input_preflight_signature(self) -> tuple[object, ...] | None:
+        try:
+            _paths, _landmarks, signature = self._input_preflight_request()
+        except (OSError, TypeError, ValueError):
+            return None
+        return signature
+
+    @Slot()
+    def _start_input_preflight(self) -> None:
+        try:
+            mesh_paths, landmark_csv, signature = self._input_preflight_request()
+        except (OSError, TypeError, ValueError) as error:
+            self._input_preflight = None
+            self._input_preflight_signature = None
+            self._input_preflight_failed_signature = None
+            self.input_preflight_status_label.setObjectName("status")
+            self.input_preflight_status_label.setStyleSheet("")
+            self.input_preflight_status_label.setText(str(error))
+            self._sync_ready_state()
+            return
+        if self._input_preflight_worker is not None:
+            self.input_preflight_status_label.setObjectName("status")
+            self.input_preflight_status_label.setStyleSheet("")
+            self.input_preflight_status_label.setText(
+                "Inputs changed while a read-only preflight was running. The current "
+                "inspection will finish, then DiffeoForge will inspect the new selection."
+            )
+            self._sync_ready_state()
+            return
+        if (
+            self._input_preflight is not None
+            and self._input_preflight_signature == signature
+        ):
+            return
+        worker = _InputPreflightWorker(mesh_paths, landmark_csv, signature)
+        worker.signals.succeeded.connect(self._input_preflight_succeeded)
+        worker.signals.failed.connect(self._input_preflight_failed)
+        self._input_preflight = None
+        self._input_preflight_signature = None
+        self._input_preflight_failed_signature = None
+        self._input_preflight_worker = worker
+        self.input_preflight_status_label.setObjectName("status")
+        self.input_preflight_status_label.setStyleSheet("")
+        self.input_preflight_status_label.setText(
+            f"Inspecting {len(mesh_paths)} meshes read-only outside the interface. "
+            "Large files may take a moment; no input will be changed."
+        )
+        self._sync_ready_state()
+        self._thread_pool.start(worker)
+
+    @Slot(object)
+    def _input_preflight_succeeded(self, report: MeshInputPreflight) -> None:
+        worker = self._input_preflight_worker
+        if worker is None:
+            return
+        completed_signature = worker.signature
+        self._input_preflight_worker = None
+        current_signature = self._current_input_preflight_signature()
+        if completed_signature != current_signature:
+            self._start_input_preflight()
+            return
+        self._input_preflight = report
+        self._input_preflight_signature = completed_signature
+        self._input_preflight_failed_signature = None
+        rendered = format_mesh_input_preflight(report)
+        if report.blockers:
+            self.input_preflight_status_label.setObjectName("statusError")
+        elif report.warnings:
+            self.input_preflight_status_label.setObjectName("statusWarning")
+        else:
+            self.input_preflight_status_label.setObjectName("statusSuccess")
+        self.input_preflight_status_label.setStyleSheet("")
+        self.input_preflight_status_label.setText(rendered)
+        if report.issues and report.fingerprint not in self._shown_input_preflight_fingerprints:
+            self._shown_input_preflight_fingerprints.add(report.fingerprint)
+            QMessageBox.warning(self, "Mesh data preflight", rendered)
+        self._sync_ready_state()
+
+    @Slot(str)
+    def _input_preflight_failed(self, message: str) -> None:
+        worker = self._input_preflight_worker
+        if worker is None:
+            return
+        completed_signature = worker.signature
+        self._input_preflight_worker = None
+        current_signature = self._current_input_preflight_signature()
+        if completed_signature != current_signature:
+            self._start_input_preflight()
+            return
+        self._input_preflight = None
+        self._input_preflight_signature = None
+        self._input_preflight_failed_signature = completed_signature
+        self.input_preflight_status_label.setObjectName("statusError")
+        self.input_preflight_status_label.setStyleSheet("")
+        self.input_preflight_status_label.setText(
+            f"Mesh data preflight failed: {message}\n"
+            "DiffeoForge will not continue from an unreadable or unmatched cohort."
+        )
+        QMessageBox.warning(
+            self,
+            "Mesh data preflight unavailable",
+            f"The selected cohort could not be inspected safely:\n\n{message}",
+        )
+        self._sync_ready_state()
 
     @Slot()
     def _choose_project_directory(self) -> None:
@@ -3667,6 +3879,7 @@ class DiffeoForgeWindow(QMainWindow):
         if selected:
             self.template_edit.setText(selected)
             self._adopt_template_format_pattern(Path(selected))
+            self._start_input_preflight()
 
     @Slot()
     def _choose_landmarks(self) -> None:
@@ -3681,6 +3894,7 @@ class DiffeoForgeWindow(QMainWindow):
         selected_path = Path(selected).expanduser()
         if selected_path.suffix.casefold() == ".csv":
             self.landmarks_edit.setText(selected)
+            self._start_input_preflight()
             return
         if selected_path.suffix.casefold() == ".txt":
             self._complete_landmark_txt_import(selected_path.parent)
@@ -3734,6 +3948,7 @@ class DiffeoForgeWindow(QMainWindow):
             )
             self.landmark_count_spin.setValue(len(result.landmark_labels))
             self.landmarks_edit.setText(str(result.csv_path))
+            self._start_input_preflight()
             ignored = (
                 f"\n\nUnmatched TXT files ignored: {len(result.ignored_txt_files)}."
                 if result.ignored_txt_files
@@ -3853,6 +4068,7 @@ class DiffeoForgeWindow(QMainWindow):
             self.landmark_auto_advance_check.setChecked(dialog.auto_advance_mesh_check.isChecked())
             if result == QDialog.DialogCode.Accepted:
                 self.landmarks_edit.setText(str(dialog.output_path))
+                self._start_input_preflight()
         except (OSError, TypeError, ValueError, MeshPreviewError) as error:
             QMessageBox.warning(self, "Landmark placement unavailable", str(error))
 
@@ -5685,11 +5901,30 @@ class DiffeoForgeWindow(QMainWindow):
             button.setStyleSheet("")
 
     def _data_inputs_ready(self) -> bool:
-        return bool(
+        basic_ready = bool(
             self.mesh_edit.text().strip()
             and self.project_edit.text().strip()
             and self.units_combo.currentData() is not None
         )
+        if not basic_ready:
+            return False
+        current_signature = self._current_input_preflight_signature()
+        if current_signature is None:
+            return basic_ready
+        if (
+            self._input_preflight_worker is not None
+            and self._input_preflight_worker.signature == current_signature
+        ):
+            return False
+        if self._input_preflight_failed_signature == current_signature:
+            return False
+        if (
+            self._input_preflight is not None
+            and self._input_preflight_signature == current_signature
+            and self._input_preflight.blockers
+        ):
+            return False
+        return True
 
     def _sync_setup_primary_action(self, *, form_ready: bool) -> None:
         current_reference_values_can_skip_pilot = bool(
@@ -5851,8 +6086,53 @@ class DiffeoForgeWindow(QMainWindow):
         )
         ready = bool(self._data_inputs_ready() and alignment_ready and reference_parameters_ready)
         data_ready = self._data_inputs_ready()
+        raw_data_ready = bool(
+            self.mesh_edit.text().strip()
+            and self.project_edit.text().strip()
+            and self.units_combo.currentData() is not None
+        )
+        current_preflight_signature = self._current_input_preflight_signature()
         self.continue_parameter_button.setEnabled(data_ready and self._worker is None)
-        if data_ready:
+        if (
+            raw_data_ready
+            and self._input_preflight_worker is not None
+            and self._input_preflight_worker.signature == current_preflight_signature
+        ):
+            self.data_status_label.setObjectName("status")
+            self.data_status_label.setText(
+                "Inspecting mesh workload and coordinate-scale consistency read-only."
+            )
+        elif (
+            raw_data_ready
+            and self._input_preflight_failed_signature == current_preflight_signature
+        ):
+            self.data_status_label.setObjectName("statusError")
+            self.data_status_label.setText(
+                "Data preflight failed. Resolve the reported input problem before continuing."
+            )
+        elif (
+            raw_data_ready
+            and self._input_preflight is not None
+            and self._input_preflight_signature == current_preflight_signature
+            and self._input_preflight.blockers
+        ):
+            self.data_status_label.setObjectName("statusError")
+            self.data_status_label.setText(
+                "Data preflight found incompatible coordinate scales. Use corrected working "
+                "copies before continuing."
+            )
+        elif (
+            raw_data_ready
+            and self._input_preflight is not None
+            and self._input_preflight_signature == current_preflight_signature
+            and self._input_preflight.warnings
+        ):
+            self.data_status_label.setObjectName("statusWarning")
+            self.data_status_label.setText(
+                "Data preflight found an unusually heavy mesh workload. Review the warning; "
+                "continuing is allowed."
+            )
+        elif data_ready:
             self.data_status_label.setObjectName("statusSuccess")
             self.data_status_label.setText(
                 "Required data locations and coordinate unit are present. "

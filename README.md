@@ -143,6 +143,11 @@ This repository currently provides:
 - a deterministic CC0 synthetic mesh cohort for public integration tests;
 - versioned Deformetrica outputs and a tolerance-based reference comparator;
 - a read-only environment doctor and transparent mesh-directory initializer;
+- an asynchronous read-only desktop input preflight that inventories selected
+  surface workload, warns about unusually dense or large meshes, detects strongly
+  separated relative coordinate scales, compares mesh and landmark extents when a
+  canonical landmark CSV is present, and blocks clear scale incompatibilities before
+  GPA without silently rescaling, decimating, or asserting an absolute unit;
 - an optional PySide6 desktop preview for non-overwriting mesh-folder
   validation, modern/reference project creation, effective-parameter review,
   hash-bound reference-environment and future-prelaunch inspection plus
