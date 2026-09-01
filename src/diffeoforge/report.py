@@ -22,10 +22,10 @@ from diffeoforge.config import (
 )
 from diffeoforge.mesh import MeshMetadata, inspect_inputs, read_vtk_polydata
 from diffeoforge.mesh_quality import (
+    ATLAS_INPUT_MESH_QUALITY_SETTINGS,
     QUALITY_BOUNDARY,
     MeshQualityError,
     MeshQualityResult,
-    MeshQualitySettings,
     assess_triangle_mesh,
     enforce_mesh_quality,
 )
@@ -107,17 +107,6 @@ class PreflightMeshQuality:
     result: MeshQualityResult
 
 
-_PREFLIGHT_QUALITY_SETTINGS = MeshQualitySettings(
-    require_no_duplicate_faces=True,
-    require_no_isolated_vertices=True,
-    require_edge_manifold=True,
-    require_consistent_orientation=True,
-    require_single_component=False,
-    require_closed_surface=False,
-    reject_zero_area_faces=True,
-)
-
-
 def _bbox_center(mesh: MeshMetadata) -> tuple[float, float, float]:
     bounds = mesh.bounds
     return (
@@ -139,7 +128,7 @@ def _structural_quality(
             enforce_mesh_quality(
                 f"{role} {Path(metadata.path).name}",
                 quality,
-                _PREFLIGHT_QUALITY_SETTINGS,
+                ATLAS_INPUT_MESH_QUALITY_SETTINGS,
             )
         except MeshQualityError as error:
             raise ConfigurationError(str(error)) from error

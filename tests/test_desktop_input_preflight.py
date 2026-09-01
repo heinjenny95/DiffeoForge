@@ -8,6 +8,7 @@ from diffeoforge.input_preflight import (
     HEAVY_COHORT_FACE_COUNT,
     assess_mesh_input_metadata,
 )
+from diffeoforge.mesh import write_vtk_polydata
 from diffeoforge.surface_io import SurfaceMeshMetadata
 
 ROOT = Path(__file__).parents[1]
@@ -138,6 +139,66 @@ def test_mesh_folder_selection_runs_read_only_preflight_automatically(
     assert window._input_preflight_worker is None
     assert "No exceptional combined workload" in window.input_preflight_status_label.text()
     assert window.project_edit.text() == str(directory.parent / "diffeoforge-project")
+
+    window.close()
+    application.processEvents()
+
+
+def test_mesh_folder_selection_blocks_nonmanifold_source_before_parameter_step(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QFileDialog, QMessageBox
+
+    from diffeoforge.desktop.widgets import DiffeoForgeWindow
+
+    class ImmediateThreadPool:
+        @staticmethod
+        def start(worker) -> None:
+            worker.run()
+
+    vertices = (
+        (0.0, 0.0, 0.0),
+        (1.0, 0.0, 0.0),
+        (0.0, 1.0, 0.0),
+        (0.0, 0.0, 1.0),
+        (0.0, -1.0, 0.0),
+    )
+    valid_faces = ((0, 2, 1), (0, 1, 3), (1, 2, 3), (2, 0, 3))
+    nonmanifold_faces = ((0, 1, 2), (1, 0, 3), (0, 1, 4))
+    mesh_directory = tmp_path / "meshes"
+    mesh_directory.mkdir()
+    write_vtk_polydata(mesh_directory / "template.vtk", vertices[:4], valid_faces)
+    write_vtk_polydata(mesh_directory / "subject-valid.vtk", vertices[:4], valid_faces)
+    write_vtk_polydata(mesh_directory / "aberrans_s.vtk", vertices, nonmanifold_faces)
+
+    warnings: list[str] = []
+    monkeypatch.setattr(
+        QFileDialog,
+        "getExistingDirectory",
+        lambda *_args, **_kwargs: str(mesh_directory),
+    )
+    monkeypatch.setattr(
+        QMessageBox,
+        "warning",
+        lambda _parent, _title, message: warnings.append(message),
+    )
+    application = QApplication.instance() or QApplication(["topology-preflight-test"])
+    window = DiffeoForgeWindow()
+    window._thread_pool = ImmediateThreadPool()
+    window.units_combo.setCurrentIndex(window.units_combo.findData("millimeter"))
+
+    window._choose_mesh_directory()
+
+    assert window._input_preflight is not None
+    assert not window._input_preflight.ready
+    assert "non-manifold edges" in window.input_preflight_status_label.text()
+    assert "aberrans_s.vtk" in window.input_preflight_status_label.text()
+    assert warnings and "aberrans_s.vtk" in warnings[0]
+    assert window.continue_parameter_button.isEnabled() is False
+    assert "blocking mesh-quality" in window.data_status_label.text()
 
     window.close()
     application.processEvents()

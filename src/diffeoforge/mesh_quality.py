@@ -182,6 +182,17 @@ def _optional_finite(
     return normalized
 
 
+ATLAS_INPUT_MESH_QUALITY_SETTINGS = MeshQualitySettings(
+    require_no_duplicate_faces=True,
+    require_no_isolated_vertices=True,
+    require_edge_manifold=True,
+    require_consistent_orientation=True,
+    require_single_component=False,
+    require_closed_surface=False,
+    reject_zero_area_faces=True,
+)
+
+
 def _normalized_geometry(
     vertices: Sequence[Sequence[Real]],
     triangles: Sequence[Sequence[Integral]],

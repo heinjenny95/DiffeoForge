@@ -9,7 +9,9 @@ from diffeoforge.input_preflight import (
     HEAVY_COHORT_FACE_COUNT,
     assess_mesh_input_metadata,
     format_mesh_input_preflight,
+    inspect_mesh_input_cohort,
 )
+from diffeoforge.mesh import write_vtk_polydata
 from diffeoforge.surface_io import SurfaceMeshMetadata
 
 
@@ -234,3 +236,37 @@ def test_disabled_gpa_does_not_block_on_unused_landmark_mesh_scale() -> None:
     assert tuple(issue.code for issue in report.warnings) == (
         "mixed_mesh_coordinate_scales",
     )
+
+
+def test_source_mesh_topology_is_checked_before_project_creation(tmp_path: Path) -> None:
+    vertices = (
+        (0.0, 0.0, 0.0),
+        (1.0, 0.0, 0.0),
+        (0.0, 1.0, 0.0),
+        (0.0, 0.0, 1.0),
+        (0.0, -1.0, 0.0),
+    )
+    valid_faces = ((0, 2, 1), (0, 1, 3), (1, 2, 3), (2, 0, 3))
+    nonmanifold_faces = ((0, 1, 2), (1, 0, 3), (0, 1, 4))
+    template = write_vtk_polydata(tmp_path / "template.vtk", vertices[:4], valid_faces)
+    subject = write_vtk_polydata(
+        tmp_path / "subject-valid.vtk", vertices[:4], valid_faces
+    )
+    aberrans = write_vtk_polydata(
+        tmp_path / "aberrans_s.vtk", vertices, nonmanifold_faces
+    )
+
+    report = inspect_mesh_input_cohort(
+        (template, subject, aberrans),
+        template_path=template,
+    )
+
+    assert not report.ready
+    nonmanifold = next(
+        issue for issue in report.blockers if issue.code == "mesh_quality_non_manifold_edges"
+    )
+    assert nonmanifold.affected_meshes == ("aberrans_s.vtk",)
+    rendered = format_mesh_input_preflight(report)
+    assert "non-manifold edges" in rendered
+    assert "aberrans_s.vtk" in rendered
+    assert "DiffeoForge did not modify any input" in rendered

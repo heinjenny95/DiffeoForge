@@ -3199,7 +3199,8 @@ class DiffeoForgeWindow(QMainWindow):
         data_form.addRow("File pattern", self.pattern_edit)
 
         self.input_preflight_status_label = _ReadOnlyStatusText(
-            "Select a mesh folder to check workload and relative coordinate scales."
+            "Select a mesh folder to check structural quality, workload, and relative "
+            "coordinate scales."
         )
         self.input_preflight_status_label.setObjectName("status")
         data_form.addRow("Data preflight", self.input_preflight_status_label)
@@ -3838,8 +3839,9 @@ class DiffeoForgeWindow(QMainWindow):
         self.input_preflight_status_label.setObjectName("status")
         self.input_preflight_status_label.setStyleSheet("")
         self.input_preflight_status_label.setText(
-            f"Inspecting {len(mesh_paths)} meshes read-only outside the interface. "
-            "Large files may take a moment; no input will be changed."
+            f"Inspecting structural quality, workload, and coordinate scales for "
+            f"{len(mesh_paths)} meshes read-only outside the interface. Large files "
+            "may take a moment; no input will be changed."
         )
         self._sync_ready_state()
         self._thread_pool.start(worker)
@@ -6158,7 +6160,8 @@ class DiffeoForgeWindow(QMainWindow):
         ):
             self.data_status_label.setObjectName("status")
             self.data_status_label.setText(
-                "Inspecting mesh workload and coordinate-scale consistency read-only."
+                "Inspecting mesh topology, workload, and coordinate-scale consistency "
+                "read-only."
             )
         elif (
             raw_data_ready
@@ -6176,8 +6179,8 @@ class DiffeoForgeWindow(QMainWindow):
         ):
             self.data_status_label.setObjectName("statusError")
             self.data_status_label.setText(
-                "Data preflight found incompatible mesh and landmark coordinate frames. "
-                "Use corrected working copies before continuing with GPA."
+                "Data preflight found blocking mesh-quality or coordinate-frame problems. "
+                "Review the named meshes and use corrected working copies before continuing."
             )
         elif (
             raw_data_ready

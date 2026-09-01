@@ -15,7 +15,13 @@ import numpy as np
 
 from diffeoforge.analysis.landmarks import read_landmark_csv
 from diffeoforge.config import ConfigurationError
-from diffeoforge.surface_io import SurfaceMeshMetadata, inspect_surface_mesh
+from diffeoforge.mesh_quality import (
+    ATLAS_INPUT_MESH_QUALITY_SETTINGS,
+    MeshQualityResult,
+    assess_triangle_mesh,
+    mesh_quality_failures,
+)
+from diffeoforge.surface_io import SurfaceMeshMetadata, load_surface_mesh
 
 InputPreflightSeverity = Literal["warning", "blocker"]
 
@@ -39,6 +45,14 @@ class InputPreflightIssue:
 
 
 @dataclass(frozen=True)
+class InputMeshQualityObservation:
+    """Structural quality evidence retained from the initial mesh read."""
+
+    path: str
+    result: MeshQualityResult
+
+
+@dataclass(frozen=True)
 class MeshInputPreflight:
     """Immutable inspection of one exact mesh and optional landmark cohort."""
 
@@ -56,6 +70,7 @@ class MeshInputPreflight:
     total_bytes: int
     total_points: int
     total_triangles: int
+    mesh_quality: tuple[InputMeshQualityObservation, ...]
     issues: tuple[InputPreflightIssue, ...]
 
     @property
@@ -244,9 +259,82 @@ def _landmark_scale_issue(
     )
 
 
+def _mesh_quality_issues(
+    observations: Sequence[InputMeshQualityObservation],
+) -> tuple[InputPreflightIssue, ...]:
+    if not observations:
+        return ()
+    failures_by_gate: dict[str, list[str]] = {}
+    open_meshes: list[str] = []
+    multipart_meshes: list[str] = []
+    for observation in observations:
+        name = Path(observation.path).name
+        for failure in mesh_quality_failures(
+            observation.result,
+            ATLAS_INPUT_MESH_QUALITY_SETTINGS,
+        ):
+            failures_by_gate.setdefault(failure, []).append(name)
+        if observation.result.boundary_edges > 0:
+            open_meshes.append(name)
+        if observation.result.face_connected_components > 1:
+            multipart_meshes.append(name)
+
+    issues: list[InputPreflightIssue] = []
+    mesh_count = len(observations)
+    for gate, affected in failures_by_gate.items():
+        count = len(affected)
+        noun = "mesh fails" if count == 1 else "meshes fail"
+        issues.append(
+            InputPreflightIssue(
+                code=f"mesh_quality_{gate.replace('-', '_').replace(' ', '_')}",
+                severity="blocker",
+                title=f"Required mesh-quality gate failed: {gate}",
+                summary=(
+                    f"{count} of {mesh_count} selected {noun} the required structural "
+                    f"atlas-input gate because {'it contains' if count == 1 else 'they contain'} "
+                    f"{gate}. Use documented repaired working copies or correct source "
+                    "exports before continuing. DiffeoForge did not modify any input."
+                ),
+                affected_meshes=tuple(affected),
+            )
+        )
+    if open_meshes:
+        issues.append(
+            InputPreflightIssue(
+                code="open_mesh_surfaces",
+                severity="warning",
+                title="Open mesh surfaces need review",
+                summary=(
+                    f"{len(open_meshes)} of {mesh_count} selected meshes have boundary "
+                    "edges. Open anatomical surfaces can be intentional, so this is "
+                    "advisory rather than an automatic rejection. Confirm and document "
+                    "the study-level decision; DiffeoForge will not close surfaces."
+                ),
+                affected_meshes=tuple(open_meshes),
+            )
+        )
+    if multipart_meshes:
+        issues.append(
+            InputPreflightIssue(
+                code="multipart_mesh_surfaces",
+                severity="warning",
+                title="Multiple surface components need review",
+                summary=(
+                    f"{len(multipart_meshes)} of {mesh_count} selected meshes contain "
+                    "multiple face-connected components. This can be anatomically "
+                    "intentional; confirm and document it before atlasing. DiffeoForge "
+                    "will not remove components automatically."
+                ),
+                affected_meshes=tuple(multipart_meshes),
+            )
+        )
+    return tuple(issues)
+
+
 def assess_mesh_input_metadata(
     metadata: Sequence[SurfaceMeshMetadata],
     *,
+    mesh_quality: Sequence[InputMeshQualityObservation] = (),
     template_path: Path | str | None = None,
     landmark_path: Path | None = None,
     landmark_sha256: str | None = None,
@@ -258,10 +346,23 @@ def assess_mesh_input_metadata(
     """Assess already inspected metadata, primarily for reuse and deterministic tests."""
 
     items = tuple(metadata)
+    quality_observations = tuple(mesh_quality)
     if len(items) < 2:
         raise ConfigurationError("Mesh input preflight requires at least two meshes")
     if len({Path(item.path).name.casefold() for item in items}) != len(items):
         raise ConfigurationError("Mesh filenames must be unique for input preflight")
+    if quality_observations and len(quality_observations) != len(items):
+        raise ConfigurationError(
+            "Mesh-quality observations do not match the inspected mesh cohort"
+        )
+    if quality_observations and any(
+        Path(observation.path).expanduser().resolve()
+        != Path(item.path).expanduser().resolve()
+        for observation, item in zip(quality_observations, items, strict=True)
+    ):
+        raise ConfigurationError(
+            "Mesh-quality observation order differs from the inspected mesh cohort"
+        )
     if not isinstance(procrustes_enabled, bool):
         raise TypeError("procrustes_enabled must be a boolean")
     if not isinstance(scale_to_unit_centroid_size, bool):
@@ -286,7 +387,7 @@ def assess_mesh_input_metadata(
         total_triangles - template.triangles
     )
     effective_procrustes = procrustes_enabled and landmark_values is not None
-    issues: list[InputPreflightIssue] = []
+    issues = list(_mesh_quality_issues(quality_observations))
     if workload := _workload_issue(items, template_index=template_index):
         issues.append(workload)
     if landmark_values is not None:
@@ -318,6 +419,13 @@ def assess_mesh_input_metadata(
         "scale_to_unit_centroid_size": (
             scale_to_unit_centroid_size if effective_procrustes else False
         ),
+        "mesh_quality": [
+            {
+                "path": observation.path,
+                "result": observation.result.as_manifest(),
+            }
+            for observation in quality_observations
+        ],
         "issues": [issue.__dict__ for issue in issues],
     }
     fingerprint = hashlib.sha256(
@@ -340,6 +448,7 @@ def assess_mesh_input_metadata(
         total_bytes=sum(item.bytes for item in items),
         total_points=sum(item.points for item in items),
         total_triangles=total_triangles,
+        mesh_quality=quality_observations,
         issues=tuple(issues),
     )
 
@@ -357,10 +466,26 @@ def inspect_mesh_input_cohort(
     paths = tuple(Path(path).expanduser().resolve() for path in mesh_paths)
     if len(paths) < 2:
         raise ConfigurationError("Mesh input preflight requires at least two meshes")
-    metadata = tuple(inspect_surface_mesh(path) for path in paths)
+    metadata: list[SurfaceMeshMetadata] = []
+    quality_observations: list[InputMeshQualityObservation] = []
+    for path in paths:
+        loaded = load_surface_mesh(path)
+        metadata.append(loaded.metadata)
+        quality_observations.append(
+            InputMeshQualityObservation(
+                path=str(path),
+                result=assess_triangle_mesh(
+                    loaded.geometry.vertices,
+                    loaded.geometry.triangles,
+                ),
+            )
+        )
+    metadata_tuple = tuple(metadata)
+    quality_tuple = tuple(quality_observations)
     if landmark_csv is None:
         return assess_mesh_input_metadata(
-            metadata,
+            metadata_tuple,
+            mesh_quality=quality_tuple,
             template_path=template_path,
             procrustes_enabled=False,
             scale_to_unit_centroid_size=scale_to_unit_centroid_size,
@@ -369,7 +494,8 @@ def inspect_mesh_input_cohort(
     landmark_sha256 = hashlib.sha256(landmark_path.read_bytes()).hexdigest()
     labels, values = read_landmark_csv(landmark_path, tuple(path.name for path in paths))
     return assess_mesh_input_metadata(
-        metadata,
+        metadata_tuple,
+        mesh_quality=quality_tuple,
         template_path=template_path,
         landmark_path=landmark_path,
         landmark_sha256=landmark_sha256,
@@ -390,6 +516,12 @@ def format_mesh_input_preflight(report: MeshInputPreflight) -> str:
         "Estimated template-to-target face pairs per full attachment sweep: "
         f"{_number(report.estimated_attachment_interactions)}.",
     ]
+    if report.mesh_quality:
+        lines.append(
+            "Checked required structural topology and degenerate-face gates for every "
+            "selected mesh. Open surfaces and multiple components are reported "
+            "separately as study-level advisories."
+        )
     if report.landmark_count is not None:
         if report.procrustes_enabled:
             scaling = (
@@ -408,8 +540,9 @@ def format_mesh_input_preflight(report: MeshInputPreflight) -> str:
             )
     if not report.issues:
         lines.append(
-            "No exceptional combined workload or unresolved coordinate-scale mismatch "
-            "was detected. Individual face counts alone are not treated as a problem."
+            "No required structural-quality failure was detected. No exceptional combined "
+            "workload or unresolved coordinate-scale mismatch was detected. Individual "
+            "face counts alone are not treated as a problem."
         )
         return "\n".join(lines)
     for issue in report.issues:
