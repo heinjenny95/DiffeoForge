@@ -477,6 +477,20 @@ def test_desktop_window_exposes_required_project_controls(monkeypatch) -> None:
     assert window.windowTitle() == "DiffeoForge Desktop"
     assert window.findChild(QLineEdit, "meshDirectoryEdit") is not None
     assert window.findChild(QLineEdit, "projectDirectoryEdit") is not None
+    assert window.required_fields_legend.text() == "* Required"
+    assert window.mesh_field_label.text() == "Mesh folder *"
+    assert window.project_field_label.text() == "Project folder *"
+    assert window.units_field_label.text() == "Coordinate unit *"
+    assert window.alignment_field_label.text() == "Alignment"
+    assert window.data_status_label.text() == (
+        "Missing required fields: Mesh folder, Project folder, Coordinate unit."
+    )
+    window.mesh_edit.setText("C:/example/meshes")
+    window.units_combo.setCurrentIndex(window.units_combo.findData("unitless"))
+    application.processEvents()
+    assert window.data_status_label.text() == "Missing required field: Project folder."
+    window.mesh_edit.clear()
+    window.units_combo.setCurrentIndex(0)
     assert window.findChild(QComboBox, "engineCombo") is not None
     assert window.findChild(QComboBox, "unitsCombo") is not None
     assert window.findChild(QComboBox, "pairwiseEvaluationCombo") is not None
@@ -532,6 +546,7 @@ def test_desktop_window_exposes_required_project_controls(monkeypatch) -> None:
     window.landmarks_edit.setText("landmarks.csv")
     application.processEvents()
     assert window.procrustes_box.isHidden() is False
+    assert window.alignment_field_label.text() == "Alignment *"
     assert window._request().landmarks_file == Path("landmarks.csv")
     assert window.preview_procrustes_button.isEnabled() is True
     assert window.approve_procrustes_check.isEnabled() is False
@@ -545,10 +560,12 @@ def test_desktop_window_exposes_required_project_controls(monkeypatch) -> None:
     assert procrustes_request.procrustes_tolerance == pytest.approx(0.00000001)
     assert procrustes_request.procrustes_max_iterations == 250
     window.procrustes_apply_check.setChecked(False)
+    assert window.alignment_field_label.text() == "Alignment"
     assert window._request().landmarks_file is None
     assert window.procrustes_scale_check.isEnabled() is False
     assert window.preview_procrustes_button.isEnabled() is False
     window.procrustes_apply_check.setChecked(True)
+    assert window.alignment_field_label.text() == "Alignment *"
     assert window.pairwise_box.isHidden() is True
     assert window.optimization_effort_box.isHidden() is True
     assert window.reference_parameter_box.isHidden() is False

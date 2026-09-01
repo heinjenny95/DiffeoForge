@@ -33,6 +33,7 @@ from diffeoforge.reference_recommendation import (
     MeshGeometryObservation,
     ReferenceParameterRecommendation,
 )
+from diffeoforge.surface_io import canonical_vtk_filename
 
 CALIBRATION_PLAN_VERSION = "0.3"
 STRATIFIED_CALIBRATION_PLAN_VERSION = "0.5"
@@ -1130,9 +1131,13 @@ def bind_reference_calibration_plan_to_inputs(
 
     template_path = Path(template).expanduser().resolve()
     subject_paths = tuple(Path(path).expanduser().resolve() for path in subjects)
-    if template_path.name != plan.template_filename:
+    planned_template_key = canonical_vtk_filename(plan.template_filename).casefold()
+    effective_template_key = canonical_vtk_filename(template_path).casefold()
+    if effective_template_key != planned_template_key:
         raise ConfigurationError(
-            "Effective calibration template filename differs from the planned template"
+            "Effective calibration template does not match the planned template after "
+            "canonical surface conversion: "
+            f"planned {plan.template_filename!r}, effective {template_path.name!r}"
         )
     if len(subject_paths) != plan.subject_count:
         raise ConfigurationError(
@@ -1143,9 +1148,17 @@ def bind_reference_calibration_plan_to_inputs(
         raise ConfigurationError(
             "Effective calibration subject filenames must be unique"
         )
-    by_name = dict(zip(names, subject_paths, strict=True))
+    subject_keys = tuple(
+        canonical_vtk_filename(path).casefold() for path in subject_paths
+    )
+    if len(set(subject_keys)) != len(subject_keys):
+        raise ConfigurationError(
+            "Effective calibration subjects must have unique canonical surface names"
+        )
+    by_key = dict(zip(subject_keys, subject_paths, strict=True))
     for selected in plan.selected_pilot_subjects:
-        path = by_name.get(selected.filename)
+        selected_key = canonical_vtk_filename(selected.filename).casefold()
+        path = by_key.get(selected_key)
         if path is None:
             raise ConfigurationError(
                 "Effective calibration inputs do not contain selected subject "
@@ -1154,11 +1167,22 @@ def bind_reference_calibration_plan_to_inputs(
         if (
             selected.source_subject_index < 0
             or selected.source_subject_index >= len(subject_paths)
-            or subject_paths[selected.source_subject_index].name != selected.filename
+            or subject_keys[selected.source_subject_index] != selected_key
         ):
             raise ConfigurationError(
                 "Effective calibration subject order differs from the planned cohort"
             )
+
+    declaration_paths: dict[str, Path] = {}
+    for declaration in plan.pilot_subject_declarations:
+        declaration_key = canonical_vtk_filename(declaration.filename).casefold()
+        path = by_key.get(declaration_key)
+        if path is None:
+            raise ConfigurationError(
+                "Effective calibration inputs do not contain declared subject "
+                f"{declaration.filename!r}"
+            )
+        declaration_paths[declaration_key] = path
 
     paths = (template_path, *subject_paths)
     hashes = tuple(sha256_file(path) for path in paths)
@@ -1166,16 +1190,31 @@ def bind_reference_calibration_plan_to_inputs(
         raise ConfigurationError(
             "An effective calibration input changed while its plan was being bound"
         )
-    subject_hashes = dict(zip(names, hashes[1:], strict=True))
+    subject_hashes = dict(zip(subject_keys, hashes[1:], strict=True))
     selected = tuple(
-        replace(item, sha256=subject_hashes[item.filename])
+        replace(
+            item,
+            filename=by_key[canonical_vtk_filename(item.filename).casefold()].name,
+            sha256=subject_hashes[canonical_vtk_filename(item.filename).casefold()],
+        )
         for item in plan.selected_pilot_subjects
+    )
+    declarations = tuple(
+        replace(
+            item,
+            filename=declaration_paths[
+                canonical_vtk_filename(item.filename).casefold()
+            ].name,
+        )
+        for item in plan.pilot_subject_declarations
     )
     rebound = replace(
         plan,
         fingerprint="",
+        template_filename=template_path.name,
         template_sha256=hashes[0],
         selected_pilot_subjects=selected,
+        pilot_subject_declarations=declarations,
     )
     payload = rebound.provenance
     payload.pop("fingerprint")

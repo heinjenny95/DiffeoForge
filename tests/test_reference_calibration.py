@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from diffeoforge.config import ConfigurationError
-from diffeoforge.mesh import sha256_file
+from diffeoforge.mesh import read_vtk_polydata, sha256_file
 from diffeoforge.reference_calibration import (
     CalibrationCandidateEvidence,
     PilotSubjectDeclaration,
@@ -44,6 +44,36 @@ def _recommendation():
     )
 
 
+def _write_ply_cohort(directory: Path) -> tuple[Path, ...]:
+    directory.mkdir()
+    result: list[Path] = []
+    for source in _cohort():
+        mesh = read_vtk_polydata(source)
+        destination = directory / source.with_suffix(".ply").name
+        destination.write_text(
+            "\n".join(
+                (
+                    "ply",
+                    "format ascii 1.0",
+                    f"element vertex {len(mesh.vertices)}",
+                    "property double x",
+                    "property double y",
+                    "property double z",
+                    f"element face {len(mesh.triangles)}",
+                    "property list uchar int vertex_indices",
+                    "end_header",
+                    *(f"{x} {y} {z}" for x, y, z in mesh.vertices),
+                    *(f"3 {a} {b} {c}" for a, b, c in mesh.triangles),
+                )
+            )
+            + "\n",
+            encoding="ascii",
+            newline="\n",
+        )
+        result.append(destination)
+    return tuple(result)
+
+
 def test_calibration_plan_can_bind_published_effective_input_bytes(
     tmp_path: Path,
 ) -> None:
@@ -79,6 +109,62 @@ def test_calibration_plan_can_bind_published_effective_input_bytes(
         verify_reference_calibration_plan_provenance(rebound.provenance)
         == rebound.fingerprint
     )
+
+
+def test_calibration_plan_treats_ply_and_canonical_vtk_as_the_same_surfaces(
+    tmp_path: Path,
+) -> None:
+    ply_cohort = _write_ply_cohort(tmp_path / "ply")
+    recommendation = recommend_reference_parameters(
+        ply_cohort,
+        alignment_basis="declared_gpa",
+        surface_detail_intent="balanced",
+        deformation_scale_intent="balanced",
+    )
+    declaration = PilotSubjectDeclaration(ply_cohort[1].name, "declared", True)
+    plan = build_reference_calibration_plan(
+        recommendation,
+        coordinate_unit="unitless",
+        requested_pilot_subject_count=3,
+        pilot_subject_declarations=(declaration,),
+    )
+
+    rebound = bind_reference_calibration_plan_to_inputs(
+        plan,
+        template=_cohort()[0],
+        subjects=_cohort()[1:],
+    )
+
+    assert rebound.template_filename == "template.vtk"
+    assert all(item.filename.endswith(".vtk") for item in rebound.selected_pilot_subjects)
+    assert rebound.pilot_subject_declarations[0].filename.endswith(".vtk")
+    assert (
+        verify_reference_calibration_plan_provenance(rebound.provenance)
+        == rebound.fingerprint
+    )
+
+
+def test_calibration_plan_reports_both_names_for_a_real_template_mismatch(
+    tmp_path: Path,
+) -> None:
+    plan = build_reference_calibration_plan(
+        _recommendation(),
+        coordinate_unit="unitless",
+        requested_pilot_subject_count=3,
+    )
+    wrong = tmp_path / "different-template.vtk"
+    wrong.write_bytes(_cohort()[0].read_bytes())
+
+    with pytest.raises(ConfigurationError) as error:
+        bind_reference_calibration_plan_to_inputs(
+            plan,
+            template=wrong,
+            subjects=_cohort()[1:],
+        )
+
+    message = str(error.value)
+    assert "template.vtk" in message
+    assert "different-template.vtk" in message
 
 
 def test_axis_separated_width_refinement_brackets_each_parameter_independently() -> None:

@@ -3155,6 +3155,11 @@ class DiffeoForgeWindow(QMainWindow):
         self.parameter_input_form = parameter_form
         self.data_input_form = data_form
 
+        self.required_fields_legend = QLabel("* Required")
+        self.required_fields_legend.setObjectName("requiredFieldsLegend")
+        self.required_fields_legend.setProperty("required", True)
+        data_form.addRow(self.required_fields_legend)
+
         self.mesh_edit = QLineEdit()
         self.mesh_edit.setObjectName("meshDirectoryEdit")
         self.mesh_edit.setPlaceholderText(r"e.g. C:\Data\Beetles\meshes")
@@ -3166,7 +3171,9 @@ class DiffeoForgeWindow(QMainWindow):
         mesh_button = QPushButton("Browse…")
         mesh_button.setObjectName("secondary")
         mesh_button.clicked.connect(self._choose_mesh_directory)
-        data_form.addRow("Mesh folder", _path_row(self.mesh_edit, mesh_button))
+        self.mesh_field_label = QLabel("Mesh folder *")
+        self.mesh_field_label.setObjectName("meshDirectoryLabel")
+        data_form.addRow(self.mesh_field_label, _path_row(self.mesh_edit, mesh_button))
 
         self.template_edit = QLineEdit()
         self.template_edit.setObjectName("templateEdit")
@@ -3204,7 +3211,12 @@ class DiffeoForgeWindow(QMainWindow):
         project_button = QPushButton("Browse…")
         project_button.setObjectName("secondary")
         project_button.clicked.connect(self._choose_project_directory)
-        data_form.addRow("Project folder", _path_row(self.project_edit, project_button))
+        self.project_field_label = QLabel("Project folder *")
+        self.project_field_label.setObjectName("projectDirectoryLabel")
+        data_form.addRow(
+            self.project_field_label,
+            _path_row(self.project_edit, project_button),
+        )
 
         self.name_edit = QLineEdit()
         self.name_edit.setObjectName("projectNameEdit")
@@ -3225,7 +3237,9 @@ class DiffeoForgeWindow(QMainWindow):
             self.units_combo.addItem(labels[unit], unit)
         self.units_combo.currentIndexChanged.connect(self._sync_ready_state)
         self.units_combo.currentIndexChanged.connect(self._reference_recommendation_inputs_changed)
-        data_form.addRow("Coordinate unit", self.units_combo)
+        self.units_field_label = QLabel("Coordinate unit *")
+        self.units_field_label.setObjectName("coordinateUnitLabel")
+        data_form.addRow(self.units_field_label, self.units_combo)
 
         self.landmarks_edit = QLineEdit()
         self.landmarks_edit.setObjectName("landmarksEdit")
@@ -3355,7 +3369,9 @@ class DiffeoForgeWindow(QMainWindow):
             self.procrustes_iterations_spin,
         )
         self.procrustes_box.hide()
-        data_form.addRow("Alignment", self.procrustes_box)
+        self.alignment_field_label = QLabel("Alignment")
+        self.alignment_field_label.setObjectName("alignmentLabel")
+        data_form.addRow(self.alignment_field_label, self.procrustes_box)
 
         self.already_gpa_check = QCheckBox(
             "I confirm that these mesh coordinates are already GPA aligned"
@@ -4095,7 +4111,13 @@ class DiffeoForgeWindow(QMainWindow):
 
     @Slot()
     def _update_procrustes_visibility(self) -> None:
-        self.procrustes_box.setVisible(bool(self.landmarks_edit.text().strip()))
+        has_landmarks = bool(self.landmarks_edit.text().strip())
+        self.procrustes_box.setVisible(has_landmarks)
+        self.alignment_field_label.setText(
+            "Alignment *"
+            if has_landmarks and self.procrustes_apply_check.isChecked()
+            else "Alignment"
+        )
         self._invalidate_procrustes_preview()
 
     @Slot()
@@ -4104,6 +4126,12 @@ class DiffeoForgeWindow(QMainWindow):
 
     @Slot()
     def _alignment_policy_changed(self) -> None:
+        self.alignment_field_label.setText(
+            "Alignment *"
+            if self.landmarks_edit.text().strip()
+            and self.procrustes_apply_check.isChecked()
+            else "Alignment"
+        )
         self._procrustes_inputs_changed()
         self._invalidate_input_preflight()
         self._start_input_preflight()
@@ -5927,12 +5955,18 @@ class DiffeoForgeWindow(QMainWindow):
                 button.setToolTip("")
             button.setStyleSheet("")
 
+    def _missing_required_data_fields(self) -> tuple[str, ...]:
+        missing: list[str] = []
+        if not self.mesh_edit.text().strip():
+            missing.append("Mesh folder")
+        if not self.project_edit.text().strip():
+            missing.append("Project folder")
+        if self.units_combo.currentData() is None:
+            missing.append("Coordinate unit")
+        return tuple(missing)
+
     def _data_inputs_ready(self) -> bool:
-        basic_ready = bool(
-            self.mesh_edit.text().strip()
-            and self.project_edit.text().strip()
-            and self.units_combo.currentData() is not None
-        )
+        basic_ready = not self._missing_required_data_fields()
         if not basic_ready:
             return False
         current_signature = self._current_input_preflight_signature()
@@ -6113,11 +6147,8 @@ class DiffeoForgeWindow(QMainWindow):
         )
         ready = bool(self._data_inputs_ready() and alignment_ready and reference_parameters_ready)
         data_ready = self._data_inputs_ready()
-        raw_data_ready = bool(
-            self.mesh_edit.text().strip()
-            and self.project_edit.text().strip()
-            and self.units_combo.currentData() is not None
-        )
+        missing_required_fields = self._missing_required_data_fields()
+        raw_data_ready = not missing_required_fields
         current_preflight_signature = self._current_input_preflight_signature()
         self.continue_parameter_button.setEnabled(data_ready and self._worker is None)
         if (
@@ -6167,8 +6198,9 @@ class DiffeoForgeWindow(QMainWindow):
             )
         else:
             self.data_status_label.setObjectName("status")
+            label = "field" if len(missing_required_fields) == 1 else "fields"
             self.data_status_label.setText(
-                "Enter a mesh folder, project folder, and coordinate unit."
+                f"Missing required {label}: {', '.join(missing_required_fields)}."
             )
         self.data_status_label.setStyleSheet("")
         self._update_procrustes_controls()

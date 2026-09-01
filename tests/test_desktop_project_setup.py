@@ -41,6 +41,48 @@ def _write_landmarks(path: Path) -> Path:
     return path
 
 
+def _write_ply_cohort_with_landmarks(
+    directory: Path,
+    landmarks_path: Path,
+) -> tuple[tuple[Path, ...], Path]:
+    directory.mkdir()
+    destinations: list[Path] = []
+    sources = (
+        MESH_DIRECTORY / "template.vtk",
+        *sorted(MESH_DIRECTORY.glob("subject-*.vtk")),
+    )
+    with landmarks_path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.writer(handle, lineterminator="\n")
+        writer.writerow(LANDMARK_COLUMNS)
+        for source in sources:
+            mesh = read_vtk_polydata(source)
+            destination = directory / source.with_suffix(".ply").name
+            destination.write_text(
+                "\n".join(
+                    (
+                        "ply",
+                        "format ascii 1.0",
+                        f"element vertex {len(mesh.vertices)}",
+                        "property double x",
+                        "property double y",
+                        "property double z",
+                        f"element face {len(mesh.triangles)}",
+                        "property list uchar int vertex_indices",
+                        "end_header",
+                        *(f"{x} {y} {z}" for x, y, z in mesh.vertices),
+                        *(f"3 {a} {b} {c}" for a, b, c in mesh.triangles),
+                    )
+                )
+                + "\n",
+                encoding="ascii",
+                newline="\n",
+            )
+            destinations.append(destination)
+            for label, index in zip(("a", "b", "c"), (0, 40, 80), strict=True):
+                writer.writerow((destination.name, label, *mesh.vertices[index]))
+    return tuple(destinations), landmarks_path
+
+
 def test_reference_project_setup_uses_shared_core_and_writes_preflight(tmp_path: Path) -> None:
     result = create_project(
         ProjectSetupRequest(
@@ -585,6 +627,66 @@ def test_gpa_project_rebinds_pilot_plan_to_published_aligned_vtk(
     study = create_reference_calibration_study(
         result.config_path,
         tmp_path / "gpa-study",
+    )
+    assert study.plan.fingerprint == stored["fingerprint"]
+
+
+def test_gpa_project_accepts_ply_plan_and_published_aligned_vtk(
+    tmp_path: Path,
+) -> None:
+    cohort, landmarks = _write_ply_cohort_with_landmarks(
+        tmp_path / "ply-cohort",
+        tmp_path / "ply-landmarks.csv",
+    )
+    preview = preview_landmark_alignment(
+        cohort[0].parent,
+        landmarks_file=landmarks,
+        subject_pattern="*.ply",
+    )
+    recommendation = recommend_reference_parameters(
+        cohort,
+        alignment_basis="diffeoforge_gpa",
+        surface_detail_intent="coarse",
+        deformation_scale_intent="global",
+        transforms=preview.alignment.transforms,
+        alignment_fingerprint=preview.fingerprint,
+    )
+    plan = build_reference_calibration_plan(
+        recommendation,
+        coordinate_unit="unitless",
+        requested_pilot_subject_count=3,
+    )
+    provenance = recommendation.provenance
+    provenance["calibration_plan"] = plan.provenance
+
+    result = create_project(
+        ProjectSetupRequest(
+            mesh_directory=cohort[0].parent,
+            project_directory=tmp_path / "ply-gpa-pilot",
+            units="unitless",
+            engine=DesktopEngine.DEFORMETRICA_REFERENCE,
+            subject_pattern="*.ply",
+            landmarks_file=landmarks,
+            approved_procrustes_fingerprint=preview.fingerprint,
+            reference_parameter_profile="data_assisted",
+            reference_parameter_ratios=recommendation.parameter_ratios,
+            reference_parameter_recommendation=provenance,
+        )
+    )
+
+    config = load_config(result.config_path)
+    stored = config["project"]["parameter_provenance"]["recommendation"][
+        "calibration_plan"
+    ]
+    assert result.template_path.name == "template.vtk"
+    assert stored["template_filename"] == "template.vtk"
+    assert all(
+        item["filename"].endswith(".vtk")
+        for item in stored["selected_pilot_subjects"]
+    )
+    study = create_reference_calibration_study(
+        result.config_path,
+        tmp_path / "ply-gpa-study",
     )
     assert study.plan.fingerprint == stored["fingerprint"]
 
