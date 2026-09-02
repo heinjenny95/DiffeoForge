@@ -16,6 +16,8 @@ import diffeoforge.reference_pca_deformations as deformation_module
 from diffeoforge.cli import main
 from diffeoforge.desktop.reference_result_review import (
     export_registration_qc_review,
+    finalize_registration_qc_review,
+    load_finalized_registration_qc_review,
     load_registration_qc_draft,
     review_reference_result,
     save_registration_qc_draft,
@@ -710,6 +712,75 @@ def test_registration_qc_draft_round_trips_and_is_bound_to_verified_source(
     draft.write_text(json.dumps(payload), encoding="utf-8")
     with pytest.raises(ModernResultReviewError, match="different verified run"):
         load_registration_qc_draft(review)
+
+
+def test_registration_qc_finalization_is_complete_explicit_and_report_bound(
+    tmp_path: Path,
+) -> None:
+    run = _completed_reference_run(tmp_path)
+    review = review_reference_result(run)
+    decisions = {
+        item.subject_name: ("uncertain" if item.rank == 1 else "pass")
+        for item in review.registration_qc
+    }
+
+    with pytest.raises(ModernResultReviewError, match="QC is incomplete"):
+        finalize_registration_qc_review(
+            review,
+            {review.registration_qc[0].subject_name: "pass"},
+        )
+
+    finalized = finalize_registration_qc_review(review, decisions)
+    loaded = load_finalized_registration_qc_review(review)
+    payload = json.loads(finalized.path.read_text(encoding="utf-8"))
+
+    assert finalized.complete is True
+    assert finalized.binding_path == run / "reviews" / "registration-qc-finalized.json"
+    assert loaded is not None
+    assert loaded.path == finalized.path
+    assert loaded.sha256 == finalized.sha256
+    assert dict(loaded.decisions) == decisions
+    assert payload["review_status"] == "finalized"
+    assert payload["summary"]["decision_counts"] == {
+        "fail": 0,
+        "pass": 4,
+        "uncertain": 1,
+        "unreviewed": 0,
+    }
+
+
+def test_registration_qc_incomplete_finalization_requires_explicit_confirmation(
+    tmp_path: Path,
+) -> None:
+    run = _completed_reference_run(tmp_path)
+    review = review_reference_result(run)
+    decisions = {review.registration_qc[0].subject_name: "fail"}
+
+    finalized = finalize_registration_qc_review(
+        review,
+        decisions,
+        allow_incomplete=True,
+    )
+    loaded = load_finalized_registration_qc_review(review)
+    payload = json.loads(finalized.path.read_text(encoding="utf-8"))
+
+    assert finalized.complete is False
+    assert loaded is not None and loaded.complete is False
+    assert payload["summary"]["unreviewed_count"] == 4
+    assert payload["summary"]["incomplete_finalization_explicitly_confirmed"] is True
+
+
+def test_registration_qc_finalized_binding_detects_changed_review_bytes(
+    tmp_path: Path,
+) -> None:
+    run = _completed_reference_run(tmp_path)
+    review = review_reference_result(run)
+    decisions = {item.subject_name: "pass" for item in review.registration_qc}
+    finalized = finalize_registration_qc_review(review, decisions)
+    finalized.path.write_text("{}\n", encoding="utf-8")
+
+    with pytest.raises(ModernResultReviewError, match="missing, symbolic, or changed"):
+        load_finalized_registration_qc_review(review)
 
 
 def test_modern_reference_qualification_design_is_prospective_and_tamper_evident(

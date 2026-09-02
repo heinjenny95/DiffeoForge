@@ -21,7 +21,10 @@ from pathlib import Path
 from typing import Any, Literal
 
 from diffeoforge.atomic_io import write_text_safely
-from diffeoforge.desktop.reference_result_review import review_reference_result
+from diffeoforge.desktop.reference_result_review import (
+    load_finalized_registration_qc_review,
+    review_reference_result,
+)
 from diffeoforge.desktop.result_review import (
     ModernResultReview,
     ModernResultReviewError,
@@ -308,12 +311,13 @@ def _load_decisions(
     decision_review: Path | str | None,
 ) -> tuple[dict[str, str], tuple[str, Path, str] | None]:
     if decision_review is None:
-        candidates = sorted(
-            (review.run_directory / "reviews").glob("registration-qc-review-*.json")
-        )
-        if not candidates:
+        try:
+            finalized = load_finalized_registration_qc_review(review)
+        except ModernResultReviewError as error:
+            raise ScientificReportError(str(error)) from error
+        if finalized is None:
             return {}, None
-        source = candidates[-1]
+        source = finalized.path
     else:
         source = Path(decision_review).expanduser().resolve()
     if source.is_symlink() or not source.is_file():

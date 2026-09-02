@@ -130,6 +130,14 @@ def test_registration_qc_decision_advances_once_and_stops_after_last(
     assert loaded == [1]
     assert "All 2 registration-QC meshes" in window.result_atlas_status_label.text()
     assert (tmp_path / "reviews" / "registration-qc-draft.json").is_file()
+    assert "2 plausible" in window.result_qc_summary_label.text()
+    assert "0 unreviewed" in window.result_qc_summary_label.text()
+
+    window._finalize_registration_qc_review()
+
+    assert (tmp_path / "reviews" / "registration-qc-finalized.json").is_file()
+    assert "Finalized and bound" in window.result_qc_summary_label.text()
+    assert "Scientific reports now bind" in window.result_atlas_status_label.text()
     application.processEvents()
 
 

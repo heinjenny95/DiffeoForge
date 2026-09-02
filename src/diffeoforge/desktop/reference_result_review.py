@@ -47,6 +47,7 @@ _PCA_DISPLAY_LIMIT = 10
 _ESTIMATED_TEMPLATE_MARKER = "__EstimatedParameters__Template_"
 _RECONSTRUCTION_MARKER = "__Reconstruction__"
 _REGISTRATION_QC_DRAFT = "registration-qc-draft.json"
+_REGISTRATION_QC_FINALIZED = "registration-qc-finalized.json"
 
 
 @dataclass(frozen=True)
@@ -56,6 +57,18 @@ class RegistrationQCReviewExport:
     path: Path
     sha256_path: Path
     sha256: str
+    binding_path: Path | None = None
+    complete: bool = False
+
+
+@dataclass(frozen=True)
+class FinalizedRegistrationQCReview:
+    """One verified final review selected for downstream scientific reports."""
+
+    path: Path
+    sha256: str
+    complete: bool
+    decisions: Mapping[str, str]
 
 
 def _validated_registration_qc_decisions(
@@ -224,6 +237,230 @@ def export_registration_qc_review(
     with sidecar.open("x", encoding="ascii", newline="\n") as handle:
         handle.write(f"{digest}  {path.name}\n")
     return RegistrationQCReviewExport(path, sidecar, digest)
+
+
+def _registration_qc_counts(
+    review: ModernResultReview,
+    decisions: Mapping[str, str],
+) -> dict[str, int]:
+    counts = {"pass": 0, "uncertain": 0, "fail": 0, "unreviewed": 0}
+    for item in review.registration_qc:
+        counts[decisions.get(item.subject_name, "unreviewed")] += 1
+    return counts
+
+
+def finalize_registration_qc_review(
+    review: ModernResultReview,
+    decisions: Mapping[str, str],
+    *,
+    allow_incomplete: bool = False,
+) -> RegistrationQCReviewExport:
+    """Finalize one explicit QC review and atomically bind downstream reports to it.
+
+    The immutable review is never overwritten.  A small source-bound pointer records
+    which finalized review scientific reports should use by default.  Incomplete
+    finalization requires an explicit caller declaration.
+    """
+
+    normalized = _validated_registration_qc_decisions(review, decisions)
+    counts = _registration_qc_counts(review, normalized)
+    complete = counts["unreviewed"] == 0
+    if not complete and not allow_incomplete:
+        raise ModernResultReviewError(
+            "Registration QC is incomplete: "
+            f"{counts['unreviewed']} of {len(review.registration_qc)} subjects remain "
+            "unreviewed. Review every subject or explicitly finalize an incomplete review."
+        )
+
+    created_at = datetime.now(UTC)
+    payload = {
+        "schema_version": "0.2",
+        "review_status": "finalized",
+        "created_at": created_at.isoformat(),
+        "scientific_boundary": (
+            "Residual rank prioritizes inspection and is not an automatic biological "
+            "exclusion rule. Finalized decisions are researcher-recorded plausibility "
+            "evidence and do not mutate the atlas or PCA."
+        ),
+        "source": {
+            "run_directory": str(review.run_directory),
+            "run_manifest_sha256": review.workflow_manifest_sha256,
+            "analysis_manifest_sha256": review.bundle_manifest_sha256,
+        },
+        "summary": {
+            "subject_count": len(review.registration_qc),
+            "reviewed_count": len(normalized),
+            "unreviewed_count": counts["unreviewed"],
+            "decision_counts": counts,
+            "complete": complete,
+            "incomplete_finalization_explicitly_confirmed": bool(
+                not complete and allow_incomplete
+            ),
+        },
+        "subjects": [
+            {
+                "rank": item.rank,
+                "subject_name": item.subject_name,
+                "residual_p95": item.residual_p95,
+                "decision": normalized.get(item.subject_name, "unreviewed"),
+            }
+            for item in review.registration_qc
+        ],
+    }
+    directory = review.run_directory / "reviews"
+    directory.mkdir(parents=True, exist_ok=True)
+    stem = (
+        "registration-qc-review-"
+        + created_at.strftime("%Y%m%dT%H%M%SZ")
+        + "-finalized-"
+        + uuid.uuid4().hex[:8]
+    )
+    path = directory / f"{stem}.json"
+    write_text_safely(
+        path,
+        json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
+        overwrite=False,
+    )
+    digest = sha256_file(path)
+    sidecar = directory / f"{stem}.sha256"
+    write_text_safely(
+        sidecar,
+        f"{digest}  {path.name}\n",
+        overwrite=False,
+        encoding="ascii",
+    )
+    binding_path = directory / _REGISTRATION_QC_FINALIZED
+    binding = {
+        "schema_version": "0.1",
+        "updated_at": created_at.isoformat(),
+        "source": {
+            "run_manifest_sha256": review.workflow_manifest_sha256,
+            "analysis_manifest_sha256": review.bundle_manifest_sha256,
+        },
+        "review": {
+            "filename": path.name,
+            "sha256": digest,
+            "complete": complete,
+            "reviewed_count": len(normalized),
+            "unreviewed_count": counts["unreviewed"],
+        },
+    }
+    write_text_safely(
+        binding_path,
+        json.dumps(binding, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
+        overwrite=True,
+    )
+    return RegistrationQCReviewExport(
+        path,
+        sidecar,
+        digest,
+        binding_path=binding_path,
+        complete=complete,
+    )
+
+
+def load_finalized_registration_qc_review(
+    review: ModernResultReview,
+) -> FinalizedRegistrationQCReview | None:
+    """Verify and load the review explicitly bound for downstream reporting."""
+
+    directory = review.run_directory / "reviews"
+    binding_path = directory / _REGISTRATION_QC_FINALIZED
+    if not binding_path.exists():
+        return None
+    if not binding_path.is_file() or binding_path.is_symlink():
+        raise ModernResultReviewError(
+            "Finalized registration-QC binding is not a regular file"
+        )
+    try:
+        binding = json.loads(binding_path.read_text(encoding="utf-8", errors="strict"))
+        source = binding["source"]
+        record = binding["review"]
+    except (KeyError, OSError, UnicodeError, TypeError, json.JSONDecodeError) as error:
+        raise ModernResultReviewError(
+            "Finalized registration-QC binding is unreadable or incomplete"
+        ) from error
+    if binding.get("schema_version") != "0.1" or source != {
+        "run_manifest_sha256": review.workflow_manifest_sha256,
+        "analysis_manifest_sha256": review.bundle_manifest_sha256,
+    }:
+        raise ModernResultReviewError(
+            "Finalized registration-QC binding belongs to different verified run evidence"
+        )
+    filename = record.get("filename") if isinstance(record, dict) else None
+    expected_hash = record.get("sha256") if isinstance(record, dict) else None
+    if (
+        not isinstance(filename, str)
+        or Path(filename).name != filename
+        or not filename.startswith("registration-qc-review-")
+        or not filename.endswith(".json")
+        or not isinstance(expected_hash, str)
+        or len(expected_hash) != 64
+    ):
+        raise ModernResultReviewError("Finalized registration-QC review identity is invalid")
+    path = directory / filename
+    if not path.is_file() or path.is_symlink() or sha256_file(path) != expected_hash:
+        raise ModernResultReviewError(
+            "Finalized registration-QC review is missing, symbolic, or changed"
+        )
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8", errors="strict"))
+        payload_source = payload["source"]
+        subjects = payload["subjects"]
+        summary = payload["summary"]
+    except (KeyError, OSError, UnicodeError, TypeError, json.JSONDecodeError) as error:
+        raise ModernResultReviewError(
+            "Finalized registration-QC review is unreadable or incomplete"
+        ) from error
+    if payload.get("schema_version") != "0.2" or payload.get("review_status") != "finalized":
+        raise ModernResultReviewError("Bound registration-QC review is not finalized")
+    if not isinstance(payload_source, dict) or (
+        payload_source.get("run_manifest_sha256") != review.workflow_manifest_sha256
+        or payload_source.get("analysis_manifest_sha256") != review.bundle_manifest_sha256
+    ):
+        raise ModernResultReviewError(
+            "Finalized registration-QC review belongs to different atlas evidence"
+        )
+    if not isinstance(subjects, list) or not isinstance(summary, dict):
+        raise ModernResultReviewError("Finalized registration-QC subject records are invalid")
+    decisions: dict[str, str] = {}
+    for item in subjects:
+        if not isinstance(item, dict):
+            raise ModernResultReviewError(
+                "Finalized registration-QC subject record is invalid"
+            )
+        name = item.get("subject_name")
+        decision = item.get("decision")
+        if not isinstance(name, str) or decision not in {
+            "pass",
+            "uncertain",
+            "fail",
+            "unreviewed",
+        }:
+            raise ModernResultReviewError(
+                "Finalized registration-QC review contains an invalid decision"
+            )
+        if name in decisions:
+            raise ModernResultReviewError(
+                "Finalized registration-QC review contains a duplicate subject"
+            )
+        decisions[name] = decision
+    expected_subjects = {item.subject_name for item in review.registration_qc}
+    if set(decisions) != expected_subjects:
+        raise ModernResultReviewError(
+            "Finalized registration-QC review does not cover the verified cohort"
+        )
+    complete = all(value != "unreviewed" for value in decisions.values())
+    if summary.get("complete") is not complete or record.get("complete") is not complete:
+        raise ModernResultReviewError(
+            "Finalized registration-QC completeness metadata differs from decisions"
+        )
+    return FinalizedRegistrationQCReview(
+        path=path,
+        sha256=expected_hash,
+        complete=complete,
+        decisions=dict(sorted(decisions.items())),
+    )
 
 
 def _pca_items(bundle_manifest: dict, ratios: tuple[float, ...]) -> tuple[ResultReviewItem, ...]:

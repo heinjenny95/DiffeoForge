@@ -110,6 +110,8 @@ from diffeoforge.desktop.reference_readiness import (
 )
 from diffeoforge.desktop.reference_result_review import (
     export_registration_qc_review,
+    finalize_registration_qc_review,
+    load_finalized_registration_qc_review,
     load_registration_qc_draft,
     review_reference_result,
     save_registration_qc_draft,
@@ -2346,7 +2348,18 @@ class DiffeoForgeWindow(QMainWindow):
         self.result_qc_export_button.clicked.connect(self._export_registration_qc_status)
         self.result_qc_export_button.hide()
         decision_controls.addWidget(self.result_qc_export_button)
+        self.result_qc_finalize_button = QPushButton("Finalize QC review")
+        self.result_qc_finalize_button.setObjectName("primary")
+        self.result_qc_finalize_button.clicked.connect(
+            self._finalize_registration_qc_review
+        )
+        self.result_qc_finalize_button.hide()
+        decision_controls.addWidget(self.result_qc_finalize_button)
         decision_controls.addStretch()
+        self.result_qc_summary_label = QLabel("QC review has not started.")
+        self.result_qc_summary_label.setObjectName("status")
+        self.result_qc_summary_label.setWordWrap(True)
+        self.result_qc_summary_label.hide()
         self.result_atlas_canvas = InteractiveMeshCanvas3D()
         self.result_atlas_canvas.setObjectName("resultAtlasViewer3D")
         self.result_atlas_canvas.setAccessibleName(
@@ -2370,6 +2383,7 @@ class DiffeoForgeWindow(QMainWindow):
         atlas_viewer_layout.addLayout(atlas_view_controls)
         atlas_viewer_layout.addLayout(overlay_controls)
         atlas_viewer_layout.addLayout(decision_controls)
+        atlas_viewer_layout.addWidget(self.result_qc_summary_label)
         atlas_viewer_layout.addWidget(self.result_atlas_status_label)
         atlas_viewer_layout.addWidget(self.result_atlas_canvas)
         atlas_viewer_layout.addWidget(self.result_registration_qc_canvas)
@@ -9451,6 +9465,13 @@ class DiffeoForgeWindow(QMainWindow):
         self.result_qc_export_button.setVisible(
             is_specimen_group and bool(review.registration_qc)
         )
+        self.result_qc_finalize_button.setVisible(
+            is_specimen_group and bool(review.registration_qc)
+        )
+        self.result_qc_summary_label.setVisible(
+            is_specimen_group and bool(review.registration_qc)
+        )
+        self._update_registration_qc_summary()
         current_key = self.result_atlas_mesh_combo.currentData()
         entries: list[tuple[str, str]] = []
         if is_specimen_group and review.registration_qc:
@@ -9601,7 +9622,7 @@ class DiffeoForgeWindow(QMainWindow):
             self.result_qc_uncertain_button.show()
             self.result_qc_fail_button.show()
             decision = self._registration_qc_decisions.get(subject_name, "unreviewed")
-            if decision == "implausible":
+            if decision == "fail":
                 decision_style = "statusError"
             elif decision in {"unreviewed", "uncertain"}:
                 decision_style = "statusWarning"
@@ -9706,6 +9727,7 @@ class DiffeoForgeWindow(QMainWindow):
                 )
             except (ModernResultReviewError, OSError, TypeError, ValueError) as error:
                 autosave_error = str(error)
+        self._update_registration_qc_summary()
 
         qc_items = self._result_review.registration_qc if self._result_review else ()
         subject_order = [item.subject_name for item in qc_items]
@@ -9775,17 +9797,115 @@ class DiffeoForgeWindow(QMainWindow):
             f"SHA-256 {exported.sha256}"
         )
 
+    def _update_registration_qc_summary(self) -> None:
+        review = self._result_review
+        if review is None or not review.registration_qc:
+            self.result_qc_summary_label.setText("QC review is unavailable.")
+            return
+        counts = {"pass": 0, "uncertain": 0, "fail": 0, "unreviewed": 0}
+        current: dict[str, str] = {}
+        for item in review.registration_qc:
+            decision = self._registration_qc_decisions.get(item.subject_name, "unreviewed")
+            counts[decision] += 1
+            current[item.subject_name] = decision
+        status = "Draft not finalized."
+        status_style = "statusWarning"
+        try:
+            finalized = load_finalized_registration_qc_review(review)
+        except ModernResultReviewError as error:
+            status = f"Finalized-review verification failed: {error}"
+            status_style = "statusError"
+        else:
+            if finalized is not None and dict(finalized.decisions) == current:
+                status = (
+                    "Finalized and bound to scientific reports."
+                    if finalized.complete
+                    else "Explicitly finalized as incomplete and bound to scientific reports."
+                )
+                status_style = "statusSuccess" if finalized.complete else "statusWarning"
+            elif finalized is not None:
+                status = (
+                    "Draft differs from the finalized review; finalize again to "
+                    "rebind reports."
+                )
+        self.result_qc_summary_label.setObjectName(status_style)
+        self.result_qc_summary_label.setStyleSheet("")
+        self.result_qc_summary_label.setText(
+            f"QC decisions: {counts['pass']} plausible · {counts['uncertain']} uncertain · "
+            f"{counts['fail']} implausible · {counts['unreviewed']} unreviewed · "
+            f"{len(review.registration_qc)} total. {status}"
+        )
+
+    @Slot()
+    def _finalize_registration_qc_review(self) -> None:
+        review = self._result_review
+        if review is None or not review.registration_qc:
+            return
+        unreviewed = len(review.registration_qc) - len(self._registration_qc_decisions)
+        allow_incomplete = False
+        if unreviewed:
+            answer = QMessageBox.question(
+                self,
+                "Finalize incomplete QC review?",
+                f"{unreviewed} of {len(review.registration_qc)} subjects are still "
+                "unreviewed. Finalizing now records that incompleteness explicitly; it "
+                "does not exclude specimens or change the atlas/PCA. Finalize anyway?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                return
+            allow_incomplete = True
+        try:
+            finalized = finalize_registration_qc_review(
+                review,
+                self._registration_qc_decisions,
+                allow_incomplete=allow_incomplete,
+            )
+        except (ModernResultReviewError, OSError, TypeError, ValueError) as error:
+            QMessageBox.warning(self, "QC finalization failed", str(error))
+            return
+        self._update_registration_qc_summary()
+        self.result_atlas_status_label.setObjectName(
+            "statusSuccess" if finalized.complete else "statusWarning"
+        )
+        self.result_atlas_status_label.setStyleSheet("")
+        self.result_atlas_status_label.setText(
+            "QC review finalized without changing atlas or PCA evidence: "
+            f"{finalized.path} · SHA-256 {finalized.sha256}. Scientific reports now "
+            "bind to this exact review."
+        )
+
+    def _require_current_finalized_registration_qc(self) -> None:
+        review = self._result_review
+        if review is None or not review.registration_qc:
+            return
+        finalized = load_finalized_registration_qc_review(review)
+        if finalized is None:
+            raise ModernResultReviewError(
+                "Finalize the registration-QC review before creating a scientific or "
+                "publication report. This explicitly binds the report to one review."
+            )
+        current = {
+            item.subject_name: self._registration_qc_decisions.get(
+                item.subject_name,
+                "unreviewed",
+            )
+            for item in review.registration_qc
+        }
+        if dict(finalized.decisions) != current:
+            raise ModernResultReviewError(
+                "The QC draft changed after finalization. Finalize it again before "
+                "creating a scientific or publication report."
+            )
+
     @Slot()
     def _create_scientific_report(self) -> None:
         review = self._result_review
         if review is None or self._worker is not None:
             return
         try:
-            if review.registration_qc and self._registration_qc_decisions:
-                export_registration_qc_review(
-                    review,
-                    self._registration_qc_decisions,
-                )
+            self._require_current_finalized_registration_qc()
             destination = default_scientific_report_directory(review.run_directory)
             if destination.exists():
                 timestamp = time.strftime("%Y%m%d-%H%M%S")
@@ -9842,11 +9962,7 @@ class DiffeoForgeWindow(QMainWindow):
         if review is None or self._worker is not None:
             return
         try:
-            if review.registration_qc and self._registration_qc_decisions:
-                export_registration_qc_review(
-                    review,
-                    self._registration_qc_decisions,
-                )
+            self._require_current_finalized_registration_qc()
             destination = default_publication_bundle_directory(review.run_directory)
             if destination.exists():
                 timestamp = time.strftime("%Y%m%d-%H%M%S")
@@ -10166,6 +10282,11 @@ class DiffeoForgeWindow(QMainWindow):
         )
         for button in self.result_artifact_buttons:
             button.setEnabled(enabled)
+        self.result_qc_pass_button.setEnabled(enabled)
+        self.result_qc_uncertain_button.setEnabled(enabled)
+        self.result_qc_fail_button.setEnabled(enabled)
+        self.result_qc_export_button.setEnabled(enabled)
+        self.result_qc_finalize_button.setEnabled(enabled)
         reference = (
             self._result_review is not None
             and self._result_review.engine_route == "deformetrica_reference"
