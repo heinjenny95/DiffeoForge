@@ -57,6 +57,13 @@ from diffeoforge.reference_calibration_study import (
 )
 from diffeoforge.result_report import collect_run_report
 
+_FEASIBILITY_PARAMETER_LABELS = {
+    "attachment_kernel_width": "surface-matching detail width",
+    "deformation_kernel_width": "deformation spread width",
+    "initial_control_point_spacing": "control-point spacing",
+    "noise_std": "fit-versus-smoothness setting",
+}
+
 
 def _set_action_emphasis(button: QPushButton, emphasized: bool) -> None:
     """Apply the shared primary/secondary action role immediately."""
@@ -680,7 +687,7 @@ class ReferenceCalibrationDialog(QDialog):
                 )
                 method = QLabel(
                     "DiffeoForge first screened attachment and deformation scales "
-                    "jointly, then refined deformation, regularization, and numerical "
+                    "together, then refined deformation, regularization, and numerical "
                     "accuracy. Automatic choices had to remain stable under metric-weight "
                     "changes, an independent rank analysis, and pilot-subject resampling "
                     "when available. The complete report preserves every alternative, "
@@ -817,6 +824,35 @@ class ReferenceCalibrationDialog(QDialog):
                 else "statusWarning"
             )
             self.content_layout.addWidget(confidence)
+            recommended_option = self._recommended_option_text(assessment)
+            if recommended_option is not None:
+                if assessment.search_range_status == "not_bounded":
+                    recommendation_text = (
+                        f"DiffeoForge's current best compromise is {recommended_option}, "
+                        "but one of its selected values is at the edge of the tested "
+                        "range. Recommended next action: collect more evidence outward. "
+                        "Use it provisionally only if you accept that limitation."
+                    )
+                elif assessment.automatic_selection_allowed:
+                    recommendation_text = (
+                        f"DiffeoForge recommends {recommended_option}. It remained the "
+                        "preferred valid option across the robustness checks shown above."
+                    )
+                else:
+                    recommendation_text = (
+                        f"DiffeoForge's provisional recommendation is {recommended_option}. "
+                        "It is the best balanced trade-off in this pilot, but the evidence "
+                        "does not separate it decisively from every alternative. You may "
+                        "use it provisionally, inspect the options, or collect more evidence."
+                    )
+                recommendation = QLabel(recommendation_text)
+                recommendation.setObjectName(
+                    "statusSuccess"
+                    if assessment.automatic_selection_allowed
+                    else "statusWarning"
+                )
+                recommendation.setWordWrap(True)
+                self.content_layout.addWidget(recommendation)
         completed = sum(candidate.status == "completed" for candidate in self._snapshot.candidates)
         if automatic_mode:
             completed_before = sum(
@@ -921,6 +957,12 @@ class ReferenceCalibrationDialog(QDialog):
                     self.use_provisional_button.setEnabled(
                         assessment.balanced_candidate_id is not None
                     )
+                    recommended_option = self._recommended_option_text(assessment)
+                    self.use_provisional_button.setText(
+                        "Use provisional recommendation"
+                        if recommended_option is None
+                        else f"Use provisional recommendation: {recommended_option}"
+                    )
                     self.use_provisional_button.show()
                     self.compare_options_button.show()
                     self.collect_evidence_button.show()
@@ -965,14 +1007,22 @@ class ReferenceCalibrationDialog(QDialog):
                         in self._visually_approved_candidates
                         else " · visual QC optional / not performed"
                     )
+                    recommendation_suffix = (
+                        " · DiffeoForge provisional recommendation"
+                        if candidate.candidate_id
+                        == assessment.balanced_candidate_id
+                        else ""
+                    )
                     self.selection_combo.addItem(
-                        f"Option {option_letter} — {candidate.label}{review_suffix}",
+                        f"Option {option_letter} — {candidate.label}"
+                        f"{recommendation_suffix}{review_suffix}",
                         candidate.candidate_id,
                     )
             previous_index = self.selection_combo.findData(previous_selection)
             if previous_index >= 0:
                 self.selection_combo.setCurrentIndex(previous_index)
             self.selection_combo.blockSignals(False)
+            self.collect_evidence_button.show()
             self._update_stage_review_action()
         elif running:
             self.status.setText(
@@ -1195,6 +1245,18 @@ class ReferenceCalibrationDialog(QDialog):
                 selectable.add(candidate.candidate_id)
         return selectable
 
+    def _recommended_option_text(self, assessment: object) -> str | None:
+        """Return the human-facing option name for the balanced pilot candidate."""
+
+        candidate_id = getattr(assessment, "balanced_candidate_id", None)
+        if candidate_id is None:
+            return None
+        for index, candidate in enumerate(self._snapshot.candidates, start=1):
+            if candidate.candidate_id == candidate_id:
+                option_letter = chr(ord("A") + index - 1)
+                return f"Option {option_letter} — {candidate.label}"
+        return None
+
     @Slot()
     def _update_stage_review_action(self) -> None:
         if self._snapshot.status != "awaiting_review":
@@ -1229,10 +1291,24 @@ class ReferenceCalibrationDialog(QDialog):
         self.selection_combo.show()
         if not selected_is_selectable:
             _set_choice_emphasis(self.selection_combo, True)
-            self.status.setText(
-                "Next: compare the explained pros and cons, then choose one option from "
-                "the green menu. Opening the reconstruction viewer is optional."
+            assessment = assess_reference_calibration_snapshot(
+                self._snapshot,
+                visual_approvals=self._visual_approvals(),
             )
+            recommended_option = self._recommended_option_text(assessment)
+            if recommended_option is None:
+                self.status.setText(
+                    "Next: compare the explained pros and cons, then choose one option "
+                    "from the green menu. Opening the reconstruction viewer is optional."
+                )
+            else:
+                self.status.setText(
+                    f"DiffeoForge's provisional recommendation is {recommended_option}. "
+                    "Choose it from the green menu to follow the balanced numerical "
+                    "recommendation, or choose another option if the documented trade-off "
+                    "better matches your scientific goal. Opening the reconstruction "
+                    "viewer is optional."
+                )
             return
         self.advance_button.show()
         _set_choice_emphasis(self.selection_combo, False)
@@ -1409,7 +1485,7 @@ class ReferenceCalibrationDialog(QDialog):
             rendered = []
             for candidate in proposal.candidates:
                 values = ", ".join(
-                    f"{name}={value:.6g}"
+                    f"{_FEASIBILITY_PARAMETER_LABELS.get(name, name)}={value:.6g}"
                     for name, value in candidate.parameter_values
                 )
                 rendered.append(f"• {candidate.label}: {values}")
@@ -1432,11 +1508,20 @@ class ReferenceCalibrationDialog(QDialog):
                 ]
                 observed_low = min((*tested, *proposed))
                 observed_high = max((*tested, *proposed))
+                friendly_parameter = _FEASIBILITY_PARAMETER_LABELS.get(
+                    parameter,
+                    parameter,
+                )
                 if direction == "minimum":
                     outward_limit, accepted = QInputDialog.getDouble(
                         self,
-                        "Declare lower feasibility limit",
-                        f"Minimum allowed {parameter} (must be ≤ {observed_low:.9g}):",
+                        "Confirm how far the pilot may search",
+                        f"{friendly_parameter.capitalize()} needs testing below the "
+                        f"current range. The suggested value ({observed_low:.9g}) is "
+                        "the next automatically derived candidate. Leave it unchanged "
+                        "unless you have a scientific or technical reason to impose a "
+                        "different limit.\n\nSmallest allowed value "
+                        f"(must be ≤ {observed_low:.9g}):",
                         observed_low,
                         1e-15,
                         1e15,
@@ -1448,8 +1533,13 @@ class ReferenceCalibrationDialog(QDialog):
                 elif direction == "maximum":
                     outward_limit, accepted = QInputDialog.getDouble(
                         self,
-                        "Declare upper feasibility limit",
-                        f"Maximum allowed {parameter} (must be ≥ {observed_high:.9g}):",
+                        "Confirm how far the pilot may search",
+                        f"{friendly_parameter.capitalize()} needs testing above the "
+                        f"current range. The suggested value ({observed_high:.9g}) is "
+                        "the next automatically derived candidate. Leave it unchanged "
+                        "unless you have a scientific or technical reason to impose a "
+                        "different limit.\n\nLargest allowed value "
+                        f"(must be ≥ {observed_high:.9g}):",
                         observed_high,
                         1e-15,
                         1e15,
@@ -1462,7 +1552,8 @@ class ReferenceCalibrationDialog(QDialog):
                     QMessageBox.warning(
                         self,
                         "Cannot extend this grid",
-                        f"{parameter} has only one tested value, so no logarithmic "
+                        f"{friendly_parameter.capitalize()} has only one tested value, "
+                        "so no logarithmic "
                         "outward step can be derived.",
                     )
                     return

@@ -1,6 +1,6 @@
 # Transparent Deformetrica parameter calibration
 
-Status: **implemented deterministic planning, broad joint kernel screening,
+Status: **implemented deterministic planning, broad combined kernel screening,
 automatic candidate execution, subject-level and reconstruction-wide QC,
 weight-sensitivity and subject-bootstrap robustness gates, optional visual QC,
 and one-operation uncertainty-qualified reporting. Full-cohort and external
@@ -43,7 +43,7 @@ therefore keeps three sources of information separate:
 8. After the automatic Deformetrica setup check passes, open **Automatic
    Deformetrica pilot calibration**.
 9. Select **Run complete four-stage pilot** once. DiffeoForge first screens
-   attachment and deformation scales jointly, then refines deformation, noise,
+   attachment and deformation scales together, then refines deformation, noise,
    and time points. The search is logarithmically spaced around the biological
    priorities declared in step 2 and crosses the conservative mesh-sampling
    diagnostic. Already completed candidates are retained if execution is
@@ -123,20 +123,20 @@ parameter scoring.
 Only one parameter block changes in each stage. Values selected in earlier
 stages remain locked.
 
-### 1. Joint surface-detail and deformation-scale screen
+### 1. Surface-detail and deformation-scale screen
 
 The attachment center is the measured smallest relevant feature. If no feature
 is measured, the declared fine/balanced/coarse intent supplies the center. It
 is not silently raised to the four-edge sampling diagnostic. Six
 logarithmically spaced attachment scales span the declared center, the median
 mesh edge, and the conservative four-edge scale. Each is paired with local,
-center, and global deformation screens, producing 18 joint candidates.
+center, and global deformation screens, producing 18 combined candidates.
 Together with five deformation refinements, five noise candidates, and three
 time-point candidates, the standard strict pilot contains 31 resumable atlas
 runs. This is intentionally a scientific calibration workload rather than a
 quick preset picker.
 
-The joint screen prevents a superficially attractive attachment width from
+The combined screen prevents a superficially attractive attachment width from
 being evaluated under only one arbitrary deformation width. Finer-than-four-
 edge candidates remain allowed, but their sampling sensitivity is measured and
 reported.
@@ -144,7 +144,7 @@ reported.
 ### 2. Deformation locality and control density
 
 Five logarithmically spaced candidates refine the declared
-local/balanced/global deformation range after the joint screen. Deformation
+local/balanced/global deformation range after the combined screen. Deformation
 width and initial control-point spacing move together.
 
 The automatic route compares the declared-intent-centered candidates using the

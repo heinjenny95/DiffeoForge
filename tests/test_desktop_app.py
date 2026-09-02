@@ -1232,6 +1232,15 @@ def test_desktop_continues_existing_reference_project_instead_of_restarting_gpa(
     window._sync_ready_state()
 
     assert window.continue_parameter_button.text() == "Resume existing project"
+    assert window.new_project_instead_button.isHidden() is False
+    assert window.new_project_instead_button.isEnabled() is True
+    window.new_project_instead_button.click()
+    application.processEvents()
+    assert window.page_stack.currentIndex() == 1
+    assert loaded == []
+    assert config_path.read_bytes() == original
+    assert "New-project route selected" in window.status_label.text()
+    window._show_setup_page()
     window._continue_to_parameter_setting()
 
     assert loaded == [config_path.resolve()]
@@ -1258,6 +1267,17 @@ def test_desktop_continues_existing_reference_project_instead_of_restarting_gpa(
 
     assert window.create_button.text() == "Apply completed pilot calibration"
     assert window.create_button.isEnabled() is True
+    assert window.new_parameter_workflow_button.isHidden() is False
+    assert window.new_parameter_workflow_button.isEnabled() is True
+
+    window.new_parameter_workflow_button.click()
+    application.processEvents()
+
+    assert window.page_stack.currentIndex() == 0
+    assert window._result is None
+    assert window._review is None
+    assert config_path.read_bytes() == original
+    assert "left unchanged" in window.data_status_label.text()
     window.close()
     application.processEvents()
 
@@ -2440,14 +2460,38 @@ def test_desktop_window_renders_deformetrica_iteration_and_bounded_eta(
     assert "maximum" in window.run_progress_bar.format()
     assert "Iteration 12 of maximum 100" in window.run_optimizer_label.text()
     assert "Elapsed: 1 h 01 min 01 s" in window.run_optimizer_label.text()
-    assert "Time to iteration cap: 7 h 27 min 20 s" in (
+    assert "Maximum-iteration scenario: 7 h 27 min 20 s" in (
         window.run_optimizer_label.text()
     )
-    assert "Likely stopping window: not stable enough" in (
+    assert "Estimated time remaining: not reliable yet" in (
         window.run_optimizer_label.text()
     )
-    assert "not convergence" in window.run_optimizer_label.text()
+    assert "not an expected finish time" in window.run_optimizer_label.text()
     assert "#3 progress" in window.run_event_log.toPlainText()
+
+    stable_event = DesktopReferenceWorkerEvent(
+        request_id="reference-test",
+        sequence=4,
+        kind="progress",
+        payload={
+            **event.payload,
+            "iteration": 20,
+            "elapsed_seconds": 600.0,
+            "eta_to_iteration_cap_seconds": 2400.0,
+            "likely_convergence_iteration_lower": 30,
+            "likely_convergence_iteration_upper": 40,
+            "eta_to_likely_convergence_lower_seconds": 300.0,
+            "eta_to_likely_convergence_upper_seconds": 600.0,
+        },
+    )
+    window._atlas_event(stable_event)
+    assert "Estimated time remaining: 5 min 00 s–10 min 00 s" in (
+        window.run_optimizer_label.text()
+    )
+    assert "likely stop around iterations 30–40" in window.run_optimizer_label.text()
+    assert "Maximum-iteration scenario: 40 min 00 s" in (
+        window.run_optimizer_label.text()
+    )
     window.close()
     application.processEvents()
 

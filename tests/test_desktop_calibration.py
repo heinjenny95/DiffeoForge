@@ -71,7 +71,7 @@ def test_desktop_builds_and_binds_transparent_calibration_plan(
         window.reference_feature_scale_spin.value()
     )
     assert "planned, not executed" in window.reference_calibration_status.text()
-    assert "Joint surface-detail and deformation-scale screening" in (
+    assert "Surface-detail and deformation-scale screening" in (
         window.reference_calibration_status.text()
     )
     assert window.export_reference_calibration_button.isEnabled() is True

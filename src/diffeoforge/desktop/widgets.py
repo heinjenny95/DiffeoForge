@@ -1368,6 +1368,17 @@ class DiffeoForgeWindow(QMainWindow):
         self.continue_parameter_button.clicked.connect(
             self._continue_to_parameter_setting
         )
+        self.new_project_instead_button = QPushButton("Set up new project instead")
+        self.new_project_instead_button.setObjectName("secondary")
+        self.new_project_instead_button.setToolTip(
+            "Keep the existing project unchanged and continue with the inputs above. "
+            "Choose a different project folder, or explicitly confirm replacement later."
+        )
+        self.new_project_instead_button.clicked.connect(
+            self._continue_new_project_to_parameter_setting
+        )
+        self.new_project_instead_button.hide()
+        footer_layout.addWidget(self.new_project_instead_button)
         footer_layout.addWidget(self.continue_parameter_button)
 
         content = QWidget()
@@ -1459,6 +1470,19 @@ class DiffeoForgeWindow(QMainWindow):
         )
         self.skip_reference_pilot_button.hide()
         footer_layout.addWidget(self.skip_reference_pilot_button)
+        self.new_parameter_workflow_button = QPushButton(
+            "Set up new project or calibration instead…"
+        )
+        self.new_parameter_workflow_button.setObjectName("secondary")
+        self.new_parameter_workflow_button.setToolTip(
+            "Leave the loaded project and its pilot evidence unchanged, then return to "
+            "the data page to choose a new project destination."
+        )
+        self.new_parameter_workflow_button.clicked.connect(
+            self._begin_new_project_from_current_inputs
+        )
+        self.new_parameter_workflow_button.hide()
+        footer_layout.addWidget(self.new_parameter_workflow_button)
         self.create_button = QPushButton("Validate data & create project")
         self.create_button.setObjectName("primary")
         self.create_button.clicked.connect(self._setup_primary_action)
@@ -6198,6 +6222,15 @@ class DiffeoForgeWindow(QMainWindow):
             else "Continue to parameter setting"
         )
         self.continue_parameter_button.setEnabled(data_ready and self._worker is None)
+        self.new_project_instead_button.setVisible(resumable_reference_project)
+        self.new_project_instead_button.setEnabled(
+            resumable_reference_project and data_ready and self._worker is None
+        )
+        loaded_project = bool(self._result is not None or self._review is not None)
+        self.new_parameter_workflow_button.setVisible(loaded_project)
+        self.new_parameter_workflow_button.setEnabled(
+            loaded_project and self._worker is None
+        )
         if (
             raw_data_ready
             and self._input_preflight_worker is not None
@@ -8847,15 +8880,16 @@ class DiffeoForgeWindow(QMainWindow):
                 and likely_eta_upper is not None
             ):
                 convergence_text = (
-                    f"Likely stopping window: iterations {int(likely_lower)}–"
-                    f"{int(likely_upper)} (about "
+                    "Estimated time remaining: "
                     f"{self._format_duration(float(likely_eta_lower))}–"
-                    f"{self._format_duration(float(likely_eta_upper))} remaining; "
-                    "trend estimate, not a guarantee)"
+                    f"{self._format_duration(float(likely_eta_upper))} "
+                    f"(likely stop around iterations {int(likely_lower)}–"
+                    f"{int(likely_upper)}; trend estimate, not a guarantee)"
                 )
             else:
                 convergence_text = (
-                    "Likely stopping window: not stable enough to estimate yet"
+                    "Estimated time remaining: not reliable yet; DiffeoForge is still "
+                    "learning the convergence trend"
                 )
             contention_text = (
                 " · Resource contention detected; recent iterations are slower than "
@@ -8878,9 +8912,11 @@ class DiffeoForgeWindow(QMainWindow):
                 f"{float(event.payload['log_likelihood']):.6g} · attachment "
                 f"{float(event.payload['attachment']):.6g} · regularity "
                 f"{float(event.payload['regularity']):.6g}\n"
-                f"Elapsed: {self._format_duration(elapsed)} · observed rate: {rate_text} · "
-                f"Time to iteration cap: {eta_text} (live upper bound, not convergence)\n"
+                f"Elapsed: {self._format_duration(elapsed)} · observed pace: {rate_text} "
+                "(rolling median; may change)\n"
                 f"{convergence_text}{contention_text}\n"
+                f"Maximum-iteration scenario: {eta_text} remaining if all {maximum} "
+                "iterations run (not an expected finish time)\n"
                 f"{self._latest_reference_resource_text}"
             )
             self.run_state_label.setText(message)
@@ -10269,6 +10305,53 @@ class DiffeoForgeWindow(QMainWindow):
             "are being verified; no GPA or pilot candidate is being rerun."
         )
         self._review_project()
+
+    @Slot()
+    def _continue_new_project_to_parameter_setting(self) -> None:
+        """Choose the new-project route without touching an existing configuration."""
+
+        if self._worker is not None or not self._data_inputs_ready():
+            self._sync_ready_state()
+            return
+        self.status_label.setObjectName("statusWarning")
+        self.status_label.setStyleSheet("")
+        self.status_label.setText(
+            "New-project route selected. The existing project remains unchanged. "
+            "Choose a different project folder to preserve it, or DiffeoForge will ask "
+            "for explicit confirmation before replacing its generated configuration."
+        )
+        self._navigate_to_step(1)
+
+    @Slot()
+    def _begin_new_project_from_current_inputs(self) -> None:
+        """Leave loaded project evidence intact and return to a fresh setup route."""
+
+        if self._worker is not None:
+            return
+        self._guided_reference_calibration_requested = False
+        self._reference_calibrated_config_path = None
+        self._reference_calibration_study_directory = None
+        self._result = None
+        self._review = None
+        self._reference_readiness = None
+        self._reference_preparation_status = None
+        self._run_readiness = None
+        self._reference_run_request = None
+        self._run_result = None
+        self._result_review = None
+        self.result_card.hide()
+        self.template_preview_card.hide()
+        self.reference_preparation_status_card.hide()
+        self.run_result_card.hide()
+        self._set_active_step(0)
+        self.page_stack.setCurrentIndex(0)
+        self._sync_ready_state()
+        self.data_status_label.setObjectName("statusWarning")
+        self.data_status_label.setStyleSheet("")
+        self.data_status_label.setText(
+            "Existing project and pilot evidence were left unchanged. Choose a new "
+            "Project folder for a separate analysis, then continue to parameter setting."
+        )
 
     @Slot(int)
     def _navigate_to_step(self, step: int) -> None:

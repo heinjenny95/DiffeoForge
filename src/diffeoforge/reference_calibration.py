@@ -404,7 +404,7 @@ class ReferenceCalibrationPlan:
                     }
                 )
                 lines.append(
-                    f"{stage.order}. {stage.title}: {len(stage.candidates)} joint "
+                    f"{stage.order}. {stage.title}: {len(stage.candidates)} combined "
                     f"candidates; attachment {attachment_values[0]:.6g}–"
                     f"{attachment_values[-1]:.6g}{unit_suffix}; deformation "
                     f"{deformation_values[0]:.6g}–{deformation_values[-1]:.6g}"
@@ -854,7 +854,7 @@ def build_reference_calibration_plan(
                         "initial_control_point_spacing": deformation_value,
                     },
                     (
-                        "Jointly screens surface-matching resolution and deformation "
+                        "Screens surface-matching resolution and deformation spread "
                         "reach so their interaction is observed before either is locked."
                     ),
                 )
@@ -888,7 +888,7 @@ def build_reference_calibration_plan(
                         else "more global"
                     )
                 ),
-                "Refines deformation reach after the joint kernel interaction screen.",
+                "Refines deformation reach after the combined kernel interaction screen.",
             ),
         )
     )
@@ -944,7 +944,7 @@ def build_reference_calibration_plan(
             stage_id="attachment",
             order=1,
             kind="attachment_width",
-            title="Joint surface-detail and deformation-scale screening",
+            title="Surface-detail and deformation-scale screening",
             candidates=attachment_candidates,
             locked_from_previous_stages=(),
             evidence_required=(
@@ -957,7 +957,7 @@ def build_reference_calibration_plan(
             ),
             reject_when=common_rejections,
             decision_rule=(
-                "Screen attachment and deformation widths jointly. Retain a Pareto "
+                "Screen attachment and deformation widths together. Retain a Pareto "
                 "candidate only when its advantage remains stable across subjects and "
                 "reasonable metric weightings. The four-edge sampling value is a "
                 "diagnostic, not an exclusion boundary."

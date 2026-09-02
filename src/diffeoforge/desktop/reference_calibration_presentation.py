@@ -40,7 +40,7 @@ _GUIDANCE: dict[str, CalibrationStageGuidance] = {
             "local deformation can represent real variation or implausible warping."
         ),
         action=(
-            "Let DiffeoForge complete the joint grid. An automatic choice is allowed "
+            "Let DiffeoForge complete the combined grid. An automatic choice is allowed "
             "only when one Pareto candidate remains stable across metric priorities, "
             "subject resampling, and an independent rank analysis. Otherwise review "
             "the alternatives or collect more evidence."

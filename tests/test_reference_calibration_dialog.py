@@ -337,6 +337,7 @@ def test_staged_calibration_allows_selection_without_visual_qc(
     assert dialog.advanced_mode.isChecked() is False
     assert dialog.start_button.isHidden() is True
     assert dialog.use_provisional_button.isVisible() is True
+    assert "Option" in dialog.use_provisional_button.text()
     assert dialog.compare_options_button.isVisible() is True
     assert dialog.collect_evidence_button.isVisible() is True
     assert "Paused checkpoint" in dialog.status.text()
@@ -345,7 +346,7 @@ def test_staged_calibration_allows_selection_without_visual_qc(
     application.processEvents()
     assert entered_limits
     assert confirmations[-1][0] == "Create and start outward pilot evidence"
-    assert "attachment_kernel_width=" in confirmations[-1][1]
+    assert "surface-matching detail width=" in confirmations[-1][1]
     assert "Only these new candidates will run" in confirmations[-1][1]
     assert successor_calls
     assert successor_calls[-1][0] == tmp_path
@@ -361,6 +362,7 @@ def test_staged_calibration_allows_selection_without_visual_qc(
     application.processEvents()
     assert dialog.advanced_mode.isChecked() is True
     assert dialog.selection_combo.isVisible() is True
+    assert dialog.collect_evidence_button.isVisible() is True
     warning_labels = dialog.findChildren(QLabel, "statusWarning")
     assert any("Evidence grade:" in label.text() for label in warning_labels)
 
@@ -393,6 +395,11 @@ def test_staged_calibration_allows_selection_without_visual_qc(
     assert dialog.selection_combo.count() == 3
     assert "evidence and trade-offs" in dialog.selection_combo.itemText(0)
     assert "not performed" in dialog.selection_combo.itemText(1)
+    assert any(
+        "DiffeoForge provisional recommendation" in dialog.selection_combo.itemText(index)
+        for index in range(1, dialog.selection_combo.count())
+    )
+    assert "DiffeoForge's provisional recommendation is Option" in dialog.status.text()
     assert dialog.advance_button.isHidden() is True
     favorable = dialog.findChildren(QLabel, "tradeoffFavorable")
     caution = dialog.findChildren(QLabel, "tradeoffCaution")
