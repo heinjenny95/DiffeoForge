@@ -9,6 +9,7 @@ import subprocess
 import sys
 from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 import yaml
@@ -1326,6 +1327,163 @@ def test_desktop_applies_pilot_selected_values_as_locked_final_parameters(
     assert window.reference_attachment_ratio_spin.isEnabled() is False
     assert window.reference_timepoints_spin.isEnabled() is False
     assert "Final pilot-calibrated" in window.reference_parameter_section_label.text()
+    window.close()
+    application.processEvents()
+
+
+def test_desktop_applies_completed_search_extension_after_dialog_closes(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    import diffeoforge.desktop.widgets as widgets_module
+    from diffeoforge.desktop.project_setup import DesktopEngine, ProjectSetupResult
+    from diffeoforge.desktop.widgets import DiffeoForgeWindow
+
+    application = QApplication.instance() or QApplication(
+        ["diffeoforge-calibration-extension-application-test"]
+    )
+    window = DiffeoForgeWindow()
+    source_config = tmp_path / "atlas.yaml"
+    source_config.write_text(
+        (ROOT / "examples" / "minimal-atlas.yaml").read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    calibrated_config = tmp_path / "atlas-calibrated.yaml"
+    calibrated_config.write_text(
+        source_config.read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    source_study = tmp_path / "reference-pilot-abc123"
+    successor_study = tmp_path / "reference-pilot-abc123-extension-01"
+    source_study.mkdir()
+    successor_study.mkdir()
+    window._result = ProjectSetupResult(
+        engine=DesktopEngine.DEFORMETRICA_REFERENCE,
+        config_path=source_config,
+        template_path=ROOT / "examples" / "synthetic" / "meshes" / "template.vtk",
+        subject_count=3,
+        report_path=None,
+        notices=(),
+    )
+    window._review = SimpleNamespace(engine=DesktopEngine.DEFORMETRICA_REFERENCE)
+    window._reference_readiness = SimpleNamespace(ready=True)
+    window._reference_calibration_study_directory = source_study
+    monkeypatch.setattr(
+        window,
+        "_reference_calibration_context",
+        lambda: (SimpleNamespace(), source_study),
+    )
+
+    class FakeDialog:
+        def __init__(self, study_directory, _parent) -> None:
+            assert study_directory == source_study
+            self.study_directory = successor_study
+
+        def exec(self) -> None:
+            return None
+
+    loaded: list[Path] = []
+
+    def load_snapshot(study_directory):
+        path = Path(study_directory)
+        loaded.append(path)
+        if path == source_study:
+            return SimpleNamespace(
+                status="awaiting_review",
+                final_config_path=None,
+            )
+        return SimpleNamespace(
+            status="completed",
+            final_config_path=calibrated_config,
+        )
+
+    review_calls: list[bool] = []
+    monkeypatch.setattr(widgets_module, "ReferenceCalibrationDialog", FakeDialog)
+    monkeypatch.setattr(widgets_module, "load_reference_calibration_study", load_snapshot)
+    monkeypatch.setattr(window, "_refresh_reference_calibration_execution_card", lambda: None)
+    monkeypatch.setattr(window, "_review_project", lambda: review_calls.append(True))
+
+    window._open_reference_calibration()
+
+    assert loaded[:2] == [source_study, successor_study]
+    assert window._reference_calibration_study_directory == successor_study
+    assert window._reference_calibrated_config_path == calibrated_config
+    assert window._result.config_path == calibrated_config
+    assert review_calls == [True]
+    window.close()
+    application.processEvents()
+
+
+def test_desktop_reuses_completed_calibration_without_reopening_dialog(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    import diffeoforge.desktop.widgets as widgets_module
+    from diffeoforge.desktop.project_setup import DesktopEngine, ProjectSetupResult
+    from diffeoforge.desktop.widgets import DiffeoForgeWindow
+
+    application = QApplication.instance() or QApplication(
+        ["diffeoforge-completed-calibration-reuse-test"]
+    )
+    window = DiffeoForgeWindow()
+    source_config = tmp_path / "atlas.yaml"
+    source_config.write_text(
+        (ROOT / "examples" / "minimal-atlas.yaml").read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    calibrated_config = tmp_path / "atlas-calibrated.yaml"
+    calibrated_config.write_text(
+        source_config.read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    completed_study = tmp_path / "reference-pilot-abc123-extension-01"
+    completed_study.mkdir()
+    window._result = ProjectSetupResult(
+        engine=DesktopEngine.DEFORMETRICA_REFERENCE,
+        config_path=source_config,
+        template_path=ROOT / "examples" / "synthetic" / "meshes" / "template.vtk",
+        subject_count=3,
+        report_path=None,
+        notices=(),
+    )
+    window._review = SimpleNamespace(engine=DesktopEngine.DEFORMETRICA_REFERENCE)
+    window._reference_readiness = SimpleNamespace(ready=True)
+    monkeypatch.setattr(
+        window,
+        "_reference_calibration_context",
+        lambda: (SimpleNamespace(), completed_study),
+    )
+    monkeypatch.setattr(
+        widgets_module,
+        "load_reference_calibration_study",
+        lambda _directory: SimpleNamespace(
+            status="completed",
+            final_config_path=calibrated_config,
+        ),
+    )
+
+    class UnexpectedDialog:
+        def __init__(self, *_args, **_kwargs) -> None:
+            raise AssertionError("A completed pilot must not reopen the calibration dialog")
+
+    review_calls: list[bool] = []
+    monkeypatch.setattr(widgets_module, "ReferenceCalibrationDialog", UnexpectedDialog)
+    monkeypatch.setattr(window, "_refresh_reference_calibration_execution_card", lambda: None)
+    monkeypatch.setattr(window, "_review_project", lambda: review_calls.append(True))
+
+    window._open_reference_calibration()
+
+    assert window._reference_calibrated_config_path == calibrated_config
+    assert window._result.config_path == calibrated_config
+    assert review_calls == [True]
     window.close()
     application.processEvents()
 

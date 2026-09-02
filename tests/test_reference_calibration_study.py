@@ -24,6 +24,7 @@ from diffeoforge.reference_calibration_study import (
     assess_reference_calibration_snapshot,
     create_reference_calibration_search_extension_study,
     create_reference_calibration_study,
+    latest_reference_calibration_search_extension_directory,
     load_reference_calibration_study,
     record_reference_calibration_provisional_override,
     record_reference_calibration_stage_review,
@@ -32,6 +33,29 @@ from diffeoforge.reference_recommendation import recommend_reference_parameters
 
 ROOT = Path(__file__).parents[1]
 MESH_DIRECTORY = ROOT / "examples" / "synthetic" / "meshes"
+
+
+def test_latest_search_extension_directory_follows_deterministic_rounds(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    root = tmp_path / "reference-pilot-abc123"
+    root.mkdir()
+    monkeypatch.setattr(
+        study_module,
+        "_search_extension_series",
+        lambda candidate: (candidate.resolve(), 0),
+    )
+    assert latest_reference_calibration_search_extension_directory(root) == root
+
+    first = tmp_path / "reference-pilot-abc123-extension-01"
+    first.mkdir()
+    assert latest_reference_calibration_search_extension_directory(root) == first
+
+    third = tmp_path / "reference-pilot-abc123-extension-03"
+    third.mkdir()
+    with pytest.raises(ReferenceCalibrationStudyError, match="missing round"):
+        latest_reference_calibration_search_extension_directory(root)
 
 
 def _project(tmp_path: Path) -> Path:

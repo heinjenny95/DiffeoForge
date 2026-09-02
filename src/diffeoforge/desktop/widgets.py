@@ -187,6 +187,7 @@ from diffeoforge.reference_calibration_report import (
 )
 from diffeoforge.reference_calibration_study import (
     create_reference_calibration_study,
+    latest_reference_calibration_search_extension_directory,
     load_reference_calibration_study,
 )
 from diffeoforge.reference_pca import (
@@ -7372,7 +7373,16 @@ class DiffeoForgeWindow(QMainWindow):
                 / "calibration"
                 / f"reference-pilot-{plan.fingerprint[:12]}"
             ).resolve()
-            self._reference_calibration_study_directory = directory
+        if directory.exists():
+            try:
+                directory = latest_reference_calibration_search_extension_directory(
+                    directory
+                )
+            except (OSError, RuntimeError, TypeError, ValueError):
+                # Keep the known study path so the normal loader can present its
+                # precise verification error in the execution card.
+                pass
+        self._reference_calibration_study_directory = directory
         return plan, directory
 
     def _reference_calibration_pending(self) -> bool:
@@ -7386,7 +7396,7 @@ class DiffeoForgeWindow(QMainWindow):
             snapshot = load_reference_calibration_study(directory)
         except (OSError, RuntimeError, TypeError, ValueError):
             return True
-        return snapshot.status != "completed"
+        return snapshot.status != "completed" or not self._reference_calibration_completed()
 
     def _reference_calibration_action_text(self) -> str:
         """Describe whether the next pilot action runs work or reviews finished work."""
@@ -7401,6 +7411,8 @@ class DiffeoForgeWindow(QMainWindow):
             snapshot = load_reference_calibration_study(directory)
         except (OSError, RuntimeError, TypeError, ValueError):
             return "Inspect pilot calibration issue"
+        if snapshot.status == "completed":
+            return "Apply completed pilot calibration"
         if snapshot.status == "awaiting_review":
             return "Review pilot results & choose parameters"
         return "Continue pilot calibration"
@@ -7506,8 +7518,12 @@ class DiffeoForgeWindow(QMainWindow):
         )
         self.reference_calibration_execution_status.setStyleSheet("")
         if snapshot.status == "completed":
+            self.open_reference_calibration_button.setText(
+                "Apply completed pilot-selected parameters…"
+            )
             message = (
-                "Calibration complete · selected full-cohort configuration: "
+                "Calibration complete. Apply the already selected parameters to continue; "
+                "no pilot candidate will run again. Selected full-cohort configuration: "
                 f"{snapshot.final_config_path}"
             )
         elif snapshot.status == "awaiting_review":
@@ -7687,9 +7703,13 @@ class DiffeoForgeWindow(QMainWindow):
                     directory,
                     pilot_max_iterations=150,
                 )
-            dialog = ReferenceCalibrationDialog(directory, self)
-            dialog.exec()
             snapshot = load_reference_calibration_study(directory)
+            if snapshot.status != "completed":
+                dialog = ReferenceCalibrationDialog(directory, self)
+                dialog.exec()
+                directory = dialog.study_directory.expanduser().resolve()
+                self._reference_calibration_study_directory = directory
+                snapshot = load_reference_calibration_study(directory)
         except (OSError, RuntimeError, TypeError, ValueError) as error:
             QMessageBox.warning(
                 self,

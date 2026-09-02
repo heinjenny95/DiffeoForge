@@ -15,6 +15,7 @@ import html
 import json
 import math
 import os
+import re
 import shutil
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
@@ -269,6 +270,54 @@ def next_reference_calibration_search_extension_destination(
     _verify_manifest(source_root)
     series_root, depth = _search_extension_series(source_root)
     return series_root.with_name(f"{series_root.name}-extension-{depth + 1:02d}")
+
+
+def latest_reference_calibration_search_extension_directory(
+    study_directory: Path | str,
+) -> Path:
+    """Return the newest deterministic successor in one immutable study series.
+
+    The returned path is only discovered here. Callers still load the study through
+    :func:`load_reference_calibration_study`, which verifies its complete hash-bound
+    lineage before any selected configuration is trusted.
+    """
+
+    root = Path(study_directory).expanduser().resolve()
+    if not root.is_dir():
+        raise ReferenceCalibrationStudyError(
+            f"Calibration study directory does not exist: {root}"
+        )
+    series_root, _depth = _search_extension_series(root)
+    pattern = re.compile(
+        rf"{re.escape(series_root.name)}-extension-(?P<round>[0-9]{{2,}})"
+    )
+    successors: dict[int, Path] = {}
+    try:
+        siblings = tuple(series_root.parent.iterdir())
+    except OSError as error:
+        raise ReferenceCalibrationStudyError(
+            f"Could not inspect calibration search-extension series: {error}"
+        ) from error
+    for sibling in siblings:
+        if not sibling.is_dir():
+            continue
+        match = pattern.fullmatch(sibling.name)
+        if match is None:
+            continue
+        round_number = int(match.group("round"))
+        if round_number < 1 or round_number in successors:
+            raise ReferenceCalibrationStudyError(
+                "Calibration search-extension series contains an ambiguous round"
+            )
+        successors[round_number] = sibling.resolve()
+    if not successors:
+        return series_root
+    rounds = sorted(successors)
+    if rounds != list(range(1, rounds[-1] + 1)):
+        raise ReferenceCalibrationStudyError(
+            "Calibration search-extension series contains a missing round"
+        )
+    return successors[rounds[-1]]
 
 
 def _load_events(root: Path) -> tuple[dict[str, Any], ...]:
