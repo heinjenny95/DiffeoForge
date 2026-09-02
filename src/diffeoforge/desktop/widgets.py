@@ -73,6 +73,7 @@ from diffeoforge.desktop.project_setup import (
     ProjectSetupRequest,
     ProjectSetupResult,
     create_project,
+    load_existing_reference_project,
 )
 from diffeoforge.desktop.reference_calibration_dialog import (
     ReferenceCalibrationDialog,
@@ -1364,7 +1365,9 @@ class DiffeoForgeWindow(QMainWindow):
         footer_layout.addWidget(self.data_status_label, 1)
         self.continue_parameter_button = QPushButton("Continue to parameter setting")
         self.continue_parameter_button.setObjectName("primary")
-        self.continue_parameter_button.clicked.connect(lambda: self._navigate_to_step(1))
+        self.continue_parameter_button.clicked.connect(
+            self._continue_to_parameter_setting
+        )
         footer_layout.addWidget(self.continue_parameter_button)
 
         content = QWidget()
@@ -5693,6 +5696,25 @@ class DiffeoForgeWindow(QMainWindow):
 
         recommendation = self._reference_recommendation
         if key == "data_assisted":
+            if calibrated and recommendation is None:
+                self._set_reference_parameter_fields_visible(True)
+                for widget in self._reference_parameter_widgets():
+                    widget.setEnabled(False)
+                self.reference_parameter_section_label.setText(
+                    "Final pilot-calibrated parameter values"
+                )
+                self.reference_parameter_hint.setText(
+                    "These read-only values were restored from the completed pilot's "
+                    "verified configuration. No aligned-mesh analysis, GPA, or pilot "
+                    "candidate was rerun."
+                )
+                self.reference_effective_widths_label.setText(
+                    "Absolute values restored from the completed pilot configuration; "
+                    "the verified configuration and Step 3 review retain their full "
+                    "scale provenance."
+                )
+                self._sync_ready_state()
+                return
             if recommendation is None:
                 self._set_reference_parameter_fields_visible(False)
                 self.reference_parameter_section_label.setText(
@@ -5990,6 +6012,17 @@ class DiffeoForgeWindow(QMainWindow):
             return False
         return True
 
+    def _existing_configuration_path_from_form(self) -> Path | None:
+        project_text = self.project_edit.text().strip()
+        if not project_text:
+            return None
+        filename = (
+            "modern-atlas.yaml"
+            if self.engine_combo.currentData() == DesktopEngine.MODERN_CPU
+            else "atlas.yaml"
+        )
+        return (Path(project_text).expanduser() / filename).resolve()
+
     def _sync_setup_primary_action(self, *, form_ready: bool) -> None:
         current_reference_values_can_skip_pilot = bool(
             self.engine_combo.currentData() == DesktopEngine.DEFORMETRICA_REFERENCE
@@ -6153,6 +6186,17 @@ class DiffeoForgeWindow(QMainWindow):
         missing_required_fields = self._missing_required_data_fields()
         raw_data_ready = not missing_required_fields
         current_preflight_signature = self._current_input_preflight_signature()
+        existing_config = self._existing_configuration_path_from_form()
+        resumable_reference_project = bool(
+            self.engine_combo.currentData() == DesktopEngine.DEFORMETRICA_REFERENCE
+            and existing_config is not None
+            and existing_config.is_file()
+        )
+        self.continue_parameter_button.setText(
+            "Resume existing project"
+            if resumable_reference_project
+            else "Continue to parameter setting"
+        )
         self.continue_parameter_button.setEnabled(data_ready and self._worker is None)
         if (
             raw_data_ready
@@ -10186,6 +10230,45 @@ class DiffeoForgeWindow(QMainWindow):
     def _set_active_step(self, active: int) -> None:
         self._active_step = active
         self._sync_navigation_state()
+
+    @Slot()
+    def _continue_to_parameter_setting(self) -> None:
+        """Open an existing reference project or continue one new-project form."""
+
+        if self._worker is not None or not self._data_inputs_ready():
+            self._sync_ready_state()
+            return
+        config_path = self._existing_configuration_path_from_form()
+        if (
+            self.engine_combo.currentData() != DesktopEngine.DEFORMETRICA_REFERENCE
+            or config_path is None
+            or not config_path.is_file()
+        ):
+            self._navigate_to_step(1)
+            return
+        try:
+            result = load_existing_reference_project(config_path)
+        except (OSError, RuntimeError, TypeError, ValueError) as error:
+            self.data_status_label.setObjectName("statusError")
+            self.data_status_label.setStyleSheet("")
+            self.data_status_label.setText(
+                "The existing DiffeoForge project could not be resumed safely: "
+                f"{error}"
+            )
+            self._sync_navigation_state()
+            return
+
+        self._guided_reference_calibration_requested = False
+        self._reference_calibrated_config_path = None
+        self._reference_calibration_study_directory = None
+        self._project_succeeded(result)
+        self.status_label.setObjectName("statusSuccess")
+        self.status_label.setStyleSheet("")
+        self.status_label.setText(
+            "Existing project found. Its stored GPA-aligned inputs and pilot evidence "
+            "are being verified; no GPA or pilot candidate is being rerun."
+        )
+        self._review_project()
 
     @Slot(int)
     def _navigate_to_step(self, step: int) -> None:

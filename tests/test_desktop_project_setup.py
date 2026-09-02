@@ -17,6 +17,7 @@ from diffeoforge.desktop.project_setup import (
     DesktopEngine,
     ProjectSetupRequest,
     create_project,
+    load_existing_reference_project,
 )
 from diffeoforge.mesh import read_vtk_polydata, sha256_file
 from diffeoforge.preprocessing import preview_landmark_alignment
@@ -101,6 +102,31 @@ def test_reference_project_setup_uses_shared_core_and_writes_preflight(tmp_path:
     assert result.report_path == result.config_path.with_suffix(".preflight.html")
     assert result.report_path.is_file()
     assert any("did not execute Deformetrica" in notice for notice in result.notices)
+
+
+def test_existing_reference_project_reopens_without_recreating_inputs(tmp_path: Path) -> None:
+    created = create_project(
+        ProjectSetupRequest(
+            mesh_directory=MESH_DIRECTORY,
+            project_directory=tmp_path / "reference project",
+            units="millimeter",
+            engine=DesktopEngine.DEFORMETRICA_REFERENCE,
+        )
+    )
+    config_before = created.config_path.read_bytes()
+    report_before = created.report_path.read_bytes()
+
+    reopened = load_existing_reference_project(created.config_path)
+
+    assert reopened.engine is DesktopEngine.DEFORMETRICA_REFERENCE
+    assert reopened.config_path == created.config_path
+    assert reopened.template_path == created.template_path
+    assert reopened.subject_count == created.subject_count
+    assert reopened.report_path == created.report_path
+    assert reopened.preprocessing_report_path is None
+    assert created.config_path.read_bytes() == config_before
+    assert created.report_path.read_bytes() == report_before
+    assert any("without recreating" in notice for notice in reopened.notices)
 
 
 def test_reference_project_setup_persists_visible_parameter_selection(tmp_path: Path) -> None:

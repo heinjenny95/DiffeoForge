@@ -1184,6 +1184,84 @@ def test_desktop_analyzes_user_declared_gpa_meshes_before_project_creation(
     application.processEvents()
 
 
+def test_desktop_continues_existing_reference_project_instead_of_restarting_gpa(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    import diffeoforge.desktop.widgets as widgets_module
+    from diffeoforge.desktop.project_setup import DesktopEngine, ProjectSetupResult
+    from diffeoforge.desktop.widgets import DiffeoForgeWindow
+
+    application = QApplication.instance() or QApplication(
+        ["diffeoforge-existing-project-continuation-test"]
+    )
+    project_directory = tmp_path / "existing project"
+    project_directory.mkdir()
+    config_path = project_directory / "atlas.yaml"
+    original = b"existing generated configuration\n"
+    config_path.write_bytes(original)
+    result = ProjectSetupResult(
+        engine=DesktopEngine.DEFORMETRICA_REFERENCE,
+        config_path=config_path,
+        template_path=ROOT / "examples" / "synthetic" / "meshes" / "template.vtk",
+        subject_count=5,
+        report_path=None,
+        notices=("Existing project reopened.",),
+    )
+    loaded: list[Path] = []
+    reviews: list[bool] = []
+    completed_study = tmp_path / "reference-pilot-completed-extension-01"
+    completed_study.mkdir()
+
+    def fake_load(path):
+        loaded.append(Path(path))
+        return result
+
+    window = DiffeoForgeWindow()
+    window.engine_combo.setCurrentIndex(
+        window.engine_combo.findData(DesktopEngine.DEFORMETRICA_REFERENCE)
+    )
+    window.project_edit.setText(str(project_directory))
+    monkeypatch.setattr(widgets_module, "load_existing_reference_project", fake_load)
+    monkeypatch.setattr(window, "_data_inputs_ready", lambda: True)
+    monkeypatch.setattr(window, "_review_project", lambda: reviews.append(True))
+    window._sync_ready_state()
+
+    assert window.continue_parameter_button.text() == "Resume existing project"
+    window._continue_to_parameter_setting()
+
+    assert loaded == [config_path.resolve()]
+    assert window._result == result
+    assert reviews == [True]
+    assert window._procrustes_preview is None
+    assert window._reference_calibrated_config_path is None
+    assert config_path.read_bytes() == original
+    assert "no GPA or pilot candidate is being rerun" in window.status_label.text()
+
+    window._review = SimpleNamespace(engine=DesktopEngine.DEFORMETRICA_REFERENCE)
+    window._reference_readiness = SimpleNamespace(ready=True)
+    monkeypatch.setattr(
+        window,
+        "_reference_calibration_context",
+        lambda: (SimpleNamespace(), completed_study),
+    )
+    monkeypatch.setattr(
+        widgets_module,
+        "load_reference_calibration_study",
+        lambda _directory: SimpleNamespace(status="completed"),
+    )
+    window._sync_ready_state()
+
+    assert window.create_button.text() == "Apply completed pilot calibration"
+    assert window.create_button.isEnabled() is True
+    window.close()
+    application.processEvents()
+
+
 def test_desktop_can_use_current_reference_parameters_without_pilot(
     monkeypatch,
     tmp_path,
@@ -1414,6 +1492,12 @@ def test_desktop_applies_completed_search_extension_after_dialog_closes(
     assert window._reference_calibrated_config_path == calibrated_config
     assert window._result.config_path == calibrated_config
     assert review_calls == [True]
+    assert window.reference_attachment_ratio_spin.isHidden() is False
+    assert window.reference_attachment_ratio_spin.isEnabled() is False
+    assert "Final pilot-calibrated" in window.reference_parameter_section_label.text()
+    assert "No aligned-mesh analysis, GPA, or pilot candidate was rerun" in (
+        window.reference_parameter_hint.text()
+    )
     window.close()
     application.processEvents()
 
