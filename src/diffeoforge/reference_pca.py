@@ -33,27 +33,42 @@ from diffeoforge.analysis.reference_convergence_visualization import (
     reference_convergence_svg,
     write_reference_convergence_svg,
 )
+from diffeoforge.analysis.shape_space import (
+    LDDMM_METRIC_PCA_METHOD,
+    lddmm_metric_momenta_pca,
+)
 from diffeoforge.config import ConfigurationError
 from diffeoforge.mesh import sha256_file
 from diffeoforge.result_report import ConvergenceRow, RunReport, collect_run_report
 from diffeoforge.runs import publish_directory_exclusive
 from diffeoforge.strict_json import load_strict_json_object
 
-REFERENCE_PCA_BUNDLE_VERSION = "0.2"
+REFERENCE_PCA_BUNDLE_VERSION = "0.3"
 REFERENCE_PCA_MANIFEST = "reference-pca-manifest.json"
 REFERENCE_PCA_SIDECAR = "reference-pca-manifest.sha256"
-DEFAULT_REFERENCE_PCA_DIRECTORY = Path("analysis") / "reference-result-analysis-v0.2"
+DEFAULT_REFERENCE_PCA_DIRECTORY = Path("analysis") / "reference-result-analysis-v0.3"
+LEGACY_V02_REFERENCE_PCA_DIRECTORY = Path("analysis") / "reference-result-analysis-v0.2"
 LEGACY_REFERENCE_PCA_DIRECTORY = Path("analysis") / "reference-momenta-pca"
 MOMENTA_SUFFIX = "__EstimatedParameters__Momenta.txt"
 CONTROL_POINTS_SUFFIX = "__EstimatedParameters__ControlPoints.txt"
 MAX_MOMENTA_VALUES = 100_000_000
 SUBJECT_IDENTITY_SOURCE = "run manifest subject inputs in stored Deformetrica XML order"
 FEATURE_ORDER = "subject outer; control point middle; Cartesian x, y, z inner"
+LDDMM_REFERENCE_PCA_METHOD_ID = "lddmm_deformation_kernel_pca"
+CARTESIAN_REFERENCE_PCA_METHOD_ID = "cartesian_momenta_pca"
+DEFAULT_REFERENCE_PCA_METHOD_ID = LDDMM_REFERENCE_PCA_METHOD_ID
+REFERENCE_PCA_METHOD_IDS = (
+    LDDMM_REFERENCE_PCA_METHOD_ID,
+    CARTESIAN_REFERENCE_PCA_METHOD_ID,
+)
+CARTESIAN_PCA_METHOD = "centered linear PCA by deterministic float64 SVD"
+LDDMM_KERNEL_CONVENTION = "exp(-squared_distance / width^2) tensor I3"
 SCIENTIFIC_BOUNDARY = (
-    "Linear PCA is computed from Deformetrica subject initial momenta in the exact stored "
-    "control-point/Cartesian order. It is an exploratory coordinate summary, not proof of "
-    "group separation, biological effect, adequate registration, convergence, or causal "
-    "interpretation. Component signs are conventional."
+    "PCA is computed from Deformetrica subject initial momenta in the exact stored "
+    "control-point/Cartesian order. The default uses the fitted deformation-kernel tangent "
+    "metric; Cartesian PCA remains available for legacy comparison. This is an exploratory "
+    "coordinate summary, not proof of group separation, biological effect, adequate "
+    "registration, convergence, or causal interpretation. Component signs are conventional."
 )
 
 
@@ -89,8 +104,39 @@ class ReferenceMomentaInput:
 
 
 def _schema(version: str) -> dict[str, Any]:
-    if version not in {"0.1", "0.2"}:
+    if version not in {"0.1", "0.2", "0.3"}:
         raise ReferencePCAError(f"Unsupported reference PCA bundle version: {version}")
+    if version == "0.3":
+        schema = _schema("0.2")
+        schema["title"] = "DiffeoForge deformation-aware result-analysis bundle"
+        schema["properties"]["bundle_version"] = {"const": "0.3"}
+        pca_schema = schema["properties"]["pca"]
+        pca_schema["required"].extend(["method_id", "method_parameters"])
+        pca_schema["properties"]["method_id"] = {
+            "enum": list(REFERENCE_PCA_METHOD_IDS)
+        }
+        pca_schema["properties"]["method"] = {
+            "enum": [LDDMM_METRIC_PCA_METHOD, CARTESIAN_PCA_METHOD]
+        }
+        pca_schema["properties"]["feature_space"] = {
+            "enum": [
+                "subject_initial_momenta_lddmm_deformation_metric",
+                "subject_initial_momenta_cartesian",
+            ]
+        }
+        pca_schema["properties"]["method_parameters"] = {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "deformation_kernel_width": {
+                    "type": "number",
+                    "exclusiveMinimum": 0,
+                },
+                "kernel_convention": {"const": LDDMM_KERNEL_CONVENTION},
+                "control_points_sha256": {"$ref": "#/$defs/sha256"},
+            },
+        }
+        return schema
     resource = files("diffeoforge.schema").joinpath(
         f"reference-pca-bundle-v{version}.json"
     )
@@ -463,11 +509,64 @@ def _source_file_artifact(
     }
 
 
+def _deformation_kernel_width(inputs: ReferenceMomentaInput) -> float:
+    try:
+        value = float(
+            inputs.run_report.manifest["effective_config"]["model"]["deformation"][
+                "kernel_width"
+            ]
+        )
+    except (KeyError, TypeError, ValueError) as error:
+        raise ReferencePCAError(
+            "The completed run does not declare its deformation kernel width"
+        ) from error
+    if not math.isfinite(value) or value <= 0:
+        raise ReferencePCAError(
+            "The completed run declares an invalid deformation kernel width"
+        )
+    return value
+
+
+def _reference_pca(
+    inputs: ReferenceMomentaInput,
+    *,
+    method_id: str,
+    pca_components: int | None,
+) -> tuple[PCAResult, dict[str, object]]:
+    if method_id == LDDMM_REFERENCE_PCA_METHOD_ID:
+        width = _deformation_kernel_width(inputs)
+        pca = lddmm_metric_momenta_pca(
+            np.array(inputs.momenta, dtype=np.float64, copy=True),
+            np.array(inputs.control_points, dtype=np.float64, copy=True),
+            deformation_kernel_width=width,
+            n_components=pca_components,
+            subject_labels=inputs.subject_labels,
+        )
+        parameters: dict[str, object] = {
+            "deformation_kernel_width": width,
+            "kernel_convention": LDDMM_KERNEL_CONVENTION,
+            "control_points_sha256": str(inputs.control_points_record["sha256"]),
+        }
+        return pca, parameters
+    if method_id == CARTESIAN_REFERENCE_PCA_METHOD_ID:
+        pca = momenta_pca(
+            np.array(inputs.momenta, dtype=np.float64, copy=True),
+            n_components=pca_components,
+            subject_labels=inputs.subject_labels,
+        )
+        return pca, {}
+    raise ReferencePCAError(
+        "Unsupported reference PCA method. Choose one of: "
+        + ", ".join(REFERENCE_PCA_METHOD_IDS)
+    )
+
+
 def write_reference_pca_bundle(
     run_directory: Path | str,
     destination: Path | str | None = None,
     *,
     pca_components: int | None = None,
+    method_id: str = DEFAULT_REFERENCE_PCA_METHOD_ID,
     created_at: str | None = None,
 ) -> Path:
     """Atomically publish a self-contained, source-bound Deformetrica PCA bundle."""
@@ -475,10 +574,10 @@ def write_reference_pca_bundle(
     inputs = load_reference_momenta(run_directory)
     optimization = _reference_optimization_input(inputs)
     try:
-        pca = momenta_pca(
-            np.array(inputs.momenta, dtype=np.float64, copy=True),
-            n_components=pca_components,
-            subject_labels=inputs.subject_labels,
+        pca, method_parameters = _reference_pca(
+            inputs,
+            method_id=method_id,
+            pca_components=pca_components,
         )
     except (TypeError, ValueError, np.linalg.LinAlgError) as error:
         raise ReferencePCAError(f"Could not compute momenta PCA: {error}") from error
@@ -549,7 +648,9 @@ def write_reference_pca_bundle(
                 "feature_order": FEATURE_ORDER,
             },
             "pca": {
-                "method": "centered linear PCA by deterministic float64 SVD",
+                "method_id": method_id,
+                "method": pca.method,
+                "method_parameters": method_parameters,
                 "feature_space": pca.feature_space,
                 "components": pca.number_of_components,
                 "numerical_rank": pca.numerical_rank,
@@ -708,7 +809,20 @@ def _verify_source_binding(manifest: Mapping[str, Any], source_run: Path) -> Non
         raise ReferencePCAError("PCA bundle source-run hashes differ from the current run")
     if tuple(manifest["inputs"]["subject_labels"]) != inputs.subject_labels:
         raise ReferencePCAError("PCA bundle subject order differs from the source run")
-    if manifest["bundle_version"] == "0.2":
+    if (
+        manifest["bundle_version"] == "0.3"
+        and manifest["pca"]["method_id"] == LDDMM_REFERENCE_PCA_METHOD_ID
+        and not math.isclose(
+            float(manifest["pca"]["method_parameters"]["deformation_kernel_width"]),
+            _deformation_kernel_width(inputs),
+            rel_tol=0.0,
+            abs_tol=0.0,
+        )
+    ):
+        raise ReferencePCAError(
+            "PCA deformation kernel width differs from the exact source run"
+        )
+    if manifest["bundle_version"] in {"0.2", "0.3"}:
         optimization = manifest["optimization"]
         for key, path in (
             ("convergence", source_run / "logs" / "convergence.csv"),
@@ -890,7 +1004,9 @@ def verify_reference_pca_bundle(
         ):
             raise ReferencePCAError(f"Copied raw Deformetrica {label} differs from source hash")
     momenta = read_deformetrica_momenta(raw_momenta)
-    read_deformetrica_control_points(raw_controls, expected_count=momenta.shape[1])
+    control_points = read_deformetrica_control_points(
+        raw_controls, expected_count=momenta.shape[1]
+    )
     labels = tuple(input_document["subject_labels"])
     if momenta.shape != (
         int(input_document["subjects"]),
@@ -899,11 +1015,56 @@ def verify_reference_pca_bundle(
     ) or len(labels) != momenta.shape[0]:
         raise ReferencePCAError("Copied raw parameters differ from declared dimensions")
     try:
-        pca = momenta_pca(
-            np.array(momenta, dtype=np.float64, copy=True),
-            n_components=int(manifest["pca"]["components"]),
-            subject_labels=labels,
-        )
+        if manifest["bundle_version"] == "0.3":
+            method_id = str(manifest["pca"]["method_id"])
+            if method_id == LDDMM_REFERENCE_PCA_METHOD_ID:
+                method_parameters = manifest["pca"]["method_parameters"]
+                expected_parameters = {
+                    "deformation_kernel_width": float(
+                        method_parameters["deformation_kernel_width"]
+                    ),
+                    "kernel_convention": LDDMM_KERNEL_CONVENTION,
+                    "control_points_sha256": str(input_document["control_points"]["sha256"]),
+                }
+                if method_parameters != expected_parameters:
+                    raise ReferencePCAError(
+                        "PCA deformation metric parameters differ from copied controls"
+                    )
+                pca = lddmm_metric_momenta_pca(
+                    np.array(momenta, dtype=np.float64, copy=True),
+                    np.array(control_points, dtype=np.float64, copy=True),
+                    deformation_kernel_width=float(
+                        method_parameters["deformation_kernel_width"]
+                    ),
+                    n_components=int(manifest["pca"]["components"]),
+                    subject_labels=labels,
+                )
+            elif method_id == CARTESIAN_REFERENCE_PCA_METHOD_ID:
+                method_parameters = manifest["pca"]["method_parameters"]
+                if method_parameters != {}:
+                    raise ReferencePCAError(
+                        "Cartesian PCA must not declare deformation metric parameters"
+                    )
+                pca = momenta_pca(
+                    np.array(momenta, dtype=np.float64, copy=True),
+                    n_components=int(manifest["pca"]["components"]),
+                    subject_labels=labels,
+                )
+            else:
+                raise ReferencePCAError(f"Unsupported reference PCA method: {method_id}")
+            if (
+                manifest["pca"]["method"] != pca.method
+                or manifest["pca"]["feature_space"] != pca.feature_space
+            ):
+                raise ReferencePCAError(
+                    "PCA method identity or parameters differ from recomputation"
+                )
+        else:
+            pca = momenta_pca(
+                np.array(momenta, dtype=np.float64, copy=True),
+                n_components=int(manifest["pca"]["components"]),
+                subject_labels=labels,
+            )
     except (TypeError, ValueError, np.linalg.LinAlgError) as error:
         raise ReferencePCAError(f"Could not recompute momenta PCA: {error}") from error
     if pca.numerical_rank != int(manifest["pca"]["numerical_rank"]) or not math.isclose(
@@ -935,7 +1096,7 @@ def verify_reference_pca_bundle(
         pca_mean_rows(pca),
         label="PCA mean",
     )
-    if manifest["bundle_version"] == "0.2":
+    if manifest["bundle_version"] in {"0.2", "0.3"}:
         _verify_optimization(root, manifest)
     if source_run is not None:
         _verify_source_binding(manifest, Path(source_run).expanduser().resolve())

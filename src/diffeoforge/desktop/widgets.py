@@ -215,6 +215,12 @@ from diffeoforge.reference_recommendation import (
     recommend_reference_parameters,
 )
 from diffeoforge.reference_runtime import launcher_label
+from diffeoforge.reference_shape_space_comparison import (
+    DEFAULT_COMPARISON_DIRECTORY,
+    ReferenceShapeSpaceComparison,
+    verify_reference_shape_space_comparison,
+    write_reference_shape_space_comparison,
+)
 from diffeoforge.reference_validation_study import (
     create_reference_validation_study,
     load_reference_validation_study,
@@ -867,6 +873,31 @@ class _ReferencePCADeformationWorker(QRunnable):
             self.signals.failed.emit(str(error))
             return
         self.signals.succeeded.emit(result)
+
+
+class _ReferenceShapeSpaceComparisonWorker(QRunnable):
+    """Create or reverify one cheap post-hoc shape-space method comparison."""
+
+    def __init__(self, run_directory: Path) -> None:
+        super().__init__()
+        self.run_directory = run_directory.expanduser().resolve()
+        self.signals = _WorkerSignals()
+
+    @Slot()
+    def run(self) -> None:
+        try:
+            destination = self.run_directory / DEFAULT_COMPARISON_DIRECTORY
+            artifact = (
+                verify_reference_shape_space_comparison(destination)
+                if destination.exists()
+                else verify_reference_shape_space_comparison(
+                    write_reference_shape_space_comparison(self.run_directory)
+                )
+            )
+        except (OSError, RuntimeError, TypeError, ValueError) as error:
+            self.signals.failed.emit(str(error))
+            return
+        self.signals.succeeded.emit(artifact)
 
 
 class _AbandonedReferenceRecoveryWorker(QRunnable):
@@ -2472,6 +2503,51 @@ class DiffeoForgeWindow(QMainWindow):
         pca_plots_layout.addWidget(pc1_pc2_panel)
         pca_plots_layout.addWidget(pc2_pc3_panel)
         layout.addWidget(pca_plots)
+
+        self.shape_space_comparison_card = QFrame()
+        self.shape_space_comparison_card.setObjectName("card")
+        shape_space_layout = QVBoxLayout(self.shape_space_comparison_card)
+        shape_space_layout.setContentsMargins(24, 22, 24, 24)
+        shape_space_layout.setSpacing(10)
+        shape_space_title = QLabel("Shape-space method comparison")
+        shape_space_title.setObjectName("sectionTitle")
+        shape_space_summary = QLabel(
+            "Compare the default LDDMM deformation-kernel PCA with legacy Cartesian "
+            "momenta PCA, tangent-distance PCoA, three RBF KernelPCA bandwidths, Isomap, "
+            "and diffusion maps. This reuses the completed momenta and does not rerun the atlas."
+        )
+        shape_space_summary.setWordWrap(True)
+        self.shape_space_comparison_status_label = QLabel(
+            "Load a completed Deformetrica result to compare shape-space methods."
+        )
+        self.shape_space_comparison_status_label.setObjectName("status")
+        self.shape_space_comparison_status_label.setWordWrap(True)
+        self.create_shape_space_comparison_button = QPushButton(
+            "Compare shape-space methods…"
+        )
+        self.create_shape_space_comparison_button.setObjectName("primary")
+        self.create_shape_space_comparison_button.clicked.connect(
+            self._start_shape_space_comparison
+        )
+        self.create_shape_space_comparison_button.setEnabled(False)
+        shape_space_layout.addWidget(shape_space_title)
+        shape_space_layout.addWidget(shape_space_summary)
+        shape_space_layout.addWidget(
+            InfoDisclosure(
+                "How DiffeoForge uses this evidence",
+                (
+                    "The model-aligned PCA must preserve the fitted tangent metric, agree "
+                    "with independent PCoA up to rotation, and reconstruct shootable momenta. "
+                    "Generic RBF, Isomap, and diffusion-map views remain exploratory because "
+                    "their tuning changes the view and they have no automatic momenta preimage."
+                ),
+                parent=self.shape_space_comparison_card,
+            )
+        )
+        shape_space_layout.addWidget(self.shape_space_comparison_status_label)
+        shape_space_layout.addWidget(self.create_shape_space_comparison_button)
+        self.shape_space_comparison_card.hide()
+        layout.addWidget(self.shape_space_comparison_card)
         layout.addWidget(quality_card)
 
         self.reference_pca_deformation_card = QFrame()
@@ -6625,6 +6701,62 @@ class DiffeoForgeWindow(QMainWindow):
         self._sync_ready_state()
 
     @Slot()
+    def _start_shape_space_comparison(self) -> None:
+        review = self._result_review
+        if (
+            review is None
+            or review.engine_route != "deformetrica_reference"
+            or self._worker is not None
+        ):
+            return
+        worker = _ReferenceShapeSpaceComparisonWorker(review.run_directory)
+        worker.signals.succeeded.connect(self._shape_space_comparison_succeeded)
+        worker.signals.failed.connect(self._shape_space_comparison_failed)
+        self._worker = worker
+        self._set_result_controls_enabled(False)
+        self.create_shape_space_comparison_button.setText("Comparing methods…")
+        self.shape_space_comparison_status_label.setObjectName("status")
+        self.shape_space_comparison_status_label.setStyleSheet("")
+        self.shape_space_comparison_status_label.setText(
+            "Recomputing deterministic ordinations from the completed momenta; the atlas "
+            "is not being rerun or modified."
+        )
+        self.thread_pool.start(worker)
+
+    @Slot(object)
+    def _shape_space_comparison_succeeded(
+        self, artifact: ReferenceShapeSpaceComparison
+    ) -> None:
+        self._worker = None
+        self._set_result_controls_enabled(True)
+        decision = artifact.manifest["default_decision"]
+        self.create_shape_space_comparison_button.setText(
+            "Open verified method comparison"
+        )
+        self.shape_space_comparison_status_label.setObjectName("statusSuccess")
+        self.shape_space_comparison_status_label.setStyleSheet("")
+        self.shape_space_comparison_status_label.setText(
+            f"{decision['status']}: {decision['reason']} The generic RBF variants remain "
+            "exploratory."
+        )
+        QDesktopServices.openUrl(
+            QUrl.fromLocalFile(str(artifact.artifact_directory / "README.md"))
+        )
+
+    @Slot(str)
+    def _shape_space_comparison_failed(self, message: str) -> None:
+        self._worker = None
+        self._set_result_controls_enabled(True)
+        self.create_shape_space_comparison_button.setText(
+            "Compare shape-space methods…"
+        )
+        self.shape_space_comparison_status_label.setObjectName("statusError")
+        self.shape_space_comparison_status_label.setStyleSheet("")
+        self.shape_space_comparison_status_label.setText(
+            f"Shape-space comparison was not created: {message}"
+        )
+
+    @Slot()
     def _start_reference_pca_deformations(self) -> None:
         review = self._result_review
         if (
@@ -9161,7 +9293,8 @@ class DiffeoForgeWindow(QMainWindow):
             self.run_state_label.setObjectName("statusSuccess")
             self.run_state_label.setText(
                 "Deformetrica completed and the result was independently verified. "
-                "Its momenta will now be imported into a source-bound linear PCA snapshot."
+                "Its momenta will now be imported into a source-bound deformation-kernel "
+                "PCA snapshot."
             )
             self.run_progress_bar.setValue(self.run_progress_bar.maximum())
         elif result.interrupted:
@@ -9245,7 +9378,7 @@ class DiffeoForgeWindow(QMainWindow):
         self.run_state_label.setText(
             "Deformetrica completion was independently verified; its output parameters "
             "are now being imported, every subject reconstruction is being ranked for "
-            "registration QC, and a linear PCA snapshot is being recomputed. This can "
+            "registration QC, and a deformation-kernel PCA snapshot is being recomputed. This can "
             "take several minutes for a large cohort."
             if reference
             else "Workflow, bundle, inventory, mesh QC, and static SVGs are being "
@@ -9378,6 +9511,26 @@ class DiffeoForgeWindow(QMainWindow):
         self.pca_metadata_status_label.setText(
             "Ready for an exact-ID CSV join. Metadata will be applied after PCA only."
         )
+        reference_result = review.engine_route == "deformetrica_reference"
+        self.shape_space_comparison_card.setVisible(reference_result)
+        self.create_shape_space_comparison_button.setEnabled(reference_result)
+        if reference_result:
+            comparison = review.run_directory / DEFAULT_COMPARISON_DIRECTORY
+            self.create_shape_space_comparison_button.setText(
+                "Open verified method comparison"
+                if comparison.exists()
+                else "Compare shape-space methods…"
+            )
+            self.shape_space_comparison_status_label.setObjectName("status")
+            self.shape_space_comparison_status_label.setStyleSheet("")
+            self.shape_space_comparison_status_label.setText(
+                "An existing comparison will be fully reverified before opening."
+                if comparison.exists()
+                else (
+                    "Ready for deterministic post-processing of the completed momenta; "
+                    "no atlas rerun is required."
+                )
+            )
         self._sync_reference_pca_deformation_action(review)
         self.result_status_label.setObjectName("statusSuccess")
         self.result_status_label.setStyleSheet("")
@@ -9406,6 +9559,8 @@ class DiffeoForgeWindow(QMainWindow):
         self.create_scientific_report_button.setEnabled(False)
         self.create_publication_bundle_button.setEnabled(False)
         self.create_pca_metadata_button.setEnabled(False)
+        self.create_shape_space_comparison_button.setEnabled(False)
+        self.shape_space_comparison_card.hide()
         self._sync_reference_pca_deformation_action(None)
         self.status_label.setObjectName("statusError")
         self.status_label.setStyleSheet("")
@@ -10292,6 +10447,7 @@ class DiffeoForgeWindow(QMainWindow):
             and self._result_review.engine_route == "deformetrica_reference"
         )
         self.open_validation_lab_button.setEnabled(enabled and reference)
+        self.create_shape_space_comparison_button.setEnabled(enabled and reference)
         if enabled:
             self._sync_reference_pca_deformation_action(self._result_review)
         else:

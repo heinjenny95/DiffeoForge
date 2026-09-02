@@ -566,6 +566,10 @@ def _methods(review: ModernResultReview, config: Mapping[str, Any]) -> str:
         review.engine_route,
     )
     optimizer_method = optimization.get("method", "block-coordinate optimization")
+    pca_method = next(
+        (item.value for item in review.overview if item.label == "PCA method"),
+        "the PCA method recorded in the verified result bundle",
+    )
     noise = (
         f"noise standard deviation {float(model['noise_std']):g}"
         if "noise_std" in model
@@ -592,8 +596,8 @@ def _methods(review: ModernResultReview, config: Mapping[str, Any]) -> str:
         f"{float(attachment['kernel_width']):g}; deformation kernel width was "
         f"{float(deformation['kernel_width']):g} with {int(deformation['timepoints'])} "
         f"time points and {noise}. {gpa_text} Optimization used {optimizer_method}. "
-        "Subject shape variation "
-        "was summarized by centered linear PCA of subject-specific initial momenta. "
+        "Subject shape variation was summarized using "
+        f"{pca_method} of subject-specific initial momenta. "
         "Registration quality was assessed from verified surface reconstructions; residual "
         "ranking was used only to prioritize visual inspection."
     )

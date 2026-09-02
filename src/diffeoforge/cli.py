@@ -1046,7 +1046,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     reference_pca_parser = subparsers.add_parser(
         "reference-pca",
-        help="Create a verified linear PCA snapshot from completed Deformetrica momenta.",
+        help="Create a verified deformation-aware PCA snapshot from Deformetrica momenta.",
     )
     reference_pca_parser.add_argument(
         "run_directory",
@@ -1058,13 +1058,22 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         help=(
             "New result-analysis bundle directory "
-            "(default: RUN/analysis/reference-result-analysis-v0.2)."
+            "(default: RUN/analysis/reference-result-analysis-v0.3)."
         ),
     )
     reference_pca_parser.add_argument(
         "--components",
         type=int,
         help="Retain an explicit number of components (default: all available).",
+    )
+    reference_pca_parser.add_argument(
+        "--method",
+        choices=["lddmm_deformation_kernel_pca", "cartesian_momenta_pca"],
+        default="lddmm_deformation_kernel_pca",
+        help=(
+            "Shape-space metric (default: deformation-kernel PCA; Cartesian is retained "
+            "for legacy comparison)."
+        ),
     )
 
     reference_pca_verify_parser = subparsers.add_parser(
@@ -1077,6 +1086,39 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         help="Also require an exact hash binding to this current Deformetrica run.",
     )
+
+    reference_shape_space_parser = subparsers.add_parser(
+        "reference-shape-space-comparison",
+        help=(
+            "Compare deformation-kernel PCA, Cartesian PCA, PCoA, RBF KernelPCA, "
+            "Isomap, and diffusion maps for one completed Deformetrica atlas."
+        ),
+    )
+    reference_shape_space_parser.add_argument(
+        "run_directory",
+        type=Path,
+        help="Completed immutable Deformetrica run directory.",
+    )
+    reference_shape_space_parser.add_argument(
+        "--output",
+        type=Path,
+        help=(
+            "New immutable comparison directory (default: "
+            "RUN/analysis/reference-shape-space-comparison-v0.1)."
+        ),
+    )
+    reference_shape_space_parser.add_argument(
+        "--exported-components",
+        type=int,
+        default=10,
+        help="Maximum score axes exported per method (default: 10).",
+    )
+
+    reference_shape_space_verify_parser = subparsers.add_parser(
+        "reference-shape-space-comparison-verify",
+        help="Rebind the source run and recompute an immutable method comparison.",
+    )
+    reference_shape_space_verify_parser.add_argument("artifact_directory", type=Path)
 
     reference_pca_deformation_design_parser = subparsers.add_parser(
         "reference-pca-deformation-design",
@@ -2922,15 +2964,14 @@ def main(argv: Sequence[str] | None = None) -> int:
                 args.run_directory,
                 args.output,
                 pca_components=args.components,
+                method_id=args.method,
             )
             verified = verify_reference_pca_bundle(bundle, source_run=args.run_directory)
             print(f"Verified Deformetrica momenta PCA created: {bundle}")
             print(f"Subjects: {verified.manifest['inputs']['subjects']}")
             print(f"Control points: {verified.manifest['inputs']['control_point_count']}")
             print(f"Components: {verified.pca.number_of_components}")
-            print(
-                "PCA method: centered linear PCA by deterministic float64 SVD (not RBF KernelPCA)"
-            )
+            print(f"PCA method: {verified.manifest['pca']['method']}")
             print(f"PCA scores: {bundle / verified.manifest['pca']['scores_path']}")
             print(f"PCA scree plot: {bundle / verified.manifest['pca']['plots']['scree_path']}")
         except (OSError, RuntimeError, TypeError, ValueError) as error:
@@ -2950,6 +2991,42 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"Subjects: {verified.manifest['inputs']['subjects']}")
             print(f"Components: {verified.pca.number_of_components}")
             print("Raw parameter hashes and recomputed PCA tables match.")
+        except (OSError, RuntimeError, TypeError, ValueError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
+
+    if args.command == "reference-shape-space-comparison":
+        try:
+            from diffeoforge.reference_shape_space_comparison import (
+                write_reference_shape_space_comparison,
+            )
+
+            artifact = write_reference_shape_space_comparison(
+                args.run_directory,
+                args.output,
+                maximum_exported_components=args.exported_components,
+            )
+            print(f"Verified shape-space comparison created: {artifact}")
+            print("Validated default candidate: LDDMM deformation-kernel metric PCA")
+            print("Generic RBF KernelPCA remains exploratory sensitivity analysis.")
+        except (OSError, RuntimeError, TypeError, ValueError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
+
+    if args.command == "reference-shape-space-comparison-verify":
+        try:
+            from diffeoforge.reference_shape_space_comparison import (
+                verify_reference_shape_space_comparison,
+            )
+
+            artifact = verify_reference_shape_space_comparison(args.artifact_directory)
+            print(f"Shape-space comparison verified: {artifact.artifact_directory}")
+            print(
+                "Default decision: "
+                f"{artifact.manifest['default_decision']['status']}"
+            )
         except (OSError, RuntimeError, TypeError, ValueError) as error:
             print(f"ERROR: {error}", file=sys.stderr)
             return 2

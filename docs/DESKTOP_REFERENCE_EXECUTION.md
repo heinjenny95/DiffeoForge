@@ -61,8 +61,10 @@ cross-source repeats, and flushes the observed stream into
 and progress events on its protocol stdout.
 
 After the parent accepts a completed run, a separate GUI task strictly imports
-the estimated momenta and control points, publishes a source-bound linear PCA
-snapshot, verifies it by recomputation, and only then unlocks Results & PCA.
+the estimated momenta and control points, publishes a source-bound LDDMM
+deformation-kernel PCA snapshot, verifies it by recomputation, and only then
+unlocks Results & PCA. The previous Cartesian PCA remains an explicit legacy
+comparison rather than the silent default.
 This postprocessing is documented in
 [verified PCA of Deformetrica momenta](REFERENCE_PCA.md).
 

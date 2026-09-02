@@ -1,4 +1,4 @@
-# Verified Deformetrica result analysis and momenta PCA
+# Verified Deformetrica result analysis and deformation-kernel PCA
 
 Status: **connected source-level analysis path; not yet scientifically validated**
 
@@ -10,15 +10,16 @@ available without the GUI:
 ```powershell
 diffeoforge reference-pca RUN_DIRECTORY
 diffeoforge reference-pca-verify `
-  RUN_DIRECTORY/analysis/reference-result-analysis-v0.2 `
+  RUN_DIRECTORY/analysis/reference-result-analysis-v0.3 `
   --source-run RUN_DIRECTORY
 ```
 
 Neither command edits the completed run outputs. The default destination is a
 new, non-replacing directory at
-`RUN_DIRECTORY/analysis/reference-result-analysis-v0.2`. An existing
+`RUN_DIRECTORY/analysis/reference-result-analysis-v0.3`. An existing
 destination is refused. Legacy `reference-momenta-pca` snapshots remain
-readable and are never upgraded in place.
+readable and are never upgraded in place. Version 0.2 Cartesian snapshots also
+remain verifiable.
 
 ## Accepted source contract
 
@@ -98,16 +99,43 @@ dataset XML. Features are flattened in this declared order:
 
 ## Analysis method
 
-The transparent default is centered linear PCA using deterministic `float64`
-SVD. The maximum retained component count is `min(subjects - 1, features)`;
-`--components` can request a smaller explicit count. The stored sign convention
-makes the largest-absolute loading positive, with the lowest feature index used
-for ties. Component signs remain conventional.
+The default is deterministic tangent-momenta PCA in the fitted Deformetrica
+deformation-kernel metric. For control points `q` and deformation width `w`,
+DiffeoForge uses Deformetrica's Gaussian convention
+`K(q_i,q_j) = exp(-||q_i-q_j||² / w²)` and the vector-valued metric
+`K tensor I3`. PCA is performed in a numerically whitened representation, while
+the stored inverse components reconstruct exact momenta that can be passed to
+Deformetrica Shooting. The bundle records the source width, kernel convention,
+and control-point hash.
 
-This deliberately differs from the legacy local notebook, which applied an RBF
-KernelPCA with a fixed `gamma=0.25`. DiffeoForge does not silently preserve that
-undocumented scientific choice. A future kernel method must be exposed as a
-separately named, parameterized, validated option.
+The maximum retained component count is `min(subjects - 1, metric rank)`;
+`--components` can request a smaller explicit count. The stored sign convention
+makes the largest-absolute reconstructed momenta loading positive, with the
+lowest feature index used for ties. Component signs remain conventional.
+
+Legacy Cartesian momenta PCA remains an explicit option:
+
+```powershell
+diffeoforge reference-pca RUN_DIRECTORY --method cartesian_momenta_pca `
+  --output C:\path\to\new-cartesian-comparison
+```
+
+Generic RBF KernelPCA is not the default. It changes with its bandwidth and has
+no automatic inverse to shootable momenta. DiffeoForge exposes it only inside a
+named sensitivity comparison alongside PCoA, Isomap, and diffusion maps:
+
+```powershell
+diffeoforge reference-shape-space-comparison RUN_DIRECTORY
+diffeoforge reference-shape-space-comparison-verify `
+  RUN_DIRECTORY/analysis/reference-shape-space-comparison-v0.1
+```
+
+The comparison tests RBF gamma at 0.5, 1, and 2 times the median-distance
+heuristic, records distance fidelity, optimally scaled stress, centered-kernel
+alignment, and outlier overlap, and exports method scores. LDDMM tangent PCoA is
+an independent distance-based cross-check. Isomap and diffusion maps are
+exploratory views. Exact geodesic PGA is documented as not executed because it
+requires additional fitting or shooting rather than cost-free post-processing.
 
 ## Published evidence
 

@@ -469,7 +469,7 @@ def _pca_items(bundle_manifest: dict, ratios: tuple[float, ...]) -> tuple[Result
         ResultReviewItem(
             "PCA space",
             f"{pca['components']} components · rank {pca['numerical_rank']}",
-            "Centered linear PCA of Deformetrica subject initial momenta.",
+            f"{pca['method']} of Deformetrica subject initial momenta.",
         ),
         ResultReviewItem(
             "Total variance",
@@ -967,8 +967,11 @@ def review_reference_result(
         ),
         ResultReviewItem(
             "PCA method",
-            "centered linear float64 SVD",
-            "Transparent default; this is not the old notebook's RBF KernelPCA.",
+            str(manifest["pca"]["method"]),
+            (
+                "The method and metric are stored in the verified PCA bundle; generic RBF "
+                "KernelPCA is not substituted silently."
+            ),
         ),
     )
     optimization = (

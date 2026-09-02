@@ -104,8 +104,8 @@ new immutable artifact now:
 
 ```powershell
 diffeoforge reference-pca-stability `
-  "C:\result-a\analysis\reference-result-analysis-v0.2" `
-  "C:\result-b\analysis\reference-result-analysis-v0.2" `
+  "C:\result-a\analysis\reference-result-analysis-v0.3" `
+  "C:\result-b\analysis\reference-result-analysis-v0.3" `
   --output "C:\comparison\pca-stability" `
   --variance-target 0.90
 

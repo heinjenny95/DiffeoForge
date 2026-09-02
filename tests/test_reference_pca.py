@@ -44,6 +44,8 @@ from diffeoforge.modern_reference_qualification import (
 )
 from diffeoforge.modern_workflow import run_modern_workflow
 from diffeoforge.reference_pca import (
+    CARTESIAN_REFERENCE_PCA_METHOD_ID,
+    LDDMM_REFERENCE_PCA_METHOD_ID,
     REFERENCE_PCA_MANIFEST,
     REFERENCE_PCA_SIDECAR,
     ReferencePCAError,
@@ -64,6 +66,12 @@ from diffeoforge.reference_pca_deformations import (
     execute_reference_pca_deformation_design,
     verify_reference_pca_deformation_design,
     verify_reference_pca_deformation_result,
+)
+from diffeoforge.reference_shape_space_comparison import (
+    COMPARISON_MANIFEST,
+    ReferenceShapeSpaceComparisonError,
+    verify_reference_shape_space_comparison,
+    write_reference_shape_space_comparison,
 )
 from diffeoforge.runs import prepare_run
 
@@ -250,11 +258,83 @@ def test_reference_pca_bundle_is_source_bound_recomputed_and_nonreplacing(
     assert (bundle_path / "analysis" / "pca-scores.svg").is_file()
     assert (bundle_path / "analysis" / "deformetrica-convergence.svg").is_file()
     assert (bundle_path / "parameters" / "momenta.csv").is_file()
-    assert bundle.manifest["bundle_version"] == "0.2"
+    assert bundle.manifest["bundle_version"] == "0.3"
+    assert bundle.manifest["pca"]["method_id"] == LDDMM_REFERENCE_PCA_METHOD_ID
+    assert bundle.manifest["pca"]["method_parameters"]["deformation_kernel_width"] > 0
     assert bundle.manifest["optimization"]["reported_stop_signal"] == "tolerance_threshold"
 
     with pytest.raises(FileExistsError, match="already exists"):
         write_reference_pca_bundle(run)
+
+    cartesian = write_reference_pca_bundle(
+        run,
+        tmp_path / "cartesian-pca",
+        method_id=CARTESIAN_REFERENCE_PCA_METHOD_ID,
+        created_at="2026-07-19T09:00:00+00:00",
+    )
+    cartesian_bundle = verify_reference_pca_bundle(cartesian, source_run=run)
+    assert cartesian_bundle.manifest["pca"]["method_id"] == CARTESIAN_REFERENCE_PCA_METHOD_ID
+    assert cartesian_bundle.manifest["pca"]["method_parameters"] == {}
+
+
+def test_reference_shape_space_comparison_validates_model_aligned_default(
+    tmp_path: Path,
+) -> None:
+    run = _completed_reference_run(tmp_path)
+    destination = tmp_path / "shape-space-comparison"
+
+    artifact = write_reference_shape_space_comparison(
+        run,
+        destination,
+        maximum_exported_components=2,
+        created_at="2026-09-02T12:00:00+00:00",
+    )
+    verified = verify_reference_shape_space_comparison(artifact)
+
+    assert verified.manifest["default_decision"] == {
+        "generic_rbf_default": False,
+        "generic_rbf_reason": (
+            "Generic RBF KernelPCA remains sensitivity analysis because its gamma changes "
+            "the morphospace and no automatic Deformetrica-momenta preimage is available."
+        ),
+        "reason": (
+            "The deformation-kernel PCA exactly preserves the fitted atlas tangent metric "
+            "at full rank, agrees with independent tangent-distance PCoA up to rotation, "
+            "and retains direct reconstruction of shootable momenta."
+        ),
+        "selected_default_method_id": "lddmm_deformation_kernel_pca",
+        "status": "validated_for_default",
+    }
+    method_ids = {item["method_id"] for item in verified.manifest["methods"]}
+    assert method_ids == {
+        "lddmm_deformation_kernel_pca",
+        "cartesian_momenta_pca",
+        "lddmm_tangent_pcoa",
+        "rbf_kpca_gamma_0.5",
+        "rbf_kpca_gamma_1",
+        "rbf_kpca_gamma_2",
+        "isomap",
+        "diffusion_map",
+    }
+    assert (artifact / "method-metrics.csv").is_file()
+    assert (artifact / "scores.csv").is_file()
+    with pytest.raises(FileExistsError, match="already exists"):
+        write_reference_shape_space_comparison(run, destination)
+
+
+def test_reference_shape_space_comparison_detects_tampering(tmp_path: Path) -> None:
+    run = _completed_reference_run(tmp_path)
+    artifact = write_reference_shape_space_comparison(
+        run,
+        tmp_path / "comparison",
+        maximum_exported_components=2,
+        created_at="2026-09-02T12:00:00+00:00",
+    )
+    manifest = artifact / COMPARISON_MANIFEST
+    manifest.write_text(manifest.read_text(encoding="utf-8") + " ", encoding="utf-8")
+
+    with pytest.raises(ReferenceShapeSpaceComparisonError, match="SHA-256 differs"):
+        verify_reference_shape_space_comparison(artifact)
 
 
 def test_reference_pca_deformation_design_binds_exact_shooting_endpoints(
@@ -1270,8 +1350,8 @@ def test_reference_pca_cli_creates_and_strictly_verifies_bundle(
 
     assert main(["reference-pca", str(run), "--components", "1"]) == 0
     created = capsys.readouterr()
-    assert "centered linear PCA" in created.out
-    bundle = run / "analysis" / "reference-result-analysis-v0.2"
+    assert "LDDMM deformation-kernel metric tangent PCA" in created.out
+    bundle = run / "analysis" / "reference-result-analysis-v0.3"
 
     assert main(["reference-pca-verify", str(bundle), "--source-run", str(run)]) == 0
     verified = capsys.readouterr()

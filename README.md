@@ -394,7 +394,7 @@ diffeoforge report runs/pilot-001
 # After a completed Deformetrica atlas, create and independently recheck PCA:
 diffeoforge reference-pca runs/pilot-001
 diffeoforge reference-pca-verify `
-  runs/pilot-001/analysis/reference-result-analysis-v0.2 --source-run runs/pilot-001
+  runs/pilot-001/analysis/reference-result-analysis-v0.3 --source-run runs/pilot-001
 ```
 
 `init` never guesses coordinate units or silently overwrites files. A file
