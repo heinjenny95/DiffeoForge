@@ -255,10 +255,14 @@ def test_source_mesh_topology_is_checked_before_project_creation(tmp_path: Path)
     aberrans = write_vtk_polydata(
         tmp_path / "aberrans_s.vtk", vertices, nonmanifold_faces
     )
+    progress: list[tuple[int, int, str]] = []
 
     report = inspect_mesh_input_cohort(
         (template, subject, aberrans),
         template_path=template,
+        progress_callback=lambda completed, total, path: progress.append(
+            (completed, total, path.name)
+        ),
     )
 
     assert not report.ready
@@ -270,3 +274,8 @@ def test_source_mesh_topology_is_checked_before_project_creation(tmp_path: Path)
     assert "non-manifold edges" in rendered
     assert "aberrans_s.vtk" in rendered
     assert "DiffeoForge did not modify any input" in rendered
+    assert progress == [
+        (1, 3, "template.vtk"),
+        (2, 3, "subject-valid.vtk"),
+        (3, 3, "aberrans_s.vtk"),
+    ]

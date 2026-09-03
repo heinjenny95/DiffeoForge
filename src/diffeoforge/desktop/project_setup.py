@@ -3,10 +3,15 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
 from copy import deepcopy
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from diffeoforge.preprocessing import LandmarkAlignmentPreview
 
 from diffeoforge.config import ConfigurationError, load_config, validate_input_paths
 from diffeoforge.initialization import (
@@ -408,7 +413,11 @@ def _normalize_request(request: ProjectSetupRequest) -> ProjectSetupRequest:
     )
 
 
-def _create_reference_project(request: ProjectSetupRequest) -> ProjectSetupResult:
+def _create_reference_project(
+    request: ProjectSetupRequest,
+    approved_procrustes_preview: LandmarkAlignmentPreview | None = None,
+    progress_callback: Callable[[int, int, Path], None] | None = None,
+) -> ProjectSetupResult:
     config_path = request.project_directory / "atlas.yaml"
     report_path = default_preflight_report_path(config_path)
     ensure_generated_configuration_replaceable(
@@ -448,6 +457,8 @@ def _create_reference_project(request: ProjectSetupRequest) -> ProjectSetupResul
             tolerance=request.procrustes_tolerance,
             max_iterations=request.procrustes_max_iterations,
             expected_fingerprint=request.approved_procrustes_fingerprint,
+            approved_preview=approved_procrustes_preview,
+            progress_callback=progress_callback,
         )
         input_directory = aligned.aligned_directory
         input_template = aligned.template
@@ -586,7 +597,11 @@ def _create_reference_project(request: ProjectSetupRequest) -> ProjectSetupResul
     )
 
 
-def _create_modern_project(request: ProjectSetupRequest) -> ProjectSetupResult:
+def _create_modern_project(
+    request: ProjectSetupRequest,
+    approved_procrustes_preview: LandmarkAlignmentPreview | None = None,
+    progress_callback: Callable[[int, int, Path], None] | None = None,
+) -> ProjectSetupResult:
     try:
         from diffeoforge.modern_workflow import (
             CONFIG_MARKER as MODERN_CONFIG_MARKER,
@@ -663,6 +678,8 @@ def _create_modern_project(request: ProjectSetupRequest) -> ProjectSetupResult:
             tolerance=request.procrustes_tolerance,
             max_iterations=request.procrustes_max_iterations,
             expected_fingerprint=request.approved_procrustes_fingerprint,
+            approved_preview=approved_procrustes_preview,
+            progress_callback=progress_callback,
         )
         input_directory = aligned.aligned_directory
         input_template = aligned.template
@@ -686,6 +703,11 @@ def _create_modern_project(request: ProjectSetupRequest) -> ProjectSetupResult:
             allow_reflection=request.procrustes_allow_reflection,
             tolerance=request.procrustes_tolerance,
             max_iterations=request.procrustes_max_iterations,
+            source_metadata=(
+                approved_procrustes_preview.source_metadata
+                if approved_procrustes_preview is not None
+                else None
+            ),
         )
         if preview.fingerprint != request.approved_procrustes_fingerprint:
             raise ConfigurationError(
@@ -788,7 +810,12 @@ def _create_modern_project(request: ProjectSetupRequest) -> ProjectSetupResult:
     )
 
 
-def create_project(request: ProjectSetupRequest) -> ProjectSetupResult:
+def create_project(
+    request: ProjectSetupRequest,
+    *,
+    approved_procrustes_preview: LandmarkAlignmentPreview | None = None,
+    progress_callback: Callable[[int, int, Path], None] | None = None,
+) -> ProjectSetupResult:
     """Validate inputs and create or explicitly replace one generated starter project."""
 
     normalized = _normalize_request(request)
@@ -814,5 +841,13 @@ def create_project(request: ProjectSetupRequest) -> ProjectSetupResult:
                 "copies and create canonical aligned VTK inputs."
             )
     if normalized.engine is DesktopEngine.MODERN_CPU:
-        return _create_modern_project(normalized)
-    return _create_reference_project(normalized)
+        return _create_modern_project(
+            normalized,
+            approved_procrustes_preview,
+            progress_callback,
+        )
+    return _create_reference_project(
+        normalized,
+        approved_procrustes_preview,
+        progress_callback,
+    )

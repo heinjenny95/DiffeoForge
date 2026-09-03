@@ -6,6 +6,7 @@ import hashlib
 import json
 import shutil
 import tempfile
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -156,8 +157,15 @@ def preview_landmark_alignment(
     allow_reflection: bool = False,
     tolerance: float = DEFAULT_PROCRUSTES_TOLERANCE,
     max_iterations: int = DEFAULT_PROCRUSTES_MAX_ITERATIONS,
+    source_metadata: Sequence[SurfaceMeshMetadata] | None = None,
 ) -> LandmarkAlignmentPreview:
-    """Compute a hash-bound alignment preview without creating or changing files."""
+    """Compute a hash-bound alignment preview without creating or changing files.
+
+    A caller that already completed the exact-cohort mesh preflight may supply its
+    immutable metadata.  GPA itself only needs landmark coordinates; reusing the
+    hash-bound metadata avoids parsing every high-resolution surface a second time.
+    Every supplied source hash is still checked before the preview is returned.
+    """
 
     directory = Path(mesh_directory).expanduser().resolve()
     if not directory.is_dir():
@@ -167,8 +175,30 @@ def preview_landmark_alignment(
         raise ConfigurationError(f"Landmark CSV does not exist: {landmark_source}")
     template_path, subject_paths = _select_inputs(directory, template, subject_pattern)
     source_paths = (template_path, *subject_paths)
-    source_metadata = tuple(inspect_surface_mesh(path) for path in source_paths)
-    source_hashes = tuple(item.sha256 for item in source_metadata)
+    if source_metadata is None:
+        resolved_metadata = tuple(inspect_surface_mesh(path) for path in source_paths)
+    else:
+        resolved_metadata = tuple(source_metadata)
+        if len(resolved_metadata) != len(source_paths):
+            raise ConfigurationError(
+                "Cached mesh metadata does not match the Procrustes cohort length"
+            )
+        for path, metadata in zip(source_paths, resolved_metadata, strict=True):
+            if Path(metadata.path).expanduser().resolve() != path:
+                raise ConfigurationError(
+                    "Cached mesh metadata order does not match the Procrustes cohort"
+                )
+            try:
+                current_bytes = path.stat().st_size
+            except OSError as error:
+                raise ConfigurationError(
+                    f"Could not verify cached mesh metadata for {path}: {error}"
+                ) from error
+            if current_bytes != metadata.bytes:
+                raise ConfigurationError(
+                    f"Mesh size changed after data preflight: {path}"
+                )
+    source_hashes = tuple(item.sha256 for item in resolved_metadata)
     aligned_filenames = tuple(canonical_vtk_filename(path) for path in source_paths)
     landmark_hash = sha256_file(landmark_source)
     labels, landmark_values = read_landmark_csv(
@@ -201,7 +231,7 @@ def preview_landmark_alignment(
         }
         for path, metadata, aligned_filename in zip(
             source_paths,
-            source_metadata,
+            resolved_metadata,
             aligned_filenames,
             strict=True,
         )
@@ -230,7 +260,7 @@ def preview_landmark_alignment(
         landmark_labels=labels,
         landmark_sha256=landmark_hash,
         mesh_sha256=source_hashes,
-        source_metadata=source_metadata,
+        source_metadata=resolved_metadata,
         aligned_filenames=aligned_filenames,
         scale_to_unit_centroid_size=scale_to_unit_centroid_size,
         allow_reflection=allow_reflection,
@@ -330,6 +360,8 @@ def prepare_landmark_aligned_inputs(
     tolerance: float = DEFAULT_PROCRUSTES_TOLERANCE,
     max_iterations: int = DEFAULT_PROCRUSTES_MAX_ITERATIONS,
     expected_fingerprint: str | None = None,
+    approved_preview: LandmarkAlignmentPreview | None = None,
+    progress_callback: Callable[[int, int, Path], None] | None = None,
 ) -> AlignedInputCohort:
     """Create or verify one content-addressed Procrustes-aligned mesh cohort.
 
@@ -338,16 +370,37 @@ def prepare_landmark_aligned_inputs(
     """
 
     project = Path(project_directory).expanduser().resolve()
-    preview = preview_landmark_alignment(
-        mesh_directory,
-        landmarks_file=landmarks_file,
-        template=template,
-        subject_pattern=subject_pattern,
-        scale_to_unit_centroid_size=scale_to_unit_centroid_size,
-        allow_reflection=allow_reflection,
-        tolerance=tolerance,
-        max_iterations=max_iterations,
-    )
+    if approved_preview is None:
+        preview = preview_landmark_alignment(
+            mesh_directory,
+            landmarks_file=landmarks_file,
+            template=template,
+            subject_pattern=subject_pattern,
+            scale_to_unit_centroid_size=scale_to_unit_centroid_size,
+            allow_reflection=allow_reflection,
+            tolerance=tolerance,
+            max_iterations=max_iterations,
+        )
+    else:
+        preview = approved_preview
+        directory = Path(mesh_directory).expanduser().resolve()
+        landmark_source = Path(landmarks_file).expanduser().resolve()
+        template_path, subject_paths = _select_inputs(directory, template, subject_pattern)
+        if (
+            preview.mesh_directory != directory
+            or preview.landmarks != landmark_source
+            or preview.template != template_path
+            or preview.subjects != subject_paths
+            or preview.subject_pattern != subject_pattern
+            or preview.scale_to_unit_centroid_size != scale_to_unit_centroid_size
+            or preview.allow_reflection != allow_reflection
+            or preview.tolerance != float(tolerance)
+            or preview.max_iterations != max_iterations
+        ):
+            raise ConfigurationError(
+                "The approved preview (Procrustes) does not match the requested inputs "
+                "or settings"
+            )
     if expected_fingerprint is not None and preview.fingerprint != expected_fingerprint:
         raise ConfigurationError(
             "The current Procrustes inputs or settings differ from the approved preview"
@@ -413,29 +466,44 @@ def prepare_landmark_aligned_inputs(
         landmark_copy = temporary / "landmarks.csv"
         if sha256_file(landmark_source) != preview.landmark_sha256:
             raise ConfigurationError(
-                "The landmark file changed after the approved Procrustes preview"
+                "The landmark file changed after the approved preview (Procrustes)"
             )
         shutil.copyfile(landmark_source, landmark_copy)
         if sha256_file(landmark_copy) != preview.landmark_sha256:
             raise ConfigurationError(
-                "The copied landmark file differs from the approved Procrustes preview"
+                "The copied landmark file differs from the approved preview (Procrustes)"
             )
-        geometries = []
-        for path, expected_sha256, expected_metadata in zip(
-            source_paths,
-            preview.mesh_sha256,
-            preview.source_metadata,
-            strict=True,
+        mesh_evidence: list[dict[str, object]] = []
+        for index, (
+            path,
+            expected_sha256,
+            expected_metadata,
+            transform,
+            residual,
+            aligned_filename,
+            source_record,
+        ) in enumerate(
+            zip(
+                source_paths,
+                preview.mesh_sha256,
+                preview.source_metadata,
+                alignment.transforms,
+                alignment.residuals,
+                preview.aligned_filenames,
+                source_records,
+                strict=True,
+            )
         ):
             if sha256_file(path) != expected_sha256:
                 raise ConfigurationError(
-                    f"Mesh changed after the approved Procrustes preview: {path}"
+                    f"Mesh changed after the approved preview (Procrustes): {path}"
                 )
             raw_copy = raw_directory / path.name
             shutil.copyfile(path, raw_copy)
-            if sha256_file(raw_copy) != expected_sha256:
+            raw_copy_sha256 = sha256_file(raw_copy)
+            if raw_copy_sha256 != expected_sha256:
                 raise ConfigurationError(
-                    f"Raw mesh copy differs from the approved Procrustes preview: {path}"
+                    f"Raw mesh copy differs from the approved preview (Procrustes): {path}"
                 )
             geometry = read_surface_mesh(path)
             if sha256_file(path) != expected_sha256:
@@ -447,35 +515,15 @@ def prepare_landmark_aligned_inputs(
                 or len(geometry.triangles) != expected_metadata.triangles
             ):
                 raise ConfigurationError(
-                    f"Mesh geometry changed after the approved Procrustes preview: {path}"
+                    f"Mesh geometry changed after the approved preview (Procrustes): {path}"
                 )
-            geometries.append(geometry)
-        mesh_evidence: list[dict[str, object]] = []
-        for index, (
-            source,
-            geometry,
-            transform,
-            residual,
-            aligned_filename,
-            source_record,
-        ) in enumerate(
-            zip(
-                source_paths,
-                geometries,
-                alignment.transforms,
-                alignment.residuals,
-                preview.aligned_filenames,
-                source_records,
-                strict=True,
-            )
-        ):
             aligned_vertices = transform.apply(
                 np.asarray(geometry.vertices, dtype=np.float64)
             )
             aligned_path = aligned_directory / aligned_filename
             write_vtk_polydata(
                 aligned_path,
-                aligned_vertices.tolist(),
+                aligned_vertices,
                 geometry.triangles,
                 title=f"DiffeoForge Procrustes aligned mesh {index:04d}",
             )
@@ -483,8 +531,8 @@ def prepare_landmark_aligned_inputs(
                 {
                     "index": index,
                     **source_record,
-                    "raw_copy_path": f"raw/{source.name}",
-                    "raw_copy_sha256": sha256_file(raw_directory / source.name),
+                    "raw_copy_path": f"raw/{path.name}",
+                    "raw_copy_sha256": raw_copy_sha256,
                     "aligned_path": f"aligned-vtk/{aligned_filename}",
                     "aligned_sha256": sha256_file(aligned_path),
                     "aligned_format": "legacy_vtk",
@@ -498,6 +546,8 @@ def prepare_landmark_aligned_inputs(
                     },
                 }
             )
+            if progress_callback is not None:
+                progress_callback(index + 1, len(source_paths), path)
         evidence = {
             "preprocessing_version": PREPROCESSING_VERSION,
             "fingerprint": fingerprint,

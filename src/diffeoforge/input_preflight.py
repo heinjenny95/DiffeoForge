@@ -6,7 +6,7 @@ import hashlib
 import json
 import math
 import statistics
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -18,7 +18,7 @@ from diffeoforge.config import ConfigurationError
 from diffeoforge.mesh_quality import (
     ATLAS_INPUT_MESH_QUALITY_SETTINGS,
     MeshQualityResult,
-    assess_triangle_mesh,
+    assess_normalized_triangle_mesh,
     mesh_quality_failures,
 )
 from diffeoforge.surface_io import SurfaceMeshMetadata, load_surface_mesh
@@ -460,6 +460,7 @@ def inspect_mesh_input_cohort(
     landmark_csv: Path | str | None = None,
     procrustes_enabled: bool = True,
     scale_to_unit_centroid_size: bool = True,
+    progress_callback: Callable[[int, int, Path], None] | None = None,
 ) -> MeshInputPreflight:
     """Inspect an exact surface cohort and optional canonical landmark CSV read-only."""
 
@@ -468,18 +469,20 @@ def inspect_mesh_input_cohort(
         raise ConfigurationError("Mesh input preflight requires at least two meshes")
     metadata: list[SurfaceMeshMetadata] = []
     quality_observations: list[InputMeshQualityObservation] = []
-    for path in paths:
+    for index, path in enumerate(paths, start=1):
         loaded = load_surface_mesh(path)
         metadata.append(loaded.metadata)
         quality_observations.append(
             InputMeshQualityObservation(
                 path=str(path),
-                result=assess_triangle_mesh(
+                result=assess_normalized_triangle_mesh(
                     loaded.geometry.vertices,
                     loaded.geometry.triangles,
                 ),
             )
         )
+        if progress_callback is not None:
+            progress_callback(index, len(paths), path)
     metadata_tuple = tuple(metadata)
     quality_tuple = tuple(quality_observations)
     if landmark_csv is None:

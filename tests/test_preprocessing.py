@@ -105,6 +105,57 @@ def test_procrustes_preview_is_read_only_and_binds_later_publication(
     assert result.fingerprint == preview.fingerprint
 
 
+def test_procrustes_preview_reuses_verified_preflight_metadata(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    from diffeoforge import preprocessing
+
+    landmarks = _write_landmarks(tmp_path / "landmarks.csv")
+    first = preview_landmark_alignment(MESH_DIRECTORY, landmarks_file=landmarks)
+
+    def unexpected_surface_parse(_path: Path) -> None:
+        raise AssertionError("cached GPA preview reparsed a full-resolution surface")
+
+    monkeypatch.setattr(preprocessing, "inspect_surface_mesh", unexpected_surface_parse)
+    cached = preview_landmark_alignment(
+        MESH_DIRECTORY,
+        landmarks_file=landmarks,
+        source_metadata=first.source_metadata,
+    )
+
+    assert cached.fingerprint == first.fingerprint
+    assert np.allclose(cached.alignment.mean_shape, first.alignment.mean_shape)
+
+
+def test_preparation_reuses_approved_preview_without_recomputing_gpa(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    from diffeoforge import preprocessing
+
+    landmarks = _write_landmarks(tmp_path / "landmarks.csv")
+    preview = preview_landmark_alignment(MESH_DIRECTORY, landmarks_file=landmarks)
+
+    def unexpected_preview(*_args, **_kwargs) -> None:
+        raise AssertionError("approved GPA was recomputed during project preparation")
+
+    monkeypatch.setattr(
+        preprocessing,
+        "preview_landmark_alignment",
+        unexpected_preview,
+    )
+    result = prepare_landmark_aligned_inputs(
+        MESH_DIRECTORY,
+        project_directory=tmp_path / "project",
+        landmarks_file=landmarks,
+        expected_fingerprint=preview.fingerprint,
+        approved_preview=preview,
+    )
+
+    assert result.fingerprint == preview.fingerprint
+
+
 def test_procrustes_publication_rejects_changed_approved_preview(
     tmp_path: Path,
 ) -> None:

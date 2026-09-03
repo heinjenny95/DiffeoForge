@@ -78,6 +78,35 @@ def test_mesh_preview_edge_budget_is_deterministic_and_disclosed(tmp_path: Path)
     assert len(projection.points) <= projection.displayed_edge_count * 2
 
 
+def test_mesh_preview_triangle_budget_creates_display_only_proxy(tmp_path: Path) -> None:
+    vertices = ((0.0, 0.0, 0.0),) + tuple(
+        (float(index), float(index % 3), 1.0)
+        for index in range(1, 15)
+    )
+    triangles = tuple((0, index, index + 1) for index in range(1, 14))
+    source = write_vtk_polydata(tmp_path / "large-preview.vtk", vertices, triangles)
+    exact = load_mesh_preview(source)
+
+    proxy = load_mesh_preview(source, triangle_budget=4)
+
+    assert proxy.sha256 == exact.sha256
+    assert proxy.bounds == exact.bounds
+    assert proxy.triangle_count == 4
+    assert proxy.triangle_count < exact.triangle_count
+    assert proxy.point_count <= 12
+
+
+@pytest.mark.parametrize("triangle_budget", [0, -1, True])
+def test_mesh_preview_rejects_invalid_triangle_budget(
+    tmp_path: Path,
+    triangle_budget: int,
+) -> None:
+    source = _tetrahedron(tmp_path / "template.vtk")
+
+    with pytest.raises(ValueError, match="positive integer"):
+        load_mesh_preview(source, triangle_budget=triangle_budget)
+
+
 def test_default_preview_budget_bounds_plane_switch_work() -> None:
     edge_count = DEFAULT_EDGE_BUDGET + 5
     model = MeshPreviewModel(

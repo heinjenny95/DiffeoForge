@@ -8,6 +8,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from diffeoforge.desktop.mesh_preview import (
+    DEFAULT_GPA_TRIANGLE_BUDGET,
     MeshPreviewError,
     MeshPreviewModel,
     load_mesh_preview,
@@ -60,6 +61,7 @@ class GpaAlignedWireframe:
     sha256: str
     source_format: str
     vertices: np.ndarray
+    triangles: np.ndarray
     edges: np.ndarray
     landmarks: np.ndarray
     squared_landmark_residual: float
@@ -69,10 +71,13 @@ class GpaAlignedWireframe:
 
     def __post_init__(self) -> None:
         vertices = np.asarray(self.vertices)
+        triangles = np.asarray(self.triangles)
         edges = np.asarray(self.edges)
         landmarks = np.asarray(self.landmarks)
         if vertices.ndim != 2 or vertices.shape[1] != 3:
             raise ValueError("wireframe vertices must have shape (points, 3)")
+        if triangles.ndim != 2 or triangles.shape[1] != 3:
+            raise ValueError("preview triangles must have shape (triangles, 3)")
         if edges.ndim != 2 or edges.shape[1] != 2:
             raise ValueError("wireframe edges must have shape (edges, 2)")
         if landmarks.ndim != 2 or landmarks.shape[1] != 3:
@@ -90,7 +95,13 @@ class GpaAlignedWireframe:
             int(np.min(edges)) < 0 or int(np.max(edges)) >= vertices.shape[0]
         ):
             raise ValueError("wireframe edge index is outside its vertex array")
+        if triangles.size and (
+            int(np.min(triangles)) < 0
+            or int(np.max(triangles)) >= vertices.shape[0]
+        ):
+            raise ValueError("preview triangle index is outside its vertex array")
         object.__setattr__(self, "vertices", _readonly(vertices, dtype=np.float64))
+        object.__setattr__(self, "triangles", _readonly(triangles, dtype=np.int64))
         object.__setattr__(self, "edges", _readonly(edges, dtype=np.int64))
         object.__setattr__(self, "landmarks", _readonly(landmarks, dtype=np.float64))
 
@@ -107,6 +118,8 @@ class GpaAlignmentVisual:
     first_detail: MeshPreviewModel
     total_displayed_edges: int
     total_source_edges: int
+    total_source_triangles: int
+    detail_triangle_budget: int
 
     def __post_init__(self) -> None:
         if len(self.fingerprint) != 64:
@@ -128,12 +141,17 @@ class GpaAlignmentVisual:
 def _verified_source_model(
     preview: LandmarkAlignmentPreview,
     index: int,
+    *,
+    triangle_budget: int | None = None,
 ) -> MeshPreviewModel:
     if isinstance(index, bool) or not isinstance(index, int):
         raise TypeError("mesh index must be an integer")
     if index < 0 or index >= len(preview.source_paths):
         raise IndexError("mesh index is outside the GPA cohort")
-    model = load_mesh_preview(preview.source_paths[index])
+    model = load_mesh_preview(
+        preview.source_paths[index],
+        triangle_budget=triangle_budget,
+    )
     if model.sha256 != preview.mesh_sha256[index]:
         raise MeshPreviewError(
             f"Mesh changed after the numerical GPA preview: {model.path}"
@@ -144,10 +162,16 @@ def _verified_source_model(
 def load_gpa_aligned_detail(
     preview: LandmarkAlignmentPreview,
     index: int,
+    *,
+    triangle_budget: int | None = None,
 ) -> MeshPreviewModel:
-    """Load and transform one complete source mesh for detailed inspection."""
+    """Load and transform one source mesh or an explicit display-only proxy."""
 
-    source = _verified_source_model(preview, index)
+    source = _verified_source_model(
+        preview,
+        index,
+        triangle_budget=triangle_budget,
+    )
     vertices = np.asarray(source.vertices, dtype=np.float64)
     aligned = preview.alignment.transforms[index].apply(vertices)
     return _aligned_model(source, aligned)
@@ -157,8 +181,14 @@ def build_gpa_alignment_visual(
     preview: LandmarkAlignmentPreview,
     *,
     cohort_edge_budget: int = DEFAULT_COHORT_EDGE_BUDGET,
+    detail_triangle_budget: int = DEFAULT_GPA_TRIANGLE_BUDGET,
 ) -> GpaAlignmentVisual:
-    """Build a deterministic all-mesh overlay without retaining full cohort meshes."""
+    """Build a deterministic all-mesh overlay without retaining full cohort meshes.
+
+    Every surface is reduced to a bounded display-only proxy while it is loaded.
+    The numerical GPA and later atlas preparation remain bound to the complete source
+    files and do not consume this visualization geometry.
+    """
 
     if not isinstance(preview, LandmarkAlignmentPreview):
         raise TypeError("preview must be a LandmarkAlignmentPreview")
@@ -168,6 +198,12 @@ def build_gpa_alignment_visual(
         raise TypeError("cohort_edge_budget must be an integer")
     if cohort_edge_budget < 1:
         raise ValueError("cohort_edge_budget must be positive")
+    if (
+        isinstance(detail_triangle_budget, bool)
+        or not isinstance(detail_triangle_budget, int)
+        or detail_triangle_budget < 1
+    ):
+        raise ValueError("detail_triangle_budget must be a positive integer")
     mesh_count = len(preview.source_paths)
     if not (
         mesh_count
@@ -187,13 +223,31 @@ def build_gpa_alignment_visual(
     global_maximum = np.full(3, -np.inf, dtype=np.float64)
     first_detail: MeshPreviewModel | None = None
     total_source_edges = 0
+    total_source_triangles = 0
     total_displayed_edges = 0
     for index in range(mesh_count):
-        source = _verified_source_model(preview, index)
+        source = _verified_source_model(
+            preview,
+            index,
+            triangle_budget=detail_triangle_budget,
+        )
         vertices = np.asarray(source.vertices, dtype=np.float64)
         aligned = preview.alignment.transforms[index].apply(vertices)
-        global_minimum = np.minimum(global_minimum, np.min(aligned, axis=0))
-        global_maximum = np.maximum(global_maximum, np.max(aligned, axis=0))
+        x_min, x_max, y_min, y_max, z_min, z_max = (
+            preview.source_metadata[index].bounds
+        )
+        source_bounds = np.asarray(
+            [
+                (x, y, z)
+                for x in (x_min, x_max)
+                for y in (y_min, y_max)
+                for z in (z_min, z_max)
+            ],
+            dtype=np.float64,
+        )
+        aligned_bounds = preview.alignment.transforms[index].apply(source_bounds)
+        global_minimum = np.minimum(global_minimum, np.min(aligned_bounds, axis=0))
+        global_maximum = np.maximum(global_maximum, np.max(aligned_bounds, axis=0))
         if first_detail is None:
             first_detail = _aligned_model(source, aligned)
 
@@ -207,18 +261,14 @@ def build_gpa_alignment_visual(
             selected_edges = source_edges[selection]
         else:
             selected_edges = source_edges
-        source_vertex_indices, inverse = np.unique(
-            selected_edges.reshape(-1),
-            return_inverse=True,
-        )
-        local_edges = inverse.reshape(-1, 2)
         wireframes.append(
             GpaAlignedWireframe(
                 path=str(source.path),
                 sha256=source.sha256,
                 source_format=preview.source_metadata[index].source_format,
-                vertices=aligned[source_vertex_indices],
-                edges=local_edges,
+                vertices=aligned,
+                triangles=np.asarray(source.triangles, dtype=np.int64),
+                edges=selected_edges,
                 landmarks=preview.alignment.aligned_landmarks[index],
                 squared_landmark_residual=preview.alignment.residuals[index],
                 applied_scale=preview.alignment.transforms[index].scale,
@@ -226,8 +276,9 @@ def build_gpa_alignment_visual(
                 source_triangle_count=source.triangle_count,
             )
         )
-        total_source_edges += len(source.edges)
-        total_displayed_edges += len(local_edges)
+        total_source_edges += preview.source_metadata[index].triangles * 3
+        total_source_triangles += preview.source_metadata[index].triangles
+        total_displayed_edges += len(selected_edges)
 
     if first_detail is None or not (
         np.isfinite(global_minimum).all() and np.isfinite(global_maximum).all()
@@ -253,4 +304,6 @@ def build_gpa_alignment_visual(
         first_detail=first_detail,
         total_displayed_edges=total_displayed_edges,
         total_source_edges=total_source_edges,
+        total_source_triangles=total_source_triangles,
+        detail_triangle_budget=detail_triangle_budget,
     )

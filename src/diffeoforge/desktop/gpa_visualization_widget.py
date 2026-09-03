@@ -102,6 +102,20 @@ class GpaAlignmentCanvas3D(QWidget):
         self._detail_triangles = np.asarray(detail.triangles, dtype=np.int64)
         self.update()
 
+    def set_selected_proxy(self, index: int) -> None:
+        """Select one already loaded bounded GPA display proxy."""
+
+        if self._visual is None:
+            raise RuntimeError("Set the GPA visual before selecting a mesh")
+        if index < 0 or index >= len(self._visual.meshes):
+            raise IndexError("Selected GPA mesh is outside the cohort")
+        mesh = self._visual.meshes[index]
+        self._selected_index = index
+        self._detail = None
+        self._detail_vertices = mesh.vertices
+        self._detail_triangles = mesh.triangles
+        self.update()
+
     def set_show_cohort(self, visible: bool) -> None:
         self._show_cohort = bool(visible)
         self.update()
@@ -304,7 +318,7 @@ class GpaAlignmentCanvas3D(QWidget):
         painter = QPainter(self)
         painter.fillRect(self.rect(), QColor("#f7f9f9"))
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-        if self._visual is None or self._detail is None:
+        if self._visual is None or self._detail_vertices.size == 0:
             painter.setPen(QColor("#64777c"))
             painter.drawText(
                 self.rect().adjusted(20, 20, -20, -20),

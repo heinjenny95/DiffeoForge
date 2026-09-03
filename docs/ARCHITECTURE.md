@@ -99,6 +99,17 @@ conservative dense-equivalent payload arithmetic and host observations, and
 publishes strict JSON plus self-contained HTML. It deliberately does not cross
 the backend boundary into runtime or peak-memory prediction.
 
+Desktop intake separates source geometry, display geometry, and computation
+geometry. Exact asynchronous preflight records full source evidence with compact
+topology bookkeeping and observable per-mesh progress. Numerical GPA reuses that
+metadata, while the interactive review retains bounded deterministic face subsets.
+After approval, project preparation streams the cohort mesh-by-mesh through the
+full-resolution similarity transform and canonical writer. Display proxies never
+cross the engine boundary; no analysis mesh is silently decimated. The client still
+needs memory for its largest individual parsed mesh. The complete boundary and
+remaining server-side preprocessing work are documented in
+`docs/HIGH_RESOLUTION_INPUTS.md`.
+
 `modern-run` now accepts a synchronous read-only progress observer. The
 application service emits versioned workflow-stage events and translates the
 dense optimizer's committed decision records without exposing rejected

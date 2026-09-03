@@ -17,10 +17,8 @@ from PySide6.QtWidgets import (
 
 from diffeoforge.desktop.gpa_visualization import (
     GpaAlignmentVisual,
-    load_gpa_aligned_detail,
 )
 from diffeoforge.desktop.gpa_visualization_widget import GpaAlignmentCanvas3D
-from diffeoforge.desktop.mesh_preview import MeshPreviewError
 from diffeoforge.preprocessing import LandmarkAlignmentPreview
 
 
@@ -55,8 +53,10 @@ class GpaAlignmentReviewDialog(QDialog):
             "equal-weight, high-contrast colored wireframe: coincident silhouettes indicate "
             "matching position, scale, and orientation, while separated colors expose "
             "misalignment immediately. The selected mesh is only drawn slightly thicker. "
-            "Enable its shaded surface when you want an individual detail inspection. "
-            "No source or aligned file is created or changed."
+            "Enable its shaded surface when you want an individual inspection. Large "
+            "surfaces use bounded display proxies here; numerical GPA and atlas computation "
+            "remain bound to the complete source meshes. No source or aligned file is "
+            "created or changed."
         )
         explanation.setWordWrap(True)
         explanation.setObjectName("boundaryText")
@@ -134,8 +134,9 @@ class GpaAlignmentReviewDialog(QDialog):
         self.landmarks_check.setChecked(True)
         self.landmarks_check.toggled.connect(self._set_landmarks_visible)
         self.sampling_label = QLabel(
-            f"Interactive overlay: {visual.total_displayed_edges:,} of "
-            f"{visual.total_source_edges:,} source edges"
+            f"Display proxies: up to {visual.detail_triangle_budget:,} faces per mesh; "
+            f"{visual.total_displayed_edges:,} overlay edges from "
+            f"{visual.total_source_triangles:,} full-resolution source faces"
         )
         self.sampling_label.setObjectName("hint")
         display_controls.addWidget(self.cohort_overlay_check)
@@ -147,7 +148,7 @@ class GpaAlignmentReviewDialog(QDialog):
 
         self.canvas = GpaAlignmentCanvas3D()
         self.canvas.set_visual(visual)
-        self.canvas.set_selected_detail(0, visual.first_detail)
+        self.canvas.set_selected_proxy(0)
         layout.addWidget(self.canvas, 1)
 
         review_status = QHBoxLayout()
@@ -194,23 +195,7 @@ class GpaAlignmentReviewDialog(QDialog):
         if combo_index < 0:
             return
         index = int(self.mesh_combo.itemData(combo_index))
-        try:
-            detail = (
-                self.visual.first_detail
-                if index == 0
-                else load_gpa_aligned_detail(self.preview, index)
-            )
-        except (IndexError, OSError, TypeError, ValueError, MeshPreviewError) as error:
-            message = f"The exact GPA visual preview is no longer valid: {error}"
-            self.mesh_status_label.setText(message)
-            self.mesh_status_label.setStyleSheet("color: #a13a2d;")
-            self.review_complete_check.setChecked(False)
-            self.review_complete_check.setEnabled(False)
-            self.complete_button.setEnabled(False)
-            self.previewInvalidated.emit(message)
-            self.reject()
-            return
-        self.canvas.set_selected_detail(index, detail)
+        self.canvas.set_selected_proxy(index)
         self._viewed_indices.add(index)
         self._update_mesh_status(index)
 

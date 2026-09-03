@@ -150,7 +150,10 @@ This repository currently provides:
   unresolved units according to the active GPA scaling policy, compares each mesh
   with its own landmarks when a canonical CSV is present, and blocks only clear
   mesh-to-landmark coordinate-frame incompatibilities before GPA without silently
-  rescaling, decimating, or asserting an absolute unit;
+  rescaling, decimating, or asserting an absolute unit; exact deep inspection emits
+  per-mesh progress, its metadata are reused by GPA, visual review retains only bounded
+  display proxies, and approved project preparation transforms one full-resolution
+  surface at a time instead of retaining the full cohort;
 - an optional PySide6 desktop preview for non-overwriting mesh-folder
   validation, modern/reference project creation, effective-parameter review,
   hash-bound reference-environment and future-prelaunch inspection plus
@@ -638,6 +641,7 @@ and workflow for another mesh directory.
 
 - [Project specification](docs/PROJECT_SPECIFICATION.md)
 - [Architecture](docs/ARCHITECTURE.md)
+- [High-resolution mesh intake](docs/HIGH_RESOLUTION_INPUTS.md)
 - [Portable Modern atlas execution on a server](docs/REMOTE_ATLAS_EXECUTION.md)
 - [Deformetrica reference backend](docs/REFERENCE_BACKEND.md)
 - [Managed Windows reference runtime](docs/MANAGED_REFERENCE_RUNTIME.md)

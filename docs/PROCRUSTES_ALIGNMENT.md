@@ -159,6 +159,15 @@ After every mesh has been visited, **Review again from first mesh** provides an
 explicit restart while preserving the completed unique-view count. Direct
 selection and highest-residual inspection remain available throughout.
 
+For high-resolution cohorts, this review retains a deterministic display proxy
+of at most 8,000 source faces per mesh. Exact source hashes, bounds, and face counts
+remain visible evidence; the numerical GPA and every downstream atlas computation
+continue to use the complete source geometry. Approved preflight metadata are reused
+instead of reparsing the cohort for preview, and project preparation transforms and
+writes one full-resolution mesh at a time. The display proxy is never published as an
+aligned input and is never a silent decimation step. See
+[High-resolution mesh intake](HIGH_RESOLUTION_INPUTS.md).
+
 This remains a bounded surface-landmarking system. The code does not provide
 landmark uncertainty estimates, missing-landmark handling, semilandmark sliding,
 symmetry models, automated homology, or weights.

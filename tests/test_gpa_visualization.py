@@ -68,6 +68,10 @@ def test_gpa_visual_is_hash_bound_memory_bounded_and_read_only(
     assert all(
         len(mesh.edges) <= MAX_EDGES_PER_MESH for mesh in visual.meshes
     )
+    assert all(
+        len(mesh.triangles) <= visual.detail_triangle_budget
+        for mesh in visual.meshes
+    )
     assert all(mesh.vertices.flags.writeable is False for mesh in visual.meshes)
     assert {path: sha256_file(path) for path in (*sources, landmarks)} == before
 

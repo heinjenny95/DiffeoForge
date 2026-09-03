@@ -449,18 +449,30 @@ class _ExpandableParameterHelp(QWidget):
 class _WorkerSignals(QObject):
     succeeded = Signal(object)
     failed = Signal(str)
+    progress = Signal(object)
 
 
 class _ProjectWorker(QRunnable):
-    def __init__(self, request: ProjectSetupRequest) -> None:
+    def __init__(
+        self,
+        request: ProjectSetupRequest,
+        approved_procrustes_preview: LandmarkAlignmentPreview | None = None,
+    ) -> None:
         super().__init__()
         self.request = request
+        self.approved_procrustes_preview = approved_procrustes_preview
         self.signals = _WorkerSignals()
 
     @Slot()
     def run(self) -> None:
         try:
-            result = create_project(self.request)
+            result = create_project(
+                self.request,
+                approved_procrustes_preview=self.approved_procrustes_preview,
+                progress_callback=lambda completed, total, path: (
+                    self.signals.progress.emit((completed, total, path.name))
+                ),
+            )
         except (OSError, RuntimeError, TypeError, ValueError) as error:
             self.signals.failed.emit(str(error))
             return
@@ -531,6 +543,9 @@ class _InputPreflightWorker(QRunnable):
                 landmark_csv=self.landmark_csv,
                 procrustes_enabled=self.procrustes_enabled,
                 scale_to_unit_centroid_size=self.scale_to_unit_centroid_size,
+                progress_callback=lambda completed, total, path: (
+                    self.signals.progress.emit((completed, total, path.name))
+                ),
             )
         except (OSError, RuntimeError, TypeError, ValueError) as error:
             self.signals.failed.emit(str(error))
@@ -552,6 +567,7 @@ class _ProcrustesPreviewWorker(QRunnable):
         allow_reflection: bool,
         tolerance: float,
         max_iterations: int,
+        source_metadata: tuple[object, ...] | None = None,
     ) -> None:
         super().__init__()
         self.mesh_directory = mesh_directory
@@ -562,6 +578,7 @@ class _ProcrustesPreviewWorker(QRunnable):
         self.allow_reflection = allow_reflection
         self.tolerance = tolerance
         self.max_iterations = max_iterations
+        self.source_metadata = source_metadata
         self.signals = _WorkerSignals()
 
     @Slot()
@@ -576,6 +593,7 @@ class _ProcrustesPreviewWorker(QRunnable):
                 allow_reflection=self.allow_reflection,
                 tolerance=self.tolerance,
                 max_iterations=self.max_iterations,
+                source_metadata=self.source_metadata,
             )
         except (OSError, RuntimeError, TypeError, ValueError) as error:
             self.signals.failed.emit(str(error))
@@ -3950,6 +3968,7 @@ class DiffeoForgeWindow(QMainWindow):
         )
         worker.signals.succeeded.connect(self._input_preflight_succeeded)
         worker.signals.failed.connect(self._input_preflight_failed)
+        worker.signals.progress.connect(self._input_preflight_progress)
         self._input_preflight = None
         self._input_preflight_signature = None
         self._input_preflight_failed_signature = None
@@ -3963,6 +3982,16 @@ class DiffeoForgeWindow(QMainWindow):
         )
         self._sync_ready_state()
         self._thread_pool.start(worker)
+
+    @Slot(object)
+    def _input_preflight_progress(self, progress: tuple[int, int, str]) -> None:
+        if self._input_preflight_worker is None:
+            return
+        completed, total, filename = progress
+        self.input_preflight_status_label.setText(
+            f"Deep mesh validation: {completed} of {total} complete — {filename}. "
+            "The interface remains usable; original meshes are read-only."
+        )
 
     @Slot(object)
     def _input_preflight_succeeded(self, report: MeshInputPreflight) -> None:
@@ -5064,6 +5093,13 @@ class DiffeoForgeWindow(QMainWindow):
             allow_reflection=self.procrustes_reflection_check.isChecked(),
             tolerance=self.procrustes_tolerance_spin.value(),
             max_iterations=self.procrustes_iterations_spin.value(),
+            source_metadata=(
+                self._input_preflight.metadata
+                if self._input_preflight is not None
+                and self._input_preflight_signature
+                == self._current_input_preflight_signature()
+                else None
+            ),
         )
         worker.signals.succeeded.connect(self._procrustes_preview_succeeded)
         worker.signals.failed.connect(self._procrustes_preview_failed)
@@ -5076,8 +5112,9 @@ class DiffeoForgeWindow(QMainWindow):
         self.procrustes_preview_status_label.setObjectName("status")
         self.procrustes_preview_status_label.setStyleSheet("")
         self.procrustes_preview_status_label.setText(
-            "Landmarks and meshes are being hashed and aligned read-only outside the "
-            "event loop. No file is being created or changed."
+            "Landmarks are being aligned and complete source hashes are being verified "
+            "outside the event loop. Existing mesh-preflight metadata is reused when "
+            "available; no file is being created or changed."
         )
         self._sync_ready_state()
         self._thread_pool.start(worker)
@@ -7303,11 +7340,32 @@ class DiffeoForgeWindow(QMainWindow):
         self.status_label.setObjectName("status")
         self.status_label.setStyleSheet("")
         self.status_label.setText("Meshes and configuration are being validated…")
-        self._worker = _ProjectWorker(request)
+        self._worker = _ProjectWorker(
+            request,
+            (
+                self._procrustes_preview
+                if request.approved_procrustes_fingerprint is not None
+                and self._procrustes_preview is not None
+                and self._procrustes_preview.fingerprint
+                == request.approved_procrustes_fingerprint
+                else None
+            ),
+        )
         self._worker.signals.succeeded.connect(self._project_succeeded)
         self._worker.signals.failed.connect(self._project_failed)
+        self._worker.signals.progress.connect(self._project_progress)
         self._sync_ready_state()
         self._thread_pool.start(self._worker)
+
+    @Slot(object)
+    def _project_progress(self, progress: tuple[int, int, str]) -> None:
+        if not isinstance(self._worker, _ProjectWorker):
+            return
+        completed, total, filename = progress
+        self.status_label.setText(
+            f"Preparing full-resolution GPA-aligned meshes: {completed} of {total} "
+            f"complete — {filename}. Only one complete mesh is held in memory at a time."
+        )
 
     @Slot(object)
     def _project_succeeded(self, result: ProjectSetupResult) -> None:
