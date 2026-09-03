@@ -226,6 +226,34 @@ def test_config_v07_requires_explicit_template_gradient_provenance() -> None:
     workflow.validate_modern_workflow_config(current)
 
 
+def test_config_v08_requires_explicit_mesh_scaling_provenance() -> None:
+    current = _configuration()
+    current["schema_version"] = "0.8"
+    current["optimization"].update(
+        {
+            "step_initialization": "previous_accepted",
+            "shared_step_scaling": "inverse_subject_count",
+            "template_gradient": "euclidean",
+            "sobolev_kernel_width_ratio": 1.0,
+        }
+    )
+
+    with pytest.raises(ConfigurationError, match="scaling_mode"):
+        workflow.validate_modern_workflow_config(current)
+
+    current["preprocessing"]["procrustes"].update(
+        {
+            "scaling_mode": "pams_surface_area_weighted_rms",
+            "target_size": 1.0,
+        }
+    )
+    workflow.validate_modern_workflow_config(current)
+
+    current["preprocessing"]["procrustes"]["scale_to_unit_centroid_size"] = False
+    with pytest.raises(ConfigurationError, match="scale_to_unit_centroid_size"):
+        workflow.validate_modern_workflow_config(current)
+
+
 def test_legacy_dense_manifest_without_pairwise_record_remains_verifiable() -> None:
     legacy = _configuration()
     del legacy["runtime"]["pairwise_evaluation"]
@@ -361,6 +389,11 @@ def test_generated_checkpoint_policy_retains_only_the_latest_recovery_point(
         threads=1,
     )
     config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    assert config["schema_version"] == "0.8"
+    assert config["preprocessing"]["procrustes"]["scaling_mode"] == (
+        "pams_surface_area_weighted_rms"
+    )
+    assert config["preprocessing"]["procrustes"]["target_size"] == 1.0
     config["optimization"]["block_order"] = ["momenta"]
     config["optimization"]["gradient_tolerance"] = 0.0
     config_path.write_text(

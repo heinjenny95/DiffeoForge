@@ -14,6 +14,15 @@ from typing import Literal
 import numpy as np
 
 from diffeoforge.analysis.landmarks import read_landmark_csv
+from diffeoforge.analysis.mesh_scaling import (
+    MeshScaleMetrics,
+    MeshScalingMode,
+    normalize_mesh_scaling_mode,
+    scaling_mode_label,
+)
+from diffeoforge.analysis.mesh_scaling import (
+    mesh_scale_metrics as compute_mesh_scale_metrics,
+)
 from diffeoforge.config import ConfigurationError
 from diffeoforge.mesh_quality import (
     ATLAS_INPUT_MESH_QUALITY_SETTINGS,
@@ -67,10 +76,12 @@ class MeshInputPreflight:
     estimated_attachment_interactions: int
     procrustes_enabled: bool
     scale_to_unit_centroid_size: bool
+    scaling_mode: str | None
     total_bytes: int
     total_points: int
     total_triangles: int
     mesh_quality: tuple[InputMeshQualityObservation, ...]
+    mesh_scale_metrics: tuple[MeshScaleMetrics, ...]
     issues: tuple[InputPreflightIssue, ...]
 
     @property
@@ -175,10 +186,10 @@ def _mesh_scale_issue(
     larger_center = _geometric_median(tuple(value for _name, value in larger))
     separation = larger_center / smaller_center
     alignment_note = (
-        "GPA is active but centroid-size scaling is disabled, so this size difference "
+        "Landmark-guided alignment is active in size-and-shape mode, so this size difference "
         "will remain in the atlas."
         if procrustes_enabled and not scale_to_unit_centroid_size
-        else "No active unit-centroid-size GPA will remove this size difference before "
+        else "No active size-removing alignment will remove this difference before "
         "atlasing."
     )
     return InputPreflightIssue(
@@ -194,6 +205,31 @@ def _mesh_scale_issue(
             "unit and will not rescale files automatically."
         ),
         affected_meshes=tuple(name for name, _value in smaller),
+    )
+
+
+def _resolution_sensitive_scaling_issue(
+    metadata: Sequence[SurfaceMeshMetadata],
+    scaling_mode: MeshScalingMode | None,
+) -> InputPreflightIssue | None:
+    if scaling_mode is not MeshScalingMode.PAMS_VERTEX_CENTROID:
+        return None
+    minimum = min(item.points for item in metadata)
+    maximum = max(item.points for item in metadata)
+    if minimum <= 0 or maximum / minimum < 1.25:
+        return None
+    return InputPreflightIssue(
+        code="vertex_centroid_size_resolution_sensitivity",
+        severity="warning",
+        title="Published PAMS scaling is sensitive to mesh sampling density",
+        summary=(
+            "The selected published PAMS-compatible scale is computed from all mesh "
+            f"vertices, but vertex counts differ by {maximum / minimum:.3g}x across the "
+            "cohort. Identical surfaces with different tessellation densities can receive "
+            "different scale factors. Use comparable remeshing densities for strict paper "
+            "reproduction, or select the area-weighted PAMS-style mode, whose scale is "
+            "invariant to subdivision of an unchanged triangular surface."
+        ),
     )
 
 
@@ -335,6 +371,7 @@ def assess_mesh_input_metadata(
     metadata: Sequence[SurfaceMeshMetadata],
     *,
     mesh_quality: Sequence[InputMeshQualityObservation] = (),
+    mesh_scale_metrics: Sequence[MeshScaleMetrics] = (),
     template_path: Path | str | None = None,
     landmark_path: Path | None = None,
     landmark_sha256: str | None = None,
@@ -342,11 +379,13 @@ def assess_mesh_input_metadata(
     landmark_values: np.ndarray | None = None,
     procrustes_enabled: bool = True,
     scale_to_unit_centroid_size: bool = True,
+    scaling_mode: MeshScalingMode | str | None = None,
 ) -> MeshInputPreflight:
     """Assess already inspected metadata, primarily for reuse and deterministic tests."""
 
     items = tuple(metadata)
     quality_observations = tuple(mesh_quality)
+    scale_observations = tuple(mesh_scale_metrics)
     if len(items) < 2:
         raise ConfigurationError("Mesh input preflight requires at least two meshes")
     if len({Path(item.path).name.casefold() for item in items}) != len(items):
@@ -354,6 +393,10 @@ def assess_mesh_input_metadata(
     if quality_observations and len(quality_observations) != len(items):
         raise ConfigurationError(
             "Mesh-quality observations do not match the inspected mesh cohort"
+        )
+    if scale_observations and len(scale_observations) != len(items):
+        raise ConfigurationError(
+            "Mesh-scale observations do not match the inspected mesh cohort"
         )
     if quality_observations and any(
         Path(observation.path).expanduser().resolve()
@@ -367,6 +410,9 @@ def assess_mesh_input_metadata(
         raise TypeError("procrustes_enabled must be a boolean")
     if not isinstance(scale_to_unit_centroid_size, bool):
         raise TypeError("scale_to_unit_centroid_size must be a boolean")
+    selected_scaling_mode = (
+        None if scaling_mode is None else normalize_mesh_scaling_mode(scaling_mode)
+    )
     if template_path is None:
         template_index = 0
     else:
@@ -390,6 +436,8 @@ def assess_mesh_input_metadata(
     issues = list(_mesh_quality_issues(quality_observations))
     if workload := _workload_issue(items, template_index=template_index):
         issues.append(workload)
+    if issue := _resolution_sensitive_scaling_issue(items, selected_scaling_mode):
+        issues.append(issue)
     if landmark_values is not None:
         if landmark_labels is None:
             raise TypeError("landmark_labels are required with landmark_values")
@@ -419,6 +467,10 @@ def assess_mesh_input_metadata(
         "scale_to_unit_centroid_size": (
             scale_to_unit_centroid_size if effective_procrustes else False
         ),
+        "scaling_mode": (
+            selected_scaling_mode.value if selected_scaling_mode is not None else None
+        ),
+        "mesh_scale_metrics": [item.as_manifest() for item in scale_observations],
         "mesh_quality": [
             {
                 "path": observation.path,
@@ -445,10 +497,16 @@ def assess_mesh_input_metadata(
         scale_to_unit_centroid_size=(
             scale_to_unit_centroid_size if effective_procrustes else False
         ),
+        scaling_mode=(
+            selected_scaling_mode.value
+            if effective_procrustes and selected_scaling_mode is not None
+            else None
+        ),
         total_bytes=sum(item.bytes for item in items),
         total_points=sum(item.points for item in items),
         total_triangles=total_triangles,
         mesh_quality=quality_observations,
+        mesh_scale_metrics=scale_observations,
         issues=tuple(issues),
     )
 
@@ -460,6 +518,7 @@ def inspect_mesh_input_cohort(
     landmark_csv: Path | str | None = None,
     procrustes_enabled: bool = True,
     scale_to_unit_centroid_size: bool = True,
+    scaling_mode: MeshScalingMode | str | None = None,
     progress_callback: Callable[[int, int, Path], None] | None = None,
 ) -> MeshInputPreflight:
     """Inspect an exact surface cohort and optional canonical landmark CSV read-only."""
@@ -469,6 +528,7 @@ def inspect_mesh_input_cohort(
         raise ConfigurationError("Mesh input preflight requires at least two meshes")
     metadata: list[SurfaceMeshMetadata] = []
     quality_observations: list[InputMeshQualityObservation] = []
+    scale_observations: list[MeshScaleMetrics] = []
     for index, path in enumerate(paths, start=1):
         loaded = load_surface_mesh(path)
         metadata.append(loaded.metadata)
@@ -481,6 +541,12 @@ def inspect_mesh_input_cohort(
                 ),
             )
         )
+        scale_observations.append(
+            compute_mesh_scale_metrics(
+                loaded.geometry.vertices,
+                loaded.geometry.triangles,
+            )
+        )
         if progress_callback is not None:
             progress_callback(index, len(paths), path)
     metadata_tuple = tuple(metadata)
@@ -489,9 +555,11 @@ def inspect_mesh_input_cohort(
         return assess_mesh_input_metadata(
             metadata_tuple,
             mesh_quality=quality_tuple,
+            mesh_scale_metrics=tuple(scale_observations),
             template_path=template_path,
             procrustes_enabled=False,
             scale_to_unit_centroid_size=scale_to_unit_centroid_size,
+            scaling_mode=scaling_mode,
         )
     landmark_path = Path(landmark_csv).expanduser().resolve()
     landmark_sha256 = hashlib.sha256(landmark_path.read_bytes()).hexdigest()
@@ -499,6 +567,7 @@ def inspect_mesh_input_cohort(
     return assess_mesh_input_metadata(
         metadata_tuple,
         mesh_quality=quality_tuple,
+        mesh_scale_metrics=tuple(scale_observations),
         template_path=template_path,
         landmark_path=landmark_path,
         landmark_sha256=landmark_sha256,
@@ -506,6 +575,7 @@ def inspect_mesh_input_cohort(
         landmark_values=values,
         procrustes_enabled=procrustes_enabled,
         scale_to_unit_centroid_size=scale_to_unit_centroid_size,
+        scaling_mode=scaling_mode,
     )
 
 
@@ -528,13 +598,17 @@ def format_mesh_input_preflight(report: MeshInputPreflight) -> str:
     if report.landmark_count is not None:
         if report.procrustes_enabled:
             scaling = (
-                "with unit-centroid-size scaling"
-                if report.scale_to_unit_centroid_size
-                else "without centroid-size scaling"
+                scaling_mode_label(report.scaling_mode)
+                if report.scaling_mode is not None
+                else (
+                    "legacy unit-landmark-centroid-size scaling"
+                    if report.scale_to_unit_centroid_size
+                    else "legacy size-preserving GPA"
+                )
             )
             lines.append(
                 f"Checked {report.landmark_count} landmarks per mesh against its surface "
-                f"coordinate frame; GPA is active {scaling}."
+                f"coordinate frame; GPA is active with {scaling}."
             )
         else:
             lines.append(

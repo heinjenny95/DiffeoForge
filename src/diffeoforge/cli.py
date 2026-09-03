@@ -371,6 +371,28 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         help="Optional labelled landmark CSV; enables recorded Procrustes alignment.",
     )
+    modern_init_parser.add_argument(
+        "--procrustes-scaling-mode",
+        choices=(
+            "pams_surface_area_weighted_rms",
+            "pams_surface_vertex_centroid_size",
+            "preserve_size",
+            "landmark_centroid_size_legacy",
+        ),
+        default="pams_surface_area_weighted_rms",
+        help=(
+            "Size treatment after landmark-guided orientation; the default is the "
+            "tessellation-invariant PAMS-style surface scale."
+        ),
+    )
+    modern_init_parser.add_argument(
+        "--procrustes-target-size",
+        type=float,
+        help=(
+            "Common working size after size removal (default: 1000 for the published "
+            "PAMS preset, otherwise 1)."
+        ),
+    )
     modern_init_parser.add_argument("--control-points", type=int, default=9)
     modern_init_parser.add_argument("--attachment-kernel-width", type=float)
     modern_init_parser.add_argument("--deformation-kernel-width", type=float)
@@ -1135,7 +1157,7 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         help=(
             "New immutable comparison directory (default: "
-            "RUN/analysis/reference-shape-space-comparison-v0.1)."
+            "RUN/analysis/reference-shape-space-comparison-v0.2)."
         ),
     )
     reference_shape_space_parser.add_argument(
@@ -2657,6 +2679,20 @@ def main(argv: Sequence[str] | None = None) -> int:
                 project_name=args.project_name,
                 output_directory=args.output_directory,
                 landmarks_file=args.landmarks,
+                procrustes_scale_to_unit_centroid_size=(
+                    args.procrustes_scaling_mode != "preserve_size"
+                ),
+                procrustes_scaling_mode=args.procrustes_scaling_mode,
+                procrustes_target_size=(
+                    args.procrustes_target_size
+                    if args.procrustes_target_size is not None
+                    else (
+                        1000.0
+                        if args.procrustes_scaling_mode
+                        == "pams_surface_vertex_centroid_size"
+                        else 1.0
+                    )
+                ),
                 control_point_count=args.control_points,
                 attachment_kernel_width=args.attachment_kernel_width,
                 deformation_kernel_width=args.deformation_kernel_width,

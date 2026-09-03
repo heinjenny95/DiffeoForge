@@ -23,6 +23,7 @@ from diffeoforge.desktop.reference_runtime_estimate import (
     estimate_reference_runtime,
 )
 from diffeoforge.desktop.worker_protocol import sha256_file
+from diffeoforge.mesh_scaling_contract import scaling_mode_label
 from diffeoforge.report import (
     collect_preflight,
     default_preflight_report_path,
@@ -128,7 +129,7 @@ def _reference_alignment_items(preflight) -> tuple[ReviewItem, ...]:
             preflight.inputs.template.name,
             *(path.name for path in preflight.inputs.subjects),
         )
-        if version not in {"0.1", "0.2"}:
+        if version not in {"0.1", "0.2", "0.3"}:
             raise ValueError("unsupported preprocessing evidence version")
         if evidence.get("method") != "generalized_procrustes":
             raise ValueError("unexpected alignment method")
@@ -137,7 +138,7 @@ def _reference_alignment_items(preflight) -> tuple[ReviewItem, ...]:
         if not isinstance(fingerprint, str) or len(fingerprint) != 64:
             raise ValueError("invalid alignment fingerprint")
         root = directory if version == "0.1" else directory.parent
-        if version == "0.2" and (
+        if version in {"0.2", "0.3"} and (
             (root / "raw").is_symlink() or (root / "aligned-vtk").is_symlink()
         ):
             raise ValueError("alignment raw or aligned directory is a symbolic link")
@@ -154,7 +155,7 @@ def _reference_alignment_items(preflight) -> tuple[ReviewItem, ...]:
                 if version == "0.1"
                 else root / "aligned-vtk" / record["filename"]
             )
-            if version == "0.2" and record.get("aligned_path") != (
+            if version in {"0.2", "0.3"} and record.get("aligned_path") != (
                 f"aligned-vtk/{record['filename']}"
             ):
                 raise ValueError("aligned mesh path does not match its canonical filename")
@@ -164,7 +165,7 @@ def _reference_alignment_items(preflight) -> tuple[ReviewItem, ...]:
                 or sha256_file(aligned_path) != record.get("aligned_sha256")
             ):
                 raise ValueError(f"aligned mesh no longer matches: {aligned_path.name}")
-            if version == "0.2":
+            if version in {"0.2", "0.3"}:
                 source_filename = record.get("source_filename")
                 if (
                     not isinstance(source_filename, str)
@@ -206,6 +207,29 @@ def _reference_alignment_items(preflight) -> tuple[ReviewItem, ...]:
             or max_iterations < 1
         ):
             raise ValueError("invalid Procrustes iteration limit")
+        scaling_label = (
+            scaling_mode_label(settings["scaling_mode"])
+            if version == "0.3"
+            else (
+                "legacy landmark-centroid-size similarity scaling"
+                if scale
+                else "legacy size-preserving landmark GPA"
+            )
+        )
+        target_size = float(settings.get("target_size", 1.0))
+        if not math.isfinite(target_size) or target_size <= 0:
+            raise ValueError("invalid Procrustes target size")
+        if version == "0.3":
+            sensitivity = evidence.get("scaling_sensitivity")
+            sensitivity_path = root / "scaling-sensitivity.csv"
+            if (
+                not isinstance(sensitivity, dict)
+                or sensitivity.get("csv_path") != sensitivity_path.name
+                or not sensitivity_path.is_file()
+                or sensitivity_path.is_symlink()
+                or sha256_file(sensitivity_path) != sensitivity.get("csv_sha256")
+            ):
+                raise ValueError("scaling-sensitivity evidence does not verify")
     except (KeyError, OSError, TypeError, ValueError, json.JSONDecodeError) as error:
         raise RuntimeError(
             f"Landmark-alignment evidence cannot be verified: {evidence_path}: {error}"
@@ -217,7 +241,7 @@ def _reference_alignment_items(preflight) -> tuple[ReviewItem, ...]:
             (
                 "Verified content-addressed aligned VTK copies are used as atlas input. "
                 "Byte-identical raw source copies and original formats remain recorded."
-                if version == "0.2"
+                if version in {"0.2", "0.3"}
                 else "Verified content-addressed aligned copies are used as atlas input. "
                 "The raw source meshes remain unchanged."
             ),
@@ -225,11 +249,27 @@ def _reference_alignment_items(preflight) -> tuple[ReviewItem, ...]:
         ReviewItem(
             "Procrustes settings",
             (
-                f"unit centroid size {_setting(scale)} · reflections {_setting(reflection)} · "
+                f"size treatment {scaling_label} · target {_number(target_size)} · "
+                f"reflections {_setting(reflection)} · "
                 f"tolerance {_number(float(tolerance))} · max. {max_iterations} iterations"
             ),
             "These are the effective alignment settings recorded in the verified "
             "preprocessing evidence.",
+        ),
+        *(
+            (
+                ReviewItem(
+                    "Scaling sensitivity",
+                    (
+                        f"{len(evidence['scaling_sensitivity']['modes'])} policies assessed · "
+                        f"{len(evidence['scaling_sensitivity']['warnings'])} warning(s)"
+                    ),
+                    "A deterministic preprocessing-only comparison is verified. It does "
+                    "not replace complete atlas reruns when conclusions depend on size treatment.",
+                ),
+            )
+            if version == "0.3"
+            else ()
         ),
     )
 

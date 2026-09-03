@@ -40,6 +40,7 @@ from diffeoforge.analysis.landmarks import (
     import_landmark_fcsv_folder,
     import_landmark_txt_folder,
 )
+from diffeoforge.analysis.mesh_scaling import MeshScalingMode
 from diffeoforge.config import load_config
 from diffeoforge.desktop.aspect_svg_widget import AspectRatioSvgWidget
 from diffeoforge.desktop.calibration_comparison_widget import (
@@ -526,6 +527,7 @@ class _InputPreflightWorker(QRunnable):
         template_path: Path,
         procrustes_enabled: bool,
         scale_to_unit_centroid_size: bool,
+        scaling_mode: str,
         signature: tuple[object, ...],
     ) -> None:
         super().__init__()
@@ -534,6 +536,7 @@ class _InputPreflightWorker(QRunnable):
         self.template_path = template_path
         self.procrustes_enabled = procrustes_enabled
         self.scale_to_unit_centroid_size = scale_to_unit_centroid_size
+        self.scaling_mode = scaling_mode
         self.signature = signature
         self.signals = _WorkerSignals()
 
@@ -546,6 +549,7 @@ class _InputPreflightWorker(QRunnable):
                 landmark_csv=self.landmark_csv,
                 procrustes_enabled=self.procrustes_enabled,
                 scale_to_unit_centroid_size=self.scale_to_unit_centroid_size,
+                scaling_mode=self.scaling_mode,
                 progress_callback=lambda completed, total, path: (
                     self.signals.progress.emit((completed, total, path.name))
                 ),
@@ -567,10 +571,13 @@ class _ProcrustesPreviewWorker(QRunnable):
         template: Path | None,
         subject_pattern: str,
         scale_to_unit_centroid_size: bool,
+        scaling_mode: str,
+        target_size: float,
         allow_reflection: bool,
         tolerance: float,
         max_iterations: int,
         source_metadata: tuple[object, ...] | None = None,
+        source_scale_metrics: tuple[object, ...] | None = None,
     ) -> None:
         super().__init__()
         self.mesh_directory = mesh_directory
@@ -578,10 +585,13 @@ class _ProcrustesPreviewWorker(QRunnable):
         self.template = template
         self.subject_pattern = subject_pattern
         self.scale_to_unit_centroid_size = scale_to_unit_centroid_size
+        self.scaling_mode = scaling_mode
+        self.target_size = target_size
         self.allow_reflection = allow_reflection
         self.tolerance = tolerance
         self.max_iterations = max_iterations
         self.source_metadata = source_metadata
+        self.source_scale_metrics = source_scale_metrics
         self.signals = _WorkerSignals()
 
     @Slot()
@@ -593,10 +603,13 @@ class _ProcrustesPreviewWorker(QRunnable):
                 template=self.template,
                 subject_pattern=self.subject_pattern,
                 scale_to_unit_centroid_size=self.scale_to_unit_centroid_size,
+                scaling_mode=self.scaling_mode,
+                target_size=self.target_size,
                 allow_reflection=self.allow_reflection,
                 tolerance=self.tolerance,
                 max_iterations=self.max_iterations,
                 source_metadata=self.source_metadata,
+                source_scale_metrics=self.source_scale_metrics,
             )
         except (OSError, RuntimeError, TypeError, ValueError) as error:
             self.signals.failed.emit(str(error))
@@ -2534,8 +2547,9 @@ class DiffeoForgeWindow(QMainWindow):
         shape_space_title.setObjectName("sectionTitle")
         shape_space_summary = QLabel(
             "Compare the default LDDMM deformation-kernel PCA with legacy Cartesian "
-            "momenta PCA, tangent-distance PCoA, three RBF KernelPCA bandwidths, Isomap, "
-            "and diffusion maps. This reuses the completed momenta and does not rerun the atlas."
+            "momenta PCA, tangent-distance PCoA, three adaptive RBF KernelPCA bandwidths, "
+            "the Roberts et al. 2026 fixed-gamma compatibility preset, Isomap, and "
+            "diffusion maps. This reuses the completed momenta and does not rerun the atlas."
         )
         shape_space_summary.setWordWrap(True)
         self.shape_space_comparison_status_label = QLabel(
@@ -2560,7 +2574,9 @@ class DiffeoForgeWindow(QMainWindow):
                     "The model-aligned PCA must preserve the fitted tangent metric, agree "
                     "with independent PCoA up to rotation, and reconstruct shootable momenta. "
                     "Generic RBF, Isomap, and diffusion-map views remain exploratory because "
-                    "their tuning changes the view and they have no automatic momenta preimage."
+                    "their tuning changes the view and they have no automatic momenta preimage. "
+                    "The Roberts preset reproduces a published postprocessing choice; it is not "
+                    "an automatic claim that this choice is best for another dataset."
                 ),
                 parent=self.shape_space_comparison_card,
             )
@@ -3446,13 +3462,51 @@ class DiffeoForgeWindow(QMainWindow):
         )
         self.procrustes_apply_check.setChecked(True)
         self.procrustes_apply_check.toggled.connect(self._alignment_policy_changed)
-        self.procrustes_scale_check = QCheckBox("Scale to unit centroid size")
-        self.procrustes_scale_check.setChecked(True)
-        self.procrustes_scale_check.toggled.connect(self._alignment_policy_changed)
+        self.procrustes_scaling_combo = QComboBox()
+        self.procrustes_scaling_combo.setObjectName("procrustesScalingModeCombo")
+        self.procrustes_scaling_combo.addItem(
+            "Shape only — surface scale, resolution-independent (recommended)",
+            MeshScalingMode.PAMS_AREA_WEIGHTED.value,
+        )
+        self.procrustes_scaling_combo.addItem(
+            "Shape only — published PAMS (vertex CS; working size 1000 preset)",
+            MeshScalingMode.PAMS_VERTEX_CENTROID.value,
+        )
+        self.procrustes_scaling_combo.addItem(
+            "Size + shape — preserve specimen size",
+            MeshScalingMode.PRESERVE_SIZE.value,
+        )
+        self.procrustes_scaling_combo.addItem(
+            "Legacy — scale from landmark centroid size",
+            MeshScalingMode.LANDMARK_CENTROID_LEGACY.value,
+        )
+        self.procrustes_scaling_combo.setToolTip(
+            "Landmarks determine homologous orientation. Shape-only modes remove size "
+            "from the complete surface separately; the legacy mode derives mesh scale "
+            "from the landmark configuration."
+        )
+        self.procrustes_scaling_combo.currentIndexChanged.connect(
+            self._procrustes_scaling_mode_changed
+        )
+        self.procrustes_target_size_spin = QDoubleSpinBox()
+        self.procrustes_target_size_spin.setObjectName("procrustesTargetSizeSpin")
+        self.procrustes_target_size_spin.setDecimals(6)
+        self.procrustes_target_size_spin.setRange(0.000001, 1_000_000_000.0)
+        self.procrustes_target_size_spin.setValue(1.0)
+        self.procrustes_target_size_spin.setToolTip(
+            "Arbitrary common working size after size removal. Changing it requires "
+            "pilot recalibration because absolute kernel widths and noise also change."
+        )
+        self.procrustes_target_size_spin.valueChanged.connect(
+            self._procrustes_inputs_changed
+        )
         self.procrustes_reflection_check = QCheckBox("Allow reflections")
         self.procrustes_reflection_check.toggled.connect(self._procrustes_inputs_changed)
         procrustes_settings = QHBoxLayout()
-        procrustes_settings.addWidget(self.procrustes_scale_check)
+        procrustes_settings.addWidget(QLabel("Size treatment"))
+        procrustes_settings.addWidget(self.procrustes_scaling_combo, 1)
+        procrustes_settings.addWidget(QLabel("Working size"))
+        procrustes_settings.addWidget(self.procrustes_target_size_spin)
         procrustes_settings.addWidget(self.procrustes_reflection_check)
         procrustes_settings.addStretch()
         procrustes_advanced = QHBoxLayout()
@@ -3471,8 +3525,10 @@ class DiffeoForgeWindow(QMainWindow):
         procrustes_advanced.addWidget(self.procrustes_iterations_spin)
         procrustes_advanced.addStretch()
         procrustes_hint = QLabel(
-            "This preview uses the homologous landmarks to estimate translation, "
-            "rotation, and optional centroid-size scaling for the complete cohort. "
+            "This preview uses homologous landmarks to estimate translation and "
+            "rotation. The selected size treatment is then applied explicitly to the "
+            "complete surfaces. The recommended mode removes size using an area-weighted "
+            "surface measure that is stable under triangle subdivision. "
             "It writes nothing until you review and approve the report below. Raw "
             "meshes remain unchanged; approved project creation writes immutable "
             "aligned VTK copies and records every transform. Reflection is off by default."
@@ -3504,7 +3560,8 @@ class DiffeoForgeWindow(QMainWindow):
         procrustes_layout.addWidget(self.review_procrustes_visual_button)
         procrustes_layout.addWidget(self.approve_procrustes_check)
         self._procrustes_setting_widgets = (
-            self.procrustes_scale_check,
+            self.procrustes_scaling_combo,
+            self.procrustes_target_size_spin,
             self.procrustes_reflection_check,
             self.procrustes_tolerance_spin,
             self.procrustes_iterations_spin,
@@ -3910,7 +3967,8 @@ class DiffeoForgeWindow(QMainWindow):
             mesh_state,
             landmark_state,
             self.procrustes_apply_check.isChecked(),
-            self.procrustes_scale_check.isChecked(),
+            self._current_procrustes_scaling_mode(),
+            self.procrustes_target_size_spin.value(),
         )
         return mesh_paths, landmark_csv, signature
 
@@ -3967,7 +4025,8 @@ class DiffeoForgeWindow(QMainWindow):
             landmark_csv,
             mesh_paths[0],
             landmark_csv is not None and self.procrustes_apply_check.isChecked(),
-            self.procrustes_scale_check.isChecked(),
+            self._current_procrustes_removes_size(),
+            self._current_procrustes_scaling_mode(),
             signature,
         )
         worker.signals.succeeded.connect(self._input_preflight_succeeded)
@@ -4359,6 +4418,31 @@ class DiffeoForgeWindow(QMainWindow):
     def _procrustes_inputs_changed(self) -> None:
         self._invalidate_procrustes_preview()
 
+    def _current_procrustes_scaling_mode(self) -> str:
+        value = self.procrustes_scaling_combo.currentData()
+        if value is None:
+            return MeshScalingMode.PAMS_AREA_WEIGHTED.value
+        return str(value)
+
+    def _current_procrustes_removes_size(self) -> bool:
+        return self._current_procrustes_scaling_mode() not in {
+            MeshScalingMode.PRESERVE_SIZE.value,
+            MeshScalingMode.LANDMARK_RIGID_LEGACY.value,
+        }
+
+    @Slot(int)
+    def _procrustes_scaling_mode_changed(self, _index: int) -> None:
+        preset_target = (
+            1000.0
+            if self._current_procrustes_scaling_mode()
+            == MeshScalingMode.PAMS_VERTEX_CENTROID.value
+            else 1.0
+        )
+        self.procrustes_target_size_spin.blockSignals(True)
+        self.procrustes_target_size_spin.setValue(preset_target)
+        self.procrustes_target_size_spin.blockSignals(False)
+        self._alignment_policy_changed()
+
     @Slot()
     def _alignment_policy_changed(self) -> None:
         self.alignment_field_label.setText(
@@ -4366,6 +4450,10 @@ class DiffeoForgeWindow(QMainWindow):
             if self.landmarks_edit.text().strip()
             and self.procrustes_apply_check.isChecked()
             else "Alignment"
+        )
+        self.procrustes_target_size_spin.setEnabled(
+            self.procrustes_apply_check.isChecked()
+            and self._current_procrustes_removes_size()
         )
         self._procrustes_inputs_changed()
         self._invalidate_input_preflight()
@@ -4411,6 +4499,9 @@ class DiffeoForgeWindow(QMainWindow):
         enabled = self.procrustes_apply_check.isChecked()
         for widget in self._procrustes_setting_widgets:
             widget.setEnabled(enabled)
+        self.procrustes_target_size_spin.setEnabled(
+            enabled and self._current_procrustes_removes_size()
+        )
         self.preview_procrustes_button.setEnabled(
             enabled and bool(self.landmarks_edit.text().strip()) and self._worker is None
         )
@@ -5022,7 +5113,7 @@ class DiffeoForgeWindow(QMainWindow):
         self._update_reference_parameter_profile()
         effective = recommendation.effective_values
         coordinate_label = (
-            "unit-centroid-size coordinates"
+            f"normalized coordinates ({self._procrustes_preview.scaling_label})"
             if (
                 recommendation.alignment_basis == "diffeoforge_gpa"
                 and self._procrustes_preview is not None
@@ -5143,7 +5234,8 @@ class DiffeoForgeWindow(QMainWindow):
             and preview.landmarks == landmarks_file
             and preview.template == resolved_template.resolve()
             and preview.subject_pattern == pattern
-            and preview.scale_to_unit_centroid_size == self.procrustes_scale_check.isChecked()
+            and preview.scaling_mode.value == self._current_procrustes_scaling_mode()
+            and preview.target_size == self.procrustes_target_size_spin.value()
             and preview.allow_reflection == self.procrustes_reflection_check.isChecked()
             and preview.tolerance == self.procrustes_tolerance_spin.value()
             and preview.max_iterations == self.procrustes_iterations_spin.value()
@@ -5175,12 +5267,21 @@ class DiffeoForgeWindow(QMainWindow):
             landmarks_file=landmarks_file,
             template=template,
             subject_pattern=pattern,
-            scale_to_unit_centroid_size=self.procrustes_scale_check.isChecked(),
+            scale_to_unit_centroid_size=self._current_procrustes_removes_size(),
+            scaling_mode=self._current_procrustes_scaling_mode(),
+            target_size=self.procrustes_target_size_spin.value(),
             allow_reflection=self.procrustes_reflection_check.isChecked(),
             tolerance=self.procrustes_tolerance_spin.value(),
             max_iterations=self.procrustes_iterations_spin.value(),
             source_metadata=(
                 self._input_preflight.metadata
+                if self._input_preflight is not None
+                and self._input_preflight_signature
+                == self._current_input_preflight_signature()
+                else None
+            ),
+            source_scale_metrics=(
+                self._input_preflight.mesh_scale_metrics
                 if self._input_preflight is not None
                 and self._input_preflight_signature
                 == self._current_input_preflight_signature()
@@ -5237,6 +5338,12 @@ class DiffeoForgeWindow(QMainWindow):
             else (residuals[midpoint - 1] + residuals[midpoint]) / 2.0
         )
         scales = tuple(transform.scale for transform in alignment.transforms)
+        post_vertex_sizes = preview.post_vertex_centroid_sizes
+        post_surface_sizes = preview.post_area_weighted_rms_radii
+        sensitivity = preview.scaling_sensitivity
+        sensitivity_warnings = "".join(
+            f"\n• {warning}" for warning in sensitivity["warnings"]
+        )
         final_iteration = alignment.history[-1]
         specimen_count = len(preview.source_paths)
         format_counts: dict[str, int] = {}
@@ -5260,7 +5367,16 @@ class DiffeoForgeWindow(QMainWindow):
             f"residual: {final_iteration.total_squared_residual:.6g}.\n"
             f"Per-mesh squared residual min / median / max: "
             f"{residuals[0]:.6g} / {median_residual:.6g} / {residuals[-1]:.6g}.\n"
+            f"Size treatment: {preview.scaling_label}; working size "
+            f"{preview.target_size:.6g}.\n"
             f"Applied scale min / max: {min(scales):.6g} / {max(scales):.6g}.\n"
+            f"Post-alignment surface RMS radius min / max: "
+            f"{min(post_surface_sizes):.6g} / {max(post_surface_sizes):.6g}; "
+            f"vertex centroid size min / max: "
+            f"{min(post_vertex_sizes):.6g} / {max(post_vertex_sizes):.6g}.\n"
+            f"Preprocessing sensitivity: {len(sensitivity['modes'])} size policies "
+            "compared without atlas reruns. This does not establish atlas or "
+            f"morphospace robustness.{sensitivity_warnings}\n"
             f"Exact preview fingerprint: {preview.fingerprint}\n"
             "Raw meshes and the landmark CSV remain unchanged. This numerical preview "
             "does not establish biological landmark quality.\n"
@@ -5861,7 +5977,10 @@ class DiffeoForgeWindow(QMainWindow):
             and self._procrustes_preview is not None
             and self._procrustes_preview.scale_to_unit_centroid_size
         ):
-            return "normalized unit-centroid-size coordinates", " normalized units"
+            return (
+                f"normalized coordinates ({self._procrustes_preview.scaling_label})",
+                " normalized units",
+            )
         unit = str(self.units_combo.currentData() or "unitless")
         labels = {
             "unitless": ("mesh coordinate units", " coordinate units"),
@@ -6860,7 +6979,7 @@ class DiffeoForgeWindow(QMainWindow):
         self.shape_space_comparison_status_label.setStyleSheet("")
         self.shape_space_comparison_status_label.setText(
             f"{decision['status']}: {decision['reason']} The generic RBF variants remain "
-            "exploratory."
+            "exploratory; the Roberts et al. preset is exported as a named compatibility view."
         )
         QDesktopServices.openUrl(
             QUrl.fromLocalFile(str(artifact.artifact_directory / "README.md"))
@@ -7330,7 +7449,9 @@ class DiffeoForgeWindow(QMainWindow):
             reference_acceleration=self.reference_acceleration_combo.currentData(),
             reference_threads=self.reference_threads_spin.value(),
             reference_random_seed=self.reference_random_seed_spin.value(),
-            procrustes_scale_to_unit_centroid_size=self.procrustes_scale_check.isChecked(),
+            procrustes_scale_to_unit_centroid_size=self._current_procrustes_removes_size(),
+            procrustes_scaling_mode=self._current_procrustes_scaling_mode(),
+            procrustes_target_size=self.procrustes_target_size_spin.value(),
             procrustes_allow_reflection=self.procrustes_reflection_check.isChecked(),
             procrustes_tolerance=self.procrustes_tolerance_spin.value(),
             procrustes_max_iterations=self.procrustes_iterations_spin.value(),

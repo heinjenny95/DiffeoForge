@@ -184,6 +184,7 @@ def initialize_project(
     parameter_profile: str = "recommended",
     parameter_ratios: Mapping[str, float] | None = None,
     parameter_recommendation: Mapping[str, Any] | None = None,
+    preprocessing: Mapping[str, Any] | None = None,
     max_iterations: int | None = None,
     initial_step_size: float | None = None,
     convergence_tolerance: float | None = None,
@@ -255,6 +256,9 @@ def initialize_project(
         if parameter_recommendation is None
         else deepcopy(dict(parameter_recommendation))
     )
+    preprocessing_record = (
+        None if preprocessing is None else deepcopy(dict(preprocessing))
+    )
     if parameter_profile == "data_assisted" and recommendation is None:
         raise ConfigurationError(
             "A data-assisted parameter profile requires recommendation provenance"
@@ -311,6 +315,11 @@ def initialize_project(
             "template": _portable_path(template_path, config_base),
             "units": units,
         },
+        **(
+            {"preprocessing": preprocessing_record}
+            if preprocessing_record is not None
+            else {}
+        ),
         "model": {
             "type": "deterministic_atlas",
             "dimension": 3,

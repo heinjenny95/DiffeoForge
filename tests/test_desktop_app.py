@@ -559,19 +559,32 @@ def test_desktop_window_exposes_required_project_controls(monkeypatch) -> None:
     assert window._request().landmarks_file == Path("landmarks.csv")
     assert window.preview_procrustes_button.isEnabled() is True
     assert window.approve_procrustes_check.isEnabled() is False
-    window.procrustes_scale_check.setChecked(False)
+    assert (
+        window.procrustes_scaling_combo.currentData()
+        == "pams_surface_area_weighted_rms"
+    )
+    assert window._request().procrustes_scaling_mode == "pams_surface_area_weighted_rms"
+    window.procrustes_scaling_combo.setCurrentIndex(
+        window.procrustes_scaling_combo.findData("pams_surface_vertex_centroid_size")
+    )
+    assert window.procrustes_target_size_spin.value() == 1000.0
+    window.procrustes_scaling_combo.setCurrentIndex(
+        window.procrustes_scaling_combo.findData("preserve_size")
+    )
+    assert window.procrustes_target_size_spin.value() == 1.0
     window.procrustes_reflection_check.setChecked(True)
     window.procrustes_tolerance_spin.setValue(0.00000001)
     window.procrustes_iterations_spin.setValue(250)
     procrustes_request = window._request()
     assert procrustes_request.procrustes_scale_to_unit_centroid_size is False
+    assert procrustes_request.procrustes_scaling_mode == "preserve_size"
     assert procrustes_request.procrustes_allow_reflection is True
     assert procrustes_request.procrustes_tolerance == pytest.approx(0.00000001)
     assert procrustes_request.procrustes_max_iterations == 250
     window.procrustes_apply_check.setChecked(False)
     assert window.alignment_field_label.text() == "Alignment"
     assert window._request().landmarks_file is None
-    assert window.procrustes_scale_check.isEnabled() is False
+    assert window.procrustes_scaling_combo.isEnabled() is False
     assert window.preview_procrustes_button.isEnabled() is False
     window.procrustes_apply_check.setChecked(True)
     assert window.alignment_field_label.text() == "Alignment *"
@@ -1075,7 +1088,7 @@ def test_desktop_requires_exact_procrustes_preview_approval_and_rejects_drift(
     assert "Analyzed 6 aligned meshes" in window.reference_guidance_status_label.text()
     assert "not inferable from geometry" in window.reference_guidance_status_label.text()
     assert "Attachment KW" in window.reference_effective_widths_label.text()
-    assert "normalized unit-centroid-size coordinates" in (
+    assert "PAMS-style surface scaling" in (
         window.reference_effective_widths_label.text()
     )
     measured: dict[str, float] = {}

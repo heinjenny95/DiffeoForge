@@ -191,8 +191,11 @@ This repository currently provides:
   validated per-mesh tagged-TXT and 3D Slicer FCSV folder importers that match
   mesh stems, reject incomplete or mixed-coordinate-system cohorts, and preserve
   coordinate values without implicit RAS/LPS conversion, unit conversion, or sliding,
-  configurable generalized Procrustes alignment for either engine, read-only
-  convergence/residual/scale preview with exact fingerprint approval, immutable
+  configurable landmark-guided alignment for either engine, with landmarks restricted
+  to homologous orientation and explicit complete-surface shape normalization,
+  published PAMS compatibility, size-preserving form analysis, and legacy landmark
+  scaling; read-only convergence/residual/scale preview plus preprocessing-only scaling
+  sensitivity with exact fingerprint approval, immutable
   content-addressed aligned mesh copies, and hash-verified alignment evidence
   in parameter review;
 - reviewed triangular PLY, OBJ, and ASCII/binary STL import for landmarking and

@@ -33,14 +33,17 @@ from diffeoforge.reference_pca import ReferenceMomentaInput, load_reference_mome
 from diffeoforge.runs import publish_directory_exclusive
 from diffeoforge.strict_json import load_strict_json_object
 
-COMPARISON_VERSION = "0.1"
+LEGACY_COMPARISON_VERSION = "0.1"
+COMPARISON_VERSION = "0.2"
+SUPPORTED_COMPARISON_VERSIONS = (LEGACY_COMPARISON_VERSION, COMPARISON_VERSION)
 COMPARISON_MANIFEST = "shape-space-comparison.json"
 COMPARISON_SIDECAR = "shape-space-comparison.sha256"
 METRICS_CSV = "method-metrics.csv"
 SCORES_CSV = "scores.csv"
 README_NAME = "README.md"
-DEFAULT_COMPARISON_DIRECTORY = Path("analysis") / "reference-shape-space-comparison-v0.1"
+DEFAULT_COMPARISON_DIRECTORY = Path("analysis") / "reference-shape-space-comparison-v0.2"
 DEFAULT_METHOD_ID = "lddmm_deformation_kernel_pca"
+ROBERTS_2026_RBF_GAMMA = 0.00000025
 SCIENTIFIC_BOUNDARY = (
     "This comparison evaluates numerical representations of one completed atlas. It does "
     "not establish biological group separation, registration validity, or an exact geodesic "
@@ -241,7 +244,12 @@ def _comparison_payload(
     *,
     created_at: str,
     maximum_exported_components: int,
+    artifact_version: str = COMPARISON_VERSION,
 ) -> tuple[dict[str, object], dict[str, np.ndarray]]:
+    if artifact_version not in SUPPORTED_COMPARISON_VERSIONS:
+        raise ReferenceShapeSpaceComparisonError(
+            f"Unsupported comparison artifact version: {artifact_version}"
+        )
     count = inputs.subject_count
     width = _deformation_kernel_width(inputs)
     full_components = count - 1
@@ -279,6 +287,11 @@ def _comparison_payload(
         )
         for multiplier in (0.5, 1.0, 2.0)
     }
+    roberts_compatibility = rbf_kernel_pca_from_squared_distances(
+        _squared_distances(momenta.reshape(count, -1)),
+        gamma=ROBERTS_2026_RBF_GAMMA,
+        sample_labels=labels,
+    )
     isomap_scores, neighbors, isomap_ratios = _isomap(target_squared, labels)
     diffusion = diffusion_map_from_squared_distances(
         target_squared,
@@ -299,6 +312,10 @@ def _comparison_payload(
         "isomap": isomap_scores[:, :exported],
         "diffusion_map": diffusion.coordinates[:, :exported],
     }
+    if artifact_version != LEGACY_COMPARISON_VERSION:
+        scores["roberts_2026_cartesian_momenta_rbf_kpca"] = (
+            roberts_compatibility.scores[:, :exported]
+        )
     methods = [
         _method_document(
             method_id="lddmm_deformation_kernel_pca",
@@ -363,6 +380,30 @@ def _comparison_payload(
                 },
             )
         )
+    if artifact_version != LEGACY_COMPARISON_VERSION:
+        methods.append(
+            _method_document(
+                method_id="roberts_2026_cartesian_momenta_rbf_kpca",
+                label="Roberts et al. 2026 Cartesian-momenta RBF KernelPCA preset",
+                role="published_workflow_compatibility",
+                scores=roberts_compatibility.scores,
+                ratios=roberts_compatibility.explained_variance_ratio,
+                target_squared=target_squared,
+                reference_scores=metric_pca.scores,
+                reference_outliers=reference_outliers,
+                supports_shooting=False,
+                parameters={
+                    "gamma": ROBERTS_2026_RBF_GAMMA,
+                    "input": "flattened Cartesian initial momenta",
+                    "publication": "Roberts et al. 2026, Journal of Anatomy",
+                    "source_code_compatibility": (
+                        "KernelPCA(kernel='rbf', gamma=0.00000025, n_components=n-1)"
+                    ),
+                    "fit_inverse_transform_in_publication": True,
+                    "preimage": "not_exported_or_claimed_by_diffeoforge",
+                },
+            )
+        )
     methods.extend(
         [
             _method_document(
@@ -424,7 +465,7 @@ def _comparison_payload(
         ),
     }
     manifest: dict[str, object] = {
-        "artifact_version": COMPARISON_VERSION,
+        "artifact_version": artifact_version,
         "created_at": created_at,
         "source": _source_record(inputs),
         "analysis": {
@@ -445,7 +486,13 @@ def _comparison_payload(
             }
         ],
         "default_decision": decision,
-        "scientific_boundary": SCIENTIFIC_BOUNDARY,
+        "scientific_boundary": (
+            SCIENTIFIC_BOUNDARY
+            if artifact_version == LEGACY_COMPARISON_VERSION
+            else SCIENTIFIC_BOUNDARY
+            + " The Roberts et al. 2026 fixed-gamma preset is a published-workflow "
+            "compatibility view, not evidence that its bandwidth transfers to this cohort."
+        ),
         "verification_contract": (
             "Exact source hashes, all method scores, all metrics, and the default decision "
             "are deterministically recomputed from the completed run."
@@ -528,11 +575,13 @@ def _artifact_documents(
     *,
     created_at: str,
     maximum_exported_components: int,
+    artifact_version: str = COMPARISON_VERSION,
 ) -> tuple[dict[str, object], dict[str, str]]:
     manifest, scores = _comparison_payload(
         inputs,
         created_at=created_at,
         maximum_exported_components=maximum_exported_components,
+        artifact_version=artifact_version,
     )
     return manifest, {
         COMPARISON_MANIFEST: _canonical_json(manifest),
@@ -651,7 +700,10 @@ def verify_reference_shape_space_comparison(
         "scientific_boundary",
         "verification_contract",
     }
-    if set(manifest) != required or manifest["artifact_version"] != COMPARISON_VERSION:
+    if (
+        set(manifest) != required
+        or manifest["artifact_version"] not in SUPPORTED_COMPARISON_VERSIONS
+    ):
         raise ReferenceShapeSpaceComparisonError(
             "Shape-space comparison version or manifest fields differ"
         )
@@ -678,6 +730,7 @@ def verify_reference_shape_space_comparison(
         inputs,
         created_at=str(manifest["created_at"]),
         maximum_exported_components=exported,
+        artifact_version=str(manifest["artifact_version"]),
     )
     if manifest != recomputed:
         raise ReferenceShapeSpaceComparisonError(

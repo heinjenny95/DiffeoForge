@@ -18,7 +18,7 @@
     "output"
   ],
   "properties": {
-    "schema_version": {"enum": ["0.1", "0.2", "0.3", "0.4", "0.5", "0.6", "0.7"]},
+    "schema_version": {"enum": ["0.1", "0.2", "0.3", "0.4", "0.5", "0.6", "0.7", "0.8"]},
     "project": {
       "type": "object",
       "additionalProperties": false,
@@ -63,6 +63,16 @@
               ]
             },
             "scale_to_unit_centroid_size": {"type": "boolean"},
+            "scaling_mode": {
+              "enum": [
+                "pams_surface_area_weighted_rms",
+                "pams_surface_vertex_centroid_size",
+                "preserve_size",
+                "landmark_centroid_size_legacy",
+                "landmark_rigid_gpa_legacy"
+              ]
+            },
+            "target_size": {"type": "number", "exclusiveMinimum": 0},
             "allow_reflection": {"type": "boolean"},
             "tolerance": {"type": "number", "minimum": 0},
             "max_iterations": {"type": "integer", "minimum": 1}
@@ -72,6 +82,36 @@
               "if": {"properties": {"enabled": {"const": true}}},
               "then": {"properties": {"landmarks_file": {"type": "string", "minLength": 1}}},
               "else": {"properties": {"landmarks_file": {"type": "null"}}}
+            },
+            {
+              "if": {
+                "required": ["scaling_mode"],
+                "properties": {
+                  "scaling_mode": {
+                    "enum": [
+                      "pams_surface_area_weighted_rms",
+                      "pams_surface_vertex_centroid_size",
+                      "landmark_centroid_size_legacy"
+                    ]
+                  }
+                }
+              },
+              "then": {
+                "properties": {"scale_to_unit_centroid_size": {"const": true}}
+              }
+            },
+            {
+              "if": {
+                "required": ["scaling_mode"],
+                "properties": {
+                  "scaling_mode": {
+                    "enum": ["preserve_size", "landmark_rigid_gpa_legacy"]
+                  }
+                }
+              },
+              "then": {
+                "properties": {"scale_to_unit_centroid_size": {"const": false}}
+              }
             }
           ]
         }
@@ -348,6 +388,32 @@
         "properties": {
           "initialization": {
             "properties": {"momenta": {"const": "zeros"}}
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": ["schema_version"],
+        "properties": {"schema_version": {"const": "0.8"}}
+      },
+      "then": {
+        "properties": {
+          "preprocessing": {
+            "properties": {
+              "procrustes": {
+                "required": ["scaling_mode", "target_size"]
+              }
+            }
+          },
+          "runtime": {"required": ["pairwise_evaluation"]},
+          "optimization": {
+            "required": [
+              "step_initialization",
+              "shared_step_scaling",
+              "template_gradient",
+              "sobolev_kernel_width_ratio"
+            ]
           }
         }
       }

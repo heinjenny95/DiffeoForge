@@ -11,8 +11,9 @@ Tracked by [scientific-change issue #18](https://github.com/heinjenny95/DiffeoFo
 The implemented workflow is:
 
 1. record the same ordered homologous landmarks for every specimen;
-2. compute and preserve one landmark-derived similarity transform per specimen;
-3. apply that transform to every vertex of the corresponding complete mesh;
+2. use the landmarks to estimate and preserve translation and orientation;
+3. apply the explicitly selected mesh-size policy and the landmark-derived rigid
+   transform to every vertex of the complete mesh;
 4. run the atlas on the aligned mesh copies while retaining the raw meshes;
 5. compute downstream statistics in an explicitly named feature space.
 
@@ -28,11 +29,26 @@ the order changes the scientific meaning of the analysis.
 For each specimen the prototype:
 
 - subtracts the landmark centroid;
-- optionally divides by centroid size (enabled by default);
+- divides the landmark configuration by centroid size while estimating orientation;
 - estimates a least-squares orthogonal rotation with SVD;
 - prohibits reflections by default;
-- iteratively updates a centered consensus, normalized to unit centroid size
-  when scaling is enabled.
+- iteratively updates a centered unit-centroid-size landmark consensus.
+
+The final scale applied to the complete surface is a separate scientific choice:
+
+- **Shape only — surface scale, resolution-independent (default):** divide by the
+  area-weighted RMS radius of the triangular surface. Integrating triangle moments
+  makes this measure invariant to subdivision of an unchanged piecewise-linear surface.
+- **Shape only — published PAMS:** divide by complete-mesh vertex centroid size. This
+  reproduces the alignment/scaling definition used by Roberts et al. (2026), but can
+  vary with vertex sampling density. Selecting this desktop preset also selects the
+  paper's common working size of 1000; both values remain explicit and editable.
+- **Size + shape:** apply translation and rotation while preserving specimen size.
+- **Legacy landmark scale:** divide the entire mesh by landmark centroid size. This is
+  retained for exact reproduction of earlier DiffeoForge projects, not as the new default.
+
+All size-removing modes expose an arbitrary common working-size constant. Changing it
+changes absolute atlas widths and noise values, so pilot calibration must be repeated.
 
 Each returned `SimilarityTransform` stores the original centroid, applied scale
 factor, and 3 × 3 rotation. With row-vector coordinates, its forward mapping is
@@ -158,8 +174,9 @@ automatically or navigation remains manual. Work in progress, including the
 label plan and this navigation choice, is written atomically beside the target
 CSV. Draft recovery requires the same absolute cohort paths and matching
 SHA-256 for every mesh that already has placements. A completed CSV export
-removes the draft. Project setup exposes whether GPA is applied,
-unit-centroid-size scaling, reflection policy, tolerance, and iteration limit.
+removes the draft. Project setup exposes whether landmark-guided alignment is applied,
+the shape-only or size-and-shape policy, common working size, reflection policy,
+tolerance, and iteration limit.
 Before project creation, the guided desktop computes a read-only preview outside
 the event loop. It
 reports the exact cohort and landmark counts, convergence status and iteration
@@ -172,17 +189,22 @@ configuration or aligned cohort is published. Step 2 then verifies the
 content-addressed aligned meshes and landmark copy against their recorded
 hashes before displaying the effective settings.
 
-The input preflight interprets scale in the context of those choices. When GPA
-and unit-centroid-size scaling are active, large proportional size differences
-between specimens are expected to be removed by the landmark-derived
-similarity transforms; they are not classified as unit errors merely because
-the raw meshes form size groups. The fail-closed check is instead within each
-specimen: its mesh and landmarks must occupy a compatible coordinate frame so
-that the same transform can legitimately be applied to both. When GPA is off,
-or centroid-size scaling is disabled, large mesh-size groups are reported only
-as an advisory review item. Geometry alone cannot decide whether such a group
-represents biology, life stage, acquisition units, or preprocessing history,
-and DiffeoForge neither rescales nor rejects it automatically.
+The input preflight interprets scale in the context of those choices. In a shape-only
+analysis, large proportional size differences are expected to be removed from each
+complete surface; they are not classified as unit errors merely because raw meshes form
+size groups. The fail-closed check is instead within each specimen: its mesh and
+landmarks must occupy a compatible coordinate frame so the landmark-derived rigid
+orientation can legitimately be applied to that mesh. In a size-and-shape analysis,
+large mesh-size groups remain an advisory review item. Geometry alone cannot decide
+whether a group represents biology, life stage, acquisition units, or preprocessing
+history, and DiffeoForge neither rescales nor rejects it automatically.
+
+Every newly published aligned cohort contains `scaling-sensitivity.csv` and the same
+data, interpretation boundary, and hash in `procrustes.json`. The diagnostic compares
+all supported scale definitions on the exact cohort and highlights disagreement between
+vertex-based and area-weighted size. It deliberately runs no atlas. If conclusions
+depend on size treatment, complete shape-only and size-preserving atlas runs must still
+be compared.
 
 The visual GPA review is a finite sequence. It reports both the current mesh
 number and the number of unique meshes viewed. **Next** stops at the final mesh
@@ -203,9 +225,8 @@ aligned input and is never a silent decimation step. See
 This remains a bounded surface-landmarking system. The code does not provide
 landmark uncertainty estimates, missing-landmark handling, semilandmark sliding,
 symmetry models, automated homology, or weights.
-The current combined template-and-subject GPA cohort and default
-unit-centroid-size scaling are explicit preprocessing choices, not
-automatically appropriate biological decisions.
+The current combined template-and-subject cohort and declared mesh-size policy are
+explicit preprocessing choices, not automatically appropriate biological decisions.
 The numerical preview is a reproducibility and gross-diagnostic gate, not a
 registration rendering, uncertainty estimate, or proof that landmarks are
 homologous or biologically suitable.

@@ -212,7 +212,7 @@ def test_size_groups_warn_when_gpa_preserves_centroid_size() -> None:
     assert tuple(issue.code for issue in report.warnings) == (
         "mixed_mesh_coordinate_scales",
     )
-    assert "centroid-size scaling is disabled" in report.warnings[0].summary
+    assert "size-and-shape mode" in report.warnings[0].summary
 
 
 def test_disabled_gpa_does_not_block_on_unused_landmark_mesh_scale() -> None:

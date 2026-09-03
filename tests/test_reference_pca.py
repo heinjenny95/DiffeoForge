@@ -313,6 +313,7 @@ def test_reference_shape_space_comparison_validates_model_aligned_default(
         "rbf_kpca_gamma_0.5",
         "rbf_kpca_gamma_1",
         "rbf_kpca_gamma_2",
+        "roberts_2026_cartesian_momenta_rbf_kpca",
         "isomap",
         "diffusion_map",
     }
@@ -887,7 +888,7 @@ def test_modern_reference_qualification_design_is_prospective_and_tamper_evident
     assert design["protocol"]["modern_result_existed_at_freeze"] is False
     assert design["design_version"] == "0.6"
     assert design["modern_workflow"]["expected_engine_implementation"] == "1.8"
-    assert config["schema_version"] == "0.7"
+    assert config["schema_version"] == "0.8"
     assert design["protocol"]["quality_screening"]["excluded_candidates"] == []
     assert all("source_quality" in record for record in design["subjects"])
     assert config["optimization"]["block_order"] == ["momenta"]

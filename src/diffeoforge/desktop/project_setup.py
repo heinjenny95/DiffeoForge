@@ -20,6 +20,13 @@ from diffeoforge.initialization import (
     ensure_generated_configuration_replaceable,
     initialize_project,
 )
+from diffeoforge.mesh import sha256_file
+from diffeoforge.mesh_scaling_contract import (
+    MeshScalingMode,
+    normalize_mesh_scaling_mode,
+    scaling_mode_label,
+    validate_target_size,
+)
 from diffeoforge.reference_parameters import REFERENCE_PARAMETER_PROFILES
 from diffeoforge.reference_runtime import (
     MANAGED_WSL_DISTRIBUTION,
@@ -81,7 +88,9 @@ class ProjectSetupRequest:
     reference_acceleration: str = "cpu"
     reference_threads: int | None = None
     reference_random_seed: int = 20260715
-    procrustes_scale_to_unit_centroid_size: bool = True
+    procrustes_scale_to_unit_centroid_size: bool | None = None
+    procrustes_scaling_mode: str | None = None
+    procrustes_target_size: float = 1.0
     procrustes_allow_reflection: bool = False
     procrustes_tolerance: float = 1e-10
     procrustes_max_iterations: int = 100
@@ -328,8 +337,43 @@ def _normalize_request(request: ProjectSetupRequest) -> ProjectSetupRequest:
     ):
         if not isinstance(value, bool):
             raise ConfigurationError(f"{label} must be a boolean")
-    if not isinstance(request.procrustes_scale_to_unit_centroid_size, bool):
-        raise ConfigurationError("procrustes_scale_to_unit_centroid_size must be a boolean")
+    if request.procrustes_scale_to_unit_centroid_size is not None and not isinstance(
+        request.procrustes_scale_to_unit_centroid_size, bool
+    ):
+        raise ConfigurationError(
+            "procrustes_scale_to_unit_centroid_size must be a boolean or null"
+        )
+    if request.procrustes_scaling_mode is None:
+        if request.procrustes_scale_to_unit_centroid_size is None:
+            procrustes_scaling_mode = MeshScalingMode.PAMS_AREA_WEIGHTED
+        else:
+            procrustes_scaling_mode = (
+                MeshScalingMode.LANDMARK_CENTROID_LEGACY
+                if request.procrustes_scale_to_unit_centroid_size
+                else MeshScalingMode.LANDMARK_RIGID_LEGACY
+            )
+    else:
+        try:
+            procrustes_scaling_mode = normalize_mesh_scaling_mode(
+                request.procrustes_scaling_mode
+            )
+        except ValueError as error:
+            raise ConfigurationError(str(error)) from error
+        removes_size = procrustes_scaling_mode not in {
+            MeshScalingMode.PRESERVE_SIZE,
+            MeshScalingMode.LANDMARK_RIGID_LEGACY,
+        }
+        if (
+            request.procrustes_scale_to_unit_centroid_size is not None
+            and removes_size != request.procrustes_scale_to_unit_centroid_size
+        ):
+            raise ConfigurationError(
+                "procrustes_scaling_mode conflicts with the legacy scaling boolean"
+            )
+    try:
+        procrustes_target_size = validate_target_size(request.procrustes_target_size)
+    except (TypeError, ValueError) as error:
+        raise ConfigurationError(str(error)) from error
     if not isinstance(request.procrustes_allow_reflection, bool):
         raise ConfigurationError("procrustes_allow_reflection must be a boolean")
     if (
@@ -402,9 +446,10 @@ def _normalize_request(request: ProjectSetupRequest) -> ProjectSetupRequest:
         reference_acceleration=acceleration,
         reference_threads=request.reference_threads,
         reference_random_seed=request.reference_random_seed,
-        procrustes_scale_to_unit_centroid_size=(
-            request.procrustes_scale_to_unit_centroid_size
-        ),
+        procrustes_scale_to_unit_centroid_size=procrustes_scaling_mode
+        not in {MeshScalingMode.PRESERVE_SIZE, MeshScalingMode.LANDMARK_RIGID_LEGACY},
+        procrustes_scaling_mode=procrustes_scaling_mode.value,
+        procrustes_target_size=procrustes_target_size,
         procrustes_allow_reflection=request.procrustes_allow_reflection,
         procrustes_tolerance=float(request.procrustes_tolerance),
         procrustes_max_iterations=request.procrustes_max_iterations,
@@ -435,6 +480,7 @@ def _create_reference_project(
     input_template = request.template
     input_subject_pattern = request.subject_pattern
     parameter_recommendation = request.reference_parameter_recommendation
+    preprocessing_record: dict[str, object] | None = None
     preprocessing_report_path: Path | None = None
     effective_project_name = request.project_name
     if request.landmarks_file is not None:
@@ -453,6 +499,8 @@ def _create_reference_project(
             scale_to_unit_centroid_size=(
                 request.procrustes_scale_to_unit_centroid_size
             ),
+            scaling_mode=request.procrustes_scaling_mode,
+            target_size=request.procrustes_target_size,
             allow_reflection=request.procrustes_allow_reflection,
             tolerance=request.procrustes_tolerance,
             max_iterations=request.procrustes_max_iterations,
@@ -464,6 +512,24 @@ def _create_reference_project(
         input_template = aligned.template
         input_subject_pattern = "*.vtk"
         preprocessing_report_path = aligned.evidence
+        preprocessing_record = {
+            "procrustes": {
+                "enabled": True,
+                "evidence_file": aligned.evidence.relative_to(
+                    config_path.parent
+                ).as_posix(),
+                "evidence_sha256": sha256_file(aligned.evidence),
+                "fingerprint": aligned.fingerprint,
+                "scale_to_unit_centroid_size": (
+                    request.procrustes_scale_to_unit_centroid_size
+                ),
+                "scaling_mode": request.procrustes_scaling_mode,
+                "target_size": request.procrustes_target_size,
+                "allow_reflection": request.procrustes_allow_reflection,
+                "tolerance": request.procrustes_tolerance,
+                "max_iterations": request.procrustes_max_iterations,
+            }
+        }
         if parameter_recommendation is not None:
             calibration_record = parameter_recommendation.get("calibration_plan")
             if calibration_record is not None:
@@ -518,6 +584,7 @@ def _create_reference_project(
         parameter_profile=request.reference_parameter_profile,
         parameter_ratios=request.reference_parameter_ratios,
         parameter_recommendation=parameter_recommendation,
+        preprocessing=preprocessing_record,
         max_iterations=request.reference_max_iterations,
         initial_step_size=request.reference_initial_step_size,
         convergence_tolerance=request.reference_convergence_tolerance,
@@ -578,7 +645,8 @@ def _create_reference_project(
     if preprocessing_report_path is not None:
         notices.insert(
             0,
-            "Homologous landmarks were validated and generalized Procrustes was applied. "
+            "Homologous landmarks were validated and generalized Procrustes was applied "
+            f"with {scaling_mode_label(request.procrustes_scaling_mode)}. "
             "Byte-identical raw copies and canonical aligned VTK meshes were published "
             "separately. Raw meshes were not modified.",
         )
@@ -674,6 +742,8 @@ def _create_modern_project(
             scale_to_unit_centroid_size=(
                 request.procrustes_scale_to_unit_centroid_size
             ),
+            scaling_mode=request.procrustes_scaling_mode,
+            target_size=request.procrustes_target_size,
             allow_reflection=request.procrustes_allow_reflection,
             tolerance=request.procrustes_tolerance,
             max_iterations=request.procrustes_max_iterations,
@@ -700,11 +770,18 @@ def _create_modern_project(
             scale_to_unit_centroid_size=(
                 request.procrustes_scale_to_unit_centroid_size
             ),
+            scaling_mode=request.procrustes_scaling_mode,
+            target_size=request.procrustes_target_size,
             allow_reflection=request.procrustes_allow_reflection,
             tolerance=request.procrustes_tolerance,
             max_iterations=request.procrustes_max_iterations,
             source_metadata=(
                 approved_procrustes_preview.source_metadata
+                if approved_procrustes_preview is not None
+                else None
+            ),
+            source_scale_metrics=(
+                approved_procrustes_preview.mesh_scale_metrics
                 if approved_procrustes_preview is not None
                 else None
             ),
@@ -734,6 +811,8 @@ def _create_modern_project(
         procrustes_scale_to_unit_centroid_size=(
             request.procrustes_scale_to_unit_centroid_size
         ),
+        procrustes_scaling_mode=request.procrustes_scaling_mode,
+        procrustes_target_size=request.procrustes_target_size,
         procrustes_allow_reflection=request.procrustes_allow_reflection,
         procrustes_tolerance=request.procrustes_tolerance,
         procrustes_max_iterations=request.procrustes_max_iterations,
@@ -762,7 +841,8 @@ def _create_modern_project(
     if preprocessing_report_path is not None:
         notices.insert(
             0,
-            "Homologous landmarks were validated and generalized Procrustes was applied. "
+            "Homologous landmarks were validated and generalized Procrustes was applied "
+            f"with {scaling_mode_label(request.procrustes_scaling_mode)}. "
             "Byte-identical raw copies and canonical aligned VTK meshes were published "
             "separately; both source meshes and their formats remain recorded.",
         )

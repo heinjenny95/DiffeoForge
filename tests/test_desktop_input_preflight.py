@@ -96,9 +96,11 @@ def test_alignment_scale_policy_is_part_of_preflight_signature(
 ) -> None:
     application, window, _paths, initial_signature = _ready_window(tmp_path, monkeypatch)
 
-    window.procrustes_scale_check.blockSignals(True)
-    window.procrustes_scale_check.setChecked(False)
-    window.procrustes_scale_check.blockSignals(False)
+    window.procrustes_scaling_combo.blockSignals(True)
+    window.procrustes_scaling_combo.setCurrentIndex(
+        window.procrustes_scaling_combo.findData("preserve_size")
+    )
+    window.procrustes_scaling_combo.blockSignals(False)
     _paths, _landmarks, changed_signature = window._input_preflight_request()
 
     assert changed_signature != initial_signature

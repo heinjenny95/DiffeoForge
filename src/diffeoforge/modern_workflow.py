@@ -25,7 +25,15 @@ import yaml
 
 from diffeoforge import __version__
 from diffeoforge.analysis.landmarks import LANDMARK_COLUMNS, read_landmark_csv
-from diffeoforge.analysis.procrustes import generalized_procrustes
+from diffeoforge.analysis.mesh_scaling import (
+    DEFAULT_MESH_SCALING_MODE,
+    DEFAULT_TARGET_SIZE,
+    MeshScalingMode,
+    mesh_scale_metrics,
+    normalize_mesh_scaling_mode,
+    scaling_mode_label,
+    validate_target_size,
+)
 from diffeoforge.atomic_io import write_text_safely
 from diffeoforge.config import ConfigurationError, InputSummary, validate_input_paths
 from diffeoforge.engine import PairwiseEvaluationPlan
@@ -84,13 +92,14 @@ from diffeoforge.modern_progress import (
     ModernProgressPhase,
     ModernProgressStatus,
 )
+from diffeoforge.preprocessing import fit_landmark_guided_alignment
 from diffeoforge.private_runs import (
     PrivateRunLease,
     acquire_private_run_lease,
     discover_private_runs,
 )
 
-CONFIG_VERSION = "0.7"
+CONFIG_VERSION = "0.8"
 WORKFLOW_VERSION = "0.1"
 MANIFEST_NAME = "workflow-manifest.json"
 MANIFEST_SIDECAR_NAME = "workflow-manifest.sha256"
@@ -461,6 +470,8 @@ def initialize_modern_workflow(
     output_directory: Path | str | None = None,
     landmarks_file: Path | str | None = None,
     procrustes_scale_to_unit_centroid_size: bool = True,
+    procrustes_scaling_mode: MeshScalingMode | str | None = None,
+    procrustes_target_size: float = DEFAULT_TARGET_SIZE,
     procrustes_allow_reflection: bool = False,
     procrustes_tolerance: float = 1e-10,
     procrustes_max_iterations: int = 100,
@@ -508,6 +519,31 @@ def initialize_modern_workflow(
         )
     if not isinstance(procrustes_scale_to_unit_centroid_size, bool):
         raise ConfigurationError("procrustes_scale_to_unit_centroid_size must be a boolean")
+    if procrustes_scaling_mode is None:
+        selected_scaling_mode = (
+            DEFAULT_MESH_SCALING_MODE
+            if procrustes_scale_to_unit_centroid_size
+            else MeshScalingMode.PRESERVE_SIZE
+        )
+    else:
+        try:
+            selected_scaling_mode = normalize_mesh_scaling_mode(
+                procrustes_scaling_mode
+            )
+        except ValueError as error:
+            raise ConfigurationError(str(error)) from error
+    removes_size = selected_scaling_mode not in {
+        MeshScalingMode.PRESERVE_SIZE,
+        MeshScalingMode.LANDMARK_RIGID_LEGACY,
+    }
+    if removes_size != procrustes_scale_to_unit_centroid_size:
+        raise ConfigurationError(
+            "procrustes_scaling_mode conflicts with the legacy scaling boolean"
+        )
+    try:
+        normalized_target_size = validate_target_size(procrustes_target_size)
+    except (TypeError, ValueError) as error:
+        raise ConfigurationError(str(error)) from error
     if not isinstance(procrustes_allow_reflection, bool):
         raise ConfigurationError("procrustes_allow_reflection must be a boolean")
     if (
@@ -610,6 +646,8 @@ def initialize_modern_workflow(
                 "enabled": landmark_value is not None,
                 "landmarks_file": landmark_value,
                 "scale_to_unit_centroid_size": procrustes_scale_to_unit_centroid_size,
+                "scaling_mode": selected_scaling_mode.value,
+                "target_size": normalized_target_size,
                 "allow_reflection": procrustes_allow_reflection,
                 "tolerance": float(procrustes_tolerance),
                 "max_iterations": procrustes_max_iterations,
@@ -708,9 +746,15 @@ def initialize_modern_workflow(
             landmark_source,
             (summary.template.name, *(path.name for path in summary.subjects)),
         )
-        alignment = generalized_procrustes(
+        metrics = tuple(
+            mesh_scale_metrics(geometry.vertices, geometry.triangles)
+            for geometry in source_geometries
+        )
+        alignment, _landmark_sizes = fit_landmark_guided_alignment(
             landmark_values,
-            scale_to_unit_centroid_size=procrustes_scale_to_unit_centroid_size,
+            metrics,
+            scaling_mode=selected_scaling_mode,
+            target_size=normalized_target_size,
             allow_reflection=procrustes_allow_reflection,
             tolerance=float(procrustes_tolerance),
             max_iterations=procrustes_max_iterations,
@@ -888,9 +932,25 @@ def _alignment_evidence(
     landmark_labels, landmarks = read_landmark_csv(
         landmark_copy, tuple(path.name for path in source_paths)
     )
-    result = generalized_procrustes(
+    if "scaling_mode" in procrustes:
+        scaling_mode = normalize_mesh_scaling_mode(procrustes["scaling_mode"])
+        target_size = validate_target_size(procrustes["target_size"])
+    else:
+        scaling_mode = (
+            MeshScalingMode.LANDMARK_CENTROID_LEGACY
+            if procrustes["scale_to_unit_centroid_size"]
+            else MeshScalingMode.LANDMARK_RIGID_LEGACY
+        )
+        target_size = DEFAULT_TARGET_SIZE
+    scale_metrics = tuple(
+        mesh_scale_metrics(geometry.vertices, geometry.triangles)
+        for geometry in geometries
+    )
+    result, landmark_centroid_sizes = fit_landmark_guided_alignment(
         landmarks,
-        scale_to_unit_centroid_size=procrustes["scale_to_unit_centroid_size"],
+        scale_metrics,
+        scaling_mode=scaling_mode,
+        target_size=target_size,
         allow_reflection=procrustes["allow_reflection"],
         tolerance=procrustes["tolerance"],
         max_iterations=procrustes["max_iterations"],
@@ -902,8 +962,15 @@ def _alignment_evidence(
     aligned_vertices: list[np.ndarray] = []
     aligned_paths: list[Path] = []
     specimens: list[dict[str, Any]] = []
-    for index, (source, raw_path, geometry, transform) in enumerate(
-        zip(source_paths, raw_paths, geometries, result.transforms, strict=True)
+    for index, (source, raw_path, geometry, transform, metric) in enumerate(
+        zip(
+            source_paths,
+            raw_paths,
+            geometries,
+            result.transforms,
+            scale_metrics,
+            strict=True,
+        )
     ):
         vertices = transform.apply(np.array(geometry.vertices, dtype=np.float64))
         aligned_path = root / "input" / "aligned" / f"mesh-{index:04d}-{_slug(source.stem)}.vtk"
@@ -922,6 +989,15 @@ def _alignment_evidence(
                 "raw_path": raw_path.relative_to(root).as_posix(),
                 "aligned_path": aligned_path.relative_to(root).as_posix(),
                 "residual": result.residuals[index],
+                "landmark_centroid_size": landmark_centroid_sizes[index],
+                "source_scale_metrics": metric.as_manifest(),
+                "post_scale_metrics": {
+                    "vertex_centroid_size": metric.vertex_centroid_size * transform.scale,
+                    "area_weighted_rms_radius": (
+                        metric.area_weighted_rms_radius * transform.scale
+                    ),
+                    "surface_area": metric.surface_area * transform.scale**2,
+                },
                 "transform": {
                     "centroid": transform.centroid.tolist(),
                     "scale": transform.scale,
@@ -930,12 +1006,19 @@ def _alignment_evidence(
             }
         )
     evidence = {
-        "alignment_version": "0.1",
+        "alignment_version": "0.2",
         "method": "generalized_procrustes",
+        "alignment_role": (
+            "homologous landmarks determine orientation; the declared mesh scaling "
+            "mode independently determines size treatment"
+        ),
         "coordinate_convention": "aligned = ((raw - centroid) * scale) @ rotation",
         "landmark_columns": list(LANDMARK_COLUMNS),
         "landmark_labels": list(landmark_labels),
         "settings": {
+            "scaling_mode": scaling_mode.value,
+            "scaling_label": scaling_mode_label(scaling_mode),
+            "target_size": target_size,
             "scale_to_unit_centroid_size": result.scale_to_unit_centroid_size,
             "allow_reflection": result.allow_reflection,
             "tolerance": float(procrustes["tolerance"]),

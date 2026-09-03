@@ -127,7 +127,7 @@ named sensitivity comparison alongside PCoA, Isomap, and diffusion maps:
 ```powershell
 diffeoforge reference-shape-space-comparison RUN_DIRECTORY
 diffeoforge reference-shape-space-comparison-verify `
-  RUN_DIRECTORY/analysis/reference-shape-space-comparison-v0.1
+  RUN_DIRECTORY/analysis/reference-shape-space-comparison-v0.2
 ```
 
 The comparison tests RBF gamma at 0.5, 1, and 2 times the median-distance
@@ -136,6 +136,14 @@ alignment, and outlier overlap, and exports method scores. LDDMM tangent PCoA is
 an independent distance-based cross-check. Isomap and diffusion maps are
 exploratory views. Exact geodesic PGA is documented as not executed because it
 requires additional fitting or shooting rather than cost-free post-processing.
+
+Version 0.2 also exports a named **Roberts et al. (2026) compatibility preset**:
+RBF KernelPCA on flattened Cartesian momenta with the published fixed
+`gamma = 0.00000025`. It is present to reproduce and compare that workflow, not to
+replace the model-aligned default. The manifest records that the paper's scikit-learn
+call requested inverse fitting while DiffeoForge does not claim or export a shootable
+preimage from this generic kernel embedding. Version 0.1 comparison bundles remain
+verifiable.
 
 ## Published evidence
 

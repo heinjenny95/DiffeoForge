@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import csv
 import hashlib
 import json
 import shutil
@@ -12,9 +13,27 @@ from pathlib import Path
 
 import numpy as np
 
+from diffeoforge.analysis.alignment_scaling_sensitivity import (
+    alignment_scaling_sensitivity_csv_rows,
+    build_alignment_scaling_sensitivity,
+)
 from diffeoforge.analysis.landmarks import LANDMARK_COLUMNS, read_landmark_csv
+from diffeoforge.analysis.mesh_scaling import (
+    DEFAULT_MESH_SCALING_MODE,
+    DEFAULT_TARGET_SIZE,
+    MeshScaleMetrics,
+    MeshScalingMode,
+    normalize_mesh_scaling_mode,
+    scaling_factor,
+    scaling_mode_label,
+    validate_target_size,
+)
+from diffeoforge.analysis.mesh_scaling import (
+    mesh_scale_metrics as compute_mesh_scale_metrics,
+)
 from diffeoforge.analysis.procrustes import (
     GeneralizedProcrustesResult,
+    SimilarityTransform,
     generalized_procrustes,
 )
 from diffeoforge.atomic_io import replace_atomically
@@ -25,12 +44,12 @@ from diffeoforge.surface_io import (
     SUPPORTED_SURFACE_EXTENSIONS,
     SurfaceMeshMetadata,
     canonical_vtk_filename,
-    inspect_surface_mesh,
     is_supported_surface_path,
+    load_surface_mesh,
     read_surface_mesh,
 )
 
-PREPROCESSING_VERSION = "0.2"
+PREPROCESSING_VERSION = "0.3"
 DEFAULT_PROCRUSTES_TOLERANCE = 1e-10
 DEFAULT_PROCRUSTES_MAX_ITERATIONS = 100
 
@@ -62,7 +81,11 @@ class LandmarkAlignmentPreview:
     landmark_sha256: str
     mesh_sha256: tuple[str, ...]
     source_metadata: tuple[SurfaceMeshMetadata, ...]
+    mesh_scale_metrics: tuple[MeshScaleMetrics, ...]
+    landmark_centroid_sizes: tuple[float, ...]
     aligned_filenames: tuple[str, ...]
+    scaling_mode: MeshScalingMode
+    target_size: float
     scale_to_unit_centroid_size: bool
     allow_reflection: bool
     tolerance: float
@@ -73,6 +96,134 @@ class LandmarkAlignmentPreview:
     @property
     def source_paths(self) -> tuple[Path, ...]:
         return (self.template, *self.subjects)
+
+    @property
+    def scaling_label(self) -> str:
+        return scaling_mode_label(self.scaling_mode)
+
+    @property
+    def post_vertex_centroid_sizes(self) -> tuple[float, ...]:
+        return tuple(
+            metric.vertex_centroid_size * transform.scale
+            for metric, transform in zip(
+                self.mesh_scale_metrics,
+                self.alignment.transforms,
+                strict=True,
+            )
+        )
+
+    @property
+    def post_area_weighted_rms_radii(self) -> tuple[float, ...]:
+        return tuple(
+            metric.area_weighted_rms_radius * transform.scale
+            for metric, transform in zip(
+                self.mesh_scale_metrics,
+                self.alignment.transforms,
+                strict=True,
+            )
+        )
+
+    @property
+    def scaling_sensitivity(self) -> dict[str, object]:
+        return build_alignment_scaling_sensitivity(
+            tuple(path.name for path in self.source_paths),
+            tuple(item.points for item in self.source_metadata),
+            self.mesh_scale_metrics,
+            self.landmark_centroid_sizes,
+            selected_mode=self.scaling_mode,
+            target_size=self.target_size,
+        )
+
+
+def _resolve_scaling_mode(
+    scaling_mode: MeshScalingMode | str | None,
+    scale_to_unit_centroid_size: bool | None,
+) -> MeshScalingMode:
+    if scale_to_unit_centroid_size is not None and not isinstance(
+        scale_to_unit_centroid_size, bool
+    ):
+        raise TypeError("scale_to_unit_centroid_size must be a boolean or null")
+    if scaling_mode is None:
+        if scale_to_unit_centroid_size is None:
+            return DEFAULT_MESH_SCALING_MODE
+        return (
+            MeshScalingMode.LANDMARK_CENTROID_LEGACY
+            if scale_to_unit_centroid_size
+            else MeshScalingMode.LANDMARK_RIGID_LEGACY
+        )
+    selected = normalize_mesh_scaling_mode(scaling_mode)
+    if scale_to_unit_centroid_size is not None:
+        removes_size = selected not in {
+            MeshScalingMode.PRESERVE_SIZE,
+            MeshScalingMode.LANDMARK_RIGID_LEGACY,
+        }
+        if removes_size != scale_to_unit_centroid_size:
+            raise ValueError(
+                "scaling_mode conflicts with scale_to_unit_centroid_size"
+            )
+    return selected
+
+
+def fit_landmark_guided_alignment(
+    landmarks: np.ndarray,
+    mesh_metrics: tuple[MeshScaleMetrics, ...],
+    *,
+    scaling_mode: MeshScalingMode,
+    target_size: float,
+    allow_reflection: bool,
+    tolerance: float,
+    max_iterations: int,
+) -> tuple[GeneralizedProcrustesResult, tuple[float, ...]]:
+    """Fit landmark orientation, then apply the declared independent size policy."""
+
+    legacy_rigid = scaling_mode is MeshScalingMode.LANDMARK_RIGID_LEGACY
+    orientation = generalized_procrustes(
+        landmarks,
+        scale_to_unit_centroid_size=not legacy_rigid,
+        allow_reflection=allow_reflection,
+        tolerance=tolerance,
+        max_iterations=max_iterations,
+    )
+    centroids = np.mean(landmarks, axis=1)
+    centered = landmarks - centroids[:, None, :]
+    landmark_sizes_array = np.sqrt(np.sum(centered * centered, axis=(1, 2)))
+    landmark_sizes = tuple(float(value) for value in landmark_sizes_array)
+    transforms = tuple(
+        SimilarityTransform(
+            centroid=orientation.transforms[index].centroid,
+            scale=scaling_factor(
+                scaling_mode,
+                target_size=target_size,
+                landmark_centroid_size=landmark_sizes[index],
+                mesh_metrics=mesh_metrics[index],
+            ),
+            rotation=orientation.transforms[index].rotation,
+        )
+        for index in range(landmarks.shape[0])
+    )
+    aligned = np.stack(
+        tuple(transform.apply(landmarks[index]) for index, transform in enumerate(transforms))
+    )
+    mean_shape = np.mean(aligned, axis=0)
+    residuals = np.sum((aligned - mean_shape[None, :, :]) ** 2, axis=(1, 2))
+    removes_size = scaling_mode not in {
+        MeshScalingMode.PRESERVE_SIZE,
+        MeshScalingMode.LANDMARK_RIGID_LEGACY,
+    }
+    return (
+        GeneralizedProcrustesResult(
+            aligned_landmarks=aligned,
+            mean_shape=mean_shape,
+            transforms=transforms,
+            residuals=tuple(float(value) for value in residuals),
+            history=orientation.history,
+            termination_reason=orientation.termination_reason,
+            converged=orientation.converged,
+            scale_to_unit_centroid_size=removes_size,
+            allow_reflection=orientation.allow_reflection,
+        ),
+        landmark_sizes,
+    )
 
 
 def _resolve_template(directory: Path, template: Path | str | None) -> Path:
@@ -153,11 +304,14 @@ def preview_landmark_alignment(
     landmarks_file: Path | str,
     template: Path | str | None = None,
     subject_pattern: str = "*.vtk",
-    scale_to_unit_centroid_size: bool = True,
+    scale_to_unit_centroid_size: bool | None = None,
+    scaling_mode: MeshScalingMode | str | None = None,
+    target_size: float = DEFAULT_TARGET_SIZE,
     allow_reflection: bool = False,
     tolerance: float = DEFAULT_PROCRUSTES_TOLERANCE,
     max_iterations: int = DEFAULT_PROCRUSTES_MAX_ITERATIONS,
     source_metadata: Sequence[SurfaceMeshMetadata] | None = None,
+    source_scale_metrics: Sequence[MeshScaleMetrics] | None = None,
 ) -> LandmarkAlignmentPreview:
     """Compute a hash-bound alignment preview without creating or changing files.
 
@@ -175,8 +329,17 @@ def preview_landmark_alignment(
         raise ConfigurationError(f"Landmark CSV does not exist: {landmark_source}")
     template_path, subject_paths = _select_inputs(directory, template, subject_pattern)
     source_paths = (template_path, *subject_paths)
+    selected_scaling_mode = _resolve_scaling_mode(
+        scaling_mode, scale_to_unit_centroid_size
+    )
+    normalized_target_size = validate_target_size(target_size)
     if source_metadata is None:
-        resolved_metadata = tuple(inspect_surface_mesh(path) for path in source_paths)
+        loaded_sources = tuple(load_surface_mesh(path) for path in source_paths)
+        resolved_metadata = tuple(item.metadata for item in loaded_sources)
+        resolved_scale_metrics = tuple(
+            compute_mesh_scale_metrics(item.geometry.vertices, item.geometry.triangles)
+            for item in loaded_sources
+        )
     else:
         resolved_metadata = tuple(source_metadata)
         if len(resolved_metadata) != len(source_paths):
@@ -198,6 +361,20 @@ def preview_landmark_alignment(
                 raise ConfigurationError(
                     f"Mesh size changed after data preflight: {path}"
                 )
+        if source_scale_metrics is None:
+            resolved_scale_metrics = tuple(
+                compute_mesh_scale_metrics(
+                    geometry.vertices,
+                    geometry.triangles,
+                )
+                for geometry in (read_surface_mesh(path) for path in source_paths)
+            )
+        else:
+            resolved_scale_metrics = tuple(source_scale_metrics)
+            if len(resolved_scale_metrics) != len(source_paths):
+                raise ConfigurationError(
+                    "Cached mesh scale metrics do not match the Procrustes cohort length"
+                )
     source_hashes = tuple(item.sha256 for item in resolved_metadata)
     aligned_filenames = tuple(canonical_vtk_filename(path) for path in source_paths)
     landmark_hash = sha256_file(landmark_source)
@@ -206,9 +383,11 @@ def preview_landmark_alignment(
         tuple(path.name for path in source_paths),
     )
     try:
-        alignment = generalized_procrustes(
+        alignment, landmark_centroid_sizes = fit_landmark_guided_alignment(
             landmark_values,
-            scale_to_unit_centroid_size=scale_to_unit_centroid_size,
+            resolved_scale_metrics,
+            scaling_mode=selected_scaling_mode,
+            target_size=normalized_target_size,
             allow_reflection=allow_reflection,
             tolerance=tolerance,
             max_iterations=max_iterations,
@@ -237,7 +416,9 @@ def preview_landmark_alignment(
         )
     )
     settings = {
-        "scale_to_unit_centroid_size": scale_to_unit_centroid_size,
+        "scaling_mode": selected_scaling_mode.value,
+        "target_size": normalized_target_size,
+        "scale_to_unit_centroid_size": alignment.scale_to_unit_centroid_size,
         "allow_reflection": allow_reflection,
         "tolerance": float(tolerance),
         "max_iterations": int(max_iterations),
@@ -261,8 +442,12 @@ def preview_landmark_alignment(
         landmark_sha256=landmark_hash,
         mesh_sha256=source_hashes,
         source_metadata=resolved_metadata,
+        mesh_scale_metrics=resolved_scale_metrics,
+        landmark_centroid_sizes=landmark_centroid_sizes,
         aligned_filenames=aligned_filenames,
-        scale_to_unit_centroid_size=scale_to_unit_centroid_size,
+        scaling_mode=selected_scaling_mode,
+        target_size=normalized_target_size,
+        scale_to_unit_centroid_size=alignment.scale_to_unit_centroid_size,
         allow_reflection=allow_reflection,
         tolerance=float(tolerance),
         max_iterations=int(max_iterations),
@@ -336,6 +521,18 @@ def _load_existing(
         or sha256_file(landmark_copy) != evidence.get("landmark_copy_sha256")
     ):
         raise ConfigurationError("Existing aligned landmark copy no longer matches its evidence")
+    sensitivity = evidence.get("scaling_sensitivity")
+    sensitivity_path = destination / "scaling-sensitivity.csv"
+    if (
+        not isinstance(sensitivity, dict)
+        or sensitivity.get("csv_path") != sensitivity_path.name
+        or not sensitivity_path.is_file()
+        or sensitivity_path.is_symlink()
+        or sha256_file(sensitivity_path) != sensitivity.get("csv_sha256")
+    ):
+        raise ConfigurationError(
+            "Existing scaling-sensitivity table no longer matches its evidence"
+        )
     return AlignedInputCohort(
         directory=destination,
         raw_directory=raw_directory,
@@ -355,7 +552,9 @@ def prepare_landmark_aligned_inputs(
     landmarks_file: Path | str,
     template: Path | str | None = None,
     subject_pattern: str = "*.vtk",
-    scale_to_unit_centroid_size: bool = True,
+    scale_to_unit_centroid_size: bool | None = None,
+    scaling_mode: MeshScalingMode | str | None = None,
+    target_size: float = DEFAULT_TARGET_SIZE,
     allow_reflection: bool = False,
     tolerance: float = DEFAULT_PROCRUSTES_TOLERANCE,
     max_iterations: int = DEFAULT_PROCRUSTES_MAX_ITERATIONS,
@@ -377,6 +576,8 @@ def prepare_landmark_aligned_inputs(
             template=template,
             subject_pattern=subject_pattern,
             scale_to_unit_centroid_size=scale_to_unit_centroid_size,
+            scaling_mode=scaling_mode,
+            target_size=target_size,
             allow_reflection=allow_reflection,
             tolerance=tolerance,
             max_iterations=max_iterations,
@@ -386,13 +587,18 @@ def prepare_landmark_aligned_inputs(
         directory = Path(mesh_directory).expanduser().resolve()
         landmark_source = Path(landmarks_file).expanduser().resolve()
         template_path, subject_paths = _select_inputs(directory, template, subject_pattern)
+        selected_scaling_mode = _resolve_scaling_mode(
+            scaling_mode, scale_to_unit_centroid_size
+        )
+        normalized_target_size = validate_target_size(target_size)
         if (
             preview.mesh_directory != directory
             or preview.landmarks != landmark_source
             or preview.template != template_path
             or preview.subjects != subject_paths
             or preview.subject_pattern != subject_pattern
-            or preview.scale_to_unit_centroid_size != scale_to_unit_centroid_size
+            or preview.scaling_mode != selected_scaling_mode
+            or preview.target_size != normalized_target_size
             or preview.allow_reflection != allow_reflection
             or preview.tolerance != float(tolerance)
             or preview.max_iterations != max_iterations
@@ -432,7 +638,10 @@ def prepare_landmark_aligned_inputs(
         )
     )
     settings = {
-        "scale_to_unit_centroid_size": scale_to_unit_centroid_size,
+        "scaling_mode": preview.scaling_mode.value,
+        "scaling_label": preview.scaling_label,
+        "target_size": preview.target_size,
+        "scale_to_unit_centroid_size": preview.scale_to_unit_centroid_size,
         "allow_reflection": allow_reflection,
         "tolerance": float(tolerance),
         "max_iterations": int(max_iterations),
@@ -520,6 +729,11 @@ def prepare_landmark_aligned_inputs(
             aligned_vertices = transform.apply(
                 np.asarray(geometry.vertices, dtype=np.float64)
             )
+            source_scale = preview.mesh_scale_metrics[index]
+            post_vertex_centroid_size = source_scale.vertex_centroid_size * transform.scale
+            post_area_weighted_rms_radius = (
+                source_scale.area_weighted_rms_radius * transform.scale
+            )
             aligned_path = aligned_directory / aligned_filename
             write_vtk_polydata(
                 aligned_path,
@@ -539,6 +753,13 @@ def prepare_landmark_aligned_inputs(
                     "aligned_points": len(geometry.vertices),
                     "aligned_triangles": len(geometry.triangles),
                     "residual": residual,
+                    "landmark_centroid_size": preview.landmark_centroid_sizes[index],
+                    "source_scale_metrics": source_scale.as_manifest(),
+                    "post_scale_metrics": {
+                        "vertex_centroid_size": post_vertex_centroid_size,
+                        "area_weighted_rms_radius": post_area_weighted_rms_radius,
+                        "surface_area": source_scale.surface_area * transform.scale**2,
+                    },
                     "transform": {
                         "centroid": transform.centroid.tolist(),
                         "scale": transform.scale,
@@ -548,10 +769,21 @@ def prepare_landmark_aligned_inputs(
             )
             if progress_callback is not None:
                 progress_callback(index + 1, len(source_paths), path)
+        sensitivity_report = preview.scaling_sensitivity
+        sensitivity_csv_path = temporary / "scaling-sensitivity.csv"
+        with sensitivity_csv_path.open("x", encoding="utf-8", newline="") as handle:
+            writer = csv.writer(handle, lineterminator="\n")
+            writer.writerows(alignment_scaling_sensitivity_csv_rows(sensitivity_report))
+        sensitivity_report["csv_path"] = sensitivity_csv_path.name
+        sensitivity_report["csv_sha256"] = sha256_file(sensitivity_csv_path)
         evidence = {
             "preprocessing_version": PREPROCESSING_VERSION,
             "fingerprint": fingerprint,
             "method": "generalized_procrustes",
+            "alignment_role": (
+                "homologous landmarks determine orientation; the declared mesh scaling "
+                "mode independently determines size treatment"
+            ),
             "coordinate_convention": "aligned = ((raw - centroid) * scale) @ rotation",
             "directory_layout": {
                 "raw": "raw",
@@ -575,6 +807,7 @@ def prepare_landmark_aligned_inputs(
                 }
                 for item in alignment.history
             ],
+            "scaling_sensitivity": sensitivity_report,
             "meshes": mesh_evidence,
         }
         evidence_path = temporary / "procrustes.json"

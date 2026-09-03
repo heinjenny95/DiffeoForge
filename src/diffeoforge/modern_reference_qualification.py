@@ -107,7 +107,7 @@ QUALIFICATION_CONFIG_SCHEMA_BY_ENGINE = {
     "1.5": "0.6",
     "1.6": "0.7",
     "1.7": "0.7",
-    "1.8": "0.7",
+    "1.8": "0.8",
 }
 
 
@@ -639,7 +639,9 @@ def create_modern_reference_qualification(
                 "procrustes": {
                     "enabled": False,
                     "landmarks_file": None,
-                    "scale_to_unit_centroid_size": True,
+                    "scale_to_unit_centroid_size": False,
+                    "scaling_mode": "preserve_size",
+                    "target_size": 1.0,
                     "allow_reflection": False,
                     "tolerance": 1e-10,
                     "max_iterations": 100,
@@ -1256,7 +1258,13 @@ def verify_modern_reference_qualification_design(
             not isinstance(expected_engine, str)
             or re.fullmatch(r"[0-9]+\.[0-9]+", expected_engine) is None
             or expected_schema is None
-            or config["schema_version"] != expected_schema
+                or (
+                    config["schema_version"] != expected_schema
+                    and not (
+                        expected_engine == "1.8"
+                        and config["schema_version"] == "0.7"
+                    )
+                )
         ):
             raise ModernReferenceQualificationError(
                 "Qualification expected-engine binding is invalid"

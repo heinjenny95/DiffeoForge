@@ -142,7 +142,7 @@ def test_reference_review_verifies_and_exposes_procrustes_evidence(tmp_path: Pat
     assert values["Landmark alignment"] == (
         "generalized Procrustes · 3 landmarks · 6 meshes"
     )
-    assert "unit centroid size no" in values["Procrustes settings"]
+    assert "legacy size-preserving landmark GPA" in values["Procrustes settings"]
     assert "reflections yes" in values["Procrustes settings"]
     assert "max. 250 iterations" in values["Procrustes settings"]
 

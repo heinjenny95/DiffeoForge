@@ -711,6 +711,70 @@
         }
       }
     },
+    "preprocessing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["procrustes"],
+      "properties": {
+        "procrustes": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "enabled",
+            "evidence_file",
+            "evidence_sha256",
+            "fingerprint",
+            "scale_to_unit_centroid_size",
+            "scaling_mode",
+            "target_size",
+            "allow_reflection",
+            "tolerance",
+            "max_iterations"
+          ],
+          "properties": {
+            "enabled": {"const": true},
+            "evidence_file": {"type": "string", "minLength": 1},
+            "evidence_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+            "fingerprint": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+            "scale_to_unit_centroid_size": {"type": "boolean"},
+            "scaling_mode": {
+              "enum": [
+                "pams_surface_area_weighted_rms",
+                "pams_surface_vertex_centroid_size",
+                "preserve_size",
+                "landmark_centroid_size_legacy",
+                "landmark_rigid_gpa_legacy"
+              ]
+            },
+            "target_size": {"type": "number", "exclusiveMinimum": 0},
+            "allow_reflection": {"type": "boolean"},
+            "tolerance": {"type": "number", "exclusiveMinimum": 0},
+            "max_iterations": {"type": "integer", "minimum": 1}
+          },
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "scaling_mode": {
+                    "enum": [
+                      "pams_surface_area_weighted_rms",
+                      "pams_surface_vertex_centroid_size",
+                      "landmark_centroid_size_legacy"
+                    ]
+                  }
+                }
+              },
+              "then": {
+                "properties": {"scale_to_unit_centroid_size": {"const": true}}
+              },
+              "else": {
+                "properties": {"scale_to_unit_centroid_size": {"const": false}}
+              }
+            }
+          ]
+        }
+      }
+    },
     "model": {
       "type": "object",
       "additionalProperties": false,

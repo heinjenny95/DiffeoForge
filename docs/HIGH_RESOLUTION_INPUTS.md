@@ -45,13 +45,18 @@ cost.
 
 ## Scale and units
 
-Landmark GPA with centroid-size scaling removes one similarity scale per specimen from
-both its landmarks and its mesh. Raw size groups are therefore not automatically unit
-errors. The fail-closed condition is different: the landmark configuration and the mesh
-for the same specimen must share a coordinate frame, otherwise the landmark-derived
-transform would be invalid for that mesh.
+The default landmark-guided workflow uses landmarks for homologous orientation and
+removes size from each complete surface using an area-weighted RMS radius. Raw size
+groups are therefore not automatically unit errors. The fail-closed condition is
+different: the landmark configuration and mesh for the same specimen must share a
+coordinate frame, otherwise the landmark-derived orientation would be invalid.
 
-When GPA scaling is disabled, size groups remain advisory because geometry alone cannot
+The exact published PAMS-compatible alternative uses the centroid size of all mesh
+vertices. Because that measure depends on how a surface is sampled, DiffeoForge warns
+when vertex counts differ materially. The area-weighted default is stable when triangles
+are subdivided without changing the surface. Neither policy discards faces.
+
+When **Size + shape** is selected, size groups remain advisory because geometry alone cannot
 distinguish biological size, acquisition units, life stages, or previous preprocessing.
 
 ## Server execution boundary

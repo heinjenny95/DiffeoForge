@@ -8,6 +8,7 @@ import numpy as np
 import pytest
 
 from diffeoforge.analysis.landmarks import LANDMARK_COLUMNS
+from diffeoforge.analysis.mesh_scaling import MeshScalingMode, mesh_scale_metrics
 from diffeoforge.config import ConfigurationError
 from diffeoforge.mesh import read_vtk_polydata, sha256_file
 from diffeoforge.preprocessing import (
@@ -66,14 +67,24 @@ def test_procrustes_preprocessing_is_engine_independent_and_preserves_raw_meshes
         for item in evidence["meshes"]
     )
 
-    aligned_landmarks = []
+    aligned_surface_sizes = []
     for mesh in (result.template, *result.subjects):
-        vertices = np.asarray(read_vtk_polydata(mesh).vertices, dtype=np.float64)
-        aligned_landmarks.append(vertices[(0, 40, 80), :])
-    centroid_sizes = [
-        np.linalg.norm(values - np.mean(values, axis=0)) for values in aligned_landmarks
-    ]
-    assert np.allclose(centroid_sizes, 1.0, rtol=1e-12, atol=1e-12)
+        geometry = read_vtk_polydata(mesh)
+        aligned_surface_sizes.append(
+            mesh_scale_metrics(
+                geometry.vertices, geometry.triangles
+            ).area_weighted_rms_radius
+        )
+    assert np.allclose(aligned_surface_sizes, 1.0, rtol=1e-11, atol=1e-11)
+    assert evidence["settings"]["scaling_mode"] == (
+        MeshScalingMode.PAMS_AREA_WEIGHTED.value
+    )
+    sensitivity_path = result.directory / "scaling-sensitivity.csv"
+    assert sensitivity_path.is_file()
+    assert evidence["scaling_sensitivity"]["computed_without_atlas_reruns"] is True
+    assert evidence["scaling_sensitivity"]["csv_sha256"] == sha256_file(
+        sensitivity_path
+    )
 
 
 def test_procrustes_preview_is_read_only_and_binds_later_publication(
@@ -105,6 +116,30 @@ def test_procrustes_preview_is_read_only_and_binds_later_publication(
     assert result.fingerprint == preview.fingerprint
 
 
+def test_published_pams_and_legacy_landmark_scaling_are_distinct(
+    tmp_path: Path,
+) -> None:
+    landmarks = _write_landmarks(tmp_path / "landmarks.csv")
+    pams = preview_landmark_alignment(
+        MESH_DIRECTORY,
+        landmarks_file=landmarks,
+        scaling_mode=MeshScalingMode.PAMS_VERTEX_CENTROID,
+        target_size=1000.0,
+    )
+    legacy = preview_landmark_alignment(
+        MESH_DIRECTORY,
+        landmarks_file=landmarks,
+        scaling_mode=MeshScalingMode.LANDMARK_CENTROID_LEGACY,
+        target_size=1.0,
+    )
+
+    assert np.allclose(pams.post_vertex_centroid_sizes, 1000.0, rtol=1e-12)
+    assert max(legacy.post_vertex_centroid_sizes) - min(
+        legacy.post_vertex_centroid_sizes
+    ) > 0.01
+    assert pams.fingerprint != legacy.fingerprint
+
+
 def test_procrustes_preview_reuses_verified_preflight_metadata(
     monkeypatch,
     tmp_path: Path,
@@ -117,11 +152,12 @@ def test_procrustes_preview_reuses_verified_preflight_metadata(
     def unexpected_surface_parse(_path: Path) -> None:
         raise AssertionError("cached GPA preview reparsed a full-resolution surface")
 
-    monkeypatch.setattr(preprocessing, "inspect_surface_mesh", unexpected_surface_parse)
+    monkeypatch.setattr(preprocessing, "read_surface_mesh", unexpected_surface_parse)
     cached = preview_landmark_alignment(
         MESH_DIRECTORY,
         landmarks_file=landmarks,
         source_metadata=first.source_metadata,
+        source_scale_metrics=first.mesh_scale_metrics,
     )
 
     assert cached.fingerprint == first.fingerprint
@@ -232,3 +268,26 @@ def test_identical_preprocessing_request_reuses_verified_content_addressed_cohor
     assert second == first
     assert second.evidence.read_bytes() == evidence_before
     assert list((tmp_path / "project" / "preprocessing").glob(".aligning-*")) == []
+
+
+def test_existing_preprocessing_rejects_tampered_scaling_sensitivity(
+    tmp_path: Path,
+) -> None:
+    landmarks = _write_landmarks(tmp_path / "landmarks.csv")
+    first = prepare_landmark_aligned_inputs(
+        MESH_DIRECTORY,
+        project_directory=tmp_path / "project",
+        landmarks_file=landmarks,
+    )
+    sensitivity = first.directory / "scaling-sensitivity.csv"
+    sensitivity.write_text(
+        sensitivity.read_text(encoding="utf-8") + "tampered\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ConfigurationError, match="scaling-sensitivity"):
+        prepare_landmark_aligned_inputs(
+            MESH_DIRECTORY,
+            project_directory=tmp_path / "project",
+            landmarks_file=landmarks,
+        )

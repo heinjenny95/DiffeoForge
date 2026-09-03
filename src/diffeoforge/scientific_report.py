@@ -581,10 +581,38 @@ def _methods(review: ModernResultReview, config: Mapping[str, Any]) -> str:
             "any landmarks used upstream were not used as an atlas attachment term."
         )
     elif bool(procrustes.get("enabled", False)):
-        gpa_text = (
-            "Generalized Procrustes pre-alignment was enabled; its landmarks were used "
-            "only for pre-alignment and not as an atlas attachment term."
-        )
+        scaling_mode = procrustes.get("scaling_mode")
+        if isinstance(scaling_mode, str):
+            scaling_descriptions = {
+                "pams_surface_area_weighted_rms": (
+                    "specimen size was removed from each complete surface using its "
+                    "area-weighted RMS radius"
+                ),
+                "pams_surface_vertex_centroid_size": (
+                    "specimen size was removed using complete-surface vertex centroid "
+                    "size, matching the published PAMS definition"
+                ),
+                "preserve_size": "complete-surface specimen size was preserved",
+                "landmark_centroid_size_legacy": (
+                    "specimen size was removed using landmark centroid size (legacy mode)"
+                ),
+                "landmark_rigid_gpa_legacy": (
+                    "specimen size was preserved using the legacy rigid-GPA route"
+                ),
+            }
+            scaling_text = scaling_descriptions.get(
+                scaling_mode, f"the declared scaling mode was {scaling_mode}"
+            )
+            gpa_text = (
+                "Homologous landmarks determined translation and orientation during "
+                f"pre-alignment; {scaling_text}. Landmarks were not used as an atlas "
+                "attachment term."
+            )
+        else:
+            gpa_text = (
+                "Generalized Procrustes pre-alignment was enabled; its landmarks were "
+                "used only for pre-alignment and not as an atlas attachment term."
+            )
     else:
         gpa_text = (
             "Generalized Procrustes pre-alignment was disabled, and no landmark atlas "

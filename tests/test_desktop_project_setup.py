@@ -544,12 +544,22 @@ def test_reference_project_applies_landmarks_before_deformetrica_without_editing
     assert result.template_path.parent.name.startswith("aligned-")
     assert {path: sha256_file(path) for path in sources} == hashes_before
     evidence = json.loads(result.preprocessing_report_path.read_text(encoding="utf-8"))
+    config = yaml.safe_load(result.config_path.read_text(encoding="utf-8"))
     assert evidence["settings"] == {
         "allow_reflection": True,
         "max_iterations": 250,
         "scale_to_unit_centroid_size": False,
+        "scaling_label": "legacy size-preserving landmark GPA",
+        "scaling_mode": "landmark_rigid_gpa_legacy",
+        "target_size": 1.0,
         "tolerance": 1e-8,
     }
+    assert config["preprocessing"]["procrustes"]["scaling_mode"] == (
+        "landmark_rigid_gpa_legacy"
+    )
+    assert config["preprocessing"]["procrustes"]["evidence_sha256"] == sha256_file(
+        result.preprocessing_report_path
+    )
     config = yaml.safe_load(result.config_path.read_text(encoding="utf-8"))
     assert "preprocessing/aligned-" in config["input"]["directory"]
     assert any("Raw meshes were not modified" in notice for notice in result.notices)
@@ -842,7 +852,7 @@ def test_modern_project_setup_records_an_explicit_blockwise_high_face_plan(
     )
     config = yaml.safe_load(result.config_path.read_text(encoding="utf-8"))
 
-    assert config["schema_version"] == "0.7"
+    assert config["schema_version"] == "0.8"
     assert config["optimization"]["step_initialization"] == "previous_accepted"
     assert config["optimization"]["template_gradient"] == "euclidean"
     assert config["optimization"]["sobolev_kernel_width_ratio"] == 1.0
