@@ -62,6 +62,8 @@ REFERENCE_PCA_METHOD_IDS = (
     CARTESIAN_REFERENCE_PCA_METHOD_ID,
 )
 CARTESIAN_PCA_METHOD = "centered linear PCA by deterministic float64 SVD"
+_RECOMPUTED_CSV_RTOL = 1e-10
+_RECOMPUTED_CSV_ATOL = 1e-12
 LDDMM_KERNEL_CONVENTION = "exp(-squared_distance / width^2) tensor I3"
 SCIENTIFIC_BOUNDARY = (
     "PCA is computed from Deformetrica subject initial momenta in the exact stored "
@@ -762,8 +764,18 @@ def _assert_numeric_rows_close(
             wanted_values = np.asarray(wanted[1:], dtype=np.float64)
         except ValueError as error:
             raise ReferencePCAError(f"{label} contains a non-number at CSV line {line}") from error
+        # Independently recomputed eigensystems can differ by a few hundred ulps
+        # across otherwise compatible BLAS/LAPACK builds.  The bundle bytes and
+        # hashes remain exact; this tolerance applies only to the scientific
+        # equality check against a fresh float64 recomputation.
         if not bool(
-            np.allclose(actual_values, wanted_values, rtol=1e-12, atol=1e-14, equal_nan=False)
+            np.allclose(
+                actual_values,
+                wanted_values,
+                rtol=_RECOMPUTED_CSV_RTOL,
+                atol=_RECOMPUTED_CSV_ATOL,
+                equal_nan=False,
+            )
         ):
             raise ReferencePCAError(f"{label} values differ at CSV line {line}")
 

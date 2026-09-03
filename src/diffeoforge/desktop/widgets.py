@@ -220,8 +220,14 @@ from diffeoforge.reference_recommendation import (
 )
 from diffeoforge.reference_runtime import launcher_label
 from diffeoforge.reference_shape_space_comparison import (
+    ALL_METHOD_IDS,
+    COMPATIBILITY_METHOD_IDS,
     DEFAULT_COMPARISON_DIRECTORY,
+    EXPLORATORY_METHOD_IDS,
+    METHOD_LABELS,
+    QUICK_METHOD_IDS,
     ReferenceShapeSpaceComparison,
+    comparison_directory_for_methods,
     verify_reference_shape_space_comparison,
     write_reference_shape_space_comparison,
 )
@@ -909,23 +915,165 @@ class _ReferencePCADeformationWorker(QRunnable):
         self.signals.succeeded.emit(result)
 
 
-class _ReferenceShapeSpaceComparisonWorker(QRunnable):
-    """Create or reverify one cheap post-hoc shape-space method comparison."""
+class _ShapeSpaceComparisonDialog(QDialog):
+    """Collect one explicit, cost-aware shape-space method selection."""
 
-    def __init__(self, run_directory: Path) -> None:
+    def __init__(self, subject_count: int, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Choose shape-space methods")
+        self.setMinimumWidth(720)
+        self._subject_count = max(0, int(subject_count))
+        self._checks: dict[str, QCheckBox] = {}
+
+        layout = QVBoxLayout(self)
+        title = QLabel("Choose only the ordinations you need")
+        title.setObjectName("sectionTitle")
+        explanation = QLabel(
+            "This is post-processing of the completed momenta; it does not rerun the atlas. "
+            "The full suite can take substantial time and memory. The recommended quick "
+            "preset computes the default LDDMM metric tangent PCA and its essential, "
+            "independent PCoA cross-check."
+        )
+        explanation.setWordWrap(True)
+        layout.addWidget(title)
+        layout.addWidget(explanation)
+
+        preset_row = QHBoxLayout()
+        preset_row.addWidget(QLabel("Preset"))
+        self.preset_combo = QComboBox()
+        self.preset_combo.setObjectName("shapeSpacePresetCombo")
+        self.preset_combo.addItem("Quick evidence — recommended", QUICK_METHOD_IDS)
+        self.preset_combo.addItem("Legacy / publication compatibility", COMPATIBILITY_METHOD_IDS)
+        self.preset_combo.addItem("Exploratory nonlinear methods", EXPLORATORY_METHOD_IDS)
+        self.preset_combo.addItem("All methods — slow", ALL_METHOD_IDS)
+        self.preset_combo.addItem("Custom selection", None)
+        self.preset_combo.currentIndexChanged.connect(self._apply_preset)
+        preset_row.addWidget(self.preset_combo, 1)
+        layout.addLayout(preset_row)
+
+        for method_id in ALL_METHOD_IDS:
+            check = QCheckBox(METHOD_LABELS[method_id])
+            check.setObjectName(f"shapeSpaceMethod_{method_id}")
+            check.toggled.connect(self._selection_changed)
+            self._checks[method_id] = check
+            layout.addWidget(check)
+
+        self.cost_label = QLabel()
+        self.cost_label.setObjectName("statusWarning")
+        self.cost_label.setWordWrap(True)
+        layout.addWidget(self.cost_label)
+        layout.addWidget(
+            InfoDisclosure(
+                "What the methods mean",
+                (
+                    "LDDMM metric tangent PCA is the default linear summary because it uses "
+                    "the fitted deformation kernel and can reconstruct shootable momenta. "
+                    "Tangent-distance PCoA is its independent geometric cross-check. Cartesian "
+                    "momenta PCA and the Roberts fixed-gamma KernelPCA are compatibility views. "
+                    "Generic RBF KernelPCA, Isomap, and diffusion maps are exploratory: their "
+                    "tuning can change the morphospace and DiffeoForge does not claim a direct "
+                    "Deformetrica preimage for them."
+                ),
+                parent=self,
+            )
+        )
+
+        actions = QHBoxLayout()
+        actions.addStretch()
+        cancel = QPushButton("Cancel")
+        cancel.setObjectName("secondary")
+        cancel.clicked.connect(self.reject)
+        self.run_button = QPushButton("Run selected methods")
+        self.run_button.setObjectName("primary")
+        self.run_button.clicked.connect(self.accept)
+        actions.addWidget(cancel)
+        actions.addWidget(self.run_button)
+        layout.addLayout(actions)
+        self._apply_preset(0)
+
+    @property
+    def method_ids(self) -> tuple[str, ...]:
+        return tuple(
+            method_id for method_id in ALL_METHOD_IDS if self._checks[method_id].isChecked()
+        )
+
+    @Slot(int)
+    def _apply_preset(self, _index: int) -> None:
+        selected = self.preset_combo.currentData()
+        if selected is None:
+            self._update_cost()
+            return
+        for check in self._checks.values():
+            check.blockSignals(True)
+        try:
+            for method_id, check in self._checks.items():
+                check.setChecked(method_id in selected)
+        finally:
+            for check in self._checks.values():
+                check.blockSignals(False)
+        self._update_cost()
+
+    @Slot(bool)
+    def _selection_changed(self, _checked: bool) -> None:
+        selected = self.method_ids
+        if self.preset_combo.currentData() != selected:
+            custom = self.preset_combo.findText("Custom selection")
+            self.preset_combo.blockSignals(True)
+            self.preset_combo.setCurrentIndex(custom)
+            self.preset_combo.blockSignals(False)
+        self._update_cost()
+
+    def _update_cost(self) -> None:
+        selected = self.method_ids
+        pairs = self._subject_count * self._subject_count
+        slow = any(method_id in selected for method_id in ("isomap", "diffusion_map"))
+        tier = "potentially slow and memory-intensive" if slow or len(selected) >= 7 else "quick"
+        self.cost_label.setText(
+            f"Cohort estimate: {self._subject_count} specimens, {pairs:,} entries in each "
+            f"pairwise matrix, {len(selected)} selected method(s). This selection is {tier}. "
+            "Actual time depends on specimen and control-point counts; no atlas computation "
+            "is repeated. Completed matching artifacts are verified and reused."
+        )
+        self.run_button.setEnabled(bool(selected))
+
+
+class _ReferenceShapeSpaceComparisonWorker(QRunnable):
+    """Create or reverify one selected post-hoc shape-space method comparison."""
+
+    def __init__(self, run_directory: Path, method_ids: tuple[str, ...]) -> None:
         super().__init__()
         self.run_directory = run_directory.expanduser().resolve()
+        self.method_ids = method_ids
+        self._cancel_requested = threading.Event()
         self.signals = _WorkerSignals()
+
+    def request_cancel(self) -> None:
+        self._cancel_requested.set()
 
     @Slot()
     def run(self) -> None:
         try:
-            destination = self.run_directory / DEFAULT_COMPARISON_DIRECTORY
+            destination = self.run_directory / comparison_directory_for_methods(
+                self.method_ids
+            )
             artifact = (
                 verify_reference_shape_space_comparison(destination)
                 if destination.exists()
                 else verify_reference_shape_space_comparison(
-                    write_reference_shape_space_comparison(self.run_directory)
+                    write_reference_shape_space_comparison(
+                        self.run_directory,
+                        method_ids=self.method_ids,
+                        progress_callback=lambda method_id, completed, total: (
+                            self.signals.progress.emit(
+                                {
+                                    "method_id": method_id,
+                                    "completed": completed,
+                                    "total": total,
+                                }
+                            )
+                        ),
+                        should_cancel=self._cancel_requested.is_set,
+                    )
                 )
             )
         except (OSError, RuntimeError, TypeError, ValueError) as error:
@@ -1191,6 +1339,11 @@ class DiffeoForgeWindow(QMainWindow):
         self.setMinimumSize(900, 650)
         self.setStyleSheet(_STYLE)
         self._thread_pool = QThreadPool.globalInstance()
+        self._shape_space_comparison_worker: (
+            _ReferenceShapeSpaceComparisonWorker | None
+        ) = None
+        self._shape_space_selected_method_ids: tuple[str, ...] = ()
+        self._close_after_shape_space_comparison = False
         self._worker: (
             _ProjectWorker
             | _ReviewWorker
@@ -2247,8 +2400,8 @@ class DiffeoForgeWindow(QMainWindow):
 
         eyebrow = QLabel("STEP 5 OF 5")
         eyebrow.setObjectName("eyebrow")
-        title = QLabel("Verified results & PCA")
-        title.setObjectName("title")
+        self.results_page_title = QLabel("Verified results & shape-space analysis")
+        self.results_page_title.setObjectName("title")
         subtitle = QLabel(
             "Read a bound summary and open only artifacts whose size and SHA-256 were "
             "rechecked immediately beforehand."
@@ -2256,7 +2409,7 @@ class DiffeoForgeWindow(QMainWindow):
         subtitle.setObjectName("subtitle")
         subtitle.setWordWrap(True)
         layout.addWidget(eyebrow)
-        layout.addWidget(title)
+        layout.addWidget(self.results_page_title)
         layout.addWidget(subtitle)
 
         boundary = QFrame()
@@ -2425,6 +2578,12 @@ class DiffeoForgeWindow(QMainWindow):
         self.result_qc_summary_label.setObjectName("status")
         self.result_qc_summary_label.setWordWrap(True)
         self.result_qc_summary_label.hide()
+        self.result_qc_last_action_label = QLabel(
+            "No registration-QC decision has been saved in this session."
+        )
+        self.result_qc_last_action_label.setObjectName("status")
+        self.result_qc_last_action_label.setWordWrap(True)
+        self.result_qc_last_action_label.hide()
         self.result_atlas_canvas = InteractiveMeshCanvas3D()
         self.result_atlas_canvas.setObjectName("resultAtlasViewer3D")
         self.result_atlas_canvas.setAccessibleName(
@@ -2449,6 +2608,7 @@ class DiffeoForgeWindow(QMainWindow):
         atlas_viewer_layout.addLayout(overlay_controls)
         atlas_viewer_layout.addLayout(decision_controls)
         atlas_viewer_layout.addWidget(self.result_qc_summary_label)
+        atlas_viewer_layout.addWidget(self.result_qc_last_action_label)
         atlas_viewer_layout.addWidget(self.result_atlas_status_label)
         atlas_viewer_layout.addWidget(self.result_atlas_canvas)
         atlas_viewer_layout.addWidget(self.result_registration_qc_canvas)
@@ -2461,6 +2621,7 @@ class DiffeoForgeWindow(QMainWindow):
             "Optimization", "resultOptimization"
         )
         pca_card, self.result_pca_layout = self._build_result_items_card("PCA", "resultPca")
+        self.result_pca_title = pca_card.layout().itemAt(0).widget()
         quality_card, self.result_quality_layout = self._build_result_items_card(
             "Verification and quality evidence", "resultQuality"
         )
@@ -2501,8 +2662,8 @@ class DiffeoForgeWindow(QMainWindow):
         pca_plots_layout = QVBoxLayout(pca_plots)
         pca_plots_layout.setContentsMargins(24, 22, 24, 24)
         pca_plots_layout.setSpacing(14)
-        pca_plots_title = QLabel("PCA plots")
-        pca_plots_title.setObjectName("sectionTitle")
+        self.result_pca_plots_title = QLabel("Shape-space plots")
+        self.result_pca_plots_title.setObjectName("sectionTitle")
         pca_plots_hint = QLabel(
             "All views are loaded directly from independently verified, script-free SVG "
             "artifacts. Hover over a score point to see its specimen name and PC values. "
@@ -2531,8 +2692,21 @@ class DiffeoForgeWindow(QMainWindow):
         ) = self._build_result_plot_panel(
             "PC2 vs PC3", "resultPc2Pc3Plot", "Awaiting a verified PCA plot."
         )
-        pca_plots_layout.addWidget(pca_plots_title)
+        self.result_pca_scree_title = scree_panel.layout().itemAt(0).widget()
+        self.result_pc1_pc2_title = pc1_pc2_panel.layout().itemAt(0).widget()
+        self.result_pc2_pc3_title = pc2_pc3_panel.layout().itemAt(0).widget()
+        self.result_pca_method_disclosure = InfoDisclosure(
+            "Which shape-space method is this?",
+            (
+                "The exact verified method will be shown after a result is loaded. An "
+                "LDDMM deformation kernel used as a tangent-space metric is not the same "
+                "thing as nonlinear generic RBF KernelPCA."
+            ),
+            parent=pca_plots,
+        )
+        pca_plots_layout.addWidget(self.result_pca_plots_title)
         pca_plots_layout.addWidget(pca_plots_hint)
+        pca_plots_layout.addWidget(self.result_pca_method_disclosure)
         pca_plots_layout.addWidget(scree_panel)
         pca_plots_layout.addWidget(pc1_pc2_panel)
         pca_plots_layout.addWidget(pc2_pc3_panel)
@@ -2565,6 +2739,19 @@ class DiffeoForgeWindow(QMainWindow):
             self._start_shape_space_comparison
         )
         self.create_shape_space_comparison_button.setEnabled(False)
+        self.cancel_shape_space_comparison_button = QPushButton("Cancel comparison")
+        self.cancel_shape_space_comparison_button.setObjectName("secondary")
+        self.cancel_shape_space_comparison_button.clicked.connect(
+            self._cancel_shape_space_comparison
+        )
+        self.cancel_shape_space_comparison_button.hide()
+        self.shape_space_comparison_progress = QProgressBar()
+        self.shape_space_comparison_progress.setObjectName(
+            "shapeSpaceComparisonProgress"
+        )
+        self.shape_space_comparison_progress.setRange(0, 1)
+        self.shape_space_comparison_progress.setValue(0)
+        self.shape_space_comparison_progress.setFormat("No comparison running")
         shape_space_layout.addWidget(shape_space_title)
         shape_space_layout.addWidget(shape_space_summary)
         shape_space_layout.addWidget(
@@ -2582,7 +2769,12 @@ class DiffeoForgeWindow(QMainWindow):
             )
         )
         shape_space_layout.addWidget(self.shape_space_comparison_status_label)
-        shape_space_layout.addWidget(self.create_shape_space_comparison_button)
+        shape_space_layout.addWidget(self.shape_space_comparison_progress)
+        shape_space_actions = QHBoxLayout()
+        shape_space_actions.addWidget(self.create_shape_space_comparison_button)
+        shape_space_actions.addWidget(self.cancel_shape_space_comparison_button)
+        shape_space_actions.addStretch()
+        shape_space_layout.addLayout(shape_space_actions)
         self.shape_space_comparison_card.hide()
         layout.addWidget(self.shape_space_comparison_card)
         layout.addWidget(quality_card)
@@ -3537,6 +3729,32 @@ class DiffeoForgeWindow(QMainWindow):
         procrustes_hint.setWordWrap(True)
         procrustes_layout.addWidget(self.procrustes_apply_check)
         procrustes_layout.addLayout(procrustes_settings)
+        procrustes_layout.addWidget(
+            InfoDisclosure(
+                "Compare the four alignment and size choices",
+                (
+                    "Shape only — surface scale, resolution-independent (recommended): "
+                    "landmarks remove translation and rotation, while an area-weighted "
+                    "whole-surface measure removes specimen size. This is robust to triangle "
+                    "subdivision and is the default for shape-only studies.\n\n"
+                    "Shape only — published PAMS: landmarks remove translation and rotation, "
+                    "and complete-surface vertex centroid size removes specimen size at the "
+                    "published working-size preset. It is useful for reproducing that workflow, "
+                    "but its scale can depend on vertex sampling density.\n\n"
+                    "Size + shape — preserve specimen size: landmarks remove translation and "
+                    "rotation but the surfaces retain size differences. Choose this only when "
+                    "size is part of the intended signal; large between-group size differences "
+                    "can otherwise dominate the morphospace.\n\n"
+                    "Legacy — landmark centroid size: the same landmarks determine translation, "
+                    "rotation, and scale. This supports older workflows, but the chosen landmark "
+                    "configuration can make whole-surface scaling sensitive.\n\n"
+                    "In every option, landmarks guide alignment only. They are never used as an "
+                    "atlas attachment term, and opening this explanation never changes the "
+                    "selected option."
+                ),
+                parent=self.procrustes_box,
+            )
+        )
         procrustes_layout.addLayout(procrustes_advanced)
         procrustes_layout.addWidget(procrustes_hint)
         self.preview_procrustes_button = QPushButton("Preview alignment read-only")
@@ -6227,8 +6445,8 @@ class DiffeoForgeWindow(QMainWindow):
         if sobolev:
             self.modern_gradient_hint.setText(
                 "Smooths each template update with the deformation-kernel Gaussian. "
-                "Ratio 1.0 passed the prospective 236-subject Trochanter engineering "
-                "gate, but remains anatomy-specific evidence rather than a universal preset."
+                "Ratio 1.0 passed a prospective 236-subject engineering gate, but that "
+                "single-cohort result is not a universal preset."
             )
         else:
             self.modern_gradient_hint.setText(
@@ -6642,17 +6860,21 @@ class DiffeoForgeWindow(QMainWindow):
         try:
             results = discover_completed_results(selected)
         except CompletedResultDiscoveryError as error:
-            self.status_label.setObjectName("statusError")
-            self.status_label.setStyleSheet("")
-            self.status_label.setText(f"Completed runs could not be inspected: {error}")
+            message = f"Completed runs could not be inspected: {error}"
+            for label in (self.status_label, self.data_status_label):
+                label.setObjectName("statusError")
+                label.setStyleSheet("")
+                label.setText(message)
             return
         if not results:
-            self.status_label.setObjectName("statusError")
-            self.status_label.setStyleSheet("")
-            self.status_label.setText(
+            message = (
                 "No completed DiffeoForge run was found there. Select either the exact "
                 "completed run folder or the project folder that contains its runs."
             )
+            for label in (self.status_label, self.data_status_label):
+                label.setObjectName("statusError")
+                label.setStyleSheet("")
+                label.setText(message)
             return
         result = results[0]
         if len(results) > 1:
@@ -6817,6 +7039,9 @@ class DiffeoForgeWindow(QMainWindow):
             "restarted or overwrittenâ€¦"
         )
         self._sync_ready_state()
+        self.data_status_label.setObjectName("status")
+        self.data_status_label.setStyleSheet("")
+        self.data_status_label.setText(self.status_label.text())
         self._thread_pool.start(worker)
 
     @Slot(object)
@@ -6948,32 +7173,105 @@ class DiffeoForgeWindow(QMainWindow):
         if (
             review is None
             or review.engine_route != "deformetrica_reference"
-            or self._worker is not None
+            or self._shape_space_comparison_worker is not None
         ):
             return
-        worker = _ReferenceShapeSpaceComparisonWorker(review.run_directory)
+        subject_count = len(review.registration_qc)
+        if subject_count < 1:
+            subject_count = next(
+                (
+                    int(item.value.split()[0])
+                    for item in review.overview
+                    if item.label == "Dataset"
+                    and item.value.split()
+                    and item.value.split()[0].isdigit()
+                ),
+                0,
+            )
+        dialog = _ShapeSpaceComparisonDialog(subject_count, self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        method_ids = dialog.method_ids
+        worker = _ReferenceShapeSpaceComparisonWorker(
+            review.run_directory,
+            method_ids,
+        )
         worker.signals.succeeded.connect(self._shape_space_comparison_succeeded)
         worker.signals.failed.connect(self._shape_space_comparison_failed)
-        self._worker = worker
-        self._set_result_controls_enabled(False)
-        self.create_shape_space_comparison_button.setText("Comparing methods…")
+        worker.signals.progress.connect(self._shape_space_comparison_progressed)
+        self._shape_space_comparison_worker = worker
+        self._shape_space_selected_method_ids = method_ids
+        self.create_shape_space_comparison_button.setEnabled(False)
+        self.cancel_shape_space_comparison_button.show()
+        self.cancel_shape_space_comparison_button.setEnabled(True)
+        self.shape_space_comparison_progress.setRange(0, len(method_ids))
+        self.shape_space_comparison_progress.setValue(0)
+        self.shape_space_comparison_progress.setFormat(
+            f"0 of {len(method_ids)} selected methods completed"
+        )
+        self.create_shape_space_comparison_button.setText("Comparison running…")
         self.shape_space_comparison_status_label.setObjectName("status")
         self.shape_space_comparison_status_label.setStyleSheet("")
         self.shape_space_comparison_status_label.setText(
-            "Recomputing deterministic ordinations from the completed momenta; the atlas "
-            "is not being rerun or modified."
+            "Computing only the selected ordinations from the completed momenta. The atlas "
+            "is not being rerun or modified; registration QC remains available."
         )
-        self.thread_pool.start(worker)
+        self._thread_pool.start(worker)
+
+    @Slot(object)
+    def _shape_space_comparison_progressed(self, progress: object) -> None:
+        if not isinstance(progress, dict):
+            return
+        try:
+            method_id = str(progress["method_id"])
+            completed = int(progress["completed"])
+            total = int(progress["total"])
+        except (KeyError, TypeError, ValueError):
+            return
+        self.shape_space_comparison_progress.setRange(0, total)
+        self.shape_space_comparison_progress.setValue(completed)
+        self.shape_space_comparison_progress.setFormat(
+            f"{completed} of {total}: {METHOD_LABELS.get(method_id, method_id)}"
+        )
+        lines = ["Per-method status:"]
+        for index, selected_id in enumerate(self._shape_space_selected_method_ids):
+            marker = "✓ completed" if index < completed else "○ pending"
+            lines.append(f"{marker} — {METHOD_LABELS[selected_id]}")
+        self.shape_space_comparison_status_label.setObjectName("status")
+        self.shape_space_comparison_status_label.setStyleSheet("")
+        self.shape_space_comparison_status_label.setText("\n".join(lines))
+
+    @Slot()
+    def _cancel_shape_space_comparison(self) -> None:
+        worker = self._shape_space_comparison_worker
+        if worker is None:
+            return
+        worker.request_cancel()
+        self.cancel_shape_space_comparison_button.setEnabled(False)
+        self.shape_space_comparison_status_label.setObjectName("statusWarning")
+        self.shape_space_comparison_status_label.setStyleSheet("")
+        self.shape_space_comparison_status_label.setText(
+            "Cancellation requested. The current numerical operation will finish safely; "
+            "DiffeoForge will stop before the next method."
+        )
 
     @Slot(object)
     def _shape_space_comparison_succeeded(
         self, artifact: ReferenceShapeSpaceComparison
     ) -> None:
-        self._worker = None
-        self._set_result_controls_enabled(True)
+        self._shape_space_comparison_worker = None
+        self._shape_space_selected_method_ids = ()
+        self.create_shape_space_comparison_button.setEnabled(True)
+        self.cancel_shape_space_comparison_button.hide()
         decision = artifact.manifest["default_decision"]
         self.create_shape_space_comparison_button.setText(
-            "Open verified method comparison"
+            "Configure or open method comparison…"
+        )
+        method_count = len(artifact.manifest["methods"])
+        self.shape_space_comparison_progress.setRange(0, method_count)
+        self.shape_space_comparison_progress.setValue(method_count)
+        self.shape_space_comparison_progress.setFormat(
+            f"{method_count} selected methods verified"
         )
         self.shape_space_comparison_status_label.setObjectName("statusSuccess")
         self.shape_space_comparison_status_label.setStyleSheet("")
@@ -6984,19 +7282,27 @@ class DiffeoForgeWindow(QMainWindow):
         QDesktopServices.openUrl(
             QUrl.fromLocalFile(str(artifact.artifact_directory / "README.md"))
         )
+        if self._close_after_shape_space_comparison:
+            self._close_after_shape_space_comparison = False
+            self.close()
 
     @Slot(str)
     def _shape_space_comparison_failed(self, message: str) -> None:
-        self._worker = None
-        self._set_result_controls_enabled(True)
+        self._shape_space_comparison_worker = None
+        self._shape_space_selected_method_ids = ()
+        self.create_shape_space_comparison_button.setEnabled(True)
+        self.cancel_shape_space_comparison_button.hide()
         self.create_shape_space_comparison_button.setText(
-            "Compare shape-space methods…"
+            "Configure shape-space methods…"
         )
         self.shape_space_comparison_status_label.setObjectName("statusError")
         self.shape_space_comparison_status_label.setStyleSheet("")
         self.shape_space_comparison_status_label.setText(
-            f"Shape-space comparison was not created: {message}"
+            f"Shape-space comparison stopped: {message}"
         )
+        if self._close_after_shape_space_comparison:
+            self._close_after_shape_space_comparison = False
+            self.close()
 
     @Slot()
     def _start_reference_pca_deformations(self) -> None:
@@ -9290,17 +9596,38 @@ class DiffeoForgeWindow(QMainWindow):
                 and likely_eta_lower is not None
                 and likely_eta_upper is not None
             ):
-                convergence_text = (
-                    "Estimated time remaining: "
-                    f"{self._format_duration(float(likely_eta_lower))}–"
-                    f"{self._format_duration(float(likely_eta_upper))} "
-                    f"(likely stop around iterations {int(likely_lower)}–"
-                    f"{int(likely_upper)}; trend estimate, not a guarantee)"
+                estimate = (
+                    None if self._review is None else self._review.runtime_estimate
                 )
+                if estimate is None:
+                    convergence_text = (
+                        "Estimated optimizer time remaining: "
+                        f"{self._format_duration(float(likely_eta_lower))}–"
+                        f"{self._format_duration(float(likely_eta_upper))} "
+                        f"(likely stop around iterations {int(likely_lower)}–"
+                        f"{int(likely_upper)}; later verification and PCA are not included)"
+                    )
+                else:
+                    workflow_lower = (
+                        float(likely_eta_lower)
+                        + estimate.postprocessing_lower_seconds
+                    )
+                    workflow_upper = (
+                        float(likely_eta_upper)
+                        + estimate.postprocessing_upper_seconds
+                    )
+                    convergence_text = (
+                        "Estimated complete-workflow time remaining: "
+                        f"{self._format_duration(workflow_lower)}–"
+                        f"{self._format_duration(workflow_upper)} "
+                        f"(likely optimizer stop around iterations {int(likely_lower)}–"
+                        f"{int(likely_upper)}, followed by output inventory, verification, "
+                        "registration-QC preparation, and PCA; broad trend estimate)"
+                    )
             else:
                 convergence_text = (
-                    "Estimated time remaining: not reliable yet; DiffeoForge is still "
-                    "learning the convergence trend"
+                    "Estimated complete-workflow time remaining: not reliable yet; "
+                    "DiffeoForge is still learning the convergence trend"
                 )
             contention_text = (
                 " · Resource contention detected; recent iterations are slower than "
@@ -9656,6 +9983,24 @@ class DiffeoForgeWindow(QMainWindow):
     def _result_review_succeeded(self, review: ModernResultReview) -> None:
         self._worker = None
         self._result_review = review
+        method_label = review.pca_method_label
+        self.result_pca_title.setText(method_label)
+        self.result_pca_plots_title.setText(f"{method_label} plots")
+        self.result_pca_scree_title.setText(f"{method_label}: explained variance")
+        self.result_pc1_pc2_title.setText(f"{method_label}: PC1 vs PC2")
+        self.result_pc2_pc3_title.setText(f"{method_label}: PC2 vs PC3")
+        self.result_pca_method_disclosure.content_widget.setText(
+            f"Active verified method: {method_label} (ID: {review.pca_method_id}). "
+            + (
+                "Here the fitted LDDMM deformation kernel defines the tangent-space metric; "
+                "this is a linear metric-aware PCA and is not generic nonlinear KernelPCA."
+                if review.pca_method_id == "lddmm_deformation_kernel_pca"
+                else (
+                    "This is linear PCA of flattened Cartesian initial momenta. It does not "
+                    "apply a nonlinear RBF kernel."
+                )
+            )
+        )
         draft_warning: str | None = None
         try:
             self._registration_qc_decisions = load_registration_qc_draft(review)
@@ -9782,18 +10127,18 @@ class DiffeoForgeWindow(QMainWindow):
         if reference_result:
             comparison = review.run_directory / DEFAULT_COMPARISON_DIRECTORY
             self.create_shape_space_comparison_button.setText(
-                "Open verified method comparison"
+                "Configure or open method comparison…"
                 if comparison.exists()
-                else "Compare shape-space methods…"
+                else "Choose shape-space methods…"
             )
             self.shape_space_comparison_status_label.setObjectName("status")
             self.shape_space_comparison_status_label.setStyleSheet("")
             self.shape_space_comparison_status_label.setText(
-                "An existing comparison will be fully reverified before opening."
+                "A matching completed selection will be hash-verified and reused."
                 if comparison.exists()
                 else (
-                    "Ready for deterministic post-processing of the completed momenta; "
-                    "no atlas rerun is required."
+                    "Choose the recommended quick evidence preset, individual methods, or "
+                    "the explicitly slow full suite. No atlas rerun is required."
                 )
             )
         self._sync_reference_pca_deformation_action(review)
@@ -9827,12 +10172,17 @@ class DiffeoForgeWindow(QMainWindow):
         self.create_shape_space_comparison_button.setEnabled(False)
         self.shape_space_comparison_card.hide()
         self._sync_reference_pca_deformation_action(None)
-        self.status_label.setObjectName("statusError")
-        self.status_label.setStyleSheet("")
-        self.status_label.setText(
+        visible_message = (
             f"Completed run could not be opened because full verification failed: {message}"
         )
+        for label in (self.status_label, self.data_status_label):
+            label.setObjectName("statusError")
+            label.setStyleSheet("")
+            label.setText(visible_message)
         self._sync_ready_state()
+        self.data_status_label.setObjectName("statusError")
+        self.data_status_label.setStyleSheet("")
+        self.data_status_label.setText(visible_message)
 
     def _populate_atlas_viewer(self, review: ModernResultReview) -> None:
         vtk_artifacts = tuple(
@@ -9890,6 +10240,11 @@ class DiffeoForgeWindow(QMainWindow):
         )
         self.result_qc_summary_label.setVisible(
             is_specimen_group and bool(review.registration_qc)
+        )
+        self.result_qc_last_action_label.setVisible(
+            is_specimen_group
+            and bool(review.registration_qc)
+            and bool(self._registration_qc_decisions)
         )
         self._update_registration_qc_summary()
         current_key = self.result_atlas_mesh_combo.currentData()
@@ -10123,7 +10478,30 @@ class DiffeoForgeWindow(QMainWindow):
         if not isinstance(key, str) or not key.startswith("registration-qc:"):
             return
         subject_name = key.split(":", 1)[1]
-        self._registration_qc_decisions[subject_name] = decision
+        proposed_decisions = dict(self._registration_qc_decisions)
+        proposed_decisions[subject_name] = decision
+        if self._result_review is not None:
+            try:
+                save_registration_qc_draft(
+                    self._result_review,
+                    proposed_decisions,
+                )
+            except (ModernResultReviewError, OSError, TypeError, ValueError) as error:
+                self.result_qc_last_action_label.show()
+                self.result_qc_last_action_label.setObjectName("statusWarning")
+                self.result_qc_last_action_label.setStyleSheet("")
+                self.result_qc_last_action_label.setText(
+                    f"Could not save {subject_name} = {decision}. Nothing changed and "
+                    f"the review did not advance: {error}"
+                )
+                self.result_atlas_status_label.setObjectName("statusWarning")
+                self.result_atlas_status_label.setStyleSheet("")
+                self.result_atlas_status_label.setText(
+                    "QC decision was not saved. The same specimen remains open; fix the "
+                    "reported storage problem and try again."
+                )
+                return
+        self._registration_qc_decisions = proposed_decisions
         index = self.result_atlas_mesh_combo.currentIndex()
         item = (
             self._result_review.registration_qc_item(subject_name)
@@ -10138,16 +10516,15 @@ class DiffeoForgeWindow(QMainWindow):
                     f"{item.subject_name} · {decision}"
                 ),
             )
-        autosave_error: str | None = None
-        if self._result_review is not None:
-            try:
-                save_registration_qc_draft(
-                    self._result_review,
-                    self._registration_qc_decisions,
-                )
-            except (ModernResultReviewError, OSError, TypeError, ValueError) as error:
-                autosave_error = str(error)
         self._update_registration_qc_summary()
+        reviewed_count = len(self._registration_qc_decisions)
+        self.result_qc_last_action_label.show()
+        self.result_qc_last_action_label.setObjectName("statusSuccess")
+        self.result_qc_last_action_label.setStyleSheet("")
+        self.result_qc_last_action_label.setText(
+            f"Saved immediately: {subject_name} = {decision} "
+            f"({reviewed_count} of {len(self._result_review.registration_qc)} reviewed)."
+        )
 
         qc_items = self._result_review.registration_qc if self._result_review else ()
         subject_order = [item.subject_name for item in qc_items]
@@ -10189,13 +10566,6 @@ class DiffeoForgeWindow(QMainWindow):
                 f"All {len(qc_items)} registration-QC meshes have a decision. "
                 "The review will not restart automatically. The current draft is saved; "
                 "use Export QC status for a timestamped immutable snapshot."
-            )
-        if autosave_error is not None:
-            self.result_atlas_status_label.setObjectName("statusWarning")
-            self.result_atlas_status_label.setStyleSheet("")
-            self.result_atlas_status_label.setText(
-                self.result_atlas_status_label.text()
-                + f" Autosave failed; export before closing: {autosave_error}"
             )
 
     @Slot()
@@ -10712,7 +11082,9 @@ class DiffeoForgeWindow(QMainWindow):
             and self._result_review.engine_route == "deformetrica_reference"
         )
         self.open_validation_lab_button.setEnabled(enabled and reference)
-        self.create_shape_space_comparison_button.setEnabled(enabled and reference)
+        self.create_shape_space_comparison_button.setEnabled(
+            enabled and reference and self._shape_space_comparison_worker is None
+        )
         if enabled:
             self._sync_reference_pca_deformation_action(self._result_review)
         else:
@@ -10753,13 +11125,15 @@ class DiffeoForgeWindow(QMainWindow):
             else "engineering heuristic; no same-project pilot timing was available"
         )
         return (
-            f"Pre-run planning estimate ({estimate.confidence.replace('_', ' ')}): "
-            "typically about "
+            "Pre-run complete-workflow planning estimate "
+            f"({estimate.confidence.replace('_', ' ')}): typically about "
             f"{self._format_duration(estimate.typical_seconds)}; broad range "
             f"{self._format_duration(estimate.lower_seconds)} to "
             f"{self._format_duration(estimate.upper_seconds)}. Based on mesh faces, "
             "cohort size, time points, control spacing, threads, and iteration cap; "
-            f"{evidence}. Live observations will replace it."
+            f"{evidence}. This includes a broad allowance for final inventory, "
+            "verification, registration-QC preparation, and PCA. Live observations "
+            "will refine it."
         )
 
     @staticmethod
@@ -11009,6 +11383,15 @@ class DiffeoForgeWindow(QMainWindow):
                 self.result_status_label.setText(
                     "The window will remain open until the artifact check finishes."
                 )
+            event.ignore()
+            return
+        if self._shape_space_comparison_worker is not None:
+            self._close_after_shape_space_comparison = True
+            self._cancel_shape_space_comparison()
+            self.shape_space_comparison_status_label.setText(
+                "The window will remain open until the current numerical method finishes "
+                "safely. Cancellation was requested; completed method caches are retained."
+            )
             event.ignore()
             return
         super().closeEvent(event)

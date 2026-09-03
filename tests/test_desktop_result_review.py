@@ -69,7 +69,7 @@ def test_verified_modern_result_exposes_bounded_summary_and_inventory(
         "Objective",
         "Subject residuals",
     }
-    assert review.pca[0].label == "PCA space"
+    assert review.pca[0].label == "Cartesian initial-momenta PCA — Modern Engine"
     assert any(item.label == "PC1" for item in review.pca)
     assert {artifact.key for artifact in review.artifacts} >= {
         "estimated-template",

@@ -163,6 +163,11 @@ class ScientificAtlasReport:
                 "execution_duration_seconds": self.review.execution_duration_seconds,
                 "stop_interpretation": self.review.optimizer_stop_interpretation,
             },
+            "shape_space_method": {
+                "method_id": self.review.pca_method_id,
+                "label": self.review.pca_method_label,
+                "generic_rbf_kernel_pca": False,
+            },
             "registration_qc": {
                 "metric": self.residual_metric,
                 "subject_count": len(self.subjects),
@@ -566,10 +571,7 @@ def _methods(review: ModernResultReview, config: Mapping[str, Any]) -> str:
         review.engine_route,
     )
     optimizer_method = optimization.get("method", "block-coordinate optimization")
-    pca_method = next(
-        (item.value for item in review.overview if item.label == "PCA method"),
-        "the PCA method recorded in the verified result bundle",
-    )
+    pca_method = review.pca_method_label
     noise = (
         f"noise standard deviation {float(model['noise_std']):g}"
         if "noise_std" in model
@@ -760,10 +762,11 @@ def _claim_matrix(
         ),
         ScientificClaim(
             "biological_validity",
-            "Independent anatomy-specific validity",
+            "Independent study-specific validity",
             "not_assessed",
-            "No independent anatomical evidence is part of this numerical atlas report.",
-            "GPA landmarks and downstream helix measurements are not atlas validation data.",
+            "No independent study-specific evidence is part of this numerical atlas report.",
+            "GPA landmarks and downstream measurements are not atlas validation data unless "
+            "a separate validation design establishes that role.",
         ),
     )
 
@@ -960,9 +963,11 @@ def render_scientific_report_html(report: ScientificAtlasReport) -> str:
             "<figcaption>Verified optimizer history from the source result.</figcaption></figure>"
         )
     if pca_plot is not None:
+        method = html.escape(report.review.pca_method_label)
         figures.append(
-            f'<figure><img src="{pca_plot}" alt="Verified PCA scree plot">'
-            "<figcaption>Verified explained-variance plot; PCA axes are descriptive.</figcaption>"
+            f'<figure><img src="{pca_plot}" alt="Verified {method} scree plot">'
+            f"<figcaption>Verified explained-variance plot for {method}; component axes "
+            "are descriptive.</figcaption>"
             "</figure>"
         )
     evidence_cards = []

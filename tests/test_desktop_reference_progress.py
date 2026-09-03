@@ -87,3 +87,43 @@ def test_reference_progress_flags_sustained_resource_contention() -> None:
     assert final is not None
     assert final.resource_contention_detected is True
     assert final.estimate_status == "observed_rate_to_cap_with_resource_contention"
+
+
+def test_reference_progress_smooths_one_off_rate_changes_but_adapts() -> None:
+    tracker = ReferenceProgressTracker(100)
+    elapsed = 0.0
+    observed = []
+    for iteration, increment in enumerate((5, 5, 5, 5, 5, 30, 30, 30, 30, 30)):
+        elapsed += increment
+        assert tracker.observe(_iteration(iteration), elapsed_seconds=elapsed) is None
+        item = tracker.observe(_objective(-100 + iteration), elapsed_seconds=elapsed)
+        if item is not None and item.seconds_per_iteration is not None:
+            observed.append(item.seconds_per_iteration)
+
+    assert observed[0] == pytest.approx(5.0)
+    assert observed[-1] > observed[0]
+    assert observed[-1] < 30.0
+
+
+def test_reference_progress_handles_resumed_iteration_numbers() -> None:
+    tracker = ReferenceProgressTracker(100)
+    final = None
+    for iteration, elapsed in ((40, 5.0), (41, 10.0), (42, 15.0), (43, 20.0)):
+        assert tracker.observe(_iteration(iteration), elapsed_seconds=elapsed) is None
+        final = tracker.observe(_objective(-100 + iteration), elapsed_seconds=elapsed)
+
+    assert final is not None
+    assert final.iteration == 43
+    assert final.seconds_per_iteration == pytest.approx(5.0)
+    assert final.eta_to_iteration_cap_seconds == pytest.approx(57 * 5.0)
+
+
+def test_reference_progress_cap_scenario_includes_declared_later_stage_overhead() -> None:
+    tracker = ReferenceProgressTracker(10, output_overhead_seconds=45.0)
+    final = None
+    for iteration, elapsed in ((0, 5.0), (1, 10.0), (2, 15.0), (3, 20.0)):
+        assert tracker.observe(_iteration(iteration), elapsed_seconds=elapsed) is None
+        final = tracker.observe(_objective(-100 + iteration), elapsed_seconds=elapsed)
+
+    assert final is not None
+    assert final.eta_to_iteration_cap_seconds == pytest.approx(7 * 5.0 + 45.0)

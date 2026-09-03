@@ -93,6 +93,8 @@ class ModernResultReview:
     additional_artifact_roots: tuple[Path, ...] = ()
     additional_manifest_bindings: tuple[tuple[Path, str], ...] = ()
     registration_qc: tuple[RegistrationQCItem, ...] = ()
+    pca_method_id: str = "cartesian_initial_momenta_pca"
+    pca_method_label: str = "Cartesian initial-momenta PCA — Modern Engine"
 
     def artifact(self, key: str) -> ModernResultArtifact:
         for artifact in self.artifacts:
@@ -332,7 +334,7 @@ def review_modern_result(directory: Path | str) -> ModernResultReview:
     cumulative = 0.0
     pca_items: list[ResultReviewItem] = [
         ResultReviewItem(
-            "PCA space",
+            "Cartesian initial-momenta PCA — Modern Engine",
             f"{pca['components']} components · rank {pca['numerical_rank']}",
             "PCA of subject-specific initial momenta; not a taxonomic axis.",
         ),
@@ -416,28 +418,28 @@ def review_modern_result(directory: Path | str) -> ModernResultReview:
         )
     add_artifact(
         "pca-summary",
-        "PCA summary (JSON)",
+        "Cartesian initial-momenta PCA summary (JSON)",
         pca["summary_path"],
         "json",
         "Complete variance, rank, and sign convention.",
     )
     add_artifact(
         "pca-scores",
-        "PCA-Scores (CSV)",
+        "Cartesian initial-momenta PCA scores (CSV)",
         pca["scores_path"],
         "csv",
         "Open table of all subject scores.",
     )
     add_artifact(
         "pca-scree",
-        "PCA scree plot (SVG)",
+        "Cartesian initial-momenta PCA scree plot (SVG)",
         pca["plots"]["scree_path"],
         "svg",
         "Static, script-free SVG of explained variance.",
     )
     add_artifact(
         "pca-score-plot",
-        "PCA scores: PC1 vs PC2 (SVG)",
+        "Cartesian initial-momenta PCA: PC1 vs PC2 (SVG)",
         pca["plots"]["scores_path"],
         "svg",
         "Static, script-free SVG with explained variance on both axes.",
@@ -445,7 +447,7 @@ def review_modern_result(directory: Path | str) -> ModernResultReview:
     if secondary_plot_path is not None:
         add_artifact(
             "pca-score-plot-pc2-pc3",
-            "PCA scores: PC2 vs PC3 (SVG)",
+            "Cartesian initial-momenta PCA: PC2 vs PC3 (SVG)",
             secondary_plot_path,
             "svg",
             "Static, script-free SVG using the same score matrix and subject ordering.",
@@ -537,6 +539,12 @@ def review_modern_result(directory: Path | str) -> ModernResultReview:
             "Control points",
             str(bundle["parameters"]["control_points"]),
             "Manifested dimension of the momenta parameter space.",
+        ),
+        ResultReviewItem(
+            "PCA method",
+            "Cartesian initial-momenta PCA — Modern Engine",
+            "Linear deterministic PCA of subject-specific Cartesian initial momenta; "
+            "this is not nonlinear generic RBF KernelPCA.",
         ),
         ResultReviewItem(
             "Procrustes",
@@ -636,6 +644,8 @@ def review_modern_result(directory: Path | str) -> ModernResultReview:
         quality=quality_items,
         artifacts=tuple(artifacts),
         scientific_boundaries=boundaries,
+        pca_method_id="cartesian_initial_momenta_pca",
+        pca_method_label="Cartesian initial-momenta PCA — Modern Engine",
         pca_pc2_pc3_unavailable_reason=(
             None if secondary_plot_path is not None else str(secondary_unavailable_reason)
         ),

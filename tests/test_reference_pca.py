@@ -49,6 +49,7 @@ from diffeoforge.reference_pca import (
     REFERENCE_PCA_MANIFEST,
     REFERENCE_PCA_SIDECAR,
     ReferencePCAError,
+    _assert_numeric_rows_close,
     load_reference_momenta,
     read_deformetrica_control_points,
     read_deformetrica_momenta,
@@ -68,8 +69,15 @@ from diffeoforge.reference_pca_deformations import (
     verify_reference_pca_deformation_result,
 )
 from diffeoforge.reference_shape_space_comparison import (
+    ALL_METHOD_IDS,
+    CACHE_DIRECTORY,
     COMPARISON_MANIFEST,
+    COMPARISON_SIDECAR,
+    FULL_COMPARISON_VERSION,
+    LEGACY_COMPARISON_VERSION,
+    QUICK_METHOD_IDS,
     ReferenceShapeSpaceComparisonError,
+    _artifact_documents,
     verify_reference_shape_space_comparison,
     write_reference_shape_space_comparison,
 )
@@ -191,6 +199,17 @@ def _completed_reference_run(tmp_path: Path) -> Path:
     return run
 
 
+def test_reference_pca_csv_reverification_accepts_float64_backend_roundoff() -> None:
+    expected = [["subject", "PC1", "PC2"], ["a", "0", "1.25"]]
+    observed = [["subject", "PC1", "PC2"], ["a", "2.4e-13", "1.2500000000002"]]
+
+    _assert_numeric_rows_close(observed, expected, label="PCA scores")
+
+    changed = [["subject", "PC1", "PC2"], ["a", "0.000001", "1.25"]]
+    with pytest.raises(ReferencePCAError, match="values differ"):
+        _assert_numeric_rows_close(changed, expected, label="PCA scores")
+
+
 def test_strict_momenta_reader_preserves_deformetrica_block_order(tmp_path: Path) -> None:
     source = tmp_path / "momenta.txt"
     source.write_text(
@@ -288,6 +307,7 @@ def test_reference_shape_space_comparison_validates_model_aligned_default(
         destination,
         maximum_exported_components=2,
         created_at="2026-09-02T12:00:00+00:00",
+        method_ids=ALL_METHOD_IDS,
     )
     verified = verify_reference_shape_space_comparison(artifact)
 
@@ -323,6 +343,192 @@ def test_reference_shape_space_comparison_validates_model_aligned_default(
         write_reference_shape_space_comparison(run, destination)
 
 
+def test_reference_shape_space_quick_selection_is_cached_and_reused(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    run = _completed_reference_run(tmp_path)
+    first = write_reference_shape_space_comparison(
+        run,
+        tmp_path / "quick-first",
+        maximum_exported_components=2,
+        method_ids=QUICK_METHOD_IDS,
+        created_at="2026-09-02T12:00:00+00:00",
+    )
+    first_verified = verify_reference_shape_space_comparison(first)
+    assert first_verified.manifest["selection"]["method_ids"] == list(QUICK_METHOD_IDS)
+    assert {
+        item["method_id"] for item in first_verified.manifest["methods"]
+    } == set(QUICK_METHOD_IDS)
+    assert all(
+        (run / CACHE_DIRECTORY / method_id / "method.json").is_file()
+        for method_id in QUICK_METHOD_IDS
+    )
+
+    monkeypatch.setattr(
+        "diffeoforge.reference_shape_space_comparison.principal_coordinates_analysis",
+        lambda *_args, **_kwargs: pytest.fail("verified cached PCoA must be reused"),
+    )
+    monkeypatch.setattr(
+        "diffeoforge.reference_shape_space_comparison.lddmm_momenta_squared_distances",
+        lambda *_args, **_kwargs: pytest.fail("full cache hit must reuse LDDMM distances"),
+    )
+    monkeypatch.setattr(
+        "diffeoforge.reference_shape_space_comparison.lddmm_metric_momenta_pca",
+        lambda *_args, **_kwargs: pytest.fail("full cache hit must reuse metric PCA"),
+    )
+    second = write_reference_shape_space_comparison(
+        run,
+        tmp_path / "quick-second",
+        maximum_exported_components=2,
+        method_ids=QUICK_METHOD_IDS,
+        created_at="2026-09-02T12:05:00+00:00",
+    )
+    assert verify_reference_shape_space_comparison(second).manifest["selection"][
+        "method_ids"
+    ] == list(QUICK_METHOD_IDS)
+
+
+def test_reference_shape_space_pre_cancel_skips_heavy_metric_work(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    run = _completed_reference_run(tmp_path)
+    monkeypatch.setattr(
+        "diffeoforge.reference_shape_space_comparison.lddmm_momenta_squared_distances",
+        lambda *_args, **_kwargs: pytest.fail("pre-cancel must skip LDDMM distances"),
+    )
+    monkeypatch.setattr(
+        "diffeoforge.reference_shape_space_comparison.lddmm_metric_momenta_pca",
+        lambda *_args, **_kwargs: pytest.fail("pre-cancel must skip metric PCA"),
+    )
+
+    with pytest.raises(ReferenceShapeSpaceComparisonError, match="cancelled"):
+        write_reference_shape_space_comparison(
+            run,
+            tmp_path / "pre-cancelled-comparison",
+            maximum_exported_components=2,
+            method_ids=QUICK_METHOD_IDS,
+            should_cancel=lambda: True,
+            created_at="2026-09-02T12:00:00+00:00",
+        )
+
+
+@pytest.mark.parametrize(
+    ("artifact_version", "expected_methods", "expected_scores"),
+    (
+        (
+            LEGACY_COMPARISON_VERSION,
+            (
+                ("lddmm_deformation_kernel_pca", "LDDMM deformation-kernel metric tangent PCA"),
+                ("cartesian_momenta_pca", "Cartesian momenta PCA"),
+                ("lddmm_tangent_pcoa", "PCoA of LDDMM tangent distances"),
+                ("rbf_kpca_gamma_0.5", "Generic RBF KernelPCA (gamma x 0.5)"),
+                ("rbf_kpca_gamma_1", "Generic RBF KernelPCA (gamma x 1)"),
+                ("rbf_kpca_gamma_2", "Generic RBF KernelPCA (gamma x 2)"),
+                ("isomap", "Isomap of LDDMM tangent distances"),
+                ("diffusion_map", "Diffusion map of LDDMM tangent distances"),
+            ),
+            (
+                "lddmm_deformation_kernel_pca",
+                "cartesian_momenta_pca",
+                "lddmm_tangent_pcoa",
+                "rbf_kpca_gamma_0.5",
+                "rbf_kpca_gamma_1",
+                "rbf_kpca_gamma_2",
+                "isomap",
+                "diffusion_map",
+            ),
+        ),
+        (
+            FULL_COMPARISON_VERSION,
+            (
+                ("lddmm_deformation_kernel_pca", "LDDMM deformation-kernel metric tangent PCA"),
+                ("cartesian_momenta_pca", "Cartesian momenta PCA"),
+                ("lddmm_tangent_pcoa", "PCoA of LDDMM tangent distances"),
+                ("rbf_kpca_gamma_0.5", "Generic RBF KernelPCA (gamma x 0.5)"),
+                ("rbf_kpca_gamma_1", "Generic RBF KernelPCA (gamma x 1)"),
+                ("rbf_kpca_gamma_2", "Generic RBF KernelPCA (gamma x 2)"),
+                (
+                    "roberts_2026_cartesian_momenta_rbf_kpca",
+                    "Roberts et al. 2026 Cartesian-momenta RBF KernelPCA preset",
+                ),
+                ("isomap", "Isomap of LDDMM tangent distances"),
+                ("diffusion_map", "Diffusion map of LDDMM tangent distances"),
+            ),
+            (
+                "lddmm_deformation_kernel_pca",
+                "cartesian_momenta_pca",
+                "lddmm_tangent_pcoa",
+                "rbf_kpca_gamma_0.5",
+                "rbf_kpca_gamma_1",
+                "rbf_kpca_gamma_2",
+                "isomap",
+                "diffusion_map",
+                "roberts_2026_cartesian_momenta_rbf_kpca",
+            ),
+        ),
+    ),
+)
+def test_reference_shape_space_legacy_versions_preserve_exact_order_and_labels(
+    tmp_path: Path,
+    artifact_version: str,
+    expected_methods: tuple[tuple[str, str], ...],
+    expected_scores: tuple[str, ...],
+) -> None:
+    run = _completed_reference_run(tmp_path)
+    inputs = load_reference_momenta(run)
+    manifest, documents = _artifact_documents(
+        inputs,
+        created_at="2026-09-02T12:00:00+00:00",
+        maximum_exported_components=2,
+        artifact_version=artifact_version,
+    )
+    assert tuple(
+        (str(method["method_id"]), str(method["label"]))
+        for method in manifest["methods"]
+    ) == expected_methods
+    score_rows = list(csv.reader(documents["scores.csv"].splitlines()))[1:]
+    observed_score_order = tuple(dict.fromkeys(row[0] for row in score_rows))
+    assert observed_score_order == expected_scores
+
+    artifact = tmp_path / f"legacy-comparison-{artifact_version}"
+    artifact.mkdir()
+    for name, contents in documents.items():
+        (artifact / name).write_text(contents, encoding="utf-8", newline="\n")
+    (artifact / COMPARISON_SIDECAR).write_text(
+        sha256_file(artifact / COMPARISON_MANIFEST) + "\n",
+        encoding="ascii",
+        newline="\n",
+    )
+    assert verify_reference_shape_space_comparison(artifact).manifest == manifest
+
+
+def test_reference_shape_space_cancellation_preserves_completed_method_cache(
+    tmp_path: Path,
+) -> None:
+    run = _completed_reference_run(tmp_path)
+    cancelled = False
+
+    def progress(_method_id: str, completed: int, _total: int) -> None:
+        nonlocal cancelled
+        cancelled = completed == 1
+
+    with pytest.raises(ReferenceShapeSpaceComparisonError, match="cancelled"):
+        write_reference_shape_space_comparison(
+            run,
+            tmp_path / "cancelled-comparison",
+            maximum_exported_components=2,
+            method_ids=ALL_METHOD_IDS,
+            progress_callback=progress,
+            should_cancel=lambda: cancelled,
+            created_at="2026-09-02T12:00:00+00:00",
+        )
+
+    assert (run / CACHE_DIRECTORY / QUICK_METHOD_IDS[0] / "method.json").is_file()
+    assert not (tmp_path / "cancelled-comparison").exists()
+
+
 def test_reference_shape_space_comparison_detects_tampering(tmp_path: Path) -> None:
     run = _completed_reference_run(tmp_path)
     artifact = write_reference_shape_space_comparison(
@@ -335,6 +541,121 @@ def test_reference_shape_space_comparison_detects_tampering(tmp_path: Path) -> N
     manifest.write_text(manifest.read_text(encoding="utf-8") + " ", encoding="utf-8")
 
     with pytest.raises(ReferenceShapeSpaceComparisonError, match="SHA-256 differs"):
+        verify_reference_shape_space_comparison(artifact)
+
+
+def test_reference_shape_space_v03_rejects_coordinated_manifest_tampering(
+    tmp_path: Path,
+) -> None:
+    run = _completed_reference_run(tmp_path)
+    artifact = write_reference_shape_space_comparison(
+        run,
+        tmp_path / "comparison-manifest-tamper",
+        maximum_exported_components=2,
+        created_at="2026-09-02T12:00:00+00:00",
+    )
+    manifest_path = artifact / COMPARISON_MANIFEST
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["methods"] = []
+    manifest_path.write_text(
+        json.dumps(manifest, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    (artifact / COMPARISON_SIDECAR).write_text(
+        sha256_file(manifest_path) + "\n",
+        encoding="ascii",
+        newline="\n",
+    )
+
+    with pytest.raises(ReferenceShapeSpaceComparisonError, match="declared selection"):
+        verify_reference_shape_space_comparison(artifact)
+
+
+@pytest.mark.parametrize(
+    ("artifact_name", "replacement", "expected_error"),
+    (
+        ("README.md", "\nCoordinated tampering.\n", "README differs"),
+        (
+            "method-metrics.csv",
+            "\ntampered,2,1,0,1,1,false,exploratory\n",
+            "metrics CSV differs",
+        ),
+    ),
+)
+def test_reference_shape_space_v03_rejects_coordinated_text_artifact_tampering(
+    tmp_path: Path,
+    artifact_name: str,
+    replacement: str,
+    expected_error: str,
+) -> None:
+    run = _completed_reference_run(tmp_path)
+    artifact = write_reference_shape_space_comparison(
+        run,
+        tmp_path / f"comparison-{Path(artifact_name).stem}-tamper",
+        maximum_exported_components=2,
+        created_at="2026-09-02T12:00:00+00:00",
+    )
+    artifact_path = artifact / artifact_name
+    artifact_path.write_text(
+        artifact_path.read_text(encoding="utf-8") + replacement,
+        encoding="utf-8",
+        newline="\n",
+    )
+
+    manifest_path = artifact / COMPARISON_MANIFEST
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    record = next(item for item in manifest["artifacts"] if item["path"] == artifact_name)
+    record["bytes"] = artifact_path.stat().st_size
+    record["sha256"] = sha256_file(artifact_path)
+    manifest_path.write_text(
+        json.dumps(manifest, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    (artifact / COMPARISON_SIDECAR).write_text(
+        sha256_file(manifest_path) + "\n",
+        encoding="ascii",
+        newline="\n",
+    )
+
+    with pytest.raises(ReferenceShapeSpaceComparisonError, match=expected_error):
+        verify_reference_shape_space_comparison(artifact)
+
+
+def test_reference_shape_space_v03_rejects_coordinated_score_tampering(
+    tmp_path: Path,
+) -> None:
+    run = _completed_reference_run(tmp_path)
+    artifact = write_reference_shape_space_comparison(
+        run,
+        tmp_path / "comparison-score-tamper",
+        maximum_exported_components=2,
+        created_at="2026-09-02T12:00:00+00:00",
+    )
+    scores_path = artifact / "scores.csv"
+    rows = list(csv.reader(scores_path.read_text(encoding="utf-8").splitlines()))
+    rows[1][3] = format(float(rows[1][3]) + 1.0, ".17g")
+    with scores_path.open("w", encoding="utf-8", newline="") as handle:
+        csv.writer(handle, lineterminator="\n").writerows(rows)
+
+    manifest_path = artifact / COMPARISON_MANIFEST
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    record = next(item for item in manifest["artifacts"] if item["path"] == "scores.csv")
+    record["bytes"] = scores_path.stat().st_size
+    record["sha256"] = sha256_file(scores_path)
+    manifest_path.write_text(
+        json.dumps(manifest, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    (artifact / COMPARISON_SIDECAR).write_text(
+        sha256_file(manifest_path) + "\n",
+        encoding="ascii",
+        newline="\n",
+    )
+
+    with pytest.raises(ReferenceShapeSpaceComparisonError, match="source-bound cache"):
         verify_reference_shape_space_comparison(artifact)
 
 

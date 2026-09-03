@@ -1157,8 +1157,33 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         help=(
             "New immutable comparison directory (default: "
-            "RUN/analysis/reference-shape-space-comparison-v0.2)."
+            "a selection-specific RUN/analysis/reference-shape-space-comparison-v0.3 path)."
         ),
+    )
+    reference_shape_space_parser.add_argument(
+        "--preset",
+        choices=("quick", "compatibility", "exploratory", "all"),
+        default="quick",
+        help=(
+            "Method preset (default: quick = LDDMM metric PCA plus tangent PCoA). "
+            "The all preset can take substantially longer."
+        ),
+    )
+    reference_shape_space_parser.add_argument(
+        "--method",
+        action="append",
+        choices=(
+            "lddmm_deformation_kernel_pca",
+            "lddmm_tangent_pcoa",
+            "cartesian_momenta_pca",
+            "roberts_2026_cartesian_momenta_rbf_kpca",
+            "rbf_kpca_gamma_0.5",
+            "rbf_kpca_gamma_1",
+            "rbf_kpca_gamma_2",
+            "isomap",
+            "diffusion_map",
+        ),
+        help="Select an individual method; repeat to override --preset.",
     )
     reference_shape_space_parser.add_argument(
         "--exported-components",
@@ -1169,7 +1194,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     reference_shape_space_verify_parser = subparsers.add_parser(
         "reference-shape-space-comparison-verify",
-        help="Rebind the source run and recompute an immutable method comparison.",
+        help="Rebind source hashes and verify an immutable method comparison.",
     )
     reference_shape_space_verify_parser.add_argument("artifact_directory", type=Path)
 
@@ -3107,17 +3132,29 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "reference-shape-space-comparison":
         try:
             from diffeoforge.reference_shape_space_comparison import (
+                ALL_METHOD_IDS,
+                COMPATIBILITY_METHOD_IDS,
+                EXPLORATORY_METHOD_IDS,
+                QUICK_METHOD_IDS,
                 write_reference_shape_space_comparison,
             )
 
+            presets = {
+                "quick": QUICK_METHOD_IDS,
+                "compatibility": COMPATIBILITY_METHOD_IDS,
+                "exploratory": EXPLORATORY_METHOD_IDS,
+                "all": ALL_METHOD_IDS,
+            }
+            method_ids = tuple(args.method) if args.method else presets[args.preset]
             artifact = write_reference_shape_space_comparison(
                 args.run_directory,
                 args.output,
                 maximum_exported_components=args.exported_components,
+                method_ids=method_ids,
             )
             print(f"Verified shape-space comparison created: {artifact}")
-            print("Validated default candidate: LDDMM deformation-kernel metric PCA")
-            print("Generic RBF KernelPCA remains exploratory sensitivity analysis.")
+            print(f"Selected methods: {', '.join(method_ids)}")
+            print("The quick preset is the validated default plus its essential PCoA check.")
         except (OSError, RuntimeError, TypeError, ValueError) as error:
             print(f"ERROR: {error}", file=sys.stderr)
             return 2

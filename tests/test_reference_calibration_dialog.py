@@ -344,10 +344,11 @@ def test_staged_calibration_allows_selection_without_visual_qc(
     assert "search range is not bounded" in dialog.status.text()
     dialog.collect_evidence_button.click()
     application.processEvents()
-    assert entered_limits
+    assert entered_limits == []
     assert confirmations[-1][0] == "Create and start outward pilot evidence"
     assert "surface-matching detail width=" in confirmations[-1][1]
     assert "Only these new candidates will run" in confirmations[-1][1]
+    assert "not selected as final parameters" in confirmations[-1][1]
     assert successor_calls
     assert successor_calls[-1][0] == tmp_path
     assert successor_calls[-1][1] == tmp_path.with_name(

@@ -21,6 +21,11 @@ def test_reference_runtime_estimate_is_broad_and_parameter_bound() -> None:
     assert estimate.lower_iterations < estimate.typical_iterations
     assert estimate.maximum_iterations == 100
     assert estimate.confidence == "very_low"
+    assert (
+        estimate.postprocessing_lower_seconds
+        < estimate.postprocessing_typical_seconds
+        < estimate.postprocessing_upper_seconds
+    )
 
 
 def test_reference_runtime_estimate_grows_strongly_with_surface_resolution() -> None:

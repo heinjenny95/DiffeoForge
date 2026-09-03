@@ -60,6 +60,19 @@ def test_desktop_ui_source_has_no_german_copy() -> None:
     assert violations == []
 
 
+def test_generic_desktop_ui_has_no_dataset_specific_anatomy_terms() -> None:
+    ui_sources = tuple((ROOT / "src" / "diffeoforge" / "desktop").glob("*.py"))
+    forbidden = re.compile(r"\b(?:joint|joints|trochanter|mandible)\b", re.IGNORECASE)
+
+    violations = [
+        f"{source.name}: {match.group(0)!r}"
+        for source in ui_sources
+        if (match := forbidden.search(source.read_text(encoding="utf-8")))
+    ]
+
+    assert violations == []
+
+
 def test_registration_qc_decision_advances_once_and_stops_after_last(
     tmp_path: Path,
     monkeypatch,
@@ -129,6 +142,8 @@ def test_registration_qc_decision_advances_once_and_stops_after_last(
     }
     assert loaded == [1]
     assert "All 2 registration-QC meshes" in window.result_atlas_status_label.text()
+    assert "subject-2 = pass" in window.result_qc_last_action_label.text()
+    assert window.result_qc_last_action_label.objectName() == "statusSuccess"
     assert (tmp_path / "reviews" / "registration-qc-draft.json").is_file()
     assert "2 plausible" in window.result_qc_summary_label.text()
     assert "0 unreviewed" in window.result_qc_summary_label.text()
@@ -138,6 +153,73 @@ def test_registration_qc_decision_advances_once_and_stops_after_last(
     assert (tmp_path / "reviews" / "registration-qc-finalized.json").is_file()
     assert "Finalized and bound" in window.result_qc_summary_label.text()
     assert "Scientific reports now bind" in window.result_atlas_status_label.text()
+    application.processEvents()
+
+
+def test_registration_qc_autosave_failure_does_not_change_or_advance(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from diffeoforge.desktop.result_review import ModernResultReview, RegistrationQCItem
+    from diffeoforge.desktop.widgets import DiffeoForgeWindow
+
+    application = QApplication.instance() or QApplication(["registration-qc-failure-test"])
+    items = tuple(
+        RegistrationQCItem(
+            rank=index,
+            subject_name=f"subject-{index}",
+            residual_p95=float(3 - index),
+            original_artifact_key=f"original-{index}",
+            reconstruction_artifact_key=f"reconstruction-{index}",
+        )
+        for index in (1, 2)
+    )
+    review = ModernResultReview(
+        run_directory=tmp_path,
+        bundle_directory=tmp_path,
+        project_name="QC",
+        created_at="2026-08-22T00:00:00+00:00",
+        workflow_manifest_path=tmp_path / "manifest.json",
+        workflow_manifest_sha256="a" * 64,
+        bundle_manifest_path=tmp_path / "analysis.json",
+        bundle_manifest_sha256="b" * 64,
+        optimizer_converged=True,
+        optimizer_termination_reason="test",
+        optimizer_cycles_completed=1,
+        optimizer_max_cycles=1,
+        overview=(),
+        optimization=(),
+        pca=(),
+        quality=(),
+        artifacts=(),
+        scientific_boundaries=(),
+        engine_route="deformetrica_reference",
+        registration_qc=items,
+    )
+    window = DiffeoForgeWindow()
+    window._result_review = review
+    window.result_atlas_mesh_combo.blockSignals(True)
+    for item in items:
+        window.result_atlas_mesh_combo.addItem(
+            item.subject_name,
+            f"registration-qc:{item.subject_name}",
+        )
+    monkeypatch.setattr(
+        "diffeoforge.desktop.widgets.save_registration_qc_draft",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("read-only storage")),
+    )
+
+    window._record_registration_qc_decision("pass")
+
+    assert window.result_atlas_mesh_combo.currentIndex() == 0
+    assert window._registration_qc_decisions == {}
+    assert "Nothing changed" in window.result_qc_last_action_label.text()
+    assert window.result_qc_last_action_label.objectName() == "statusWarning"
+    assert "same specimen remains open" in window.result_atlas_status_label.text()
     application.processEvents()
 
 
@@ -2540,7 +2622,7 @@ def test_desktop_window_renders_deformetrica_iteration_and_bounded_eta(
     assert "Maximum-iteration scenario: 7 h 27 min 20 s" in (
         window.run_optimizer_label.text()
     )
-    assert "Estimated time remaining: not reliable yet" in (
+    assert "Estimated complete-workflow time remaining: not reliable yet" in (
         window.run_optimizer_label.text()
     )
     assert "not an expected finish time" in window.run_optimizer_label.text()
@@ -2561,11 +2643,20 @@ def test_desktop_window_renders_deformetrica_iteration_and_bounded_eta(
             "eta_to_likely_convergence_upper_seconds": 600.0,
         },
     )
+    window._review = SimpleNamespace(
+        runtime_estimate=SimpleNamespace(
+            postprocessing_lower_seconds=60.0,
+            postprocessing_upper_seconds=120.0,
+        )
+    )
     window._atlas_event(stable_event)
-    assert "Estimated time remaining: 5 min 00 s–10 min 00 s" in (
+    assert "Estimated complete-workflow time remaining: 6 min 00 s–12 min 00 s" in (
         window.run_optimizer_label.text()
     )
-    assert "likely stop around iterations 30–40" in window.run_optimizer_label.text()
+    assert "likely optimizer stop around iterations 30–40" in (
+        window.run_optimizer_label.text()
+    )
+    assert "registration-QC preparation, and PCA" in window.run_optimizer_label.text()
     assert "Maximum-iteration scenario: 40 min 00 s" in (
         window.run_optimizer_label.text()
     )
@@ -3582,6 +3673,84 @@ def test_desktop_can_select_a_saved_completed_run(monkeypatch, tmp_path) -> None
     window._completed_result_review_failed("test failure")
     assert window.open_completed_run_button.isEnabled() is True
     assert "full verification failed" in window.status_label.text()
+    assert "full verification failed" in window.data_status_label.text()
+    window.close()
+    application.processEvents()
+
+
+def test_shape_space_comparison_uses_dedicated_worker_without_locking_qc(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QDialog
+
+    from diffeoforge.desktop.result_review import ModernResultReview
+    from diffeoforge.desktop.widgets import (
+        DiffeoForgeWindow,
+        _ReferenceShapeSpaceComparisonWorker,
+    )
+    from diffeoforge.reference_shape_space_comparison import QUICK_METHOD_IDS
+
+    application = QApplication.instance() or QApplication(["shape-space-worker-test"])
+    review = ModernResultReview(
+        run_directory=tmp_path,
+        bundle_directory=tmp_path,
+        project_name="Comparison",
+        created_at="2026-09-03T00:00:00+00:00",
+        workflow_manifest_path=tmp_path / "manifest.json",
+        workflow_manifest_sha256="a" * 64,
+        bundle_manifest_path=tmp_path / "bundle.json",
+        bundle_manifest_sha256="b" * 64,
+        optimizer_converged=None,
+        optimizer_termination_reason="test",
+        optimizer_cycles_completed=1,
+        optimizer_max_cycles=1,
+        overview=(),
+        optimization=(),
+        pca=(),
+        quality=(),
+        artifacts=(),
+        scientific_boundaries=(),
+        engine_route="deformetrica_reference",
+    )
+
+    class FakeDialog:
+        method_ids = QUICK_METHOD_IDS
+
+        def __init__(self, *_args, **_kwargs) -> None:
+            pass
+
+        def exec(self):
+            return QDialog.DialogCode.Accepted
+
+    queued = []
+
+    class FakePool:
+        def start(self, worker) -> None:
+            queued.append(worker)
+
+    monkeypatch.setattr(
+        "diffeoforge.desktop.widgets._ShapeSpaceComparisonDialog",
+        FakeDialog,
+    )
+    window = DiffeoForgeWindow()
+    window._thread_pool = FakePool()  # type: ignore[assignment]
+    window._result_review = review
+    window.result_qc_pass_button.setEnabled(True)
+
+    window._start_shape_space_comparison()
+
+    assert window._worker is None
+    assert isinstance(window._shape_space_comparison_worker, _ReferenceShapeSpaceComparisonWorker)
+    assert queued == [window._shape_space_comparison_worker]
+    assert queued[0].method_ids == QUICK_METHOD_IDS
+    assert window.result_qc_pass_button.isEnabled() is True
+    assert window.cancel_shape_space_comparison_button.isHidden() is False
+    window._cancel_shape_space_comparison()
+    assert queued[0]._cancel_requested.is_set()
+    window._shape_space_comparison_failed("cancelled")
     window.close()
     application.processEvents()
 

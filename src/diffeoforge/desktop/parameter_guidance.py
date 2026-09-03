@@ -127,7 +127,7 @@ DEFORMETRICA_PARAMETER_GUIDANCE: dict[str, ParameterGuidance] = {
             ),
             (
                 "Example",
-                "Very different trochanter shapes may be declared extreme while their "
+                "Very different specimen shapes may be declared extreme while their "
                 "coordinated deformation reach is still broad/global.",
             ),
         ),

@@ -465,9 +465,12 @@ def load_finalized_registration_qc_review(
 
 def _pca_items(bundle_manifest: dict, ratios: tuple[float, ...]) -> tuple[ResultReviewItem, ...]:
     pca = bundle_manifest["pca"]
+    method_label = str(pca["method"])
+    if str(pca["method_id"]) == "lddmm_deformation_kernel_pca":
+        method_label += " — default"
     items = [
         ResultReviewItem(
-            "PCA space",
+            method_label,
             f"{pca['components']} components · rank {pca['numerical_rank']}",
             f"{pca['method']} of Deformetrica subject initial momenta.",
         ),
@@ -830,35 +833,35 @@ def review_reference_result(
         ),
         (
             "pca-summary",
-            "PCA summary (JSON)",
+            f"{pca['method']} summary (JSON)",
             pca["summary_path"],
             "json",
             "Method, feature order, rank, variance, and sign convention.",
         ),
         (
             "pca-scores",
-            "PCA scores (CSV)",
+            f"{pca['method']} scores (CSV)",
             pca["scores_path"],
             "csv",
             "All subject scores in immutable manifest order.",
         ),
         (
             "pca-loadings",
-            "PCA loadings (CSV)",
+            f"{pca['method']} loadings (CSV)",
             pca["loadings_path"],
             "csv",
             "Component loadings for every control-point/Cartesian feature.",
         ),
         (
             "pca-scree",
-            "PCA scree plot (SVG)",
+            f"{pca['method']} scree plot (SVG)",
             pca["plots"]["scree_path"],
             "svg",
             "Static explained-variance plot from the recomputed PCA.",
         ),
         (
             "pca-score-plot",
-            "PCA scores: PC1 vs PC2 (SVG)",
+            f"{pca['method']}: PC1 vs PC2 (SVG)",
             pca["plots"]["scores_path"],
             "svg",
             "Static subject score plot with explained variance on both axes.",
@@ -869,7 +872,7 @@ def review_reference_result(
     if secondary is not None:
         add_artifact(
             "pca-score-plot-pc2-pc3",
-            "PCA scores: PC2 vs PC3 (SVG)",
+            f"{pca['method']}: PC2 vs PC3 (SVG)",
             secondary,
             "svg",
             "Static secondary score plot from the same verified PCA matrix.",
@@ -967,7 +970,13 @@ def review_reference_result(
         ),
         ResultReviewItem(
             "PCA method",
-            str(manifest["pca"]["method"]),
+            str(manifest["pca"]["method"])
+            + (
+                " — default"
+                if str(manifest["pca"]["method_id"])
+                == "lddmm_deformation_kernel_pca"
+                else ""
+            ),
             (
                 "The method and metric are stored in the verified PCA bundle; generic RBF "
                 "KernelPCA is not substituted silently."
@@ -1102,6 +1111,15 @@ def review_reference_result(
             else str(pca["plots"]["scores_pc2_pc3_unavailable_reason"])
         ),
         engine_route="deformetrica_reference",
+        pca_method_id=str(pca["method_id"]),
+        pca_method_label=(
+            str(pca["method"])
+            + (
+                " — default"
+                if str(pca["method_id"]) == "lddmm_deformation_kernel_pca"
+                else ""
+            )
+        ),
         execution_duration_seconds=duration_seconds,
         optimizer_stop_interpretation=str(optimization_evidence["stop_interpretation"]),
         additional_artifact_roots=(

@@ -79,7 +79,7 @@ def test_scientific_report_is_bounded_complete_and_source_verified(tmp_path: Pat
     assert payload["claim_matrix"][-1]["claim_id"] == "biological_validity"
     rendered = (artifact.directory / SCIENTIFIC_REPORT_HTML).read_text("utf-8")
     assert "data:image/svg+xml;base64," in rendered
-    assert "GPA landmarks and downstream helix measurements" in rendered
+    assert "GPA landmarks and downstream measurements" in rendered
 
 
 def test_scientific_report_refuses_overwrite_and_detects_tampering(tmp_path: Path) -> None:

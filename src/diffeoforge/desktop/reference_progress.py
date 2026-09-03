@@ -90,6 +90,7 @@ class ReferenceProgressTracker:
             raise ValueError("output_overhead_seconds must be finite and nonnegative")
         self._pending_iteration: int | None = None
         self._samples: list[tuple[int, float, float]] = []
+        self._smoothed_seconds_per_iteration: float | None = None
 
     def _likely_convergence_window(self) -> tuple[int, int] | None:
         changes: list[tuple[int, float]] = []
@@ -196,7 +197,16 @@ class ReferenceProgressTracker:
         likely_eta_lower: float | None = None
         likely_eta_upper: float | None = None
         if len(rates) >= 3:
-            seconds_per_iteration = float(statistics.median(rates))
+            observed_rate = float(statistics.median(rates))
+            if self._smoothed_seconds_per_iteration is None:
+                self._smoothed_seconds_per_iteration = observed_rate
+            else:
+                # Damp one-off scheduler/logging spikes while allowing a sustained
+                # hardware or workload change to move the estimate over several samples.
+                self._smoothed_seconds_per_iteration = (
+                    0.7 * self._smoothed_seconds_per_iteration + 0.3 * observed_rate
+                )
+            seconds_per_iteration = self._smoothed_seconds_per_iteration
             eta = (
                 max(0.0, self.maximum_iterations - iteration)
                 * seconds_per_iteration

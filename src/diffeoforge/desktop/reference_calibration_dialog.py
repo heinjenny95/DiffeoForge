@@ -812,8 +812,10 @@ class ReferenceCalibrationDialog(QDialog):
             )
             confidence = QLabel(
                 f"<b>Evidence grade: {assessment.recommendation_confidence.upper()}</b><br>"
-                f"Winner support across metric priorities: {weight_support}<br>"
-                f"Winner support across pilot-subject resampling: {subject_support}<br>"
+                "How often this recommendation stayed best when metric priorities "
+                f"changed: {weight_support}<br>"
+                "How often it stayed best when pilot specimens were resampled: "
+                f"{subject_support}<br>"
                 f"{flags}"
             )
             confidence.setTextFormat(Qt.TextFormat.RichText)
@@ -948,7 +950,7 @@ class ReferenceCalibrationDialog(QDialog):
                 assessment = assess_reference_calibration_snapshot(self._snapshot)
                 if assessment.automatic_selection_allowed:
                     self.status.setText(
-                        "This stage has a robust winner. Next: click the green Continue "
+                        "This stage has a robust recommendation. Next: click the green Continue "
                         "complete four-stage pilot button; DiffeoForge will record the "
                         "uncertainty-qualified choice and continue automatically."
                     )
@@ -968,7 +970,7 @@ class ReferenceCalibrationDialog(QDialog):
                     self.collect_evidence_button.show()
                     if assessment.search_range_status == "not_bounded":
                         self.status.setText(
-                            "Paused checkpoint: the provisional winner is on a tested "
+                            "Paused checkpoint: the provisional recommendation is on a tested "
                             "parameter boundary, so the search range is not bounded. "
                             "Nothing was selected automatically. Collect outward pilot "
                             "evidence before treating it as an enclosed optimum, or "
@@ -977,7 +979,8 @@ class ReferenceCalibrationDialog(QDialog):
                     else:
                         self.status.setText(
                             "Paused checkpoint: the pilot evidence does not support one "
-                            "robust unique winner. Nothing was selected and Advanced mode "
+                            "robust unique recommendation. Nothing was selected and Advanced "
+                            "mode "
                             "was not enabled. You can explicitly use the displayed balanced "
                             "recommendation provisionally, compare every option yourself, "
                             "or collect more pilot evidence."
@@ -1421,14 +1424,14 @@ class ReferenceCalibrationDialog(QDialog):
         self._render()
         if "Search range not bounded" in message:
             self.status.setText(
-                "Paused checkpoint: the provisional winner is at a tested parameter "
+                "Paused checkpoint: the provisional recommendation is at a tested parameter "
                 "boundary, so the search range is not bounded. No option was selected "
                 "automatically; collect outward evidence or explicitly authorize the "
                 "displayed value as provisional."
             )
         elif "refused to invent a unique winner" in message:
             self.status.setText(
-                "Paused checkpoint: no robust unique winner was found. No option was "
+                "Paused checkpoint: no robust unique recommendation was found. No option was "
                 "selected automatically; choose one of the explicit actions below."
             )
         else:
@@ -1513,40 +1516,42 @@ class ReferenceCalibrationDialog(QDialog):
                     parameter,
                 )
                 if direction == "minimum":
-                    outward_limit, accepted = QInputDialog.getDouble(
-                        self,
-                        "Confirm how far the pilot may search",
-                        f"{friendly_parameter.capitalize()} needs testing below the "
-                        f"current range. The suggested value ({observed_low:.9g}) is "
-                        "the next automatically derived candidate. Leave it unchanged "
-                        "unless you have a scientific or technical reason to impose a "
-                        "different limit.\n\nSmallest allowed value "
-                        f"(must be ≤ {observed_low:.9g}):",
-                        observed_low,
-                        1e-15,
-                        1e15,
-                        12,
-                    )
-                    if not accepted:
-                        return
+                    outward_limit = observed_low
+                    if self.advanced_mode.isChecked():
+                        outward_limit, accepted = QInputDialog.getDouble(
+                            self,
+                            "Expert search safety limit",
+                            f"{friendly_parameter.capitalize()} needs testing below the "
+                            f"current range. DiffeoForge derived {observed_low:.9g}. This "
+                            "limit only bounds the search and is not selected as the final "
+                            "parameter.\n\nSmallest allowed value "
+                            f"(must be ≤ {observed_low:.9g}):",
+                            observed_low,
+                            1e-15,
+                            1e15,
+                            12,
+                        )
+                        if not accepted:
+                            return
                     limits[parameter] = (outward_limit, observed_high)
                 elif direction == "maximum":
-                    outward_limit, accepted = QInputDialog.getDouble(
-                        self,
-                        "Confirm how far the pilot may search",
-                        f"{friendly_parameter.capitalize()} needs testing above the "
-                        f"current range. The suggested value ({observed_high:.9g}) is "
-                        "the next automatically derived candidate. Leave it unchanged "
-                        "unless you have a scientific or technical reason to impose a "
-                        "different limit.\n\nLargest allowed value "
-                        f"(must be ≥ {observed_high:.9g}):",
-                        observed_high,
-                        1e-15,
-                        1e15,
-                        12,
-                    )
-                    if not accepted:
-                        return
+                    outward_limit = observed_high
+                    if self.advanced_mode.isChecked():
+                        outward_limit, accepted = QInputDialog.getDouble(
+                            self,
+                            "Expert search safety limit",
+                            f"{friendly_parameter.capitalize()} needs testing above the "
+                            f"current range. DiffeoForge derived {observed_high:.9g}. This "
+                            "limit only bounds the search and is not selected as the final "
+                            "parameter.\n\nLargest allowed value "
+                            f"(must be ≥ {observed_high:.9g}):",
+                            observed_high,
+                            1e-15,
+                            1e15,
+                            12,
+                        )
+                        if not accepted:
+                            return
                     limits[parameter] = (observed_low, outward_limit)
                 else:
                     QMessageBox.warning(
@@ -1576,8 +1581,10 @@ class ReferenceCalibrationDialog(QDialog):
                 + "\n".join(rendered)
                 + "\n\nCreate the immutable successor and start it here?\n"
                 + str(destination)
-                + "\n\nOnly these new candidates will run. The entered feasibility "
-                "limits and all source evidence will be hash-bound. If the winner "
+                + "\n\nOnly these new candidates will run. In Guided Mode, DiffeoForge "
+                "uses the shown next-neighbor values as conservative search safety limits; "
+                "they are not selected as final parameters. The limits and all source "
+                "evidence will be hash-bound. If the recommendation "
                 "remains on the same boundary, DiffeoForge will continue outward "
                 "automatically until it becomes interior or reaches the limit.",
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,

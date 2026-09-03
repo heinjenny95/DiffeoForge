@@ -91,6 +91,8 @@ def _source_bundle(directory: Path | str) -> tuple[PCAResult, dict[str, object]]
             bundle = verify_reference_pca_bundle(root)
             return bundle.pca, {
                 "kind": "deformetrica_reference_pca",
+                "method": bundle.pca.method,
+                "feature_space": bundle.pca.feature_space,
                 "directory": str(bundle.bundle_directory),
                 "manifest_name": REFERENCE_PCA_MANIFEST,
                 "manifest_sha256": sha256_file(
@@ -101,6 +103,8 @@ def _source_bundle(directory: Path | str) -> tuple[PCAResult, dict[str, object]]
             bundle = verify_modern_pca_bundle(root)
             return bundle.pca, {
                 "kind": "modern_engine_pca",
+                "method": bundle.pca.method,
+                "feature_space": bundle.pca.feature_space,
                 "directory": str(bundle.bundle_directory),
                 "manifest_name": MODERN_MANIFEST,
                 "manifest_sha256": bundle.manifest_sha256,
@@ -527,14 +531,17 @@ def _render_files(
             f"<figcaption>{html.escape(column)} ({kinds[column]})</figcaption></figure>"
         )
     files[PCA_METADATA_HTML] = f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
-<title>DiffeoForge PCA metadata report</title><style>
+<title>DiffeoForge shape-space metadata report</title><style>
 body{{font-family:Segoe UI,Arial,sans-serif;max-width:1100px;margin:36px auto;padding:0 24px;
 color:#103b3b;line-height:1.45}}.notice{{background:#e3f6ef;border-left:5px solid #13856f;
 padding:14px 18px}}figure{{margin:28px 0}}img{{max-width:100%;height:auto;border:1px solid #ccd}}
-</style></head><body><h1>DiffeoForge PCA metadata report</h1>
+</style></head><body><h1>DiffeoForge shape-space metadata report</h1>
 <p class="notice">{html.escape(SCIENTIFIC_BOUNDARY)}</p>
+<p><strong>Active method:</strong>
+{html.escape(str(analysis['source_pca'].get('method', pca.method)))}</p>
 <p>{analysis['metadata']['subject_count']} subjects; {len(columns)} metadata variables; metadata
-were joined after PCA and did not alter the atlas or axes.</p>{''.join(plot_links)}</body></html>"""
+were joined after the verified shape-space analysis and did not alter the atlas or axes.</p>
+{''.join(plot_links)}</body></html>"""
     return files
 
 
