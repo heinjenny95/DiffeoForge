@@ -36,7 +36,10 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from diffeoforge.analysis.landmarks import import_landmark_txt_folder
+from diffeoforge.analysis.landmarks import (
+    import_landmark_fcsv_folder,
+    import_landmark_txt_folder,
+)
 from diffeoforge.config import load_config
 from diffeoforge.desktop.aspect_svg_widget import AspectRatioSvgWidget
 from diffeoforge.desktop.calibration_comparison_widget import (
@@ -3381,24 +3384,25 @@ class DiffeoForgeWindow(QMainWindow):
         self.landmarks_edit = QLineEdit()
         self.landmarks_edit.setObjectName("landmarksEdit")
         self.landmarks_edit.setPlaceholderText(
-            "optional: landmark CSV, or import a per-mesh TXT folder"
+            "optional: landmark CSV, or import a per-mesh TXT/FCSV folder"
         )
         self.landmarks_edit.textChanged.connect(self._invalidate_input_preflight)
         self.landmarks_edit.textChanged.connect(self._update_procrustes_visibility)
         self.landmarks_edit.editingFinished.connect(self._start_input_preflight)
-        landmarks_button = QPushButton("Select CSV/TXT…")
+        landmarks_button = QPushButton("Select CSV/TXT/FCSV…")
         landmarks_button.setObjectName("secondary")
         landmarks_button.setToolTip(
-            "Select a canonical cohort CSV or any one tagged per-mesh TXT file. "
-            "Selecting TXT imports every matching TXT in that folder automatically."
+            "Select a canonical cohort CSV or any one tagged per-mesh TXT or Slicer "
+            "FCSV file. Selecting TXT/FCSV imports every matching file in that folder "
+            "automatically."
         )
         landmarks_button.clicked.connect(self._choose_landmarks)
         self.landmarks_button = landmarks_button
-        self.import_landmark_txt_button = QPushButton("Import TXT folder…")
+        self.import_landmark_txt_button = QPushButton("Import TXT/FCSV folder…")
         self.import_landmark_txt_button.setObjectName("importLandmarkTxtButton")
         self.import_landmark_txt_button.setToolTip(
-            "Match one tagged TXT file to each selected mesh by filename stem and "
-            "create a new canonical CSV without changing the TXT files."
+            "Match one tagged TXT or Slicer FCSV file to each selected mesh by exact "
+            "filename stem and create a canonical CSV without changing source files."
         )
         self.import_landmark_txt_button.clicked.connect(self._import_landmark_txt_folder)
         self.place_landmarks_button = QPushButton("Place landmarks…")
@@ -4071,9 +4075,10 @@ class DiffeoForgeWindow(QMainWindow):
     def _choose_landmarks(self) -> None:
         selected, _ = QFileDialog.getOpenFileName(
             self,
-            "Select landmark CSV or one tagged TXT file",
+            "Select landmark CSV or one per-mesh TXT/FCSV file",
             self.mesh_edit.text().strip(),
-            "Landmark files (*.csv *.txt);;Canonical CSV (*.csv);;Tagged TXT (*.txt)",
+            "Landmark files (*.csv *.txt *.fcsv);;Canonical CSV (*.csv);;"
+            "Tagged TXT (*.txt);;3D Slicer FCSV (*.fcsv)",
         )
         if not selected:
             return
@@ -4085,21 +4090,46 @@ class DiffeoForgeWindow(QMainWindow):
         if selected_path.suffix.casefold() == ".txt":
             self._complete_landmark_txt_import(selected_path.parent)
             return
+        if selected_path.suffix.casefold() == ".fcsv":
+            self._complete_landmark_fcsv_import(selected_path.parent)
+            return
         QMessageBox.warning(
             self,
             "Unsupported landmark file",
-            "Select a canonical .csv file or a tagged per-mesh .txt file.",
+            "Select a canonical .csv file or a per-mesh .txt/.fcsv file.",
         )
 
     @Slot()
     def _import_landmark_txt_folder(self) -> None:
         selected_directory = QFileDialog.getExistingDirectory(
             self,
-            "Select folder with one landmark TXT per mesh",
+            "Select folder with one landmark TXT or FCSV per mesh",
             self.mesh_edit.text().strip(),
         )
-        if selected_directory:
-            self._complete_landmark_txt_import(Path(selected_directory))
+        if not selected_directory:
+            return
+        selected_path = Path(selected_directory)
+        txt_count = sum(
+            path.is_file() and path.suffix.casefold() == ".txt"
+            for path in selected_path.iterdir()
+        )
+        fcsv_count = sum(
+            path.is_file() and path.suffix.casefold() == ".fcsv"
+            for path in selected_path.iterdir()
+        )
+        if txt_count and fcsv_count:
+            QMessageBox.warning(
+                self,
+                "Choose one landmark format",
+                "This folder contains both TXT and FCSV files. Use "
+                "'Select CSV/TXT/FCSV…' and choose one representative file so "
+                "DiffeoForge knows which complete cohort to import.",
+            )
+            return
+        if fcsv_count:
+            self._complete_landmark_fcsv_import(selected_path)
+            return
+        self._complete_landmark_txt_import(selected_path)
 
     def _complete_landmark_txt_import(self, selected_directory: Path) -> None:
         try:
@@ -4154,6 +4184,62 @@ class DiffeoForgeWindow(QMainWindow):
             )
         except (OSError, TypeError, ValueError) as error:
             QMessageBox.warning(self, "Landmark TXT import unavailable", str(error))
+
+    def _complete_landmark_fcsv_import(self, selected_directory: Path) -> None:
+        try:
+            cohort = self._current_surface_cohort()
+            project_text = self.project_edit.text().strip()
+            output_parent = (
+                Path(project_text).expanduser()
+                if project_text
+                else Path(self.mesh_edit.text().strip()).expanduser().parent
+            )
+            output = output_parent / "landmarks.csv"
+            overwrite = False
+            if output.exists():
+                answer = QMessageBox.question(
+                    self,
+                    "Replace existing landmark CSV?",
+                    f"A landmark working CSV already exists at:\n{output.resolve()}\n\n"
+                    "Replace it with a fresh import from the currently selected FCSV "
+                    "folder? The replacement is written atomically; the original FCSV "
+                    "files are not changed.",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.No,
+                )
+                if answer != QMessageBox.StandardButton.Yes:
+                    return
+                overwrite = True
+            result = import_landmark_fcsv_folder(
+                selected_directory,
+                cohort,
+                output,
+                overwrite=overwrite,
+            )
+            self.landmark_count_spin.setValue(len(result.landmark_labels))
+            self.landmarks_edit.setText(str(result.csv_path))
+            self._start_input_preflight()
+            ignored = (
+                f"\n\nUnmatched FCSV files ignored: {len(result.ignored_fcsv_files)}."
+                if result.ignored_fcsv_files
+                else ""
+            )
+            QMessageBox.information(
+                self,
+                "Landmark FCSV import complete",
+                f"Imported {len(result.fcsv_files)} FCSV files with "
+                f"{len(result.landmark_labels)} ordered defined 3D points each.\n\n"
+                f"Declared coordinate system: {result.coordinate_system}.\n\n"
+                f"DiffeoForge created the working CSV automatically at:\n"
+                f"{result.csv_path}\n\n"
+                "Coordinates and source files were not changed. DiffeoForge did not "
+                "convert RAS/LPS, infer units, or interpret curve/sliding metadata. "
+                "Point order is used as the homology contract and the normal GPA "
+                "preview remains required."
+                f"{ignored}",
+            )
+        except (OSError, TypeError, ValueError) as error:
+            QMessageBox.warning(self, "Landmark FCSV import unavailable", str(error))
 
     @Slot()
     def _choose_remote_token(self) -> None:

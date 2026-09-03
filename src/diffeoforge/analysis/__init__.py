@@ -2,9 +2,13 @@
 
 from diffeoforge.analysis.landmarks import (
     LANDMARK_COLUMNS,
+    LandmarkFcsvData,
+    LandmarkFcsvImportResult,
     LandmarkTxtImportResult,
+    import_landmark_fcsv_folder,
     import_landmark_txt_folder,
     read_landmark_csv,
+    read_landmark_fcsv,
     read_landmark_txt,
     write_landmark_csv,
 )
@@ -28,6 +32,8 @@ from diffeoforge.analysis.procrustes import (
 __all__ = [
     "GeneralizedProcrustesResult",
     "LANDMARK_COLUMNS",
+    "LandmarkFcsvData",
+    "LandmarkFcsvImportResult",
     "LandmarkTxtImportResult",
     "PCAResult",
     "PCAStabilityEvidence",
@@ -35,10 +41,12 @@ __all__ = [
     "SimilarityTransform",
     "compare_pca_stability",
     "generalized_procrustes",
+    "import_landmark_fcsv_folder",
     "import_landmark_txt_folder",
     "momenta_pca",
     "principal_component_analysis",
     "read_landmark_csv",
+    "read_landmark_fcsv",
     "read_landmark_txt",
     "write_landmark_csv",
     "write_pca_score_pair_svg",

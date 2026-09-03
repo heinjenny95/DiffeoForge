@@ -70,7 +70,9 @@ project setup or the [experimental modern workflow](MODERN_WORKFLOW.md);
 identical verified requests reuse the same immutable aligned cohort. See the
 [format and conversion contract](SURFACE_INPUT_FORMATS.md).
 
-## Per-mesh tagged TXT import
+## Per-mesh landmark imports
+
+### Tagged TXT
 
 DiffeoForge can create the canonical cohort CSV from a folder containing one
 tagged TXT file per selected mesh. Matching is case-insensitive by filename stem:
@@ -101,8 +103,8 @@ TXT files but does not interpret them.
 The importer never edits source TXT files, changes coordinate values, infers
 units, applies a scale factor, or interprets curve/sliding metadata. The normal
 read-only GPA preview remains mandatory after import. Desktop users may use
-**Select CSV/TXT...** and choose any one matching TXT, or use **Import TXT
-folder...**. Both routes import the complete matched folder and create the
+**Select CSV/TXT/FCSV...** and choose any one matching TXT, or use **Import
+TXT/FCSV folder...**. Both routes import the complete matched folder and create the
 canonical `landmarks.csv` automatically in the project folder; no second CSV
 input or save selection is required. If that working CSV already exists, the
 desktop asks whether to replace it atomically; declining preserves it byte for
@@ -112,6 +114,36 @@ byte. The equivalent CLI command is:
 diffeoforge landmarks-import-txt C:\study\meshes C:\study\landmarks `
   --mesh-pattern "*.ply" --output C:\study\project\landmarks.csv
 ```
+
+### 3D Slicer FCSV
+
+Legacy 3D Slicer Markups fiducial files (`.fcsv`) are supported as one file per
+mesh. Matching is case-insensitive by exact filename stem, just like tagged TXT.
+The importer reads the declared FCSV columns instead of assuming fixed column
+positions, accepts both named (`RAS`, `LPS`) and legacy numeric (`0`, `1`)
+coordinate-system headers, and handles the two trailing status fields emitted by
+Slicer 5.x even though the legacy header does not name them. Only defined control
+points are accepted. Every selected file must contain the same ordered point count
+and declare the same coordinate system.
+
+Slicer point IDs and labels are not a safe cross-specimen homology key: they may be
+duplicated, specimen-prefixed, or regenerated. DiffeoForge therefore preserves row
+order as the explicit homology contract and assigns `LM1` through `LMN` in the
+canonical CSV. It never converts RAS to LPS (or vice versa), changes units, reflects
+points, or interprets curve/sliding semantics. The declared source coordinate
+system is reported before the normal read-only mesh/GPA review. Researchers remain
+responsible for confirming that the meshes use the same spatial convention.
+
+```powershell
+diffeoforge landmarks-import-fcsv C:\study\meshes C:\study\landmarks `
+  --mesh-pattern "*.ply" --output C:\study\project\landmarks.csv
+```
+
+3D Slicer identifies FCSV as a legacy format and recommends Markups JSON
+(`.mrk.json`) for new data because JSON preserves point status and other markup
+semantics without extending an undeclared CSV schema. Markups JSON is therefore the
+next planned Slicer import format; FCSV support remains necessary for published and
+historical datasets.
 
 The desktop can create the strict CSV by rotating, panning, and zooming each
 mesh, then clicking the visible surface. Each click is resolved by barycentric

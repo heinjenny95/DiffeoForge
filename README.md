@@ -188,8 +188,9 @@ This repository currently provides:
   arbitrary triangle-point interpolation, a researcher-selected landmark count,
   optional automatic next-mesh loading after the final planned point,
   hash-validated resumable drafts, strict reusable landmark CSV output, and a
-  validated per-mesh tagged-TXT folder importer that matches mesh stems and
-  preserves coordinate values without implicit unit conversion or sliding,
+  validated per-mesh tagged-TXT and 3D Slicer FCSV folder importers that match
+  mesh stems, reject incomplete or mixed-coordinate-system cohorts, and preserve
+  coordinate values without implicit RAS/LPS conversion, unit conversion, or sliding,
   configurable generalized Procrustes alignment for either engine, read-only
   convergence/residual/scale preview with exact fingerprint approval, immutable
   content-addressed aligned mesh copies, and hash-verified alignment evidence

@@ -133,6 +133,47 @@ def test_landmark_txt_import_cli_creates_canonical_csv(capsys, tmp_path: Path) -
     assert "no unit conversion or sliding" in captured.out
 
 
+def test_landmark_fcsv_import_cli_creates_canonical_csv(capsys, tmp_path: Path) -> None:
+    meshes = tmp_path / "meshes"
+    fcsv = tmp_path / "fcsv"
+    meshes.mkdir()
+    fcsv.mkdir()
+    for name, offset in (("first", 0), ("second", 10)):
+        (meshes / f"{name}.ply").write_text("placeholder\n", encoding="utf-8")
+        (fcsv / f"{name}.fcsv").write_text(
+            "# Markups fiducial file version = 5.2\n"
+            "# CoordinateSystem = LPS\n"
+            "# columns = id,x,y,z,ow,ox,oy,oz,vis,sel,lock,label,desc,associatedNodeID\n"
+            f"1,{offset + 1},2,3,0,0,0,1,1,1,0,F-1,,,2,0\n"
+            f"2,{offset + 4},5,6,0,0,0,1,1,1,0,F-2,,,2,0\n"
+            f"3,{offset + 7},8,9,0,0,0,1,1,1,0,F-3,,,2,0\n",
+            encoding="utf-8",
+        )
+    output = tmp_path / "landmarks.csv"
+
+    return_code = main(
+        [
+            "landmarks-import-fcsv",
+            str(meshes),
+            str(fcsv),
+            "--mesh-pattern",
+            "*.ply",
+            "--output",
+            str(output),
+        ]
+    )
+
+    captured = capsys.readouterr()
+    labels, values = read_landmark_csv(output, ("first.ply", "second.ply"))
+    assert return_code == 0
+    assert labels == ("LM1", "LM2", "LM3")
+    assert values.dtype == np.float64
+    assert values[1, 0].tolist() == [11.0, 2.0, 3.0]
+    assert "Matched meshes/FCSV files: 2" in captured.out
+    assert "Declared coordinate system: LPS" in captured.out
+    assert "no RAS/LPS conversion" in captured.out
+
+
 def test_reference_calibration_plan_cli_exports_reproducible_methods_bundle(
     capsys,
     tmp_path: Path,

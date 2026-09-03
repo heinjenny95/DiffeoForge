@@ -518,7 +518,7 @@ def test_desktop_window_exposes_required_project_controls(monkeypatch) -> None:
     assert auto_advance.isChecked() is True
     assert "next mesh" in auto_advance.text()
     assert window.place_landmarks_button.text().startswith("Place landmarks")
-    assert window.import_landmark_txt_button.text().startswith("Import TXT folder")
+    assert window.import_landmark_txt_button.text().startswith("Import TXT/FCSV folder")
     assert window.create_button.isEnabled() is False
     assert all(isinstance(step, QPushButton) for step in window.rail_steps)
     assert window.rail_steps[0].isEnabled() is True
@@ -864,6 +864,62 @@ def test_desktop_landmark_browser_accepts_txt_and_imports_its_folder(
     assert values.shape == (len(cohort), 3, 3)
     assert window.landmarks_edit.text() == str(output.resolve())
     assert replacement_questions and "written atomically" in replacement_questions[0]
+    window.close()
+    application.processEvents()
+
+
+def test_desktop_landmark_browser_accepts_fcsv_and_imports_its_folder(
+    monkeypatch, tmp_path: Path
+) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QFileDialog, QMessageBox
+
+    from diffeoforge.analysis.landmarks import read_landmark_csv
+    from diffeoforge.desktop.widgets import DiffeoForgeWindow
+
+    application = QApplication.instance() or QApplication(["diffeoforge-fcsv-browser-test"])
+    mesh_directory = ROOT / "examples" / "synthetic" / "meshes"
+    fcsv_directory = tmp_path / "fcsv"
+    fcsv_directory.mkdir()
+    output = tmp_path / "project" / "landmarks.csv"
+    cohort = (mesh_directory / "template.vtk", *sorted(mesh_directory.glob("subject-*.vtk")))
+    selected_fcsv: Path | None = None
+    for mesh_index, mesh in enumerate(cohort):
+        fcsv_path = fcsv_directory / f"{mesh.stem}.fcsv"
+        fcsv_path.write_text(
+            "# Markups fiducial file version = 5.2\n"
+            "# CoordinateSystem = LPS\n"
+            "# columns = id,x,y,z,ow,ox,oy,oz,vis,sel,lock,label,desc,associatedNodeID\n"
+            f"1,{mesh_index + 1},0,0,0,0,0,1,1,1,0,F-1,,,2,0\n"
+            f"2,0,{mesh_index + 2},0,0,0,0,1,1,1,0,F-2,,,2,0\n"
+            f"3,0,0,{mesh_index + 3},0,0,0,1,1,1,0,F-3,,,2,0\n",
+            encoding="utf-8",
+        )
+        selected_fcsv = selected_fcsv or fcsv_path
+    monkeypatch.setattr(
+        QFileDialog,
+        "getOpenFileName",
+        lambda *_args, **_kwargs: (str(selected_fcsv), "3D Slicer FCSV (*.fcsv)"),
+    )
+    messages: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        QMessageBox,
+        "information",
+        lambda _parent, title, message: messages.append((title, message)),
+    )
+    window = DiffeoForgeWindow()
+    window.mesh_edit.setText(str(mesh_directory))
+    window.project_edit.setText(str(tmp_path / "project"))
+
+    window._choose_landmarks()
+
+    labels, values = read_landmark_csv(output, tuple(path.name for path in cohort))
+    assert labels == ("LM1", "LM2", "LM3")
+    assert values.shape == (len(cohort), 3, 3)
+    assert window.landmarks_edit.text() == str(output.resolve())
+    assert messages and "Declared coordinate system: LPS" in messages[0][1]
+    assert "did not convert RAS/LPS" in messages[0][1]
     window.close()
     application.processEvents()
 
