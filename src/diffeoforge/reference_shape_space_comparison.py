@@ -196,6 +196,20 @@ V04_VERIFICATION_CONTRACT = (
     "exported artifact size and SHA-256 are rechecked. Completed methods are not "
     "numerically recomputed unless their source or parameters change."
 )
+_AGREEMENT_VERIFICATION_RELATIVE_TOLERANCE = 1e-12
+_AGREEMENT_VERIFICATION_ABSOLUTE_TOLERANCE = 1e-15
+_AGREEMENT_RECOMPUTED_FLOAT_FIELDS = {
+    "centered_kernel_alignment",
+    "median_nearest_neighbor_overlap",
+    "median_orthogonal_procrustes_correlation",
+    "median_pairwise_distance_correlation",
+    "median_top_outlier_overlap",
+    "minimum_pairwise_distance_correlation",
+    "nearest_neighbor_overlap",
+    "orthogonal_procrustes_correlation",
+    "pairwise_distance_correlation",
+    "top_outlier_overlap",
+}
 
 
 class ReferenceShapeSpaceComparisonError(RuntimeError):
@@ -788,6 +802,42 @@ def _agreement_analysis(
             "establish biological equivalence, registration validity, or causal meaning."
         ),
     }
+
+
+def _agreement_analysis_matches(
+    observed: object,
+    expected: object,
+    *,
+    field_name: str | None = None,
+) -> bool:
+    """Compare score-derived metrics without accepting structural or material drift."""
+
+    if type(observed) is not type(expected):
+        return False
+    if isinstance(expected, float):
+        if field_name not in _AGREEMENT_RECOMPUTED_FLOAT_FIELDS:
+            return observed == expected
+        return math.isclose(
+            observed,
+            expected,
+            rel_tol=_AGREEMENT_VERIFICATION_RELATIVE_TOLERANCE,
+            abs_tol=_AGREEMENT_VERIFICATION_ABSOLUTE_TOLERANCE,
+        )
+    if isinstance(expected, dict):
+        return observed.keys() == expected.keys() and all(
+            _agreement_analysis_matches(
+                observed[key],
+                value,
+                field_name=str(key),
+            )
+            for key, value in expected.items()
+        )
+    if isinstance(expected, list):
+        return len(observed) == len(expected) and all(
+            _agreement_analysis_matches(observed_item, expected_item, field_name=field_name)
+            for observed_item, expected_item in zip(observed, expected, strict=True)
+        )
+    return observed == expected
 
 
 def _isomap(
@@ -2089,7 +2139,10 @@ def _verify_selection_structure_and_documents(
             method_ids,
             outlier_count=outlier_count,
         )
-        if manifest.get("agreement_analysis") != expected_agreement:
+        if not _agreement_analysis_matches(
+            manifest.get("agreement_analysis"),
+            expected_agreement,
+        ):
             raise ReferenceShapeSpaceComparisonError(
                 "Comparison agreement statistics differ from the exported scores"
             )

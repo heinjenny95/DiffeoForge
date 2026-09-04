@@ -150,6 +150,12 @@ PGA is documented as not executed because it requires additional fitting or
 shooting rather than cost-free post-processing. Version 0.3 selection bundles
 remain verifiable.
 
+Verification keeps source identities, score values, document contents, artifact
+sizes, and SHA-256 hashes exact. Score-derived agreement statistics are recomputed
+with relative tolerance `1e-12` and absolute tolerance `1e-15` so that harmless
+last-bit NumPy/BLAS differences do not reject the same exported scores; structural
+changes and larger numerical drift still fail verification.
+
 Version 0.2 also exports a named **Roberts et al. (2026) compatibility preset**:
 RBF KernelPCA on flattened Cartesian momenta with the published fixed
 `gamma = 0.00000025`. It is present to reproduce and compare that workflow, not to

@@ -3720,6 +3720,12 @@ def test_shape_space_comparison_uses_dedicated_worker_without_locking_qc(
     window._cancel_shape_space_comparison()
     assert queued[0]._cancel_requested.is_set()
     window._shape_space_comparison_failed("cancelled")
+    assert window.shape_space_comparison_progress.format() == (
+        "Comparison stopped; completed method caches were preserved"
+    )
+    assert "completed atlas was not rerun or modified" in (
+        window.shape_space_comparison_status_label.text()
+    )
     window.close()
     application.processEvents()
 

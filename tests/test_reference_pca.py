@@ -13,6 +13,7 @@ import pytest
 import yaml
 
 import diffeoforge.reference_pca_deformations as deformation_module
+import diffeoforge.reference_shape_space_comparison as comparison_module
 from diffeoforge.cli import main
 from diffeoforge.desktop.reference_result_review import (
     export_registration_qc_review,
@@ -799,6 +800,39 @@ def test_reference_shape_space_v04_rejects_coordinated_agreement_tampering(
         match="agreement statistics differ",
     ):
         verify_reference_shape_space_comparison(artifact)
+
+
+def test_reference_shape_space_v04_accepts_cross_runtime_agreement_roundoff(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run = _completed_reference_run(tmp_path)
+    artifact = write_reference_shape_space_comparison(
+        run,
+        tmp_path / "comparison-agreement-roundoff",
+        maximum_exported_components=2,
+        created_at="2026-09-02T12:00:00+00:00",
+    )
+    original = comparison_module._agreement_analysis
+
+    def recompute_with_runtime_roundoff(*args: object, **kwargs: object) -> dict[str, object]:
+        result = original(*args, **kwargs)
+        pairwise = result["pairwise"]
+        assert isinstance(pairwise, list)
+        first = pairwise[0]
+        assert isinstance(first, dict)
+        first["pairwise_distance_correlation"] = float(
+            np.nextafter(float(first["pairwise_distance_correlation"]), math.inf)
+        )
+        return result
+
+    monkeypatch.setattr(
+        comparison_module,
+        "_agreement_analysis",
+        recompute_with_runtime_roundoff,
+    )
+
+    assert verify_reference_shape_space_comparison(artifact).artifact_directory == artifact
 
 
 def test_reference_shape_space_v03_rejects_coordinated_score_tampering(

@@ -7195,10 +7195,16 @@ class DiffeoForgeWindow(QMainWindow):
         self.create_shape_space_comparison_button.setEnabled(True)
         self.cancel_shape_space_comparison_button.hide()
         self.create_shape_space_comparison_button.setText("Configure shape-space methods…")
+        self.shape_space_comparison_progress.setRange(0, 1)
+        self.shape_space_comparison_progress.setValue(0)
+        self.shape_space_comparison_progress.setFormat(
+            "Comparison stopped; completed method caches were preserved"
+        )
         self.shape_space_comparison_status_label.setObjectName("statusError")
         self.shape_space_comparison_status_label.setStyleSheet("")
         self.shape_space_comparison_status_label.setText(
-            f"Shape-space comparison stopped: {message}"
+            f"Shape-space comparison stopped: {message} The completed atlas was not rerun "
+            "or modified; any verified method caches remain available."
         )
         if self._close_after_shape_space_comparison:
             self._close_after_shape_space_comparison = False
