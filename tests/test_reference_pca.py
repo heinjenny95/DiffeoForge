@@ -69,16 +69,26 @@ from diffeoforge.reference_pca_deformations import (
     verify_reference_pca_deformation_result,
 )
 from diffeoforge.reference_shape_space_comparison import (
+    AGREEMENT_HEATMAP_2D_SVG,
+    AGREEMENT_HEATMAP_HIGH_DIM_SVG,
     ALL_METHOD_IDS,
     CACHE_DIRECTORY,
     COMPARISON_MANIFEST,
     COMPARISON_SIDECAR,
+    COMPARISON_VERSION,
+    DEFAULT_PROFILE_SVG,
     FULL_COMPARISON_VERSION,
     LEGACY_COMPARISON_VERSION,
+    PAIRWISE_METRICS_CSV,
     QUICK_METHOD_IDS,
+    REPORT_HTML,
+    SCORE_OVERVIEW_SVG,
+    SELECTION_COMPARISON_VERSION,
     ReferenceShapeSpaceComparisonError,
     _artifact_documents,
     _metrics_csv,
+    _pairwise_agreement_record,
+    _write_method_cache,
     verify_reference_shape_space_comparison,
     write_reference_shape_space_comparison,
 )
@@ -312,6 +322,8 @@ def test_reference_shape_space_comparison_validates_model_aligned_default(
     )
     verified = verify_reference_shape_space_comparison(artifact)
 
+    assert verified.manifest["artifact_version"] == COMPARISON_VERSION
+
     assert verified.manifest["default_decision"] == {
         "generic_rbf_default": False,
         "generic_rbf_reason": (
@@ -340,8 +352,102 @@ def test_reference_shape_space_comparison_validates_model_aligned_default(
     }
     assert (artifact / "method-metrics.csv").is_file()
     assert (artifact / "scores.csv").is_file()
+    assert (artifact / PAIRWISE_METRICS_CSV).is_file()
+    assert (artifact / REPORT_HTML).is_file()
+    for plot_name in (
+        SCORE_OVERVIEW_SVG,
+        AGREEMENT_HEATMAP_2D_SVG,
+        AGREEMENT_HEATMAP_HIGH_DIM_SVG,
+        DEFAULT_PROFILE_SVG,
+    ):
+        assert ET.parse(artifact / plot_name).getroot().tag.endswith("svg")
+    agreement = verified.manifest["agreement_analysis"]
+    assert agreement["dimensions"] == [2]
+    assert agreement["visual_reference_method_id"] == "lddmm_deformation_kernel_pca"
+    assert agreement["summaries"][0]["pair_count"] == math.comb(
+        len(ALL_METHOD_IDS),
+        2,
+    )
+    assert len(agreement["pairwise"]) == math.comb(len(ALL_METHOD_IDS), 2)
+    report = (artifact / REPORT_HTML).read_text(encoding="utf-8")
+    assert "Aligned score overview" in report
+    assert "Overall agreement statistics" in report
+    assert "These are descriptive statistics" in report
     with pytest.raises(FileExistsError, match="already exists"):
         write_reference_shape_space_comparison(run, destination)
+
+
+def test_pairwise_shape_space_metrics_ignore_axis_ambiguity_and_scale() -> None:
+    left = np.asarray(
+        [
+            [-2.0, -0.5],
+            [-0.5, 1.5],
+            [0.5, -1.0],
+            [2.0, 0.75],
+            [3.0, -2.0],
+            [-1.0, 2.5],
+        ],
+        dtype=np.float64,
+    )
+    rotation_and_reflection = np.asarray([[0.0, 1.0], [1.0, 0.0]])
+    right = 4.5 * (left @ rotation_and_reflection) + np.asarray([13.0, -7.0])
+
+    record = _pairwise_agreement_record(
+        "left",
+        "right",
+        left,
+        right,
+        dimensions=2,
+        outlier_count=3,
+    )
+
+    assert record["pairwise_distance_correlation"] == pytest.approx(1.0)
+    assert record["orthogonal_procrustes_correlation"] == pytest.approx(1.0)
+    assert record["centered_kernel_alignment"] == pytest.approx(1.0)
+    assert record["nearest_neighbor_overlap"] == pytest.approx(1.0)
+    assert record["top_outlier_overlap"] == pytest.approx(1.0)
+    assert record["agreement_grade"] == "very_high"
+
+
+def test_reference_shape_space_v03_selection_bundle_remains_verifiable(
+    tmp_path: Path,
+) -> None:
+    run = _completed_reference_run(tmp_path)
+    inputs = load_reference_momenta(run)
+    manifest, documents = _artifact_documents(
+        inputs,
+        created_at="2026-09-02T12:00:00+00:00",
+        maximum_exported_components=2,
+        artifact_version=SELECTION_COMPARISON_VERSION,
+        method_ids=QUICK_METHOD_IDS,
+        method_completed_callback=lambda method_id, method, scores: _write_method_cache(
+            inputs,
+            method_id,
+            method,
+            scores,
+            exported_components=2,
+        ),
+    )
+    artifact = tmp_path / "selection-comparison-v0.3"
+    artifact.mkdir()
+    for name, contents in documents.items():
+        (artifact / name).write_text(contents, encoding="utf-8", newline="\n")
+    (artifact / COMPARISON_SIDECAR).write_text(
+        sha256_file(artifact / COMPARISON_MANIFEST) + "\n",
+        encoding="ascii",
+        newline="\n",
+    )
+
+    verified = verify_reference_shape_space_comparison(artifact)
+
+    assert verified.manifest == manifest
+    assert {path.name for path in artifact.iterdir()} == {
+        COMPARISON_MANIFEST,
+        COMPARISON_SIDECAR,
+        "method-metrics.csv",
+        "scores.csv",
+        "README.md",
+    }
 
 
 def test_reference_shape_space_metrics_are_stable_across_json_cache_order() -> None:
@@ -387,9 +493,9 @@ def test_reference_shape_space_quick_selection_is_cached_and_reused(
     )
     first_verified = verify_reference_shape_space_comparison(first)
     assert first_verified.manifest["selection"]["method_ids"] == list(QUICK_METHOD_IDS)
-    assert {
-        item["method_id"] for item in first_verified.manifest["methods"]
-    } == set(QUICK_METHOD_IDS)
+    assert {item["method_id"] for item in first_verified.manifest["methods"]} == set(
+        QUICK_METHOD_IDS
+    )
     assert all(
         (run / CACHE_DIRECTORY / method_id / "method.json").is_file()
         for method_id in QUICK_METHOD_IDS
@@ -514,10 +620,10 @@ def test_reference_shape_space_legacy_versions_preserve_exact_order_and_labels(
         maximum_exported_components=2,
         artifact_version=artifact_version,
     )
-    assert tuple(
-        (str(method["method_id"]), str(method["label"]))
-        for method in manifest["methods"]
-    ) == expected_methods
+    assert (
+        tuple((str(method["method_id"]), str(method["label"])) for method in manifest["methods"])
+        == expected_methods
+    )
     score_rows = list(csv.reader(documents["scores.csv"].splitlines()))[1:]
     observed_score_order = tuple(dict.fromkeys(row[0] for row in score_rows))
     assert observed_score_order == expected_scores
@@ -611,6 +717,17 @@ def test_reference_shape_space_v03_rejects_coordinated_manifest_tampering(
             "\ntampered,2,1,0,1,1,false,exploratory\n",
             "metrics CSV differs",
         ),
+        (
+            PAIRWISE_METRICS_CSV,
+            "\ntampered,method,2,1,1,1,5,1,1,very_high\n",
+            "pairwise metrics CSV differs",
+        ),
+        (REPORT_HTML, "\n<!-- coordinated tampering -->\n", "comparison-report.html differs"),
+        (
+            SCORE_OVERVIEW_SVG,
+            "\n<!-- coordinated tampering -->\n",
+            "scores-overview.svg differs",
+        ),
     ),
 )
 def test_reference_shape_space_v03_rejects_coordinated_text_artifact_tampering(
@@ -650,6 +767,37 @@ def test_reference_shape_space_v03_rejects_coordinated_text_artifact_tampering(
     )
 
     with pytest.raises(ReferenceShapeSpaceComparisonError, match=expected_error):
+        verify_reference_shape_space_comparison(artifact)
+
+
+def test_reference_shape_space_v04_rejects_coordinated_agreement_tampering(
+    tmp_path: Path,
+) -> None:
+    run = _completed_reference_run(tmp_path)
+    artifact = write_reference_shape_space_comparison(
+        run,
+        tmp_path / "comparison-agreement-tamper",
+        maximum_exported_components=2,
+        created_at="2026-09-02T12:00:00+00:00",
+    )
+    manifest_path = artifact / COMPARISON_MANIFEST
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["agreement_analysis"]["pairwise"][0]["pairwise_distance_correlation"] = 0.123
+    manifest_path.write_text(
+        json.dumps(manifest, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    (artifact / COMPARISON_SIDECAR).write_text(
+        sha256_file(manifest_path) + "\n",
+        encoding="ascii",
+        newline="\n",
+    )
+
+    with pytest.raises(
+        ReferenceShapeSpaceComparisonError,
+        match="agreement statistics differ",
+    ):
         verify_reference_shape_space_comparison(artifact)
 
 
@@ -723,13 +871,13 @@ def test_reference_pca_deformation_design_binds_exact_shooting_endpoints(
     assert model.findtext("model-type") == "Shooting"
     assert model.findtext("initial-control-points") == "../source/control-points.txt"
     assert model.findtext("initial-momenta") == "../source/endpoint-momenta.txt"
+    assert model.findtext("./template/object/filename") == "../source/estimated-template.vtk"
     assert (
-        model.findtext("./template/object/filename")
-        == "../source/estimated-template.vtk"
+        design["runtime"]
+        == json.loads((run / "manifest.json").read_text(encoding="utf-8"))["effective_config"][
+            "runtime"
+        ]
     )
-    assert design["runtime"] == json.loads(
-        (run / "manifest.json").read_text(encoding="utf-8")
-    )["effective_config"]["runtime"]
     assert (
         main(
             [
@@ -778,11 +926,7 @@ def test_reference_pca_deformation_design_recomputes_resigned_momenta(
     )
     momenta_path = design_path / "source" / "endpoint-momenta.txt"
     lines = momenta_path.read_text(encoding="utf-8").splitlines()
-    numeric_line = next(
-        index
-        for index, line in enumerate(lines[2:], start=2)
-        if line.strip()
-    )
+    numeric_line = next(index for index, line in enumerate(lines[2:], start=2) if line.strip())
     values = lines[numeric_line].split()
     values[0] = format(float(values[0]) + 1.0, ".17g")
     lines[numeric_line] = " ".join(values)
@@ -791,9 +935,7 @@ def test_reference_pca_deformation_design_recomputes_resigned_momenta(
     manifest_path = design_path / DESIGN_NAME
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     record = next(
-        item
-        for item in manifest["artifacts"]
-        if item["path"] == "source/endpoint-momenta.txt"
+        item for item in manifest["artifacts"] if item["path"] == "source/endpoint-momenta.txt"
     )
     record["bytes"] = momenta_path.stat().st_size
     record["sha256"] = sha256_file(momenta_path)
@@ -862,9 +1004,9 @@ def test_reference_pca_deformation_execution_publishes_verified_endpoints(
     def complete_shooting(_argv, *, cwd, **_kwargs):
         root = Path(cwd)
         output = root / "output"
-        header = (root / "source" / "endpoint-momenta.txt").read_text(
-            encoding="utf-8"
-        ).splitlines()[0]
+        header = (
+            (root / "source" / "endpoint-momenta.txt").read_text(encoding="utf-8").splitlines()[0]
+        )
         endpoint_count = int(header.split()[0])
         timepoints = int(
             ET.parse(root / "engine" / "model.xml")
@@ -1507,9 +1649,7 @@ def test_modern_full_atlas_qualification_binds_initial_template_and_template_gat
     historical = tmp_path / "engine15-full-atlas-design"
     shutil.copytree(destination, historical)
     historical_config_path = historical / design["modern_workflow"]["config_path"]
-    historical_config = yaml.safe_load(
-        historical_config_path.read_text(encoding="utf-8")
-    )
+    historical_config = yaml.safe_load(historical_config_path.read_text(encoding="utf-8"))
     historical_config["schema_version"] = "0.6"
     historical_config["optimization"].pop("template_gradient")
     historical_config["optimization"].pop("sobolev_kernel_width_ratio")
@@ -1519,13 +1659,9 @@ def test_modern_full_atlas_qualification_binds_initial_template_and_template_gat
         newline="\n",
     )
     historical_design_path = historical / DESIGN_JSON_NAME
-    historical_design = json.loads(
-        historical_design_path.read_text(encoding="utf-8")
-    )
+    historical_design = json.loads(historical_design_path.read_text(encoding="utf-8"))
     historical_design["modern_workflow"]["expected_engine_implementation"] = "1.5"
-    historical_design["modern_workflow"]["config_sha256"] = sha256_file(
-        historical_config_path
-    )
+    historical_design["modern_workflow"]["config_sha256"] = sha256_file(historical_config_path)
     historical_html_path = historical / "modern-reference-qualification-design.html"
     historical_html_path.write_text(
         _render_design_html(historical_design),
@@ -1573,12 +1709,8 @@ def test_modern_full_atlas_qualification_binds_initial_template_and_template_gat
         created_at="2026-08-25T03:00:00+00:00",
     )
     continuation = verify_modern_reference_qualification_design(continuation_path)
-    continuation_config_path = (
-        continuation_path / continuation["modern_workflow"]["config_path"]
-    )
-    continuation_config = yaml.safe_load(
-        continuation_config_path.read_text(encoding="utf-8")
-    )
+    continuation_config_path = continuation_path / continuation["modern_workflow"]["config_path"]
+    continuation_config = yaml.safe_load(continuation_config_path.read_text(encoding="utf-8"))
     assert continuation["design_version"] == "0.9"
     assert continuation["protocol"]["qualification_scope"] == "full_atlas"
     assert continuation_config["optimization"]["block_order"] == [
@@ -1607,14 +1739,9 @@ def test_modern_full_atlas_qualification_binds_initial_template_and_template_gat
     successor_assessment = verify_modern_reference_qualification_assessment(
         successor_assessment_path
     )
-    assert successor_assessment["continuation_verification"][
-        "initial_objective_matches"
-    ] is True
+    assert successor_assessment["continuation_verification"]["initial_objective_matches"] is True
     assert (
-        successor_assessment["metrics"][
-            "cross_engine_template_p95_over_reference_diagonal"
-        ]
-        >= 0.0
+        successor_assessment["metrics"]["cross_engine_template_p95_over_reference_diagonal"] >= 0.0
     )
 
 

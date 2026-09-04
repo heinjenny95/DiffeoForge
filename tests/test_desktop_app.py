@@ -641,10 +641,7 @@ def test_desktop_window_exposes_required_project_controls(monkeypatch) -> None:
     assert window._request().landmarks_file == Path("landmarks.csv")
     assert window.preview_procrustes_button.isEnabled() is True
     assert window.approve_procrustes_check.isEnabled() is False
-    assert (
-        window.procrustes_scaling_combo.currentData()
-        == "pams_surface_area_weighted_rms"
-    )
+    assert window.procrustes_scaling_combo.currentData() == "pams_surface_area_weighted_rms"
     assert window._request().procrustes_scaling_mode == "pams_surface_area_weighted_rms"
     window.procrustes_scaling_combo.setCurrentIndex(
         window.procrustes_scaling_combo.findData("pams_surface_vertex_centroid_size")
@@ -734,9 +731,7 @@ def test_desktop_window_separates_data_parameters_review_run_and_results(
     assert window.page_stack.widget(1).isAncestorOf(window.reference_guidance_box)
     assert window.page_stack.widget(1).isAncestorOf(window.reference_parameter_box)
     assert window.page_stack.widget(1).isAncestorOf(window.reference_calibration_execution_card)
-    assert window.reference_guidance_box.isAncestorOf(
-        window.reference_calibration_execution_card
-    )
+    assert window.reference_guidance_box.isAncestorOf(window.reference_calibration_execution_card)
     assert window.page_stack.widget(2).isAncestorOf(window.review_summary_label)
     assert window.page_stack.widget(3).isAncestorOf(window.run_state_label)
     assert window.page_stack.widget(4).isAncestorOf(window.result_summary_label)
@@ -1170,9 +1165,7 @@ def test_desktop_requires_exact_procrustes_preview_approval_and_rejects_drift(
     assert "Analyzed 6 aligned meshes" in window.reference_guidance_status_label.text()
     assert "not inferable from geometry" in window.reference_guidance_status_label.text()
     assert "Attachment KW" in window.reference_effective_widths_label.text()
-    assert "PAMS-style surface scaling" in (
-        window.reference_effective_widths_label.text()
-    )
+    assert "PAMS-style surface scaling" in (window.reference_effective_widths_label.text())
     measured: dict[str, float] = {}
 
     class FakeFeatureScaleRulerDialog:
@@ -1201,9 +1194,7 @@ def test_desktop_requires_exact_procrustes_preview_approval_and_rejects_drift(
     window._measure_reference_feature()
     expected_scale = window._procrustes_preview.alignment.transforms[0].scale
     assert measured["scale"] == pytest.approx(expected_scale)
-    assert window.reference_feature_scale_spin.value() == pytest.approx(
-        10.0 * expected_scale
-    )
+    assert window.reference_feature_scale_spin.value() == pytest.approx(10.0 * expected_scale)
     original_effective_text = window.reference_effective_widths_label.text()
     window.reference_parameter_profile_combo.setCurrentIndex(
         window.reference_parameter_profile_combo.findData("advanced")
@@ -1484,9 +1475,7 @@ def test_desktop_can_use_current_reference_parameters_without_pilot(
     assert window.reference_parameter_profile_combo.currentData() == "data_assisted"
     assert window.skip_reference_pilot_button.isHidden() is False
     assert window.skip_reference_pilot_button.isEnabled() is True
-    assert window.skip_reference_pilot_button.text() == (
-        "Use current parameters & skip pilot"
-    )
+    assert window.skip_reference_pilot_button.text() == ("Use current parameters & skip pilot")
 
     create_calls: list[dict[str, bool]] = []
     monkeypatch.setattr(
@@ -1509,9 +1498,7 @@ def test_desktop_can_use_current_reference_parameters_without_pilot(
     request = window._request()
     assert request.reference_parameter_profile == "advanced"
     assert request.reference_parameter_recommendation is None
-    assert "pilot calibration will be skipped" in (
-        window.reference_parameter_section_label.text()
-    )
+    assert "pilot calibration will be skipped" in (window.reference_parameter_section_label.text())
     window.close()
     application.processEvents()
 
@@ -2619,9 +2606,7 @@ def test_desktop_window_renders_deformetrica_iteration_and_bounded_eta(
     assert "maximum" in window.run_progress_bar.format()
     assert "Iteration 12 of maximum 100" in window.run_optimizer_label.text()
     assert "Elapsed: 1 h 01 min 01 s" in window.run_optimizer_label.text()
-    assert "Maximum-iteration scenario: 7 h 27 min 20 s" in (
-        window.run_optimizer_label.text()
-    )
+    assert "Maximum-iteration scenario: 7 h 27 min 20 s" in (window.run_optimizer_label.text())
     assert "Estimated complete-workflow time remaining: not reliable yet" in (
         window.run_optimizer_label.text()
     )
@@ -2653,13 +2638,9 @@ def test_desktop_window_renders_deformetrica_iteration_and_bounded_eta(
     assert "Estimated complete-workflow time remaining: 6 min 00 s–12 min 00 s" in (
         window.run_optimizer_label.text()
     )
-    assert "likely optimizer stop around iterations 30–40" in (
-        window.run_optimizer_label.text()
-    )
+    assert "likely optimizer stop around iterations 30–40" in (window.run_optimizer_label.text())
     assert "registration-QC preparation, and PCA" in window.run_optimizer_label.text()
-    assert "Maximum-iteration scenario: 40 min 00 s" in (
-        window.run_optimizer_label.text()
-    )
+    assert "Maximum-iteration scenario: 40 min 00 s" in (window.run_optimizer_label.text())
     window.close()
     application.processEvents()
 
@@ -2981,9 +2962,7 @@ def test_desktop_window_starts_bound_worker_and_shows_only_reconciled_result(
     application.processEvents()
 
 
-def test_desktop_window_starts_persistent_remote_worker(
-    monkeypatch, tmp_path
-) -> None:
+def test_desktop_window_starts_persistent_remote_worker(monkeypatch, tmp_path) -> None:
     pytest.importorskip("PySide6")
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
@@ -3043,9 +3022,7 @@ def test_desktop_window_starts_persistent_remote_worker(
         ca_file,
         submission_id,
     ):
-        created.append(
-            (supplied_request, Path(session), server_url, ca_file, submission_id)
-        )
+        created.append((supplied_request, Path(session), server_url, ca_file, submission_id))
         return Path(session).resolve()
 
     monkeypatch.setattr(
@@ -3080,9 +3057,7 @@ def test_desktop_window_starts_persistent_remote_worker(
     application.processEvents()
 
 
-def test_desktop_remote_reconnect_rejects_different_ca(
-    monkeypatch, tmp_path
-) -> None:
+def test_desktop_remote_reconnect_rejects_different_ca(monkeypatch, tmp_path) -> None:
     pytest.importorskip("PySide6")
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
@@ -3147,9 +3122,7 @@ def test_desktop_remote_server_copy_deletion_requires_confirmation_and_runs_off_
         _RemoteAtlasDeletionWorker,
     )
 
-    application = QApplication.instance() or QApplication(
-        ["diffeoforge-remote-delete-test"]
-    )
+    application = QApplication.instance() or QApplication(["diffeoforge-remote-delete-test"])
     queued = []
 
     class FakePool:
@@ -3613,12 +3586,8 @@ def test_desktop_window_verifies_and_renders_step_five_before_artifact_handoff(
         )
     )
     assert window.generate_reference_pca_deformations_button.isEnabled() is False
-    assert window.generate_reference_pca_deformations_button.text() == (
-        "PC shape meshes generated"
-    )
-    assert "loaded in the atlas viewer" in (
-        window.reference_pca_deformation_status_label.text()
-    )
+    assert window.generate_reference_pca_deformations_button.text() == ("PC shape meshes generated")
+    assert "loaded in the atlas viewer" in (window.reference_pca_deformation_status_label.text())
     window._show_run_page_from_results()
     assert window.page_stack.currentIndex() == 3
     window.start_atlas_button.click()
@@ -3755,6 +3724,54 @@ def test_shape_space_comparison_uses_dedicated_worker_without_locking_qc(
     application.processEvents()
 
 
+def test_completed_shape_space_comparison_opens_visual_report(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtGui import QDesktopServices
+    from PySide6.QtWidgets import QApplication
+
+    from diffeoforge.desktop.widgets import DiffeoForgeWindow
+    from diffeoforge.reference_shape_space_comparison import (
+        REPORT_HTML,
+        ReferenceShapeSpaceComparison,
+    )
+
+    application = QApplication.instance() or QApplication(["shape-space-report-test"])
+    artifact_directory = tmp_path / "comparison"
+    artifact_directory.mkdir()
+    report = artifact_directory / REPORT_HTML
+    report.write_text("<!doctype html><title>Comparison</title>\n", encoding="utf-8")
+    opened: list[Path] = []
+    monkeypatch.setattr(
+        QDesktopServices,
+        "openUrl",
+        lambda url: opened.append(Path(url.toLocalFile())) or True,
+    )
+    artifact = ReferenceShapeSpaceComparison(
+        artifact_directory=artifact_directory,
+        manifest={
+            "default_decision": {
+                "status": "validated_for_default",
+                "reason": "Test evidence passed.",
+            },
+            "methods": [{"method_id": "lddmm_deformation_kernel_pca"}],
+        },
+    )
+    window = DiffeoForgeWindow()
+
+    window._shape_space_comparison_succeeded(artifact)
+
+    assert opened == [report]
+    assert "visual comparison report has been opened" in (
+        window.shape_space_comparison_status_label.text()
+    )
+    window.close()
+    application.processEvents()
+
+
 def test_reference_pca_deformation_worker_reuses_a_verified_design(
     monkeypatch,
     tmp_path,
@@ -3778,9 +3795,7 @@ def test_reference_pca_deformation_worker_reuses_a_verified_design(
 
     monkeypatch.setattr(
         "diffeoforge.desktop.widgets.verify_reference_pca_bundle",
-        lambda *args, **kwargs: SimpleNamespace(
-            pca=SimpleNamespace(number_of_components=2)
-        ),
+        lambda *args, **kwargs: SimpleNamespace(pca=SimpleNamespace(number_of_components=2)),
     )
     monkeypatch.setattr(
         "diffeoforge.desktop.widgets.create_reference_pca_deformation_design",

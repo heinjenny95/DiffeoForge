@@ -1157,7 +1157,7 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         help=(
             "New immutable comparison directory (default: "
-            "a selection-specific RUN/analysis/reference-shape-space-comparison-v0.3 path)."
+            "a selection-specific RUN/analysis/reference-shape-space-comparison-v0.4 path)."
         ),
     )
     reference_shape_space_parser.add_argument(

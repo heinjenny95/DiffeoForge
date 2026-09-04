@@ -127,15 +127,28 @@ named sensitivity comparison alongside PCoA, Isomap, and diffusion maps:
 ```powershell
 diffeoforge reference-shape-space-comparison RUN_DIRECTORY
 diffeoforge reference-shape-space-comparison-verify `
-  RUN_DIRECTORY/analysis/reference-shape-space-comparison-v0.2
+  RUN_DIRECTORY/analysis/reference-shape-space-comparison-v0.4
 ```
 
 The comparison tests RBF gamma at 0.5, 1, and 2 times the median-distance
 heuristic, records distance fidelity, optimally scaled stress, centered-kernel
-alignment, and outlier overlap, and exports method scores. LDDMM tangent PCoA is
-an independent distance-based cross-check. Isomap and diffusion maps are
-exploratory views. Exact geodesic PGA is documented as not executed because it
-requires additional fitting or shooting rather than cost-free post-processing.
+alignment, and outlier overlap, and exports method scores. Version 0.4 also
+calculates every selected method pair at 2, 3, 10, and the maximum exported
+dimensions where available. The pairwise evidence includes specimen-distance
+correlation, orthogonal Procrustes correlation, centered-kernel alignment,
+five-nearest-neighbor overlap, and top-outlier overlap. These are descriptive
+agreement measures rather than p-values or biological equivalence tests.
+
+The version 0.4 bundle opens a static `comparison-report.html` and stores an
+aligned two-axis score overview, a method-by-metric profile, low- and
+higher-dimensional agreement heatmaps, exact pairwise CSV values, and the
+unchanged original score coordinates. The overview removes translation,
+uniform scale, rotation, and reflection only for visual comparison; it never
+overwrites `scores.csv`. LDDMM tangent PCoA is an independent distance-based
+cross-check. Isomap and diffusion maps are exploratory views. Exact geodesic
+PGA is documented as not executed because it requires additional fitting or
+shooting rather than cost-free post-processing. Version 0.3 selection bundles
+remain verifiable.
 
 Version 0.2 also exports a named **Roberts et al. (2026) compatibility preset**:
 RBF KernelPCA on flattened Cartesian momenta with the published fixed
