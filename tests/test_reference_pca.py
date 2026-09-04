@@ -78,6 +78,7 @@ from diffeoforge.reference_shape_space_comparison import (
     QUICK_METHOD_IDS,
     ReferenceShapeSpaceComparisonError,
     _artifact_documents,
+    _metrics_csv,
     verify_reference_shape_space_comparison,
     write_reference_shape_space_comparison,
 )
@@ -341,6 +342,35 @@ def test_reference_shape_space_comparison_validates_model_aligned_default(
     assert (artifact / "scores.csv").is_file()
     with pytest.raises(FileExistsError, match="already exists"):
         write_reference_shape_space_comparison(run, destination)
+
+
+def test_reference_shape_space_metrics_are_stable_across_json_cache_order() -> None:
+    def evidence(dimensions: int) -> dict[str, object]:
+        return {
+            "dimensions": dimensions,
+            "distance_correlation": 0.9,
+            "normalized_stress_after_scale": 0.1,
+            "centered_kernel_alignment_to_lddmm_pca": 0.8,
+            "top_outlier_overlap": 0.75,
+        }
+
+    method = {
+        "method_id": "example",
+        "evaluations": {
+            "2": evidence(2),
+            "3": evidence(3),
+            "10": evidence(10),
+        },
+        "supports_direct_momenta_reconstruction_and_shooting": False,
+        "role": "test",
+    }
+    manifest = {"methods": [method]}
+    cache_round_trip = json.loads(json.dumps(manifest, sort_keys=True))
+
+    written = _metrics_csv(manifest)
+    assert written == _metrics_csv(cache_round_trip)
+    rows = list(csv.reader(written.splitlines()))
+    assert [row[1] for row in rows[1:]] == ["2", "3", "10"]
 
 
 def test_reference_shape_space_quick_selection_is_cached_and_reused(

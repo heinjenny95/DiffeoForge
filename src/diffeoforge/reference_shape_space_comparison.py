@@ -1202,7 +1202,16 @@ def _metrics_csv(manifest: dict[str, object]) -> str:
         ]
     )
     for method in manifest["methods"]:
-        for evidence in method["evaluations"].values():
+        # The canonical JSON manifest sorts object keys lexicographically.  Do not
+        # let that serialization detail change the CSV when a comparison mixes
+        # freshly computed methods (insertion-ordered dimensions) with methods
+        # restored from JSON caches.  Dimension order is a scientific table
+        # property, so make it explicit and numeric on both write and verify.
+        evaluations = sorted(
+            method["evaluations"].items(),
+            key=lambda item: int(item[0]),
+        )
+        for _dimension, evidence in evaluations:
             writer.writerow(
                 [
                     method["method_id"],
