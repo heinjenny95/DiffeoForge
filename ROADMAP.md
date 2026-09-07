@@ -159,6 +159,15 @@ This roadmap describes evidence gates rather than promised dates.
   provenance-bound destination, refuse silent overwrite, and expose both reports
   from the desktop result view.
 - [x] Define desktop executable/installer architecture and release gates
+- [ ] Keep Validation Lab preparation and mesh/workload preflight off the UI
+  thread. Large inputs currently can leave the window unresponsive while CPU
+  work continues, before any optimizer run has started.
+  - [ ] Use an appropriate background worker/process, show preparation phases
+    and progress, provide safe cancellation, and prevent duplicate starts.
+  - [ ] Preserve input/hash checks, geometry gates, the frozen study design,
+    explicit start confirmation and completed immutable evidence.
+  - [ ] Test delayed preparation, responsive UI, cancellation, errors and repeated
+    start clicks; a cancelled preparation must not launch a run afterward.
 - [ ] Local graphical interface backed by the shared core
   - [x] First non-overwriting mesh-folder and project-setup slice
   - [x] Read-only effective-parameter and workload/preflight review
