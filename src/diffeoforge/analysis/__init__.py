@@ -43,6 +43,12 @@ from diffeoforge.analysis.procrustes import (
     SimilarityTransform,
     generalized_procrustes,
 )
+from diffeoforge.analysis.slicer_json import (
+    LandmarkJsonData,
+    LandmarkJsonImportResult,
+    import_landmark_json_folder,
+    read_landmark_json,
+)
 
 __all__ = [
     "ASSESSED_MODES",
@@ -50,6 +56,8 @@ __all__ = [
     "LANDMARK_COLUMNS",
     "LandmarkFcsvData",
     "LandmarkFcsvImportResult",
+    "LandmarkJsonData",
+    "LandmarkJsonImportResult",
     "LandmarkTxtImportResult",
     "MeshScaleMetrics",
     "MeshScalingMode",
@@ -64,6 +72,7 @@ __all__ = [
     "DEFAULT_TARGET_SIZE",
     "generalized_procrustes",
     "import_landmark_fcsv_folder",
+    "import_landmark_json_folder",
     "import_landmark_txt_folder",
     "momenta_pca",
     "mesh_scale_metrics",
@@ -71,6 +80,7 @@ __all__ = [
     "principal_component_analysis",
     "read_landmark_csv",
     "read_landmark_fcsv",
+    "read_landmark_json",
     "read_landmark_txt",
     "scaling_factor",
     "scaling_mode_label",

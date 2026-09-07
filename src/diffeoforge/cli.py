@@ -250,6 +250,31 @@ def build_parser() -> argparse.ArgumentParser:
         help="Explicitly replace an existing generated CSV atomically.",
     )
 
+    landmark_json_parser = subparsers.add_parser(
+        "landmarks-import-json",
+        help="Import one 3D Slicer Markups JSON per mesh into a canonical cohort CSV.",
+    )
+    landmark_json_parser.add_argument(
+        "mesh_directory", type=Path,
+        help="Directory containing the exact mesh cohort to match by filename stem.",
+    )
+    landmark_json_parser.add_argument(
+        "json_directory", type=Path,
+        help="Directory containing one Slicer .mrk.json (or .json) file per selected mesh.",
+    )
+    landmark_json_parser.add_argument(
+        "--mesh-pattern", default="*",
+        help="Glob selecting the exact mesh cohort (default: all supported surfaces).",
+    )
+    landmark_json_parser.add_argument(
+        "--output", type=Path, default=Path("landmarks.csv"),
+        help="Canonical landmark CSV to create (default: ./landmarks.csv).",
+    )
+    landmark_json_parser.add_argument(
+        "--force", action="store_true",
+        help="Explicitly replace an existing generated CSV atomically.",
+    )
+
     doctor_parser = subparsers.add_parser(
         "doctor",
         help="Check whether the host and frozen reference backend are ready.",
@@ -2336,6 +2361,41 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(
             "Coordinates were preserved exactly; no RAS/LPS conversion, unit conversion, "
             "or semilandmark sliding was applied."
+        )
+        return 0
+
+    if args.command == "landmarks-import-json":
+        try:
+            from diffeoforge.analysis.slicer_json import import_landmark_json_folder
+
+            mesh_directory = args.mesh_directory.expanduser().resolve()
+            if not mesh_directory.is_dir():
+                raise ConfigurationError(f"Mesh folder does not exist: {mesh_directory}")
+            mesh_files = tuple(
+                path.resolve()
+                for path in sorted(
+                    mesh_directory.glob(args.mesh_pattern),
+                    key=lambda path: path.name.casefold(),
+                )
+                if path.is_file() and is_supported_surface_path(path)
+            )
+            result = import_landmark_json_folder(
+                args.json_directory, mesh_files, args.output, overwrite=args.force,
+            )
+        except (OSError, ConfigurationError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        print(f"Landmark CSV created: {result.csv_path}")
+        print(f"Matched meshes/JSON files: {len(result.mesh_files)}")
+        print(f"Ordered defined points per mesh: {len(result.landmark_labels)}")
+        print(f"Declared coordinate system: {result.coordinate_system}")
+        print(f"Coordinate units: {result.units_label}")
+        if result.ignored_json_files:
+            print(f"Unmatched JSON files ignored: {len(result.ignored_json_files)}")
+        print(
+            "Coordinates were preserved exactly; no RAS/LPS conversion, unit conversion, "
+            "or semilandmark sliding was applied. Point order defines homology. "
+            "Confirm mesh coordinate frame and units in the GPA preview."
         )
         return 0
 

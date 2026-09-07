@@ -34,6 +34,95 @@ def _write_landmarks(path: Path) -> Path:
     return path
 
 
+def test_windows_staging_inherits_parent_permissions(monkeypatch, tmp_path: Path) -> None:
+    from diffeoforge import preprocessing
+
+    monkeypatch.setattr(preprocessing.sys, "platform", "win32")
+    original_mkdir = Path.mkdir
+    calls = []
+
+    def checked_mkdir(path, mode=0o777, parents=False, exist_ok=False):
+        calls.append((path, mode, parents, exist_ok))
+        return original_mkdir(path, mode=mode, parents=parents, exist_ok=exist_ok)
+
+    def forbidden_private_temp(*args, **kwargs):
+        raise AssertionError("Windows project staging must not install tempfile's private ACL")
+
+    monkeypatch.setattr(Path, "mkdir", checked_mkdir)
+    monkeypatch.setattr(preprocessing.tempfile, "mkdtemp", forbidden_private_temp)
+    result = preprocessing._create_alignment_staging_directory(tmp_path)
+    assert result.parent == tmp_path
+    assert result.name.startswith(".aligning-")
+    assert calls == [(result, 0o777, False, False)]
+    (result / "raw").mkdir()
+    (result / "raw" / "probe.txt").write_text("working copy", encoding="utf-8")
+
+
+def test_windows_staging_collision_never_reuses_existing_path(monkeypatch, tmp_path: Path) -> None:
+    from types import SimpleNamespace
+
+    from diffeoforge import preprocessing
+
+    occupied = tmp_path / ".aligning-collision"
+    occupied.mkdir()
+    sentinel = occupied / "keep.txt"
+    sentinel.write_text("preserve", encoding="utf-8")
+    names = iter(("collision", "fresh"))
+    monkeypatch.setattr(preprocessing.sys, "platform", "win32")
+    monkeypatch.setattr(preprocessing, "uuid4", lambda: SimpleNamespace(hex=next(names)))
+    result = preprocessing._create_alignment_staging_directory(tmp_path)
+    assert result == tmp_path / ".aligning-fresh"
+    assert sentinel.read_text(encoding="utf-8") == "preserve"
+
+
+def test_windows_staging_collision_retries_are_bounded(monkeypatch, tmp_path: Path) -> None:
+    from types import SimpleNamespace
+
+    from diffeoforge import preprocessing
+
+    occupied = tmp_path / ".aligning-collision"
+    occupied.mkdir()
+    monkeypatch.setattr(preprocessing.sys, "platform", "win32")
+    monkeypatch.setattr(preprocessing, "uuid4", lambda: SimpleNamespace(hex="collision"))
+    with pytest.raises(FileExistsError, match="unique alignment staging"):
+        preprocessing._create_alignment_staging_directory(tmp_path)
+    assert list(tmp_path.iterdir()) == [occupied]
+
+
+def test_windows_staging_preserves_real_access_denial(monkeypatch, tmp_path: Path) -> None:
+    from diffeoforge import preprocessing
+
+    monkeypatch.setattr(preprocessing.sys, "platform", "win32")
+    calls = []
+
+    def denied(path, **kwargs):
+        calls.append(path)
+        raise PermissionError("project is read-only")
+
+    monkeypatch.setattr(Path, "mkdir", denied)
+    with pytest.raises(PermissionError, match="project is read-only"):
+        preprocessing._create_alignment_staging_directory(tmp_path)
+    assert len(calls) == 1
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_non_windows_staging_keeps_private_tempfile_policy(monkeypatch, tmp_path: Path) -> None:
+    from diffeoforge import preprocessing
+
+    calls = []
+
+    def private_temp(**kwargs):
+        calls.append(kwargs)
+        return str(tmp_path / ".aligning-private")
+
+    monkeypatch.setattr(preprocessing.sys, "platform", "linux")
+    monkeypatch.setattr(preprocessing.tempfile, "mkdtemp", private_temp)
+    assert preprocessing._create_alignment_staging_directory(tmp_path) == (
+        tmp_path / ".aligning-private"
+    )
+    assert calls == [{"prefix": ".aligning-", "dir": tmp_path}]
+
+
 def test_procrustes_preprocessing_is_engine_independent_and_preserves_raw_meshes(
     tmp_path: Path,
 ) -> None:

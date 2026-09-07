@@ -95,6 +95,7 @@ class ModernResultReview:
     registration_qc: tuple[RegistrationQCItem, ...] = ()
     pca_method_id: str = "cartesian_initial_momenta_pca"
     pca_method_label: str = "Cartesian initial-momenta PCA — Modern Engine"
+    registration_qc_metric_label: str = "nearest-vertex p95 (proxy)"
 
     def artifact(self, key: str) -> ModernResultArtifact:
         for artifact in self.artifacts:
@@ -401,6 +402,41 @@ def review_modern_result(directory: Path | str) -> ModernResultReview:
             "vtk",
             "Final subject-specific reconstruction for visual atlas quality control.",
         )
+    workflow_artifacts = {record["path"]: record for record in workflow["artifacts"]}
+    inputs_by_label = {record["label"]: record for record in workflow["input"]["subjects"]}
+    if set(inputs_by_label) != {subject["label"] for subject in bundle["subjects"]}:
+        raise ModernResultReviewError("Visual review originals do not match reconstructed subjects")
+    qc_items = []
+    for position, subject in enumerate(bundle["subjects"], start=1):
+        source = inputs_by_label[subject["label"]]
+        value = source["aligned_path"] or source["raw_path"]
+        record = workflow_artifacts[value]
+        path = _safe_bundle_path(run_directory, value, label="Registration original")
+        if path.stat().st_size != record["bytes"] or sha256_file(path) != record["sha256"]:
+            raise ModernResultReviewError("Registration original changed after verification")
+        key = f"subject-original-{position}"
+        artifacts.append(
+            ModernResultArtifact(
+                key, str(subject["label"]), path, "vtk", record["bytes"], record["sha256"],
+                "Verified input in the same atlas coordinates as the reconstruction.",
+            )
+        )
+        qc_items.append(
+            RegistrationQCItem(
+                0, str(subject["label"]), _finite_number(subject["residual"], "QC residual"),
+                key, f"subject-reconstruction-{position}",
+            )
+        )
+    registration_qc = tuple(
+        RegistrationQCItem(
+            rank, item.subject_name, item.residual_p95,
+            item.original_artifact_key, item.reconstruction_artifact_key,
+        )
+        for rank, item in enumerate(
+            sorted(qc_items, key=lambda item: (-item.residual_p95, item.subject_name.casefold())),
+            start=1,
+        )
+    )
     add_artifact(
         "optimizer-history",
         "Optimization history (CSV)",
@@ -645,6 +681,9 @@ def review_modern_result(directory: Path | str) -> ModernResultReview:
         artifacts=tuple(artifacts),
         scientific_boundaries=boundaries,
         pca_method_id="cartesian_initial_momenta_pca",
+        registration_qc=registration_qc,
+        registration_qc_metric_label="attachment residual",
+        additional_artifact_roots=(run_directory,),
         pca_method_label="Cartesian initial-momenta PCA — Modern Engine",
         pca_pc2_pc3_unavailable_reason=(
             None if secondary_plot_path is not None else str(secondary_unavailable_reason)

@@ -71,13 +71,20 @@ class FinalizedRegistrationQCReview:
     decisions: Mapping[str, str]
 
 
+def registration_qc_directory(review: ModernResultReview) -> Path:
+    """Keep Modern's exact-inventory workflow tree immutable as well."""
+    if review.engine_route == "modern":
+        return review.run_directory.with_name(review.run_directory.name + "-reviews")
+    return review.run_directory / "reviews"
+
+
 def _validated_registration_qc_decisions(
     review: ModernResultReview,
     decisions: Mapping[str, str],
 ) -> dict[str, str]:
-    if review.engine_route != "deformetrica_reference" or not review.registration_qc:
+    if not review.registration_qc:
         raise ModernResultReviewError(
-            "A full-cohort Deformetrica registration-QC ranking is required"
+            "A full-cohort registration-QC ranking is required"
         )
     allowed_subjects = {item.subject_name for item in review.registration_qc}
     normalized = dict(decisions)
@@ -98,6 +105,8 @@ def _validated_registration_qc_decisions(
 def save_registration_qc_draft(
     review: ModernResultReview,
     decisions: Mapping[str, str],
+    *,
+    visual_inspections: Mapping[str, Mapping[str, str]] | None = None,
 ) -> Path:
     """Atomically persist the current QC session outside immutable run evidence."""
 
@@ -110,8 +119,9 @@ def save_registration_qc_draft(
             "analysis_manifest_sha256": review.bundle_manifest_sha256,
         },
         "decisions": dict(sorted(normalized.items())),
+        "visual_inspections": dict(visual_inspections or {}),
     }
-    path = review.run_directory / "reviews" / _REGISTRATION_QC_DRAFT
+    path = registration_qc_directory(review) / _REGISTRATION_QC_DRAFT
     write_text_safely(
         path,
         json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
@@ -123,7 +133,7 @@ def save_registration_qc_draft(
 def load_registration_qc_draft(review: ModernResultReview) -> dict[str, str]:
     """Load a source-bound autosave draft, returning an empty mapping when absent."""
 
-    path = review.run_directory / "reviews" / _REGISTRATION_QC_DRAFT
+    path = registration_qc_directory(review) / _REGISTRATION_QC_DRAFT
     if not path.exists():
         return {}
     if not path.is_file() or path.is_symlink():
@@ -220,7 +230,7 @@ def export_registration_qc_review(
             for item in review.registration_qc
         ],
     }
-    directory = review.run_directory / "reviews"
+    directory = registration_qc_directory(review)
     directory.mkdir(parents=True, exist_ok=True)
     stem = (
         "registration-qc-review-"
@@ -254,6 +264,7 @@ def finalize_registration_qc_review(
     decisions: Mapping[str, str],
     *,
     allow_incomplete: bool = False,
+    visual_review_scope: Mapping[str, Any] | None = None,
 ) -> RegistrationQCReviewExport:
     """Finalize one explicit QC review and atomically bind downstream reports to it.
 
@@ -276,6 +287,9 @@ def finalize_registration_qc_review(
     payload = {
         "schema_version": "0.2",
         "review_status": "finalized",
+        "visual_review_scope": (
+            dict(visual_review_scope) if visual_review_scope is not None else None
+        ),
         "created_at": created_at.isoformat(),
         "scientific_boundary": (
             "Residual rank prioritizes inspection and is not an automatic biological "
@@ -307,7 +321,7 @@ def finalize_registration_qc_review(
             for item in review.registration_qc
         ],
     }
-    directory = review.run_directory / "reviews"
+    directory = registration_qc_directory(review)
     directory.mkdir(parents=True, exist_ok=True)
     stem = (
         "registration-qc-review-"
@@ -364,7 +378,7 @@ def load_finalized_registration_qc_review(
 ) -> FinalizedRegistrationQCReview | None:
     """Verify and load the review explicitly bound for downstream reporting."""
 
-    directory = review.run_directory / "reviews"
+    directory = registration_qc_directory(review)
     binding_path = directory / _REGISTRATION_QC_FINALIZED
     if not binding_path.exists():
         return None

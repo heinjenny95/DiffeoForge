@@ -187,8 +187,9 @@ This repository currently provides:
 - interactive native 3D surface-landmark placement with rotation, zoom, pan,
   arbitrary triangle-point interpolation, a researcher-selected landmark count,
   optional automatic next-mesh loading after the final planned point,
-  hash-validated resumable drafts, strict reusable landmark CSV output, and a
-  validated per-mesh tagged-TXT and 3D Slicer FCSV folder importers that match
+  hash-validated resumable drafts, strict reusable landmark CSV output, and
+  validated per-mesh tagged-TXT, 3D Slicer FCSV, and Markups JSON (`.mrk.json`)
+  folder importers that match
   mesh stems, reject incomplete or mixed-coordinate-system cohorts, and preserve
   coordinate values without implicit RAS/LPS conversion, unit conversion, or sliding,
   configurable landmark-guided alignment for either engine, with landmarks restricted

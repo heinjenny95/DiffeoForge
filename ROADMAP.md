@@ -154,6 +154,10 @@ This roadmap describes evidence gates rather than promised dates.
 - [x] Display observed progress and explicitly labelled ETA-to-iteration-cap
 - [x] Import verified Deformetrica momenta into the shared PCA/result pipeline
 - [ ] Add verified reference PC deformation meshes and registration-quality rendering
+- [x] Export the reference shape-space comparison as a PDF in the project folder
+  in addition to the local HTML report; use a deterministic,
+  provenance-bound destination, refuse silent overwrite, and expose both reports
+  from the desktop result view.
 - [x] Define desktop executable/installer architecture and release gates
 - [ ] Local graphical interface backed by the shared core
   - [x] First non-overwriting mesh-folder and project-setup slice
@@ -203,6 +207,13 @@ This roadmap describes evidence gates rather than promised dates.
 - [x] Automate approval-bound calibration candidate execution and verified
   residual/distortion/runtime evidence ingestion
 - [ ] Prospectively validate dataset-specific settings before any safe-preset claim
+- [ ] Add a prospective multi-resolution mesh sensitivity workflow and guided
+  evidence report: compare researcher-approved face-count levels without silent
+  source-mesh modification; bind every derived mesh to its simplification
+  provenance; assess atlas/template geometry, registration residuals, pairwise
+  tangent distances, PCA subspace/scores, and reconstructed PC extremes; report
+  the smallest tested resolution that meets predeclared stability tolerances, or
+  state explicitly that no face-count recommendation is supported.
 - [x] Pre-compute configured all-pairs and known-payload workload report
 - [x] Versioned workflow-stage and committed optimizer-decision reporting
 - [x] Fresh-process objective/gradient wall-time and sampled-RSS protocol
@@ -238,6 +249,12 @@ This roadmap describes evidence gates rather than promised dates.
   - [x] Advance registration QC to the next unreviewed mesh after every decision,
     stop explicitly after the final decision instead of restarting, and atomically
     autosave/load a source-bound draft while retaining immutable snapshot export
+  - [x] Place a mandatory Visual quality review step between atlas completion and
+    Results & PCA: original/reconstruction overlays, per-specimen visual
+    acknowledgement and explicit release after required flagged cases are resolved,
+    including on reopen. Full-cohort review remains optional; unflagged/uninspected
+    specimens stay unreviewed. Reuse the report's residual-screening rule and show
+    each reason. Never substitute specimen filtering for review.
   - [ ] Revisit subject-tail/outlier stability and add regression tests for the
     full automatic-to-ambiguous-to-continued four-stage workflow
   - [x] Distinguish necessary biological deformation from pathological mapping:
@@ -252,6 +269,16 @@ This roadmap describes evidence gates rather than promised dates.
     deformation reach (`how broadly do regions move together?`); show exactly
     how both declarations change the pilot range and use them as transparent
     priors/tie-breakers rather than silently confirming the requested intent
+  - [ ] Make calibration search-boundary handling explicit and adaptive:
+    label every width unambiguously as attachment width, deformation width, or
+    control-point spacing; detect when a selected attachment, deformation, or
+    noise candidate is the minimum/maximum tested value; automatically extend
+    the logarithmic grid by one or two outward candidates until the winner is
+    interior or a predeclared safety/feasibility limit is reached; otherwise
+    report `search range not bounded` instead of presenting an enclosed optimum.
+    Add a regression case for the 236-subject Trochanter pilot, whose selected
+    attachment width 0.258691 was the largest tested value and whose selected
+    noise standard deviation 0.00808408 was the smallest tested value.
   - [x] Replace the broad pre-run atlas ETA with a cohort- and hardware-bound
     estimator calibrated from the completed pilot runs and the selected control
     grid/timepoints, then update it from robust observed iteration timings

@@ -45,6 +45,7 @@ from diffeoforge.reference_template_robustness import (
     load_reference_template_robustness_study,
 )
 from diffeoforge.reference_validation_study import load_reference_validation_study
+from diffeoforge.registration_screening import inspection_threshold as _inspection_threshold
 from diffeoforge.runs import publish_directory_exclusive
 
 SCIENTIFIC_REPORT_VERSION = "0.1"
@@ -174,10 +175,18 @@ class ScientificAtlasReport:
                 "inspection_priority_count": sum(
                     item.inspection_priority for item in self.subjects
                 ),
+                "researcher_reviewed_count": sum(
+                    item.researcher_decision != "unreviewed" for item in self.subjects
+                ),
+                "unreviewed_count": sum(
+                    item.researcher_decision == "unreviewed" for item in self.subjects
+                ),
                 "scientific_boundary": (
                     "The robust upper-tail rule prioritizes visual inspection. It is not an "
                     "automatic biological outlier or exclusion rule. Residual values from "
-                    "different engine objectives are not assumed to share a scale."
+                    "different engine objectives are not assumed to share a scale. Unflagged, "
+                    "unreviewed specimens are not counted as visually approved. A relative "
+                    "screen can miss uniformly poor fits."
                 ),
                 "subjects": [item.as_manifest() for item in self.subjects],
             },
@@ -288,27 +297,6 @@ def _residuals(review: ModernResultReview) -> tuple[tuple[str, float], ...]:
     if not values or any(not math.isfinite(value) or value < 0 for _, value in values):
         raise ScientificReportError("Subject residual evidence is empty or non-finite")
     return values
-
-
-def _quartile(values: list[float], fraction: float) -> float:
-    if len(values) == 1:
-        return values[0]
-    position = fraction * (len(values) - 1)
-    lower = int(math.floor(position))
-    upper = int(math.ceil(position))
-    if lower == upper:
-        return values[lower]
-    weight = position - lower
-    return values[lower] * (1.0 - weight) + values[upper] * weight
-
-
-def _inspection_threshold(values: tuple[float, ...]) -> float | None:
-    if len(values) < 4:
-        return None
-    ordered = sorted(values)
-    q1 = _quartile(ordered, 0.25)
-    q3 = _quartile(ordered, 0.75)
-    return q3 + 1.5 * (q3 - q1)
 
 
 def _load_decisions(

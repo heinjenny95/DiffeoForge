@@ -119,8 +119,8 @@ TXT files but does not interpret them.
 The importer never edits source TXT files, changes coordinate values, infers
 units, applies a scale factor, or interprets curve/sliding metadata. The normal
 read-only GPA preview remains mandatory after import. Desktop users may use
-**Select CSV/TXT/FCSV...** and choose any one matching TXT, or use **Import
-TXT/FCSV folder...**. Both routes import the complete matched folder and create the
+**Select CSV/TXT/FCSV/JSON...** and choose any one matching TXT, or use **Import
+TXT/FCSV/JSON folder...**. Both routes import the complete matched folder and create the
 canonical `landmarks.csv` automatically in the project folder; no second CSV
 input or save selection is required. If that working CSV already exists, the
 desktop asks whether to replace it atomically; declining preserves it byte for
@@ -155,11 +155,46 @@ diffeoforge landmarks-import-fcsv C:\study\meshes C:\study\landmarks `
   --mesh-pattern "*.ply" --output C:\study\project\landmarks.csv
 ```
 
-3D Slicer identifies FCSV as a legacy format and recommends Markups JSON
-(`.mrk.json`) for new data because JSON preserves point status and other markup
-semantics without extending an undeclared CSV schema. Markups JSON is therefore the
-next planned Slicer import format; FCSV support remains necessary for published and
-historical datasets.
+### 3D Slicer Markups JSON
+
+Slicer Markups JSON (`.mrk.json`, also `.json` with the same content) is supported
+natively. Select one representative JSON file or its folder using the desktop
+controls above; DiffeoForge imports the matched cohort and selects the generated
+project `landmarks.csv` automatically. No external converter is needed.
+
+- `specimen.mrk.json` or `specimen.json` matches `specimen.ply` (or another
+  supported surface extension), case-insensitively. Duplicate/ambiguous stems,
+  missing matches, or different point counts stop the import before writing.
+- Each file must contain exactly one `Fiducial` markup with at least three finite,
+  numeric 3D control points. Curves, planes, ROIs, multiple markup lists, and
+  undefined/preview points are rejected, not silently flattened or dropped.
+- An omitted `positionStatus` uses Slicer's `defined` default, but a valid
+  `position` is always required. Hidden/unselected defined points are retained.
+- Every file must explicitly declare the same `RAS` or `LPS` coordinate system.
+  Units may be a UCUM string or a `[code, coding scheme, meaning]` triple. Unit
+  identity is checked across files; missing units are reported as unspecified,
+  not guessed. Mixing declared and unspecified units is rejected.
+- Source order defines homology and produces `LM1` through `LMN`, as for FCSV.
+  Source labels are not sorted or used to infer homology. Coordinates are retained
+  as float64 without RAS/LPS conversion, rescaling, reflection, or sliding.
+
+The declared frame and units are shown after import. They do **not** establish
+that the meshes use the same convention: confirm this in the required GPA review.
+Original files stay unchanged; replacing an existing working CSV requires desktop
+confirmation or CLI `--force`, and occurs only after the full cohort validates.
+For mixed-format folders, select a representative file to choose which format to
+import. Unmatched JSON files are reported but not interpreted.
+
+```powershell
+diffeoforge landmarks-import-json C:\study\meshes C:\study\landmarks `
+  --mesh-pattern "*.ply" --output C:\study\project\landmarks.csv
+```
+
+The coordinate contract follows the official
+[Slicer Markups JSON v1.0.3 schema](https://github.com/Slicer/Slicer/blob/main/Modules/Loadable/Markups/Resources/Schema/markups-schema-v1.0.3.json).
+Display metadata is ignored and schema URLs inside input files are never fetched.
+
+### Interactive landmark placement
 
 The desktop can create the strict CSV by rotating, panning, and zooming each
 mesh, then clicking the visible surface. Each click is resolved by barycentric
@@ -221,6 +256,15 @@ instead of reparsing the cohort for preview, and project preparation transforms 
 writes one full-resolution mesh at a time. The display proxy is never published as an
 aligned input and is never a silent decimation step. See
 [High-resolution mesh intake](HIGH_RESOLUTION_INPUTS.md).
+
+On Windows, alignment staging directories inherit the selected project's access
+control rules, including on NAS/SMB shares and mapped drives. They are created
+exclusively with unpredictable names beside the final aligned cohort, preserving
+same-filesystem publication. DiffeoForge does not modify existing directory ACLs
+or broaden share permissions. Other platforms retain private temporary-directory
+permissions. An actual project access denial is still reported; this does not
+bypass a read-only share. Previously inaccessible `.aligning-*` remnants are not
+reused or automatically granted new permissions.
 
 This remains a bounded surface-landmarking system. The code does not provide
 landmark uncertainty estimates, missing-landmark handling, semilandmark sliding,

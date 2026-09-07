@@ -37,10 +37,14 @@ dependencies = [
 [project.optional-dependencies]
 analysis = [
   "numpy>=2,<3",
+  "reportlab>=4.2,<5",
+  "svglib>=1.5,<2",
 ]
 desktop = [
   "numpy>=2,<3",
   "PySide6-Essentials>=6.8,<7",
+  "reportlab>=4.2,<5",
+  "svglib>=1.5,<2",
 ]
 dev = [
   "build>=1.2,<2",

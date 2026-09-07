@@ -150,6 +150,16 @@ PGA is documented as not executed because it requires additional fitting or
 shooting rather than cost-free post-processing. Version 0.3 selection bundles
 remain verifiable.
 
+The desktop additionally writes a printable PDF directly into the DiffeoForge
+project folder after the selected comparison passes full verification. Its
+stable filename includes the source run ID and method-selection fingerprint.
+The PDF is a project-level derivative rather than a mutation of the immutable
+comparison bundle: adjacent provenance JSON and SHA-256 sidecar files bind its
+bytes to the exact comparison manifest, run, selection, and creation record.
+An existing complete export is regenerated and hash-verified before reuse;
+partial, changed, or colliding files are never silently overwritten. The result
+view exposes separate actions for the PDF report and the local HTML evidence.
+
 Verification keeps source identities, score values, document contents, artifact
 sizes, and SHA-256 hashes exact. Score-derived agreement statistics are recomputed
 with relative tolerance `1e-12` and absolute tolerance `1e-15` so that harmless

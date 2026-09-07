@@ -6,10 +6,12 @@ import csv
 import hashlib
 import json
 import shutil
+import sys
 import tempfile
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from uuid import uuid4
 
 import numpy as np
 
@@ -52,6 +54,29 @@ from diffeoforge.surface_io import (
 PREPROCESSING_VERSION = "0.3"
 DEFAULT_PROCRUSTES_TOLERANCE = 1e-10
 DEFAULT_PROCRUSTES_MAX_ITERATIONS = 100
+
+
+def _create_alignment_staging_directory(parent: Path) -> Path:
+    """Create an exclusive sibling staging directory, respecting project ACLs.
+
+    On Windows, tempfile.mkdtemp uses mode 0o700 and installs a protected ACL.
+    An SMB session can use a different identity from the local process, making
+    that directory inaccessible immediately after creation. Project artifacts
+    must inherit the selected project directory's ACL instead, on both UNC and
+    mapped drives. No existing ACL is changed and no explicit access is granted.
+    Non-Windows platforms retain tempfile's private-directory permissions.
+    """
+    if sys.platform != "win32":
+        return Path(tempfile.mkdtemp(prefix=".aligning-", dir=parent))
+    for _ in range(100):
+        candidate = parent / f".aligning-{uuid4().hex}"
+        try:
+            # Default Windows mkdir inherits the parent ACL; never reuse a path.
+            candidate.mkdir(mode=0o777, exist_ok=False)
+        except FileExistsError:
+            continue
+        return candidate
+    raise FileExistsError(f"Could not allocate a unique alignment staging directory in {parent}")
 
 
 @dataclass(frozen=True)
@@ -666,7 +691,7 @@ def prepare_landmark_aligned_inputs(
             aligned_names=preview.aligned_filenames,
         )
 
-    temporary = Path(tempfile.mkdtemp(prefix=".aligning-", dir=preprocessing_root))
+    temporary = _create_alignment_staging_directory(preprocessing_root)
     try:
         raw_directory = temporary / "raw"
         aligned_directory = temporary / "aligned-vtk"

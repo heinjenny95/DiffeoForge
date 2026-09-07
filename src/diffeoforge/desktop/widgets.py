@@ -6,7 +6,7 @@ import threading
 import time
 import uuid
 from collections.abc import Mapping
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from PySide6.QtCore import QEvent, QObject, QRunnable, Qt, QThreadPool, QTimer, QUrl, Signal, Slot
@@ -41,6 +41,7 @@ from diffeoforge.analysis.landmarks import (
     import_landmark_txt_folder,
 )
 from diffeoforge.analysis.mesh_scaling import MeshScalingMode
+from diffeoforge.analysis.slicer_json import import_landmark_json_folder
 from diffeoforge.config import load_config
 from diffeoforge.desktop.aspect_svg_widget import AspectRatioSvgWidget
 from diffeoforge.desktop.calibration_comparison_widget import (
@@ -114,7 +115,6 @@ from diffeoforge.desktop.reference_readiness import (
 )
 from diffeoforge.desktop.reference_result_review import (
     export_registration_qc_review,
-    finalize_registration_qc_review,
     load_finalized_registration_qc_review,
     load_registration_qc_draft,
     review_reference_result,
@@ -122,6 +122,15 @@ from diffeoforge.desktop.reference_result_review import (
 )
 from diffeoforge.desktop.reference_validation_dialog import ReferenceValidationDialog
 from diffeoforge.desktop.reference_worker_protocol import DesktopReferenceWorkerEvent
+from diffeoforge.desktop.registration_release import (
+    inspection_binding,
+    load_visual_inspections,
+    registration_inspection_plan,
+    release_registration_results,
+    require_registration_release,
+    require_visual_approvals,
+    required_registration_inspections,
+)
 from diffeoforge.desktop.remote_atlas_controller import (
     DesktopRemoteAtlasController,
     DesktopRemoteAtlasDeletionController,
@@ -231,6 +240,10 @@ from diffeoforge.reference_shape_space_comparison import (
     comparison_directory_for_methods,
     verify_reference_shape_space_comparison,
     write_reference_shape_space_comparison,
+)
+from diffeoforge.reference_shape_space_pdf import (
+    ReferenceShapeSpacePdfExport,
+    write_reference_shape_space_pdf,
 )
 from diffeoforge.reference_validation_study import (
     create_reference_validation_study,
@@ -1030,13 +1043,25 @@ class _ShapeSpaceComparisonDialog(QDialog):
         self.run_button.setEnabled(bool(selected))
 
 
+@dataclass(frozen=True)
+class _ShapeSpaceComparisonResult:
+    comparison: ReferenceShapeSpaceComparison
+    pdf_export: ReferenceShapeSpacePdfExport
+
+
 class _ReferenceShapeSpaceComparisonWorker(QRunnable):
     """Create or reverify one selected post-hoc shape-space method comparison."""
 
-    def __init__(self, run_directory: Path, method_ids: tuple[str, ...]) -> None:
+    def __init__(
+        self,
+        run_directory: Path,
+        method_ids: tuple[str, ...],
+        project_directory: Path,
+    ) -> None:
         super().__init__()
         self.run_directory = run_directory.expanduser().resolve()
         self.method_ids = method_ids
+        self.project_directory = project_directory.expanduser().resolve()
         self._cancel_requested = threading.Event()
         self.signals = _WorkerSignals()
 
@@ -1067,10 +1092,19 @@ class _ReferenceShapeSpaceComparisonWorker(QRunnable):
                     )
                 )
             )
+            if self._cancel_requested.is_set():
+                raise RuntimeError("Shape-space comparison cancelled before PDF export")
+            result = _ShapeSpaceComparisonResult(
+                comparison=artifact,
+                pdf_export=write_reference_shape_space_pdf(
+                    artifact,
+                    self.project_directory,
+                ),
+            )
         except (OSError, RuntimeError, TypeError, ValueError) as error:
             self.signals.failed.emit(str(error))
             return
-        self.signals.succeeded.emit(artifact)
+        self.signals.succeeded.emit(result)
 
 
 class _AbandonedReferenceRecoveryWorker(QRunnable):
@@ -1332,6 +1366,7 @@ class DiffeoForgeWindow(QMainWindow):
         self._thread_pool = QThreadPool.globalInstance()
         self._shape_space_comparison_worker: _ReferenceShapeSpaceComparisonWorker | None = None
         self._shape_space_selected_method_ids: tuple[str, ...] = ()
+        self._shape_space_comparison_result: _ShapeSpaceComparisonResult | None = None
         self._close_after_shape_space_comparison = False
         self._worker: (
             _ProjectWorker
@@ -1405,6 +1440,8 @@ class DiffeoForgeWindow(QMainWindow):
             self._update_reference_pca_deformation_elapsed
         )
         self._registration_qc_decisions: dict[str, str] = {}
+        self._registration_visual_inspections: dict[str, dict[str, str]] = {}
+        self._loaded_qc_subject: str | None = None
         self._result_atlas_mesh_total = 0
         self._result_atlas_mesh_filtered = 0
         self._close_after_worker = False
@@ -1434,7 +1471,9 @@ class DiffeoForgeWindow(QMainWindow):
         self.page_stack.addWidget(self._build_parameter_content(parameter_form_card))
         self.page_stack.addWidget(self._build_review_content())
         self.page_stack.addWidget(self._build_run_content())
-        self.page_stack.addWidget(self._build_results_content())
+        results_page = self._build_results_content()
+        self.page_stack.addWidget(self._build_quality_review_content())
+        self.page_stack.addWidget(results_page)
         root_layout.addWidget(self.page_stack, 1)
         self.setCentralWidget(root)
 
@@ -1469,7 +1508,8 @@ class DiffeoForgeWindow(QMainWindow):
             "2  Parameter setting",
             "3  Review parameters",
             "4  Compute atlas",
-            "5  Results & PCA",
+            "5  Visual quality review",
+            "6  Results & PCA",
         )
         self.rail_steps: list[QPushButton] = []
         for index, text in enumerate(steps):
@@ -1501,7 +1541,7 @@ class DiffeoForgeWindow(QMainWindow):
         layout.setContentsMargins(52, 40, 52, 24)
         layout.setSpacing(15)
 
-        eyebrow = QLabel("STEP 1 OF 5")
+        eyebrow = QLabel("STEP 1 OF 6")
         eyebrow.setObjectName("eyebrow")
         title = QLabel("New atlas project")
         title.setObjectName("title")
@@ -1606,7 +1646,7 @@ class DiffeoForgeWindow(QMainWindow):
         layout.setContentsMargins(52, 40, 52, 24)
         layout.setSpacing(15)
 
-        eyebrow = QLabel("STEP 2 OF 5")
+        eyebrow = QLabel("STEP 2 OF 6")
         eyebrow.setObjectName("eyebrow")
         title = QLabel("Parameter setting")
         title.setObjectName("title")
@@ -1845,7 +1885,7 @@ class DiffeoForgeWindow(QMainWindow):
         layout.setContentsMargins(52, 40, 52, 24)
         layout.setSpacing(15)
 
-        eyebrow = QLabel("STEP 3 OF 5")
+        eyebrow = QLabel("STEP 3 OF 6")
         eyebrow.setObjectName("eyebrow")
         title = QLabel("Review parameters and workload")
         title.setObjectName("title")
@@ -2127,7 +2167,7 @@ class DiffeoForgeWindow(QMainWindow):
         layout.setContentsMargins(52, 40, 52, 24)
         layout.setSpacing(15)
 
-        eyebrow = QLabel("STEP 4 OF 5")
+        eyebrow = QLabel("STEP 4 OF 6")
         eyebrow.setObjectName("eyebrow")
         self.run_title_label = QLabel("Compute atlas")
         self.run_title_label.setObjectName("title")
@@ -2375,7 +2415,7 @@ class DiffeoForgeWindow(QMainWindow):
         layout.setContentsMargins(52, 40, 52, 24)
         layout.setSpacing(15)
 
-        eyebrow = QLabel("STEP 5 OF 5")
+        eyebrow = QLabel("STEP 6 OF 6")
         eyebrow.setObjectName("eyebrow")
         self.results_page_title = QLabel("Verified results & shape-space analysis")
         self.results_page_title.setObjectName("title")
@@ -2426,7 +2466,7 @@ class DiffeoForgeWindow(QMainWindow):
         atlas_viewer_layout = QVBoxLayout(atlas_viewer)
         atlas_viewer_layout.setContentsMargins(24, 22, 24, 24)
         atlas_viewer_layout.setSpacing(12)
-        atlas_viewer_title = QLabel("Atlas & registration QC viewer")
+        atlas_viewer_title = QLabel("Inspect original and reconstructed meshes")
         atlas_viewer_title.setObjectName("sectionTitle")
         atlas_viewer_hint = QLabel(
             "The selected VTK is rechecked against the verified result inventory before "
@@ -2502,7 +2542,7 @@ class DiffeoForgeWindow(QMainWindow):
         self.result_atlas_status_label = QLabel("Awaiting a verified atlas or reconstruction.")
         self.result_atlas_status_label.setObjectName("status")
         self.result_atlas_status_label.setWordWrap(True)
-        overlay_controls = QHBoxLayout()
+        overlay_controls = QVBoxLayout()
         self.result_show_original_check = QCheckBox("Show original (blue wireframe)")
         self.result_show_original_check.setChecked(True)
         self.result_show_reconstruction_check = QCheckBox("Show reconstruction (orange surface)")
@@ -2537,12 +2577,16 @@ class DiffeoForgeWindow(QMainWindow):
         self.result_qc_export_button.clicked.connect(self._export_registration_qc_status)
         self.result_qc_export_button.hide()
         decision_controls.addWidget(self.result_qc_export_button)
-        self.result_qc_finalize_button = QPushButton("Finalize QC review")
+        self.result_qc_finalize_button = QPushButton("Approve review && release results")
         self.result_qc_finalize_button.setObjectName("primary")
         self.result_qc_finalize_button.clicked.connect(self._finalize_registration_qc_review)
         self.result_qc_finalize_button.hide()
-        decision_controls.addWidget(self.result_qc_finalize_button)
         decision_controls.addStretch()
+        self.result_qc_inspected_check = QCheckBox(
+            "I visually inspected both meshes for this specimen"
+        )
+        self.result_qc_inspected_check.setObjectName("registrationVisualInspectionCheck")
+        self.result_qc_inspected_check.toggled.connect(self._sync_visual_decision_controls)
         self.result_qc_summary_label = QLabel("QC review has not started.")
         self.result_qc_summary_label.setObjectName("status")
         self.result_qc_summary_label.setWordWrap(True)
@@ -2559,29 +2603,47 @@ class DiffeoForgeWindow(QMainWindow):
             "Interactive verified atlas and registration quality-control viewer"
         )
         self.result_atlas_canvas.set_picking_enabled(False)
-        self.result_atlas_canvas.setMinimumHeight(620)
+        self.result_atlas_canvas.setMinimumHeight(440)
         self.result_atlas_canvas.hide()
         self.result_registration_qc_canvas = CalibrationComparisonCanvas3D()
         self.result_registration_qc_canvas.setObjectName("resultRegistrationQcViewer3D")
         self.result_registration_qc_canvas.setAccessibleName(
             "Original and reconstruction overlay ranked by registration residual"
         )
-        self.result_registration_qc_canvas.setMinimumHeight(620)
+        self.result_registration_qc_canvas.setMinimumHeight(440)
         self.result_registration_qc_canvas.hide()
         atlas_viewer_layout.addWidget(atlas_viewer_title)
         atlas_viewer_layout.addWidget(atlas_viewer_hint)
-        atlas_viewer_layout.addLayout(atlas_mesh_group_controls)
-        atlas_viewer_layout.addLayout(atlas_mesh_controls)
-        atlas_viewer_layout.addLayout(atlas_mesh_search_controls)
-        atlas_viewer_layout.addLayout(atlas_view_controls)
-        atlas_viewer_layout.addLayout(overlay_controls)
+        visual_body = QHBoxLayout()
+        controls = QWidget()
+        controls.setFixedWidth(340)
+        controls_layout = QVBoxLayout(controls)
+        controls_layout.setContentsMargins(0, 0, 8, 0)
+        controls_layout.addLayout(atlas_mesh_group_controls)
+        controls_layout.addLayout(atlas_mesh_controls)
+        controls_layout.addLayout(atlas_mesh_search_controls)
+        controls_layout.addLayout(atlas_view_controls)
+        controls_layout.addLayout(overlay_controls)
+        controls_layout.addWidget(self.result_atlas_status_label)
+        controls_layout.addStretch()
+        for combo in (self.result_atlas_mesh_group_combo, self.result_atlas_mesh_combo):
+            combo.setMinimumContentsLength(10)
+            combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        canvases = QVBoxLayout()
+        canvases.addWidget(self.result_atlas_canvas)
+        canvases.addWidget(self.result_registration_qc_canvas)
+        visual_body.addWidget(controls)
+        visual_body.addLayout(canvases, 1)
+        atlas_viewer_layout.addLayout(visual_body)
+        atlas_viewer_layout.addWidget(self.result_qc_inspected_check)
         atlas_viewer_layout.addLayout(decision_controls)
         atlas_viewer_layout.addWidget(self.result_qc_summary_label)
         atlas_viewer_layout.addWidget(self.result_qc_last_action_label)
-        atlas_viewer_layout.addWidget(self.result_atlas_status_label)
-        atlas_viewer_layout.addWidget(self.result_atlas_canvas)
-        atlas_viewer_layout.addWidget(self.result_registration_qc_canvas)
-        layout.addWidget(atlas_viewer)
+        self._registration_viewer_card = atlas_viewer
+        open_mesh_review = QPushButton("Open 3D atlas / visual quality review (Step 5)")
+        open_mesh_review.setObjectName("secondary")
+        open_mesh_review.clicked.connect(lambda: self._navigate_to_step(4))
+        layout.addWidget(open_mesh_review)
 
         overview_card, self.result_overview_layout = self._build_result_items_card(
             "Atlas and dataset", "resultOverview"
@@ -2712,6 +2774,14 @@ class DiffeoForgeWindow(QMainWindow):
             self._cancel_shape_space_comparison
         )
         self.cancel_shape_space_comparison_button.hide()
+        self.open_shape_space_pdf_button = QPushButton("Open PDF report")
+        self.open_shape_space_pdf_button.setObjectName("secondary")
+        self.open_shape_space_pdf_button.clicked.connect(self._open_shape_space_pdf_report)
+        self.open_shape_space_pdf_button.hide()
+        self.open_shape_space_html_button = QPushButton("Open HTML evidence")
+        self.open_shape_space_html_button.setObjectName("secondary")
+        self.open_shape_space_html_button.clicked.connect(self._open_shape_space_html_report)
+        self.open_shape_space_html_button.hide()
         self.shape_space_comparison_progress = QProgressBar()
         self.shape_space_comparison_progress.setObjectName("shapeSpaceComparisonProgress")
         self.shape_space_comparison_progress.setRange(0, 1)
@@ -2738,6 +2808,8 @@ class DiffeoForgeWindow(QMainWindow):
         shape_space_actions = QHBoxLayout()
         shape_space_actions.addWidget(self.create_shape_space_comparison_button)
         shape_space_actions.addWidget(self.cancel_shape_space_comparison_button)
+        shape_space_actions.addWidget(self.open_shape_space_pdf_button)
+        shape_space_actions.addWidget(self.open_shape_space_html_button)
         shape_space_actions.addStretch()
         shape_space_layout.addLayout(shape_space_actions)
         self.shape_space_comparison_card.hide()
@@ -2956,7 +3028,7 @@ class DiffeoForgeWindow(QMainWindow):
         artifacts_title = QLabel("Verified open artifacts")
         artifacts_title.setObjectName("sectionTitle")
         artifacts_hint = QLabel(
-            "Atlas and reconstruction VTK files are rendered in the internal viewer above. "
+            "Atlas and reconstruction VTK files are rendered in the Step 5 internal viewer. "
             "Tables, JSON, text, and static SVG files are handed to the locally associated "
             "application only after another size and SHA-256 check."
         )
@@ -2993,6 +3065,68 @@ class DiffeoForgeWindow(QMainWindow):
         page_layout = QVBoxLayout(page)
         page_layout.setContentsMargins(0, 0, 0, 0)
         page_layout.setSpacing(0)
+        page_layout.addWidget(scroll, 1)
+        page_layout.addWidget(footer)
+        return page
+
+    def _build_quality_review_content(self) -> QWidget:
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        content = QWidget()
+        layout = QVBoxLayout(content)
+        layout.setContentsMargins(52, 32, 52, 24)
+        eyebrow = QLabel("STEP 5 OF 6")
+        eyebrow.setObjectName("eyebrow")
+        title = QLabel("Visual quality review")
+        title.setObjectName("title")
+        hint = QLabel(
+            "Only flagged registrations require visual approval. The others remain "
+            "available for optional inspection. Rotate, "
+            "zoom and toggle each mesh to check missing detail and local misregistration. "
+            "Confirm the visual inspection, then record your decision."
+        )
+        hint.setObjectName("subtitle")
+        hint.setWordWrap(True)
+        boundary = QLabel(
+            "Unreviewed flagged cases and any uncertain or implausible decisions "
+            "keep results locked. "
+            "Resolve them through further inspection or a separately corrected atlas run. "
+            "No mesh is removed, and no filtered PCA plot substitutes for this review. "
+            "Not flagged does not mean visually reviewed. Relative screening can miss "
+            "uniformly poor fits; optional spot checks remain useful."
+        )
+        boundary.setObjectName("boundaryText")
+        boundary.setWordWrap(True)
+        self.registration_release_status_label = QLabel("Awaiting a completed atlas.")
+        self.registration_release_status_label.setObjectName("statusWarning")
+        self.registration_release_status_label.setWordWrap(True)
+        layout.addWidget(eyebrow)
+        layout.addWidget(title)
+        layout.addWidget(hint)
+        layout.addWidget(boundary)
+        layout.addWidget(self.registration_release_status_label)
+        layout.addWidget(self._registration_viewer_card)
+        scroll.setWidget(content)
+        footer = QFrame()
+        footer.setObjectName("footer")
+        footer_layout = QHBoxLayout(footer)
+        self.registration_review_back_button = QPushButton("Back to atlas run")
+        self.registration_review_back_button.setObjectName("secondary")
+        self.registration_review_back_button.clicked.connect(lambda: self._navigate_to_step(3))
+        footer_layout.addWidget(self.registration_review_back_button)
+        footer_layout.addStretch()
+        footer_layout.addWidget(self.result_qc_finalize_button)
+        self.registration_results_button = QPushButton("Open Results && PCA")
+        self.registration_results_button.setObjectName("primary")
+        self.registration_results_button.setEnabled(False)
+        self.registration_results_button.clicked.connect(lambda: self._navigate_to_step(5))
+        footer_layout.addWidget(self.registration_results_button)
+        page = QWidget()
+        page.setObjectName("registrationQualityReviewPage")
+        page_layout = QVBoxLayout(page)
+        page_layout.setContentsMargins(0, 0, 0, 0)
         page_layout.addWidget(scroll, 1)
         page_layout.addWidget(footer)
         return page
@@ -3549,24 +3683,24 @@ class DiffeoForgeWindow(QMainWindow):
         self.landmarks_edit = QLineEdit()
         self.landmarks_edit.setObjectName("landmarksEdit")
         self.landmarks_edit.setPlaceholderText(
-            "optional: landmark CSV, or import a per-mesh TXT/FCSV folder"
+            "optional: landmark CSV, or import a per-mesh TXT/FCSV/JSON folder"
         )
         self.landmarks_edit.textChanged.connect(self._invalidate_input_preflight)
         self.landmarks_edit.textChanged.connect(self._update_procrustes_visibility)
         self.landmarks_edit.editingFinished.connect(self._start_input_preflight)
-        landmarks_button = QPushButton("Select CSV/TXT/FCSV…")
+        landmarks_button = QPushButton("Select CSV/TXT/FCSV/JSON…")
         landmarks_button.setObjectName("secondary")
         landmarks_button.setToolTip(
             "Select a canonical cohort CSV or any one tagged per-mesh TXT or Slicer "
-            "FCSV file. Selecting TXT/FCSV imports every matching file in that folder "
+            "FCSV/Markups JSON file. Selecting TXT/FCSV/JSON imports matching files "
             "automatically."
         )
         landmarks_button.clicked.connect(self._choose_landmarks)
         self.landmarks_button = landmarks_button
-        self.import_landmark_txt_button = QPushButton("Import TXT/FCSV folder…")
+        self.import_landmark_txt_button = QPushButton("Import TXT/FCSV/JSON folder…")
         self.import_landmark_txt_button.setObjectName("importLandmarkTxtButton")
         self.import_landmark_txt_button.setToolTip(
-            "Match one tagged TXT or Slicer FCSV file to each selected mesh by exact "
+            "Match one tagged TXT or Slicer FCSV/Markups JSON file per mesh by exact "
             "filename stem and create a canonical CSV without changing source files."
         )
         self.import_landmark_txt_button.clicked.connect(self._import_landmark_txt_folder)
@@ -4293,10 +4427,11 @@ class DiffeoForgeWindow(QMainWindow):
     def _choose_landmarks(self) -> None:
         selected, _ = QFileDialog.getOpenFileName(
             self,
-            "Select landmark CSV or one per-mesh TXT/FCSV file",
+            "Select landmark CSV or one per-mesh TXT/FCSV/JSON file",
             self.mesh_edit.text().strip(),
-            "Landmark files (*.csv *.txt *.fcsv);;Canonical CSV (*.csv);;"
-            "Tagged TXT (*.txt);;3D Slicer FCSV (*.fcsv)",
+            "Landmark files (*.csv *.txt *.fcsv *.json);;Canonical CSV (*.csv);;"
+            "Tagged TXT (*.txt);;3D Slicer FCSV (*.fcsv);;"
+            "3D Slicer Markups JSON (*.mrk.json *.json)",
         )
         if not selected:
             return
@@ -4311,38 +4446,46 @@ class DiffeoForgeWindow(QMainWindow):
         if selected_path.suffix.casefold() == ".fcsv":
             self._complete_landmark_fcsv_import(selected_path.parent)
             return
+        if selected_path.suffix.casefold() == ".json":
+            self._complete_landmark_json_import(selected_path.parent)
+            return
         QMessageBox.warning(
             self,
             "Unsupported landmark file",
-            "Select a canonical .csv file or a per-mesh .txt/.fcsv file.",
+            "Select a canonical .csv file or a per-mesh .txt/.fcsv/.mrk.json file.",
         )
 
     @Slot()
     def _import_landmark_txt_folder(self) -> None:
         selected_directory = QFileDialog.getExistingDirectory(
             self,
-            "Select folder with one landmark TXT or FCSV per mesh",
+            "Select folder with one landmark TXT, FCSV, or Slicer JSON per mesh",
             self.mesh_edit.text().strip(),
         )
         if not selected_directory:
             return
         selected_path = Path(selected_directory)
-        txt_count = sum(
-            path.is_file() and path.suffix.casefold() == ".txt" for path in selected_path.iterdir()
-        )
-        fcsv_count = sum(
-            path.is_file() and path.suffix.casefold() == ".fcsv" for path in selected_path.iterdir()
-        )
-        if txt_count and fcsv_count:
+        try:
+            formats = {
+                path.suffix.casefold() for path in selected_path.iterdir()
+                if path.is_file() and path.suffix.casefold() in {".txt", ".fcsv", ".json"}
+            }
+        except OSError as error:
+            QMessageBox.warning(self, "Landmark folder unavailable", str(error))
+            return
+        if len(formats) > 1:
             QMessageBox.warning(
                 self,
                 "Choose one landmark format",
-                "This folder contains both TXT and FCSV files. Use "
-                "'Select CSV/TXT/FCSV…' and choose one representative file so "
+                "This folder contains multiple landmark file formats. Use "
+                "'Select CSV/TXT/FCSV/JSON…' and choose one representative file so "
                 "DiffeoForge knows which complete cohort to import.",
             )
             return
-        if fcsv_count:
+        if ".json" in formats:
+            self._complete_landmark_json_import(selected_path)
+            return
+        if ".fcsv" in formats:
             self._complete_landmark_fcsv_import(selected_path)
             return
         self._complete_landmark_txt_import(selected_path)
@@ -4456,6 +4599,58 @@ class DiffeoForgeWindow(QMainWindow):
             )
         except (OSError, TypeError, ValueError) as error:
             QMessageBox.warning(self, "Landmark FCSV import unavailable", str(error))
+
+    def _complete_landmark_json_import(self, selected_directory: Path) -> None:
+        try:
+            cohort = self._current_surface_cohort()
+            project_text = self.project_edit.text().strip()
+            output_parent = (
+                Path(project_text).expanduser()
+                if project_text
+                else Path(self.mesh_edit.text().strip()).expanduser().parent
+            )
+            output = output_parent / "landmarks.csv"
+            overwrite = False
+            if output.exists():
+                answer = QMessageBox.question(
+                    self,
+                    "Replace existing landmark CSV?",
+                    f"A landmark working CSV already exists at:\n{output.resolve()}\n\n"
+                    "Replace it with a fresh import from the selected Slicer JSON folder? "
+                    "The replacement is written atomically; original JSON files are not changed.",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.No,
+                )
+                if answer != QMessageBox.StandardButton.Yes:
+                    return
+                overwrite = True
+            result = import_landmark_json_folder(
+                selected_directory, cohort, output, overwrite=overwrite,
+            )
+            self.landmark_count_spin.setValue(len(result.landmark_labels))
+            self.landmarks_edit.setText(str(result.csv_path))
+            self._start_input_preflight()
+            ignored = (
+                f"\n\nUnmatched JSON files ignored: {len(result.ignored_json_files)}."
+                if result.ignored_json_files else ""
+            )
+            QMessageBox.information(
+                self,
+                "Slicer JSON import complete",
+                f"Imported {len(result.json_files)} JSON files with "
+                f"{len(result.landmark_labels)} ordered defined 3D points each.\n\n"
+                f"Declared coordinate system: {result.coordinate_system}.\n"
+                f"Coordinate units: {result.units_label}.\n\n"
+                f"DiffeoForge created the working CSV automatically at:\n{result.csv_path}\n\n"
+                "No separate conversion or CSV selection is needed. Coordinates and source "
+                "files were not changed. No RAS/LPS conversion, unit conversion, or "
+                "semilandmark sliding was applied. Point order defines homology (LM1…LMN). "
+                "Confirm that landmarks and meshes use the same coordinate frame and units; "
+                "the normal GPA preview remains required."
+                f"{ignored}",
+            )
+        except (OSError, TypeError, ValueError) as error:
+            QMessageBox.warning(self, "Slicer JSON import unavailable", str(error))
 
     @Slot()
     def _choose_remote_token(self) -> None:
@@ -6435,6 +6630,8 @@ class DiffeoForgeWindow(QMainWindow):
             return bool(self._reference_readiness is not None and self._reference_readiness.ready)
         if step == 4:
             return self._result_review is not None
+        if step == 5:
+            return self._registration_results_released()
         return False
 
     def _sync_navigation_state(self) -> None:
@@ -6442,7 +6639,8 @@ class DiffeoForgeWindow(QMainWindow):
             "Select the required data and coordinate unit in Step 1 first.",
             "Create and verify the parameterized project in Step 2 first.",
             "Complete parameter review in Step 3 before atlas computation.",
-            "Complete and verify an atlas run before opening Results & PCA.",
+            "Complete and verify an atlas run before visual quality review.",
+            "Approve the visual quality review in Step 5 before opening Results & PCA.",
         )
         for index, button in enumerate(self.rail_steps):
             unlocked = self._step_is_unlocked(index)
@@ -6601,14 +6799,17 @@ class DiffeoForgeWindow(QMainWindow):
             self.start_atlas_button.setText("Atlas computation running…")
             self.start_atlas_button.setEnabled(False)
         elif isinstance(self._worker, _ResultReviewWorker):
-            self.start_atlas_button.setText("Verifying Results & PCA…")
+            self.start_atlas_button.setText("Preparing visual quality review…")
             self.start_atlas_button.setEnabled(False)
         elif self._result_review is not None:
-            self.start_atlas_button.setText("Open Results & PCA")
+            self.start_atlas_button.setText(
+                "Open Results & PCA" if self._registration_results_released()
+                else "Review registrations before results"
+            )
             self.start_atlas_button.setEnabled(self._worker is None)
         elif self._run_result is not None:
             if self._run_result.completed:
-                self.start_atlas_button.setText("Continue to Results & PCA")
+                self.start_atlas_button.setText("Continue to visual quality review")
                 self.start_atlas_button.setEnabled(self._worker is None)
         else:
             reference = bool(
@@ -7066,8 +7267,28 @@ class DiffeoForgeWindow(QMainWindow):
         self._navigate_to_step(3)
         self._sync_ready_state()
 
+    def _shape_space_project_directory(self, run_directory: Path) -> Path:
+        resolved_run = run_directory.expanduser().resolve()
+        if self._result is not None:
+            project = self._result.config_path.parent.expanduser().resolve()
+            if project.is_dir():
+                try:
+                    resolved_run.relative_to(project)
+                except ValueError:
+                    pass
+                else:
+                    return project
+        for candidate in (resolved_run, *resolved_run.parents):
+            if (candidate / "atlas.yaml").is_file():
+                return candidate
+        raise RuntimeError(
+            "Could not locate the DiffeoForge project folder containing atlas.yaml"
+        )
+
     @Slot()
     def _start_shape_space_comparison(self) -> None:
+        if not self._ensure_results_released():
+            return
         review = self._result_review
         if (
             review is None
@@ -7091,15 +7312,24 @@ class DiffeoForgeWindow(QMainWindow):
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
         method_ids = dialog.method_ids
+        try:
+            project_directory = self._shape_space_project_directory(review.run_directory)
+        except RuntimeError as error:
+            self._shape_space_comparison_failed(str(error))
+            return
         worker = _ReferenceShapeSpaceComparisonWorker(
             review.run_directory,
             method_ids,
+            project_directory,
         )
         worker.signals.succeeded.connect(self._shape_space_comparison_succeeded)
         worker.signals.failed.connect(self._shape_space_comparison_failed)
         worker.signals.progress.connect(self._shape_space_comparison_progressed)
         self._shape_space_comparison_worker = worker
         self._shape_space_selected_method_ids = method_ids
+        self._shape_space_comparison_result = None
+        self.open_shape_space_pdf_button.hide()
+        self.open_shape_space_html_button.hide()
         self.create_shape_space_comparison_button.setEnabled(False)
         self.cancel_shape_space_comparison_button.show()
         self.cancel_shape_space_comparison_button.setEnabled(True)
@@ -7155,11 +7385,17 @@ class DiffeoForgeWindow(QMainWindow):
         )
 
     @Slot(object)
-    def _shape_space_comparison_succeeded(self, artifact: ReferenceShapeSpaceComparison) -> None:
+    def _shape_space_comparison_succeeded(self, result: _ShapeSpaceComparisonResult) -> None:
         self._shape_space_comparison_worker = None
         self._shape_space_selected_method_ids = ()
-        self.create_shape_space_comparison_button.setEnabled(True)
+        self._shape_space_comparison_result = result
+        self.create_shape_space_comparison_button.setEnabled(self._registration_results_released())
         self.cancel_shape_space_comparison_button.hide()
+        self.open_shape_space_pdf_button.show()
+        self.open_shape_space_pdf_button.setEnabled(self._registration_results_released())
+        self.open_shape_space_html_button.show()
+        self.open_shape_space_html_button.setEnabled(self._registration_results_released())
+        artifact = result.comparison
         decision = artifact.manifest["default_decision"]
         self.create_shape_space_comparison_button.setText("Configure or open method comparison…")
         method_count = len(artifact.manifest["methods"])
@@ -7171,29 +7407,54 @@ class DiffeoForgeWindow(QMainWindow):
         self.shape_space_comparison_status_label.setText(
             f"{decision['status']}: {decision['reason']} The generic RBF variants remain "
             "exploratory; the Roberts et al. preset is exported as a named compatibility "
-            "view. The visual comparison report has been opened and all plots and exact "
-            "statistics are stored beside it."
+            "view. The verified PDF report has been saved in the DiffeoForge project folder "
+            "and is available after visual result release. Local HTML and exact statistics "
+            "remain in "
+            "the immutable comparison bundle."
         )
-        report_path = artifact.artifact_directory / REPORT_HTML
+        self._open_shape_space_pdf_report()
+        if self._close_after_shape_space_comparison:
+            self._close_after_shape_space_comparison = False
+            self.close()
+
+    @Slot()
+    def _open_shape_space_pdf_report(self) -> None:
+        if not self._ensure_results_released():
+            return
+        result = self._shape_space_comparison_result
+        if result is None:
+            return
+        QDesktopServices.openUrl(
+            QUrl.fromLocalFile(str(result.pdf_export.pdf_path))
+        )
+
+    @Slot()
+    def _open_shape_space_html_report(self) -> None:
+        if not self._ensure_results_released():
+            return
+        result = self._shape_space_comparison_result
+        if result is None:
+            return
+        report_path = result.comparison.artifact_directory / REPORT_HTML
         QDesktopServices.openUrl(
             QUrl.fromLocalFile(
                 str(
                     report_path
                     if report_path.is_file()
-                    else artifact.artifact_directory / "README.md"
+                    else result.comparison.artifact_directory / "README.md"
                 )
             )
         )
-        if self._close_after_shape_space_comparison:
-            self._close_after_shape_space_comparison = False
-            self.close()
 
     @Slot(str)
     def _shape_space_comparison_failed(self, message: str) -> None:
         self._shape_space_comparison_worker = None
         self._shape_space_selected_method_ids = ()
+        self._shape_space_comparison_result = None
         self.create_shape_space_comparison_button.setEnabled(True)
         self.cancel_shape_space_comparison_button.hide()
+        self.open_shape_space_pdf_button.hide()
+        self.open_shape_space_html_button.hide()
         self.create_shape_space_comparison_button.setText("Configure shape-space methods…")
         self.shape_space_comparison_progress.setRange(0, 1)
         self.shape_space_comparison_progress.setValue(0)
@@ -7212,6 +7473,8 @@ class DiffeoForgeWindow(QMainWindow):
 
     @Slot()
     def _start_reference_pca_deformations(self) -> None:
+        if not self._ensure_results_released():
+            return
         review = self._result_review
         if (
             review is None
@@ -7366,6 +7629,8 @@ class DiffeoForgeWindow(QMainWindow):
 
     @Slot()
     def _open_validation_lab(self) -> None:
+        if not self._ensure_results_released():
+            return
         review = self._result_review
         if review is None or review.engine_route != "deformetrica_reference":
             QMessageBox.information(
@@ -7541,7 +7806,7 @@ class DiffeoForgeWindow(QMainWindow):
         if self._worker is not None:
             return
         if self._result_review is not None:
-            self._navigate_to_step(4)
+            self._navigate_to_step(5 if self._registration_results_released() else 4)
         elif self._run_result is not None:
             if self._run_result.completed:
                 self._review_run_result()
@@ -9834,8 +10099,24 @@ class DiffeoForgeWindow(QMainWindow):
             )
         )
         draft_warning: str | None = None
+        self._registration_visual_inspections = {}
+        self._loaded_qc_subject = None
         try:
             self._registration_qc_decisions = load_registration_qc_draft(review)
+            self._registration_visual_inspections = load_visual_inspections(review)
+            legacy_passes = {
+                name for name, decision in self._registration_qc_decisions.items()
+                if decision == "pass" and name not in self._registration_visual_inspections
+            }
+            if legacy_passes:
+                self._registration_qc_decisions = {
+                    name: decision for name, decision in self._registration_qc_decisions.items()
+                    if name not in legacy_passes
+                }
+                draft_warning = (
+                    "Older plausible decisions without visual acknowledgements were not "
+                    "counted as approvals. Only flagged cases require fresh inspection."
+                )
         except ModernResultReviewError as error:
             self._registration_qc_decisions = {}
             draft_warning = str(error)
@@ -9952,6 +10233,9 @@ class DiffeoForgeWindow(QMainWindow):
             "Ready for an exact-ID CSV join. Metadata will be applied after PCA only."
         )
         reference_result = review.engine_route == "deformetrica_reference"
+        self._shape_space_comparison_result = None
+        self.open_shape_space_pdf_button.hide()
+        self.open_shape_space_html_button.hide()
         self.shape_space_comparison_card.setVisible(reference_result)
         self.create_shape_space_comparison_button.setEnabled(reference_result)
         if reference_result:
@@ -9984,9 +10268,12 @@ class DiffeoForgeWindow(QMainWindow):
             )
         )
         self.run_back_button.setEnabled(True)
+        self._update_registration_qc_summary()
+        self._set_result_controls_enabled(True)
         self._sync_ready_state()
-        self._set_active_step(4)
-        self.page_stack.setCurrentIndex(4)
+        step = 5 if self._registration_results_released() else 4
+        self._set_active_step(step)
+        self.page_stack.setCurrentIndex(step)
         if self._close_after_worker:
             self._close_after_worker = False
             self.close()
@@ -10000,6 +10287,9 @@ class DiffeoForgeWindow(QMainWindow):
         self.create_publication_bundle_button.setEnabled(False)
         self.create_pca_metadata_button.setEnabled(False)
         self.create_shape_space_comparison_button.setEnabled(False)
+        self._shape_space_comparison_result = None
+        self.open_shape_space_pdf_button.hide()
+        self.open_shape_space_html_button.hide()
         self.shape_space_comparison_card.hide()
         self._sync_reference_pca_deformation_action(None)
         visible_message = (
@@ -10032,14 +10322,19 @@ class DiffeoForgeWindow(QMainWindow):
         )
         self.result_atlas_mesh_group_combo.blockSignals(True)
         self.result_atlas_mesh_group_combo.clear()
-        if summary_count:
+        if summary_count and self._registration_results_released():
             self.result_atlas_mesh_group_combo.addItem(
                 f"Template & PCA end forms ({summary_count})",
                 "summary",
             )
+        if review.registration_qc:
+            required = required_registration_inspections(review, self._registration_qc_decisions)
+            self.result_atlas_mesh_group_combo.addItem(
+                f"Required review ({len(required)})", "flagged"
+            )
         if specimen_count:
             self.result_atlas_mesh_group_combo.addItem(
-                f"All specimen meshes ({specimen_count})",
+                f"All {specimen_count} specimens (optional)",
                 "specimens",
             )
         self.result_atlas_mesh_group_combo.blockSignals(False)
@@ -10055,12 +10350,12 @@ class DiffeoForgeWindow(QMainWindow):
         if review is None:
             return
         group = self.result_atlas_mesh_group_combo.currentData()
-        is_specimen_group = group == "specimens"
+        is_specimen_group = group in {"specimens", "flagged"}
         self.result_atlas_mesh_search_label.setVisible(is_specimen_group)
         self.result_atlas_mesh_search_edit.setVisible(is_specimen_group)
         self.result_qc_export_button.setVisible(is_specimen_group and bool(review.registration_qc))
         self.result_qc_finalize_button.setVisible(
-            is_specimen_group and bool(review.registration_qc)
+            bool(review.registration_qc)
         )
         self.result_qc_summary_label.setVisible(is_specimen_group and bool(review.registration_qc))
         self.result_qc_last_action_label.setVisible(
@@ -10072,7 +10367,10 @@ class DiffeoForgeWindow(QMainWindow):
         current_key = self.result_atlas_mesh_combo.currentData()
         entries: list[tuple[str, str]] = []
         if is_specimen_group and review.registration_qc:
+            required = required_registration_inspections(review, self._registration_qc_decisions)
             for item in review.registration_qc:
+                if group == "flagged" and item.subject_name not in required:
+                    continue
                 decision = self._registration_qc_decisions.get(
                     item.subject_name,
                     "unreviewed",
@@ -10080,8 +10378,7 @@ class DiffeoForgeWindow(QMainWindow):
                 entries.append(
                     (
                         (
-                            f"#{item.rank} · residual p95 {item.residual_p95:.6g} · "
-                            f"{item.subject_name} · {decision}"
+                            f"#{item.rank} · {item.subject_name} · {decision}"
                         ),
                         f"registration-qc:{item.subject_name}",
                     )
@@ -10137,9 +10434,19 @@ class DiffeoForgeWindow(QMainWindow):
             self.result_atlas_mesh_combo.setCurrentIndex(selected_index)
         self.result_atlas_mesh_combo.blockSignals(False)
         if self.result_atlas_mesh_combo.count() == 0:
+            self._loaded_qc_subject = None
+            self.result_qc_inspected_check.setChecked(False)
+            self._sync_visual_decision_controls()
             self.result_atlas_canvas.set_model(None)
             self.result_atlas_canvas.hide()
             self.result_registration_qc_canvas.hide()
+            self.result_qc_inspected_check.hide()
+            for button in (
+                self.result_qc_pass_button,
+                self.result_qc_uncertain_button,
+                self.result_qc_fail_button,
+            ):
+                button.hide()
             self.result_atlas_mesh_combo.setEnabled(False)
             self._update_atlas_mesh_counter()
             self.result_atlas_status_label.setObjectName("statusWarning")
@@ -10147,7 +10454,13 @@ class DiffeoForgeWindow(QMainWindow):
             self.result_atlas_status_label.setText(
                 "No specimen mesh matches the current search."
                 if query
-                else "No verified VTK mesh is available in this result section."
+                else (
+                    "No flagged cases require review. You may inspect All specimens (optional), "
+                    "or explicitly release results. No specimen has been visually "
+                    "approved automatically."
+                    if group == "flagged"
+                    else "No verified VTK mesh is available in this result section."
+                )
             )
             return
         self.result_atlas_mesh_combo.setEnabled(True)
@@ -10168,6 +10481,10 @@ class DiffeoForgeWindow(QMainWindow):
 
     @Slot(int)
     def _load_selected_atlas_mesh(self, _index: int) -> None:
+        self._loaded_qc_subject = None
+        self.result_qc_inspected_check.setChecked(False)
+        self._sync_visual_decision_controls()
+        self.result_atlas_mesh_combo.setToolTip(self.result_atlas_mesh_combo.currentText())
         self._update_atlas_mesh_counter()
         if self._result_review is None:
             return
@@ -10188,6 +10505,15 @@ class DiffeoForgeWindow(QMainWindow):
                 )
                 original = load_mesh_preview(original_path)
                 reconstruction = load_mesh_preview(reconstruction_path)
+                if (
+                    original.sha256 != self._result_review.artifact(
+                        item.original_artifact_key
+                    ).sha256
+                    or reconstruction.sha256 != self._result_review.artifact(
+                        item.reconstruction_artifact_key
+                    ).sha256
+                ):
+                    raise ModernResultReviewError("Loaded overlay differs from verified mesh bytes")
                 self.result_registration_qc_canvas.set_models(
                     original,
                     reconstruction,
@@ -10212,6 +10538,13 @@ class DiffeoForgeWindow(QMainWindow):
             if isinstance(preset, str):
                 self.result_registration_qc_canvas.set_view_preset(preset)
             self.result_registration_qc_canvas.show()
+            self._loaded_qc_subject = subject_name
+            self.result_qc_inspected_check.show()
+            self.result_show_original_check.setChecked(True)
+            self.result_show_reconstruction_check.setChecked(True)
+            self.result_registration_qc_canvas.set_show_original(True)
+            self.result_registration_qc_canvas.set_show_reconstruction(True)
+            self._sync_visual_decision_controls()
             self.result_show_original_check.show()
             self.result_show_reconstruction_check.show()
             self.result_qc_pass_button.show()
@@ -10226,11 +10559,23 @@ class DiffeoForgeWindow(QMainWindow):
                 decision_style = "statusSuccess"
             self.result_atlas_status_label.setObjectName(decision_style)
             self.result_atlas_status_label.setStyleSheet("")
+            reason = required_registration_inspections(
+                self._result_review, self._registration_qc_decisions
+            ).get(
+                subject_name,
+                f"Not flagged: {self._result_review.registration_qc_metric_label} "
+                f"{item.residual_p95:.6g}. Visual inspection is optional.",
+            )
             self.result_atlas_status_label.setText(
-                f"Outlier rank #{item.rank} · residual p95 {item.residual_p95:.6g} · "
-                f"decision: {decision}. Blue = immutable original; orange = "
-                "reconstruction. A high residual prioritizes inspection and is not an "
-                "automatic exclusion rule."
+                f"{item.subject_name}\nDecision: {decision}.\nReview reason: {reason}\n"
+                "Blue = original in atlas coordinates; orange = reconstruction."
+            )
+            return
+        if not self._registration_results_released():
+            self.result_atlas_canvas.hide()
+            self.result_registration_qc_canvas.hide()
+            self.result_atlas_status_label.setText(
+                "Atlas and PCA forms remain locked until Step 5 visual approval."
             )
             return
         try:
@@ -10253,6 +10598,7 @@ class DiffeoForgeWindow(QMainWindow):
             return
         self.result_atlas_canvas.set_model(model)
         self.result_registration_qc_canvas.hide()
+        self.result_qc_inspected_check.hide()
         self.result_show_original_check.hide()
         self.result_show_reconstruction_check.hide()
         self.result_qc_pass_button.hide()
@@ -10299,13 +10645,29 @@ class DiffeoForgeWindow(QMainWindow):
         if not isinstance(key, str) or not key.startswith("registration-qc:"):
             return
         subject_name = key.split(":", 1)[1]
+        if (
+            self._worker is not None
+            or self._result_review is None
+            or self._loaded_qc_subject != subject_name
+            or not self.result_qc_inspected_check.isChecked()
+        ):
+            return
         proposed_decisions = dict(self._registration_qc_decisions)
         proposed_decisions[subject_name] = decision
+        proposed_inspections = dict(self._registration_visual_inspections)
+        proposed_inspections[subject_name] = inspection_binding(self._result_review, subject_name)
         if self._result_review is not None:
             try:
+                selected_item = self._result_review.registration_qc_item(subject_name)
+                for artifact_key in (
+                    selected_item.original_artifact_key,
+                    selected_item.reconstruction_artifact_key,
+                ):
+                    verify_result_artifact(self._result_review, artifact_key)
                 save_registration_qc_draft(
                     self._result_review,
                     proposed_decisions,
+                    visual_inspections=proposed_inspections,
                 )
             except (ModernResultReviewError, OSError, TypeError, ValueError) as error:
                 self.result_qc_last_action_label.show()
@@ -10323,6 +10685,7 @@ class DiffeoForgeWindow(QMainWindow):
                 )
                 return
         self._registration_qc_decisions = proposed_decisions
+        self._registration_visual_inspections = proposed_inspections
         index = self.result_atlas_mesh_combo.currentIndex()
         item = (
             self._result_review.registration_qc_item(subject_name) if self._result_review else None
@@ -10331,11 +10694,13 @@ class DiffeoForgeWindow(QMainWindow):
             self.result_atlas_mesh_combo.setItemText(
                 index,
                 (
-                    f"#{item.rank} · residual p95 {item.residual_p95:.6g} · "
-                    f"{item.subject_name} · {decision}"
+                    f"#{item.rank} · {item.subject_name} · {decision}"
                 ),
             )
         self._update_registration_qc_summary()
+        self._set_result_controls_enabled(True)
+        self._sync_navigation_state()
+        self._sync_run_primary_action()
         reviewed_count = len(self._registration_qc_decisions)
         self.result_qc_last_action_label.show()
         self.result_qc_last_action_label.setObjectName("statusSuccess")
@@ -10346,19 +10711,29 @@ class DiffeoForgeWindow(QMainWindow):
         )
 
         qc_items = self._result_review.registration_qc if self._result_review else ()
-        subject_order = [item.subject_name for item in qc_items]
+        required = required_registration_inspections(
+            self._result_review, self._registration_qc_decisions
+        )
+        required_only = self.result_atlas_mesh_group_combo.currentData() == "flagged"
+        subject_order = [
+            item.subject_name for item in qc_items
+            if (
+                not required_only or item.subject_name in required
+                or item.subject_name == subject_name
+            )
+        ]
         current_position = subject_order.index(subject_name)
         unreviewed_subjects = [
             candidate
             for candidate in subject_order[current_position + 1 :]
-            if candidate not in self._registration_qc_decisions
+            if candidate not in self._registration_visual_inspections
         ]
         wrapped = False
         if not unreviewed_subjects:
             unreviewed_subjects = [
                 candidate
                 for candidate in subject_order[:current_position]
-                if candidate not in self._registration_qc_decisions
+                if candidate not in self._registration_visual_inspections
             ]
             wrapped = bool(unreviewed_subjects)
         next_subject = unreviewed_subjects[0] if unreviewed_subjects else None
@@ -10378,13 +10753,26 @@ class DiffeoForgeWindow(QMainWindow):
                     "an explicit finite review pass, not a silent restart."
                 )
         else:
-            self._load_selected_atlas_mesh(index)
-            self.result_atlas_status_label.setObjectName("statusSuccess")
+            if required_only and subject_name not in required:
+                self._populate_selected_atlas_mesh_group()
+            else:
+                self._load_selected_atlas_mesh(index)
+            all_plausible = all(
+                value == "pass" for value in self._registration_qc_decisions.values()
+            )
+            self.result_atlas_status_label.setObjectName(
+                "statusSuccess" if all_plausible else "statusWarning"
+            )
             self.result_atlas_status_label.setStyleSheet("")
             self.result_atlas_status_label.setText(
-                f"All {len(qc_items)} registration-QC meshes have a decision. "
+                f"All {len(subject_order)} registration-QC meshes in this queue have a decision. "
                 "The review will not restart automatically. The current draft is saved; "
-                "use Export QC status for a timestamped immutable snapshot."
+                + (
+                    "use Approve review & release results to continue."
+                    if all_plausible else
+                    "uncertain or implausible registrations must be resolved before release. "
+                    "No mesh has been excluded."
+                )
             )
 
     @Slot()
@@ -10410,6 +10798,12 @@ class DiffeoForgeWindow(QMainWindow):
         review = self._result_review
         if review is None or not review.registration_qc:
             self.result_qc_summary_label.setText("QC review is unavailable.")
+            self.registration_release_status_label.setText(
+                "Results locked: the full-cohort visual review could not be prepared. "
+                "Reload the completed run to reverify its original/reconstruction pairs."
+            )
+            self.result_qc_finalize_button.setEnabled(False)
+            self.registration_results_button.setEnabled(False)
             return
         counts = {"pass": 0, "uncertain": 0, "fail": 0, "unreviewed": 0}
         current: dict[str, str] = {}
@@ -10419,6 +10813,7 @@ class DiffeoForgeWindow(QMainWindow):
             current[item.subject_name] = decision
         status = "Draft not finalized."
         status_style = "statusWarning"
+        released = self._registration_results_released()
         try:
             finalized = load_finalized_registration_qc_review(review)
         except ModernResultReviewError as error:
@@ -10427,11 +10822,11 @@ class DiffeoForgeWindow(QMainWindow):
         else:
             if finalized is not None and dict(finalized.decisions) == current:
                 status = (
-                    "Finalized and bound to scientific reports."
-                    if finalized.complete
-                    else "Explicitly finalized as incomplete and bound to scientific reports."
+                    "Finalized and bound to scientific reports; flagged-review policy complete."
+                    if released
+                    else "Saved QC snapshot exists; current visual result release is still pending."
                 )
-                status_style = "statusSuccess" if finalized.complete else "statusWarning"
+                status_style = "statusSuccess" if released else "statusWarning"
             elif finalized is not None:
                 status = (
                     "Draft differs from the finalized review; finalize again to rebind reports."
@@ -10443,51 +10838,130 @@ class DiffeoForgeWindow(QMainWindow):
             f"{counts['fail']} implausible · {counts['unreviewed']} unreviewed · "
             f"{len(review.registration_qc)} total. {status}"
         )
+        self.registration_results_button.setEnabled(released and self._worker is None)
+        try:
+            plan = registration_inspection_plan(review)
+            required = required_registration_inspections(review, self._registration_qc_decisions)
+        except ModernResultReviewError as error:
+            self.registration_release_status_label.setText(f"Screening unavailable: {error}")
+            self.result_qc_finalize_button.setEnabled(False)
+            return
+        flagged_group = self.result_atlas_mesh_group_combo.findData("flagged")
+        if flagged_group >= 0:
+            self.result_atlas_mesh_group_combo.setItemText(
+                flagged_group, f"Required review ({len(required)})"
+            )
+        try:
+            require_visual_approvals(
+                review, self._registration_qc_decisions, self._registration_visual_inspections
+            )
+            eligible = True
+            release_hint = (
+                "All required cases approved. Release results to continue."
+                if required else
+                "No cases flagged by this screen. Optional inspection is available; "
+                "release results when ready."
+            )
+        except (ModernResultReviewError, KeyError) as error:
+            eligible = False
+            release_hint = str(error)
+        self.result_qc_finalize_button.setText(
+            "Approve flagged review && release results"
+            if required else "Release results (no flagged cases)"
+        )
+        self.result_qc_finalize_button.setEnabled(
+            eligible and not released and self._worker is None
+        )
+        self.registration_release_status_label.setObjectName(
+            "statusSuccess" if released else "statusWarning"
+        )
+        self.registration_release_status_label.setStyleSheet("")
+        approved_required = sum(
+            self._registration_qc_decisions.get(name) == "pass"
+            and name in self._registration_visual_inspections
+            for name in required
+        )
+        screening = (
+            f"Relative residual screen: Q3 + 1.5 x IQR = {plan['threshold']:.6g}. "
+            if plan["threshold"] is not None else
+            "Fewer than 4 specimens: screening unavailable, manual review required. "
+        )
+        self.registration_release_status_label.setText(
+            f"Required review: {approved_required} / {len(required)} approved; "
+            f"{len(review.registration_qc) - len(self._registration_visual_inspections)} "
+            "specimens not visually reviewed. "
+            + screening
+            + ("Results released; every specimen remains included." if released else release_hint)
+        )
 
     @Slot()
     def _finalize_registration_qc_review(self) -> None:
         review = self._result_review
-        if review is None or not review.registration_qc:
+        if review is None or not review.registration_qc or self._worker is not None:
             return
-        unreviewed = len(review.registration_qc) - len(self._registration_qc_decisions)
-        allow_incomplete = False
-        if unreviewed:
-            answer = QMessageBox.question(
-                self,
-                "Finalize incomplete QC review?",
-                f"{unreviewed} of {len(review.registration_qc)} subjects are still "
-                "unreviewed. Finalizing now records that incompleteness explicitly; it "
-                "does not exclude specimens or change the atlas/PCA. Finalize anyway?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No,
-            )
-            if answer != QMessageBox.StandardButton.Yes:
-                return
-            allow_incomplete = True
         try:
-            finalized = finalize_registration_qc_review(
+            release_registration_results(
                 review,
                 self._registration_qc_decisions,
-                allow_incomplete=allow_incomplete,
+                self._registration_visual_inspections,
             )
         except (ModernResultReviewError, OSError, TypeError, ValueError) as error:
-            QMessageBox.warning(self, "QC finalization failed", str(error))
+            QMessageBox.warning(self, "Results could not be released", str(error))
             return
         self._update_registration_qc_summary()
-        self.result_atlas_status_label.setObjectName(
-            "statusSuccess" if finalized.complete else "statusWarning"
-        )
+        self.result_atlas_status_label.setObjectName("statusSuccess")
         self.result_atlas_status_label.setStyleSheet("")
         self.result_atlas_status_label.setText(
-            "QC review finalized without changing atlas or PCA evidence: "
-            f"{finalized.path} · SHA-256 {finalized.sha256}. Scientific reports now "
-            "bind to this exact review."
+            "Flagged-review policy completed; results released without changing "
+            "atlas or PCA evidence. "
+            "Scientific reports now bind to this exact finalized review."
         )
+        self._set_result_controls_enabled(True)
+        self._populate_atlas_viewer(review)
+        self._sync_ready_state()
+        self._navigate_to_step(5)
+
+    def _registration_results_released(self) -> bool:
+        if self._result_review is None:
+            return False
+        try:
+            require_registration_release(
+                self._result_review,
+                self._registration_qc_decisions,
+                self._registration_visual_inspections,
+            )
+        except (ModernResultReviewError, OSError, KeyError, TypeError, ValueError):
+            return False
+        return True
+
+    def _ensure_results_released(self) -> bool:
+        if self._registration_results_released():
+            return True
+        self._update_registration_qc_summary()
+        self._navigate_to_step(4)
+        return False
+
+    @Slot()
+    def _sync_visual_decision_controls(self) -> None:
+        enabled = bool(
+            self._worker is None and self._loaded_qc_subject is not None
+            and self.result_qc_inspected_check.isChecked()
+        )
+        self.result_qc_inspected_check.setEnabled(
+            self._worker is None and self._loaded_qc_subject is not None
+        )
+        for button in (
+            self.result_qc_pass_button, self.result_qc_uncertain_button, self.result_qc_fail_button
+        ):
+            button.setEnabled(enabled)
 
     def _require_current_finalized_registration_qc(self) -> None:
         review = self._result_review
-        if review is None or not review.registration_qc:
-            return
+        if review is None:
+            raise ModernResultReviewError("Load and visually review a completed atlas first")
+        require_registration_release(
+            review, self._registration_qc_decisions, self._registration_visual_inspections
+        )
         finalized = load_finalized_registration_qc_review(review)
         if finalized is None:
             raise ModernResultReviewError(
@@ -10619,6 +11093,8 @@ class DiffeoForgeWindow(QMainWindow):
 
     @Slot()
     def _create_pca_metadata(self) -> None:
+        if not self._ensure_results_released():
+            return
         review = self._result_review
         if review is None or self._worker is not None:
             return
@@ -10819,6 +11295,8 @@ class DiffeoForgeWindow(QMainWindow):
 
     @Slot(str)
     def _open_result_artifact(self, key: str) -> None:
+        if not self._ensure_results_released():
+            return
         if self._result_review is None or self._worker is not None:
             return
         try:
@@ -10868,27 +11346,30 @@ class DiffeoForgeWindow(QMainWindow):
 
     def _set_result_controls_enabled(self, enabled: bool) -> None:
         self.result_back_button.setEnabled(enabled)
-        self.create_scientific_report_button.setEnabled(enabled and self._result_review is not None)
+        released = enabled and self._registration_results_released()
+        self.page_stack.widget(5).setEnabled(released)
+        self.create_scientific_report_button.setEnabled(released)
         self.create_publication_bundle_button.setEnabled(
-            enabled and self._result_review is not None
+            released
         )
-        self.create_pca_metadata_button.setEnabled(enabled and self._result_review is not None)
+        self.create_pca_metadata_button.setEnabled(released)
         for button in self.result_artifact_buttons:
-            button.setEnabled(enabled)
-        self.result_qc_pass_button.setEnabled(enabled)
-        self.result_qc_uncertain_button.setEnabled(enabled)
-        self.result_qc_fail_button.setEnabled(enabled)
+            button.setEnabled(released)
+        self.open_shape_space_pdf_button.setEnabled(released)
+        self.open_shape_space_html_button.setEnabled(released)
+        self._sync_visual_decision_controls()
         self.result_qc_export_button.setEnabled(enabled)
-        self.result_qc_finalize_button.setEnabled(enabled)
+        self._update_registration_qc_summary()
+        self.registration_review_back_button.setEnabled(enabled)
         reference = (
             self._result_review is not None
             and self._result_review.engine_route == "deformetrica_reference"
         )
-        self.open_validation_lab_button.setEnabled(enabled and reference)
+        self.open_validation_lab_button.setEnabled(released and reference)
         self.create_shape_space_comparison_button.setEnabled(
-            enabled and reference and self._shape_space_comparison_worker is None
+            released and reference and self._shape_space_comparison_worker is None
         )
-        if enabled:
+        if released:
             self._sync_reference_pca_deformation_action(self._result_review)
         else:
             self.generate_reference_pca_deformations_button.setEnabled(False)
@@ -11082,6 +11563,9 @@ class DiffeoForgeWindow(QMainWindow):
         )
         if step == 3 and self._run_result is None and not resume_request:
             self._refresh_run_readiness()
+        if step == 4:
+            self._update_registration_qc_summary()
+            self._set_result_controls_enabled(True)
         self._set_active_step(step)
         self.page_stack.setCurrentIndex(step)
 
@@ -11106,6 +11590,8 @@ class DiffeoForgeWindow(QMainWindow):
 
     @Slot()
     def _open_run_result(self) -> None:
+        if not self._ensure_results_released():
+            return
         if self._run_result is None:
             return
         if isinstance(self._run_result, DesktopRemoteAtlasResult):

@@ -1,6 +1,6 @@
 # Desktop setup, review, and Modern compute preview
 
-Status: **five graphical steps with verified Modern CPU execution, an explicitly
+Status: **six graphical steps with verified Modern CPU execution, an explicitly
 bound local or private-server Modern CUDA route, persistent remote reconnection,
 and result review; same-owner private-alpha installer available**
 
@@ -23,6 +23,40 @@ The distribution architecture and its stricter release gates remain in
 [Desktop executable and installer architecture](DESKTOP_DISTRIBUTION.md).
 
 ## What works now
+
+The last three steps are **Compute atlas → Visual quality review → Results & PCA**.
+After completion and technical verification, Step 5 opens only the flagged cases
+in descending registration-discrepancy order. **All specimens (optional)** remains
+available for additional checks. The blue original is the verified
+input in atlas coordinates; the orange surface is its reconstruction. Users rotate,
+zoom and toggle the meshes, explicitly acknowledge visual inspection, and record
+Plausible / Uncertain / Implausible. Decisions advance once through the queue and
+are autosaved with the identities of both displayed meshes.
+
+Step 6, atlas/PCA summary forms, method comparisons and result exports remain
+locked until every flagged case has an acknowledged plausible decision and the
+user explicitly releases results. The screen uses the same descriptive upper
+Tukey fence as the scientific report: residual strictly greater than
+`Q3 + 1.5 × IQR`, using linear quartiles over the full cohort. The threshold and
+individual reasons are shown and saved. For fewer than four specimens, screening
+is unavailable and manual review is required. An empty flagged queue needs no
+per-mesh approval, but still requires an explicit release action. This relative
+screen can miss uniformly poor fits; optional spot checks remain useful.
+
+Any researcher-recorded uncertain or implausible decision also blocks release,
+even for an otherwise unflagged specimen. Resolve it through further inspection
+or a separate corrected run; there is no bulk approval or automatic specimen
+exclusion. Search only narrows the viewer list, never the required queue or PCA.
+Unflagged/uninspected subjects retain `unreviewed`, not an invented pass. Exports
+distinguish completed required review from incomplete full-cohort manual review.
+
+Release is bound to the verified run, analysis, original/reconstruction hashes and
+an immutable finalized QC review. Reopening resumes the saved visual review;
+legacy QC decisions alone do not release results. Changed decisions/evidence
+relock results. Review files live in the reference run's `reviews/` directory;
+Modern uses a sibling `<run-name>-reviews/` directory to preserve its exact run
+inventory. This is a desktop workflow gate, not encryption or a restriction on
+manual access to existing files/CLI tools, and is not biological validation.
 
 The optional PySide6 application provides one complete setup path without a
 terminal:
@@ -97,12 +131,13 @@ terminal:
    destination/private-state evidence, checks it again immediately before
    starting the separate worker, shows real workflow stages and committed
    optimizer decisions, and offers one cooperative cancel action; and
-16. expose the result directory only after the parent controller independently
-    verifies the published workflow, manifest hash, subject count, and bundle;
+16. have the parent controller independently verify the published workflow,
+    manifest hash, subject count, and bundle without releasing results yet;
 17. automatically continue to a fifth screen only after a fresh full
     verification of the workflow, nested bundle, exact inventories, hashes,
-    mesh QC, and static SVG safety checks; and
-18. inspect bounded Atlas, optimizer, momenta-PCA, and QC summaries together
+    mesh QC, and static SVG safety checks; inspect and explicitly approve the
+    flagged original/reconstruction overlays before releasing results; and
+18. in the sixth screen, inspect bounded Atlas, optimizer, momenta-PCA, and QC summaries together
     with an embedded verified objective/gradient convergence plot plus verified
     PC1/PC2 and PC2/PC3 score plots, then open only
     inventoried VTK/CSV/JSON/SVG artifacts whose manifest bindings, size, and
@@ -116,8 +151,9 @@ continues to parameter setting, aligned-mesh analysis becomes pilot planning,
 pilot planning becomes automatic calibration, and the selected parameters
 become parameter review. The same green emphasis is applied to the matching
 in-page action, while other available controls remain visually secondary.
-Atlas launch becomes verified Results & PCA review, and a completed review can
-be reopened without exposing duplicate primary actions inside result cards.
+Atlas launch leads to mandatory visual quality review, then released Results &
+PCA. Both the saved review and released results can be reopened without rerunning
+the atlas.
 
 The reference path creates `atlas.yaml` and `atlas.preflight.html`. Its setup
 screen does not expose a static “recommended” profile. Parameter values remain
@@ -272,9 +308,9 @@ remain open.
 Source-level Deformetrica supervision is connected and its dedicated execution
 worker is now in the prospective v0.4 Windows freeze contract. A clean-runner
 v0.4 observation and rebuilt installer remain pending. The projection preview is
-not mesh QC or registration evidence. Step 5 is a detailed read-only evidence and
-artifact-handoff view, not an interactive 3D renderer or a scientific
-interpretation system. An unsigned same-owner private-alpha Inno Setup installer
+not mesh QC or registration evidence. Step 5 is the interactive visual-registration
+approval gate; Step 6 is the released evidence and artifact-handoff view, not a
+scientific interpretation system. An unsigned same-owner private-alpha Inno Setup installer
 exists, but it is not a redistributable release. Public distribution, signing,
 clean-machine validation, and the remaining scientific release gates remain
 separate work.

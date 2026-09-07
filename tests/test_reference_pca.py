@@ -93,6 +93,11 @@ from diffeoforge.reference_shape_space_comparison import (
     verify_reference_shape_space_comparison,
     write_reference_shape_space_comparison,
 )
+from diffeoforge.reference_shape_space_pdf import (
+    ReferenceShapeSpacePdfError,
+    verify_reference_shape_space_pdf,
+    write_reference_shape_space_pdf,
+)
 from diffeoforge.runs import prepare_run
 
 
@@ -374,6 +379,22 @@ def test_reference_shape_space_comparison_validates_model_aligned_default(
     assert "Aligned score overview" in report
     assert "Overall agreement statistics" in report
     assert "These are descriptive statistics" in report
+
+    project = tmp_path / "pdf-project"
+    project.mkdir()
+    pdf_export = write_reference_shape_space_pdf(verified, project)
+    assert pdf_export.pdf_path.parent == project.resolve()
+    assert pdf_export.pdf_path.read_bytes().startswith(b"%PDF-")
+    assert pdf_export.provenance["source_manifest_sha256"] == sha256_file(
+        artifact / COMPARISON_MANIFEST
+    )
+    assert write_reference_shape_space_pdf(verified, project) == pdf_export
+    assert verify_reference_shape_space_pdf(pdf_export.pdf_path, verified) == pdf_export
+
+    pdf_export.pdf_path.write_bytes(pdf_export.pdf_path.read_bytes() + b"tampered")
+    with pytest.raises(ReferenceShapeSpacePdfError, match="bytes differ"):
+        verify_reference_shape_space_pdf(pdf_export.pdf_path, verified)
+
     with pytest.raises(FileExistsError, match="already exists"):
         write_reference_shape_space_comparison(run, destination)
 

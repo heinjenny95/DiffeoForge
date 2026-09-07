@@ -90,6 +90,12 @@ def test_verified_modern_result_exposes_bounded_summary_and_inventory(
         if artifact.key.startswith("subject-reconstruction-")
     )
     assert len(reconstruction_artifacts) == 5
+    assert len(review.registration_qc) == 5
+    assert review.registration_qc_metric_label == "attachment residual"
+    for item in review.registration_qc:
+        original = verify_result_artifact(review, item.original_artifact_key)
+        assert original.is_relative_to(run / "input")
+        assert verify_result_artifact(review, item.reconstruction_artifact_key).is_file()
     assert {artifact.label for artifact in reconstruction_artifacts} == {
         "subject-01.vtk",
         "subject-02.vtk",
@@ -106,6 +112,28 @@ def test_verified_modern_result_exposes_bounded_summary_and_inventory(
     assert verify_result_artifact(review, "optimizer-convergence-plot") == review.artifact(
         "optimizer-convergence-plot"
     ).path
+
+
+def test_modern_visual_review_preserves_exact_workflow_inventory(tmp_path: Path) -> None:
+    from diffeoforge.desktop.reference_result_review import save_registration_qc_draft
+    from diffeoforge.desktop.registration_release import (
+        inspection_binding,
+        release_registration_results,
+        require_registration_release,
+    )
+
+    run = _run_result(tmp_path)
+    review = review_modern_result(run)
+    before = {path.relative_to(run): sha256_file(path) for path in run.rglob("*") if path.is_file()}
+    decisions = {item.subject_name: "pass" for item in review.registration_qc}
+    inspections = {subject: inspection_binding(review, subject) for subject in decisions}
+    save_registration_qc_draft(review, decisions, visual_inspections=inspections)
+    release_registration_results(review, decisions, inspections)
+    reopened = review_modern_result(run)
+    require_registration_release(reopened, decisions, inspections)
+    assert before == {
+        path.relative_to(run): sha256_file(path) for path in run.rglob("*") if path.is_file()
+    }
 
 
 def test_artifact_handoff_refuses_tampering_manifest_changes_and_path_escape(

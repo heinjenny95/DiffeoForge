@@ -21,6 +21,29 @@ from diffeoforge.mesh import read_vtk_polydata
 ROOT = Path(__file__).parents[1]
 
 
+def _qc_test_evidence(review):
+    """Give decision-navigation fixtures real bindings for the new release gate."""
+    from diffeoforge.desktop.result_review import ModernResultArtifact
+    from diffeoforge.mesh import sha256_file
+
+    for path in (review.workflow_manifest_path, review.bundle_manifest_path):
+        path.write_text("{}\n", encoding="utf-8")
+    mesh_bytes = (ROOT / "examples/synthetic/meshes/template.vtk").read_bytes()
+    artifacts = []
+    for item in review.registration_qc:
+        for key in (item.original_artifact_key, item.reconstruction_artifact_key):
+            path = review.run_directory / f"{key}.vtk"
+            path.write_bytes(mesh_bytes)
+            artifacts.append(ModernResultArtifact(
+                key, key, path, "vtk", len(mesh_bytes), sha256_file(path), "Test overlay",
+            ))
+    return replace(
+        review, artifacts=tuple(artifacts),
+        workflow_manifest_sha256=sha256_file(review.workflow_manifest_path),
+        bundle_manifest_sha256=sha256_file(review.bundle_manifest_path),
+    )
+
+
 def _write_desktop_landmarks(path: Path) -> Path:
     mesh_directory = ROOT / "examples" / "synthetic" / "meshes"
     meshes = [
@@ -117,6 +140,7 @@ def test_registration_qc_decision_advances_once_and_stops_after_last(
         engine_route="deformetrica_reference",
         registration_qc=items,
     )
+    review = _qc_test_evidence(review)
     window = DiffeoForgeWindow()
     window._result_review = review
     window.result_atlas_mesh_combo.blockSignals(True)
@@ -128,11 +152,15 @@ def test_registration_qc_decision_advances_once_and_stops_after_last(
     loaded: list[int] = []
     window._load_selected_atlas_mesh = loaded.append  # type: ignore[method-assign]
 
+    window._loaded_qc_subject = "subject-1"
+    window.result_qc_inspected_check.setChecked(True)
     window._record_registration_qc_decision("pass")
 
     assert window.result_atlas_mesh_combo.currentIndex() == 1
     assert window._registration_qc_decisions == {"subject-1": "pass"}
 
+    window._loaded_qc_subject = "subject-2"
+    window.result_qc_inspected_check.setChecked(True)
     window._record_registration_qc_decision("pass")
 
     assert window.result_atlas_mesh_combo.currentIndex() == 1
@@ -152,7 +180,8 @@ def test_registration_qc_decision_advances_once_and_stops_after_last(
 
     assert (tmp_path / "reviews" / "registration-qc-finalized.json").is_file()
     assert "Finalized and bound" in window.result_qc_summary_label.text()
-    assert "Scientific reports now bind" in window.result_atlas_status_label.text()
+    assert window._registration_results_released()
+    assert window.page_stack.currentIndex() == 5
     application.processEvents()
 
 
@@ -200,6 +229,7 @@ def test_registration_qc_autosave_failure_does_not_change_or_advance(
         engine_route="deformetrica_reference",
         registration_qc=items,
     )
+    review = _qc_test_evidence(review)
     window = DiffeoForgeWindow()
     window._result_review = review
     window.result_atlas_mesh_combo.blockSignals(True)
@@ -213,6 +243,8 @@ def test_registration_qc_autosave_failure_does_not_change_or_advance(
         lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("read-only storage")),
     )
 
+    window._loaded_qc_subject = "subject-1"
+    window.result_qc_inspected_check.setChecked(True)
     window._record_registration_qc_decision("pass")
 
     assert window.result_atlas_mesh_combo.currentIndex() == 0
@@ -277,6 +309,8 @@ def test_result_viewer_separates_summary_from_searchable_specimen_meshes(
     )
     window = DiffeoForgeWindow()
     window._result_review = review
+    # This test covers the post-release summary/specimen grouping, not gate policy.
+    monkeypatch.setattr(window, "_registration_results_released", lambda: True)
     window._populate_atlas_viewer(review)
 
     assert window.result_atlas_mesh_group_combo.count() == 2
@@ -600,12 +634,13 @@ def test_desktop_window_exposes_required_project_controls(monkeypatch) -> None:
     assert auto_advance.isChecked() is True
     assert "next mesh" in auto_advance.text()
     assert window.place_landmarks_button.text().startswith("Place landmarks")
-    assert window.import_landmark_txt_button.text().startswith("Import TXT/FCSV folder")
+    assert window.import_landmark_txt_button.text().startswith("Import TXT/FCSV/JSON folder")
     assert window.create_button.isEnabled() is False
     assert all(isinstance(step, QPushButton) for step in window.rail_steps)
     assert window.rail_steps[0].isEnabled() is True
     assert all(step.isEnabled() is False for step in window.rail_steps[1:])
-    assert window.rail_steps[4].accessibleName() == "Go to step 5: Results & PCA"
+    assert window.rail_steps[4].accessibleName() == "Go to step 5: Visual quality review"
+    assert window.rail_steps[5].accessibleName() == "Go to step 6: Results & PCA"
     assert "CPU/float64" in window.engine_hint.text()
     assert window.landmarks_edit.isEnabled() is True
     assert window.procrustes_box.isHidden() is True
@@ -725,7 +760,7 @@ def test_desktop_window_separates_data_parameters_review_run_and_results(
     application = QApplication.instance() or QApplication(["diffeoforge-five-step-test"])
     window = DiffeoForgeWindow()
 
-    assert window.page_stack.count() == 5
+    assert window.page_stack.count() == 6
     assert window.page_stack.widget(0).isAncestorOf(window.engine_combo)
     assert window.page_stack.widget(0).isAncestorOf(window.mesh_edit)
     assert window.page_stack.widget(1).isAncestorOf(window.reference_guidance_box)
@@ -734,7 +769,8 @@ def test_desktop_window_separates_data_parameters_review_run_and_results(
     assert window.reference_guidance_box.isAncestorOf(window.reference_calibration_execution_card)
     assert window.page_stack.widget(2).isAncestorOf(window.review_summary_label)
     assert window.page_stack.widget(3).isAncestorOf(window.run_state_label)
-    assert window.page_stack.widget(4).isAncestorOf(window.result_summary_label)
+    assert window.page_stack.widget(4).isAncestorOf(window.result_registration_qc_canvas)
+    assert window.page_stack.widget(5).isAncestorOf(window.result_summary_label)
 
     window.mesh_edit.setText("C:/example/meshes")
     window.project_edit.setText("C:/example/project")
@@ -1858,6 +1894,7 @@ def test_desktop_window_renders_parameter_review_as_third_step(monkeypatch, tmp_
         True,
         True,
         False,
+        False,
     ]
     window.rail_steps[0].click()
     assert window.page_stack.currentIndex() == 0
@@ -2803,7 +2840,7 @@ def test_desktop_accepts_only_parent_verified_deformetrica_terminal_result(
     assert window.run_result_card.isHidden() is False
     assert "independently verified" in window.run_state_label.text()
     assert "Outcome: completed" in window.run_result_label.text()
-    assert window.start_atlas_button.text().startswith("Verifying Results & PCA")
+    assert window.start_atlas_button.text().startswith("Preparing visual quality review")
     assert window.rail_steps[2].isEnabled() is False
     assert window.rail_steps[3].isEnabled() is False
     window.close()
@@ -2957,7 +2994,7 @@ def test_desktop_window_starts_bound_worker_and_shows_only_reconciled_result(
     assert "independently verified" in window.run_state_label.text()
     assert "Subjects: 5" in window.run_result_label.text()
     assert window.start_atlas_button.isEnabled() is True
-    assert window.start_atlas_button.text() == "Continue to Results & PCA"
+    assert window.start_atlas_button.text() == "Continue to visual quality review"
     assert window.refresh_run_readiness_button.isEnabled() is True
     application.processEvents()
 
@@ -3208,7 +3245,7 @@ def test_successful_atlas_automatically_starts_verified_results_review(
     assert isinstance(queued[-1], _ResultReviewWorker)
     assert "fully reverified" in window.run_state_label.text()
     assert window.start_atlas_button.isEnabled() is False
-    assert window.start_atlas_button.text() == "Verifying Results & PCA…"
+    assert window.start_atlas_button.text() == "Preparing visual quality review…"
     window._worker = None
     window.close()
     application.processEvents()
@@ -3441,7 +3478,7 @@ def test_desktop_window_verifies_and_renders_step_five_before_artifact_handoff(
     window._run_result = result
     window._sync_ready_state()
 
-    assert window.start_atlas_button.text() == "Continue to Results & PCA"
+    assert window.start_atlas_button.text() == "Continue to visual quality review"
     assert window.start_atlas_button.isEnabled() is True
     window.start_atlas_button.click()
 
@@ -3449,19 +3486,23 @@ def test_desktop_window_verifies_and_renders_step_five_before_artifact_handoff(
     assert isinstance(queued[-1], _ResultReviewWorker)
     assert "fully reverified" in window.run_state_label.text()
 
+    # Gate behaviour is covered by test_desktop_registration_release; this fixture
+    # exercises plot verification and artifact handoff after successful release.
+    monkeypatch.setattr(window, "_registration_results_released", lambda: True)
     window._result_review_succeeded(review)
     application.processEvents()
 
-    assert window.page_stack.currentIndex() == 4
-    assert window.rail_steps[4].objectName() == "stepActive"
+    assert window.page_stack.currentIndex() == 5
+    assert window.rail_steps[5].objectName() == "stepActive"
     assert [step.isEnabled() for step in window.rail_steps] == [
         True,
         True,
         False,
         True,
         True,
+        True,
     ]
-    assert window.rail_steps[4].toolTip() == "Open Results & PCA."
+    assert window.rail_steps[5].toolTip() == "Open Results & PCA."
     assert window.start_atlas_button.text() == "Open Results & PCA"
     assert "Käfer-Atlas" in window.result_summary_label.text()
     assert "did not converge" in window.result_completion_label.text()
@@ -3591,7 +3632,7 @@ def test_desktop_window_verifies_and_renders_step_five_before_artifact_handoff(
     window._show_run_page_from_results()
     assert window.page_stack.currentIndex() == 3
     window.start_atlas_button.click()
-    assert window.page_stack.currentIndex() == 4
+    assert window.page_stack.currentIndex() == 5
     window.close()
     application.processEvents()
 
@@ -3663,6 +3704,7 @@ def test_shape_space_comparison_uses_dedicated_worker_without_locking_qc(
     from diffeoforge.reference_shape_space_comparison import QUICK_METHOD_IDS
 
     application = QApplication.instance() or QApplication(["shape-space-worker-test"])
+    (tmp_path / "atlas.yaml").write_text("project: test\n", encoding="utf-8")
     review = ModernResultReview(
         run_directory=tmp_path,
         bundle_directory=tmp_path,
@@ -3708,6 +3750,7 @@ def test_shape_space_comparison_uses_dedicated_worker_without_locking_qc(
     window._thread_pool = FakePool()  # type: ignore[assignment]
     window._result_review = review
     window.result_qc_pass_button.setEnabled(True)
+    monkeypatch.setattr(window, "_registration_results_released", lambda: True)
 
     window._start_shape_space_comparison()
 
@@ -3715,6 +3758,7 @@ def test_shape_space_comparison_uses_dedicated_worker_without_locking_qc(
     assert isinstance(window._shape_space_comparison_worker, _ReferenceShapeSpaceComparisonWorker)
     assert queued == [window._shape_space_comparison_worker]
     assert queued[0].method_ids == QUICK_METHOD_IDS
+    assert queued[0].project_directory == tmp_path.resolve()
     assert window.result_qc_pass_button.isEnabled() is True
     assert window.cancel_shape_space_comparison_button.isHidden() is False
     window._cancel_shape_space_comparison()
@@ -3730,7 +3774,7 @@ def test_shape_space_comparison_uses_dedicated_worker_without_locking_qc(
     application.processEvents()
 
 
-def test_completed_shape_space_comparison_opens_visual_report(
+def test_completed_shape_space_comparison_opens_pdf_and_exposes_html(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
@@ -3739,17 +3783,20 @@ def test_completed_shape_space_comparison_opens_visual_report(
     from PySide6.QtGui import QDesktopServices
     from PySide6.QtWidgets import QApplication
 
-    from diffeoforge.desktop.widgets import DiffeoForgeWindow
+    from diffeoforge.desktop.widgets import DiffeoForgeWindow, _ShapeSpaceComparisonResult
     from diffeoforge.reference_shape_space_comparison import (
         REPORT_HTML,
         ReferenceShapeSpaceComparison,
     )
+    from diffeoforge.reference_shape_space_pdf import ReferenceShapeSpacePdfExport
 
     application = QApplication.instance() or QApplication(["shape-space-report-test"])
     artifact_directory = tmp_path / "comparison"
     artifact_directory.mkdir()
     report = artifact_directory / REPORT_HTML
     report.write_text("<!doctype html><title>Comparison</title>\n", encoding="utf-8")
+    pdf = tmp_path / "shape-space-comparison.pdf"
+    pdf.write_bytes(b"%PDF-1.4\n")
     opened: list[Path] = []
     monkeypatch.setattr(
         QDesktopServices,
@@ -3766,12 +3813,26 @@ def test_completed_shape_space_comparison_opens_visual_report(
             "methods": [{"method_id": "lddmm_deformation_kernel_pca"}],
         },
     )
+    result = _ShapeSpaceComparisonResult(
+        comparison=artifact,
+        pdf_export=ReferenceShapeSpacePdfExport(
+            pdf_path=pdf,
+            provenance_path=tmp_path / "shape-space-comparison.pdf.provenance.json",
+            sidecar_path=tmp_path / "shape-space-comparison.pdf.provenance.sha256",
+            provenance={},
+        ),
+    )
     window = DiffeoForgeWindow()
 
-    window._shape_space_comparison_succeeded(artifact)
+    monkeypatch.setattr(window, "_registration_results_released", lambda: True)
+    window._shape_space_comparison_succeeded(result)
 
-    assert opened == [report]
-    assert "visual comparison report has been opened" in (
+    assert opened == [pdf]
+    assert window.open_shape_space_pdf_button.isHidden() is False
+    assert window.open_shape_space_html_button.isHidden() is False
+    window.open_shape_space_html_button.click()
+    assert opened == [pdf, report]
+    assert "PDF report has been saved" in (
         window.shape_space_comparison_status_label.text()
     )
     window.close()
