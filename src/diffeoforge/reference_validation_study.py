@@ -8,7 +8,8 @@ import html
 import json
 import os
 import shutil
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterator, Mapping
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
@@ -81,6 +82,29 @@ class _Controller(Protocol):
 
 
 ControllerFactory = Callable[[DesktopReferenceLaunchRequest], _Controller]
+
+
+@contextmanager
+def validation_study_writer_lock(root: Path) -> Iterator[None]:
+    """Exclude current-version runners/adopters; stale locks fail closed."""
+    path = root / ".validation-writer.lock"
+    token = f"{os.getpid()} {uuid4().hex}\n"
+    try:
+        handle = path.open("x", encoding="utf-8")
+    except FileExistsError as error:
+        raise ReferenceValidationStudyError(
+            "Another validation writer owns this study. Never remove its lock while active; "
+            "a crash-left lock requires an explicit idle-process check."
+        ) from error
+    try:
+        with handle:
+            handle.write(token)
+            handle.flush()
+            os.fsync(handle.fileno())
+        yield
+    finally:
+        if path.is_file() and path.read_text(encoding="utf-8") == token:
+            path.unlink()
 
 
 def _canonical_json(value: object, *, indent: int | None = None) -> str:
@@ -1213,13 +1237,33 @@ class ReferenceValidationStudyRunner:
         *,
         event_callback: ValidationEventCallback | None = None,
     ) -> ReferenceValidationStudySnapshot:
+        with validation_study_writer_lock(self.study_directory):
+            return self._run_all(event_callback=event_callback)
+
+    def _run_all(
+        self,
+        *,
+        event_callback: ValidationEventCallback | None = None,
+    ) -> ReferenceValidationStudySnapshot:
         snapshot = load_reference_validation_study(self.study_directory)
         if snapshot.status == "completed":
             return snapshot
         manifest = _verify_manifest(self.study_directory)
+        recovery_required: list[str] = []
         for state in snapshot.runs:
             if state.status == "completed" or self._cancel_requested:
                 continue
+            if state.status == "failed" and state.run_directory is not None:
+                result_path = state.run_directory / "result.json"
+                if result_path.is_file():
+                    result = json.loads(result_path.read_text(encoding="utf-8"))
+                    if result.get("status") == "completed" and result.get("return_code") == 0:
+                        recovery_required.append(state.run_id)
+                        if event_callback is not None:
+                            event_callback({
+                                "event": "evidence_recovery_required", "run_id": state.run_id,
+                            })
+                        continue
             request = _launch_request(self.study_directory, manifest, state)
             started = _append_event(
                 self.study_directory,
@@ -1308,6 +1352,12 @@ class ReferenceValidationStudyRunner:
             if event_callback is not None:
                 event_callback(terminal)
         updated = load_reference_validation_study(self.study_directory)
+        if recovery_required and not self._cancel_requested:
+            raise ReferenceValidationStudyError(
+                f"Backend already completed for {', '.join(recovery_required)}; recover evidence "
+                "with reference-validation-evidence-export/adopt. These atlases were not "
+                "restarted; any other pending runs were allowed to proceed."
+            )
         if not self._cancel_requested and all(
             run.status == "completed" for run in updated.runs
         ):

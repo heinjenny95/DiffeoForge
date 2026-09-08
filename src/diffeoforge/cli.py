@@ -1781,6 +1781,21 @@ def build_parser() -> argparse.ArgumentParser:
     )
     validation_study_run.add_argument("study_directory", type=Path)
 
+    validation_recovery_export = subparsers.add_parser(
+        "reference-validation-evidence-export",
+        help="Re-evaluate one completed backend in a new sidecar without editing the study.",
+    )
+    validation_recovery_export.add_argument("study_directory", type=Path)
+    validation_recovery_export.add_argument("--run-id", required=True)
+    validation_recovery_export.add_argument("--output", required=True, type=Path)
+    validation_recovery_adopt = subparsers.add_parser(
+        "reference-validation-evidence-adopt",
+        help="Adopt recovered evidence only after all planned runs have terminal events.",
+    )
+    validation_recovery_adopt.add_argument("study_directory", type=Path)
+    validation_recovery_adopt.add_argument("recovery", type=Path)
+    validation_recovery_adopt.add_argument("--expect-sha256", required=True)
+
     holdout_study_init = subparsers.add_parser(
         "reference-holdout-study-init",
         help=(
@@ -4525,6 +4540,50 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"Plan fingerprint: {snapshot.plan.fingerprint}")
             print("No process was started.")
         except (ConfigurationError, OSError, RuntimeError, TypeError, ValueError) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
+
+    if args.command == "reference-validation-evidence-export":
+        try:
+            from diffeoforge.mesh import sha256_file
+            from diffeoforge.reference_validation_recovery import (
+                export_reference_validation_evidence_recovery,
+            )
+
+            def recovery_progress(label: str, completed: int, total: int) -> None:
+                print(f"Evidence {completed}/{total}: {label}", flush=True)
+
+            destination = export_reference_validation_evidence_recovery(
+                args.study_directory, args.run_id, args.output,
+                progress_callback=recovery_progress,
+            )
+            print(f"Recovered evidence: {destination}")
+            print(f"SHA-256: {sha256_file(destination)}")
+            print("No atlas was executed; source study and existing run artifacts are unchanged.")
+        except (
+            ConfigurationError, OSError, RuntimeError, TypeError, ValueError, KeyError
+        ) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return 0
+
+    if args.command == "reference-validation-evidence-adopt":
+        try:
+            from diffeoforge.reference_validation_recovery import (
+                adopt_reference_validation_evidence_recovery,
+            )
+
+            snapshot = adopt_reference_validation_evidence_recovery(
+                args.study_directory, args.recovery, expected_sha256=args.expect_sha256,
+            )
+            print(
+                f"Validation evidence adopted: {snapshot.completed_run_count}/{len(snapshot.runs)}"
+            )
+            print("No atlas was executed; historical events and run artifacts were preserved.")
+        except (
+            ConfigurationError, OSError, RuntimeError, TypeError, ValueError, KeyError
+        ) as error:
             print(f"ERROR: {error}", file=sys.stderr)
             return 2
         return 0

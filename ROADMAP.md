@@ -159,6 +159,10 @@ This roadmap describes evidence gates rather than promised dates.
   provenance-bound destination, refuse silent overwrite, and expose both reports
   from the desktop result view.
 - [x] Define desktop executable/installer architecture and release gates
+- [x] Correct Validation Lab's scale-dependent small-triangle rejection and
+  provide hash-bound post-processing recovery without rerunning completed atlases.
+  See [evidence recovery](docs/reference-validation-evidence-recovery.md).
+  Source implementation only; do not replace a running desktop executable.
 - [ ] Keep Validation Lab preparation and mesh/workload preflight off the UI
   thread. Large inputs currently can leave the window unresponsive while CPU
   work continues, before any optimizer run has started.
