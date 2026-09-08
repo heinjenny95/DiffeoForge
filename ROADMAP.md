@@ -163,6 +163,20 @@ This roadmap describes evidence gates rather than promised dates.
   provide hash-bound post-processing recovery without rerunning completed atlases.
   See [evidence recovery](docs/reference-validation-evidence-recovery.md).
   Source implementation only; do not replace a running desktop executable.
+- [ ] Show actual study-wide Validation Lab progress, not only the current run.
+  - [ ] Separate original-start wall time (including labelled interruptions) from
+    current-run elapsed time; retain it across reopening/resume.
+  - [ ] Use frozen-plan run positions, not successful-evaluation counts, for the
+    current run number; retries must not double-count progress.
+  - [ ] Distinguish completed backends, verified evidence, pending/failed
+    post-processing, execution failures, active and pending work. Recovery-needed
+    atlases must not appear unstarted or falsely validated.
+  - [ ] Label overall execution progress and denominators, separating
+    training/resampling from holdout and showing their combined workflow scope.
+    Do not imply full validation while evidence/holdout gates remain unresolved,
+    or equate an iteration-cap fraction with exact total progress or an ETA.
+  - [ ] Test evaluation failures, early convergence, retries, cancellation,
+    reopening/resume and holdout transitions. Planned only; leave live runs intact.
 - [ ] Keep Validation Lab preparation and mesh/workload preflight off the UI
   thread. Large inputs currently can leave the window unresponsive while CPU
   work continues, before any optimizer run has started.
