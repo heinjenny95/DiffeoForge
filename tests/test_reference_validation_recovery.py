@@ -369,3 +369,58 @@ def test_runner_can_continue_pending_work_without_restarting_finished_atlas(
     assert snapshot.runs[0].run_id == run_id
     assert snapshot.runs[0].attempts == 1
     assert _hashes(run) == before
+
+
+def test_runner_restarts_only_orphaned_last_attempt_preserving_prior_runs(
+    failed_evaluation,
+) -> None:
+    from types import SimpleNamespace
+
+    root, _, _, _ = failed_evaluation
+    snapshot = load_reference_validation_study(root)
+    for state in snapshot.runs[:-1]:
+        state.run_directory.mkdir(parents=True, exist_ok=True)
+        result = state.run_directory / "result.json"
+        if not result.exists():
+            result.write_text(
+                json.dumps({"status": "completed", "return_code": 0}), encoding="utf-8"
+            )
+    last = snapshot.runs[-1]
+    last.run_directory.mkdir(parents=True, exist_ok=True)
+    (last.run_directory / "partial-output.txt").write_text("keep me", encoding="utf-8")
+    # Simulate process death: the last start has no terminal event or result.
+    events = _load_events(root)[:-1]
+    ledger_before = "".join(json.dumps(event) + "\n" for event in events)
+    (root / "events.jsonl").write_text(ledger_before, encoding="utf-8")
+    before = {state.run_id: _hashes(state.run_directory) for state in snapshot.runs}
+    requested = []
+    observed = []
+
+    class CancelReplacement:
+        def __init__(self, request):
+            requested.append(request)
+
+        def run(self, *, event_callback=None):
+            return SimpleNamespace(completed=False)
+
+        def request_cancel(self):
+            return True
+
+    assert load_reference_validation_study(root).runs[-1].status == "orphaned"
+    resumed = ReferenceValidationStudyRunner(
+        root, controller_factory=CancelReplacement
+    ).run_all(event_callback=observed.append)
+    assert len(requested) == 1
+    assert requested[0].config_path == last.config_path
+    assert requested[0].destination == last.run_directory.parent / "attempt-02"
+    assert requested[0].run_id == "attempt-02"
+    assert [state.attempts for state in resumed.runs[:-1]] == [1] * (len(resumed.runs) - 1)
+    assert resumed.runs[-1].attempts == 2
+    assert [event["run_id"] for event in observed if event["event"] == "run_started"] == [
+        last.run_id
+    ]
+    assert [
+        event["run_id"] for event in observed if event["event"] == "evidence_recovery_required"
+    ] == [state.run_id for state in snapshot.runs[:-1]]
+    assert (root / "events.jsonl").read_text(encoding="utf-8").startswith(ledger_before)
+    assert {state.run_id: _hashes(state.run_directory) for state in snapshot.runs} == before

@@ -67,6 +67,35 @@ when all predeclared runs have evidence is the ordinary validation report
 finalized. Fixed-template holdout, scientific validity gates and researcher QC
 remain separate requirements. Never mix unreviewed outputs into an accepted study.
 
+## Interrupted desktop with a final unfinished attempt
+
+Before resuming, confirm that the desktop, its workers and the backend have all
+stopped. Do not infer this merely from a closed window. Check the study ledger,
+each attempt's terminal backend result, output inventory and input bindings;
+preserve an external audit snapshot of those identities and the original ledger.
+
+If completed backends are marked failed only because evaluation failed, and a
+remaining run has an unclosed start but no successful backend result, use the
+corrected source runner:
+
+```powershell
+python -m diffeoforge reference-validation-study-run "PATH_TO_STUDY"
+```
+
+It skips the numerically completed failed-evaluation attempts and assigns a new
+attempt directory to unfinished work. An abandoned attempt is retained; this
+route does not resume its optimizer checkpoint. Without a valid checkpoint, the
+unfinished atlas starts again from its unchanged frozen configuration. Verify
+the new `run_started` event and destination before treating restart as successful.
+
+Keep the supervising source process alive; never start a second runner or reopen
+the legacy Validation Lab to run the same study concurrently. At the end, an
+`already completed ... recover evidence` CLI error (exit 2) can be expected for
+the skipped earlier attempts: inspect the new backend result and terminal study
+event separately. It does not itself mean that the replacement atlas failed.
+Finish evidence export/adoption only after all planned attempts are terminal;
+holdout work and scientific approval remain separate gates.
+
 ## Verification and scope
 
 Regression coverage includes scale equivariance, thin triangles, true degeneracy,
