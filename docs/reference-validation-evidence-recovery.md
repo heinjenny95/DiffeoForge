@@ -96,6 +96,40 @@ event separately. It does not itself mean that the replacement atlas failed.
 Finish evidence export/adoption only after all planned attempts are terminal;
 holdout work and scientific approval remain separate gates.
 
+## Complete a recovery batch and continue to holdout
+
+For several failed evaluations, keep one separate export and an independently
+recorded digest per exact run ID. Read-only exports may be computed with bounded
+CPU parallelism; do not run several study writers or atlas runners in parallel.
+Review every export's identity, sample count, convergence, invalid-face count and
+metric implementation before adoption. A computed result is not automatically
+a passed validity gate. Keep the original ledger outside the study for comparison.
+
+Adopt reviewed bundles sequentially with their recorded digests. Afterwards,
+verify that every planned run has evidence, each recovered completion retains
+its original attempt number, and the original ledger remains an unchanged prefix
+of the appended history. Read `report/validation-report.json` and its HTML peer;
+distinguish execution completion from the assessment's validity and stability
+status. A numerical equivalence margin is not an anatomical threshold.
+
+Once the training/resampling study is complete, the separate holdout stage is:
+
+```powershell
+python -m diffeoforge reference-holdout-study-init "PATH_TO_STUDY"
+python -m diffeoforge reference-holdout-study-status "PATH_TO_STUDY/heldout-confirmation" --json
+python -m diffeoforge reference-holdout-study-run "PATH_TO_STUDY/heldout-confirmation"
+```
+
+Initialization freezes the reserved subjects and each finalist's trained template
+and control points from its **training-confirmation** run. Check these identities
+and both freeze flags before starting the single supervised holdout runner. Do
+not substitute a resample template, change finalists after inspecting holdout
+results, or initialize over an existing holdout directory. The runner registers
+the same reserved subjects against every frozen finalist; it does not retrain
+the atlases. Report the holdout as pending until all registrations and their
+separate assessment finish. Scientific QC and a later parameter-locked full-cohort
+atlas remain separate decisions, not implicit consequences of recovery.
+
 ## Verification and scope
 
 Regression coverage includes scale equivariance, thin triangles, true degeneracy,
