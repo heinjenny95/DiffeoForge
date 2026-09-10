@@ -182,3 +182,9 @@ diffeoforge reference-validation-synthetic-evaluate `
 Analytic truth tests correspondence recovery under known deformations. It does
 not reproduce every biological structure, segmentation artifact, or sampling
 regime and therefore cannot replace independent real-data validation.
+
+## Interpreting the evidence
+
+See [Validation Lab interpretation](VALIDATION_LAB_INTERPRETATION.md) for the
+distinction between numerical preference and anatomical validity, the pooled
+holdout tie-break, metric-sampling limitations, and comparisons with landmark PCA.
