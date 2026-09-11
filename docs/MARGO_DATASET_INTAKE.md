@@ -1,8 +1,8 @@
 # MARGO human mandibles: dataset intake
 
 This is a preparation record, not a completed DiffeoForge benchmark or a clinical
-validation. Originals must remain unchanged until coordinate compatibility and
-anatomical scope have been reviewed.
+validation. Originals remain unchanged; derived coordinate exports must be kept
+separate and anatomical scope still requires review.
 
 ## Pinned public source
 
@@ -66,5 +66,83 @@ these points also guide DiffeoForge's initial alignment.
    anatomical detail and a documented sensitivity assessment, not a universal
    face-count target. Estimate the actual workload before starting the pilot.
 
-This record does not add a Viewbox XML importer, change DiffeoForge parameters,
-or authorize repairs, coordinate conversion, mesh simplification or an atlas run.
+## Coordinate recovery protocol (2026-09-11)
+
+At the user's request, coordinate reconciliation is performed on separate
+working copies. The source PLY meshes retain their bytes, geometry and resolution;
+only landmark coordinates are converted into the corresponding mesh's native
+frame. This is **within-subject frame reconciliation**, not between-subject GPA,
+an atlas fit or a biological validation.
+
+The source XML does not supply a verified transform to these archive PLY files.
+For this pinned dataset, estimate a proper rigid transform after a single common
+XML scale factor of 0.1. For row vectors, the recorded convention is
+`p_mesh = (0.1 * p_xml) @ R + t`, with `det(R) = +1`. Also save the equivalent
+column-vector homogeneous matrix, source hashes and inverse checks. This is an
+empirical recovery, **not an author-exported transform or a generic Viewbox unit
+rule**. Native PLY units are interpreted as millimetres, not independently
+calibrated physical measurements.
+
+- Fit only 213 alternating surface semilandmarks in the source sliding-group
+  order. Reserve the other 213 surface points, all 9 fixed landmarks and all 84
+  curve landmarks for geometric checks. These are non-fit points on the same
+  specimens, not an independent biological holdout cohort.
+- Use 24 proper PCA-frame initializations with nearest-vertex rigid ICP, then
+  refine the best and a distinct second coarse solution against exact nearest
+  triangle distances on the full mesh. Select using fitting points only.
+- Diagnose an additional free uniform scale, but never apply it to the exports.
+  Retaining the one common 0.1 factor preserves between-subject size variation.
+- Screen non-fit surface RMS <= 0.1, fixed-point RMS <= 0.25, fixed-point maximum
+  <= 1.0 and all-519 p95 <= 1.0 in native mesh units; also require restart maximum
+  displacement <= 0.05 and free-scale deviation <= 0.001. Require converged
+  optimizers, proper orthogonal rotations, inverse consistency and unchanged
+  scaled pairwise distances. These are engineering screens, not clinical limits.
+- Preserve residual curve-point offsets. Do not snap individual points to the
+  surface, re-slide them, reflect specimens, apply nonrigid/affine fitting,
+  smooth/repair meshes or remove teeth to improve the recovery metrics.
+- If the second distinct coarse solution reaches a competing local minimum,
+  retain that failed screen and inspect additional original PCA initializations.
+  Release only when at least three starts reproduce the unchanged primary
+  transform within the existing displacement threshold, and all distance,
+  scale and preservation screens pass. Record this resolution separately; do
+  not erase the initial warning or increase distance tolerances.
+- Inspect overlays of representative cases and the worst numerical cases before
+  handing off. Surface proximity alone does not establish anatomical homology.
+
+Export the canonical `mesh_file,landmark,x,y,z` CSV for the exact 100-mesh cohort:
+519 points in the template's shape order, plus a separately named 9-fixed-point
+alternative. Labels retain XML IDs and a sidecar maps labels, template indices,
+names and modes. Keep all 521 transformed source points in an **audit-only**
+file; the two omitted points must not silently enter the published-shape set.
+Choose the later alignment strategy explicitly. Using source landmarks for
+prealignment limits the independence of a subsequent landmark-method comparison.
+
+Keep per-subject coordinates, transforms, meshes and review images local. The
+public repository contains this protocol and aggregate verification only. This
+preparation does not add an automatic XML importer, change application behavior,
+select atlas parameters or start a pilot/atlas.
+
+### Verification of the prepared cohort
+
+All 100 paired original-resolution meshes were copied byte-for-byte (26,164,848
+faces). All 122 downloaded/extracted original files were rehashed successfully.
+The canonical DiffeoForge landmark reader accepted both `(100, 519, 3)` and
+`(100, 9, 3)` exports; the fixed set is an exact subset, with rank 3 in all cases.
+CSV roundtrip error was zero. The scaled pairwise-distance maximum error was
+`1.57e-13` mesh units; inverse XML error was below `1.31e-12` source units.
+
+Across the 21,300 non-fit surface points, pooled RMS/p95 were
+**0.008323 / 0.017101** native mesh units. Across the 900 fixed points,
+RMS/maximum were **0.018890 / 0.164445**. Curve offsets were retained:
+p95/maximum **0.396971 / 1.771540**. These are point-to-triangle proximity
+measurements, not landmark annotation accuracy or clinical validation.
+The diagnostic additional scale ranged from 0.999960 to 1.000122 and was not
+applied. Two competing-start warnings were resolved with three agreeing original
+initializations each; all original warning records and primary transforms remain.
+
+Six cases were reviewed in three full-resolution overlay projections each,
+including both resolved warnings and the worst numerical cases. No gross frame
+mismatch was visible; this is not a 100-subject anatomical sign-off. The existing
+landmark/mesh I/O suite passed 28 tests; four local preparation tests covered
+transform/inverse convention, reflection rejection, initializations and CSV order.
+No application code, installer, atlas parameters or existing runs were changed.
