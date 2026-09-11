@@ -678,6 +678,7 @@ and workflow for another mesh directory.
 - [Modern relative-objective stopping semantics](docs/MODERN_OBJECTIVE_STOPPING.md)
 - [Bounded-memory blockwise Gaussian primitives](docs/BLOCKWISE_GAUSSIAN.md)
 - [Landmark-based Procrustes alignment](docs/PROCRUSTES_ALIGNMENT.md)
+- [MARGO human mandible dataset intake](docs/MARGO_DATASET_INTAKE.md)
 - [Data-assisted Deformetrica parameter guidance](docs/DATA_ASSISTED_PARAMETERS.md)
 - [Transparent Deformetrica parameter calibration](docs/PARAMETER_CALIBRATION.md)
 - [Post-pilot DiffeoForge Validation Lab](docs/VALIDATION_LAB.md)
