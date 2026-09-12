@@ -1,0 +1,140 @@
+# Supervised desktop Deformetrica execution
+
+Status: **alpha; execution and cancellation are connected and the execution
+worker is included in the prospective Windows evidence bundle**
+
+DiffeoForge desktop can launch the exact Deformetrica configuration completed
+in parameter review after its configured reference runtime passes the read-only
+doctor check. The reviewed configuration hash, complete launcher identity, run
+ID, and absent immutable destination are bound into one versioned launch
+request. Refreshing or starting that request retains the same run ID, so the
+destination shown to the user cannot silently change at launch.
+
+For a terminal interrupted or failed reference run, **Resume interrupted run…**
+performs bounded discovery and verifies the source manifest, protected inputs,
+terminal evidence, complete output inventory, and checkpoint before presenting a
+successor. Starting it creates a new immutable run beside the source; the source
+run is never reopened or modified. Deformetrica 4.3 restores parameters and the
+iteration number but reinitializes the objective baseline, gradient, and
+line-search state, so recovery is not an exact optimizer-trajectory continuation.
+
+For a power loss or hard process termination that leaves the latest event at
+`started`, **Recover after crashâ€¦** performs a separate guarded flow. It fully
+verifies protected inputs and any checkpoint, requires explicit confirmation that
+no DiffeoForge, Deformetrica, WSL, or container process is still writing, and hashes
+the retained output outside the GUI thread. It never restarts the old directory.
+Complete inventory or result files left by an interrupted finalization are
+reconciled only when they still match the log, checkpoint, output bytes, and started
+event; contradictions fail closed. A resumable terminal outcome then opens the same
+immutable-successor screen.
+
+For combined production-scale cohorts (at least 250 subjects and at least 8,000
+faces), launch additionally fails closed unless checkpoint cadence is at most five
+iterations and measured free disk covers the inputs, projected generated meshes,
+one complete immutable resume successor, and a fixed safety reserve. This is an
+engineering recovery/storage gate, not evidence of biological validity or measured
+300-subject performance.
+
+## Process and evidence boundary
+
+The Qt window never runs Deformetrica in its own process. A Qt task starts a
+Qt-independent parent controller, which contains a dedicated execution child in
+a Windows kill-on-close Job before transmitting the request. The child then:
+
+1. rechecks the configuration bytes, launcher settings, and destination;
+2. runs the normal preflight service;
+3. creates the immutable prepared run with the shared preparation service;
+4. executes the existing external-backend adapter;
+5. inventories terminal outputs; and
+6. verifies the result report before emitting a terminal event.
+
+The parent separately verifies the terminal state. Completed and interrupted
+runs must pass the full result report and match the child's `result.json` hash.
+A prepared-but-not-executed stop must pass the prepared-run verifier. A stop
+before preparation must leave no destination. Protocol, exit-code, lifecycle,
+hash, and filesystem contradictions fail closed.
+
+Deformetrica can write optimizer output to timestamped `output/*_info.log`
+files instead of its process stdout. The adapter tails both sources, de-duplicates
+cross-source repeats, and flushes the observed stream into
+`logs/deformetrica.log`. The worker sends only schema-valid lifecycle, activity,
+and progress events on its protocol stdout.
+
+After the parent accepts a completed run, a separate GUI task strictly imports
+the estimated momenta and control points, publishes a source-bound LDDMM
+deformation-kernel PCA snapshot, verifies it by recomputation, and only then
+unlocks Results & PCA. The previous Cartesian PCA remains an explicit legacy
+comparison rather than the silent default.
+This postprocessing is documented in
+[verified PCA of Deformetrica momenta](REFERENCE_PCA.md).
+
+## Progress and ETA meaning
+
+Before launch, the review screen shows a deliberately broad, low-confidence
+planning range. It scales an engineering workload heuristic by template and
+subject face counts, cohort size, time points, RK2, relative control-point
+spacing, CPU threads, and the configured iteration cap. It is neither a
+hardware benchmark nor a convergence prediction.
+
+Progress is derived from Deformetrica's own iteration and objective log lines.
+The desktop displays the observed iteration, configured maximum iteration,
+objective, attachment, regularity, and elapsed time. It does not claim that the
+iteration count is a convergence percentage.
+
+While Deformetrica is active but has not completed another logged iteration,
+the worker emits a heartbeat at a bounded cadence (currently 30 seconds). The first-iteration state is
+shown explicitly with elapsed time and the latest native log message, so an
+expensive initial objective and gradient evaluation does not look frozen.
+
+At the same cadence, the worker observes summed CPU and resident memory for the
+visible backend launcher process tree plus system RAM pressure. When CUDA was
+requested and `nvidia-smi` is available, it also reports whole-device GPU load
+and memory with an explicit warning that WSL/container attribution to this one
+run is not established. Missing telemetry never fails the atlas and no value is
+presented as peak-memory evidence. See [Run management](RUN_MANAGER.md).
+
+After at least three measured iteration intervals, the tracker takes the median
+seconds per iteration from a rolling ten-observation window and computes:
+
+```text
+ETA to iteration cap = (configured maximum - observed iteration)
+                       * median observed seconds per iteration
+```
+
+The UI labels this value **ETA to iteration cap (not convergence)**. Before
+enough observations exist it retains the broad planning range and says that the
+live estimate is warming up. The observed value replaces the pre-run heuristic;
+it remains a rate extrapolation, not a runtime guarantee, convergence forecast,
+or production-performance claim.
+
+## Cancellation outcomes
+
+Cancellation is phase-dependent and yields one of three nonfailure outcomes:
+
+- `stopped_before_prepare`: no run directory exists;
+- `prepared_not_executed`: the immutable prepared run exists, but Deformetrica
+  never started; or
+- `interrupted`: execution stopped, terminal evidence was written, and any
+  inventoried checkpoint remains in the run.
+
+Closing the window while execution is active requests the same cancellation and
+keeps the window open until the parent reconciles a terminal outcome.
+
+## Current limitations
+
+- The PyInstaller specification now includes the dedicated execution worker as
+  a fifth sibling executable. The prospective v0.4 evidence build requires both
+  hard-parent-death containment and a real queued-cancellation smoke before it
+  can write evidence. A fresh clean-runner v0.4 observation and rebuilt
+  installer are still pending; the currently installed preview is unchanged.
+- Terminal interrupted/failed-run resume and explicitly confirmed abandoned-run
+  recovery are guided desktop actions. Neither path can prove biological validity or
+  exact optimizer-trajectory continuity.
+- Verified Deformetrica momenta and control points are imported into the shared
+  PCA/result screen. Exact mean/positive/negative PC Shooting designs and their
+  supervised CLI execution are available; a verified default-location result is
+  exposed automatically in the native mesh viewer. A dedicated desktop launch
+  action and richer registration renderings are not yet implemented.
+- Private-alpha builds can reuse an already verified same-owner WSL runtime.
+  Public builds require the installer-managed runtime payload and its clean-host
+  install/repair validation before release.

@@ -107,6 +107,16 @@ def test_declared_pc2_pc3_plot_has_exact_axes_subject_order_and_variance_labels(
         "four",
         "five",
     ]
+    for circle, expected_label in zip(
+        root.findall(f".//{SVG}circle"),
+        ("one", "two", "three", "four", "five"),
+        strict=True,
+    ):
+        assert circle.attrib["data-subject-label"] == expected_label
+        assert circle.attrib["data-x-axis"] == "PC2"
+        assert circle.attrib["data-y-axis"] == "PC3"
+        assert np.isfinite(float(circle.attrib["data-x-score"]))
+        assert np.isfinite(float(circle.attrib["data-y-score"]))
 
 
 def test_score_plot_tick_labels_are_compact_for_embedded_desktop_rendering(
@@ -152,3 +162,44 @@ def test_plot_writer_never_overwrites_an_existing_file(tmp_path: Path) -> None:
         write_pca_scree_svg(path, _pca(components=1))
 
     assert path.read_text(encoding="utf-8") == "user data"
+
+
+@pytest.mark.parametrize("component_count", (66, 67))
+def test_dense_scree_axis_labels_do_not_overlap_at_common_display_scales(
+    tmp_path: Path,
+    component_count: int,
+) -> None:
+    random = np.random.default_rng(20260817)
+    features = random.normal(
+        size=(component_count + 1, component_count),
+    ).astype(np.float64)
+    pca = principal_component_analysis(
+        features,
+        n_components=component_count,
+        feature_space="dense_scree_regression",
+    )
+
+    path = write_pca_scree_svg(tmp_path / f"scree-{component_count}.svg", pca)
+    root = ET.parse(path).getroot()
+    labels = [
+        element
+        for element in root.findall(f".//{SVG}text")
+        if element.attrib.get("class") == "label"
+        and (element.text or "").startswith("PC")
+    ]
+
+    assert labels[0].text == "PC1"
+    assert labels[-1].text == f"PC{component_count}"
+    bounds = []
+    for label in labels:
+        center = float(label.attrib["x"])
+        estimated_width = len(label.text or "") * 8.0
+        bounds.append(
+            (center - estimated_width / 2.0, center + estimated_width / 2.0)
+        )
+    assert all(
+        right + 10.0 <= next_left
+        for (_, right), (next_left, _) in zip(bounds, bounds[1:], strict=False)
+    )
+    assert bounds[0][0] >= 0.0
+    assert bounds[-1][1] <= 900.0

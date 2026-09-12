@@ -12,12 +12,14 @@ import torch
 
 from diffeoforge.engine.dense import (
     GaussianTilePlan,
+    PreparedSurfaceAttachmentTarget,
     ShootingTrajectory,
     current_squared_distance,
     current_squared_distance_blockwise,
     deformation_energy,
     flow_points,
     shoot,
+    surface_squared_distance_to_prepared_target,
     varifold_squared_distance,
     varifold_squared_distance_blockwise,
 )
@@ -81,6 +83,7 @@ def subject_objective(
     shooting_integrator: ShootingIntegrator = "rk2",
     flow_integrator: FlowIntegrator = "deformetrica_heun",
     gaussian_tile_plan: GaussianTilePlan | None = None,
+    prepared_target: PreparedSurfaceAttachmentTarget | None = None,
 ) -> SubjectObjective:
     """Compute one Deformetrica-convention subject log-likelihood contribution.
 
@@ -106,7 +109,23 @@ def subject_objective(
         integrator=flow_integrator,
         gaussian_tile_plan=gaussian_tile_plan,
     )
-    if gaussian_tile_plan is None:
+    if prepared_target is not None:
+        if not isinstance(prepared_target, PreparedSurfaceAttachmentTarget):
+            raise TypeError("prepared_target must be a PreparedSurfaceAttachmentTarget or None")
+        prepared_target.validate_target(target_vertices, target_triangles)
+        if prepared_target.attachment_type != attachment_type:
+            raise ValueError("prepared_target attachment type does not match attachment_type")
+        width = _positive_scalar("attachment_kernel_width", attachment_kernel_width)
+        if prepared_target.kernel_width != width:
+            raise ValueError("prepared_target kernel width does not match attachment_kernel_width")
+        if prepared_target.gaussian_tile_plan != gaussian_tile_plan:
+            raise ValueError("prepared_target tile plan does not match gaussian_tile_plan")
+        residual = surface_squared_distance_to_prepared_target(
+            template_path[-1],
+            template_triangles,
+            prepared_target,
+        )
+    elif gaussian_tile_plan is None:
         distance_function = (
             current_squared_distance if attachment_type == "current" else varifold_squared_distance
         )
@@ -165,6 +184,7 @@ def atlas_objective(
     shooting_integrator: ShootingIntegrator = "rk2",
     flow_integrator: FlowIntegrator = "deformetrica_heun",
     gaussian_tile_plan: GaussianTilePlan | None = None,
+    prepared_targets: Sequence[PreparedSurfaceAttachmentTarget] | None = None,
 ) -> AtlasObjective:
     """Sum the objective over subjects without hidden averaging or reordering."""
 
@@ -177,6 +197,16 @@ def atlas_objective(
         raise ValueError("targets must contain at least one subject")
     if len(target_sequence) != momenta.shape[0]:
         raise ValueError("targets and momenta must contain the same number of subjects")
+    if prepared_targets is None:
+        prepared_target_sequence: tuple[PreparedSurfaceAttachmentTarget | None, ...] = (
+            None,
+        ) * len(target_sequence)
+    else:
+        prepared_target_sequence = tuple(prepared_targets)
+        if len(prepared_target_sequence) != len(target_sequence):
+            raise ValueError(
+                "prepared_targets and targets must contain the same number of subjects"
+            )
 
     subjects = tuple(
         subject_objective(
@@ -194,6 +224,7 @@ def atlas_objective(
             shooting_integrator=shooting_integrator,
             flow_integrator=flow_integrator,
             gaussian_tile_plan=gaussian_tile_plan,
+            prepared_target=prepared_target_sequence[index],
         )
         for index, (target_vertices, target_triangles) in enumerate(target_sequence)
     )

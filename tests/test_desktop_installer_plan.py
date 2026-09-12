@@ -90,6 +90,7 @@ def _bundle(
         "DiffeoForgeWorker.exe",
         "DiffeoForgeReferenceWorker.exe",
         "DiffeoForgeReferencePreparationWorker.exe",
+        "DiffeoForgeReferenceExecutionWorker.exe",
     ):
         (bundle / name).write_bytes(name.encode("ascii"))
     (internal / "schema.json").write_text('{"schema": true}\n', encoding="utf-8")
@@ -152,11 +153,11 @@ def _dependency_evidence(
         sort_keys=True,
     ).encode("utf-8")
     document = {
-        "schema_version": "0.1",
+        "schema_version": "0.2",
         "status": ("distribution_metadata_inventory_not_license_or_redistribution_approval"),
         "target": "windows-x86_64-cpu",
         "source": {
-            "freeze_evidence_schema_version": "0.3",
+            "freeze_evidence_schema_version": "0.4",
             "freeze_evidence_sha256": freeze_sha256,
             "source_commit_sha": SOURCE_COMMIT,
             "bundle_inventory_sha256": freeze["bundle"]["inventory_sha256"],
@@ -411,7 +412,7 @@ def test_verification_rejects_input_change_and_requires_external_plan_hash(
         )
 
 
-def test_inno_script_is_offline_and_has_no_execution_or_project_deletion() -> None:
+def test_inno_script_is_offline_and_only_runs_guarded_runtime_setup() -> None:
     script = (ROOT / "distribution" / "windows" / "DiffeoForge.iss").read_text(encoding="utf-8")
 
     for directive in (
@@ -437,11 +438,18 @@ def test_inno_script_is_offline_and_has_no_execution_or_project_deletion() -> No
     ):
         assert f"#ifndef {define}" in script
         assert f"#error {define} compiler define is required" in script
-    assert "[Run]" not in script
+    assert script.count("[Run]") == 1
+    runtime_guard = script.index("#ifdef ReferenceRuntimeArchive", script.index("[Icons]"))
+    assert runtime_guard < script.index("[Run]") < script.rindex("#endif")
+    assert "install-reference-runtime.ps1" in script[script.index("[Run]") :]
+    assert 'Filename: "{app}\\DiffeoForge.exe"' not in script[script.index("[Run]") :]
     assert "[UninstallRun]" not in script
     assert "download" not in script.lower()
     assert "http" not in script[script.index("[Files]") :]
-    assert all(term not in script.lower() for term in ("mesh", "landmark", "atlas", "pca"))
+    assert all(
+        term not in script.lower()
+        for term in ("\\meshes", "\\landmarks", "\\atlas", "\\pca")
+    )
     assert script.count('Source: "{#EvidenceDir}\\') == 6
     assert "Flags: unchecked" in script
 

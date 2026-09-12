@@ -9,6 +9,39 @@ from typing import Any, Literal
 
 from diffeoforge.engine.dense import GaussianTilePlan
 
+ENGINE_IMPLEMENTATION_VERSION = "1.8"
+
+# Exact continuation is intentionally an allow-list, not a numerical-version
+# comparison. A future implementation may resume an older checkpoint only
+# after tests establish that its serialized optimizer state and objective
+# semantics are unchanged. Adding a new engine version therefore remains
+# fail-closed until that compatibility is declared explicitly.
+EXACT_RESUME_ENGINE_COMPATIBILITY: dict[str, frozenset[str]] = {
+    ENGINE_IMPLEMENTATION_VERSION: frozenset(
+        {"1.5", "1.6", ENGINE_IMPLEMENTATION_VERSION}
+    ),
+}
+
+
+def supports_exact_engine_resume(
+    parent_implementation: object,
+    *,
+    successor_implementation: str | None = None,
+) -> bool:
+    """Return whether a successor may consume a parent's exact optimizer state."""
+
+    successor = (
+        ENGINE_IMPLEMENTATION_VERSION
+        if successor_implementation is None
+        else successor_implementation
+    )
+    if not isinstance(parent_implementation, str) or not isinstance(successor, str):
+        return False
+    return parent_implementation in EXACT_RESUME_ENGINE_COMPATIBILITY.get(
+        successor,
+        frozenset(),
+    )
+
 
 @dataclass(frozen=True)
 class PairwiseEvaluationPlan:
@@ -17,6 +50,7 @@ class PairwiseEvaluationPlan:
     mode: Literal["dense", "blockwise"] = "dense"
     query_tile_size: int | None = None
     source_tile_size: int | None = None
+    autograd_strategy: Literal["standard", "recompute"] = "standard"
 
     def __post_init__(self) -> None:
         if self.mode not in {"dense", "blockwise"}:
@@ -24,7 +58,11 @@ class PairwiseEvaluationPlan:
         if self.mode == "dense":
             if self.query_tile_size is not None or self.source_tile_size is not None:
                 raise ValueError("dense mode requires null query/source tile sizes")
+            if self.autograd_strategy != "standard":
+                raise ValueError("dense mode requires the standard autograd strategy")
             return
+        if self.autograd_strategy not in {"standard", "recompute"}:
+            raise ValueError("autograd_strategy must be 'standard' or 'recompute'")
         for name in ("query_tile_size", "source_tile_size"):
             value = getattr(self, name)
             if isinstance(value, bool) or not isinstance(value, Integral):
@@ -39,41 +77,50 @@ class PairwiseEvaluationPlan:
 
         if not isinstance(value, Mapping):
             raise TypeError("pairwise_evaluation must be a mapping")
-        expected = {"mode", "query_tile_size", "source_tile_size"}
-        if set(value) != expected:
+        required = {"mode", "query_tile_size", "source_tile_size"}
+        if not required <= set(value) or not set(value) <= required | {"autograd_strategy"}:
             raise ValueError(
                 "pairwise_evaluation must contain exactly mode, query_tile_size, "
-                "and source_tile_size"
+                "source_tile_size, and optionally autograd_strategy"
             )
         return cls(
             mode=value["mode"],
             query_tile_size=value["query_tile_size"],
             source_tile_size=value["source_tile_size"],
+            autograd_strategy=value.get("autograd_strategy", "standard"),
         )
 
     @property
     def gaussian_tile_plan(self) -> GaussianTilePlan | None:
-        """Return the standard-autograd tile plan, or ``None`` for the dense oracle."""
+        """Return the declared tile plan, or ``None`` for the dense oracle."""
 
         if self.mode == "dense":
             return None
         return GaussianTilePlan(
             query_rows=self.query_tile_size,
             source_rows=self.source_tile_size,
-            autograd_strategy="standard",
+            autograd_strategy=self.autograd_strategy,
         )
 
     @property
     def engine_id(self) -> str:
         """Return the immutable engine identifier for this evaluation mode."""
 
-        return f"diffeoforge_modern_{self.mode}"
+        suffix = (
+            "_recompute"
+            if self.mode == "blockwise" and self.autograd_strategy == "recompute"
+            else ""
+        )
+        return f"diffeoforge_modern_{self.mode}{suffix}"
 
     def as_manifest(self) -> dict[str, str | int | None]:
         """Return the exact JSON-compatible provenance record."""
 
-        return {
+        manifest: dict[str, str | int | None] = {
             "mode": self.mode,
             "query_tile_size": self.query_tile_size,
             "source_tile_size": self.source_tile_size,
         }
+        if self.autograd_strategy != "standard":
+            manifest["autograd_strategy"] = self.autograd_strategy
+        return manifest

@@ -14,9 +14,11 @@ from pathlib import Path, PureWindowsPath
 from typing import Any
 
 from diffeoforge.config import ConfigurationError
+from diffeoforge.reference_runtime import probe_wsl_launcher
+from diffeoforge.subprocess_policy import hidden_windows_process_kwargs
 
 BACKEND_ID = "deformetrica_reference"
-BACKEND_CONTRACT_VERSION = "0.1"
+BACKEND_CONTRACT_VERSION = "0.2"
 CONTAINER_WORKING_DIRECTORY = "/work"
 ENGINE_CONSTANTS = {
     "line_search_shrink": 0.5,
@@ -47,10 +49,13 @@ def validate_reference_config(config: Mapping[str, Any]) -> None:
     runtime = config["runtime"]
     if runtime["backend"] != BACKEND_ID:
         raise ConfigurationError(f"Unsupported backend: {runtime['backend']}")
-    if runtime["device"] != "cpu":
+    if runtime["device"] not in {"cpu", "cuda"}:
         raise ConfigurationError(
-            "The Deformetrica 4.3 reference backend is CPU-only until GPU equivalence "
-            "has been validated."
+            "The Deformetrica 4.3 reference device must be 'cpu' or 'cuda'."
+        )
+    if runtime["device"] == "cuda" and runtime["launcher"]["type"] != "wsl":
+        raise ConfigurationError(
+            "Deformetrica KeOps GPU kernels currently require the verified WSL launcher."
         )
     if config["output"]["retain_flow_meshes"] is not True:
         raise ConfigurationError(
@@ -91,6 +96,7 @@ def _render_xml(root: ET.Element) -> bytes:
 def _model_xml(
     config: Mapping[str, Any],
     staged_template: Path,
+    staged_control_points: Path | None = None,
 ) -> bytes:
     model = config["model"]
     runtime = config["runtime"]
@@ -105,12 +111,17 @@ def _model_xml(
         "initial-cp-spacing",
         model["deformation"]["initial_control_point_spacing"],
     )
+    if staged_control_points is not None:
+        _add_text(root, "initial-control-points", staged_control_points.as_posix())
     template = ET.SubElement(root, "template")
     obj = ET.SubElement(template, "object", {"id": model["object_id"]})
     _add_text(obj, "deformable-object-type", "SurfaceMesh")
     _add_text(obj, "attachment-type", model["attachment"]["type"])
     _add_text(obj, "noise-std", model["noise_std"])
     _add_text(obj, "kernel-type", runtime["kernel_backend"])
+    # Deformetrica 4.3's legacy GpuMode.KERNEL keeps model tensors on CPU and
+    # dispatches KeOps reductions to CUDA.  Preserve the historical model XML
+    # while the optimization-level gpu-mode below selects that acceleration.
     _add_text(obj, "kernel-device", "cpu")
     _add_text(obj, "kernel-width", model["attachment"]["kernel_width"])
     _add_text(obj, "filename", staged_template.as_posix())
@@ -155,7 +166,11 @@ def _optimization_xml(
     _add_text(root, "optimization-method-type", method)
     _add_text(root, "optimized-log-likelihood", "complete")
     _add_text(root, "number-of-processes", config["runtime"]["processes"])
-    _add_text(root, "gpu-mode", "none")
+    _add_text(
+        root,
+        "gpu-mode",
+        "kernel" if config["runtime"]["device"] == "cuda" else "none",
+    )
     _add_text(root, "initial-step-size", optimization["initial_step_size"])
     _add_text(root, "max-iterations", optimization["max_iterations"])
     _add_text(root, "convergence-tolerance", optimization["convergence_tolerance"])
@@ -202,12 +217,13 @@ def render_engine_file_bytes(
     config: Mapping[str, Any],
     staged_template: Path,
     staged_subjects: Sequence[Path],
+    staged_control_points: Path | None = None,
 ) -> dict[str, bytes]:
     """Render the exact three Deformetrica XML inputs without writing files."""
 
     validate_reference_config(config)
     return {
-        "model.xml": _model_xml(config, staged_template),
+        "model.xml": _model_xml(config, staged_template, staged_control_points),
         "data_set.xml": _dataset_xml(config, staged_subjects),
         "optimization_parameters.xml": _optimization_xml(config),
     }
@@ -218,11 +234,17 @@ def generate_engine_files(
     engine_directory: Path,
     staged_template: Path,
     staged_subjects: Sequence[Path],
+    staged_control_points: Path | None = None,
 ) -> tuple[Path, Path, Path]:
     """Generate the three explicit XML inputs used by Deformetrica 4.3."""
 
     validate_reference_config(config)
-    rendered = render_engine_file_bytes(config, staged_template, staged_subjects)
+    rendered = render_engine_file_bytes(
+        config,
+        staged_template,
+        staged_subjects,
+        staged_control_points,
+    )
     model_path = engine_directory / "model.xml"
     dataset_path = engine_directory / "data_set.xml"
     optimization_path = engine_directory / "optimization_parameters.xml"
@@ -270,13 +292,6 @@ def build_command(
     """Resolve the exact native or WSL command for a prepared run."""
 
     validate_reference_config(config)
-    runtime = config["runtime"]
-    launcher = runtime["launcher"]
-    environment = {
-        "OMP_NUM_THREADS": str(runtime["threads"]),
-        "USE_CUDA": "0",
-        "CUDA_VISIBLE_DEVICES": "-1",
-    }
     arguments = (
         "estimate",
         "engine/model.xml",
@@ -285,8 +300,77 @@ def build_command(
         "engine/optimization_parameters.xml",
         "--output=output",
         "-v",
-        runtime["verbosity"],
+        config["runtime"]["verbosity"],
     )
+    return _build_launcher_command(
+        config,
+        run_directory,
+        arguments=arguments,
+        follow_run_directory_symlinks=follow_run_directory_symlinks,
+    )
+
+
+def build_shooting_command(
+    config: Mapping[str, Any],
+    run_directory: Path,
+    *,
+    follow_run_directory_symlinks: bool = True,
+) -> CommandSpec:
+    """Resolve an exact Deformetrica ``compute Shooting`` command.
+
+    The caller must prepare ``engine/model.xml`` with model type ``Shooting``,
+    an immutable momenta file, and the source run's optimization parameters.
+    This helper only applies the same verified launcher, device, compiler, and
+    thread contract used for atlas estimation.
+    """
+
+    validate_reference_config(config)
+    arguments = (
+        "compute",
+        "engine/model.xml",
+        "-p",
+        "engine/optimization_parameters.xml",
+        "--output=output",
+        "-v",
+        config["runtime"]["verbosity"],
+    )
+    return _build_launcher_command(
+        config,
+        run_directory,
+        arguments=arguments,
+        follow_run_directory_symlinks=follow_run_directory_symlinks,
+    )
+
+
+def _build_launcher_command(
+    config: Mapping[str, Any],
+    run_directory: Path,
+    *,
+    arguments: tuple[str, ...],
+    follow_run_directory_symlinks: bool,
+) -> CommandSpec:
+    """Apply one validated reference runtime to a prepared engine operation."""
+
+    runtime = config["runtime"]
+    launcher = runtime["launcher"]
+    gpu_kernels = runtime["device"] == "cuda"
+    environment = {
+        "OMP_NUM_THREADS": str(runtime["threads"]),
+        "CUDA_VISIBLE_DEVICES": "0" if gpu_kernels else "-1",
+    }
+    if gpu_kernels:
+        # Ubuntu 24.04 defaults to GCC 13, while the CUDA 12 toolkit used by
+        # the verified Deformetrica 4.3 runtime supports host compilers only
+        # through GCC 12.  Scope the compatible compiler to this process.
+        environment.update(
+            {
+                "CC": "/usr/bin/gcc-12",
+                "CXX": "/usr/bin/g++-12",
+                "CUDAHOSTCXX": "/usr/bin/g++-12",
+            }
+        )
+    else:
+        environment["USE_CUDA"] = "0"
     command_run_directory = _command_run_directory(
         run_directory,
         follow_symlinks=follow_run_directory_symlinks,
@@ -310,6 +394,7 @@ def build_command(
             follow_symlinks=follow_run_directory_symlinks,
         )
         env_arguments = tuple(f"{key}={value}" for key, value in environment.items())
+        unset_arguments = ("-u", "USE_CUDA") if gpu_kernels else ()
         return CommandSpec(
             argv=(
                 "wsl.exe",
@@ -319,6 +404,7 @@ def build_command(
                 wsl_directory,
                 "--",
                 "env",
+                *unset_arguments,
                 *env_arguments,
                 launcher["executable"],
                 *arguments,
@@ -382,10 +468,12 @@ def ensure_launcher_available(config: Mapping[str, Any]) -> None:
         return
 
     if launcher["type"] == "wsl":
-        if os.name != "nt":
-            raise ConfigurationError("The WSL launcher is only available from Windows.")
-        if shutil.which("wsl.exe") is None:
-            raise ConfigurationError("wsl.exe is not available on PATH.")
+        probe = probe_wsl_launcher(launcher)
+        if not probe.ready:
+            guidance = f" {probe.guidance}" if probe.guidance else ""
+            raise ConfigurationError(
+                f"Deformetrica WSL runtime is unavailable: {probe.summary}.{guidance}"
+            )
         return
 
     if launcher["type"] == "container":
@@ -403,6 +491,7 @@ def ensure_launcher_available(config: Mapping[str, Any]) -> None:
                 errors="replace",
                 timeout=30,
                 check=False,
+                **hidden_windows_process_kwargs(),
             )
         except subprocess.TimeoutExpired as error:
             raise ConfigurationError(

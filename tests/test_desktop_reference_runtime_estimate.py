@@ -1,0 +1,117 @@
+from __future__ import annotations
+
+from copy import deepcopy
+from dataclasses import replace
+from pathlib import Path
+
+from diffeoforge.desktop.reference_runtime_estimate import (
+    estimate_reference_runtime,
+)
+from diffeoforge.report import collect_preflight
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_reference_runtime_estimate_is_broad_and_parameter_bound() -> None:
+    preflight = collect_preflight(ROOT / "examples" / "minimal-atlas-container.yaml")
+
+    estimate = estimate_reference_runtime(preflight)
+
+    assert estimate.lower_seconds < estimate.typical_seconds < estimate.upper_seconds
+    assert estimate.lower_iterations < estimate.typical_iterations
+    assert estimate.maximum_iterations == 100
+    assert estimate.confidence == "very_low"
+    assert (
+        estimate.postprocessing_lower_seconds
+        < estimate.postprocessing_typical_seconds
+        < estimate.postprocessing_upper_seconds
+    )
+
+
+def test_reference_runtime_estimate_grows_strongly_with_surface_resolution() -> None:
+    preflight = collect_preflight(ROOT / "examples" / "minimal-atlas-container.yaml")
+    dense = replace(
+        preflight,
+        template=replace(
+            preflight.template,
+            points=preflight.template.points * 10,
+            cells=preflight.template.cells * 10,
+        ),
+        subjects=tuple(
+            replace(
+                subject,
+                points=subject.points * 10,
+                cells=subject.cells * 10,
+            )
+            for subject in preflight.subjects
+        ),
+    )
+
+    ordinary = estimate_reference_runtime(preflight)
+    high_resolution = estimate_reference_runtime(dense)
+
+    assert high_resolution.pair_evaluations_per_iteration == (
+        ordinary.pair_evaluations_per_iteration * 100
+    )
+    assert (
+        high_resolution.seconds_per_iteration
+        > ordinary.seconds_per_iteration * 2
+    )
+    assert high_resolution.typical_seconds > ordinary.typical_seconds
+
+
+def test_reference_runtime_estimate_accounts_for_configured_threads() -> None:
+    preflight = collect_preflight(ROOT / "examples" / "minimal-atlas-container.yaml")
+    config = deepcopy(preflight.config)
+    config["runtime"]["threads"] = 16
+
+    four_threads = estimate_reference_runtime(preflight)
+    sixteen_threads = estimate_reference_runtime(replace(preflight, config=config))
+
+    assert sixteen_threads.typical_seconds < four_threads.typical_seconds
+
+
+def test_reference_runtime_estimate_accounts_for_gpu_kernels() -> None:
+    preflight = collect_preflight(ROOT / "examples" / "minimal-atlas-container.yaml")
+    config = deepcopy(preflight.config)
+    config["runtime"]["device"] = "cuda"
+    config["runtime"]["launcher"] = {
+        "type": "wsl",
+        "distribution": "Ubuntu",
+        "executable": "/home/researcher/deformetrica/bin/deformetrica",
+    }
+
+    cpu = estimate_reference_runtime(preflight)
+    gpu = estimate_reference_runtime(replace(preflight, config=config))
+
+    assert gpu.seconds_per_iteration < cpu.seconds_per_iteration * 0.2
+    assert gpu.typical_iterations == cpu.typical_iterations
+
+
+def test_reference_runtime_estimate_uses_same_project_pilot_timings() -> None:
+    preflight = collect_preflight(ROOT / "examples" / "minimal-atlas-container.yaml")
+    config = deepcopy(preflight.config)
+    recommendation = config["project"].setdefault(
+        "parameter_provenance",
+        {},
+    ).setdefault("recommendation", {})
+    recommendation["calibration_result"] = {
+        "runtime_calibration": {
+            "pilot_subject_count": 2,
+            "observations": [
+                {
+                    "runtime_seconds": 120.0 + index * 10.0,
+                    "final_iteration": 40 + index * 5,
+                }
+                for index in range(5)
+            ],
+        }
+    }
+
+    estimate = estimate_reference_runtime(replace(preflight, config=config))
+
+    assert estimate.confidence == "pilot_calibrated"
+    assert estimate.basis == "same-project_pilot_observations"
+    assert estimate.pilot_observation_count == 5
+    assert estimate.lower_iterations <= estimate.typical_iterations
+    assert estimate.lower_seconds < estimate.typical_seconds < estimate.upper_seconds

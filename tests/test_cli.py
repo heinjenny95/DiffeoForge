@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 from pathlib import Path
 
+import numpy as np
+
 from diffeoforge import __version__, cli
+from diffeoforge.analysis.landmarks import read_landmark_csv
 from diffeoforge.cli import main
 from diffeoforge.diagnostics import DoctorCheck, DoctorReport
 
@@ -50,10 +54,16 @@ def test_package_module_entrypoint_exposes_the_same_cli(tmp_path: Path) -> None:
     assert help_result.stdout.startswith("usage: diffeoforge ")
     assert "modern-private-status" in help_result.stdout
     assert "modern-benchmark-matrix-design" in help_result.stdout
+    assert "modern-optimizer-benchmark" in help_result.stdout
+    assert "modern-optimizer-benchmark-verify" in help_result.stdout
+    assert "modern-checkpoint-recovery-init" in help_result.stdout
+    assert "modern-checkpoint-recovery-verify-run" in help_result.stdout
     assert "modern-benchmark-matrix-design-verify" in help_result.stdout
     assert "modern-benchmark-matrix-study-status" in help_result.stdout
     assert "modern-benchmark-matrix-study-verify" in help_result.stdout
     assert "modern-benchmark-study-verify" in help_result.stdout
+    assert "modern-pca-stability" in help_result.stdout
+    assert "modern-pca-stability-verify" in help_result.stdout
     assert help_result.stderr == ""
 
 
@@ -84,6 +94,182 @@ def test_package_module_can_be_imported_without_executing_cli(tmp_path: Path) ->
     assert result.returncode == 0
     assert result.stdout == "imported\n"
     assert result.stderr == ""
+
+
+def test_landmark_txt_import_cli_creates_canonical_csv(capsys, tmp_path: Path) -> None:
+    meshes = tmp_path / "meshes"
+    txt = tmp_path / "txt"
+    meshes.mkdir()
+    txt.mkdir()
+    for name, offset in (("first", 0), ("second", 10)):
+        (meshes / f"{name}.ply").write_text("placeholder\n", encoding="utf-8")
+        (txt / f"{name}.txt").write_text(
+            "[individuals]\n1\n[dimensions]\n3\n[landmarks]\n3\n"
+            "[rawpoints]\n'#1\n"
+            f"{offset + 1} 2 3\n{offset + 4} 5 6\n{offset + 7} 8 9\n",
+            encoding="utf-8",
+        )
+    output = tmp_path / "landmarks.csv"
+
+    return_code = main(
+        [
+            "landmarks-import-txt",
+            str(meshes),
+            str(txt),
+            "--mesh-pattern",
+            "*.ply",
+            "--output",
+            str(output),
+        ]
+    )
+
+    captured = capsys.readouterr()
+    labels, values = read_landmark_csv(output, ("first.ply", "second.ply"))
+    assert return_code == 0
+    assert labels == ("LM1", "LM2", "LM3")
+    assert values.dtype == np.float64
+    assert values[1, 0].tolist() == [11.0, 2.0, 3.0]
+    assert "Matched meshes/TXT files: 2" in captured.out
+    assert "no unit conversion or sliding" in captured.out
+
+
+def test_landmark_fcsv_import_cli_creates_canonical_csv(capsys, tmp_path: Path) -> None:
+    meshes = tmp_path / "meshes"
+    fcsv = tmp_path / "fcsv"
+    meshes.mkdir()
+    fcsv.mkdir()
+    for name, offset in (("first", 0), ("second", 10)):
+        (meshes / f"{name}.ply").write_text("placeholder\n", encoding="utf-8")
+        (fcsv / f"{name}.fcsv").write_text(
+            "# Markups fiducial file version = 5.2\n"
+            "# CoordinateSystem = LPS\n"
+            "# columns = id,x,y,z,ow,ox,oy,oz,vis,sel,lock,label,desc,associatedNodeID\n"
+            f"1,{offset + 1},2,3,0,0,0,1,1,1,0,F-1,,,2,0\n"
+            f"2,{offset + 4},5,6,0,0,0,1,1,1,0,F-2,,,2,0\n"
+            f"3,{offset + 7},8,9,0,0,0,1,1,1,0,F-3,,,2,0\n",
+            encoding="utf-8",
+        )
+    output = tmp_path / "landmarks.csv"
+
+    return_code = main(
+        [
+            "landmarks-import-fcsv",
+            str(meshes),
+            str(fcsv),
+            "--mesh-pattern",
+            "*.ply",
+            "--output",
+            str(output),
+        ]
+    )
+
+    captured = capsys.readouterr()
+    labels, values = read_landmark_csv(output, ("first.ply", "second.ply"))
+    assert return_code == 0
+    assert labels == ("LM1", "LM2", "LM3")
+    assert values.dtype == np.float64
+    assert values[1, 0].tolist() == [11.0, 2.0, 3.0]
+    assert "Matched meshes/FCSV files: 2" in captured.out
+    assert "Declared coordinate system: LPS" in captured.out
+    assert "no RAS/LPS conversion" in captured.out
+
+
+def test_reference_calibration_plan_cli_exports_reproducible_methods_bundle(
+    capsys,
+    tmp_path: Path,
+) -> None:
+    meshes = Path(__file__).parents[1] / "examples" / "synthetic" / "meshes"
+    output = tmp_path / "calibration"
+
+    return_code = main(
+        [
+            "reference-calibration-plan",
+            str(meshes),
+            "--units",
+            "unitless",
+            "--surface-detail",
+            "fine",
+            "--deformation-scale",
+            "local",
+            "--pilot-subjects",
+            "4",
+            "--smallest-relevant-feature",
+            "0.1",
+            "--output",
+            str(output),
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert return_code == 0
+    assert "Status: planned, not executed" in captured.out
+    assert "Pilot cohort: 4" in captured.out
+    assert (output / "parameter-calibration-plan.json").is_file()
+    assert (output / "parameter-calibration-plan.html").is_file()
+    assert (output / "parameter-calibration-plan.sha256").is_file()
+    assert (output / "aligned-mesh-recommendation.json").is_file()
+
+    blocked_code = main(
+        [
+            "reference-calibration-plan",
+            str(meshes),
+            "--units",
+            "unitless",
+            "--surface-detail",
+            "fine",
+            "--deformation-scale",
+            "local",
+            "--output",
+            str(output),
+        ]
+    )
+    blocked = capsys.readouterr()
+    assert blocked_code == 2
+    assert "will not be overwritten" in blocked.err
+
+
+def test_reference_calibration_plan_cli_binds_pilot_declarations(
+    capsys,
+    tmp_path: Path,
+) -> None:
+    meshes = Path(__file__).parents[1] / "examples" / "synthetic" / "meshes"
+    subjects = sorted(meshes.glob("subject-*.vtk"), key=lambda path: path.name.casefold())
+    declarations = tmp_path / "pilot-declarations.csv"
+    declarations.write_text(
+        "filename,stratum,is_extreme\n"
+        f"{subjects[0].name},stratum-a,true\n"
+        f"{subjects[1].name},stratum-b,false\n",
+        encoding="utf-8",
+    )
+    output = tmp_path / "calibration-stratified"
+
+    return_code = main(
+        [
+            "reference-calibration-plan",
+            str(meshes),
+            "--units",
+            "unitless",
+            "--surface-detail",
+            "coarse",
+            "--deformation-scale",
+            "global",
+            "--pilot-subjects",
+            "3",
+            "--pilot-declarations",
+            str(declarations),
+            "--output",
+            str(output),
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert return_code == 0
+    assert "2 strata; 1 explicit extremes" in captured.out
+    plan = json.loads(
+        (output / "parameter-calibration-plan.json").read_text(encoding="utf-8")
+    )
+    assert plan["version"] == "0.5"
+    assert len(plan["pilot_subject_declarations"]) == 2
 
 
 def test_doctor_json_uses_distinct_blocked_exit_code(capsys, monkeypatch, tmp_path: Path) -> None:

@@ -161,6 +161,105 @@ def test_blockwise_surface_distances_match_dense_forward_and_gradient(
         (varifold_squared_distance, varifold_squared_distance_blockwise),
     ],
 )
+@pytest.mark.parametrize("autograd_strategy", ["standard", "recompute"])
+def test_symmetric_surface_tiles_match_dense_forward_and_gradient(
+    dense_distance,
+    blockwise_distance,
+    autograd_strategy: str,
+) -> None:
+    source, triangles = _tetrahedron()
+    target = source.clone()
+    target[3] += torch.tensor([0.03, -0.02, 0.04], dtype=DTYPE)
+    dense_source = source.clone().requires_grad_(True)
+    block_source = source.clone().requires_grad_(True)
+
+    dense = dense_distance(dense_source, triangles, target, triangles, 0.75)
+    blockwise = blockwise_distance(
+        block_source,
+        triangles,
+        target,
+        triangles,
+        0.75,
+        query_tile_size=2,
+        source_tile_size=2,
+        autograd_strategy=autograd_strategy,
+    )
+    (dense_gradient,) = torch.autograd.grad(dense, dense_source)
+    (block_gradient,) = torch.autograd.grad(blockwise, block_source)
+
+    torch.testing.assert_close(blockwise, dense, rtol=2e-12, atol=2e-13)
+    torch.testing.assert_close(block_gradient, dense_gradient, rtol=3e-11, atol=3e-12)
+
+
+def test_symmetric_current_self_terms_evaluate_only_one_triangle_of_tiles(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import diffeoforge.engine.dense as dense_module
+
+    source, triangles = _tetrahedron()
+    target = source.clone()
+    target[3, 2] += 0.04
+    calls = 0
+    original = dense_module._gaussian_matrix
+
+    def observe(x, y, width):
+        nonlocal calls
+        calls += 1
+        return original(x, y, width)
+
+    monkeypatch.setattr(dense_module, "_gaussian_matrix", observe)
+    value = current_squared_distance_blockwise(
+        source,
+        triangles,
+        target,
+        triangles,
+        0.75,
+        query_tile_size=2,
+        source_tile_size=2,
+    )
+
+    assert torch.isfinite(value)
+    assert calls == 10  # 3 + 3 symmetric self tiles, plus 4 cross tiles.
+
+
+def test_symmetric_varifold_self_terms_evaluate_only_one_triangle_of_tiles(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import diffeoforge.engine.dense as dense_module
+
+    source, triangles = _tetrahedron()
+    target = source.clone()
+    target[3, 2] += 0.04
+    calls = 0
+    original = dense_module._gaussian_matrix
+
+    def observe(x, y, width):
+        nonlocal calls
+        calls += 1
+        return original(x, y, width)
+
+    monkeypatch.setattr(dense_module, "_gaussian_matrix", observe)
+    value = varifold_squared_distance_blockwise(
+        source,
+        triangles,
+        target,
+        triangles,
+        0.75,
+        query_tile_size=2,
+        source_tile_size=2,
+    )
+
+    assert torch.isfinite(value)
+    assert calls == 10  # 3 + 3 symmetric self tiles, plus 4 cross tiles.
+
+
+@pytest.mark.parametrize(
+    ("dense_distance", "blockwise_distance"),
+    [
+        (current_squared_distance, current_squared_distance_blockwise),
+        (varifold_squared_distance, varifold_squared_distance_blockwise),
+    ],
+)
 def test_blockwise_surface_forward_matches_dense_on_cc0_320_face_meshes(
     dense_distance,
     blockwise_distance,
@@ -185,6 +284,41 @@ def test_blockwise_surface_forward_matches_dense_on_cc0_320_face_meshes(
     )
 
     torch.testing.assert_close(blockwise, dense, rtol=2e-11, atol=2e-12)
+
+
+def test_symmetric_current_tiles_match_dense_on_cc0_mesh_gradient() -> None:
+    directory = ROOT / "examples" / "synthetic" / "meshes"
+    source_mesh = read_vtk_polydata(directory / "template.vtk")
+    target_mesh = read_vtk_polydata(directory / "subject-01.vtk")
+    source = torch.tensor(source_mesh.vertices, dtype=DTYPE)
+    source_triangles = torch.tensor(source_mesh.triangles, dtype=torch.int64)
+    target = torch.tensor(target_mesh.vertices, dtype=DTYPE)
+    target_triangles = torch.tensor(target_mesh.triangles, dtype=torch.int64)
+    dense_source = source.clone().requires_grad_(True)
+    block_source = source.clone().requires_grad_(True)
+
+    dense = current_squared_distance(
+        dense_source,
+        source_triangles,
+        target,
+        target_triangles,
+        0.45,
+    )
+    blockwise = current_squared_distance_blockwise(
+        block_source,
+        source_triangles,
+        target,
+        target_triangles,
+        0.45,
+        query_tile_size=32,
+        source_tile_size=32,
+        autograd_strategy="recompute",
+    )
+    (dense_gradient,) = torch.autograd.grad(dense, dense_source)
+    (block_gradient,) = torch.autograd.grad(blockwise, block_source)
+
+    torch.testing.assert_close(blockwise, dense, rtol=2e-11, atol=2e-12)
+    torch.testing.assert_close(block_gradient, dense_gradient, rtol=5e-10, atol=5e-11)
 
 
 def test_blockwise_varifold_orientation_and_joint_translation_contracts() -> None:
@@ -232,13 +366,13 @@ def test_every_observed_gaussian_tile_respects_explicit_bounds(
 
     vertices, triangles = _tetrahedron()
     observed = []
-    original = dense_module._gaussian_tile
+    original = dense_module._gaussian_matrix
 
     def observe(x, y, width):
         observed.append((x.shape[0], y.shape[0]))
         return original(x, y, width)
 
-    monkeypatch.setattr(dense_module, "_gaussian_tile", observe)
+    monkeypatch.setattr(dense_module, "_gaussian_matrix", observe)
     value = varifold_squared_distance_blockwise(
         vertices,
         triangles,
@@ -273,7 +407,7 @@ def test_tile_plan_has_exact_float64_payload_and_rejects_invalid_bounds() -> Non
         GaussianTilePlan(3, 2, "automatic")
 
 
-def test_recompute_avoids_saving_pairwise_rank_three_convolution_tensors() -> None:
+def test_recompute_avoids_saving_pairwise_convolution_matrices() -> None:
     generator = torch.Generator().manual_seed(20260716)
     inputs = (
         torch.randn((64, 3), dtype=DTYPE, generator=generator),
@@ -308,11 +442,163 @@ def test_recompute_avoids_saving_pairwise_rank_three_convolution_tensors() -> No
     torch.testing.assert_close(recomputed, standard, rtol=0, atol=0)
     for actual, expected in zip(recomputed_gradients, standard_gradients, strict=True):
         torch.testing.assert_close(actual, expected, rtol=0, atol=0)
-    assert any(rank == 3 for _, rank in standard_saved)
-    assert all(rank <= 2 for _, rank in recomputed_saved)
-    assert sum(size for size, _ in recomputed_saved) < sum(
-        size for size, _ in standard_saved
+    assert any(size == 16 * 16 * 8 and rank == 2 for size, rank in standard_saved)
+    assert all(size != 16 * 16 * 8 for size, _ in recomputed_saved)
+    assert sum(size for size, _ in recomputed_saved) < sum(size for size, _ in standard_saved)
+
+
+def test_recompute_groups_gaussian_checkpoint_boundaries_by_query_tile(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import diffeoforge.engine.dense as dense_module
+
+    x, y, left, right = _convolution_inputs()
+    calls = 0
+    original = dense_module.checkpoint
+
+    def observe(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(dense_module, "checkpoint", observe)
+    variables = tuple(value.clone().requires_grad_(True) for value in (x, y, left, right))
+    convolved = gaussian_convolve_blockwise(
+        variables[0],
+        variables[1],
+        variables[3],
+        1.1,
+        query_tile_size=3,
+        source_tile_size=2,
+        autograd_strategy="recompute",
     )
+    assert calls == 3
+    gradient = gaussian_convolve_gradient_blockwise(
+        variables[2],
+        variables[0],
+        variables[1],
+        variables[3],
+        1.1,
+        query_tile_size=3,
+        source_tile_size=2,
+        autograd_strategy="recompute",
+    )
+    assert calls == 6
+    torch.autograd.grad(convolved.sum() + gradient.sum(), variables)
+
+
+def test_recompute_current_tiles_use_fused_autograd_without_checkpoints(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import diffeoforge.engine.dense as dense_module
+
+    source, triangles = _tetrahedron()
+    target = source.clone()
+    target[3, 2] += 0.04
+    calls = 0
+    original = dense_module.checkpoint
+
+    def observe(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(dense_module, "checkpoint", observe)
+    variable = source.clone().requires_grad_(True)
+    value = current_squared_distance_blockwise(
+        variable,
+        triangles,
+        target,
+        triangles,
+        0.75,
+        query_tile_size=2,
+        source_tile_size=2,
+        autograd_strategy="recompute",
+    )
+    assert calls == 0
+    torch.autograd.grad(value, variable)
+
+
+def test_recomputed_current_tile_passes_first_and_second_derivative_checks() -> None:
+    import diffeoforge.engine.dense as dense_module
+
+    generator = torch.Generator().manual_seed(20260823)
+    values = tuple(
+        torch.randn(shape, dtype=DTYPE, generator=generator, requires_grad=True)
+        for shape in ((3, 3), (3, 3), (4, 3), (4, 3))
+    )
+
+    def function(*inputs: torch.Tensor) -> torch.Tensor:
+        return dense_module._recomputed_current_inner_product(*inputs, 0.9)
+
+    assert torch.autograd.gradcheck(function, values, eps=1e-6, atol=2e-6, rtol=2e-5)
+    assert torch.autograd.gradgradcheck(
+        function,
+        values,
+        eps=1e-6,
+        atol=4e-6,
+        rtol=4e-5,
+    )
+
+
+def test_recomputed_current_tile_retains_no_pairwise_matrix() -> None:
+    import diffeoforge.engine.dense as dense_module
+
+    generator = torch.Generator().manual_seed(20260823)
+    centers_a = torch.randn((16, 3), dtype=DTYPE, generator=generator, requires_grad=True)
+    normals_a = torch.randn((16, 3), dtype=DTYPE, generator=generator, requires_grad=True)
+    centers_b = torch.randn((12, 3), dtype=DTYPE, generator=generator, requires_grad=True)
+    normals_b = torch.randn((12, 3), dtype=DTYPE, generator=generator, requires_grad=True)
+    saved_shapes: list[tuple[int, ...]] = []
+
+    def pack(tensor: torch.Tensor) -> torch.Tensor:
+        saved_shapes.append(tuple(tensor.shape))
+        return tensor
+
+    with torch.autograd.graph.saved_tensors_hooks(pack, lambda tensor: tensor):
+        value = dense_module._recomputed_current_inner_product(
+            centers_a,
+            normals_a,
+            centers_b,
+            normals_b,
+            1.1,
+        )
+        torch.autograd.grad(value, (centers_a, normals_a, centers_b, normals_b))
+
+    assert (16, 12) not in saved_shapes
+    assert (16, 12, 3) not in saved_shapes
+
+
+def test_recompute_groups_varifold_self_and_cross_boundaries_by_query_tile(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import diffeoforge.engine.dense as dense_module
+
+    source, triangles = _tetrahedron()
+    target = source.clone()
+    target[3, 2] += 0.04
+    calls = 0
+    original = dense_module.checkpoint
+
+    def observe(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(dense_module, "checkpoint", observe)
+    variable = source.clone().requires_grad_(True)
+    value = varifold_squared_distance_blockwise(
+        variable,
+        triangles,
+        target,
+        triangles,
+        0.75,
+        query_tile_size=2,
+        source_tile_size=2,
+        autograd_strategy="recompute",
+    )
+    assert calls == 4  # Two query groups for source self, then two for cross.
+    torch.autograd.grad(value, variable)
 
 
 def test_recompute_strategy_is_strict_and_opt_in() -> None:

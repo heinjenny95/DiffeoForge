@@ -73,6 +73,20 @@ function Test-IsWithin {
         $candidateFull.StartsWith($rootFull + '\', [StringComparison]::OrdinalIgnoreCase)
 }
 
+function Get-Sha256 {
+    param([string]$Path)
+    $resolved = Resolve-RealFile -Path $Path -Label "SHA-256 input"
+    $stream = [IO.File]::OpenRead($resolved)
+    $algorithm = [Security.Cryptography.SHA256]::Create()
+    try {
+        $digest = $algorithm.ComputeHash($stream)
+        return [BitConverter]::ToString($digest).Replace("-", "").ToLowerInvariant()
+    } finally {
+        $algorithm.Dispose()
+        $stream.Dispose()
+    }
+}
+
 function Get-FileRecord {
     param([string]$Path, [string]$RecordedPath = "")
     $resolved = Resolve-RealFile -Path $Path -Label "Recorded file"
@@ -80,7 +94,7 @@ function Get-FileRecord {
     return [ordered]@{
         path = $recordPath
         bytes = (Get-Item -LiteralPath $resolved).Length
-        sha256 = (Get-FileHash -LiteralPath $resolved -Algorithm SHA256).Hash.ToLowerInvariant()
+        sha256 = Get-Sha256 -Path $resolved
     }
 }
 
@@ -103,7 +117,7 @@ function Assert-RecordContent {
     if ($null -eq $Record -or
         [IO.Path]::GetFileName([string]$Record.path) -ne $ExpectedName -or
         [long]$Record.bytes -ne (Get-Item -LiteralPath $resolved).Length -or
-        [string]$Record.sha256 -cne (Get-FileHash -LiteralPath $resolved -Algorithm SHA256).Hash.ToLowerInvariant()) {
+        [string]$Record.sha256 -cne (Get-Sha256 -Path $resolved)) {
         throw "$Label content record differs."
     }
 }
@@ -128,7 +142,7 @@ function Test-Handoff {
         }
     }
     $manifestPath = Join-Path $root $ManifestName
-    $observedSha256 = (Get-FileHash -LiteralPath $manifestPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    $observedSha256 = Get-Sha256 -Path $manifestPath
     if ($observedSha256 -cne $ExpectedSha256) {
         throw "Private-alpha manifest differs from the external SHA-256."
     }
@@ -208,7 +222,7 @@ $contract = Resolve-RealFile `
 $wrapper = Resolve-RealFile -Path $PSCommandPath -Label "Private-alpha handoff wrapper"
 $license = Resolve-RealFile -Path (Join-Path $repository "LICENSE") -Label "License"
 $buildEvidencePath = Resolve-RealFile -Path $BuildEvidence -Label "Installer build evidence"
-if ((Get-FileHash -LiteralPath $buildEvidencePath -Algorithm SHA256).Hash.ToLowerInvariant() -cne
+if ((Get-Sha256 -Path $buildEvidencePath) -cne
     $ExpectedBuildEvidenceSha256) {
     throw "Installer build evidence differs from the external SHA-256."
 }
@@ -414,7 +428,7 @@ The complete six-file directory can be verified with tools/package_private_alpha
     }
     $manifestPath = Join-Path $staging $ManifestName
     Write-JsonNoBom -Path $manifestPath -Value $manifest
-    $manifestSha256 = (Get-FileHash -LiteralPath $manifestPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    $manifestSha256 = Get-Sha256 -Path $manifestPath
     [IO.File]::WriteAllText(
         (Join-Path $staging $SidecarName),
         "$manifestSha256  $ManifestName`n",

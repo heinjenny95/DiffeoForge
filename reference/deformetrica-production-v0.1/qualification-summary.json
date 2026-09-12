@@ -1,0 +1,81 @@
+{
+  "evidence_version": "0.1",
+  "observed_on": "2026-08-11",
+  "scope": {
+    "kind": "replicated_private_engineering_cohort",
+    "biological_evidence": false,
+    "subject_count": 300,
+    "faces_per_subject": 10000,
+    "source_subject_geometries": 9,
+    "control_points": 252,
+    "deformation_timepoints": 10
+  },
+  "configuration": {
+    "sha256": "30830a0190537249baea2dba59129819ba61b776e261e4257aa654afc26add68",
+    "max_iterations": 3,
+    "save_every_n_iterations": 1,
+    "device": "cuda",
+    "precision": "float32"
+  },
+  "runtime": {
+    "launcher": "wsl",
+    "distribution": "Ubuntu",
+    "gpu": "NVIDIA GeForce RTX 4080",
+    "gpu_total_mib": 16376,
+    "nvidia_driver": "572.47",
+    "host_total_visible_mib": 130198,
+    "deformetrica": "4.3.0",
+    "pykeops": "1.4.1",
+    "torch": "1.6.0"
+  },
+  "production_readiness": {
+    "passed": true,
+    "projected_vtk_file_count": 3301,
+    "projected_output_bytes": 1958227473,
+    "required_free_bytes": 6349216672,
+    "observed_free_bytes": 245377888256
+  },
+  "resource_sampling": {
+    "interval_seconds": 5,
+    "boundary": "coarse whole-machine samples, not process-exclusive peaks",
+    "fresh_gpu_baseline_mib": 1659,
+    "fresh_gpu_maximum_mib": 1932,
+    "fresh_host_used_baseline_mib": 28608,
+    "fresh_host_used_maximum_mib": 34942,
+    "resume_gpu_baseline_mib": 1683,
+    "resume_gpu_maximum_mib": 1938,
+    "resume_host_used_baseline_mib": 32566,
+    "resume_host_used_maximum_mib": 34737
+  },
+  "interrupted_run": {
+    "status": "interrupted",
+    "duration_seconds": 278.625,
+    "convergence_rows": 2,
+    "output_file_count": 3306,
+    "output_bytes": 1114502560,
+    "checkpoint_bytes": 1940692,
+    "checkpoint_sha256": "5beb5144e38adbea7203ba4a17f01941bb8ef51ba86592ce8ae20fd355f734c8",
+    "manifest_sha256": "0067cabd6aad69ef5b3d3b8e71a32f119242753c4376cd60232fdbc16a51ef37",
+    "output_inventory_sha256": "3c265c3a6a2a6b55aab33da05a50a5c9e915694e937be827c89fd4a12fc6a4d6",
+    "result_sha256": "468aaa40044fe31a3622a2d336df7a2923e10e6dbccf3a8d076c81a2e1643568"
+  },
+  "resume_run": {
+    "status": "completed",
+    "duration_seconds": 461.938,
+    "convergence_rows": 3,
+    "output_file_count": 3306,
+    "output_bytes": 1114472458,
+    "manifest_sha256": "f3da0eaa33f5ad7d23b758589a75c3e98e80ef41cdb98351347d37e84caebabc",
+    "output_inventory_sha256": "b11a7a7be07a3eb7ab68b58b6fbf0c312e849559d4057b5ed45e61f1ddc53210",
+    "result_sha256": "0193947676ac2850ad5c5d8d9f04ca8d85c3f2e855b3688e8312e7f3325f8f68",
+    "resume_record_sha256": "c0d39f04393e5f772df255da1fae267a9f47283c031463f67e12ed7886ce9e6a",
+    "source_evidence_unchanged_after_completion": true
+  },
+  "planning_inference": {
+    "iterations": 150,
+    "checkpoint_interval": 5,
+    "rough_duration_hours_low": 3,
+    "rough_duration_hours_high": 4,
+    "boundary": "same geometry/control-point scale and machine; not an ETA or convergence guarantee"
+  }
+}

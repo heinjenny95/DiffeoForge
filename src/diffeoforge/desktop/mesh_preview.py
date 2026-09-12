@@ -8,9 +8,11 @@ from pathlib import Path
 from typing import Literal
 
 from diffeoforge.config import ConfigurationError
-from diffeoforge.mesh import inspect_vtk, read_vtk_polydata, sha256_file
+from diffeoforge.mesh import sha256_file
+from diffeoforge.surface_io import load_surface_mesh
 
 DEFAULT_EDGE_BUDGET = 20_000
+DEFAULT_GPA_TRIANGLE_BUDGET = 8_000
 PreviewPlane = Literal["xy", "xz", "yz"]
 _PLANE_AXES: dict[PreviewPlane, tuple[int, int]] = {
     "xy": (0, 1),
@@ -149,28 +151,87 @@ def _unique_edges(
     return tuple(sorted(edges))
 
 
-def load_mesh_preview(path: Path | str) -> MeshPreviewModel:
-    """Load one exact VTK template and reject concurrent source changes."""
+def _sample_triangle_geometry(
+    vertices: tuple[tuple[float, float, float], ...],
+    triangles: tuple[tuple[int, int, int], ...],
+    triangle_budget: int | None,
+) -> tuple[
+    tuple[tuple[float, float, float], ...],
+    tuple[tuple[int, int, int], ...],
+]:
+    """Return a deterministic, globally distributed display subset.
+
+    This is a viewer-only level of detail.  It never replaces analysis geometry.
+    Evenly spaced source faces avoid retaining a full high-resolution triangle and
+    edge graph merely to review a landmark-derived rigid/similarity transform.
+    """
+
+    if triangle_budget is None or len(triangles) <= triangle_budget:
+        return vertices, triangles
+    selected = tuple(
+        triangles[index * len(triangles) // triangle_budget]
+        for index in range(triangle_budget)
+    )
+    source_vertex_indices = tuple(
+        sorted({vertex for triangle in selected for vertex in triangle})
+    )
+    local_index = {
+        source_index: index
+        for index, source_index in enumerate(source_vertex_indices)
+    }
+    return (
+        tuple(vertices[index] for index in source_vertex_indices),
+        tuple(
+            tuple(local_index[index] for index in triangle)
+            for triangle in selected
+        ),
+    )
+
+
+def load_mesh_preview(
+    path: Path | str,
+    *,
+    triangle_budget: int | None = None,
+) -> MeshPreviewModel:
+    """Load one exact supported surface and reject concurrent source changes.
+
+    ``triangle_budget`` creates an in-memory display proxy only.  Source identity,
+    bounds, and hashes remain those of the complete file, and callers that omit the
+    budget retain the historical exact-geometry behavior.
+    """
+
+    if triangle_budget is not None and (
+        isinstance(triangle_budget, bool)
+        or not isinstance(triangle_budget, int)
+        or triangle_budget < 1
+    ):
+        raise ValueError("triangle_budget must be a positive integer or None")
 
     source = Path(path).expanduser().resolve()
     try:
         hash_before = sha256_file(source)
-        metadata = inspect_vtk(source)
-        geometry = read_vtk_polydata(source)
+        loaded = load_surface_mesh(source)
         hash_after = sha256_file(source)
     except (ConfigurationError, OSError, TypeError, ValueError) as error:
         raise MeshPreviewError(f"Template preview could not read {source}: {error}") from error
+    metadata = loaded.metadata
+    geometry = loaded.geometry
     if hash_before != metadata.sha256 or hash_before != hash_after:
         raise MeshPreviewError("Template changed while its preview model was loaded")
     if len(geometry.vertices) != metadata.points:
         raise MeshPreviewError("Template point count changed while preview was loaded")
-    if len(geometry.triangles) != metadata.cells:
+    if len(geometry.triangles) != metadata.triangles:
         raise MeshPreviewError("Template triangle count changed while preview was loaded")
+    display_vertices, display_triangles = _sample_triangle_geometry(
+        geometry.vertices,
+        geometry.triangles,
+        triangle_budget,
+    )
     return MeshPreviewModel(
         path=source,
         sha256=hash_after,
-        vertices=geometry.vertices,
-        triangles=geometry.triangles,
-        edges=_unique_edges(geometry.triangles),
+        vertices=display_vertices,
+        triangles=display_triangles,
+        edges=_unique_edges(display_triangles),
         bounds=metadata.bounds,
     )

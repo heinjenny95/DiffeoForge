@@ -22,6 +22,14 @@
 #ifndef OutputBaseFilename
   #error OutputBaseFilename compiler define is required
 #endif
+#ifdef ReferenceRuntimeArchive
+  #ifndef ReferenceRuntimeSha256
+    #error ReferenceRuntimeSha256 is required when ReferenceRuntimeArchive is supplied
+  #endif
+  #ifndef ReferenceRuntimeLicenseFile
+    #error ReferenceRuntimeLicenseFile is required when ReferenceRuntimeArchive is supplied
+  #endif
+#endif
 
 [Setup]
 AppId=DiffeoForge.WindowsCPU.x86_64
@@ -71,7 +79,17 @@ Source: "{#EvidenceDir}\freeze-dependency-metadata.sha256"; DestDir: "{app}\evid
 Source: "{#EvidenceDir}\freeze-sbom.cdx.json"; DestDir: "{app}\evidence"; Flags: ignoreversion
 Source: "{#EvidenceDir}\freeze-sbom.cdx.sha256"; DestDir: "{app}\evidence"; Flags: ignoreversion
 Source: "{#LicenseFile}"; DestDir: "{app}"; DestName: "LICENSE.txt"; Flags: ignoreversion
+#ifdef ReferenceRuntimeArchive
+Source: "{#ReferenceRuntimeArchive}"; DestDir: "{tmp}"; DestName: "diffeoforge-reference-runtime.tar.gz"; Flags: deleteafterinstall nocompression
+Source: "{#ReferenceRuntimeLicenseFile}"; DestDir: "{app}\licenses"; DestName: "DEFORMETRICA-LICENSE.txt"; Flags: ignoreversion
+Source: "install-reference-runtime.ps1"; DestDir: "{app}\runtime"; Flags: ignoreversion
+#endif
 
 [Icons]
 Name: "{group}\DiffeoForge"; Filename: "{app}\DiffeoForge.exe"; WorkingDir: "{app}"
 Name: "{autodesktop}\DiffeoForge"; Filename: "{app}\DiffeoForge.exe"; WorkingDir: "{app}"; Tasks: desktopicon
+
+#ifdef ReferenceRuntimeArchive
+[Run]
+Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ""{app}\runtime\install-reference-runtime.ps1"" -Archive ""{tmp}\diffeoforge-reference-runtime.tar.gz"" -ExpectedSha256 ""{#ReferenceRuntimeSha256}"" -InstallRoot ""{localappdata}\DiffeoForge\runtimes"""; StatusMsg: "Installing the managed Deformetrica 4.3 reference runtime…"; Flags: runhidden waituntilterminated
+#endif

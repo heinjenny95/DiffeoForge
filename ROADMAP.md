@@ -32,6 +32,25 @@ This roadmap describes evidence gates rather than promised dates.
 - [x] Evaluate current PyTorch/KeOps-based libraries
 - [x] Prototype only the deterministic 3D surface-atlas path
 - [ ] Compare gradients, objectives, deformations, and performance
+  - [x] Add a prospective fixed-reference qualification design that copies and
+    hashes a completed Deformetrica template, its control points, pre-results
+    geometry-diverse subjects, and their reference reconstructions
+  - [x] Permit a Modern run to freeze template/control points, optimize momenta
+    only, and use explicit blockwise recompute provenance
+  - [x] Add common external surface-distance assessment with predeclared
+    engineering non-inferiority gates; internal objectives are not compared as
+    cross-engine equivalents
+  - [x] Make the fixed-reference blockwise tile size an explicit prospective
+    design input while retaining the established 64-row default
+  - [x] Execute and review the frozen five-subject full-resolution Weevil
+    screening study; record its non-converged result as inconclusive
+  - [ ] Execute and assess the frozen ten-cycle Weevil continuation study
+  - [x] Bind new fixed-reference continuation designs to parent/successor
+    engine revisions and require successor-initial/parent-final objective parity
+  - [x] Add deterministic recomputation and strict verification for published
+    fixed-reference qualification assessments
+  - [x] Include a normalized, strictly recomputed optimizer trajectory in new
+    qualification assessments without changing the prospective registration gates
 - [x] Record the engine decision in an ADR
 - [x] Prototype landmark-based generalized Procrustes alignment
 - [x] Integrate labelled landmarks and aligned mesh copies into modern run manifests
@@ -47,18 +66,126 @@ This roadmap describes evidence gates rather than promised dates.
   saved-tensor evidence
 - [x] Carry tile recomputation through complete Subject/Atlas objectives and
   optimizer parity
+- [x] Cache invariant fixed-target surface geometry and attachment self terms
+  across optimizer evaluations with dense/blockwise value and gradient parity
+- [x] Defer Armijo candidate gradients until objective acceptance and reuse the
+  initial evaluation without changing optimizer decisions
+- [x] Reuse the accepted objective/gradient across one-block cycle boundaries,
+  eliminating one exact duplicate evaluation after every accepted cycle
+- [x] Eliminate mirrored Gaussian tile evaluation in equal-tile blockwise
+  Current and Varifold self terms with dense value/gradient parity evidence
+- [x] Eliminate the redundant reverse surface-product multiplication for
+  symmetric Current and Varifold off-diagonal self tiles
+- [x] Reuse the already evaluated first RK2 shooting stage, reducing each
+  step from six to four Gaussian calls with bit-identical trajectory evidence
+- [x] Group recompute checkpoint administration by query tile for Gaussian
+  convolution/x-gradient and Current/Varifold self/cross paths without changing tiles
+- [x] Record a separate Modern engine implementation revision in new workflow
+  and bundle evidence, and bind it prospectively in continuation plans
+- [x] Add a versioned fresh-process multi-cycle optimizer benchmark with separate
+  target-cache timing, exact work counters, result hashes, and strict verification
+- [x] Bind new multi-cycle optimizer reports and prospective scaling designs to
+  the Modern engine implementation while preserving legacy evidence verification
+- [x] Add a strictly recomputed, non-selecting comparison artifact for compatible
+  completed optimizer studies
+- [x] Freeze immutable subject-prefix by cycle-cap optimizer scaling designs before results
+- [x] Execute and resume frozen optimizer scaling designs with strict raw-report verification
+- [x] Expose versioned exact-count optimizer-study progress and read-only partial status
+- [x] Replace ordinary rank-3 Gaussian differences with centered rank-2 matrix
+  evaluation and protect values, gradients, translation stability, and workload accounting
+- [x] Remove repeated query/source mean reductions from every Gaussian tile by
+  using one detached in-tile coordinate as the algebraically equivalent shared origin
+- [x] Keep public tensor validation while removing repeated finite-value scans
+  from already validated Gaussian calls inside shooting, flow, and attachment hot paths
+- [x] Add an analytical recomputed Gaussian backward with first/second-derivative
+  evidence and full-cohort sampled-memory measurement
 - [x] Add an explicit fresh-process recompute benchmark path and spawn smoke evidence
 - [x] Freeze immutable paired standard/recompute designs before observations
 - [x] Execute/resume frozen designs with strict separate-report verification
 - [x] Expose read-only partial status and dedicated completed-run verification
 - [x] Emit versioned exact-count study progress without percentages or ETA
 - [x] Specify backward-compatible prospective multi-tile matrix semantics
-- [ ] Run a prospective standard/recompute study before public integration
-- [ ] Run a prospective multi-size/tile blockwise performance study
+- [x] Run a prospective public standard/recompute engineering study without analysis
+- [x] Run a prospective public multi-size/tile engineering study without analysis
+- [x] Add a general hash-bound completed-run Modern continuation that preserves
+  final template/control points/momenta, derives accepted starter steps, and
+  verifies the successor's initial objective against its parent
+- [x] Write and verify immutable, input-bound Modern state after every complete
+  optimizer cycle
+- [x] Create a guarded non-overwriting recovery successor from a verified
+  abandoned Modern complete-cycle checkpoint
+- [x] Serialize and strictly verify relative-objective baselines, reusable
+  accepted gradients, and retained L-BFGS curvature pairs in checkpoint v0.2
+- [x] Make completed-run continuation and abandoned-run recovery exact at
+  committed cycle boundaries through configuration v0.5 and Engine 0.9
+- [x] Bound new-run checkpoint storage to the latest verified five-cycle
+  recovery point while preserving explicit all-cycle legacy behavior
+- [x] Add deterministic parallel CPU execution across bounded subject batches,
+  exact serial/parallel trajectory tests, provenance, and checkpoint binding in
+  Engine 1.4
+- [x] Prospectively screen Engine 1.4 subject-batch worker counts on the frozen
+  real 16-subject cohort; two workers passed with an exact result and 23.77%
+  lower median optimizer time
+- [x] Confirm the selected two-worker candidate on all 236 subjects; exact
+  result hashes, 21.55% lower optimizer time, and sampled peak RSS below the
+  predeclared ceiling
 
 ## Milestone 3: Accessible application
 
+- [x] Adopt the Deformetrica-first product decision with an evidence-gated Modern engine
+- [x] Extract strict landmark CSV handling from the Modern engine
+- [x] Apply generalized Procrustes to content-addressed immutable mesh copies usable by
+  Deformetrica or any future backend
+- [x] Implement conservative observed-rate ETA arithmetic for Deformetrica iteration logs
+- [x] Add interactive 3D homologous surface-landmark placement, correction,
+  autosaved resume, and strict CSV output
+- [x] Add researcher-selected landmark counts without an arbitrary ten-point cap
+  and a draft-persisted optional automatic next-mesh transition
+- [x] Add reviewed triangular PLY/OBJ/STL landmark and GPA import with
+  byte-identical raw copies and canonical aligned VTK publication
+- [x] Retain guided orthographic inspection as a separate deterministic preview
+- [x] Connect hash-bound read-only Procrustes preview/approval to the guided
+  desktop workflow
+- [x] Expose explicit Procrustes application/settings and verify aligned-mesh evidence
+  in desktop review
+- [x] Connect supervised Deformetrica preparation, execution, and cancellation
+- [x] Connect terminal interrupted/failed-run discovery and immutable checkpoint
+  resume to the guided desktop workflow
+- [x] Display observed progress and explicitly labelled ETA-to-iteration-cap
+- [x] Import verified Deformetrica momenta into the shared PCA/result pipeline
+- [ ] Add verified reference PC deformation meshes and registration-quality rendering
+- [x] Export the reference shape-space comparison as a PDF in the project folder
+  in addition to the local HTML report; use a deterministic,
+  provenance-bound destination, refuse silent overwrite, and expose both reports
+  from the desktop result view.
 - [x] Define desktop executable/installer architecture and release gates
+- [x] Correct Validation Lab's scale-dependent small-triangle rejection and
+  provide hash-bound post-processing recovery without rerunning completed atlases.
+  See [evidence recovery](docs/reference-validation-evidence-recovery.md).
+  Source implementation only; do not replace a running desktop executable.
+- [ ] Show actual study-wide Validation Lab progress, not only the current run.
+  - [ ] Separate original-start wall time (including labelled interruptions) from
+    current-run elapsed time; retain it across reopening/resume.
+  - [ ] Use frozen-plan run positions, not successful-evaluation counts, for the
+    current run number; retries must not double-count progress.
+  - [ ] Distinguish completed backends, verified evidence, pending/failed
+    post-processing, execution failures, active and pending work. Recovery-needed
+    atlases must not appear unstarted or falsely validated.
+  - [ ] Label overall execution progress and denominators, separating
+    training/resampling from holdout and showing their combined workflow scope.
+    Do not imply full validation while evidence/holdout gates remain unresolved,
+    or equate an iteration-cap fraction with exact total progress or an ETA.
+  - [ ] Test evaluation failures, early convergence, retries, cancellation,
+    reopening/resume and holdout transitions. Planned only; leave live runs intact.
+- [ ] Keep Validation Lab preparation and mesh/workload preflight off the UI
+  thread. Large inputs currently can leave the window unresponsive while CPU
+  work continues, before any optimizer run has started.
+  - [ ] Use an appropriate background worker/process, show preparation phases
+    and progress, provide safe cancellation, and prevent duplicate starts.
+  - [ ] Preserve input/hash checks, geometry gates, the frozen study design,
+    explicit start confirmation and completed immutable evidence.
+  - [ ] Test delayed preparation, responsive UI, cancellation, errors and repeated
+    start clicks; a cancelled preparation must not launch a run afterward.
 - [ ] Local graphical interface backed by the shared core
   - [x] First non-overwriting mesh-folder and project-setup slice
   - [x] Read-only effective-parameter and workload/preflight review
@@ -93,11 +220,98 @@ This roadmap describes evidence gates rather than promised dates.
   - [x] Project-independent saved reference-status verification in the desktop GUI
   - [x] Exact non-overwriting saved-status verification-evidence export in CLI and desktop
   - [x] Exact non-overwriting plan/approval verification-evidence export in CLI
-  - [ ] User-approved private-stage mutation, reference supervision, and native mesh rendering
-- [ ] Parameter explanations and safe presets
+  - [x] Hash-bound source-level reference execution supervision and cancellation
+  - [x] Add the reference execution sibling to the v0.4 freeze contract with
+    queued-cancel and hard-parent-death gates
+  - [ ] Record fresh clean-runner v0.4 freeze evidence and rebuild the installer
+  - [x] Guided terminal reference-run discovery and immutable checkpoint resume
+  - [x] Guarded desktop recovery for abandoned nonterminal reference runs
+  - [ ] Native registration rendering
+- [x] Parameter explanations and provenance-labelled exploratory starter profiles
+- [x] Add hash-bound, non-executing dataset-specific calibration planning with
+  3D feature-scale measurement, deterministic geometry-diverse pilot selection,
+  staged candidates, explicit decision rules, and publication-oriented export
+- [x] Automate approval-bound calibration candidate execution and verified
+  residual/distortion/runtime evidence ingestion
+- [ ] Prospectively validate dataset-specific settings before any safe-preset claim
+- [ ] Add a prospective multi-resolution mesh sensitivity workflow and guided
+  evidence report: compare researcher-approved face-count levels without silent
+  source-mesh modification; bind every derived mesh to its simplification
+  provenance; assess atlas/template geometry, registration residuals, pairwise
+  tangent distances, PCA subspace/scores, and reconstructed PC extremes; report
+  the smallest tested resolution that meets predeclared stability tolerances, or
+  state explicitly that no face-count recommendation is supported.
 - [x] Pre-compute configured all-pairs and known-payload workload report
 - [x] Versioned workflow-stage and committed optimizer-decision reporting
 - [x] Fresh-process objective/gradient wall-time and sampled-RSS protocol
+- [ ] Refine the staged calibration UX from the v44 weevil pilot observations
+  - [x] Update the completed-run counter and candidate cards from the verified event
+    ledger after every candidate instead of leaving `0 of 31`/`Ready to run` stale
+    until a stage finishes
+  - [x] Keep Automatic mode selected when the robustness gate finds an ambiguous
+    result; show an explicit `Automatic selection paused` decision checkpoint
+    instead of silently enabling Advanced mode
+  - [x] Present one clearly labelled provisional recommendation with confidence,
+    competing evidence, and the actions `Use provisionally`, `Compare options`,
+    and `Collect more evidence`
+  - [x] Never show `No relative comparison is available yet` after a completed
+    comparison stage; display plain-language metric deltas and the actual
+    fit-versus-regularity trade-off on every eligible candidate card
+  - [x] Describe mixed pilot provenance accurately in the final review: do not
+    label the whole study an `automatic provisional staged pilot` when some
+    stages were explicit researcher selections; summarize each selection mode
+  - [x] Prevent PCA scree-plot x-axis label overlap for dense component ranges:
+    choose ticks from measured label widths, reserve the right edge, and add a
+    67-subject/66-PC regression render at common Windows display scales
+  - [x] Explain Visual QC as a plausibility/rejection gate rather than asking an
+    untrained user to rank several visually acceptable registrations
+  - [ ] Make visual GPA-review navigation finite and unmistakable: show both
+    `Mesh N of total` and the unique viewed count prominently, stop at the last
+    mesh instead of silently wrapping to the first, announce `All meshes viewed`,
+    and require an explicit action before starting the sequence again
+  - [x] Turn full-cohort registration QC into a guided review: compute and rank
+    subject-level residual outliers, open each original and reconstruction in a
+    shared overlay, require pass/fail/uncertain decisions for the tail cases, and
+    export the reviewed status instead of making users search a mesh dropdown
+  - [x] Advance registration QC to the next unreviewed mesh after every decision,
+    stop explicitly after the final decision instead of restarting, and atomically
+    autosave/load a source-bound draft while retaining immutable snapshot export
+  - [x] Place a mandatory Visual quality review step between atlas completion and
+    Results & PCA: original/reconstruction overlays, per-specimen visual
+    acknowledgement and explicit release after required flagged cases are resolved,
+    including on reopen. Full-cohort review remains optional; unflagged/uninspected
+    specimens stay unreviewed. Reuse the report's residual-screening rule and show
+    each reason. Never substitute specimen filtering for review.
+  - [ ] Revisit subject-tail/outlier stability and add regression tests for the
+    full automatic-to-ambiguous-to-continued four-stage workflow
+  - [x] Distinguish necessary biological deformation from pathological mapping:
+    do not present raw deformation energy or surface-area change as universally
+    negative; evaluate the fit improvement against smoothness, topology/Jacobian
+    validity, and subject-tail failures, especially for high-disparity cohorts
+  - [x] Let the researcher declare expected biological disparity and carry it
+    into pilot range, scoring, explanations, and full-cohort confirmation
+  - [ ] Add optional researcher-declared biological strata/extremes to the
+    geometry-diverse pilot selection and its evidence report
+  - [x] Separate deformation amplitude (`how different are the shapes?`) from
+    deformation reach (`how broadly do regions move together?`); show exactly
+    how both declarations change the pilot range and use them as transparent
+    priors/tie-breakers rather than silently confirming the requested intent
+  - [ ] Make calibration search-boundary handling explicit and adaptive:
+    label every width unambiguously as attachment width, deformation width, or
+    control-point spacing; detect when a selected attachment, deformation, or
+    noise candidate is the minimum/maximum tested value; automatically extend
+    the logarithmic grid by one or two outward candidates until the winner is
+    interior or a predeclared safety/feasibility limit is reached; otherwise
+    report `search range not bounded` instead of presenting an enclosed optimum.
+    Add a regression case for the 236-subject Trochanter pilot, whose selected
+    attachment width 0.258691 was the largest tested value and whose selected
+    noise standard deviation 0.00808408 was the smallest tested value.
+  - [x] Replace the broad pre-run atlas ETA with a cohort- and hardware-bound
+    estimator calibrated from the completed pilot runs and the selected control
+    grid/timepoints, then update it from robust observed iteration timings
+  - [x] Show two honest live estimates separately: `time to iteration cap` and a
+    confidence-labelled `likely convergence window`; include startup/output cost,
+    ignore warm-up outliers, and report when contention changes the observed rate
 - [ ] Prospective multi-size end-to-end runtime and peak-memory calibration
 - [ ] Cross-platform CPU distribution
   - [x] Fresh GitHub-hosted Windows one-directory engineering freeze, complete
@@ -127,7 +341,12 @@ This roadmap describes evidence gates rather than promised dates.
 
 ## Milestone 4: Scientific release
 
-- [ ] Frozen validation protocol and tolerances
+- [x] Frozen post-pilot finalist/resampling protocol, external surface metric,
+  resumable Validation Lab execution, scoped report, and analytic
+  known-correspondence generator
+- [x] SHA-bound fixed-template registration workflow for untouched Validation
+  Lab holdout subjects, with paired assessment and separate report
+- [ ] Independent biological landmark validation and PCA subspace stability
 - [ ] Multi-platform benchmark study
 - [ ] External usability evaluation
 - [ ] Complete user and methods documentation

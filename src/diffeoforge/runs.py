@@ -9,13 +9,17 @@ import importlib.metadata
 import json
 import os
 import platform
+import queue
 import re
 import shutil
 import subprocess
 import sys
+import threading
 import time
+from collections import deque
 from collections.abc import Callable, Mapping
 from copy import deepcopy
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from importlib.resources import files
 from pathlib import Path, PurePosixPath
@@ -43,6 +47,9 @@ from diffeoforge.config import (
     validate_input_paths,
 )
 from diffeoforge.mesh import MeshMetadata, inspect_inputs, sha256_file
+from diffeoforge.reference_runtime import probe_reference_gpu
+from diffeoforge.resource_monitor import ProcessResourceMonitor
+from diffeoforge.subprocess_policy import hidden_windows_process_kwargs
 
 RUN_MANIFEST_VERSION = "0.1"
 RESUME_PROVENANCE_VERSION = "0.1"
@@ -57,6 +64,36 @@ CONVERGENCE_RE = re.compile(
     rf".*?regularity\s*=\s*({NUMBER})"
 )
 ITERATION_RE = re.compile(r"-+\s*Iteration:\s*(\d+)\s*-+")
+REFERENCE_ACTIVITY_INTERVAL_SECONDS = 30.0
+
+
+@dataclass(frozen=True)
+class ResumeSourceEvidence:
+    """Fully verified, read-only evidence required to prepare one resume successor."""
+
+    source_run: Path
+    manifest: Mapping[str, Any]
+    result: Mapping[str, Any]
+    terminal_status: str
+    inventory_path: Path
+    inventory: Mapping[str, Any]
+    checkpoint_path: Path
+    checkpoint_bytes: int
+    checkpoint_sha256: str
+
+
+@dataclass(frozen=True)
+class AbandonedRunEvidence:
+    """Fully verified read-only evidence for one nonterminal started run."""
+
+    run_directory: Path
+    manifest: Mapping[str, Any]
+    started_event: Mapping[str, Any]
+    checkpoint_path: Path | None
+    checkpoint_bytes: int | None
+    checkpoint_sha256: str | None
+    output_inventory_present: bool
+    terminal_result: Mapping[str, Any] | None
 
 
 def utc_now() -> str:
@@ -81,11 +118,33 @@ def _write_json_exclusive(path: Path, value: object) -> None:
     with path.open("x", encoding="utf-8", newline="\n") as handle:
         json.dump(value, handle, indent=2, ensure_ascii=False, sort_keys=True)
         handle.write("\n")
+        handle.flush()
+        os.fsync(handle.fileno())
+
+
+def _write_json_atomic_exclusive(path: Path, value: object) -> None:
+    """Publish complete JSON bytes in one same-directory rename without reuse."""
+
+    if path.exists() or path.is_symlink():
+        raise FileExistsError(f"Terminal artifact already exists: {path}")
+    temporary = path.with_name(f".{path.name}.tmp-{uuid4().hex}")
+    try:
+        _write_json_exclusive(temporary, value)
+        if path.exists() or path.is_symlink():
+            raise FileExistsError(f"Terminal artifact already exists: {path}")
+        temporary.rename(path)
+    finally:
+        try:
+            temporary.unlink()
+        except FileNotFoundError:
+            pass
 
 
 def _write_text_exclusive(path: Path, value: str) -> None:
     with path.open("x", encoding="utf-8", newline="\n") as handle:
         handle.write(value)
+        handle.flush()
+        os.fsync(handle.fileno())
 
 
 def _append_event(path: Path, event: Mapping[str, Any]) -> None:
@@ -93,6 +152,8 @@ def _append_event(path: Path, event: Mapping[str, Any]) -> None:
     with path.open("a", encoding="utf-8", newline="\n") as handle:
         handle.write(json.dumps(record, ensure_ascii=False, sort_keys=True))
         handle.write("\n")
+        handle.flush()
+        os.fsync(handle.fileno())
 
 
 def _read_events(path: Path) -> list[Mapping[str, Any]]:
@@ -179,11 +240,16 @@ def effective_reference_config(
     input_directory: Path,
     template: Path,
     output_directory: Path,
+    initial_control_points: Path | None = None,
 ) -> dict[str, Any]:
     effective = deepcopy(dict(config))
     effective["input"]["directory"] = str(input_directory)
     effective["input"]["template"] = str(template)
     effective["output"]["directory"] = str(output_directory)
+    if initial_control_points is not None:
+        effective["model"]["deformation"]["initial_control_points"] = str(
+            initial_control_points
+        )
     return effective
 
 
@@ -230,7 +296,7 @@ def _safe_cleanup_temporary_run(temp_directory: Path, output_root: Path) -> None
         shutil.rmtree(resolved_temp)
 
 
-def _publish_directory_exclusive(source: Path, destination: Path) -> None:
+def publish_directory_exclusive(source: Path, destination: Path) -> None:
     """Atomically publish one directory without replacing an appearing destination."""
 
     if os.name == "nt":
@@ -381,6 +447,7 @@ def _prepare_run(
     try:
         input_template_directory = temp_directory / "input" / "template"
         input_subject_directory = temp_directory / "input" / "subjects"
+        input_control_points_directory = temp_directory / "input" / "control-points"
         config_directory = temp_directory / "config"
         engine_directory = temp_directory / "engine"
         output_path = temp_directory / "output"
@@ -394,6 +461,8 @@ def _prepare_run(
             logs_directory,
         ):
             directory.mkdir(parents=True, exist_ok=False)
+        if summary.initial_control_points is not None:
+            input_control_points_directory.mkdir(parents=True, exist_ok=False)
 
         staged_template_relative = Path("input") / "template" / summary.template.name
         staged_template = temp_directory / staged_template_relative
@@ -416,6 +485,19 @@ def _prepare_run(
                 reference_input_record("subject", source, staged_relative, metadata)
             )
 
+        staged_control_points_relative: Path | None = None
+        staged_control_points: Path | None = None
+        if summary.initial_control_points is not None:
+            staged_control_points_relative = (
+                Path("input") / "control-points" / summary.initial_control_points.name
+            )
+            staged_control_points = temp_directory / staged_control_points_relative
+            _copy_and_verify(
+                summary.initial_control_points,
+                staged_control_points,
+                sha256_file(summary.initial_control_points),
+            )
+
         source_config_copy = config_directory / "source-config.yaml"
         shutil.copy2(source_config, source_config_copy)
         effective = effective_reference_config(
@@ -423,6 +505,7 @@ def _prepare_run(
             summary.input_directory,
             summary.template,
             output_root,
+            summary.initial_control_points,
         )
         effective_config_path = config_directory / "effective-config.yaml"
         with effective_config_path.open("x", encoding="utf-8", newline="\n") as handle:
@@ -433,6 +516,11 @@ def _prepare_run(
             engine_directory,
             Path("..") / staged_template_relative,
             [Path("..") / path for path in staged_subject_relatives],
+            (
+                None
+                if staged_control_points_relative is None
+                else Path("..") / staged_control_points_relative
+            ),
         )
 
         protected_paths = [
@@ -440,6 +528,7 @@ def _prepare_run(
             effective_config_path,
             staged_template,
             *(temp_directory / path for path in staged_subject_relatives),
+            *(() if staged_control_points is None else (staged_control_points,)),
             *engine_files,
         ]
         command_preview = build_command(config, final_directory)
@@ -447,7 +536,7 @@ def _prepare_run(
             "manifest_version": RUN_MANIFEST_VERSION,
             "run_id": resolved_run_id,
             "created_at": utc_now(),
-            "project": dict(config["project"]),
+            "project": {"name": str(config["project"]["name"])},
             "source_config": {
                 "path": str(source_config),
                 "sha256": sha256_file(source_config_copy),
@@ -499,7 +588,7 @@ def _prepare_run(
 
         if before_publish is not None:
             before_publish(temp_directory, manifest)
-        _publish_directory_exclusive(temp_directory, final_directory)
+        publish_directory_exclusive(temp_directory, final_directory)
     except Exception:
         _safe_cleanup_temporary_run(temp_directory, output_root)
         raise
@@ -668,17 +757,39 @@ def verify_prepared_run_against_plan(
 
 def _probe_backend_environment(config: Mapping[str, Any]) -> Mapping[str, Any]:
     launcher = config["runtime"]["launcher"]
+    runtime_device = str(config["runtime"]["device"])
+    gpu_probe = None
+    if runtime_device == "cuda" and launcher["type"] == "wsl":
+        gpu_probe = probe_reference_gpu(launcher)
+        if not gpu_probe.available:
+            raise ConfigurationError(
+                "The reviewed run requires Deformetrica KeOps GPU kernels, but "
+                f"the executable kernel check failed: {gpu_probe.summary}"
+            )
     packages = ("deformetrica", "torch", "pykeops", "numpy", "scipy")
     script = (
-        "import importlib.metadata as m, json, platform, sys\n"
+        "import importlib.metadata as m, json, platform, shutil, sys\n"
         f"names={packages!r}\n"
+        f"runtime_device={runtime_device!r}\n"
         "versions={}\n"
         "for name in names:\n"
         "    try: versions[name]=m.version(name)\n"
         "    except m.PackageNotFoundError: versions[name]=None\n"
-        "print(json.dumps({'python':sys.version.replace('\\n',' '),"
+        "value={'python':sys.version.replace('\\n',' '),"
         "'python_executable':sys.executable,'platform':platform.platform(),"
-        "'packages':versions}, sort_keys=True))\n"
+        "'packages':versions,'acceleration':{'mode':runtime_device,"
+        "'gpu_mode':'kernel' if runtime_device=='cuda' else 'none'}}\n"
+        "if runtime_device=='cuda':\n"
+        "    import torch, pykeops\n"
+        "    import pykeops.torch\n"
+        "    available=bool(torch.cuda.is_available() and pykeops.gpu_available)\n"
+        "    count=int(torch.cuda.device_count()) if available else 0\n"
+        "    value['acceleration'].update({'available':available,'device_count':count,"
+        "'device_name':torch.cuda.get_device_name(0) if count else None,"
+        "'compute_capability':'.'.join(str(v) for v in "
+        "torch.cuda.get_device_capability(0)) if count else None,"
+        "'cuda_compiler':shutil.which('nvcc')})\n"
+        "print(json.dumps(value, sort_keys=True))\n"
     )
 
     container_identity: Mapping[str, Any] | None = None
@@ -689,6 +800,19 @@ def _probe_backend_environment(config: Mapping[str, Any]) -> Mapping[str, Any]:
             "-d",
             launcher["distribution"],
             "--",
+            *(
+                (
+                    "env",
+                    "-u",
+                    "USE_CUDA",
+                    "CUDA_VISIBLE_DEVICES=0",
+                    "CC=/usr/bin/gcc-12",
+                    "CXX=/usr/bin/g++-12",
+                    "CUDAHOSTCXX=/usr/bin/g++-12",
+                )
+                if runtime_device == "cuda"
+                else ()
+            ),
             python_executable,
             "-c",
             script,
@@ -704,6 +828,7 @@ def _probe_backend_environment(config: Mapping[str, Any]) -> Mapping[str, Any]:
             errors="replace",
             timeout=30,
             check=False,
+            **hidden_windows_process_kwargs(),
         )
         if inspected.returncode != 0:
             raise ConfigurationError(
@@ -755,6 +880,7 @@ def _probe_backend_environment(config: Mapping[str, Any]) -> Mapping[str, Any]:
         errors="replace",
         timeout=60,
         check=False,
+        **hidden_windows_process_kwargs(),
     )
     if completed.returncode != 0:
         raise ConfigurationError(
@@ -772,13 +898,30 @@ def _probe_backend_environment(config: Mapping[str, Any]) -> Mapping[str, Any]:
             f"Reference execution requires Deformetrica {REFERENCE_DEFORMETRICA_VERSION}, got "
             f"{value.get('packages', {}).get('deformetrica')!r}."
         )
+    if runtime_device == "cuda":
+        acceleration = value.get("acceleration", {})
+        if not acceleration.get("available") or not acceleration.get("cuda_compiler"):
+            raise ConfigurationError(
+                "The reviewed run requires Deformetrica KeOps GPU kernels, but the "
+                "execution environment did not verify GPU discovery and a CUDA compiler."
+            )
+        if gpu_probe is not None:
+            acceleration.update(
+                {
+                    "kernel_smoke_verified": True,
+                    "kernel_smoke_summary": gpu_probe.summary,
+                    "host_c_compiler": gpu_probe.host_c_compiler,
+                    "host_cpp_compiler": gpu_probe.host_cpp_compiler,
+                }
+            )
     if container_identity is not None:
         value["container"] = container_identity
     return {"probe_status": "verified", **value}
 
 
-def parse_convergence(log_path: Path, csv_path: Path) -> int:
+def _convergence_rows(log_path: Path) -> list[list[float | int]]:
     rows: list[list[float | int]] = []
+    seen_rows: set[tuple[int, float, float, float]] = set()
     current_iteration: int | None = None
     with log_path.open("r", encoding="utf-8", errors="replace") as handle:
         for line in handle:
@@ -787,34 +930,142 @@ def parse_convergence(log_path: Path, csv_path: Path) -> int:
                 current_iteration = int(iteration_match.group(1))
             match = CONVERGENCE_RE.search(line)
             if match:
-                rows.append(
-                    [
-                        current_iteration if current_iteration is not None else len(rows),
-                        float(match.group(1)),
-                        float(match.group(2)),
-                        float(match.group(3)),
-                    ]
+                row = (
+                    current_iteration if current_iteration is not None else len(rows),
+                    float(match.group(1)),
+                    float(match.group(2)),
+                    float(match.group(3)),
                 )
-    with csv_path.open("x", encoding="utf-8", newline="") as handle:
-        writer = csv.writer(handle)
-        writer.writerow(["iteration", "log_likelihood", "attachment", "regularity"])
-        writer.writerows(rows)
+                # Deformetrica can emit the same state both to stdout and to its
+                # timestamped native log. Preserve one exact observation while
+                # leaving genuinely different repeated states visible for review.
+                if row in seen_rows:
+                    continue
+                seen_rows.add(row)
+                rows.append(list(row))
+    return rows
+
+
+def parse_convergence(log_path: Path, csv_path: Path) -> int:
+    rows = _convergence_rows(log_path)
+    if csv_path.exists() or csv_path.is_symlink():
+        raise FileExistsError(f"Convergence artifact already exists: {csv_path}")
+    temporary = csv_path.with_name(f".{csv_path.name}.tmp-{uuid4().hex}")
+    try:
+        with temporary.open("x", encoding="utf-8", newline="") as handle:
+            writer = csv.writer(handle)
+            writer.writerow(["iteration", "log_likelihood", "attachment", "regularity"])
+            writer.writerows(rows)
+            handle.flush()
+            os.fsync(handle.fileno())
+        if csv_path.exists() or csv_path.is_symlink():
+            raise FileExistsError(f"Convergence artifact already exists: {csv_path}")
+        temporary.rename(csv_path)
+    finally:
+        try:
+            temporary.unlink()
+        except FileNotFoundError:
+            pass
     return len(rows)
 
 
-def _inventory_outputs(run_directory: Path) -> Mapping[str, Any]:
+def _verify_existing_convergence(log_path: Path, csv_path: Path) -> int:
+    expected = _convergence_rows(log_path)
+    try:
+        with csv_path.open("r", encoding="utf-8", newline="") as handle:
+            reader = csv.reader(handle)
+            header = next(reader)
+            observed = [
+                [int(row[0]), float(row[1]), float(row[2]), float(row[3])]
+                for row in reader
+            ]
+    except (OSError, UnicodeError, ValueError, IndexError, StopIteration) as error:
+        raise ConfigurationError(
+            f"Partial convergence CSV is not readable in the expected format: {csv_path}"
+        ) from error
+    if header != ["iteration", "log_likelihood", "attachment", "regularity"]:
+        raise ConfigurationError(
+            f"Partial convergence CSV has an unexpected header: {csv_path}"
+        )
+    if observed != expected:
+        raise ConfigurationError(
+            "The partial convergence CSV differs from the retained Deformetrica log; "
+            "recovery will not replace it."
+        )
+    return len(expected)
+
+
+def _recover_convergence(log_path: Path, csv_path: Path) -> int:
+    if not log_path.is_file():
+        if csv_path.exists() or csv_path.is_symlink():
+            raise ConfigurationError(
+                "A partial convergence CSV exists without its Deformetrica log; "
+                f"recovery will not reuse it: {csv_path}"
+            )
+        return 0
+    if not csv_path.exists() and not csv_path.is_symlink():
+        return parse_convergence(log_path, csv_path)
+    if csv_path.is_symlink() or not csv_path.is_file():
+        raise ConfigurationError(
+            f"Partial convergence artifact is not a regular file: {csv_path}"
+        )
+    return _verify_existing_convergence(log_path, csv_path)
+
+
+def _collect_stable_output_records(run_directory: Path) -> list[dict[str, object]]:
     output_directory = run_directory / "output"
-    files = sorted(path for path in output_directory.rglob("*") if path.is_file())
-    records = [
-        {
-            "path": path.relative_to(output_directory).as_posix(),
-            "bytes": path.stat().st_size,
-            "sha256": sha256_file(path),
-        }
-        for path in files
-    ]
+    observed = sorted(output_directory.rglob("*"))
+    symbolic = next((path for path in observed if path.is_symlink()), None)
+    if symbolic is not None:
+        raise ConfigurationError(
+            f"Run output contains a symbolic link and cannot be inventoried: {symbolic}"
+        )
+    files = [path for path in observed if path.is_file()]
+    records: list[dict[str, object]] = []
+    for path in files:
+        before = path.stat()
+        digest = sha256_file(path)
+        after = path.stat()
+        if (
+            before.st_size != after.st_size
+            or before.st_mtime_ns != after.st_mtime_ns
+        ):
+            raise ConfigurationError(
+                "Run output changed while its terminal inventory was being created. "
+                f"Confirm the backend process is stopped before recovery: {path}"
+            )
+        records.append(
+            {
+                "path": path.relative_to(output_directory).as_posix(),
+                "bytes": after.st_size,
+                "sha256": digest,
+            }
+        )
+    final_observed = sorted(output_directory.rglob("*"))
+    if observed != final_observed:
+        raise ConfigurationError(
+            "Run output file membership changed while its terminal inventory was being "
+            "created. Confirm the backend process is stopped before recovery."
+        )
+    return records
+
+
+def _output_summary(
+    inventory_path: Path,
+    records: list[dict[str, object]],
+) -> Mapping[str, Any]:
+    return {
+        "file_count": len(records),
+        "total_bytes": sum(int(record["bytes"]) for record in records),
+        "inventory_path": "output-inventory.json",
+        "inventory_sha256": sha256_file(inventory_path),
+    }
+
+
+def _inventory_outputs(run_directory: Path) -> Mapping[str, Any]:
+    records = _collect_stable_output_records(run_directory)
     inventory_path = run_directory / "output-inventory.json"
-    _write_json_exclusive(
+    _write_json_atomic_exclusive(
         inventory_path,
         {
             "inventory_version": "0.1",
@@ -822,12 +1073,79 @@ def _inventory_outputs(run_directory: Path) -> Mapping[str, Any]:
             "files": records,
         },
     )
-    return {
-        "file_count": len(records),
-        "total_bytes": sum(record["bytes"] for record in records),
-        "inventory_path": "output-inventory.json",
-        "inventory_sha256": sha256_file(inventory_path),
-    }
+    return _output_summary(inventory_path, records)
+
+
+def _verify_existing_output_inventory(run_directory: Path) -> Mapping[str, Any]:
+    inventory_path = run_directory / "output-inventory.json"
+    inventory = _read_json_object(inventory_path, "Partial terminal output inventory")
+    if inventory.get("inventory_version") != "0.1" or not isinstance(
+        inventory.get("files"), list
+    ):
+        raise ConfigurationError(
+            f"Partial terminal output inventory has an unsupported structure: {inventory_path}"
+        )
+    current_records = _collect_stable_output_records(run_directory)
+    if inventory["files"] != current_records:
+        raise ConfigurationError(
+            "Retained outputs differ from the existing partial terminal inventory; "
+            "recovery stopped without replacing either artifact."
+        )
+    return _output_summary(inventory_path, current_records)
+
+
+def _verify_orphan_terminal_result(
+    run_directory: Path,
+    manifest: Mapping[str, Any],
+    started_event: Mapping[str, Any],
+    output_summary: Mapping[str, Any],
+) -> Mapping[str, Any]:
+    result_path = run_directory / "result.json"
+    result = _read_json_object(result_path, "Partial terminal result")
+    status = result.get("status")
+    if (
+        result.get("result_version") != "0.1"
+        or result.get("run_id") != manifest["run_id"]
+        or status not in {"completed", "failed", "interrupted"}
+        or result.get("started_at") != started_event.get("timestamp")
+        or result.get("command") != started_event.get("command")
+        or result.get("backend_environment") != started_event.get("backend_environment")
+        or result.get("outputs") != output_summary
+        or result.get("checkpoint") != _checkpoint_summary(run_directory)
+    ):
+        raise ConfigurationError(
+            "Partial terminal result does not match the protected run, started event, "
+            "current output inventory, or checkpoint."
+        )
+    log_path = run_directory / "logs" / "deformetrica.log"
+    convergence_path = run_directory / "logs" / "convergence.csv"
+    if log_path.is_file():
+        if convergence_path.is_symlink() or not convergence_path.is_file():
+            raise ConfigurationError(
+                "Partial terminal result is missing its regular convergence CSV."
+            )
+        convergence_rows = _verify_existing_convergence(log_path, convergence_path)
+    else:
+        if convergence_path.exists() or convergence_path.is_symlink():
+            raise ConfigurationError(
+                "Partial terminal result has a convergence CSV without a backend log."
+            )
+        convergence_rows = 0
+    if result.get("convergence_rows") != convergence_rows:
+        raise ConfigurationError(
+            "Partial terminal result convergence count differs from retained log evidence."
+        )
+    return_code = result.get("return_code")
+    execution_error = result.get("execution_error")
+    if status == "completed" and (return_code != 0 or execution_error is not None):
+        raise ConfigurationError(
+            "Partial completed result has inconsistent return-code or error evidence."
+        )
+    if status == "failed" and return_code == 0 and execution_error is None:
+        raise ConfigurationError(
+            "Partial failed result has no failure return-code or error evidence."
+        )
+    return result
 
 
 def _checkpoint_summary(run_directory: Path) -> Mapping[str, Any]:
@@ -914,8 +1232,41 @@ def _log_reports_keyboard_interrupt(log_path: Path) -> bool:
     return any(line.strip() == "KeyboardInterrupt" for line in tail.splitlines())
 
 
-def execute_run(run_directory: Path | str) -> int:
+def _backend_process_working_directory(
+    config: Mapping[str, Any],
+    command_working_directory: str,
+) -> str | None:
+    """Return the host cwd only when the backend process depends on it.
+
+    WSL and container commands already select their working directory through
+    ``wsl.exe --cd`` and the container ``--workdir`` option.  Supplying the same
+    directory as the Windows child-process cwd is redundant and makes
+    ``CreateProcess`` reject otherwise usable project paths once the immutable
+    run hierarchy grows beyond the legacy Windows path limit.
+    """
+
+    launcher_type = config["runtime"]["launcher"]["type"]
+    return command_working_directory if launcher_type == "native" else None
+
+
+def execute_run(
+    run_directory: Path | str,
+    *,
+    line_callback: Callable[[str], None] | None = None,
+    activity_callback: Callable[[float, str | None, str | None], None] | None = None,
+    resource_callback: Callable[[Mapping[str, object]], None] | None = None,
+    cancel_requested: Callable[[], bool] | None = None,
+) -> int:
     """Execute a prepared run exactly once and record append-only lifecycle evidence."""
+
+    if line_callback is not None and not callable(line_callback):
+        raise TypeError("line_callback must be callable or None")
+    if activity_callback is not None and not callable(activity_callback):
+        raise TypeError("activity_callback must be callable or None")
+    if resource_callback is not None and not callable(resource_callback):
+        raise TypeError("resource_callback must be callable or None")
+    if cancel_requested is not None and not callable(cancel_requested):
+        raise TypeError("cancel_requested must be callable or None")
 
     run_path = Path(run_directory).expanduser().resolve()
     manifest = verify_prepared_run(run_path)
@@ -952,16 +1303,19 @@ def execute_run(run_directory: Path | str) -> int:
         environment = os.environ.copy()
         environment.update(command.environment)
         process_group_options: dict[str, Any]
+        process_group_creationflags = 0
         if os.name == "nt":
-            process_group_options = {
-                "creationflags": subprocess.CREATE_NEW_PROCESS_GROUP,
-            }
+            process_group_options = {}
+            process_group_creationflags = subprocess.CREATE_NEW_PROCESS_GROUP
         else:
             process_group_options = {"start_new_session": True}
         with log_path.open("x", encoding="utf-8", newline="\n") as log_handle:
             process = subprocess.Popen(
                 list(command.argv),
-                cwd=command.working_directory,
+                cwd=_backend_process_working_directory(
+                    config,
+                    command.working_directory,
+                ),
                 env=environment,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
@@ -970,11 +1324,120 @@ def execute_run(run_directory: Path | str) -> int:
                 errors="replace",
                 bufsize=1,
                 **process_group_options,
+                **hidden_windows_process_kwargs(
+                    creationflags=process_group_creationflags
+                ),
+            )
+            resource_monitor = (
+                None
+                if resource_callback is None
+                else ProcessResourceMonitor(
+                    process.pid,
+                    requested_device=str(config["runtime"]["device"]),
+                )
             )
             assert process.stdout is not None
-            for line in process.stdout:
-                print(line, end="", flush=True)
+            output_queue: queue.Queue[tuple[str, object]] = queue.Queue()
+
+            def read_process_output() -> None:
+                try:
+                    for observed_line in process.stdout:
+                        output_queue.put(("line", observed_line))
+                except BaseException as error:
+                    output_queue.put(("error", error))
+                finally:
+                    output_queue.put(("eof", None))
+
+            output_reader = threading.Thread(
+                target=read_process_output,
+                name="diffeoforge-reference-output-reader",
+                daemon=True,
+            )
+            output_reader.start()
+            native_offsets: dict[Path, int] = {}
+            recent_lines: deque[tuple[float, str, str]] = deque(maxlen=200)
+            latest_message: str | None = None
+            latest_source: str | None = None
+            stdout_eof = False
+            last_activity_emit = start_time
+
+            def dispatch_line(line: str, source: str) -> None:
+                nonlocal latest_message, latest_source
+                observed_at = time.monotonic()
+                while recent_lines and observed_at - recent_lines[0][0] > 3.0:
+                    recent_lines.popleft()
+                duplicate = any(
+                    previous_line == line and previous_source != source
+                    for _seen_at, previous_line, previous_source in recent_lines
+                )
+                recent_lines.append((observed_at, line, source))
+                stripped = line.strip()
+                if stripped:
+                    latest_message = stripped[-400:]
+                    latest_source = source
+                if duplicate:
+                    return
                 log_handle.write(line)
+                log_handle.flush()
+                if source == "process output":
+                    print(line, end="", flush=True)
+                if line_callback is not None:
+                    line_callback(line)
+
+            def observe_native_logs() -> None:
+                output_directory = run_path / "output"
+                for native_log in sorted(output_directory.glob("*_info.log")):
+                    if not native_log.is_file() or native_log.is_symlink():
+                        continue
+                    offset = native_offsets.get(native_log, 0)
+                    with native_log.open(
+                        "r",
+                        encoding="utf-8",
+                        errors="replace",
+                    ) as native_handle:
+                        native_handle.seek(offset)
+                        for native_line in native_handle:
+                            dispatch_line(
+                                native_line,
+                                f"output/{native_log.name}",
+                            )
+                        native_offsets[native_log] = native_handle.tell()
+
+            while True:
+                while True:
+                    try:
+                        output_kind, observed = output_queue.get_nowait()
+                    except queue.Empty:
+                        break
+                    if output_kind == "eof":
+                        stdout_eof = True
+                    elif output_kind == "error":
+                        raise observed
+                    else:
+                        dispatch_line(str(observed), "process output")
+                observe_native_logs()
+                if cancel_requested is not None and cancel_requested():
+                    raise KeyboardInterrupt
+                now = time.monotonic()
+                if (
+                    (activity_callback is not None or resource_callback is not None)
+                    and now - last_activity_emit
+                    >= REFERENCE_ACTIVITY_INTERVAL_SECONDS
+                ):
+                    if resource_callback is not None and resource_monitor is not None:
+                        resource_callback(resource_monitor.sample())
+                    if activity_callback is not None:
+                        activity_callback(
+                            now - start_time,
+                            latest_message,
+                            latest_source,
+                        )
+                    last_activity_emit = now
+                if process.poll() is not None and stdout_eof and output_queue.empty():
+                    observe_native_logs()
+                    break
+                time.sleep(0.25)
+            output_reader.join(timeout=2)
             return_code = process.wait()
     except KeyboardInterrupt:
         interrupted = True
@@ -1023,7 +1486,7 @@ def execute_run(run_directory: Path | str) -> int:
     }
     if resume_provenance is not None:
         result["resume"] = resume_provenance
-    _write_json_exclusive(run_path / "result.json", result)
+    _write_json_atomic_exclusive(run_path / "result.json", result)
     _append_event(
         event_path,
         {
@@ -1055,32 +1518,37 @@ def recover_run(
     if not normalized_reason:
         raise ConfigurationError("Recovery requires a non-empty reason.")
 
-    run_path = Path(run_directory).expanduser().resolve()
-    manifest = _read_manifest(run_path)
-    _verify_protected_artifacts(run_path, manifest)
-    events = _read_events(run_path / "events.jsonl")
-    if events[-1]["event"] != "started":
-        raise ConfigurationError(
-            "Only an abandoned run whose latest event is 'started' can be recovered; "
-            f"latest event is {events[-1]['event']!r}."
+    evidence = inspect_abandoned_run(run_directory)
+    run_path = evidence.run_directory
+    manifest = evidence.manifest
+    if evidence.terminal_result is not None:
+        result = evidence.terminal_result
+        _append_event(
+            run_path / "events.jsonl",
+            {
+                "event": result["status"],
+                "return_code": result["return_code"],
+                "duration_seconds": result["duration_seconds"],
+                "checkpoint": result["checkpoint"],
+                "reconciliation_reason": normalized_reason,
+                "process_stopped_confirmed": True,
+            },
         )
-    for forbidden in (run_path / "result.json", run_path / "output-inventory.json"):
-        if forbidden.exists():
-            raise ConfigurationError(
-                f"Recovery will not replace an existing terminal artifact: {forbidden}"
-            )
+        return result
 
     log_path = run_path / "logs" / "deformetrica.log"
-    convergence_rows = 0
-    if log_path.is_file():
-        convergence_rows = parse_convergence(
-            log_path,
-            run_path / "logs" / "convergence.csv",
-        )
-    output_summary = _inventory_outputs(run_path)
+    convergence_rows = _recover_convergence(
+        log_path,
+        run_path / "logs" / "convergence.csv",
+    )
+    output_summary = (
+        _verify_existing_output_inventory(run_path)
+        if evidence.output_inventory_present
+        else _inventory_outputs(run_path)
+    )
     checkpoint_summary = _checkpoint_summary(run_path)
     ended_at = utc_now()
-    started_event = events[-1]
+    started_event = evidence.started_event
     execution_error = f"Manual recovery after an unclean stop: {normalized_reason}"
     result = {
         "result_version": "0.1",
@@ -1102,7 +1570,7 @@ def recover_run(
             "process_stopped_confirmed": True,
         },
     }
-    _write_json_exclusive(run_path / "result.json", result)
+    _write_json_atomic_exclusive(run_path / "result.json", result)
     _append_event(
         run_path / "events.jsonl",
         {
@@ -1116,12 +1584,114 @@ def recover_run(
     return result
 
 
-def prepare_resume_run(
-    source_run_directory: Path | str,
-    *,
-    run_id: str | None = None,
-) -> Path:
-    """Prepare an immutable successor from an inventoried failed/interrupted checkpoint."""
+def inspect_abandoned_run(run_directory: Path | str) -> AbandonedRunEvidence:
+    """Verify an unfinalized started run without changing any run artifact."""
+
+    candidate = Path(run_directory).expanduser()
+    if candidate.is_symlink() or not candidate.is_dir():
+        raise ConfigurationError(
+            f"Abandoned run must be an existing real directory: {candidate}"
+        )
+    try:
+        run_path = candidate.resolve(strict=True)
+    except OSError as error:
+        raise ConfigurationError(
+            f"Abandoned run directory could not be resolved: {candidate}"
+        ) from error
+    manifest = _read_manifest(run_path)
+    if manifest.get("run_id") != run_path.name:
+        raise ConfigurationError(
+            "Abandoned run directory name does not match its manifest run_id: "
+            f"{run_path}"
+        )
+    _verify_protected_artifacts(run_path, manifest)
+    events = _read_events(run_path / "events.jsonl")
+    started_event = events[-1]
+    if started_event["event"] != "started":
+        raise ConfigurationError(
+            "Only an abandoned run whose latest event is 'started' can be recovered; "
+            f"latest event is {started_event['event']!r}."
+        )
+    output_directory = run_path / "output"
+    if output_directory.is_symlink() or not output_directory.is_dir():
+        raise ConfigurationError(
+            f"Abandoned run output must be an existing real directory: {output_directory}"
+        )
+    output_inventory_path = run_path / "output-inventory.json"
+    output_inventory_present = bool(
+        output_inventory_path.exists() or output_inventory_path.is_symlink()
+    )
+    output_summary: Mapping[str, Any] | None = None
+    if output_inventory_present:
+        if output_inventory_path.is_symlink() or not output_inventory_path.is_file():
+            raise ConfigurationError(
+                "Partial terminal output inventory is not a regular file: "
+                f"{output_inventory_path}"
+            )
+        output_summary = _verify_existing_output_inventory(run_path)
+    result_path = run_path / "result.json"
+    terminal_result: Mapping[str, Any] | None = None
+    if result_path.exists() or result_path.is_symlink():
+        if result_path.is_symlink() or not result_path.is_file():
+            raise ConfigurationError(
+                f"Partial terminal result is not a regular file: {result_path}"
+            )
+        if output_summary is None:
+            raise ConfigurationError(
+                "A partial terminal result exists without a verified output inventory."
+            )
+        terminal_result = _verify_orphan_terminal_result(
+            run_path,
+            manifest,
+            started_event,
+            output_summary,
+        )
+
+    checkpoint_path = run_path / EXECUTION_CHECKPOINT_PATH
+    if checkpoint_path.is_symlink():
+        raise ConfigurationError(
+            f"Abandoned run checkpoint must not be symbolic: {checkpoint_path}"
+        )
+    checkpoint_bytes: int | None = None
+    checkpoint_sha256: str | None = None
+    retained_checkpoint: Path | None = None
+    if checkpoint_path.exists():
+        if not checkpoint_path.is_file():
+            raise ConfigurationError(
+                f"Abandoned run checkpoint is not a regular file: {checkpoint_path}"
+            )
+        before = checkpoint_path.stat()
+        if before.st_size < 1:
+            raise ConfigurationError(
+                f"Abandoned run checkpoint is empty: {checkpoint_path}"
+            )
+        checkpoint_sha256 = sha256_file(checkpoint_path)
+        after = checkpoint_path.stat()
+        if (
+            before.st_size != after.st_size
+            or before.st_mtime_ns != after.st_mtime_ns
+        ):
+            raise ConfigurationError(
+                "Abandoned run checkpoint changed during inspection. Confirm that the "
+                f"Deformetrica process is stopped before trying again: {checkpoint_path}"
+            )
+        retained_checkpoint = checkpoint_path
+        checkpoint_bytes = after.st_size
+
+    return AbandonedRunEvidence(
+        run_directory=run_path,
+        manifest=manifest,
+        started_event=started_event,
+        checkpoint_path=retained_checkpoint,
+        checkpoint_bytes=checkpoint_bytes,
+        checkpoint_sha256=checkpoint_sha256,
+        output_inventory_present=output_inventory_present,
+        terminal_result=terminal_result,
+    )
+
+
+def inspect_resume_source(source_run_directory: Path | str) -> ResumeSourceEvidence:
+    """Verify resume eligibility and checkpoint integrity without changing any files."""
 
     source_run = Path(source_run_directory).expanduser().resolve()
     source_manifest = _read_manifest(source_run)
@@ -1193,6 +1763,34 @@ def prepare_resume_run(
         raise ConfigurationError(
             f"Source checkpoint checksum differs from its inventory: {checkpoint_path}"
         )
+    return ResumeSourceEvidence(
+        source_run=source_run,
+        manifest=source_manifest,
+        result=source_result,
+        terminal_status=terminal_status,
+        inventory_path=inventory_path,
+        inventory=inventory,
+        checkpoint_path=checkpoint_path,
+        checkpoint_bytes=checkpoint_path.stat().st_size,
+        checkpoint_sha256=checkpoint_hash,
+    )
+
+
+def prepare_resume_run(
+    source_run_directory: Path | str,
+    *,
+    run_id: str | None = None,
+) -> Path:
+    """Prepare an immutable successor from an inventoried failed/interrupted checkpoint."""
+
+    evidence = inspect_resume_source(source_run_directory)
+    source_run = evidence.source_run
+    source_manifest = evidence.manifest
+    source_result_path = source_run / "result.json"
+    terminal_status = evidence.terminal_status
+    inventory_path = evidence.inventory_path
+    checkpoint_path = evidence.checkpoint_path
+    checkpoint_hash = evidence.checkpoint_sha256
 
     output_root = source_run.parent
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")

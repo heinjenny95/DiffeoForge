@@ -220,8 +220,10 @@ def _package_component(
 
 
 def _cross_check_sources(freeze: dict, dependencies: dict) -> None:
-    if freeze["schema_version"] != "0.3":
-        raise DesktopSbomError("CycloneDX SBOM requires freeze schema_version 0.3")
+    if freeze["schema_version"] not in {"0.3", "0.4"}:
+        raise DesktopSbomError(
+            "CycloneDX SBOM requires freeze schema_version 0.3 or 0.4"
+        )
     if freeze["target"] != TARGET or dependencies["target"] != TARGET:
         raise DesktopSbomError("SBOM source target differs from windows-x86_64-cpu")
     source = dependencies["source"]

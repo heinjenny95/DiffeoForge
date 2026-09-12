@@ -1,15 +1,22 @@
 from __future__ import annotations
 
 import json
+import sys
+import time
 from pathlib import Path
 
 import pytest
 import yaml
 
+import diffeoforge.runs as runs
+from diffeoforge.backends import CommandSpec
 from diffeoforge.config import ConfigurationError
 from diffeoforge.mesh import sha256_file
 from diffeoforge.runs import (
+    REFERENCE_ACTIVITY_INTERVAL_SECONDS,
     execute_run,
+    inspect_abandoned_run,
+    inspect_resume_source,
     parse_convergence,
     prepare_resume_run,
     prepare_run,
@@ -161,6 +168,72 @@ def test_prepare_creates_verifiable_immutable_run(tmp_path: Path) -> None:
     assert run_status(run_directory)["status"] == "prepared"
 
 
+def test_prepare_binds_explicit_initial_control_points(tmp_path: Path) -> None:
+    config_path = write_run_config(tmp_path)
+    control_points = tmp_path / "trained-control-points.txt"
+    control_points.write_text("0 0 0\n1 1 1\n", encoding="ascii")
+    config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    config["model"]["deformation"]["initial_control_points"] = (
+        "./trained-control-points.txt"
+    )
+    config["optimization"]["freeze_template"] = True
+    config["optimization"]["freeze_control_points"] = True
+    config_path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+
+    run_directory = prepare_run(config_path, run_id="fixed-trained-model")
+    manifest = verify_prepared_run(run_directory)
+
+    staged = run_directory / "input" / "control-points" / control_points.name
+    assert staged.read_bytes() == control_points.read_bytes()
+    assert any(
+        item["path"] == f"input/control-points/{control_points.name}"
+        and item["sha256"] == sha256_file(control_points)
+        for item in manifest["protected_artifacts"]
+    )
+    model_xml = (run_directory / "engine" / "model.xml").read_text(encoding="utf-8")
+    assert (
+        "<initial-control-points>../input/control-points/"
+        "trained-control-points.txt</initial-control-points>"
+    ) in model_xml
+    optimization_xml = (
+        run_directory / "engine" / "optimization_parameters.xml"
+    ).read_text(encoding="utf-8")
+    assert "<freeze-template>On</freeze-template>" in optimization_xml
+    assert "<freeze-control-points>On</freeze-control-points>" in optimization_xml
+
+
+def test_prepare_preserves_parameter_provenance_in_effective_config(tmp_path: Path) -> None:
+    config_path = write_run_config(tmp_path)
+    config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    provenance = {
+        "profile": "advanced",
+        "scale_reference": "template_bounding_box_diagonal",
+        "ratios": {
+            "attachment_kernel_width": 0.1,
+            "deformation_kernel_width": 0.1,
+            "initial_control_point_spacing": 0.1,
+            "noise_std": 0.05,
+        },
+        "sources": {
+            "attachment_kernel_width": "template_diagonal_ratio",
+            "deformation_kernel_width": "template_diagonal_ratio",
+            "initial_control_point_spacing": "template_diagonal_ratio",
+            "noise_std": "template_diagonal_ratio",
+        },
+    }
+    config["project"]["parameter_provenance"] = provenance
+    config_path.write_text(
+        yaml.safe_dump(config, sort_keys=False),
+        encoding="utf-8",
+    )
+
+    run_directory = prepare_run(config_path, run_id="parameter-provenance")
+    manifest = verify_prepared_run(run_directory)
+
+    assert manifest["project"] == {"name": "immutable-test"}
+    assert manifest["effective_config"]["project"]["parameter_provenance"] == provenance
+
+
 def test_convergence_parser_preserves_backend_iteration_numbers(tmp_path: Path) -> None:
     log_path = tmp_path / "deformetrica.log"
     csv_path = tmp_path / "convergence.csv"
@@ -182,6 +255,39 @@ def test_convergence_parser_preserves_backend_iteration_numbers(tmp_path: Path) 
         "6,-8.181,-8.128,-0.05328",
         "7,-6.831,-6.77,-0.06049",
     ]
+
+
+def test_convergence_parser_collapses_exact_native_log_duplicates(tmp_path: Path) -> None:
+    log_path = tmp_path / "deformetrica.log"
+    csv_path = tmp_path / "convergence.csv"
+    log_path.write_text(
+        "------------------------------------- Iteration: 6 "
+        "-------------------------------------\n"
+        ">> Log-likelihood = -8.181E+00 [ attachment = -8.128E+00 ; "
+        "regularity = -5.328E-02 ]\n"
+        "2026-07-24 15:00:00 - estimator - INFO - "
+        "------------------------------------- Iteration: 6 "
+        "-------------------------------------\n"
+        "2026-07-24 15:00:01 - estimator - INFO - "
+        ">> Log-likelihood = -8.181E+00 [ attachment = -8.128E+00 ; "
+        "regularity = -5.328E-02 ]\n"
+        "------------------------------------- Iteration: 7 "
+        "-------------------------------------\n"
+        ">> Log-likelihood = -6.831E+00 [ attachment = -6.770E+00 ; "
+        "regularity = -6.049E-02 ]\n",
+        encoding="utf-8",
+    )
+
+    assert parse_convergence(log_path, csv_path) == 2
+    assert csv_path.read_text(encoding="utf-8").splitlines() == [
+        "iteration,log_likelihood,attachment,regularity",
+        "6,-8.181,-8.128,-0.05328",
+        "7,-6.831,-6.77,-0.06049",
+    ]
+
+
+def test_reference_activity_interval_is_thirty_seconds() -> None:
+    assert REFERENCE_ACTIVITY_INTERVAL_SECONDS == 30.0
 
 
 def test_prepare_refuses_to_overwrite_existing_run(tmp_path: Path) -> None:
@@ -264,11 +370,215 @@ def test_recover_requires_confirmation_and_records_partial_evidence(tmp_path: Pa
     assert inventory["files"][0]["path"] == "deformetrica-state.p"
 
 
+def test_inspect_abandoned_run_is_read_only_and_hashes_checkpoint(tmp_path: Path) -> None:
+    run_directory = prepare_run(write_run_config(tmp_path), run_id="abandoned")
+    checkpoint = b"opaque-checkpoint-bytes"
+    abandon_prepared_run(run_directory, checkpoint=checkpoint)
+    before = {
+        path.relative_to(run_directory): path.read_bytes()
+        for path in run_directory.rglob("*")
+        if path.is_file()
+    }
+
+    evidence = inspect_abandoned_run(run_directory)
+
+    assert evidence.run_directory == run_directory
+    assert evidence.started_event["event"] == "started"
+    assert evidence.checkpoint_path == run_directory / "output" / "deformetrica-state.p"
+    assert evidence.checkpoint_bytes == len(checkpoint)
+    assert evidence.checkpoint_sha256 == sha256_file(evidence.checkpoint_path)
+    assert {
+        path.relative_to(run_directory): path.read_bytes()
+        for path in run_directory.rglob("*")
+        if path.is_file()
+    } == before
+
+
+def test_inspect_abandoned_run_rejects_tampered_protected_input(tmp_path: Path) -> None:
+    run_directory = prepare_run(write_run_config(tmp_path), run_id="abandoned")
+    abandon_prepared_run(run_directory, checkpoint=b"checkpoint")
+    manifest = json.loads((run_directory / "manifest.json").read_text(encoding="utf-8"))
+    protected = run_directory.joinpath(*Path(manifest["inputs"][0]["staged_path"]).parts)
+    protected.write_bytes(protected.read_bytes() + b"tampered")
+
+    with pytest.raises(ConfigurationError, match="Protected artifact checksum mismatch"):
+        inspect_abandoned_run(run_directory)
+
+
+def test_inspect_abandoned_run_rejects_partial_terminal_artifact(tmp_path: Path) -> None:
+    run_directory = prepare_run(write_run_config(tmp_path), run_id="abandoned")
+    abandon_prepared_run(run_directory, checkpoint=b"checkpoint")
+    (run_directory / "output-inventory.json").write_text("{}\n", encoding="utf-8")
+
+    with pytest.raises(ConfigurationError, match="unsupported structure"):
+        inspect_abandoned_run(run_directory)
+
+
+def test_recover_reuses_verified_inventory_after_interrupted_finalization(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run_directory = prepare_run(write_run_config(tmp_path), run_id="abandoned")
+    abandon_prepared_run(run_directory, checkpoint=b"checkpoint")
+    original_write = runs._write_json_atomic_exclusive
+
+    def stop_before_result(path: Path, value: object) -> None:
+        if path.name == "result.json":
+            raise OSError("simulated power loss before result publication")
+        original_write(path, value)
+
+    monkeypatch.setattr(runs, "_write_json_atomic_exclusive", stop_before_result)
+    with pytest.raises(OSError, match="simulated power loss"):
+        recover_run(
+            run_directory,
+            reason="power loss",
+            confirm_process_stopped=True,
+        )
+    assert (run_directory / "logs" / "convergence.csv").is_file()
+    assert (run_directory / "output-inventory.json").is_file()
+    assert not (run_directory / "result.json").exists()
+
+    monkeypatch.setattr(runs, "_write_json_atomic_exclusive", original_write)
+    result = recover_run(
+        run_directory,
+        reason="power loss retry",
+        confirm_process_stopped=True,
+    )
+
+    assert result["status"] == "interrupted"
+    assert result["checkpoint"]["available"] is True
+    assert run_status(run_directory)["status"] == "interrupted"
+
+
+def test_recover_reconciles_verified_result_after_interrupted_event_append(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run_directory = prepare_run(write_run_config(tmp_path), run_id="abandoned")
+    abandon_prepared_run(run_directory, checkpoint=b"checkpoint")
+    original_append = runs._append_event
+
+    def stop_before_terminal_event(path: Path, event) -> None:
+        if event.get("event") == "interrupted":
+            raise OSError("simulated power loss before terminal event")
+        original_append(path, event)
+
+    monkeypatch.setattr(runs, "_append_event", stop_before_terminal_event)
+    with pytest.raises(OSError, match="simulated power loss"):
+        recover_run(
+            run_directory,
+            reason="power loss",
+            confirm_process_stopped=True,
+        )
+    retained_result = (run_directory / "result.json").read_bytes()
+    assert run_status(run_directory)["status"] == "started"
+
+    monkeypatch.setattr(runs, "_append_event", original_append)
+    result = recover_run(
+        run_directory,
+        reason="reconcile verified terminal result",
+        confirm_process_stopped=True,
+    )
+
+    assert result["status"] == "interrupted"
+    assert (run_directory / "result.json").read_bytes() == retained_result
+    snapshot = run_status(run_directory)
+    assert snapshot["status"] == "interrupted"
+    assert snapshot["event_count"] == 3
+
+
+def test_inspect_abandoned_rejects_tampered_orphan_terminal_result(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run_directory = prepare_run(write_run_config(tmp_path), run_id="abandoned")
+    abandon_prepared_run(run_directory, checkpoint=b"checkpoint")
+    original_append = runs._append_event
+    monkeypatch.setattr(
+        runs,
+        "_append_event",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("stop")),
+    )
+    with pytest.raises(OSError, match="stop"):
+        recover_run(
+            run_directory,
+            reason="power loss",
+            confirm_process_stopped=True,
+        )
+    monkeypatch.setattr(runs, "_append_event", original_append)
+    result_path = run_directory / "result.json"
+    result = json.loads(result_path.read_text(encoding="utf-8"))
+    result["checkpoint"]["sha256"] = "0" * 64
+    result_path.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
+
+    with pytest.raises(ConfigurationError, match="Partial terminal result does not match"):
+        inspect_abandoned_run(run_directory)
+
+
+def test_recover_reconciles_completed_result_after_terminal_event_power_loss(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run_directory = prepare_run(write_run_config(tmp_path), run_id="completed-orphan")
+    monkeypatch.setattr("diffeoforge.runs.ensure_launcher_available", lambda config: None)
+    monkeypatch.setattr(
+        "diffeoforge.runs._probe_backend_environment",
+        lambda config: {"probe_status": "verified"},
+    )
+    monkeypatch.setattr(
+        "diffeoforge.runs.build_command",
+        lambda config, run_path: CommandSpec(
+            argv=(sys.executable, "-c", "print('completed')"),
+            working_directory=str(run_path),
+            environment={},
+        ),
+    )
+    original_append = runs._append_event
+
+    def stop_before_completed_event(path: Path, event) -> None:
+        if event.get("event") == "completed":
+            raise OSError("simulated power loss before completed event")
+        original_append(path, event)
+
+    monkeypatch.setattr(runs, "_append_event", stop_before_completed_event)
+    with pytest.raises(OSError, match="simulated power loss"):
+        execute_run(run_directory)
+    assert run_status(run_directory)["status"] == "started"
+
+    monkeypatch.setattr(runs, "_append_event", original_append)
+    result = recover_run(
+        run_directory,
+        reason="reconcile complete terminal result",
+        confirm_process_stopped=True,
+    )
+
+    assert result["status"] == "completed"
+    assert result["return_code"] == 0
+    assert run_status(run_directory)["status"] == "completed"
+
+
 def test_prepare_resume_creates_immutable_successor(tmp_path: Path) -> None:
     source = prepare_run(write_run_config(tmp_path), run_id="source")
     checkpoint = b"opaque-checkpoint-bytes"
     abandon_prepared_run(source, checkpoint=checkpoint)
     recover_run(source, reason="power loss", confirm_process_stopped=True)
+    before = {
+        path.relative_to(source): path.read_bytes()
+        for path in source.rglob("*")
+        if path.is_file()
+    }
+
+    evidence = inspect_resume_source(source)
+
+    assert evidence.source_run == source
+    assert evidence.terminal_status == "interrupted"
+    assert evidence.checkpoint_bytes == len(checkpoint)
+    assert evidence.checkpoint_path.read_bytes() == checkpoint
+    assert {
+        path.relative_to(source): path.read_bytes()
+        for path in source.rglob("*")
+        if path.is_file()
+    } == before
 
     successor = prepare_resume_run(source, run_id="successor")
     manifest = verify_prepared_run(successor)
@@ -405,6 +715,19 @@ def test_keyboard_interrupt_becomes_terminal_interrupted_state(
     assert fake_process.terminated is True
 
 
+@pytest.mark.parametrize(
+    ("launcher_type", "expected_cwd"),
+    (("native", "C:/long/run"), ("wsl", None), ("container", None)),
+)
+def test_backend_process_cwd_is_omitted_when_command_selects_its_own_directory(
+    launcher_type: str,
+    expected_cwd: str | None,
+) -> None:
+    config = {"runtime": {"launcher": {"type": launcher_type}}}
+
+    assert runs._backend_process_working_directory(config, "C:/long/run") == expected_cwd
+
+
 def test_child_reported_keyboard_interrupt_is_terminal_interruption(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -441,6 +764,99 @@ def test_child_reported_keyboard_interrupt_is_terminal_interruption(
     assert snapshot["result"]["execution_error"] == (
         "Backend process reported KeyboardInterrupt"
     )
+
+
+def test_execute_run_tails_native_deformetrica_log_and_reports_activity(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run_directory = prepare_run(write_run_config(tmp_path), run_id="native-log")
+    script = (
+        "from pathlib import Path; import time; "
+        "p=Path('output')/'test_info.log'; "
+        "h=p.open('w', encoding='utf-8'); "
+        "h.write('------------------------------------- Iteration: 0 "
+        "-------------------------------------\\n'); h.flush(); time.sleep(0.08); "
+        "h.write('>> Log-likelihood = -8.0 [ attachment = -7.0 ; "
+        "regularity = -1.0 ]\\n'); h.flush(); time.sleep(0.20); h.close()"
+    )
+    monkeypatch.setattr("diffeoforge.runs.ensure_launcher_available", lambda config: None)
+    monkeypatch.setattr(
+        "diffeoforge.runs._probe_backend_environment",
+        lambda config: {"probe_status": "verified"},
+    )
+    monkeypatch.setattr(
+        "diffeoforge.runs.build_command",
+        lambda config, run_path: CommandSpec(
+            argv=(sys.executable, "-c", script),
+            working_directory=str(run_path),
+            environment={},
+        ),
+    )
+    monkeypatch.setattr(
+        "diffeoforge.runs.REFERENCE_ACTIVITY_INTERVAL_SECONDS",
+        0.05,
+    )
+    observed_lines: list[str] = []
+    activities: list[tuple[float, str | None, str | None]] = []
+    resources: list[dict[str, object]] = []
+
+    assert (
+        execute_run(
+            run_directory,
+            line_callback=observed_lines.append,
+            activity_callback=lambda elapsed, latest, source: activities.append(
+                (elapsed, latest, source)
+            ),
+            resource_callback=lambda value: resources.append(dict(value)),
+        )
+        == 0
+    )
+
+    assert any("Iteration: 0" in line for line in observed_lines)
+    assert any("Log-likelihood = -8.0" in line for line in observed_lines)
+    assert activities
+    assert activities[-1][2] == "output/test_info.log"
+    assert resources
+    assert resources[-1]["requested_device"] == "cpu"
+    assert resources[-1]["gpu"]["status"] == "not_requested"
+    assert parse_convergence(
+        run_directory / "logs" / "deformetrica.log",
+        run_directory / "logs" / "test-convergence.csv",
+    ) == 1
+
+
+def test_execute_run_polls_cancellation_when_backend_emits_no_output(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run_directory = prepare_run(write_run_config(tmp_path), run_id="silent-cancel")
+    monkeypatch.setattr("diffeoforge.runs.ensure_launcher_available", lambda config: None)
+    monkeypatch.setattr(
+        "diffeoforge.runs._probe_backend_environment",
+        lambda config: {"probe_status": "verified"},
+    )
+    monkeypatch.setattr(
+        "diffeoforge.runs.build_command",
+        lambda config, run_path: CommandSpec(
+            argv=(sys.executable, "-c", "import time; time.sleep(30)"),
+            working_directory=str(run_path),
+            environment={},
+        ),
+    )
+    cancel_checks = 0
+
+    def cancel_requested() -> bool:
+        nonlocal cancel_checks
+        cancel_checks += 1
+        return cancel_checks >= 3
+
+    started = time.monotonic()
+    assert execute_run(run_directory, cancel_requested=cancel_requested) == 130
+
+    assert time.monotonic() - started < 5
+    assert cancel_checks >= 3
+    assert run_status(run_directory)["status"] == "interrupted"
 
 
 def test_resume_execution_uses_copy_and_preserves_protected_checkpoint(

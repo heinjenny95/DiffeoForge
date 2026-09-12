@@ -20,7 +20,8 @@ from diffeoforge.desktop.freeze_evidence import (
 from diffeoforge.desktop.freeze_evidence import verify_desktop_freeze_evidence
 from diffeoforge.exact_file import write_new_exact_file
 
-SCHEMA_VERSION = "0.1"
+SCHEMA_VERSION = "0.2"
+SUPPORTED_SCHEMA_VERSIONS = ("0.1", SCHEMA_VERSION)
 STATUS = "distribution_metadata_inventory_not_license_or_redistribution_approval"
 TARGET = "windows-x86_64-cpu"
 EVIDENCE_NAME = "freeze-dependency-metadata.json"
@@ -52,15 +53,28 @@ class DesktopDependencyMetadataEvidenceError(RuntimeError):
     """Raised when dependency metadata evidence fails closed."""
 
 
-def _schema() -> dict:
+def _schema(version: str) -> dict:
+    if version not in SUPPORTED_SCHEMA_VERSIONS:
+        raise DesktopDependencyMetadataEvidenceError(
+            f"Unsupported dependency metadata schema_version: {version!r}"
+        )
     resource = files("diffeoforge.schema").joinpath(
-        f"desktop-dependency-metadata-evidence-v{SCHEMA_VERSION}.json"
+        f"desktop-dependency-metadata-evidence-v{version}.json"
     )
     return json.loads(resource.read_text(encoding="utf-8"))
 
 
 def _validate_schema(value: object) -> None:
-    validator = Draft202012Validator(_schema())
+    if not isinstance(value, Mapping):
+        raise DesktopDependencyMetadataEvidenceError(
+            "Dependency metadata evidence must be a JSON object"
+        )
+    version = value.get("schema_version")
+    if not isinstance(version, str):
+        raise DesktopDependencyMetadataEvidenceError(
+            "Dependency metadata evidence schema_version must be a string"
+        )
+    validator = Draft202012Validator(_schema(version))
     errors = sorted(validator.iter_errors(value), key=lambda error: list(error.path))
     if errors:
         first = errors[0]
@@ -354,9 +368,9 @@ def create_desktop_dependency_metadata_evidence(
     expected = _expected_sha256(expected_freeze_evidence_sha256)
     bundle = Path(bundle_directory).expanduser().absolute().resolve()
     manifest = verify_desktop_freeze_evidence(bundle)
-    if manifest["schema_version"] != "0.3":
+    if manifest["schema_version"] != "0.4":
         raise DesktopDependencyMetadataEvidenceError(
-            "Dependency metadata evidence requires desktop freeze schema_version 0.3"
+            "Dependency metadata evidence requires desktop freeze schema_version 0.4"
         )
     manifest_path = bundle / FREEZE_MANIFEST_NAME
     manifest_sha256 = _sha256_bytes(manifest_path.read_bytes())

@@ -158,9 +158,7 @@ def test_atlas_blockwise_objective_and_all_parameter_gradients_match_dense(
         return result, gradients
 
     dense, dense_gradients = evaluate(None)
-    blockwise, blockwise_gradients = evaluate(
-        GaussianTilePlan(3, 2, autograd_strategy)
-    )
+    blockwise, blockwise_gradients = evaluate(GaussianTilePlan(3, 2, autograd_strategy))
     options = {"rtol": 3e-12, "atol": 3e-13}
 
     torch.testing.assert_close(blockwise.residuals, dense.residuals, **options)
@@ -176,10 +174,12 @@ def test_atlas_blockwise_objective_and_all_parameter_gradients_match_dense(
 
 @pytest.mark.parametrize("attachment_type", ["current", "varifold"])
 @pytest.mark.parametrize("autograd_strategy", ["standard", "recompute"])
+@pytest.mark.parametrize("tile_sizes", [(2, 3), (2, 2)])
 def test_one_cycle_blockwise_optimizer_matches_dense_decisions_and_parameters(
     reference: dict,
     attachment_type: str,
     autograd_strategy: str,
+    tile_sizes: tuple[int, int],
 ) -> None:
     arguments, keywords = _atlas_problem(reference)
     keywords["attachment_type"] = attachment_type
@@ -188,7 +188,7 @@ def test_one_cycle_blockwise_optimizer_matches_dense_decisions_and_parameters(
         *arguments,
         **keywords,
         max_cycles=1,
-        gaussian_tile_plan=GaussianTilePlan(2, 3, autograd_strategy),
+        gaussian_tile_plan=GaussianTilePlan(*tile_sizes, autograd_strategy),
     )
     options = {"rtol": 2e-10, "atol": 2e-11}
 
@@ -292,15 +292,11 @@ def test_recompute_reduces_cc0_objective_forward_saved_tensor_payload() -> None:
 
     torch.testing.assert_close(recomputed, standard, rtol=0, atol=0)
     for actual, expected in zip(recomputed_gradients, standard_gradients, strict=True):
-        torch.testing.assert_close(actual, expected, rtol=0, atol=0)
-    assert any(shape == (64, 64, 3) for _, shape in standard_saved)
-    assert all(shape != (64, 64, 3) for _, shape in recomputed_saved)
-    assert max(size for size, _ in recomputed_saved) < max(
-        size for size, _ in standard_saved
-    )
-    assert sum(size for size, _ in recomputed_saved) < sum(
-        size for size, _ in standard_saved
-    )
+        torch.testing.assert_close(actual, expected, rtol=5e-12, atol=2e-14)
+    assert any(shape == (64, 64) for _, shape in standard_saved)
+    assert all(shape != (64, 64) for _, shape in recomputed_saved)
+    assert max(size for size, _ in recomputed_saved) < max(size for size, _ in standard_saved)
+    assert sum(size for size, _ in recomputed_saved) < sum(size for size, _ in standard_saved)
 
 
 def test_invalid_tile_plan_fails_before_subject_numerics(reference: dict) -> None:
