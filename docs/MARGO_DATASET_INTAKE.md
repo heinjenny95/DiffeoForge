@@ -146,3 +146,33 @@ mismatch was visible; this is not a 100-subject anatomical sign-off. The existin
 landmark/mesh I/O suite passed 28 tests; four local preparation tests covered
 transform/inverse convention, reflection rejection, initializations and CSV order.
 No application code, installer, atlas parameters or existing runs were changed.
+
+## Desktop handoff: fixed-nine alignment inputs (2026-09-12)
+
+The user chose the nine fixed landmarks for initial orientation; the full
+519-point export remains separate for later comparison. The installed desktop
+was opened with the Deformetrica 4.3 backend, the 100 original-resolution PLY
+working copies, a separate new local project output directory, and millimetres
+as the interpreted native coordinate unit. This is a setup, not a computed atlas.
+
+A separate, byte-identical starting-template copy is necessary to retain all
+100 specimens as atlas targets: selecting an existing target path directly
+would remove it from the target list. Choose the specimen nearest the fixed-nine
+GPA consensus by squared residual (unit landmark centroid size, proper rotations,
+filename-sorted tie breaking). This selection converged in five iterations.
+It is a landmark-based initialization heuristic, not a surface medoid or a
+validated optimal template. Record the source identity, residuals and hashes
+locally. Do not apply these selection-only GPA transforms to the input files.
+
+The desktop CSV contains the unchanged 900 subject rows plus nine exact copies
+under the template filename. DiffeoForge's actual input selector and CSV reader
+verified 100 targets plus one template, shape `(101, 9, 3)`, and exact template
+landmark equality. The template mesh SHA-256 matches its source. The coordinate-
+matched cohort and full landmark export remain untouched.
+
+Leave the recommended surface-based shape-only mode as a provisional UI default,
+reflections off and the already-GPA declaration unchecked. No alignment approval,
+pilot or atlas is performed in this handoff. Before computation, review the
+size-treatment choice, dental/anatomical scope, numerical and visual GPA preview,
+and workload. The installed application and source behavior are unchanged;
+only public preparation documentation is committed, with all data kept local.
