@@ -55,3 +55,16 @@ The installed application needs a rebuilt binary and restart to use this code.
 Regression coverage includes all-face rendering, caching, cancellation and
 latest-view/selection races, worker failure, cached-artifact tampering, pending
 and hidden-layer QC gates, safe landmark clicks, and existing release/draft rules.
+Asynchronous registration tests wait in Qt's native event loop instead of a tight
+`QTest.qWait` polling loop, which caused a timeout under concurrent build load.
+
+## Private Windows build
+
+Runtime commit `d4096a62e5a1d17542d6ead7f03d27dd2bebe079` was frozen locally.
+GUI startup, synthetic Modern execution, reference/preparation worker smokes,
+cancellation/parent-death checks, and the 2,676-file bundle inventory passed.
+Seven embedded viewer/QC modules were compared to compiled source and matched
+exactly. The unsigned same-owner installer was packaged and verified, not
+installed or publicly released. Later test-wait/documentation hardening does not
+change the runtime in that installer. Installation and application restart remain
+an explicit next step; existing study data and QC drafts were not changed.

@@ -148,22 +148,37 @@ def review_window(monkeypatch, visual_review):
     app.processEvents()
 
 
-def _wait_for_view(window):
-    from PySide6.QtTest import QTest
-    from PySide6.QtWidgets import QApplication
+def _wait_for_qt(predicate):
+    """Run Qt's native loop so Python workers can acquire the GIL under load."""
+    from PySide6.QtCore import QEventLoop, QTimer
 
-    for _ in range(500):
-        QApplication.processEvents()
+    if predicate():
+        return
+    loop, poll, deadline = QEventLoop(), QTimer(), QTimer()
+    poll.setInterval(16)
+    poll.timeout.connect(lambda: loop.quit() if predicate() else None)
+    deadline.setSingleShot(True)
+    deadline.timeout.connect(loop.quit)
+    poll.start()
+    deadline.start(10_000)
+    loop.exec()
+    poll.stop()
+    deadline.stop()
+    assert predicate(), "Background Qt operation did not finish"
+
+
+def _wait_for_view(window):
+    def ready():
         loader = window._result_mesh_loader
         if loader._active is None and loader._pending is None:
             if window._loaded_qc_subject is None:
-                return
+                return True
             canvas = window.result_registration_qc_canvas
             canvas.grab()
-            if canvas.full_resolution_ready:
-                return
-        QTest.qWait(10)
-    pytest.fail("Background mesh load/full-resolution frame did not finish")
+            return canvas.full_resolution_ready
+        return False
+
+    _wait_for_qt(ready)
 
 
 def _decide(window, decision="pass"):
@@ -296,10 +311,7 @@ def test_background_loader_discards_old_selection_without_blocking_ui(
     timer.start(5)
     loader.request(visual_review, "registration-qc:subject-1")
     try:
-        for _ in range(100):
-            QTest.qWait(10)
-            if entered.is_set():
-                break
+        _wait_for_qt(entered.is_set)
         assert entered.is_set()
         for _ in range(5):
             loader.request(visual_review, "registration-qc:subject-1")
@@ -310,10 +322,7 @@ def test_background_loader_discards_old_selection_without_blocking_ui(
     finally:
         release.set()
         timer.stop()
-    for _ in range(500):
-        QTest.qWait(10)
-        if loader._active is None:
-            break
+    _wait_for_qt(lambda: loader._active is None and loader._pending is None)
     assert received == ["registration-qc:subject-2"]
     assert all(value != threading.get_ident() for value in threads)
 
