@@ -5,28 +5,25 @@ from __future__ import annotations
 import math
 
 import numpy as np
-from PySide6.QtCore import QPointF, Qt
+from PySide6.QtCore import QPointF, Qt, QTimer, Signal
 from PySide6.QtGui import (
     QColor,
     QMouseEvent,
     QPainter,
-    QPainterPath,
     QPaintEvent,
-    QPen,
-    QPolygonF,
     QWheelEvent,
 )
 from PySide6.QtWidgets import QWidget
 
-from diffeoforge.desktop.landmark_3d_widget import (
-    INTERACTIVE_TRIANGLE_BUDGET,
-    camera_rotation,
-)
+from diffeoforge.desktop.landmark_3d_widget import camera_rotation
 from diffeoforge.desktop.mesh_preview import MeshPreviewModel
+from diffeoforge.desktop.surface_rendering import SurfaceFrameCache, SurfaceLayer, SurfaceScene
 
 
 class CalibrationComparisonCanvas3D(QWidget):
     """Render an original mesh and its reconstruction in one shared 3D view."""
+
+    fullResolutionReadyChanged = Signal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -35,6 +32,14 @@ class CalibrationComparisonCanvas3D(QWidget):
         self._original_vertices = np.empty((0, 3), dtype=np.float64)
         self._reconstruction_vertices = np.empty((0, 3), dtype=np.float64)
         self._reconstruction_triangles = np.empty((0, 3), dtype=np.int64)
+        self._original_edges = np.empty((0, 2), dtype=np.int64)
+        self._frames = SurfaceFrameCache(self)
+        self._frames.changed.connect(self.update)
+        self._presented_key: tuple | None = None
+        self._wheel_timer = QTimer(self)
+        self._wheel_timer.setSingleShot(True)
+        self._wheel_timer.setInterval(160)
+        self._wheel_timer.timeout.connect(self._settle_wheel)
         self._center = np.zeros(3, dtype=np.float64)
         self._scale = 1.0
         self._yaw = -0.55
@@ -71,6 +76,8 @@ class CalibrationComparisonCanvas3D(QWidget):
 
         self._original = original
         self._reconstruction = reconstruction
+        self._frames.clear()
+        self._presented_key = None
         self._original_vertices = np.asarray(original.vertices, dtype=np.float64)
         self._reconstruction_vertices = np.asarray(
             reconstruction.vertices,
@@ -80,6 +87,7 @@ class CalibrationComparisonCanvas3D(QWidget):
             reconstruction.triangles,
             dtype=np.int64,
         )
+        self._original_edges = np.asarray(original.edges, dtype=np.int64)
         combined = np.vstack(
             (self._original_vertices, self._reconstruction_vertices)
         )
@@ -89,6 +97,33 @@ class CalibrationComparisonCanvas3D(QWidget):
         self._scale = float(np.max(maximum - minimum))
         if not math.isfinite(self._scale) or self._scale <= 0:
             raise ValueError("Comparison meshes must have positive finite extent")
+        self.update()
+
+    def clear(self) -> None:
+        """Release the previous pair immediately; it cannot stand in for a new case."""
+        self._original = self._reconstruction = None
+        self._original_vertices = np.empty((0, 3), dtype=np.float64)
+        self._reconstruction_vertices = np.empty((0, 3), dtype=np.float64)
+        self._reconstruction_triangles = np.empty((0, 3), dtype=np.int64)
+        self._original_edges = np.empty((0, 2), dtype=np.int64)
+        self._frames.clear()
+        self._presented_key = None
+        self.update()
+
+    def _frame_key(self) -> tuple:
+        return (id(self._original), id(self._reconstruction), self.width(), self.height(),
+                self._yaw, self._pitch, self._zoom, self._pan,
+                self._show_original, self._show_reconstruction,
+                self._interacting or self._wheel_timer.isActive())
+
+    @property
+    def full_resolution_ready(self) -> bool:
+        key = self._frame_key()
+        return bool(self._original is not None and self._show_original
+                    and self._show_reconstruction and not key[-1]
+                    and self._presented_key == key and self._frames.ready(key))
+
+    def _settle_wheel(self) -> None:
         self.update()
 
     def set_show_original(self, visible: bool) -> None:
@@ -176,6 +211,7 @@ class CalibrationComparisonCanvas3D(QWidget):
         delta = event.angleDelta().y()
         if delta:
             self._zoom = min(8.0, max(0.25, self._zoom * math.exp(delta / 900.0)))
+            self._wheel_timer.start()
             self.update()
             event.accept()
 
@@ -186,53 +222,6 @@ class CalibrationComparisonCanvas3D(QWidget):
             return
         super().mouseDoubleClickEvent(event)
 
-    def _draw_reconstruction(self, painter: QPainter) -> None:
-        if not self._show_reconstruction or self._reconstruction is None:
-            return
-        camera, screen = self._project(self._reconstruction_vertices)
-        triangles = self._reconstruction_triangles
-        if self._interacting and len(triangles) > INTERACTIVE_TRIANGLE_BUDGET:
-            selection = np.linspace(
-                0,
-                len(triangles) - 1,
-                INTERACTIVE_TRIANGLE_BUDGET,
-                dtype=np.int64,
-            )
-            triangles = triangles[selection]
-        camera_triangles = camera[triangles]
-        normals = np.cross(
-            camera_triangles[:, 1] - camera_triangles[:, 0],
-            camera_triangles[:, 2] - camera_triangles[:, 0],
-        )
-        lengths = np.linalg.norm(normals, axis=1)
-        light = np.abs(normals[:, 2]) / np.maximum(lengths, 1e-12)
-        depth = np.mean(camera_triangles[:, :, 2], axis=1)
-        for triangle_index in np.argsort(depth):
-            coordinates = screen[triangles[triangle_index]]
-            polygon = QPolygonF(
-                [QPointF(float(x), float(y)) for x, y in coordinates]
-            )
-            shade = int(218 + 27 * float(light[triangle_index]))
-            painter.setBrush(QColor(242, max(150, shade - 42), 116, 190))
-            painter.setPen(QPen(QColor(193, 87, 42, 105), 0.30))
-            painter.drawPolygon(polygon)
-
-    def _draw_original(self, painter: QPainter) -> None:
-        if not self._show_original or self._original is None:
-            return
-        _camera, screen = self._project(self._original_vertices)
-        edges = self._original.edges
-        if self._interacting and len(edges) > 20_000:
-            indices = np.linspace(0, len(edges) - 1, 20_000, dtype=np.int64)
-            edges = tuple(edges[int(index)] for index in indices)
-        path = QPainterPath()
-        for start, end in edges:
-            first = screen[start]
-            second = screen[end]
-            path.moveTo(float(first[0]), float(first[1]))
-            path.lineTo(float(second[0]), float(second[1]))
-        painter.setPen(QPen(QColor(17, 94, 163, 220), 1.05))
-        painter.drawPath(path)
 
     def paintEvent(self, event: QPaintEvent) -> None:  # noqa: N802
         del event
@@ -248,6 +237,32 @@ class CalibrationComparisonCanvas3D(QWidget):
             )
             painter.end()
             return
-        self._draw_reconstruction(painter)
-        self._draw_original(painter)
+        key = self._frame_key()
+        layers = []
+        if self._show_reconstruction:
+            layers.append(SurfaceLayer(self._reconstruction_vertices,
+                                       self._reconstruction_triangles, orange=True))
+        if self._show_original:
+            layers.append(SurfaceLayer(self._original_vertices, self._original_edges,
+                                       wireframe=True))
+        scene = SurfaceScene(self.width(), self.height(), self._center, self._scale,
+                             camera_rotation(self._yaw, self._pitch), self._zoom,
+                             self._pan, tuple(layers), navigation=key[-1])
+        image = self._frames.request(key, scene)
+        if image is not None:
+            painter.drawImage(0, 0, image)
+        presented = key if self._frames.ready(key) and not scene.navigation else None
+        if presented != self._presented_key:
+            self._presented_key = presented
+            self.fullResolutionReadyChanged.emit()
+        if presented is None:
+            painter.fillRect(0, 0, self.width(), 34, QColor("#fff3d6"))
+            painter.setPen(QColor("#705419"))
+            painter.drawText(12, 23, self._frames.error or (
+                "Navigation preview — full-resolution QC view follows after movement."
+                if scene.navigation else "Rendering full-resolution view in background…"
+            ))
+        elif not self._show_original or not self._show_reconstruction:
+            painter.setPen(QColor("#705419"))
+            painter.drawText(12, 23, "Show both layers before confirming the QC inspection.")
         painter.end()

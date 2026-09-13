@@ -142,14 +142,35 @@ def review_window(monkeypatch, visual_review):
     monkeypatch.setattr(window, "_load_verified_optimizer_plot", lambda _review: None)
     monkeypatch.setattr(window, "_load_verified_pca_plots", lambda _review: None)
     window._result_review_succeeded(visual_review)
+    _wait_for_view(window)
     yield window
     window.close()
     app.processEvents()
 
 
+def _wait_for_view(window):
+    from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QApplication
+
+    for _ in range(500):
+        QApplication.processEvents()
+        loader = window._result_mesh_loader
+        if loader._active is None and loader._pending is None:
+            if window._loaded_qc_subject is None:
+                return
+            canvas = window.result_registration_qc_canvas
+            canvas.grab()
+            if canvas.full_resolution_ready:
+                return
+        QTest.qWait(10)
+    pytest.fail("Background mesh load/full-resolution frame did not finish")
+
+
 def _decide(window, decision="pass"):
+    _wait_for_view(window)
     window.result_qc_inspected_check.setChecked(True)
     window._record_registration_qc_decision(decision)
+    _wait_for_view(window)
 
 
 def test_completed_atlas_enters_visual_review_and_gates_all_result_actions(review_window):
@@ -193,8 +214,9 @@ def test_failed_overlay_cannot_be_marked_using_a_stale_previous_mesh(review_wind
     window.result_qc_inspected_check.setChecked(True)
     def fail(*_args):
         raise ModernResultReviewError("changed specimen")
-    monkeypatch.setattr("diffeoforge.desktop.widgets.verify_result_artifact", fail)
+    monkeypatch.setattr("diffeoforge.desktop.result_mesh_loader.verify_result_artifact", fail)
     window.result_atlas_mesh_combo.setCurrentIndex(1)
+    _wait_for_view(window)
     window.result_qc_inspected_check.setChecked(True)
     window._record_registration_qc_decision("pass")
     assert window._loaded_qc_subject is None
@@ -207,10 +229,105 @@ def test_search_does_not_hide_unresolved_subject_from_release_policy(review_wind
     _decide(window, "fail")
     _decide(window)
     window.result_atlas_mesh_search_edit.setText("subject-2")
+    _wait_for_view(window)
     assert window.result_atlas_mesh_combo.count() == 1
     assert not window.result_qc_finalize_button.isEnabled()
     assert not window._registration_results_released()
     assert len(window._result_review.registration_qc) == 2
+
+
+def test_pending_camera_or_navigation_preview_cannot_be_approved(review_window):
+    window = review_window
+    canvas = window.result_registration_qc_canvas
+    assert canvas.full_resolution_ready
+    canvas._yaw += 0.2
+    window.result_qc_inspected_check.setChecked(True)
+    window._record_registration_qc_decision("pass")
+    assert not window._registration_qc_decisions
+    canvas._interacting = True
+    canvas.grab()
+    assert not canvas.full_resolution_ready
+    window._record_registration_qc_decision("pass")
+    assert not window._registration_qc_decisions
+    canvas._interacting = False
+    _wait_for_view(window)
+    assert canvas.full_resolution_ready
+
+
+def test_hidden_overlay_layers_cannot_be_approved(review_window):
+    window = review_window
+    canvas = window.result_registration_qc_canvas
+    for setter in (canvas.set_show_original, canvas.set_show_reconstruction):
+        setter(False)
+        window.result_qc_inspected_check.setChecked(True)
+        window._record_registration_qc_decision("pass")
+        assert not canvas.full_resolution_ready
+        assert not window._registration_qc_decisions
+        setter(True)
+    _wait_for_view(window)
+    assert canvas.full_resolution_ready
+
+
+def test_background_loader_discards_old_selection_without_blocking_ui(
+    review_window, visual_review, monkeypatch
+):
+    import threading
+
+    from PySide6.QtCore import QTimer
+    from PySide6.QtTest import QTest
+
+    from diffeoforge.desktop import result_mesh_loader as module
+
+    entered, release = threading.Event(), threading.Event()
+    threads, received, ticks = [], [], []
+    real = module.load_mesh_preview
+
+    def slow(path):
+        threads.append(threading.get_ident())
+        entered.set()
+        release.wait(3)
+        return real(path)
+
+    monkeypatch.setattr(module, "load_mesh_preview", slow)
+    loader = module.ResultMeshLoader()
+    loader.loaded.connect(lambda _review, key, _models: received.append(key))
+    timer = QTimer()
+    timer.timeout.connect(lambda: ticks.append(1))
+    timer.start(5)
+    loader.request(visual_review, "registration-qc:subject-1")
+    try:
+        for _ in range(100):
+            QTest.qWait(10)
+            if entered.is_set():
+                break
+        assert entered.is_set()
+        for _ in range(5):
+            loader.request(visual_review, "registration-qc:subject-1")
+            loader.request(visual_review, "registration-qc:subject-2")
+        QTest.qWait(50)
+        assert len(ticks) >= 2
+        assert not received
+    finally:
+        release.set()
+        timer.stop()
+    for _ in range(500):
+        QTest.qWait(10)
+        if loader._active is None:
+            break
+    assert received == ["registration-qc:subject-2"]
+    assert all(value != threading.get_ident() for value in threads)
+
+
+def test_cached_mesh_is_reverified_and_modified_file_is_rejected(review_window):
+    window = review_window
+    review = window._result_review
+    item = review.registration_qc_item(window._loaded_qc_subject)
+    review.artifact(item.original_artifact_key).path.write_text("tampered", encoding="utf-8")
+    window._load_selected_atlas_mesh(window.result_atlas_mesh_combo.currentIndex())
+    _wait_for_view(window)
+    assert window._loaded_qc_subject is None
+    assert not window.result_qc_inspected_check.isEnabled()
+    assert "verification or loading failed" in window.result_atlas_status_label.text()
 
 
 def test_mesh_changed_after_display_cannot_be_approved(review_window):
@@ -355,6 +472,7 @@ def test_optional_concern_becomes_required_and_cannot_be_hidden(flagged_window):
     assert window.result_atlas_mesh_group_combo.itemText(flagged_group) == "Required review (2)"
     window.result_atlas_mesh_group_combo.setCurrentIndex(flagged_group)
     window.result_atlas_mesh_search_edit.setText("subject-2")
+    _wait_for_view(window)
     assert window.result_atlas_mesh_combo.count() == 1
     assert "Researcher decision is uncertain" in window.result_atlas_status_label.text()
     _decide(window)

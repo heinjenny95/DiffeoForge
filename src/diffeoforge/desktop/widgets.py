@@ -140,6 +140,7 @@ from diffeoforge.desktop.remote_atlas_controller import (
     create_desktop_remote_atlas_session,
     verify_desktop_remote_atlas_session,
 )
+from diffeoforge.desktop.result_mesh_loader import ResultMeshLoader
 from diffeoforge.desktop.result_review import (
     ModernResultReview,
     ModernResultReviewError,
@@ -1364,6 +1365,9 @@ class DiffeoForgeWindow(QMainWindow):
         self.setMinimumSize(900, 650)
         self.setStyleSheet(_STYLE)
         self._thread_pool = QThreadPool.globalInstance()
+        self._result_mesh_loader = ResultMeshLoader(self)
+        self._result_mesh_loader.loaded.connect(self._atlas_mesh_loaded)
+        self._result_mesh_loader.failed.connect(self._atlas_mesh_load_failed)
         self._shape_space_comparison_worker: _ReferenceShapeSpaceComparisonWorker | None = None
         self._shape_space_selected_method_ids: tuple[str, ...] = ()
         self._shape_space_comparison_result: _ShapeSpaceComparisonResult | None = None
@@ -2606,6 +2610,9 @@ class DiffeoForgeWindow(QMainWindow):
         self.result_atlas_canvas.setMinimumHeight(440)
         self.result_atlas_canvas.hide()
         self.result_registration_qc_canvas = CalibrationComparisonCanvas3D()
+        self.result_registration_qc_canvas.fullResolutionReadyChanged.connect(
+            self._sync_visual_decision_controls
+        )
         self.result_registration_qc_canvas.setObjectName("resultRegistrationQcViewer3D")
         self.result_registration_qc_canvas.setAccessibleName(
             "Original and reconstruction overlay ranked by registration residual"
@@ -10434,10 +10441,12 @@ class DiffeoForgeWindow(QMainWindow):
             self.result_atlas_mesh_combo.setCurrentIndex(selected_index)
         self.result_atlas_mesh_combo.blockSignals(False)
         if self.result_atlas_mesh_combo.count() == 0:
+            self._result_mesh_loader.cancel()
             self._loaded_qc_subject = None
             self.result_qc_inspected_check.setChecked(False)
             self._sync_visual_decision_controls()
             self.result_atlas_canvas.set_model(None)
+            self.result_registration_qc_canvas.clear()
             self.result_atlas_canvas.hide()
             self.result_registration_qc_canvas.hide()
             self.result_qc_inspected_check.hide()
@@ -10486,52 +10495,54 @@ class DiffeoForgeWindow(QMainWindow):
         self._sync_visual_decision_controls()
         self.result_atlas_mesh_combo.setToolTip(self.result_atlas_mesh_combo.currentText())
         self._update_atlas_mesh_counter()
-        if self._result_review is None:
-            return
+        self._result_mesh_loader.cancel()
+        self.result_atlas_canvas.set_model(None)
+        self.result_registration_qc_canvas.clear()
+        self.result_atlas_canvas.hide()
+        self.result_registration_qc_canvas.hide()
+        review = self._result_review
         key = self.result_atlas_mesh_combo.currentData()
-        if not isinstance(key, str):
+        if review is None or not isinstance(key, str):
+            return
+        if not key.startswith("registration-qc:") and not self._registration_results_released():
+            self.result_atlas_status_label.setText(
+                "Atlas and PCA forms remain locked until Step 5 visual approval."
+            )
+            return
+        self.result_atlas_status_label.setObjectName("status")
+        self.result_atlas_status_label.setStyleSheet("")
+        self.result_atlas_status_label.setText(
+            "Verifying and loading full-resolution meshes in background… "
+            "You can change the selection; only the latest case will be displayed."
+        )
+        self._result_mesh_loader.request(review, key)
+
+    @Slot(object, str, str)
+    def _atlas_mesh_load_failed(self, review: ModernResultReview, key: str, error: str) -> None:
+        if review is not self._result_review or key != self.result_atlas_mesh_combo.currentData():
+            return
+        self._loaded_qc_subject = None
+        self.result_atlas_canvas.hide()
+        self.result_registration_qc_canvas.clear()
+        self.result_registration_qc_canvas.hide()
+        self._sync_visual_decision_controls()
+        self.result_atlas_status_label.setObjectName("statusError")
+        self.result_atlas_status_label.setStyleSheet("")
+        self.result_atlas_status_label.setText(
+            f"Internal mesh viewer locked because verification or loading failed: {error}"
+        )
+
+    @Slot(object, str, object)
+    def _atlas_mesh_loaded(self, review: ModernResultReview, key: str, models: tuple) -> None:
+        if review is not self._result_review or key != self.result_atlas_mesh_combo.currentData():
             return
         if key.startswith("registration-qc:"):
             subject_name = key.split(":", 1)[1]
+            item = review.registration_qc_item(subject_name)
             try:
-                item = self._result_review.registration_qc_item(subject_name)
-                original_path = verify_result_artifact(
-                    self._result_review,
-                    item.original_artifact_key,
-                )
-                reconstruction_path = verify_result_artifact(
-                    self._result_review,
-                    item.reconstruction_artifact_key,
-                )
-                original = load_mesh_preview(original_path)
-                reconstruction = load_mesh_preview(reconstruction_path)
-                if (
-                    original.sha256 != self._result_review.artifact(
-                        item.original_artifact_key
-                    ).sha256
-                    or reconstruction.sha256 != self._result_review.artifact(
-                        item.reconstruction_artifact_key
-                    ).sha256
-                ):
-                    raise ModernResultReviewError("Loaded overlay differs from verified mesh bytes")
-                self.result_registration_qc_canvas.set_models(
-                    original,
-                    reconstruction,
-                )
-            except (
-                KeyError,
-                MeshPreviewError,
-                ModernResultReviewError,
-                OSError,
-                ValueError,
-            ) as error:
-                self.result_registration_qc_canvas.hide()
-                self.result_atlas_canvas.hide()
-                self.result_atlas_status_label.setObjectName("statusError")
-                self.result_atlas_status_label.setStyleSheet("")
-                self.result_atlas_status_label.setText(
-                    f"Registration overlay locked because verification or loading failed: {error}"
-                )
+                self.result_registration_qc_canvas.set_models(*models)
+            except (TypeError, ValueError) as error:
+                self._atlas_mesh_load_failed(review, key, str(error))
                 return
             self.result_atlas_canvas.hide()
             preset = self.result_atlas_view_combo.currentData()
@@ -10572,30 +10583,9 @@ class DiffeoForgeWindow(QMainWindow):
             )
             return
         if not self._registration_results_released():
-            self.result_atlas_canvas.hide()
-            self.result_registration_qc_canvas.hide()
-            self.result_atlas_status_label.setText(
-                "Atlas and PCA forms remain locked until Step 5 visual approval."
-            )
             return
-        try:
-            artifact = self._result_review.artifact(key)
-            path = verify_result_artifact(self._result_review, key)
-            model = load_mesh_preview(path)
-            if model.sha256 != artifact.sha256:
-                raise ModernResultReviewError(
-                    "The internally loaded VTK differs from the verified artifact"
-                )
-        except (KeyError, MeshPreviewError, ModernResultReviewError, OSError) as error:
-            self.result_atlas_canvas.set_model(None)
-            self.result_atlas_canvas.hide()
-            self.result_registration_qc_canvas.hide()
-            self.result_atlas_status_label.setObjectName("statusError")
-            self.result_atlas_status_label.setStyleSheet("")
-            self.result_atlas_status_label.setText(
-                f"Internal atlas viewer locked because verification or loading failed: {error}"
-            )
-            return
+        artifact = review.artifact(key)
+        model = models[0]
         self.result_atlas_canvas.set_model(model)
         self.result_registration_qc_canvas.hide()
         self.result_qc_inspected_check.hide()
@@ -10649,6 +10639,7 @@ class DiffeoForgeWindow(QMainWindow):
             self._worker is not None
             or self._result_review is None
             or self._loaded_qc_subject != subject_name
+            or not self.result_registration_qc_canvas.full_resolution_ready
             or not self.result_qc_inspected_check.isChecked()
         ):
             return
@@ -10945,10 +10936,12 @@ class DiffeoForgeWindow(QMainWindow):
     def _sync_visual_decision_controls(self) -> None:
         enabled = bool(
             self._worker is None and self._loaded_qc_subject is not None
+            and self.result_registration_qc_canvas.full_resolution_ready
             and self.result_qc_inspected_check.isChecked()
         )
         self.result_qc_inspected_check.setEnabled(
             self._worker is None and self._loaded_qc_subject is not None
+            and self.result_registration_qc_canvas.full_resolution_ready
         )
         for button in (
             self.result_qc_pass_button, self.result_qc_uncertain_button, self.result_qc_fail_button
@@ -11678,4 +11671,7 @@ class DiffeoForgeWindow(QMainWindow):
             )
             event.ignore()
             return
+        self._result_mesh_loader.cancel()
+        self.result_atlas_canvas.set_model(None)
+        self.result_registration_qc_canvas.clear()
         super().closeEvent(event)

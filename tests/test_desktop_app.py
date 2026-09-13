@@ -21,6 +21,19 @@ from diffeoforge.mesh import read_vtk_polydata
 ROOT = Path(__file__).parents[1]
 
 
+def _wait_for_result_mesh(window):
+    from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QApplication
+
+    for _ in range(500):
+        QApplication.processEvents()
+        loader = window._result_mesh_loader
+        if loader._active is None and loader._pending is None:
+            return
+        QTest.qWait(10)
+    pytest.fail("Result mesh did not finish loading")
+
+
 def _qc_test_evidence(review):
     """Give decision-navigation fixtures real bindings for the new release gate."""
     from diffeoforge.desktop.result_review import ModernResultArtifact
@@ -151,6 +164,10 @@ def test_registration_qc_decision_advances_once_and_stops_after_last(
         )
     loaded: list[int] = []
     window._load_selected_atlas_mesh = loaded.append  # type: ignore[method-assign]
+    # This isolated navigation fixture stubs loading; real frame gating is tested
+    # in test_desktop_registration_release.
+    monkeypatch.setattr(type(window.result_registration_qc_canvas),
+                        "full_resolution_ready", property(lambda self: True))
 
     window._loaded_qc_subject = "subject-1"
     window.result_qc_inspected_check.setChecked(True)
@@ -242,6 +259,8 @@ def test_registration_qc_autosave_failure_does_not_change_or_advance(
         "diffeoforge.desktop.widgets.save_registration_qc_draft",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("read-only storage")),
     )
+    monkeypatch.setattr(type(window.result_registration_qc_canvas),
+                        "full_resolution_ready", property(lambda self: True))
 
     window._loaded_qc_subject = "subject-1"
     window.result_qc_inspected_check.setChecked(True)
@@ -3490,6 +3509,7 @@ def test_desktop_window_verifies_and_renders_step_five_before_artifact_handoff(
     # exercises plot verification and artifact handoff after successful release.
     monkeypatch.setattr(window, "_registration_results_released", lambda: True)
     window._result_review_succeeded(review)
+    _wait_for_result_mesh(window)
     application.processEvents()
 
     assert window.page_stack.currentIndex() == 5

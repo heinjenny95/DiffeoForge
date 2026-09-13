@@ -115,6 +115,18 @@ def test_3d_canvas_click_emits_an_arbitrary_surface_point(monkeypatch, tmp_path:
     application.processEvents()
 
     center = QPoint(canvas.width() // 2, canvas.height() // 2)
+    # A pending/new camera image must never place a landmark against stale pixels.
+    canvas._yaw += 0.01
+    QTest.mouseClick(canvas, Qt.MouseButton.LeftButton, pos=center)
+    assert observed == []
+    canvas.set_view_preset("front")
+    for _ in range(500):
+        application.processEvents()
+        canvas.grab()
+        if canvas.full_resolution_ready:
+            break
+        QTest.qWait(10)
+    assert canvas.full_resolution_ready
     QTest.mouseClick(canvas, Qt.MouseButton.LeftButton, pos=center)
 
     assert observed[0] == pytest.approx((0.0, 0.0, 0.0))

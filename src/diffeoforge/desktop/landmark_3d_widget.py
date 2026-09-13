@@ -6,11 +6,12 @@ import math
 from dataclasses import dataclass
 
 import numpy as np
-from PySide6.QtCore import QPointF, Qt, Signal
-from PySide6.QtGui import QColor, QMouseEvent, QPainter, QPaintEvent, QPen, QPolygonF, QWheelEvent
+from PySide6.QtCore import QPointF, Qt, QTimer, Signal
+from PySide6.QtGui import QColor, QMouseEvent, QPainter, QPaintEvent, QPen, QWheelEvent
 from PySide6.QtWidgets import QWidget
 
 from diffeoforge.desktop.mesh_preview import MeshPreviewModel
+from diffeoforge.desktop.surface_rendering import SurfaceFrameCache, SurfaceLayer, SurfaceScene
 
 INTERACTIVE_TRIANGLE_BUDGET = 5_000
 SURFACE_OPACITY = 255
@@ -124,6 +125,14 @@ class InteractiveMeshCanvas3D(QWidget):
         self._model: MeshPreviewModel | None = None
         self._vertices = np.empty((0, 3), dtype=np.float64)
         self._triangles = np.empty((0, 3), dtype=np.int64)
+        self._frames = SurfaceFrameCache(self)
+        self._frames.changed.connect(self.update)
+        self._presented_key: tuple | None = None
+        self._pick_view_key: tuple | None = None
+        self._wheel_timer = QTimer(self)
+        self._wheel_timer.setSingleShot(True)
+        self._wheel_timer.setInterval(160)
+        self._wheel_timer.timeout.connect(self.update)
         self._center = np.zeros(3, dtype=np.float64)
         self._scale = 1.0
         self._yaw = -0.55
@@ -160,6 +169,8 @@ class InteractiveMeshCanvas3D(QWidget):
 
     def set_model(self, model: MeshPreviewModel | None) -> None:
         self._model = model
+        self._frames.clear()
+        self._presented_key = None
         if model is None:
             self._vertices = np.empty((0, 3), dtype=np.float64)
             self._triangles = np.empty((0, 3), dtype=np.int64)
@@ -178,6 +189,16 @@ class InteractiveMeshCanvas3D(QWidget):
     def set_markers(self, markers: dict[str, tuple[float, float, float]]) -> None:
         self._markers = dict(markers)
         self.update()
+
+    def _frame_key(self) -> tuple:
+        return (id(self._model), self.width(), self.height(), self._yaw, self._pitch,
+                self._zoom, self._pan, self._interacting or self._wheel_timer.isActive())
+
+    @property
+    def full_resolution_ready(self) -> bool:
+        key = self._frame_key()
+        return bool(self._model is not None and not key[-1]
+                    and self._presented_key == key and self._frames.ready(key))
 
     def set_picking_enabled(self, enabled: bool) -> None:
         """Switch between landmark placement and neutral mesh viewing."""
@@ -245,6 +266,7 @@ class InteractiveMeshCanvas3D(QWidget):
         }:
             super().mousePressEvent(event)
             return
+        self._pick_view_key = self._frame_key() if self.full_resolution_ready else None
         self._press_position = event.position()
         self._last_position = event.position()
         self._drag_button = event.button()
@@ -290,7 +312,7 @@ class InteractiveMeshCanvas3D(QWidget):
         # Always schedule a new paint after release so that preview can never
         # remain as the apparent final surface.
         self.update()
-        if should_pick:
+        if should_pick and self._pick_view_key == self._frame_key():
             point = self.pick_at(event.position())
             if point is not None:
                 self.surfacePointPicked.emit(point)
@@ -300,6 +322,7 @@ class InteractiveMeshCanvas3D(QWidget):
         if delta == 0:
             return
         self._zoom = min(8.0, max(0.25, self._zoom * math.exp(delta / 900.0)))
+        self._wheel_timer.start()
         self.update()
         event.accept()
 
@@ -315,8 +338,7 @@ class InteractiveMeshCanvas3D(QWidget):
         painter = QPainter(self)
         painter.fillRect(self.rect(), QColor("#f7f9f9"))
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-        surface = self._surface()
-        if surface is None:
+        if self._model is None:
             painter.setPen(QColor("#64777c"))
             painter.drawText(
                 self.rect().adjusted(20, 20, -20, -20),
@@ -326,37 +348,23 @@ class InteractiveMeshCanvas3D(QWidget):
             painter.end()
             return
 
-        triangles = surface.triangles
-        if self._interacting and len(triangles) > INTERACTIVE_TRIANGLE_BUDGET:
-            selection = np.linspace(
-                0,
-                len(triangles) - 1,
-                INTERACTIVE_TRIANGLE_BUDGET,
-                dtype=np.int64,
-            )
-            triangles = triangles[selection]
-        camera_triangles = surface.camera_vertices[triangles]
-        normals = np.cross(
-            camera_triangles[:, 1] - camera_triangles[:, 0],
-            camera_triangles[:, 2] - camera_triangles[:, 0],
-        )
-        normal_lengths = np.linalg.norm(normals, axis=1)
-        light = np.abs(normals[:, 2]) / np.maximum(normal_lengths, 1e-12)
-        depth = np.mean(camera_triangles[:, :, 2], axis=1)
-        for triangle_index in np.argsort(depth):
-            coordinates = surface.screen_vertices[triangles[triangle_index]]
-            polygon = QPolygonF([QPointF(float(x), float(y)) for x, y in coordinates])
-            shade = int(198 + 38 * float(light[triangle_index]))
-            painter.setBrush(
-                QColor(
-                    max(0, shade - 38),
-                    shade,
-                    max(0, shade - 16),
-                    SURFACE_OPACITY,
-                )
-            )
-            painter.setPen(QPen(QColor("#6e9992"), 0.35))
-            painter.drawPolygon(polygon)
+        navigation = self._interacting or self._wheel_timer.isActive()
+        key = self._frame_key()
+        scene = SurfaceScene(self.width(), self.height(), self._center, self._scale,
+                             camera_rotation(self._yaw, self._pitch), self._zoom,
+                             self._pan, (SurfaceLayer(self._vertices, self._triangles),),
+                             navigation=navigation, margin=64.0)
+        image = self._frames.request(key, scene)
+        if image is not None:
+            painter.drawImage(0, 0, image)
+        self._presented_key = key if self._frames.ready(key) and not navigation else None
+        if navigation or not self._frames.ready(key):
+            painter.fillRect(0, 0, self.width(), 34, QColor("#fff3d6"))
+            painter.setPen(QColor("#705419"))
+            painter.drawText(12, 23, self._frames.error or (
+                "Navigation preview — full-resolution surface follows after movement."
+                if navigation else "Rendering full-resolution surface in background…"
+            ))
 
         rotation = camera_rotation(self._yaw, self._pitch)
         viewport = max(1.0, min(float(self.width()), float(self.height())) - 64.0)
