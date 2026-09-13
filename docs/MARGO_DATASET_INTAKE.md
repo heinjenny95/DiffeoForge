@@ -1,8 +1,9 @@
 # MARGO human mandibles: dataset intake
 
-This is a preparation record, not a completed DiffeoForge benchmark or a clinical
-validation. Originals remain unchanged; derived coordinate exports must be kept
-separate and anatomical scope still requires review.
+This record covers preparation and subsequent researcher-reported observations,
+not a validated DiffeoForge benchmark or a clinical validation. Originals remain
+unchanged; derived coordinate exports must be kept separate and anatomical scope
+still requires review.
 
 ## Pinned public source
 
@@ -176,3 +177,24 @@ pilot or atlas is performed in this handoff. Before computation, review the
 size-treatment choice, dental/anatomical scope, numerical and visual GPA preview,
 and workload. The installed application and source behavior are unchanged;
 only public preparation documentation is committed, with all data kept local.
+
+## Post-atlas interpretability limitation (2026-09-13)
+
+- **Observation:** after the completed whole-surface atlas, the researcher reports
+  a broadly dispersed morphospace without obvious structure in the inspected
+  plots. This is a qualitative assessment, not a quantified dispersion or
+  clustering test independently performed for this documentation update.
+- **Working explanation:** between-specimen dental differences may contribute
+  disproportionately to registration and shape variation, obscuring variation
+  of the mandibular bone. The dental contribution has not been isolated, so a
+  causal explanation is not yet established.
+- **Limitation:** in its current whole-surface form, this cohort appears poorly
+  suited to an interpretable benchmark of mandibular-bone shape. Computational
+  completion alone does not ensure that the morphospace captures the intended
+  anatomy. This is a dataset/representation-specific concern, not a demonstrated
+  general failure of DiffeoForge; absence of visible clusters alone is not a
+  validation failure or evidence of absent biological variation.
+- **Possible verification, not performed:** a predefined, consistently applied
+  dental-region sensitivity comparison could test the explanation. Anatomical
+  scope should be predefined, rather than chosen to produce visible clusters.
+  No mesh changes, exclusions, reruns or software changes were made for this note.
