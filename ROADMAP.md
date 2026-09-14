@@ -369,9 +369,11 @@ scientific gates. Planning does not mark those gates complete.
       Xeon 8573C AUTO passes only 8/10 twice, COMPATIBLE passes 10/10 exactly twice;
       AMD EPYC 7763 passes both modes twice. Retained bytes and comparisons are
       independently verified; see `reference/reference-cpu-full-pair-v1/README.md`.
-  - [ ] Review and implement a scoped, recorded legacy-CPU compatibility setting;
-    production/default reference CI and broader cross-CPU qualification remain
-    open despite the successful bounded diagnostic (no implicit baseline reset)
+  - [x] Implement the approved, process-scoped legacy-CPU COMPATIBLE setting;
+    record the exact command and probe environment; prevent silent policy changes
+    in prepared runs and checkpoint continuation. See `docs/REFERENCE_CPU_LAUNCH_POLICY.md`.
+    Post-change default reference CI remains to be verified; broader cross-CPU
+    qualification remains open (no implicit baseline reset).
   - [x] Fresh GitHub-hosted Windows one-directory engineering freeze, complete
     frozen-process smoke contract, and independently inspected evidence artifact
   - [x] Hash-bound, noninterpreting installed-distribution metadata and

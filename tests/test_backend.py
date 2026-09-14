@@ -90,9 +90,7 @@ def test_wsl_gpu_command_exposes_one_cuda_device_and_records_kernel_mode(
     # Isolate the simulated platform from pathlib and pytest's real OS state.
     monkeypatch.setattr(backend, "os", SimpleNamespace(name="nt"))
     monkeypatch.setattr(backend.shutil, "which", lambda command: command)
-    monkeypatch.setattr(
-        backend, "_windows_to_wsl", lambda path, **kwargs: "/mnt/c/synthetic-run"
-    )
+    monkeypatch.setattr(backend, "_windows_to_wsl", lambda path, **kwargs: "/mnt/c/synthetic-run")
 
     command = build_command(config, tmp_path)
 
@@ -148,4 +146,41 @@ def test_shooting_command_reuses_runtime_without_dataset_estimation(
         "OMP_NUM_THREADS": "4",
         "CUDA_VISIBLE_DEVICES": "-1",
         "USE_CUDA": "0",
+        "MKL_CBWR": "COMPATIBLE",
     }
+
+
+@pytest.mark.parametrize("operation", [build_command, build_shooting_command])
+@pytest.mark.parametrize("launcher_type", ["native", "wsl", "container"])
+def test_cpu_compatibility_is_scoped_and_recorded_for_each_launcher(
+    operation, launcher_type, monkeypatch, tmp_path
+):
+    monkeypatch.setenv("MKL_CBWR", "AUTO")
+    config = {
+        "runtime": {
+            "backend": "deformetrica_reference",
+            "device": "cpu",
+            "threads": 4,
+            "verbosity": "INFO",
+            "launcher": {
+                "type": launcher_type,
+                "executable": "deformetrica",
+                "distribution": "Ubuntu",
+                "engine": "docker",
+                "image": "frozen",
+            },
+        },
+        "output": {"retain_flow_meshes": True},
+    }
+    if launcher_type == "wsl":
+        monkeypatch.setattr(backend, "os", SimpleNamespace(name="nt"))
+        monkeypatch.setattr(backend.shutil, "which", lambda command: command)
+        monkeypatch.setattr(backend, "_windows_to_wsl", lambda *a, **kw: "/mnt/c/test")
+    command = operation(config, tmp_path)
+    assert command.as_manifest()["environment"]["MKL_CBWR"] == "COMPATIBLE"
+    if launcher_type != "native":
+        assert command.argv.count("MKL_CBWR=COMPATIBLE") == 1
+        assert "MKL_CBWR=AUTO" not in command.argv
+    import os
+
+    assert os.environ["MKL_CBWR"] == "AUTO"

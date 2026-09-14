@@ -18,7 +18,8 @@ from diffeoforge.reference_runtime import probe_wsl_launcher
 from diffeoforge.subprocess_policy import hidden_windows_process_kwargs
 
 BACKEND_ID = "deformetrica_reference"
-BACKEND_CONTRACT_VERSION = "0.2"
+BACKEND_CONTRACT_VERSION = "0.3"
+REFERENCE_CPU_MKL_MODE = "COMPATIBLE"
 CONTAINER_WORKING_DIRECTORY = "/work"
 ENGINE_CONSTANTS = {
     "line_search_shrink": 0.5,
@@ -50,9 +51,7 @@ def validate_reference_config(config: Mapping[str, Any]) -> None:
     if runtime["backend"] != BACKEND_ID:
         raise ConfigurationError(f"Unsupported backend: {runtime['backend']}")
     if runtime["device"] not in {"cpu", "cuda"}:
-        raise ConfigurationError(
-            "The Deformetrica 4.3 reference device must be 'cpu' or 'cuda'."
-        )
+        raise ConfigurationError("The Deformetrica 4.3 reference device must be 'cpu' or 'cuda'.")
     if runtime["device"] == "cuda" and runtime["launcher"]["type"] != "wsl":
         raise ConfigurationError(
             "Deformetrica KeOps GPU kernels currently require the verified WSL launcher."
@@ -342,17 +341,13 @@ def build_shooting_command(
     )
 
 
-def _build_launcher_command(
-    config: Mapping[str, Any],
-    run_directory: Path,
-    *,
-    arguments: tuple[str, ...],
-    follow_run_directory_symlinks: bool,
-) -> CommandSpec:
-    """Apply one validated reference runtime to a prepared engine operation."""
+def reference_process_environment(config: Mapping[str, Any]) -> dict[str, str]:
+    """Process-scoped legacy runtime settings, shared by execution and its probe.
 
+    CPU compatibility is supported by the retained public Intel/AMD full-atlas
+    pair, not a guarantee for arbitrary CPUs, BLAS libraries or datasets.
+    """
     runtime = config["runtime"]
-    launcher = runtime["launcher"]
     gpu_kernels = runtime["device"] == "cuda"
     environment = {
         "OMP_NUM_THREADS": str(runtime["threads"]),
@@ -371,6 +366,23 @@ def _build_launcher_command(
         )
     else:
         environment["USE_CUDA"] = "0"
+        environment["MKL_CBWR"] = REFERENCE_CPU_MKL_MODE
+    return environment
+
+
+def _build_launcher_command(
+    config: Mapping[str, Any],
+    run_directory: Path,
+    *,
+    arguments: tuple[str, ...],
+    follow_run_directory_symlinks: bool,
+) -> CommandSpec:
+    """Apply one validated reference runtime to a prepared engine operation."""
+
+    runtime = config["runtime"]
+    launcher = runtime["launcher"]
+    gpu_kernels = runtime["device"] == "cuda"
+    environment = reference_process_environment(config)
     command_run_directory = _command_run_directory(
         run_directory,
         follow_symlinks=follow_run_directory_symlinks,
@@ -416,20 +428,13 @@ def _build_launcher_command(
     if launcher["type"] == "container":
         engine = launcher["engine"]
         image = launcher["image"]
-        mount = (
-            f"type=bind,source={command_run_directory},"
-            f"target={CONTAINER_WORKING_DIRECTORY}"
-        )
+        mount = f"type=bind,source={command_run_directory},target={CONTAINER_WORKING_DIRECTORY}"
         container_environment = tuple(
             argument
             for key, value in environment.items()
             for argument in ("--env", f"{key}={value}")
         )
-        user_arguments = (
-            ()
-            if os.name == "nt"
-            else ("--user", f"{os.getuid()}:{os.getgid()}")
-        )
+        user_arguments = () if os.name == "nt" else ("--user", f"{os.getuid()}:{os.getgid()}")
         return CommandSpec(
             argv=(
                 engine,
@@ -479,9 +484,7 @@ def ensure_launcher_available(config: Mapping[str, Any]) -> None:
     if launcher["type"] == "container":
         engine = launcher["engine"]
         if shutil.which(engine) is None:
-            raise ConfigurationError(
-                f"Container engine is not available on PATH: {engine}"
-            )
+            raise ConfigurationError(f"Container engine is not available on PATH: {engine}")
         try:
             completed = subprocess.run(
                 [engine, "image", "inspect", launcher["image"]],

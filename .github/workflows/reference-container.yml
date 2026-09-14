@@ -37,7 +37,11 @@ permissions:
 jobs:
   build-run-compare:
     if: ${{ !inputs.cpu_pair }}
-    runs-on: ubuntu-24.04
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-22.04, ubuntu-24.04]
     timeout-minutes: 30
 
     steps:
@@ -99,7 +103,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: reference-cpu-evidence
+          name: reference-cpu-evidence-${{ matrix.runner }}
           retention-days: 14
           if-no-files-found: error
           path: |
@@ -107,6 +111,14 @@ jobs:
             examples/runs/container-ci/logs/convergence.csv
             examples/runs/container-ci/logs/deformetrica.log
             examples/runs/container-ci/output/DeterministicAtlas__EstimatedParameters__Residuals.txt
+            examples/runs/container-ci/manifest.json
+            examples/runs/container-ci/manifest.sha256
+            examples/runs/container-ci/result.json
+            examples/runs/container-ci/events.jsonl
+            examples/runs/container-ci/engine/*.xml
+            examples/runs/container-ci/output/*.vtk
+            examples/runs/container-ci/output/*ControlPoints*.txt
+            examples/runs/container-ci/output/*Momenta*.txt
 
   cpu-pair-diagnostic:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.cpu_pair }}

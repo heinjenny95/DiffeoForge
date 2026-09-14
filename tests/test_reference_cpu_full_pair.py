@@ -80,6 +80,22 @@ def test_prepared_inputs_and_pristine_output_have_separate_postrun_checks(pair, 
     assert all(pair.sha(run / a["path"]) == a["sha256"] for a in manifest["protected_artifacts"])
 
 
+def test_diagnostic_replaces_product_default_without_duplicate_modes(pair, tmp_path):
+    run = pair.prepare_run(ROOT / pair.PUBLIC_CONFIG, output_directory=tmp_path, run_id="mode")
+    manifest = pair.verify_prepared_run(run)
+    command = pair.build_command(manifest["effective_config"], run)
+    assert command.environment["MKL_CBWR"] == "COMPATIBLE"
+    assert command.argv.count("MKL_CBWR=COMPATIBLE") == 1
+    for mode in ("AUTO", "COMPATIBLE"):
+        argv = pair.paired_command(command, mode, "df-cpu-pair-test")
+        assert [arg for arg in argv if arg.startswith("MKL_CBWR=")] == [f"MKL_CBWR={mode}"]
+        restored = argv[6:]
+        original = list(command.argv[2:])
+        position = original.index("MKL_CBWR=COMPATIBLE")
+        del original[position - 1 : position + 1]
+        assert restored == original
+
+
 def test_summary_preserves_auto_failures_and_requires_complete_repeats(pair):
     records = [
         {

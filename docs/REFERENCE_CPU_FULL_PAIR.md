@@ -51,4 +51,8 @@ Intel AUTO passed only 8/10 in both repetitions; Intel COMPATIBLE and both AMD m
 passed 10/10 byte-identically in every repetition. Both modes repeated exactly
 within each host, and COMPATIBLE outputs matched across hosts. Downloaded results
 were independently verified; [all raw evidence and limits are retained](../reference/reference-cpu-full-pair-v1/README.md).
-The normal production/default launcher remains unchanged.
+At the time of this retained observation, the normal launcher was unchanged.
+The separately approved [contract 0.3 CPU launch policy](REFERENCE_CPU_LAUNCH_POLICY.md)
+now sets COMPATIBLE for new legacy CPU commands. The diagnostic replaces that
+single setting explicitly, preserving true AUTO observations and all other
+arguments. Historical evidence above remains bound to producer commit 6113400.

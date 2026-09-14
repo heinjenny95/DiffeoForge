@@ -40,6 +40,10 @@ from diffeoforge.backends import (
     generate_resume_optimization_file,
     validate_reference_config,
 )
+from diffeoforge.backends.deformetrica_reference import (
+    REFERENCE_CPU_MKL_MODE,
+    reference_process_environment,
+)
 from diffeoforge.config import (
     ConfigurationError,
     load_config,
@@ -758,6 +762,9 @@ def verify_prepared_run_against_plan(
 def _probe_backend_environment(config: Mapping[str, Any]) -> Mapping[str, Any]:
     launcher = config["runtime"]["launcher"]
     runtime_device = str(config["runtime"]["device"])
+    cpu_environment = (
+        reference_process_environment(config) if runtime_device == "cpu" else {}
+    )
     gpu_probe = None
     if runtime_device == "cuda" and launcher["type"] == "wsl":
         gpu_probe = probe_reference_gpu(launcher)
@@ -821,7 +828,7 @@ def _probe_backend_environment(config: Mapping[str, Any]) -> Mapping[str, Any]:
                     "CUDAHOSTCXX=/usr/bin/g++-12",
                 )
                 if runtime_device == "cuda"
-                else ()
+                else ("env", *(f"{key}={value}" for key, value in cpu_environment.items()))
             ),
             python_executable,
             "-c",
@@ -868,6 +875,7 @@ def _probe_backend_environment(config: Mapping[str, Any]) -> Mapping[str, Any]:
             "--tmpfs=/tmp:rw,exec,nosuid,size=256m",
             "--entrypoint",
             "python",
+            *(arg for key, value in cpu_environment.items() for arg in ("--env", f"{key}={value}")),
             image,
             "-c",
             script,
@@ -890,6 +898,7 @@ def _probe_backend_environment(config: Mapping[str, Any]) -> Mapping[str, Any]:
         errors="replace",
         timeout=60,
         check=False,
+        **({"env": {**os.environ, **cpu_environment}} if cpu_environment else {}),
         **hidden_windows_process_kwargs(),
     )
     if completed.returncode != 0:
@@ -927,6 +936,21 @@ def _probe_backend_environment(config: Mapping[str, Any]) -> Mapping[str, Any]:
     if container_identity is not None:
         value["container"] = container_identity
     return {"probe_status": "verified", **value}
+
+
+def _require_current_cpu_command(
+    config: Mapping[str, Any], command: Mapping[str, Any], *, context: str
+) -> None:
+    """Do not silently change the arithmetic of reviewed runs or checkpoints."""
+    if config["runtime"]["device"] != "cpu":
+        return
+    if command.get("environment", {}).get("MKL_CBWR") != REFERENCE_CPU_MKL_MODE:
+        raise ConfigurationError(
+            f"{context} does not record MKL_CBWR={REFERENCE_CPU_MKL_MODE}. "
+            "The legacy CPU launch policy changed; prepare and review a fresh run "
+            "with this version, or use the original software/environment for the "
+            "old run. Existing results and checkpoints have not been changed."
+        )
 
 
 def _convergence_rows(log_path: Path) -> list[list[float | int]]:
@@ -1281,6 +1305,7 @@ def execute_run(
     run_path = Path(run_directory).expanduser().resolve()
     manifest = verify_prepared_run(run_path)
     config = manifest["effective_config"]
+    _require_current_cpu_command(config, manifest["command_preview"], context="Prepared run")
     ensure_launcher_available(config)
     environment_probe = _probe_backend_environment(config)
     resume_provenance = _load_resume_provenance(run_path)
@@ -1720,6 +1745,11 @@ def inspect_resume_source(source_run_directory: Path | str) -> ResumeSourceEvide
         )
     source_result_path = source_run / "result.json"
     source_result = _read_json_object(source_result_path, "Source result")
+    _require_current_cpu_command(
+        source_manifest["effective_config"],
+        source_result.get("command", {}),
+        context="Checkpoint source execution",
+    )
     if source_result.get("status") != terminal_status:
         raise ConfigurationError(
             "Source result status does not match the terminal lifecycle event."
@@ -1893,7 +1923,7 @@ def prepare_resume_run(
             "created_at": utc_now(),
             "project": source_manifest["project"],
             "source_config": source_manifest["source_config"],
-            "backend": source_manifest["backend"],
+            "backend": {**source_manifest["backend"], "contract_version": BACKEND_CONTRACT_VERSION},
             "effective_config": config,
             "input_count": source_manifest["input_count"],
             "inputs": source_manifest["inputs"],

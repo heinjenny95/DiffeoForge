@@ -38,7 +38,7 @@ def test_probe_rejects_modified_inputs(tmp_path, target):
 def test_backend_probe_records_cpu_and_only_allowlisted_numeric_environment(monkeypatch, tmp_path):
     from diffeoforge.runs import _probe_backend_environment
 
-    monkeypatch.setenv("MKL_CBWR", "COMPATIBLE")
+    monkeypatch.setenv("MKL_CBWR", "AUTO")
     monkeypatch.setenv("PRIVATE_PROBE_TEST", "must-not-be-reported")
     metadata = tmp_path / "deformetrica-4.3.0.dist-info"
     metadata.mkdir()
@@ -48,6 +48,7 @@ def test_backend_probe_records_cpu_and_only_allowlisted_numeric_environment(monk
         {
             "runtime": {
                 "device": "cpu",
+                "threads": 4,
                 "launcher": {"type": "native", "executable": sys.executable},
             }
         }
@@ -55,6 +56,7 @@ def test_backend_probe_records_cpu_and_only_allowlisted_numeric_environment(monk
     assert report["probe_status"] == "verified"
     assert report["cpu_model"]
     assert report["probe_numerical_environment"]["MKL_CBWR"] == "COMPATIBLE"
+    assert report["probe_numerical_environment"]["OMP_NUM_THREADS"] == "4"
     assert set(report["probe_numerical_environment"]) == {
         "MKL_CBWR",
         "MKL_ENABLE_INSTRUCTIONS",
@@ -63,3 +65,45 @@ def test_backend_probe_records_cpu_and_only_allowlisted_numeric_environment(monk
         "MKL_NUM_THREADS",
     }
     assert "must-not-be-reported" not in str(report)
+
+
+@pytest.mark.parametrize("launcher_type", ["wsl", "container"])
+def test_cpu_probe_passes_same_explicit_environment_inside_guest(launcher_type, monkeypatch):
+    import json
+    from types import SimpleNamespace
+
+    import diffeoforge.runs as runs
+    from diffeoforge.backends.deformetrica_reference import reference_process_environment
+
+    config = {
+        "runtime": {
+            "device": "cpu",
+            "threads": 6,
+            "launcher": {
+                "type": launcher_type,
+                "distribution": "Ubuntu",
+                "executable": "/runtime/deformetrica",
+                "engine": "docker",
+                "image": "frozen",
+            },
+        }
+    }
+    calls = []
+
+    def invoke(argv, **kwargs):
+        calls.append((argv, kwargs))
+        payload = (
+            [{"Id": "sha256:test"}]
+            if argv[1:3] == ["image", "inspect"]
+            else {"packages": {"deformetrica": "4.3.0"}}
+        )
+        return SimpleNamespace(returncode=0, stdout=json.dumps(payload))
+
+    monkeypatch.setattr(runs.subprocess, "run", invoke)
+    assert runs._probe_backend_environment(config)["probe_status"] == "verified"
+    argv, kwargs = calls[-1]
+    for key, value in reference_process_environment(config).items():
+        assert argv.count(f"{key}={value}") == 1
+        assert kwargs["env"][key] == value
+        if launcher_type == "container":
+            assert argv[argv.index(f"{key}={value}") - 1] == "--env"

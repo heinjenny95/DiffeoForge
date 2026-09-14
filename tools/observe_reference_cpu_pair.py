@@ -64,9 +64,15 @@ def paired_command(command, mode, name):
         raise ValueError("Only the frozen Docker launcher is accepted")
     if not name.startswith("df-cpu-pair-") or not name.replace("-", "").isalnum():
         raise ValueError("Invalid task-scoped container name")
-    # Keep every generated command argument and isolation flag. Only the explicit
-    # per-container diagnostic mode and a unique cleanup name are added.
-    return [*command.argv[:2], "--name", name, "--env", f"MKL_CBWR={mode}", *command.argv[2:]]
+    # Replace the product CPU default, rather than passing duplicate Docker env
+    # options whose last value would silently turn the AUTO observation into
+    # COMPATIBLE. Preserve every other argument, including isolation flags.
+    tail = list(command.argv[2:])
+    image_index = tail.index(IMAGE)
+    for index in range(image_index - 1, 0, -1):
+        if tail[index - 1] == "--env" and tail[index].startswith("MKL_CBWR="):
+            del tail[index - 1 : index + 1]
+    return [*command.argv[:2], "--name", name, "--env", f"MKL_CBWR={mode}", *tail]
 
 
 def run_container(argv, log, name):

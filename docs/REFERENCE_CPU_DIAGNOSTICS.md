@@ -101,9 +101,9 @@ modes twice, also byte-identically. All eight complete atlases and same-host sta
 probes were downloaded and independently verified; see
 [retained full-pair evidence](../reference/reference-cpu-full-pair-v1/README.md).
 
-Next review a narrowly scoped, explicitly recorded compatibility-setting change
-for the frozen legacy CPU launcher. Until implemented and verified, normal default
-reference CI can still fail on Intel. This one cohort/two-CPU result does not
+The separately approved [legacy CPU launch policy](REFERENCE_CPU_LAUNCH_POLICY.md)
+now implements the scoped, recorded COMPATIBLE setting; normal strict reference
+CI checks its integration without diagnostic overrides. This one cohort/two-CPU result does not
 qualify all hardware or biological datasets; no arithmetic patch or baseline reset
 is justified by it. Separately, the Modern float64 engine passed the prospective
 [public paired protocol](PUBLIC_ENGINE_PAIR.md); do not conflate that experiment

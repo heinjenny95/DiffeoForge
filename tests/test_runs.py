@@ -119,7 +119,7 @@ def abandon_prepared_run(run_directory: Path, *, checkpoint: bytes | None = None
                     "command": {
                         "argv": ["deformetrica", "estimate"],
                         "working_directory": str(run_directory),
-                        "environment": {},
+                        "environment": {"MKL_CBWR": "COMPATIBLE"},
                     },
                     "backend_environment": {
                         "probe_status": "verified",
@@ -137,6 +137,46 @@ def abandon_prepared_run(run_directory: Path, *, checkpoint: bytes | None = None
         (run_directory / "output" / "deformetrica-state.p").write_bytes(checkpoint)
 
 
+@pytest.mark.parametrize("mode", [None, "AUTO"])
+def test_old_prepared_cpu_run_is_readable_but_not_silently_reinterpreted(tmp_path, mode):
+    run = prepare_run(write_run_config(tmp_path), run_id="old-prepared")
+    path = run / "manifest.json"
+    manifest = json.loads(path.read_text())
+    manifest["backend"]["contract_version"] = "0.2"
+    environment = manifest["command_preview"]["environment"]
+    if mode is None:
+        environment.pop("MKL_CBWR")
+    else:
+        environment["MKL_CBWR"] = mode
+    path.write_text(json.dumps(manifest), encoding="utf-8")
+    (run / "manifest.sha256").write_text(sha256_file(path), encoding="ascii")
+    assert verify_prepared_run(run)["backend"]["contract_version"] == "0.2"
+    before = {p.relative_to(run): p.read_bytes() for p in run.rglob("*") if p.is_file()}
+    with pytest.raises(ConfigurationError, match="legacy CPU launch policy changed"):
+        execute_run(run)
+    assert before == {p.relative_to(run): p.read_bytes() for p in run.rglob("*") if p.is_file()}
+    assert run_status(run)["status"] == "prepared"
+
+
+def test_old_cpu_checkpoint_cannot_cross_launch_policy(tmp_path):
+    run = prepare_run(write_run_config(tmp_path), run_id="old-checkpoint")
+    abandon_prepared_run(run, checkpoint=b"opaque-test-checkpoint")
+    recover_run(run, reason="test interruption", confirm_process_stopped=True)
+    path = run / "result.json"
+    result = json.loads(path.read_text())
+    result["command"]["environment"].pop("MKL_CBWR")
+    path.write_text(json.dumps(result), encoding="utf-8")
+    before = {p.relative_to(run): p.read_bytes() for p in run.rglob("*") if p.is_file()}
+    with pytest.raises(ConfigurationError, match="Checkpoint source execution"):
+        prepare_resume_run(run, run_id="successor")
+    assert not (run.parent / "successor").exists()
+    assert before == {p.relative_to(run): p.read_bytes() for p in run.rglob("*") if p.is_file()}
+
+
+def test_cpu_migration_guard_does_not_apply_to_gpu():
+    runs._require_current_cpu_command({"runtime": {"device": "cuda"}}, {}, context="GPU")
+
+
 def test_prepare_creates_verifiable_immutable_run(tmp_path: Path) -> None:
     config_path = write_run_config(tmp_path)
 
@@ -145,6 +185,8 @@ def test_prepare_creates_verifiable_immutable_run(tmp_path: Path) -> None:
 
     assert run_directory == tmp_path / "runs" / "fixed-run"
     assert manifest["input_count"] == {"templates": 1, "subjects": 2}
+    assert manifest["backend"]["contract_version"] == "0.3"
+    assert manifest["command_preview"]["environment"]["MKL_CBWR"] == "COMPATIBLE"
     assert (run_directory / "engine" / "model.xml").is_file()
     assert (run_directory / "engine" / "data_set.xml").is_file()
     assert (run_directory / "engine" / "optimization_parameters.xml").is_file()
