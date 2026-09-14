@@ -560,7 +560,12 @@ def test_desktop_window_constructs_in_offscreen_smoke() -> None:
     )
 
     assert completed.returncode == 0, completed.stderr
-    assert completed.stderr == ""
+    # Qt's headless Linux plugin can report unsupported native window hints.
+    # Those warnings are not a failed application start.
+    assert all(
+        line == "This plugin does not support propagateSizeHints()"
+        for line in completed.stderr.splitlines()
+    ), completed.stderr
 
 
 def test_native_mesh_preview_canvas_renders_non_background_pixels(

@@ -23,8 +23,6 @@ from diffeoforge.analysis.pca import PCAResult
 from diffeoforge.atomic_io import write_text_safely
 from diffeoforge.config import ConfigurationError
 from diffeoforge.mesh import sha256_file
-from diffeoforge.modern_bundle import MANIFEST_NAME as MODERN_MANIFEST
-from diffeoforge.modern_pca_stability import verify_modern_pca_bundle
 from diffeoforge.reference_pca import (
     REFERENCE_PCA_MANIFEST,
     verify_reference_pca_bundle,
@@ -99,7 +97,12 @@ def _source_bundle(directory: Path | str) -> tuple[PCAResult, dict[str, object]]
                     bundle.bundle_directory / REFERENCE_PCA_MANIFEST
                 ),
             }
-        if (root / MODERN_MANIFEST).is_file():
+        # Probe the format without importing the optional numerical engine on
+        # every reference-only GUI start. The verifier still owns validation.
+        if (root / "bundle-manifest.json").is_file():
+            from diffeoforge.modern_bundle import MANIFEST_NAME as MODERN_MANIFEST
+            from diffeoforge.modern_pca_stability import verify_modern_pca_bundle
+
             bundle = verify_modern_pca_bundle(root)
             return bundle.pca, {
                 "kind": "modern_engine_pca",

@@ -18,16 +18,8 @@ import yaml
 
 from diffeoforge.atomic_io import write_text_safely
 from diffeoforge.config import ConfigurationError, validate_input_paths
-from diffeoforge.engine.execution import ENGINE_IMPLEMENTATION_VERSION
 from diffeoforge.mesh import inspect_inputs, sha256_file
 from diffeoforge.modern_progress import ModernProgressCallback
-from diffeoforge.modern_workflow import (
-    WORKFLOW_VERSION,
-    load_modern_workflow_config,
-    run_modern_workflow,
-    validate_modern_analysis_dimensions,
-    verify_modern_workflow,
-)
 from diffeoforge.runs import publish_directory_exclusive
 from diffeoforge.strict_json import load_strict_json_object
 
@@ -239,6 +231,15 @@ def create_remote_atlas_job(
 ) -> Path:
     """Create an immutable portable Modern request without uploading it."""
 
+    # The desktop imports the transport/controller even when the optional Modern
+    # engine is absent. Load numerical dependencies only for an actual job.
+    from diffeoforge.engine.execution import ENGINE_IMPLEMENTATION_VERSION
+    from diffeoforge.modern_workflow import (
+        WORKFLOW_VERSION,
+        load_modern_workflow_config,
+        validate_modern_analysis_dimensions,
+    )
+
     source_config = Path(config_path).expanduser().absolute()
     if source_config.is_symlink() or not source_config.is_file():
         raise ConfigurationError(
@@ -400,6 +401,12 @@ def _read_manifest(root: Path) -> dict[str, Any]:
 def verify_remote_atlas_job(directory: Path | str) -> dict[str, Any]:
     """Verify the exact portable request without network or compute."""
 
+    from diffeoforge.modern_workflow import (
+        WORKFLOW_VERSION,
+        load_modern_workflow_config,
+        validate_modern_analysis_dimensions,
+    )
+
     root = Path(directory).expanduser().resolve()
     if not root.is_dir() or root.is_symlink():
         raise RemoteAtlasJobError(f"Remote atlas job directory is missing or symbolic: {root}")
@@ -549,6 +556,8 @@ def verify_remote_atlas_result(
 ) -> dict[str, Any]:
     """Verify a completed Modern workflow against one exact portable request."""
 
+    from diffeoforge.modern_workflow import load_modern_workflow_config, verify_modern_workflow
+
     job_root = Path(job_directory).expanduser().resolve()
     request = verify_remote_atlas_job(job_root)
     result_root = Path(result_directory).expanduser().resolve()
@@ -609,6 +618,9 @@ def run_remote_atlas_job(
     cancel_requested: Callable[[], bool] | None = None,
 ) -> Path:
     """Execute one verified request on the current host and bind its result."""
+
+    from diffeoforge.engine.execution import ENGINE_IMPLEMENTATION_VERSION
+    from diffeoforge.modern_workflow import run_modern_workflow
 
     job_root = Path(job_directory).expanduser().resolve()
     request = verify_remote_atlas_job(job_root)
