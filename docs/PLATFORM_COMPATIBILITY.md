@@ -83,6 +83,10 @@ route with the analysis extra. Three genuinely Modern-only test modules now skip
 when Torch is absent and run explicitly in the Modern matrix. The reference
 container host installs its required analysis extra; container engine versions
 remain unchanged.
+The full Python 3.11/3.13 suite also includes mixed reference/Modern qualification
+tests and now installs the CPU Modern extra explicitly. Optional-engine absence
+continues to be enforced by the independent desktop-only jobs and import-blocking
+regressions; it is not inferred from this full-suite environment.
 
 Apple Silicon initially passed 502 Modern tests but failed a legacy harness test's
 extra `max_error < 2e-14` assertion, observing `2.220446049250313e-14` instead.

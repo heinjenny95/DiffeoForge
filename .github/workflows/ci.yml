@@ -11,6 +11,10 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      OMP_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
     strategy:
       fail-fast: false
       matrix:
@@ -31,7 +35,10 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libcairo2-dev pkg-config
           python -m pip install --upgrade pip
-          python -m pip install -e ".[analysis,dev,sbom-builder]"
+          # The full suite includes paired Modern/reference qualification tests.
+          # Desktop-only jobs separately enforce operation with Torch absent.
+          python -m pip install torch==2.13.0 --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install -e ".[analysis,modern-engine,dev,sbom-builder]"
 
       - name: Lint
         run: ruff check .
