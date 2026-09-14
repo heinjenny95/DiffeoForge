@@ -136,12 +136,13 @@ scientific gates. Planning does not mark those gates complete.
 
 ## Milestone 3: Accessible application
 
-- [ ] **UX: less text, progressive disclosure.** Shorten the default copy across
+- [x] **UX: less text, progressive disclosure.** Shorten the default copy across
   the guided workflow to a brief summary and the next action; move explanations,
   methods and advanced detail into collapsed, clearly labelled info boxes.
   Keep blocking errors, required decisions and essential warnings visible.
-  Verify that users can complete the workflow without reading long text panels.
-- [ ] **Pilot: opt-in AFK / overnight mode.** After each completed stage,
+  Internal UI/regression review covers visible decisions and collapsed guidance;
+  independent usability evaluation remains an open roadmap gate.
+- [x] **Pilot: opt-in AFK / overnight mode.** After each completed stage,
   automatically accept its eligible recommendation and start the next pilot
   stage without another click. Declare the permitted scope and provisional-choice
   policy before starting; log every automatic selection and its evidence.
@@ -154,9 +155,8 @@ scientific gates. Planning does not mark those gates complete.
   cached, detail-aware simplified display proxies by default, including
   settled views, original/reconstruction QC overlays, alignment, landmark and
   result/PC viewers; inventory every rendering path so none silently falls back
-  to routine all-face rendering on large inputs. The existing
-  [large-mesh viewer fix](docs/LARGE_MESH_VIEWER.md) only samples navigation frames
-  and does not fulfill this requirement.
+  to routine all-face rendering on large inputs. The updated
+  [large-mesh viewer implementation](docs/LARGE_MESH_VIEWER.md) includes settled proxies.
   Keep original meshes, registrations, landmarks, numerical QC and analyses at
   their scientific resolution. Label display resolution and provide on-demand
   original-detail inspection; preserve exact original-surface landmark picking

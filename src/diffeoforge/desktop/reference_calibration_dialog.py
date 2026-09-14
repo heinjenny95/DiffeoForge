@@ -187,10 +187,14 @@ class _CalibrationStageWorker(QRunnable):
         runner: ReferenceCalibrationStudyRunner,
         *,
         complete_automatic_pilot: bool = False,
+        afk: bool = False,
+        visual_approvals: Mapping[str, bool] | None = None,
     ) -> None:
         super().__init__()
         self.runner = runner
         self.complete_automatic_pilot = complete_automatic_pilot
+        self.afk = afk
+        self.visual_approvals = dict(visual_approvals or {})
         self.signals = _CalibrationSignals()
         self._lock = threading.Lock()
         self._finished = False
@@ -206,7 +210,10 @@ class _CalibrationStageWorker(QRunnable):
         try:
             if self.complete_automatic_pilot:
                 result = self.runner.run_complete_automatic_pilot(
-                    event_callback=self.signals.event.emit
+                    event_callback=self.signals.event.emit,
+                    **(
+                        {"afk": True, "visual_approvals": self.visual_approvals} if self.afk else {}
+                    ),
                 )
             else:
                 result = self.runner.run_current_stage(event_callback=self.signals.event.emit)
@@ -475,7 +482,7 @@ class CalibrationCandidateViewerDialog(QDialog):
         self.previous_specimen_button.setEnabled(current_position > 0)
         self.next_specimen_button.setEnabled(not complete)
         self.review_progress.setText(
-            f"Visual review progress: {reviewed} of {total} pilot specimens opened."
+            f"Visual review progress: {reviewed} of {total} original-detail views inspected."
         )
         self.review_gate.setText(
             "Next: record your decision. Click the green button if the important "
@@ -559,6 +566,18 @@ class ReferenceCalibrationDialog(QDialog):
         )
         self.advanced_mode.toggled.connect(lambda _checked: self._render())
         root.addWidget(self.advanced_mode)
+        self.afk_mode = QCheckBox(
+            "AFK / overnight: continue with eligible provisional recommendations"
+        )
+        self.afk_mode.setToolTip(
+            "Explicit confirmation at Start. Existing pilot grid only; ambiguous or boundary "
+            "choices remain provisional. No visual approval, outward search or atlas launch."
+        )
+        self.afk_mode.toggled.connect(self._afk_toggled)
+        self.advanced_mode.toggled.connect(
+            lambda checked: self.afk_mode.setChecked(False) if checked else None
+        )
+        root.addWidget(self.afk_mode)
         self.progress = QProgressBar()
         self.progress.setRange(0, 1)
         self.progress.setValue(0)
@@ -647,6 +666,7 @@ class ReferenceCalibrationDialog(QDialog):
         self._snapshot = load_reference_calibration_study(self.study_directory)
         self._clear_content()
         running = self._worker is not None
+        self.afk_mode.setEnabled(not running and self._snapshot.status != "completed")
         if self._snapshot.status == "completed":
             self.status.setText(
                 "All four pilot stages are complete. DiffeoForge created a provisional "
@@ -664,6 +684,19 @@ class ReferenceCalibrationDialog(QDialog):
             recommendation_title.setObjectName("title")
             recommendation_layout.addWidget(recommendation_title)
             if report is not None:
+                afk_count = sum(
+                    stage.get("selection_mode") == "automatic_provisional_afk_v1"
+                    for stage in report.get("stage_decisions", [])
+                )
+                if afk_count:
+                    notice = QLabel(
+                        f"AFK return summary: {afk_count} stages selected provisionally. "
+                        "Review confidence, search boundaries and anatomy in the report. "
+                        "The atlas has not been started."
+                    )
+                    notice.setWordWrap(True)
+                    notice.setObjectName("statusWarning")
+                    recommendation_layout.addWidget(notice)
                 unit = str(report["coordinate_unit"])
                 for parameter in report["recommended_parameters"]:
                     value = parameter["value"]
@@ -692,9 +725,9 @@ class ReferenceCalibrationDialog(QDialog):
                 method = QLabel(
                     "DiffeoForge first screened attachment and deformation scales "
                     "together, then refined deformation, regularization, and numerical "
-                    "accuracy. Automatic choices had to remain stable under metric-weight "
-                    "changes, an independent rank analysis, and pilot-subject resampling "
-                    "when available. The complete report preserves every alternative, "
+                    "accuracy. Standard automatic choices require stability; AFK can accept "
+                    "eligible ambiguous or boundary-limited choices provisionally. "
+                    "The complete report preserves every alternative, "
                     "evidence grade, sensitivity warning, and limitation."
                 )
                 method.setWordWrap(True)
@@ -1311,21 +1344,52 @@ class ReferenceCalibrationDialog(QDialog):
         if candidate is not None:
             self._open_candidate(candidate)
 
+    @Slot(bool)
+    def _afk_toggled(self, checked: bool) -> None:
+        if checked:
+            self.advanced_mode.setChecked(False)
+
     @Slot()
     def _start(self) -> None:
         if self._worker is not None:
             return
         automatic_mode = not self.advanced_mode.isChecked()
+        afk = automatic_mode and self.afk_mode.isChecked()
+        if (
+            afk
+            and QMessageBox.question(
+                self,
+                "Authorize bounded AFK pilot",
+                "Run the remaining pilot stages without further selection prompts?\n\n"
+                "Accept eligible balanced recommendations provisionally, even when evidence is "
+                "ambiguous or the best tested value is at a search boundary. Keep the existing "
+                "candidate grid and iteration caps; do not add outward tests. Recorded visual "
+                "rejections remain binding. Stop on failed runs or no eligible candidate.\n\n"
+                "This does not approve anatomy or start the atlas. Review the report afterwards. "
+                "Completion by morning is not guaranteed; the computer must remain awake.",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            != QMessageBox.StandardButton.Yes
+        ):
+            return
         runner = ReferenceCalibrationStudyRunner(self.study_directory)
         worker = _CalibrationStageWorker(
             runner,
             complete_automatic_pilot=automatic_mode,
+            afk=afk,
+            visual_approvals={
+                key: value
+                for key, value in self._visual_approvals().items()
+                if key in {c.candidate_id for c in self._snapshot.candidates}
+            },
         )
         worker.signals.event.connect(self._event)
         worker.signals.succeeded.connect(self._succeeded)
         worker.signals.failed.connect(self._failed)
         self._worker = worker
         self.advanced_mode.setEnabled(False)
+        self.afk_mode.setEnabled(False)
         self.start_button.setEnabled(False)
         _set_action_emphasis(self.start_button, False)
         self.cancel_button.setEnabled(True)

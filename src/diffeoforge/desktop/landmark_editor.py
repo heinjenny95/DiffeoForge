@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
 
 from diffeoforge.analysis.landmarks import write_landmark_csv
 from diffeoforge.atomic_io import write_text_safely
+from diffeoforge.desktop.info_disclosure import InfoDisclosure
 from diffeoforge.desktop.landmark_3d_widget import InteractiveMeshCanvas3D
 from diffeoforge.desktop.mesh_preview import MeshPreviewModel
 from diffeoforge.desktop.preview_mesh_loader import PreviewMeshLoader
@@ -82,7 +83,12 @@ class LandmarkEditorDialog(QDialog):
             "modifies the source meshes. Progress is autosaved; Cancel keeps the draft."
         )
         explanation.setWordWrap(True)
-        layout.addWidget(explanation)
+        summary = QLabel(
+            "Place matching anatomical landmarks. For large meshes, enable Original detail to pick."
+        )
+        summary.setWordWrap(True)
+        layout.addWidget(summary)
+        layout.addWidget(InfoDisclosure("Placement, editing and autosave", explanation))
 
         selectors = QHBoxLayout()
         self.mesh_combo = QComboBox()

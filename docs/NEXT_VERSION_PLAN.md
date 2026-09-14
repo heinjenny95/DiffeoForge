@@ -32,6 +32,13 @@ qualification claim. The established development branch remains authoritative.
 Each completed package includes a scoped commit/push and a concise English entry
 in the existing Google Docs Project log. Partial implementation is not completion.
 
+The AFK pilot now implements the explicit bounded provisional policy described in
+`AFK_PILOT.md`. Standard robustness-gated behavior remains available. Default copy
+has been shortened in data intake, pilot planning, landmark placement, GPA review,
+registration QC, shape-space comparison and report export; detailed explanations
+remain in collapsed disclosures and mandatory QC warnings stay visible. These
+internal UI changes are not a substitute for independent usability evaluation.
+
 ## Larger roadmap: planned work, not automatically completed by this version
 
 Large-mesh viewing is implemented as bounded, cached, display-only quadric

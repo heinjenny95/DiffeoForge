@@ -570,28 +570,32 @@
                           "enum": [
                             "researcher_manual",
                             "researcher_provisional_balanced_override",
-                            "automatic_provisional_balanced_score"
+                            "automatic_provisional_balanced_score",
+                            "automatic_provisional_afk_v1"
                           ]
                         },
                         "deformation": {
                           "enum": [
                             "researcher_manual",
                             "researcher_provisional_balanced_override",
-                            "automatic_provisional_balanced_score"
+                            "automatic_provisional_balanced_score",
+                            "automatic_provisional_afk_v1"
                           ]
                         },
                         "noise": {
                           "enum": [
                             "researcher_manual",
                             "researcher_provisional_balanced_override",
-                            "automatic_provisional_balanced_score"
+                            "automatic_provisional_balanced_score",
+                            "automatic_provisional_afk_v1"
                           ]
                         },
                         "timepoints": {
                           "enum": [
                             "researcher_manual",
                             "researcher_provisional_balanced_override",
-                            "automatic_provisional_balanced_score"
+                            "automatic_provisional_balanced_score",
+                            "automatic_provisional_afk_v1"
                           ]
                         }
                       }

@@ -130,6 +130,165 @@ class _FailedController(_CompletedController):
         raise RuntimeError("synthetic transient failure")
 
 
+def _afk_runner(
+    tmp_path, monkeypatch, *, invalid=False, controller=_CompletedController
+):
+    snapshot = create_reference_calibration_study(
+        _project(tmp_path),
+        tmp_path / "afk-study",
+        pilot_max_iterations=50,
+    )
+
+    def collect(run):
+        atlas = run / "atlas.vtk"
+        atlas.write_text("placeholder", encoding="utf-8")
+        return replace(_metrics(atlas), invalid_face_count=1 if invalid else 0)
+
+    monkeypatch.setattr(
+        study_module, "collect_reference_calibration_run_metrics", collect
+    )
+    monkeypatch.setattr(study_module, "atlas_rms_distance", lambda *_args: 0.001)
+    return ReferenceCalibrationStudyRunner(
+        snapshot.study_directory, controller_factory=controller
+    )
+
+
+def test_afk_completes_ambiguous_frozen_grid_with_auditable_provisional_choices(
+    tmp_path, monkeypatch
+):
+    runner = _afk_runner(tmp_path, monkeypatch)
+    result = runner.run_complete_automatic_pilot(afk=True)
+    assert result.status == "completed"
+    events = study_module._load_events(result.study_directory)
+    consent = next(e for e in events if e["event"] == "afk_policy_authorized")
+    assert consent["outward_search"] is False
+    assert consent["atlas_launch_authorized"] is False
+    decisions = [e for e in events if e["event"] == "stage_selected"]
+    assert len(decisions) == 4
+    assert all(e["selection_mode"] == "automatic_provisional_afk_v1" for e in decisions)
+    assert all(
+        not e["researcher_decision"] and not e["visual_approvals"] for e in decisions
+    )
+    assert any(not e["assessment"]["automatic_selection_allowed"] for e in decisions)
+    report = study_module.load_reference_calibration_report(result.study_directory)
+    assert "AFK" in report["summary"]
+    assert "robust eligible" not in " ".join(e["selection_reason"] for e in decisions)
+    # A completed pilot can be reopened without new execution or duplicate consent.
+    assert runner.run_complete_automatic_pilot(afk=True).status == "completed"
+    assert study_module._load_events(result.study_directory) == events
+
+
+@pytest.mark.parametrize(
+    "invalid,controller,match",
+    [
+        (True, _CompletedController, "no eligible"),
+        (False, _FailedController, "not every candidate"),
+    ],
+)
+def test_afk_stops_on_hard_failure_or_ineligible_candidates(
+    tmp_path, monkeypatch, invalid, controller, match
+):
+    runner = _afk_runner(tmp_path, monkeypatch, invalid=invalid, controller=controller)
+    with pytest.raises(ReferenceCalibrationStudyError, match=match):
+        runner.run_complete_automatic_pilot(afk=True)
+    snapshot = load_reference_calibration_study(runner.study_directory)
+    assert not snapshot.selected_candidate_ids
+    assert snapshot.final_config_path is None
+
+
+def test_afk_requires_consent_and_respects_recorded_visual_rejections(
+    tmp_path, monkeypatch
+):
+    runner = _afk_runner(tmp_path, monkeypatch)
+    snapshot = runner.run_current_stage()
+    with pytest.raises(ReferenceCalibrationStudyError, match="policy authorization"):
+        study_module.select_reference_calibration_stage_automatically(
+            runner.study_directory, afk=True
+        )
+    with pytest.raises(ReferenceCalibrationStudyError, match="no eligible"):
+        runner.run_complete_automatic_pilot(
+            afk=True,
+            visual_approvals={
+                candidate.candidate_id: False for candidate in snapshot.candidates
+            },
+        )
+    assert not load_reference_calibration_study(
+        runner.study_directory
+    ).selected_candidate_ids
+
+    reopened = ReferenceCalibrationStudyRunner(
+        runner.study_directory, controller_factory=_CompletedController
+    )
+    with pytest.raises(ReferenceCalibrationStudyError, match="no eligible"):
+        reopened.run_complete_automatic_pilot(afk=True)
+
+
+def test_afk_cancel_between_stages_and_resume_without_rerunning_completed_stage(
+    tmp_path, monkeypatch
+):
+    runner = _afk_runner(tmp_path, monkeypatch)
+
+    def cancel_after_selection(event):
+        if event["event"] == "automatic_stage_selected":
+            runner.request_cancel()
+
+    paused = runner.run_complete_automatic_pilot(
+        afk=True, event_callback=cancel_after_selection
+    )
+    assert len(paused.selected_candidate_ids) == 1
+    before = [
+        e
+        for e in study_module._load_events(runner.study_directory)
+        if e["event"] == "candidate_started"
+    ]
+    resumed = ReferenceCalibrationStudyRunner(
+        runner.study_directory, controller_factory=_CompletedController
+    )
+    assert resumed.run_complete_automatic_pilot(afk=True).status == "completed"
+    events = study_module._load_events(runner.study_directory)
+    starts = [e for e in events if e["event"] == "candidate_started"]
+    assert starts[: len(before)] == before
+    assert len(starts) == len({e["candidate_id"] for e in starts})
+
+
+def test_afk_gui_requires_explicit_confirmation_and_reopen_defaults_off(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QMessageBox
+
+    from diffeoforge.desktop.reference_calibration_dialog import (
+        ReferenceCalibrationDialog,
+    )
+
+    app = QApplication.instance() or QApplication([])
+    runner = _afk_runner(tmp_path, monkeypatch)
+    dialog = ReferenceCalibrationDialog(runner.study_directory)
+    assert not dialog.afk_mode.isChecked()
+    dialog.advanced_mode.setChecked(True)
+    dialog.afk_mode.setChecked(True)
+    assert not dialog.advanced_mode.isChecked()
+    queued = []
+    dialog._thread_pool = SimpleNamespace(start=queued.append)
+    monkeypatch.setattr(
+        QMessageBox, "question", lambda *a: QMessageBox.StandardButton.No
+    )
+    dialog._start()
+    assert not queued and dialog._worker is None
+    monkeypatch.setattr(
+        QMessageBox, "question", lambda *a: QMessageBox.StandardButton.Yes
+    )
+    dialog._start()
+    assert len(queued) == 1 and queued[0].afk
+    assert not dialog.afk_mode.isEnabled()
+    dialog._worker = None  # Fake worker was never dispatched.
+    dialog.close()
+    reopened = ReferenceCalibrationDialog(runner.study_directory)
+    assert not reopened.afk_mode.isChecked()
+    reopened.close()
+    app.processEvents()
+
+
 def test_study_creation_binds_inputs_and_prepares_only_first_stage(
     tmp_path: Path,
 ) -> None:
@@ -306,13 +465,14 @@ def test_unbounded_stage_can_create_and_run_hash_bound_outward_successor(
     assert successor.current_stage is not None
     assert successor.current_stage.stage_id == "attachment"
     assert successor.plan.version == "0.4"
-    assert dict(successor.plan.search_extension_lineage)[
-        "parent_plan_fingerprint"
-    ] == source.plan.fingerprint
-    assert len(successor.candidates) == len(source.candidates) + 6
-    assert sum(candidate.status == "completed" for candidate in successor.candidates) == len(
-        source.candidates
+    assert (
+        dict(successor.plan.search_extension_lineage)["parent_plan_fingerprint"]
+        == source.plan.fingerprint
     )
+    assert len(successor.candidates) == len(source.candidates) + 6
+    assert sum(
+        candidate.status == "completed" for candidate in successor.candidates
+    ) == len(source.candidates)
     assert sum(candidate.status == "pending" for candidate in successor.candidates) == 6
 
     new_calls_before = call
@@ -391,8 +551,7 @@ def test_search_extension_refuses_candidates_past_declared_safety_limit(
     stage = source.current_stage
     assert stage is not None
     minimum_attachment = min(
-        candidate.values["attachment_kernel_width"]
-        for candidate in stage.candidates
+        candidate.values["attachment_kernel_width"] for candidate in stage.candidates
     )
 
     with pytest.raises(ReferenceCalibrationStudyError, match="Safety limit reached"):
@@ -476,16 +635,16 @@ def test_automatic_pilot_reuses_declared_limits_until_boundary_is_interior(
     monkeypatch.setattr(
         study_module,
         "load_reference_calibration_study",
-        lambda directory: source
-        if Path(directory).resolve() == source_directory
-        else successor_ready,
+        lambda directory: (
+            source if Path(directory).resolve() == source_directory else successor_ready
+        ),
     )
     monkeypatch.setattr(
         study_module,
         "assess_reference_calibration_snapshot",
-        lambda snapshot: boundary_assessment
-        if snapshot is source
-        else bounded_assessment,
+        lambda snapshot: (
+            boundary_assessment if snapshot is source else bounded_assessment
+        ),
     )
     monkeypatch.setattr(
         study_module,
@@ -531,9 +690,7 @@ def test_automatic_pilot_reuses_declared_limits_until_boundary_is_interior(
         event for event in observed if event["event"] == "automatic_search_extended"
     )
     assert extension_event["extension_round"] == 2
-    assert extension_event["pending_candidate_ids"] == [
-        "attachment-outward-r02-01"
-    ]
+    assert extension_event["pending_candidate_ids"] == ["attachment-outward-r02-01"]
 
 
 def test_noise_extension_preserves_prior_stage_selections(
@@ -680,7 +837,9 @@ def test_failed_candidate_can_be_retried_without_rerunning_completed_candidates(
     } == completed_attempts
 
 
-def test_automatic_pilot_reports_a_shared_candidate_failure_reason(tmp_path: Path) -> None:
+def test_automatic_pilot_reports_a_shared_candidate_failure_reason(
+    tmp_path: Path,
+) -> None:
     snapshot = create_reference_calibration_study(
         _project(tmp_path),
         tmp_path / "automatic-failure-study",
@@ -742,9 +901,7 @@ def test_stage_selection_allows_candidate_without_optional_visual_qc(
         if event["event"] == "stage_selected"
     ][-1]
     assert selection_event["visual_review_policy"] == "optional"
-    assert selection_event["visual_review_status"][selected] == (
-        "not_performed"
-    )
+    assert selection_event["visual_review_status"][selected] == ("not_performed")
 
 
 def test_provisional_override_is_recorded_as_researcher_authorized(
@@ -886,9 +1043,10 @@ def test_all_four_stages_publish_selected_full_cohort_configuration(
     }
     assert calibration["full_cohort_confirmation_required"] is True
     assert final["input"]["directory"] == str(MESH_DIRECTORY.resolve())
-    assert final["optimization"]["max_iterations"] == source["optimization"][
-        "max_iterations"
-    ]
+    assert (
+        final["optimization"]["max_iterations"]
+        == source["optimization"]["max_iterations"]
+    )
     load_reference_calibration_study(snapshot.study_directory)
 
 
@@ -953,19 +1111,22 @@ def test_complete_automatic_pilot_runs_all_stages_and_writes_explainable_report(
     runtime_calibration = calibration_result["runtime_calibration"]
     assert runtime_calibration["pilot_subject_count"] == 3
     assert len(runtime_calibration["observations"]) == 31
-    report = study_module.load_reference_calibration_report(
-        completed.study_directory
-    )
+    report = study_module.load_reference_calibration_report(completed.study_directory)
     assert report["status"] == "provisional_pilot_recommendation"
     assert len(report["stage_decisions"]) == 4
     assert [
         decision["search_range_status"] for decision in report["stage_decisions"]
-    ] == ["bounded", "bounded", "bounded", "not_applicable"]
+    ] == [
+        "bounded",
+        "bounded",
+        "bounded",
+        "not_applicable",
+    ]
     assert len(report["recommended_parameters"]) == 5
     assert report["full_cohort_confirmation_required"] is True
-    assert {
-        decision["selection_mode"] for decision in report["stage_decisions"]
-    } == {"automatic_provisional_balanced_score"}
+    assert {decision["selection_mode"] for decision in report["stage_decisions"]} == {
+        "automatic_provisional_balanced_score"
+    }
     selection_events = [
         event
         for event in study_module._load_events(completed.study_directory)
@@ -973,12 +1134,8 @@ def test_complete_automatic_pilot_runs_all_stages_and_writes_explainable_report(
     ]
     assert len(selection_events) == 4
     assert all(event["researcher_decision"] is False for event in selection_events)
-    assert sum(
-        event["event"] == "automatic_stage_selected" for event in observed
-    ) == 4
-    assert "What it changes" in completed.report_html_path.read_text(
-        encoding="utf-8"
-    )
+    assert sum(event["event"] == "automatic_stage_selected" for event in observed) == 4
+    assert "What it changes" in completed.report_html_path.read_text(encoding="utf-8")
 
 
 def test_automatic_pilot_pauses_on_subject_tail_ambiguity_then_continues(
@@ -1055,8 +1212,7 @@ def test_automatic_pilot_pauses_on_subject_tail_ambiguity_then_continues(
     assert assessment.subject_bootstrap_stability is not None
     assert assessment.subject_bootstrap_stability < 0.70
     assert any(
-        "pilot subjects are resampled" in flag
-        for flag in assessment.sensitivity_flags
+        "pilot subjects are resampled" in flag for flag in assessment.sensitivity_flags
     )
     assert assessment.balanced_candidate_id is not None
 
@@ -1078,9 +1234,7 @@ def test_automatic_pilot_pauses_on_subject_tail_ambiguity_then_continues(
         "noise",
         "timepoints",
     }
-    report = study_module.load_reference_calibration_report(
-        completed.study_directory
-    )
+    report = study_module.load_reference_calibration_report(completed.study_directory)
     selection_modes = {
         decision["stage_id"]: decision["selection_mode"]
         for decision in report["stage_decisions"]

@@ -84,17 +84,14 @@ ControllerFactory = Callable[[DesktopReferenceLaunchRequest], _Controller]
 
 
 def _canonical_json(value: object, *, indent: int | None = None) -> str:
-    return (
-        json.dumps(
-            value,
-            sort_keys=True,
-            separators=(",", ":") if indent is None else None,
-            indent=indent,
-            ensure_ascii=False,
-            allow_nan=False,
-        )
-        + ("\n" if indent is not None else "")
-    )
+    return json.dumps(
+        value,
+        sort_keys=True,
+        separators=(",", ":") if indent is None else None,
+        indent=indent,
+        ensure_ascii=False,
+        allow_nan=False,
+    ) + ("\n" if indent is not None else "")
 
 
 def _canonical_hash(value: object) -> str:
@@ -248,7 +245,11 @@ def _search_extension_series(root: Path) -> tuple[Path, int]:
         extension_source = manifest.get("search_extension_source")
         if not isinstance(extension_source, Mapping):
             return current, depth
-        source = Path(str(extension_source.get("study_directory", ""))).expanduser().resolve()
+        source = (
+            Path(str(extension_source.get("study_directory", "")))
+            .expanduser()
+            .resolve()
+        )
         if not source.is_dir():
             raise ReferenceCalibrationStudyError(
                 "Calibration search-extension source directory is absent"
@@ -342,7 +343,10 @@ def _load_events(root: Path) -> tuple[dict[str, Any], ...]:
                 f"Calibration event line {index + 1} is not an object"
             )
         recorded_hash = event.pop("event_hash", None)
-        if event.get("sequence") != index or event.get("previous_hash") != previous_hash:
+        if (
+            event.get("sequence") != index
+            or event.get("previous_hash") != previous_hash
+        ):
             raise ReferenceCalibrationStudyError(
                 f"Calibration event chain is broken at line {index + 1}"
             )
@@ -361,7 +365,9 @@ def _load_events(root: Path) -> tuple[dict[str, Any], ...]:
     return tuple(events)
 
 
-def _append_event(root: Path, event: str, payload: Mapping[str, object]) -> dict[str, Any]:
+def _append_event(
+    root: Path, event: str, payload: Mapping[str, object]
+) -> dict[str, Any]:
     events = _load_events(root) if (root / STUDY_EVENTS).exists() else ()
     record: dict[str, Any] = {
         "event_version": EVENT_VERSION,
@@ -469,7 +475,9 @@ def _prepare_stage(
     stage: CalibrationStage,
     selected_values: Mapping[str, float],
 ) -> dict[str, object]:
-    source_config = load_config(_safe_study_path(root, manifest["source_config"]["copy"]))
+    source_config = load_config(
+        _safe_study_path(root, manifest["source_config"]["copy"])
+    )
     stage_directory = root / "stages" / f"{stage.order:02d}-{stage.stage_id}"
     records: list[dict[str, object]] = []
     for candidate in stage.candidates:
@@ -649,7 +657,10 @@ def create_reference_calibration_search_extension_study(
 
     source_root = Path(source_study_directory).expanduser().resolve()
     source_snapshot = load_reference_calibration_study(source_root)
-    if source_snapshot.status != "awaiting_review" or source_snapshot.current_stage is None:
+    if (
+        source_snapshot.status != "awaiting_review"
+        or source_snapshot.current_stage is None
+    ):
         raise ReferenceCalibrationStudyError(
             "Search extension requires a completed stage awaiting review"
         )
@@ -668,8 +679,7 @@ def create_reference_calibration_search_extension_study(
         outward_steps=outward_steps,
     )
     boundary_parameters = {
-        boundary.split(":", maxsplit=1)[0]
-        for boundary in proposal.boundary_parameters
+        boundary.split(":", maxsplit=1)[0] for boundary in proposal.boundary_parameters
     }
     if set(safety_limits) != boundary_parameters:
         raise ReferenceCalibrationStudyError(
@@ -852,7 +862,9 @@ def create_reference_calibration_search_extension_study(
             current_stage,
             source_snapshot.selected_values,
         )
-        prepared = _prepared_candidates(root, _load_events(root), current_stage.stage_id)
+        prepared = _prepared_candidates(
+            root, _load_events(root), current_stage.stage_id
+        )
         for candidate in source_snapshot.current_stage.candidates:
             state = source_by_id[candidate.candidate_id]
             source_event = source_completed_events.get(candidate.candidate_id)
@@ -933,28 +945,26 @@ def _verify_manifest(root: Path) -> dict[str, Any]:
         )
     plan = reference_calibration_plan_from_provenance(plan_value)
     if manifest.get("plan_fingerprint") != plan.fingerprint:
-        raise ReferenceCalibrationStudyError(
-            "Calibration study plan binding differs"
-        )
+        raise ReferenceCalibrationStudyError("Calibration study plan binding differs")
     extension_source = manifest.get("search_extension_source")
     if extension_source is not None:
         if not isinstance(extension_source, Mapping):
             raise ReferenceCalibrationStudyError(
                 "Calibration search-extension source must be a mapping"
             )
-        source_root = Path(
-            str(extension_source.get("study_directory", ""))
-        ).expanduser().resolve()
+        source_root = (
+            Path(str(extension_source.get("study_directory", "")))
+            .expanduser()
+            .resolve()
+        )
         if source_root == root.resolve():
             raise ReferenceCalibrationStudyError(
                 "Calibration search extension cannot cite itself as its source"
             )
         source_manifest_path = source_root / STUDY_MANIFEST
-        if (
-            not source_manifest_path.is_file()
-            or sha256_file(source_manifest_path)
-            != extension_source.get("manifest_sha256")
-        ):
+        if not source_manifest_path.is_file() or sha256_file(
+            source_manifest_path
+        ) != extension_source.get("manifest_sha256"):
             raise ReferenceCalibrationStudyError(
                 "Calibration search-extension source manifest changed or is absent"
             )
@@ -1087,10 +1097,9 @@ def load_reference_calibration_study(
     manifest = _verify_manifest(root)
     plan = reference_calibration_plan_from_provenance(manifest["plan"])
     events = _load_events(root)
-    if (
-        events[0]["study_id"] != manifest["study_id"]
-        or events[0]["manifest_sha256"] != sha256_file(root / STUDY_MANIFEST)
-    ):
+    if events[0]["study_id"] != manifest["study_id"] or events[0][
+        "manifest_sha256"
+    ] != sha256_file(root / STUDY_MANIFEST):
         raise ReferenceCalibrationStudyError(
             "Calibration event ledger is bound to a different manifest"
         )
@@ -1141,9 +1150,8 @@ def load_reference_calibration_study(
             if key not in final_event:
                 continue
             report_path = _safe_study_path(root, final_event[key])
-            if (
-                not report_path.is_file()
-                or sha256_file(report_path) != final_event.get(digest_key)
+            if not report_path.is_file() or sha256_file(report_path) != final_event.get(
+                digest_key
             ):
                 raise ReferenceCalibrationStudyError(f"{label} changed or is absent")
             if key == "report_json":
@@ -1177,7 +1185,9 @@ def load_reference_calibration_study(
             and event.get("candidate_id") == candidate.candidate_id
         ]
         completed = [
-            event for event in candidate_events if event["event"] == "candidate_completed"
+            event
+            for event in candidate_events
+            if event["event"] == "candidate_completed"
         ]
         failures = [
             event
@@ -1319,8 +1329,7 @@ class ReferenceCalibrationStudyRunner:
                 "Calibration study is already complete"
             )
         if snapshot.status == "awaiting_review" and all(
-            candidate.status == "completed"
-            for candidate in snapshot.candidates
+            candidate.status == "completed" for candidate in snapshot.candidates
         ):
             return snapshot
         manifest = _verify_manifest(self.study_directory)
@@ -1458,6 +1467,8 @@ class ReferenceCalibrationStudyRunner:
         self,
         *,
         event_callback: StudyEventCallback | None = None,
+        afk: bool = False,
+        visual_approvals: Mapping[str, bool] | None = None,
     ) -> ReferenceCalibrationStudySnapshot:
         """Run every remaining stage and record provisional automatic selections.
 
@@ -1468,6 +1479,46 @@ class ReferenceCalibrationStudyRunner:
         provisional recommendation rather than a researcher anatomy approval.
         """
 
+        initial = load_reference_calibration_study(self.study_directory)
+        initial_stage = (
+            initial.current_stage.stage_id if initial.current_stage else None
+        )
+        if not isinstance(afk, bool):
+            raise TypeError("AFK authorization must be an explicit boolean")
+        approvals = {}
+        for event in _load_events(self.study_directory) if afk else ():
+            if (
+                event["event"] == "afk_policy_authorized"
+                and event.get("visual_review_stage_id") == initial_stage
+            ):
+                approvals.update(event.get("visual_approvals", {}))
+        approvals.update(visual_approvals or {})
+        if set(approvals) - {
+            candidate.candidate_id for candidate in initial.candidates
+        } or any(not isinstance(value, bool) for value in approvals.values()):
+            raise ReferenceCalibrationStudyError(
+                "Visual decisions must name current candidates and be boolean"
+            )
+        if afk and initial.status != "completed" and not self._cancel_requested:
+            _append_event(
+                self.study_directory,
+                "afk_policy_authorized",
+                {
+                    "policy": "bounded-pilot-provisional-v1",
+                    "remaining_stage_ids": [
+                        stage.stage_id
+                        for stage in initial.plan.stages
+                        if stage.stage_id not in initial.selected_candidate_ids
+                    ],
+                    "plan_fingerprint": initial.plan.fingerprint,
+                    "accept_eligible_ambiguous_or_boundary_recommendations": True,
+                    "outward_search": False,
+                    "visual_approval_implied": False,
+                    "atlas_launch_authorized": False,
+                    "visual_review_stage_id": initial_stage,
+                    "visual_approvals": approvals,
+                },
+            )
         while True:
             snapshot = load_reference_calibration_study(self.study_directory)
             if snapshot.status == "completed" or self._cancel_requested:
@@ -1505,7 +1556,8 @@ class ReferenceCalibrationStudyRunner:
                 )
             assessment = assess_reference_calibration_snapshot(snapshot)
             if (
-                not assessment.automatic_selection_allowed
+                not afk
+                and not assessment.automatic_selection_allowed
                 and assessment.search_range_status == "not_bounded"
                 and snapshot.search_extension_safety_limits is not None
             ):
@@ -1570,9 +1622,18 @@ class ReferenceCalibrationStudyRunner:
                     )
                 continue
             stage_id = snapshot.current_stage.stage_id if snapshot.current_stage else ""
-            updated, assessment = select_reference_calibration_stage_automatically(
-                self.study_directory
-            )
+            if self._cancel_requested:
+                return snapshot
+            if afk:
+                updated, assessment = select_reference_calibration_stage_automatically(
+                    self.study_directory,
+                    afk=True,
+                    visual_approvals=approvals if stage_id == initial_stage else {},
+                )
+            else:
+                updated, assessment = select_reference_calibration_stage_automatically(
+                    self.study_directory
+                )
             selected_id = updated.selected_candidate_ids.get(stage_id, "")
             if event_callback is not None:
                 event_callback(
@@ -1611,8 +1672,10 @@ def _stage_evidence(
             if candidate.candidate_id in completed
         ]
         for index, candidate in enumerate(ordered):
-            neighbor = ordered[index + 1] if index + 1 < len(ordered) else (
-                ordered[index - 1] if index else None
+            neighbor = (
+                ordered[index + 1]
+                if index + 1 < len(ordered)
+                else (ordered[index - 1] if index else None)
             )
             if neighbor is None:
                 continue
@@ -1657,24 +1720,18 @@ def _stage_evidence(
                 invalid_face_count=(
                     int(metrics["invalid_face_count"]) if metrics else 0
                 ),
-                residual_p95=(
-                    float(metrics["residual_p95"]) if metrics else None
-                ),
+                residual_p95=(float(metrics["residual_p95"]) if metrics else None),
                 deformation_energy=(
                     float(metrics["deformation_energy"]) if metrics else None
                 ),
-                distortion_p95=(
-                    float(metrics["distortion_p95"]) if metrics else None
-                ),
+                distortion_p95=(float(metrics["distortion_p95"]) if metrics else None),
                 runtime_seconds=(
                     float(metrics["runtime_seconds"]) if metrics else None
                 ),
                 resampling_sensitivity=(
                     float(metrics["resampling_sensitivity"]) if metrics else None
                 ),
-                numerical_atlas_rms=(
-                    comparison[0] if comparison is not None else None
-                ),
+                numerical_atlas_rms=(comparison[0] if comparison is not None else None),
                 objective_relative_difference=(
                     comparison[1] if comparison is not None else None
                 ),
@@ -1730,12 +1787,8 @@ def _final_configuration(
 ) -> Path:
     source = load_config(_safe_study_path(root, manifest["source_config"]["copy"]))
     config = copy.deepcopy(dict(source))
-    config["input"]["directory"] = str(
-        manifest["inputs"]["full_cohort"]["directory"]
-    )
-    config["input"]["template"] = str(
-        manifest["inputs"]["full_cohort"]["template"]
-    )
+    config["input"]["directory"] = str(manifest["inputs"]["full_cohort"]["directory"])
+    config["input"]["template"] = str(manifest["inputs"]["full_cohort"]["template"])
     config["input"]["subject_pattern"] = str(
         manifest["inputs"]["full_cohort"]["subject_pattern"]
     )
@@ -1756,8 +1809,8 @@ def _final_configuration(
             group, key = targets[name]
             config["model"][group][key] = value
         if name != "timepoints":
-            config["project"]["parameter_provenance"]["ratios"][name] = (
-                value / float(manifest["template_diagonal"])
+            config["project"]["parameter_provenance"]["ratios"][name] = value / float(
+                manifest["template_diagonal"]
             )
             config["project"]["parameter_provenance"]["sources"][name] = (
                 "absolute_override"
@@ -1864,9 +1917,11 @@ def _selection_reason(
         else f"{subject_stability:.1%} across deterministic subject bootstraps"
     )
     return (
-        "Automatically retained the robust eligible Pareto candidate with the lowest "
+        "Retained the eligible Pareto candidate with the lowest "
         f"published weighted comparison score ({score_text}); support was "
-        f"{stability_text} and {subject_text}. An independent rank aggregation agreed. "
+        f"{stability_text} and {subject_text}. Confidence: "
+        f"{assessment.recommendation_confidence}; independent rank candidate: "
+        f"{assessment.independent_rank_candidate_id}; search: {assessment.search_range_status}. "
         "The tested search was centered on the researcher's declared biological priorities."
     )
 
@@ -2004,9 +2059,11 @@ def _calibration_report_payload(
         "plan_fingerprint": plan.fingerprint,
         "status": "provisional_pilot_recommendation",
         "summary": (
-            "All four staged pilot comparisons completed. Every automatic choice met "
-            "the predeclared robustness gate; any non-robust choice required an explicit "
-            "researcher decision. Full-cohort confirmation remains required."
+            "All four staged pilot comparisons completed. Standard automatic choices "
+            "require the robustness gate; AFK choices use an explicitly pre-authorized "
+            "provisional policy and may remain ambiguous or search-boundary limited. "
+            "Consult each recorded selection mode and evidence grade. No visual approval "
+            "is implied. Full-cohort confirmation remains required."
         ),
         "coordinate_unit": plan.coordinate_unit,
         "pilot_subjects": [
@@ -2099,8 +2156,7 @@ def _calibration_report_html(report: Mapping[str, object]) -> str:
             )
         )
         flags = "".join(
-            f"<li>{html.escape(str(flag))}</li>"
-            for flag in item["sensitivity_flags"]
+            f"<li>{html.escape(str(flag))}</li>" for flag in item["sensitivity_flags"]
         )
         flag_html = (
             "<p><strong>No material sensitivity warning was triggered.</strong></p>"
@@ -2152,12 +2208,12 @@ code{{background:#eef5f4;padding:2px 5px}}
 </style></head><body>
 <h1>DiffeoForge pilot calibration report</h1>
 <p class="notice"><strong>Provisional recommendation.</strong>
-{html.escape(str(report['summary']))}</p>
+{html.escape(str(report["summary"]))}</p>
 <h2>Your declared priorities</h2>
-<p>Surface detail: <strong>{html.escape(str(priorities['surface_detail_intent']))}</strong><br>
+<p>Surface detail: <strong>{html.escape(str(priorities["surface_detail_intent"]))}</strong><br>
 Expected difference amplitude:
-<strong>{html.escape(str(priorities['expected_shape_disparity']))}</strong><br>
-Deformation reach: <strong>{html.escape(str(priorities['deformation_scale_intent']))}</strong></p>
+<strong>{html.escape(str(priorities["expected_shape_disparity"]))}</strong><br>
+Deformation reach: <strong>{html.escape(str(priorities["deformation_scale_intent"]))}</strong></p>
 <h2>Recommended parameters</h2>
 <table><thead><tr><th>Parameter</th><th>Recommended value</th><th>What it changes</th></tr></thead>
 <tbody>{parameter_rows}</tbody></table>
@@ -2171,8 +2227,8 @@ evidence required a recorded researcher decision.</p>
 {stage_rows}
 <h2>Required next steps</h2><ol>{next_steps}</ol>
 <h2>Limitations</h2><ul>{limitations}</ul>
-<p class="footer">Study ID: {html.escape(str(report['study_id']))}<br>
-Plan fingerprint: <code>{html.escape(str(report['plan_fingerprint']))}</code></p>
+<p class="footer">Study ID: {html.escape(str(report["study_id"]))}<br>
+Plan fingerprint: <code>{html.escape(str(report["plan_fingerprint"]))}</code></p>
 </body></html>"""
 
 
@@ -2234,9 +2290,7 @@ def _record_reference_calibration_stage_selection(
         raise ReferenceCalibrationStudyError(
             "The current calibration stage is not awaiting review"
         )
-    candidate_ids = {
-        candidate.candidate_id for candidate in snapshot.candidates
-    }
+    candidate_ids = {candidate.candidate_id for candidate in snapshot.candidates}
     unexpected_review_ids = set(visual_approvals) - candidate_ids
     if unexpected_review_ids:
         raise ReferenceCalibrationStudyError(
@@ -2406,6 +2460,9 @@ def record_reference_calibration_provisional_override(
 
 def select_reference_calibration_stage_automatically(
     study_directory: Path | str,
+    *,
+    afk: bool = False,
+    visual_approvals: Mapping[str, bool] | None = None,
 ) -> tuple[ReferenceCalibrationStudySnapshot, CalibrationStageAssessment]:
     """Advance one stage using the transparent provisional balanced recommendation."""
 
@@ -2419,10 +2476,30 @@ def select_reference_calibration_stage_automatically(
         raise ReferenceCalibrationStudyError(
             "Automatic selection requires every declared candidate to complete"
         )
+    approvals = dict(visual_approvals or {})
+    if afk:
+        consent = next(
+            (
+                event
+                for event in reversed(_load_events(root))
+                if event["event"] == "afk_policy_authorized"
+            ),
+            None,
+        )
+        if (
+            consent is None
+            or consent.get("policy") != "bounded-pilot-provisional-v1"
+            or consent.get("plan_fingerprint") != snapshot.plan.fingerprint
+            or snapshot.current_stage.stage_id
+            not in consent.get("remaining_stage_ids", [])
+        ):
+            raise ReferenceCalibrationStudyError(
+                "AFK selection requires recorded policy authorization"
+            )
     assessment = assess_calibration_stage(
         snapshot.plan,
         stage_id=snapshot.current_stage.stage_id,
-        evidence=_stage_evidence(snapshot, {}),
+        evidence=_stage_evidence(snapshot, approvals),
     )
     selected_candidate_id = assessment.balanced_candidate_id
     if selected_candidate_id is None:
@@ -2431,10 +2508,9 @@ def select_reference_calibration_stage_automatically(
             reasons.extend(candidate.rejection_reasons)
         raise ReferenceCalibrationStudyError(
             "Automatic pilot calibration found no eligible candidate in stage "
-            f"{snapshot.current_stage.stage_id!r}: "
-            + "; ".join(dict.fromkeys(reasons))
+            f"{snapshot.current_stage.stage_id!r}: " + "; ".join(dict.fromkeys(reasons))
         )
-    if not assessment.automatic_selection_allowed:
+    if not assessment.automatic_selection_allowed and not afk:
         details = "; ".join(assessment.sensitivity_flags) or (
             "the evidence did not meet the predeclared robustness thresholds"
         )
@@ -2446,8 +2522,21 @@ def select_reference_calibration_stage_automatically(
         )
     return _record_reference_calibration_stage_selection(
         root,
-        visual_approvals={},
+        visual_approvals=approvals,
         selected_candidate_id=selected_candidate_id,
-        selection_mode="automatic_provisional_balanced_score",
-        selection_reason=_selection_reason(assessment, selected_candidate_id),
+        selection_mode=(
+            "automatic_provisional_afk_v1"
+            if afk
+            else "automatic_provisional_balanced_score"
+        ),
+        selection_reason=(
+            (
+                "Pre-authorized AFK policy: accept the eligible balanced recommendation "
+                "within the existing pilot grid, including ambiguous or boundary-limited "
+                "evidence; no outward search, visual approval or atlas launch. "
+                if afk
+                else ""
+            )
+            + _selection_reason(assessment, selected_candidate_id)
+        ),
     )

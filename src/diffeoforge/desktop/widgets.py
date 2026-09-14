@@ -932,10 +932,8 @@ class _ShapeSpaceComparisonDialog(QDialog):
         title = QLabel("Choose only the ordinations you need")
         title.setObjectName("sectionTitle")
         explanation = QLabel(
-            "This is post-processing of the completed momenta; it does not rerun the atlas. "
-            "The full suite can take substantial time and memory. The recommended quick "
-            "preset computes the default LDDMM metric tangent PCA and its essential, "
-            "independent PCoA cross-check."
+            "Start with Quick evidence (PCA + PCoA cross-check). More methods cost time "
+            "and memory; none reruns the atlas."
         )
         explanation.setWordWrap(True)
         layout.addWidget(title)
@@ -1562,8 +1560,7 @@ class DiffeoForgeWindow(QMainWindow):
         boundary_layout = QHBoxLayout(boundary)
         boundary_layout.setContentsMargins(13, 9, 13, 9)
         boundary_text = QLabel(
-            "This step identifies the data and alignment workflow. Parameter analysis, "
-            "pilot calibration, and project creation happen together in Step 2."
+            "Choose data and alignment here. Parameters and the pilot come next."
         )
         boundary_text.setObjectName("boundaryText")
         boundary_text.setWordWrap(True)
@@ -1587,7 +1584,7 @@ class DiffeoForgeWindow(QMainWindow):
             "Select an interrupted Deformetrica run with a verified checkpoint."
         )
         self.resume_interrupted_run_button.clicked.connect(self._select_interrupted_run)
-        self.recover_abandoned_run_button = QPushButton("Recover after crashâ€¦")
+        self.recover_abandoned_run_button = QPushButton("Recover after crash…")
         self.recover_abandoned_run_button.setObjectName("secondary")
         self.recover_abandoned_run_button.setToolTip(
             "Finalize a run left nonterminal by a power loss or hard process stop, then "
@@ -2472,9 +2469,8 @@ class DiffeoForgeWindow(QMainWindow):
         atlas_viewer_title = QLabel("Inspect original and reconstructed meshes")
         atlas_viewer_title.setObjectName("sectionTitle")
         atlas_viewer_hint = QLabel(
-            "The selected VTK is rechecked against the verified result inventory before "
-            "DiffeoForge renders it internally. Drag to rotate, right-drag to pan, use the "
-            "mouse wheel to zoom, and double-click to reset."
+            "Reduced display by default; source geometry is unchanged. "
+            "Use Original detail for close inspection."
         )
         atlas_viewer_hint.setObjectName("hint")
         atlas_viewer_hint.setWordWrap(True)
@@ -2759,10 +2755,8 @@ class DiffeoForgeWindow(QMainWindow):
         shape_space_title = QLabel("Shape-space method comparison")
         shape_space_title.setObjectName("sectionTitle")
         shape_space_summary = QLabel(
-            "Compare the default LDDMM deformation-kernel PCA with legacy Cartesian "
-            "momenta PCA, tangent-distance PCoA, three adaptive RBF KernelPCA bandwidths, "
-            "the Roberts et al. 2026 fixed-gamma compatibility preset, Isomap, and "
-            "diffusion maps. This reuses the completed momenta and does not rerun the atlas."
+            "Compare PCA with alternative shape-space views using the completed atlas. "
+            "Choose methods below; no atlas rerun."
         )
         shape_space_summary.setWordWrap(True)
         self.shape_space_comparison_status_label = QLabel(
@@ -2898,8 +2892,8 @@ class DiffeoForgeWindow(QMainWindow):
                     "parameter set and its nearest tested neighbors, runs every finalist "
                     "on identical predeclared cohorts, and compares external surface "
                     "error, deformation distortion, geometric validity, and stability. "
-                    "Fixed-template heldout registration and independent biological "
-                    "landmarks remain explicitly separate future gates."
+                    "Untouched holdout registration keeps each trained template frozen. "
+                    "Independent biological landmark validation remains a separate evidence gate."
                 ),
                 parent=validation_lab,
             )
@@ -2915,10 +2909,7 @@ class DiffeoForgeWindow(QMainWindow):
         scientific_report_title = QLabel("Scientific atlas report")
         scientific_report_title.setObjectName("sectionTitle")
         scientific_report_summary = QLabel(
-            "Create a self-contained completion report with technical status, ranked "
-            "registration QC, recorded researcher decisions, a claim matrix, paper-ready "
-            "methods, tables, and verified figures. Missing robustness evidence is shown "
-            "explicitly instead of being inferred."
+            "Export QC decisions, methods, tables and figures. Missing evidence stays explicit."
         )
         scientific_report_summary.setWordWrap(True)
         self.scientific_report_status_label = QLabel(
@@ -3090,20 +3081,14 @@ class DiffeoForgeWindow(QMainWindow):
         title = QLabel("Visual quality review")
         title.setObjectName("title")
         hint = QLabel(
-            "Only flagged registrations require visual approval. The others remain "
-            "available for optional inspection. Rotate, "
-            "zoom and toggle each mesh to check missing detail and local misregistration. "
-            "Confirm the visual inspection, then record your decision."
+            "Review flagged cases in Original detail, confirm inspection, then record a decision. "
+            "Other cases are optional spot checks."
         )
         hint.setObjectName("subtitle")
         hint.setWordWrap(True)
         boundary = QLabel(
-            "Unreviewed flagged cases and any uncertain or implausible decisions "
-            "keep results locked. "
-            "Resolve them through further inspection or a separately corrected atlas run. "
-            "No mesh is removed, and no filtered PCA plot substitutes for this review. "
-            "Not flagged does not mean visually reviewed. Relative screening can miss "
-            "uniformly poor fits; optional spot checks remain useful."
+            "Unreviewed, uncertain or implausible flagged cases keep results locked. "
+            "No specimens are silently removed."
         )
         boundary.setObjectName("boundaryText")
         boundary.setWordWrap(True)
@@ -3115,6 +3100,20 @@ class DiffeoForgeWindow(QMainWindow):
         layout.addWidget(hint)
         layout.addWidget(boundary)
         layout.addWidget(self.registration_release_status_label)
+        layout.addWidget(
+            InfoDisclosure(
+                "QC scope and limitations",
+                (
+                    "Resolve flagged cases through closer inspection or a separately corrected "
+                    "atlas run. "
+                    "A filtered PCA plot is not a substitute for review. Not flagged does not mean "
+                    "visually reviewed: relative screening can miss uniformly poor fits. "
+                    "Reduced displays "
+                    "can hide fine anatomy; use Original detail and check missing detail and local "
+                    "misregistration. Optional spot checks remain useful."
+                ),
+            )
+        )
         layout.addWidget(self._registration_viewer_card)
         scroll.setWidget(content)
         footer = QFrame()
@@ -4070,10 +4069,8 @@ class DiffeoForgeWindow(QMainWindow):
         calibration_title.setObjectName("sectionTitle")
         calibration_layout.addWidget(calibration_title)
         calibration_intro = QLabel(
-            "After aligned-mesh analysis, predeclare a deterministic representative "
-            "pilot cohort and sequential comparisons for surface detail, deformation "
-            "locality, fit-versus-regularity weight, and numerical time points. Building "
-            "the plan starts no Deformetrica process."
+            "Choose the pilot size and optional feature scale. "
+            "Building the plan starts no computation."
         )
         calibration_intro.setObjectName("hint")
         calibration_intro.setWordWrap(True)
