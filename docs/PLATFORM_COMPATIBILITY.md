@@ -178,3 +178,12 @@ The request-write boundary now reports `DesktopWorkerProcessError`, drains bound
 stderr and retains cleanup/fail-closed behavior. A deterministic early-exit test
 covers the race. Fake event-stream workers now consume the request first so their
 tests actually reach the intended protocol check. No engine arithmetic changed.
+
+[CI 34831998635](https://github.com/heinjenny95/DiffeoForge/actions/runs/34831998635)
+at `0b555d83f587aed8fd4a11d19aa627d3dd06f3fd` subsequently passed all ten jobs:
+1,459 tests / 114 skipped on both Python 3.11 and 3.13; 538 Modern tests on each
+of Windows, Linux and Apple Silicon; the four-platform optional-engine-free GUI
+matrix and three-platform synthetic numeric agreement. The separate contemporaneous
+legacy reference job failed on a real Intel Xeon 8370C (8/10) and retained the
+scalar-reduction evidence described in the CPU investigation. These two workflow
+outcomes must not be collapsed into a claim that all engine gates are green.

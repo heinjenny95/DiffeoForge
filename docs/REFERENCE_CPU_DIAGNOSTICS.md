@@ -32,11 +32,31 @@ existing thresholds remain unchanged.
    `6.03157e-7`. Adding `MKL_CBWR=COMPATIBLE` did **not** rescue that artificial
    override. No compatibility flag has therefore been added to production or
    the frozen image on the strength of this experiment.
+6. A subsequent **real Intel Xeon Platinum 8370C** clean-container run reproduces
+   the original convergence/residual discrepancy statistics and the same 8/10
+   byte-identical geometry/parameter outcome. Its AUTO static probe has all
+   15 operand pairs and all five source-gradient hashes identical to the passing
+   AMD probe, but five float32 dot terms differ by up to `4.76837158203125e-7`.
+   Float64 dot differences are at most `8.88e-16`. This is actual cross-CPU evidence,
+   distinct from the artificial dispatch experiment.
+   [Intel failure with retained diagnostics](https://github.com/heinjenny95/DiffeoForge/actions/runs/34831998568).
+7. On that real Intel host, `MKL_CBWR=COMPATIBLE` makes the **static probe** match
+   AMD exactly, including float32/float64 terms and gradients. The full atlas in
+   this CI job still ran under its unchanged default environment; a complete
+   compatible-mode Intel atlas has **not** been tested. The static result alone
+   is not grounds to modify production defaults or close the strict reference gate.
 
 The controlled experiment reproduces the **class** of failure, not every number
 from the original CI. That old runner's CPU/reduction operands were not retained,
 so its exact low-level dispatch remains unproven. Do not claim native Intel
 qualification from an artificial dispatch override on an AMD host.
+The new Intel observation substantially strengthens the scalar-reduction diagnosis
+without recovering the old runner's missing provenance. Its probe uses four Torch
+threads; the earlier AMD CI probe used two (before explicit post-import thread
+configuration), while local older probes used sixteen. Operand hashes and static
+gradients agree across these observations, but these are not a controlled CPU-only
+factorial experiment. Raw evidence is retained in
+[`reference-cpu-audit-v1`](../reference/reference-cpu-audit-v1/README.md).
 
 ## Why values can differ while shapes remain identical
 
@@ -73,9 +93,10 @@ an automatic guarantee for this test:
 
 ## Next acceptance boundary
 
-Retain an actual failing runner's complete diagnostic evidence and compare it
-against a passing runner before proposing any backend arithmetic change or
-cross-CPU tolerance study. A passing AMD run is useful, but does not close that
-gate. Separately evaluate the Modern float64 engine using the prospective
+Next test complete AUTO/COMPATIBLE atlases on the same actual Intel runner with
+the frozen input and thresholds; also recheck AMD. The retained Intel static probe
+is promising, but does not establish a complete-atlas fix or cross-CPU guarantee.
+An arithmetic patch or reference/tolerance change would require its own explicitly
+versioned validation. Separately, the Modern float64 engine passed the prospective
 [public paired protocol](PUBLIC_ENGINE_PAIR.md); do not conflate that experiment
 with this float32 legacy-CLI reference or claim biological parameter validity.

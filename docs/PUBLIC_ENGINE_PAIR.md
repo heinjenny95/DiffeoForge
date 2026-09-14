@@ -60,3 +60,13 @@ worker finishes; put its output outside the observation directory.
 No private data, installed app changes, engine replacement, native installers,
 GPU/HPC certification, optimizer-convergence or biological claims are authorized
 by this protocol. A failed comparison must be investigated before optimization.
+
+## Accepted observation
+
+The canonical-input capture completed on 14 September 2026: all 36 workers
+passed, with a maximum absolute numeric discrepancy of `1.4210854715202004e-14`.
+All modes, timings, observed ranges, memory measurements, raw outputs and hashes
+are retained in [public-engine-pair-v1](../reference/public-engine-pair-v1/README.md).
+Independent re-comparison produced byte-identical output. At 1,280 faces Modern
+blockwise was about 20–23% faster than reference KeOps; at 320 faces it was slower.
+This completes this bounded benchmark, not the roadmap's end-to-end calibration.

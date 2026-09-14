@@ -347,6 +347,10 @@ scientific gates. Planning does not mark those gates complete.
     confidence-labelled `likely convergence window`; include startup/output cost,
     ignore warm-up outliers, and report when contention changes the observed rate
 - [ ] Prospective multi-size end-to-end runtime and peak-memory calibration
+  - [x] Independently verify and retain the prospectively frozen 36-worker public
+    float64 objective/gradient benchmark at 320 and 1,280 faces; all modes pass,
+    with all time ranges and whole-worker RSS reported. This is not end-to-end
+    atlas calibration; see `reference/public-engine-pair-v1/README.md`.
 - [ ] Cross-platform CPU distribution
   - [x] Define installed-wheel GUI and public synthetic CPU compatibility matrix,
     exact provenance, three-platform numerical comparison and frozen tolerances;
@@ -358,8 +362,10 @@ scientific gates. Planning does not mark those gates complete.
     mismatch (8/10 artifacts pass); retain frozen tolerances and reference bytes
     - CPU scalar-reduction sensitivity reproduced with unchanged geometry and
       static gradients; an instrumented AMD CI run passed 10/10 without a fix.
-      Capture an actual failing runner's new operand/CPU evidence before closing
-      the cross-CPU gate; see `docs/REFERENCE_CPU_DIAGNOSTICS.md`.
+      A real Intel Xeon 8370C runner now reproduces the same scalar failure and
+      preserves operand/gradient hashes. Its compatible-mode static probe matches
+      AMD; a complete Intel compatible-mode atlas remains unverified. Keep the
+      cross-CPU gate open; see `docs/REFERENCE_CPU_DIAGNOSTICS.md`.
   - [x] Fresh GitHub-hosted Windows one-directory engineering freeze, complete
     frozen-process smoke contract, and independently inspected evidence artifact
   - [x] Hash-bound, noninterpreting installed-distribution metadata and

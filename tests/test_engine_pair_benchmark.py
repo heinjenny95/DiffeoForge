@@ -162,3 +162,12 @@ def test_canonical_momenta_preserve_reference_bits_across_numpy_versions(benchma
     assert hashlib.sha256(momenta.tobytes()).hexdigest() == (
         "9a45c19f00f52838a4dae7866ee1ce76c6c5ec56ce30567513122fc7b6a68f48"
     )
+
+
+def test_retained_public_evidence_recomputes_exact_comparison(benchmark):
+    directory = ROOT / "reference/public-engine-pair-v1"
+    payload = (directory / "comparison.json").read_bytes()
+    assert hashlib.sha256(payload).hexdigest() == (
+        directory / "comparison.sha256"
+    ).read_text().strip()
+    assert benchmark.compare_directory(directory / "observations") == json.loads(payload)
