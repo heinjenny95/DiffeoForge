@@ -96,6 +96,9 @@ an automatic guarantee for this test:
 Next test complete AUTO/COMPATIBLE atlases on the same actual Intel runner with
 the frozen input and thresholds; also recheck AMD. The retained Intel static probe
 is promising, but does not establish a complete-atlas fix or cross-CPU guarantee.
+The bounded four-atlas-per-host collection is frozen in
+[the full-pair protocol](REFERENCE_CPU_FULL_PAIR.md), with separate manual CI
+dispatch and independent retained-output verification.
 An arithmetic patch or reference/tolerance change would require its own explicitly
 versioned validation. Separately, the Modern float64 engine passed the prospective
 [public paired protocol](PUBLIC_ENGINE_PAIR.md); do not conflate that experiment

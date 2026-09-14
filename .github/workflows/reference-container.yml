@@ -25,12 +25,18 @@ on:
       - "src/diffeoforge/runs.py"
       - "src/diffeoforge/schema/atlas-config-v0.1.json"
   workflow_dispatch:
+    inputs:
+      cpu_pair:
+        description: "Run isolated public AUTO/COMPATIBLE full-atlas diagnostics"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
 jobs:
   build-run-compare:
+    if: ${{ !inputs.cpu_pair }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
 
@@ -101,3 +107,49 @@ jobs:
             examples/runs/container-ci/logs/convergence.csv
             examples/runs/container-ci/logs/deformetrica.log
             examples/runs/container-ci/output/DeterministicAtlas__EstimatedParameters__Residuals.txt
+
+  cpu-pair-diagnostic:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.cpu_pair }}
+    name: Public CPU pair (${{ matrix.runner }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-22.04, ubuntu-24.04]
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Set up host Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.11"
+      - name: Install host tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libcairo2-dev pkg-config
+          python -m pip install -e ".[analysis]"
+      - name: Build unchanged frozen CPU image
+        run: |
+          docker build --platform linux/amd64 --file container/Dockerfile \
+            --tag diffeoforge-deformetrica:4.3.0-cpu .
+      - name: Execute four complete public atlases and two static probes
+        run: |
+          python tools/observe_reference_cpu_pair.py observe \
+            --repository "$PWD" --directory "$RUNNER_TEMP/cpu-pair"
+      - name: Independently rederive comparisons from retained files
+        if: ${{ !cancelled() }}
+        run: |
+          python tools/observe_reference_cpu_pair.py verify \
+            --repository "$PWD" --directory "$RUNNER_TEMP/cpu-pair/evidence"
+      - name: Retain bounded public evidence even on failure
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: cpu-pair-${{ matrix.runner }}
+          retention-days: 14
+          if-no-files-found: error
+          path: |
+            ${{ runner.temp }}/cpu-pair/evidence/
+            ${{ runner.temp }}/cpu-pair/runs/*/logs/deformetrica.log
+            ${{ runner.temp }}/cpu-pair/probe-*.log
