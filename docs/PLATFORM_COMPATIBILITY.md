@@ -198,3 +198,10 @@ surface-rendering test boundary. The traceback does not establish its cause.
 No desktop or engine implementation changed in this commit. Preserve this failed
 observation and isolate the GUI lifetime/threading/native-library issue separately;
 do not call the complete platform matrix green or suppress the test.
+
+The subsequent [renderer lifetime investigation](DESKTOP_RENDER_LIFETIME.md)
+reproduced a native Windows crash with only the five surface-render tests and
+replaced the worker-owned signal object with a Python mailbox/GUI-thread timer.
+Local repeated cases pass; post-change full-suite/platform verification is pending.
+The historical Intel-Mac observation is preserved without asserting an unobserved
+native stack or inferring its cause solely from a later green run.

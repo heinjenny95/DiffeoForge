@@ -8,9 +8,10 @@ import pytest
 
 pytest.importorskip("PySide6")
 
-from PySide6.QtCore import QThreadPool
+from PySide6.QtCore import QObject, QThreadPool
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
+from shiboken6 import delete, isValid
 
 from diffeoforge.desktop import surface_rendering as rendering
 
@@ -146,3 +147,73 @@ def test_failed_render_never_becomes_ready_and_does_not_retry_each_repaint(app, 
     for _ in range(10):
         cache.request((1,), scene())
     assert cache.render_count == 1
+
+
+def test_completion_is_delivered_on_gui_thread_and_idle_timer_stops(app):
+    main_thread = threading.get_ident()
+    delivered = []
+    cache = rendering.SurfaceFrameCache()
+    cache.changed.connect(lambda: delivered.append(threading.get_ident()))
+    cache.request((1,), scene())
+    wait_until(app, lambda: cache.ready((1,)))
+    assert delivered == [main_thread]
+    assert not cache._poller.isActive()
+
+
+def test_destroyed_view_cancels_worker_and_discards_pending_camera(app, monkeypatch):
+    entered, release = threading.Event(), threading.Event()
+    calls, delivered = [], []
+    real = rendering.render_surface_scene
+
+    def slow(snapshot, cancelled):
+        calls.append(snapshot.zoom)
+        entered.set()
+        assert release.wait(5)
+        return real(snapshot, cancelled)
+
+    monkeypatch.setattr(rendering, "render_surface_scene", slow)
+    owner = QObject()
+    cache = rendering.SurfaceFrameCache(owner)
+    cache.changed.connect(lambda: delivered.append(True))
+    cache.request((1,), scene())
+    try:
+        assert entered.wait(5)
+        cancelled = cache._active.cancelled
+        cache.request((2,), replace(scene(), zoom=2.0))
+        delete(owner)
+        assert not isValid(cache)
+        assert cancelled.is_set()
+    finally:
+        release.set()
+    assert QThreadPool.globalInstance().waitForDone(5000)
+    app.processEvents()
+    assert calls == [1.0]
+    assert not delivered
+
+
+def test_finished_but_undelivered_frame_is_not_reused_after_clear(app):
+    cache = rendering.SurfaceFrameCache()
+    cache.request((1,), scene())
+    # Complete in the worker, but do not deliver the GUI-side mailbox yet.
+    assert QThreadPool.globalInstance().waitForDone(5000)
+    cache.clear()
+    cache.request((1,), replace(scene(), width=240))
+    cache._take_result()
+    assert not cache.ready((1,))
+    wait_until(app, lambda: cache.ready((1,)))
+    assert cache._image.width() == 240
+    assert cache.render_count == 2
+    assert not cache._poller.isActive()
+
+
+def test_repeated_render_completion_and_owner_destruction(app):
+    # Exercise the lifetime boundary that could crash natively, not raise Python.
+    for index in range(100):
+        owner = QObject()
+        cache = rendering.SurfaceFrameCache(owner)
+        cache.request((index,), scene())
+        wait_until(app, lambda cache=cache, index=index: cache.ready((index,)))
+        assert not cache._poller.isActive()
+        delete(owner)
+    assert QThreadPool.globalInstance().waitForDone(5000)
+    app.processEvents()

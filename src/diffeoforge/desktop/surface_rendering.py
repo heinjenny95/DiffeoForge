@@ -8,9 +8,10 @@ from __future__ import annotations
 
 import threading
 from dataclasses import dataclass
+from queue import Empty, SimpleQueue
 
 import numpy as np
-from PySide6.QtCore import QObject, QPointF, QRunnable, QThreadPool, Signal, Slot
+from PySide6.QtCore import QObject, QPointF, QRunnable, QThreadPool, QTimer, Signal, Slot
 from PySide6.QtGui import QColor, QImage, QPainter, QPainterPath, QPen, QPolygonF
 
 NAVIGATION_FACES = 1_500
@@ -111,16 +112,25 @@ def render_surface_scene(scene: SurfaceScene, cancelled: threading.Event) -> QIm
         painter.end()
 
 
-class _FrameSignals(QObject):
-    finished = Signal(object, object, str)
+class _FrameMailbox:
+    """Python-only handoff: a pool worker never owns a GUI-thread QObject."""
+
+    def __init__(self) -> None:
+        self.results: SimpleQueue[tuple[tuple, QImage | None, str]] = SimpleQueue()
+        self.cancelled: threading.Event | None = None
+
+    def cancel(self) -> None:
+        # Connected to cache.destroyed without retaining/accessing the cache.
+        if self.cancelled is not None:
+            self.cancelled.set()
 
 
 class _FrameWorker(QRunnable):
-    def __init__(self, key: tuple, scene: SurfaceScene) -> None:
+    def __init__(self, key: tuple, scene: SurfaceScene, results: SimpleQueue) -> None:
         super().__init__()
         self.key, self.scene = key, scene
         self.cancelled = threading.Event()
-        self.signals = _FrameSignals()
+        self.results = results
 
     @Slot()
     def run(self) -> None:
@@ -129,11 +139,9 @@ class _FrameWorker(QRunnable):
             error = ""
         except Exception as exception:  # Worker failure must never leave a frame approved.
             image, error = None, str(exception)
-        try:
-            self.signals.finished.emit(self.key, image, error)
-        except RuntimeError:
-            # Qt may already have destroyed signal objects during application exit.
-            pass
+        # Releasing a runnable must not destroy a GUI-affine signal QObject from
+        # a pool thread. QImage values can cross threads; QObject lifetimes cannot.
+        self.results.put((self.key, image, error))
 
 
 class SurfaceFrameCache(QObject):
@@ -150,6 +158,11 @@ class SurfaceFrameCache(QObject):
         self._image: QImage | None = None
         self.error = ""
         self.render_count = 0
+        self._mailbox = _FrameMailbox()
+        self.destroyed.connect(self._mailbox.cancel)
+        self._poller = QTimer(self)
+        self._poller.setInterval(10)
+        self._poller.timeout.connect(self._take_result)
 
     def clear(self) -> None:
         self._wanted = self._image_key = None
@@ -171,19 +184,30 @@ class SurfaceFrameCache(QObject):
         if self._active is None and self._pending is not None:
             pending_key, pending_scene = self._pending
             self._pending = None
-            self._active = _FrameWorker(pending_key, pending_scene)
-            self._active.signals.finished.connect(self._finished)
+            self._active = _FrameWorker(pending_key, pending_scene, self._mailbox.results)
+            self._mailbox.cancelled = self._active.cancelled
             self.render_count += 1
+            self._poller.start()
             QThreadPool.globalInstance().start(self._active)
         # Callers clear on specimen changes and visibly label a pending camera view.
         return self._image
 
-    @Slot(object, object, str)
+    @Slot()
+    def _take_result(self) -> None:
+        try:
+            result = self._mailbox.results.get_nowait()
+        except Empty:
+            return
+        self._poller.stop()
+        self._finished(*result)
+
     def _finished(self, key: tuple, image: QImage | None, error: str) -> None:
+        cancelled = self._active is None or self._active.cancelled.is_set()
         self._active = None
-        if key == self._wanted and image is not None:
+        self._mailbox.cancelled = None
+        if not cancelled and key == self._wanted and image is not None:
             self._image_key, self._image = key, image
-        if key == self._wanted:
+        if not cancelled and key == self._wanted:
             self.error = error
         if self._pending is not None:
             pending_key, scene = self._pending
