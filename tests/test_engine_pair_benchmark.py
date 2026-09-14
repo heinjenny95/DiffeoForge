@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import hashlib
 import importlib.util
 import itertools
 import json
@@ -152,3 +153,12 @@ def test_midpoint_subdivision_preserves_surface_area(benchmark):
         return np.linalg.norm(np.cross(b - a, c - a), axis=1).sum() / 2
 
     assert area(divided, cells) == pytest.approx(area(vertices, faces), rel=1e-14)
+
+
+def test_canonical_momenta_preserve_reference_bits_across_numpy_versions(benchmark):
+    pytest.importorskip("numpy")
+    momenta = benchmark.frozen_momenta(ROOT)
+    assert momenta.shape == (27, 3)
+    assert hashlib.sha256(momenta.tobytes()).hexdigest() == (
+        "9a45c19f00f52838a4dae7866ee1ce76c6c5ec56ce30567513122fc7b6a68f48"
+    )

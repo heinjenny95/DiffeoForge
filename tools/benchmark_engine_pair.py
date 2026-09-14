@@ -74,6 +74,17 @@ def subdivide(points, faces):
     return np.asarray(vertices), np.asarray(triangles)
 
 
+def frozen_momenta(repo):
+    import numpy as np
+
+    raw = (repo / "reference/public-engine-pair-v1/momenta.json").read_bytes()
+    if hashlib.sha256(raw).hexdigest() != (
+        "657e086d915de3c9f2702c369f38da8fc48cb41b250f62feadde6ee9b5f3af40"
+    ):
+        raise ValueError("Canonical momenta checksum mismatch")
+    return np.asarray(json.loads(raw), dtype=np.float64)
+
+
 def observe(repo, engine, attachment, level, repeat):
     import importlib.metadata as metadata
     import resource
@@ -93,7 +104,7 @@ def observe(repo, engine, attachment, level, repeat):
         vertices, faces = subdivide(vertices, faces)
         target_vertices, target_faces = subdivide(target_vertices, target_faces)
     q = np.asarray(list(itertools.product((-0.6, 0.0, 0.6), repeat=3)))
-    p = np.sin(np.arange(q.size).reshape(q.shape) + 0.5) * 0.002
+    p = frozen_momenta(repo)
     arrays = (vertices, faces, target_vertices, target_faces, q, p)
     inputs_hash = hashlib.sha256(b"".join(a.tobytes() for a in arrays)).hexdigest()
     template = torch.tensor(vertices, dtype=torch.float64, requires_grad=True)
@@ -239,6 +250,7 @@ def observe(repo, engine, attachment, level, repeat):
         "host_kernel": [platform.system(), platform.release(), platform.machine()],
         "python": platform.python_version(),
         "torch": torch.__version__,
+        "numpy": np.__version__,
         "threads": torch.get_num_threads(),
         "dtype": "float64",
         "device": "cpu",

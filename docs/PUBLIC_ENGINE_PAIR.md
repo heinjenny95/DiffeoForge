@@ -42,6 +42,16 @@ now compares explicit system/kernel/machine fields and CPU model; runtime-specif
 platform labels remain recorded separately. All 36 workers are recollected;
 the initial rejected files remain intact. No workload or numeric threshold changes.
 
+A second capture failed the unchanged exact-input gate: NumPy 1.24.4 and 2.5.1
+returned last-bit-different sine values for the generated initial momenta; every
+other input component matched. The original NumPy 1.24.4 momenta are now frozen
+once as `reference/public-engine-pair-v1/momenta.json` and loaded by both engines.
+Its float64 byte hash is
+`9a45c19f00f52838a4dae7866ee1ce76c6c5ec56ce30567513122fc7b6a68f48`.
+The canonical-input capture is recollected into a third immutable directory,
+without relaxing input identity or any acceptance threshold. Rejected captures
+remain diagnostic observations, not valid paired performance/accuracy results.
+
 Use `tools/benchmark_engine_pair.py observe --help` in each isolated interpreter,
 with `OMP_NUM_THREADS=1 MKL_NUM_THREADS=1` before import and the repository `src`
 directory on `PYTHONPATH` for Modern. Use the `compare` command only after every
