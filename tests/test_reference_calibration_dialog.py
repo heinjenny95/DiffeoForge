@@ -41,7 +41,11 @@ def test_comparison_canvas_binds_both_meshes_and_renders(monkeypatch, tmp_path: 
 
     canvas.set_models(original, reconstruction)
     canvas.show()
-    application.processEvents()
+    deadline = time.monotonic() + 10
+    while not canvas.full_resolution_ready and time.monotonic() < deadline:
+        application.processEvents()
+        time.sleep(0.005)
+    assert canvas.full_resolution_ready
     image = canvas.grab().toImage()
 
     assert canvas.original_model is original

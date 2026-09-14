@@ -56,6 +56,13 @@ accuracy guarantees. Reproduce with `tools/benchmark_display_proxy.py`, writing
 private output outside the repository. No additional native simplifier dependency
 or source mesh repair/decimation is introduced.
 
+A follow-up native-event-loop observation loaded and first displayed the same
+mesh in 3.71 s while a 10-ms GUI timer fired 254 times (median interval 10 ms,
+maximum gap 0.66 s). Source hash and original-picking lock were preserved. This
+ran alongside build/test work and shows remaining short stalls, not zero-latency
+interaction. The new private build is documented in
+`NEXT_VERSION_BUILD_2026-09-14.md`; it has not been installed.
+
 ## Earlier full-frame-cache observation (before default proxies)
 
 One private completed-atlas pair (246,464 original faces; 229,324 reconstructed

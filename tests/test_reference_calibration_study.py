@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
@@ -251,17 +252,47 @@ def test_afk_cancel_between_stages_and_resume_without_rerunning_completed_stage(
     assert len(starts) == len({e["candidate_id"] for e in starts})
 
 
+@pytest.fixture(scope="session")
+def afk_qt_application():
+    """Match the desktop's process-long application lifetime across later GUI tests."""
+    pytest.importorskip("PySide6")
+    from PySide6.QtWidgets import QApplication
+
+    previous = os.environ.get("QT_QPA_PLATFORM")
+    os.environ["QT_QPA_PLATFORM"] = "offscreen"
+    application = QApplication.instance() or QApplication([])
+    yield application
+    application.closeAllWindows()
+    application.processEvents()
+    if previous is None:
+        os.environ.pop("QT_QPA_PLATFORM", None)
+    else:
+        os.environ["QT_QPA_PLATFORM"] = previous
+
+
 def test_afk_gui_requires_explicit_confirmation_and_reopen_defaults_off(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, afk_qt_application
 ):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
-    from PySide6.QtWidgets import QApplication, QMessageBox
+    from PySide6.QtCore import QCoreApplication, QEvent
+    from PySide6.QtWidgets import QMessageBox
 
+    import diffeoforge.desktop.reference_calibration_dialog as dialog_module
     from diffeoforge.desktop.reference_calibration_dialog import (
         ReferenceCalibrationDialog,
     )
 
-    app = QApplication.instance() or QApplication([])
+    class UndispatchedWorker:
+        def __init__(self, runner, *, complete_automatic_pilot, afk, visual_approvals):
+            self.afk = afk
+            # This test observes dispatch, not execution. Do not construct a real
+            # QRunnable with Qt signal connections and then abandon it unstarted.
+            signal = SimpleNamespace(connect=lambda _receiver: None)
+            self.signals = SimpleNamespace(event=signal, succeeded=signal, failed=signal)
+
+    monkeypatch.setattr(dialog_module, "_CalibrationStageWorker", UndispatchedWorker)
+
+    app = afk_qt_application
     runner = _afk_runner(tmp_path, monkeypatch)
     dialog = ReferenceCalibrationDialog(runner.study_directory)
     assert not dialog.afk_mode.isChecked()
@@ -283,9 +314,12 @@ def test_afk_gui_requires_explicit_confirmation_and_reopen_defaults_off(
     assert not dialog.afk_mode.isEnabled()
     dialog._worker = None  # Fake worker was never dispatched.
     dialog.close()
+    dialog.deleteLater()
     reopened = ReferenceCalibrationDialog(runner.study_directory)
     assert not reopened.afk_mode.isChecked()
     reopened.close()
+    reopened.deleteLater()
+    QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
     app.processEvents()
 
 

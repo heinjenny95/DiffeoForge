@@ -4044,7 +4044,7 @@ def test_desktop_requires_explicit_confirmation_before_crash_recovery(
 
     window = DiffeoForgeWindow()
     window._thread_pool = FakePool()  # type: ignore[assignment]
-    assert window.recover_abandoned_run_button.text() == "Recover after crashâ€¦"
+    assert window.recover_abandoned_run_button.text() == "Recover after crash…"
 
     window.recover_abandoned_run_button.click()
     application.processEvents()
