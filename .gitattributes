@@ -20,3 +20,6 @@
 # spaces in numeric text arrays; the Windows-side convergence writer uses CRLF.
 reference/synthetic-v1/artifacts/*.txt -whitespace
 reference/synthetic-v1/artifacts/convergence.csv -text -eol -whitespace
+
+# Immutable diagnostic evidence also preserves native line endings/trailing spaces.
+reference/reference-cpu-audit-v1/** -text -eol -whitespace
