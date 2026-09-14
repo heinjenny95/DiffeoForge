@@ -58,7 +58,8 @@ test suppression, mesh decimation or numerical/analysis changes are introduced.
 - These are bounded observations, not a guarantee that all native GUI crashes or
   all real-data workflows are resolved. In particular, a later green Intel-Mac
   run does not prove the cause of its historical segmentation fault. No installer
-  changed; a separately authorized build/install and interactive smoke test remain.
+  changed during that code-verification stage; the later authorized same-owner
+  build/install observation and outstanding interactive check are recorded below.
 
 Repetition recipe, run in a fresh process from the source checkout (diagnostic only):
 
@@ -76,3 +77,39 @@ raise SystemExit(pytest.main(
 
 The native-crash trace and control logs remain in the local task artifacts under
 `artifacts/desktop_crash_20260914`; they are not research data or a runtime cache.
+
+## Same-owner Windows installation observation
+
+On 14 September 2026 the user authorized building, installing and smoke-testing
+the repaired desktop. The private unsigned build is pinned to
+`063143a8cf7c94206d1f85b034455fedf726da4d`; no binary was uploaded or released.
+
+- The full frozen-process contract passed, including the 21-event synthetic
+  Modern run, reference cancellation/parent-death audits and approval-bound
+  preparation without reference-engine execution. Dependency metadata and the
+  CycloneDX evidence verified (27 packages).
+- All eight Python modules and both schema files changed since the previously
+  installed `8670974e3af1232d5e9c4f0cb3959068f8e9be62` were independently compared
+  inside the frozen bundle against committed source. Embedded code-object
+  comparison normalizes only source filenames, not instructions or constants.
+- The 2,676-file bundle contains 764,628,899 bytes. Every installed bundle file
+  was hash-verified; the installed startup `--smoke` exited 0 and the Desktop
+  shortcut targets that installed executable. The installer exited 0 without
+  a restart. All 2,687 files of the previous installation were moved to the
+  existing local backup folder and hash-verified. Study data, checkpoints and
+  the separate reference runtime were not changed.
+- Interactive viewer manipulation is **not yet verified**: the Windows
+  computer-use service rejected both launch attempts with `GetCursorPos`
+  access denied (`0x80070005`). This is a desktop-access limitation, not an
+  observed DiffeoForge crash. Rotation and close/reopen checks await an accessible
+  desktop; the offscreen startup test is not a substitute for them.
+
+Exact SHA-256 identities:
+
+- Installed EXE: `a81c1db7f1b3ff378f0cf9fdfffdbb8611b9cd98644ffee76170e072d64f3f64`
+- Setup: `da61fcaa4dd358a657755359d5a313fb94c912ce4167cceeda658334315cd9f3`
+- Freeze evidence: `c62ac4721ce9b5228ce245315ed4815370384bbe89f469ac17fb66f8563b9914`
+
+Local build/install receipts remain under `artifacts/renderer_install_20260914`.
+This same-owner installation does not establish public redistribution approval,
+code signing, clean-machine support, real-cohort performance or biological validity.

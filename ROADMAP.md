@@ -364,7 +364,9 @@ scientific gates. Planning does not mark those gates complete.
       Local full suite: 1,601 passed / seven skipped; final renderer repeat:
       200 passed / 2,000 explicit destruction cycles. CI 34839397593 passed all
       ten jobs, including all four GUI platforms. See `docs/DESKTOP_RENDER_LIFETIME.md`;
-      the exact historical Intel-Mac cause remains unproven. No installer changed.
+      the exact historical Intel-Mac cause remains unproven. A same-owner Windows
+      build at `063143a` was subsequently installed and hash/startup-verified;
+      interactive viewer checks await restored Windows desktop access.
   - [x] Define installed-wheel GUI and public synthetic CPU compatibility matrix,
     exact provenance, three-platform numerical comparison and frozen tolerances;
     see `docs/PLATFORM_COMPATIBILITY.md` for observation status and boundaries
