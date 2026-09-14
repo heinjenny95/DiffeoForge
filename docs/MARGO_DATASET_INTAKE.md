@@ -198,3 +198,38 @@ only public preparation documentation is committed, with all data kept local.
   dental-region sensitivity comparison could test the explanation. Anatomical
   scope should be predefined, rather than chosen to produce visible clusters.
   No mesh changes, exclusions, reruns or software changes were made for this note.
+
+## Exploratory dental screen (2026-09-14)
+
+The small automated follow-up qualifies the earlier qualitative impression;
+it does not establish dental causality or replace the original observation.
+
+- **Verified existing output:** 100 subjects, 99 PCA components; PC1/PC2/PC3
+  explain 18.35% / 15.10% / 10.99% (44.45% combined). Source-parameter PCA
+  recomputation and artifact hashes passed. No atlas was rerun.
+- **Interpretable continuous variation:** lateral intercondylar width divided
+  by chin reach correlates with PC2 (`r = +0.774`); bigonial width divided by
+  chin reach correlates with PC1 (`r = -0.562`). Chin reach is the Euclidean
+  distance from Gnathion to the lateral-condyle midpoint, not a projected axis.
+  These are post hoc descriptive checks; the fixed landmarks also guided
+  prealignment, so this is not independent validation. All six inspected
+  correlations across the two measures and first three PCs are retained locally.
+- **Metadata:** recorded sex explains 12.65% of PC3 variance, not total shape
+  variance. The supplied workbook has no dental-status or tooth-count column;
+  age is not a substitute. No confirmatory significance tests were performed.
+- **Visual screen:** automatically selected low/near-median/high specimens for
+  each of PC1-PC3 yielded nine individuals, rendered in two common-camera views
+  with all input faces. Visible dental heterogeneity coexists with bony-outline
+  differences; the screen does not show that teeth alone explain the morphospace.
+  Actual individuals differ on other PCs too; these are not isolated PC modes.
+- **Verification and limits:** independent standard-library calculations
+  reproduced 99 variance ratios, six bone correlations and sex/age statistics
+  for PC1-PC3. Hashes of 27 unique inspected input files remained unchanged.
+  Existing QC decisions (nine approved, 91 unreviewed) were preserved; this
+  screen is not a cohort-wide anatomical sign-off or clinical validation.
+- **Bounded next step:** document a large-medical-mesh feasibility example with
+  continuous bony-proportion associations and unresolved dental influence.
+  No cohort-wide manual tooth coding, tooth removal or masked registration was
+  performed. A predefined dental-region sensitivity test is a separate follow-up
+  only if a stronger dental claim is needed. Private meshes, subject metadata,
+  figures and detailed results remain local; only aggregate notes are public.
