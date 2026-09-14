@@ -204,3 +204,37 @@ def test_whole_harness_with_fake_containers_and_retained_output_reverification(
         stream.write("\n")
     with pytest.raises(ValueError, match="checksum"):
         pair.verify(ROOT, tmp_path / "capture/evidence")
+
+
+def test_retained_native_intel_and_amd_full_atlases_rederive_without_threshold_changes(pair):
+    retained = ROOT / "reference/reference-cpu-full-pair-v1"
+    intel = pair.verify(ROOT, retained / "intel-xeon-8573c")
+    amd = pair.verify(ROOT, retained / "amd-epyc-7763")
+    assert {intel["cpu_vendor"], amd["cpu_vendor"]} == {"GenuineIntel", "AuthenticAMD"}
+    assert (
+        intel["source_commit"]
+        == amd["source_commit"]
+        == ("6113400c29f73a11b81a62ead80b2da1d5efbe2b")
+    )
+    assert intel["worker_sha256"] == amd["worker_sha256"]
+    assert intel["records"][0]["engine_sha256"] == amd["records"][0]["engine_sha256"]
+    assert not intel["auto_reference_pass"]
+    assert amd["auto_reference_pass"]
+    for report in (intel, amd):
+        assert report["compatible_reference_pass"]
+        assert all(report["mode_repeatability"].values())
+        for record in report["records"]:
+            expected = 8 if report is intel and record["mode"] == "AUTO" else 10
+            assert record["comparison"]["passed_count"] == expected
+            assert sum(a["byte_identical"] for a in record["comparison"]["artifacts"]) == expected
+            assert all(
+                a["tolerances"] == {"max_absolute": 1e-6, "rms": 1e-7}
+                for a in record["comparison"]["artifacts"]
+            )
+    assert intel["records"][1]["artifact_sha256"] == amd["records"][1]["artifact_sha256"]
+    probes = [
+        json.loads((retained / host / "probe-COMPATIBLE.json").read_text())
+        for host in ("intel-xeon-8573c", "amd-epyc-7763")
+    ]
+    assert probes[0]["threads"] == probes[1]["threads"] == 4
+    assert probes[0]["subjects"] == probes[1]["subjects"]

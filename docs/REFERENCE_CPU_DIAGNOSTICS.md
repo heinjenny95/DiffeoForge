@@ -1,8 +1,9 @@
 # Legacy CPU numerical-reference investigation
 
-14 September 2026. **Environment-dependent behavior reproduced; no numerical
-engine fix or cross-CPU acceptance claimed.** Frozen reference bytes and both
-existing thresholds remain unchanged.
+14 September 2026. **Environment-dependent behavior reproduced; complete public
+Intel/AMD runs now support an experimental COMPATIBLE setting for this fixture.**
+No production default, engine equation, frozen reference byte or threshold changed;
+universal cross-CPU qualification is not claimed.
 
 ## Observations
 
@@ -93,13 +94,17 @@ an automatic guarantee for this test:
 
 ## Next acceptance boundary
 
-Next test complete AUTO/COMPATIBLE atlases on the same actual Intel runner with
-the frozen input and thresholds; also recheck AMD. The retained Intel static probe
-is promising, but does not establish a complete-atlas fix or cross-CPU guarantee.
-The bounded four-atlas-per-host collection is frozen in
-[the full-pair protocol](REFERENCE_CPU_FULL_PAIR.md), with separate manual CI
-dispatch and independent retained-output verification.
-An arithmetic patch or reference/tolerance change would require its own explicitly
-versioned validation. Separately, the Modern float64 engine passed the prospective
+The prospective [full-pair protocol](REFERENCE_CPU_FULL_PAIR.md) is now complete:
+Intel Xeon 8573C AUTO reproduces the scalar failure twice, while COMPATIBLE passes
+all ten reference artifacts byte-identically twice. AMD EPYC 7763 passes both
+modes twice, also byte-identically. All eight complete atlases and same-host static
+probes were downloaded and independently verified; see
+[retained full-pair evidence](../reference/reference-cpu-full-pair-v1/README.md).
+
+Next review a narrowly scoped, explicitly recorded compatibility-setting change
+for the frozen legacy CPU launcher. Until implemented and verified, normal default
+reference CI can still fail on Intel. This one cohort/two-CPU result does not
+qualify all hardware or biological datasets; no arithmetic patch or baseline reset
+is justified by it. Separately, the Modern float64 engine passed the prospective
 [public paired protocol](PUBLIC_ENGINE_PAIR.md); do not conflate that experiment
 with this float32 legacy-CLI reference or claim biological parameter validity.

@@ -42,3 +42,13 @@ reference passes. A green diagnostic is **not** a universal cross-CPU guarantee.
 Success would support a separately reviewed, scoped compatibility-setting change
 for this legacy CPU stack. It would not prove other datasets, processor families,
 libraries or optimizer decisions unaffected. A failure means no claimed fix.
+
+## Observed outcome
+
+The initial two-job collection observed native Intel Xeon Platinum 8573C and
+AMD EPYC 7763; no extra collection was needed. All eight atlases completed.
+Intel AUTO passed only 8/10 in both repetitions; Intel COMPATIBLE and both AMD modes
+passed 10/10 byte-identically in every repetition. Both modes repeated exactly
+within each host, and COMPATIBLE outputs matched across hosts. Downloaded results
+were independently verified; [all raw evidence and limits are retained](../reference/reference-cpu-full-pair-v1/README.md).
+The normal production/default launcher remains unchanged.

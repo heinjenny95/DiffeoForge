@@ -352,20 +352,26 @@ scientific gates. Planning does not mark those gates complete.
     with all time ranges and whole-worker RSS reported. This is not end-to-end
     atlas calibration; see `reference/public-engine-pair-v1/README.md`.
 - [ ] Cross-platform CPU distribution
+  - [ ] Isolate the Intel-Mac offscreen GUI segmentation fault in CI 34834843155;
+    retain the failed observation and inspect native object/thread lifetimes,
+    without skipping tests or claiming a fix from an unrelated numeric CPU pass
   - [x] Define installed-wheel GUI and public synthetic CPU compatibility matrix,
     exact provenance, three-platform numerical comparison and frozen tolerances;
     see `docs/PLATFORM_COMPATIBILITY.md` for observation status and boundaries
   - [x] Observe and independently verify the first Windows/Linux/Apple-Silicon
     CPU comparison and Windows/Linux/Apple-Silicon/Intel-Mac offscreen GUI matrix;
     retain exact public observations in `reference/platform-compatibility-v1`
-  - [ ] Diagnose the separate legacy reference-container convergence/residual
+  - [x] Diagnose the separate legacy reference-container convergence/residual
     mismatch (8/10 artifacts pass); retain frozen tolerances and reference bytes
     - CPU scalar-reduction sensitivity reproduced with unchanged geometry and
       static gradients; an instrumented AMD CI run passed 10/10 without a fix.
-      A real Intel Xeon 8370C runner now reproduces the same scalar failure and
-      preserves operand/gradient hashes. Its compatible-mode static probe matches
-      AMD; a complete Intel compatible-mode atlas remains unverified. Keep the
-      cross-CPU gate open; see `docs/REFERENCE_CPU_DIAGNOSTICS.md`.
+      Eight full paired atlases now confirm the public-fixture outcome: Intel
+      Xeon 8573C AUTO passes only 8/10 twice, COMPATIBLE passes 10/10 exactly twice;
+      AMD EPYC 7763 passes both modes twice. Retained bytes and comparisons are
+      independently verified; see `reference/reference-cpu-full-pair-v1/README.md`.
+  - [ ] Review and implement a scoped, recorded legacy-CPU compatibility setting;
+    production/default reference CI and broader cross-CPU qualification remain
+    open despite the successful bounded diagnostic (no implicit baseline reset)
   - [x] Fresh GitHub-hosted Windows one-directory engineering freeze, complete
     frozen-process smoke contract, and independently inspected evidence artifact
   - [x] Hash-bound, noninterpreting installed-distribution metadata and

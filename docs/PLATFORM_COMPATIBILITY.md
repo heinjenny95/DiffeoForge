@@ -187,3 +187,14 @@ matrix and three-platform synthetic numeric agreement. The separate contemporane
 legacy reference job failed on a real Intel Xeon 8370C (8/10) and retained the
 scalar-reduction evidence described in the CPU investigation. These two workflow
 outcomes must not be collapsed into a claim that all engine gates are green.
+
+### Later Intel-Mac GUI observation remains open
+
+[CI 34834843155](https://github.com/heinjenny95/DiffeoForge/actions/runs/34834843155)
+at `6113400c29f73a11b81a62ead80b2da1d5efbe2b` passed nine jobs, including both
+1,469-test host suites and all three Modern CPU jobs, but the optional-engine-free
+Intel-Mac GUI process exited with a native segmentation fault (139), near the
+surface-rendering test boundary. The traceback does not establish its cause.
+No desktop or engine implementation changed in this commit. Preserve this failed
+observation and isolate the GUI lifetime/threading/native-library issue separately;
+do not call the complete platform matrix green or suppress the test.
