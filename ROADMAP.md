@@ -357,11 +357,14 @@ scientific gates. Planning does not mark those gates complete.
     without skipping tests or claiming a fix from an unrelated numeric CPU pass
     - A local Windows full-suite process also aborted with a native access violation
       during desktop tests after the CPU-policy change. Hosted CI 34837396899
-      passed all ten jobs; intermittent GUI failures remain unresolved.
+      passed all ten jobs; that green run did not resolve the native failure.
     - [x] Reproduce the Windows renderer-only lifetime crash and replace
       worker-owned QObject signals with a bounded Python mailbox/GUI timer;
       test owner destruction, cancellation and stale-frame rejection.
-      See `docs/DESKTOP_RENDER_LIFETIME.md`; full/platform verification is pending.
+      Local full suite: 1,601 passed / seven skipped; final renderer repeat:
+      200 passed / 2,000 explicit destruction cycles. CI 34839397593 passed all
+      ten jobs, including all four GUI platforms. See `docs/DESKTOP_RENDER_LIFETIME.md`;
+      the exact historical Intel-Mac cause remains unproven. No installer changed.
   - [x] Define installed-wheel GUI and public synthetic CPU compatibility matrix,
     exact provenance, three-platform numerical comparison and frozen tolerances;
     see `docs/PLATFORM_COMPATIBILITY.md` for observation status and boundaries

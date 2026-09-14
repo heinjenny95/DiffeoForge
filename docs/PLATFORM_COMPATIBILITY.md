@@ -202,6 +202,12 @@ do not call the complete platform matrix green or suppress the test.
 The subsequent [renderer lifetime investigation](DESKTOP_RENDER_LIFETIME.md)
 reproduced a native Windows crash with only the five surface-render tests and
 replaced the worker-owned signal object with a Python mailbox/GUI-thread timer.
-Local repeated cases pass; post-change full-suite/platform verification is pending.
+The repaired local full suite passed 1,601 tests with seven skips; the final
+ten-case renderer suite passed 20 repetitions, including 2,000 explicit owner
+destruction cycles. [CI 34839397593](https://github.com/heinjenny95/DiffeoForge/actions/runs/34839397593)
+at `6e5eb99bc1f2662a2532f01a0114a8814df8f20e` passed all ten jobs, including all
+four desktop platforms. The baseline full suite also passed on a separate run,
+so this remains an intermittent-failure investigation, not a deterministic
+full-suite before/after comparison.
 The historical Intel-Mac observation is preserved without asserting an unobserved
 native stack or inferring its cause solely from a later green run.

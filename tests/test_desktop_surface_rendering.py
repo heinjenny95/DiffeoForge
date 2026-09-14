@@ -160,7 +160,10 @@ def test_completion_is_delivered_on_gui_thread_and_idle_timer_stops(app):
     assert not cache._poller.isActive()
 
 
-def test_destroyed_view_cancels_worker_and_discards_pending_camera(app, monkeypatch):
+@pytest.mark.parametrize("pending_camera", [False, True])
+def test_destroyed_view_cancels_worker_and_discards_pending_camera(
+    app, monkeypatch, pending_camera
+):
     entered, release = threading.Event(), threading.Event()
     calls, delivered = [], []
     real = rendering.render_surface_scene
@@ -179,7 +182,9 @@ def test_destroyed_view_cancels_worker_and_discards_pending_camera(app, monkeypa
     try:
         assert entered.wait(5)
         cancelled = cache._active.cancelled
-        cache.request((2,), replace(scene(), zoom=2.0))
+        assert not cancelled.is_set()
+        if pending_camera:
+            cache.request((2,), replace(scene(), zoom=2.0))
         delete(owner)
         assert not isValid(cache)
         assert cancelled.is_set()

@@ -35,13 +35,30 @@ test suppression, mesh decimation or numerical/analysis changes are introduced.
 - The original five cases passed 40 repetitions (200 cases) after the handoff repair.
 - Nine expanded cases passed 20 repetitions (180 cases), including 2,000 explicit
   render-completion/owner-destruction cycles in the lifetime stress test.
+- The final ten cases passed 20 repetitions (200 cases, 59.69 s), again including
+  2,000 completion/destruction cycles. Destruction during an active render is
+  tested both with and without an already-cancelling pending camera request.
 - Added checks cover GUI-thread result delivery, idle timer shutdown, destruction
   during a blocked render, cancellation of a pending camera request and stale
   completed-image rejection after clear/key reuse. Existing full-face/full-edge,
   bounded navigation, caching and failure/no-repaint-retry checks remain intact.
-- Complete local before/after suites and four-platform hosted GUI verification
-  are pending. A passing stress run is bounded evidence, not a guarantee that all
-  native GUI crashes or all real-data workflows are resolved. No installer changed.
+- A fresh complete baseline run passed 1,597 tests with seven skips (752.48 s),
+  despite the separate renderer-only crash: the failure is intermittent.
+  The repaired complete local suite passed 1,601 tests with seven skips (777.08 s).
+  This full run collected the nine-case version; the final additional parameter
+  case is covered by the final ten-case repeat above. Skips concern the installed
+  PySide6 condition and this Windows account's symbolic-link permissions.
+- [CI 34839397593](https://github.com/heinjenny95/DiffeoForge/actions/runs/34839397593)
+  at implementation commit `6e5eb99bc1f2662a2532f01a0114a8814df8f20e` passed all ten
+  jobs: 1,485 tests on each host Python version; desktop Windows 203 passed / 14
+  skipped, Linux and both Apple-Silicon/Intel Mac 196 passed / 21 skipped each;
+  all three Modern engine jobs and the synthetic CPU agreement gate passed.
+  [Reference CI 34839397585](https://github.com/heinjenny95/DiffeoForge/actions/runs/34839397585)
+  also passed both standard container runners. No numerical policy changed here.
+- These are bounded observations, not a guarantee that all native GUI crashes or
+  all real-data workflows are resolved. In particular, a later green Intel-Mac
+  run does not prove the cause of its historical segmentation fault. No installer
+  changed; a separately authorized build/install and interactive smoke test remain.
 
 Repetition recipe, run in a fresh process from the source checkout (diagnostic only):
 

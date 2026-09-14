@@ -140,7 +140,7 @@ class _FrameWorker(QRunnable):
         except Exception as exception:  # Worker failure must never leave a frame approved.
             image, error = None, str(exception)
         # Releasing a runnable must not destroy a GUI-affine signal QObject from
-        # a pool thread. QImage values can cross threads; QObject lifetimes cannot.
+        # a pool thread. The queue transfers values without that QObject lifetime coupling.
         self.results.put((self.key, image, error))
 
 
