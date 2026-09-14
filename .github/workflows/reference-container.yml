@@ -8,6 +8,7 @@ on:
       - "container/**"
       - "examples/minimal-atlas-container.yaml"
       - "reference/synthetic-v1/**"
+      - "tools/probe_reference_cpu.py"
       - "src/diffeoforge/backends/**"
       - "src/diffeoforge/runs.py"
       - "src/diffeoforge/schema/atlas-config-v0.1.json"
@@ -19,6 +20,7 @@ on:
       - "container/**"
       - "examples/minimal-atlas-container.yaml"
       - "reference/synthetic-v1/**"
+      - "tools/probe_reference_cpu.py"
       - "src/diffeoforge/backends/**"
       - "src/diffeoforge/runs.py"
       - "src/diffeoforge/schema/atlas-config-v0.1.json"
@@ -67,7 +69,35 @@ jobs:
           diffeoforge run examples/minimal-atlas-container.yaml \
             --run-id container-ci
 
+      - name: Diagnose public float32 reductions without changing the atlas
+        run: |
+          mkdir reference-cpu-evidence
+          for mode in AUTO COMPATIBLE; do
+            docker run --rm --network=none --read-only \
+              --tmpfs=/tmp:rw,exec,nosuid,size=1g \
+              --user "$(id -u):$(id -g)" \
+              --mount "type=bind,source=$PWD,target=/source,readonly" \
+              --mount "type=bind,source=$PWD/reference-cpu-evidence,target=/evidence" \
+              --env OMP_NUM_THREADS=4 --env MKL_CBWR="$mode" \
+              --entrypoint python diffeoforge-deformetrica:4.3.0-cpu \
+              /source/tools/probe_reference_cpu.py --repository /source \
+              --output "/evidence/probe-$mode.json"
+          done
+
       - name: Compare numerical reference
         run: |
           diffeoforge compare-reference \
             examples/runs/container-ci reference/synthetic-v1
+
+      - name: Retain bounded public diagnostic evidence even on comparison failure
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: reference-cpu-evidence
+          retention-days: 14
+          if-no-files-found: error
+          path: |
+            reference-cpu-evidence/*.json
+            examples/runs/container-ci/logs/convergence.csv
+            examples/runs/container-ci/logs/deformetrica.log
+            examples/runs/container-ci/output/DeterministicAtlas__EstimatedParameters__Residuals.txt
