@@ -103,9 +103,24 @@ reference fixture nor the new cross-platform protocol's tolerances were changed.
 
 The first local targeted regression selection passed **121 tests, one expected
 skip** (the missing-PySide6 branch is inapplicable where PySide6 is installed).
-Hosted matrix execution and the cross-platform comparison are pending at this
-implementation checkpoint. Results will be recorded with exact run/commit links;
-configuration alone is not compatibility evidence.
+The final local changed-area regression selection passed **106 tests, one expected
+skip**; isolated OS mocks and WSL path cases passed another **16 tests**. A wheel
+was built/verified and installed into a separate local test directory; its full
+synthetic worker/reopen/continuation/dense-blockwise/cancellation observation passed.
+
+The first complete platform matrix at development head `727dcd2` passed all seven
+platform jobs: **521 Modern tests per CPU platform** and **197 desktop tests on
+Windows / 190 on each other GUI platform**, with expected platform/optional skips.
+The three-pair numerical comparison passed and was independently recomputed
+byte-for-byte locally. Exact public observations, hashes, source checkout identity,
+job counts and limitations are retained in
+[`reference/platform-compatibility-v1`](../reference/platform-compatibility-v1/README.md).
+Maximum absolute objective difference was `7.11e-13`; reconstructed coordinates
+differed by at most `1.34e-15` on this unitless fixture.
+
+That CI run's separate full-suite jobs failed during collection, so it is **not**
+an overall-CI pass. Follow-up full-suite execution after explicit dependency and
+isolated-platform-mock corrections is still pending at this evidence checkpoint.
 
 Native `.dmg`/`.pkg` or Linux app packaging, clean-machine install/uninstall,
 project preservation, signing, Deformetrica execution, Intel-Mac Modern engine,

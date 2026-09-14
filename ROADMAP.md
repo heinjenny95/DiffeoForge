@@ -351,8 +351,9 @@ scientific gates. Planning does not mark those gates complete.
   - [x] Define installed-wheel GUI and public synthetic CPU compatibility matrix,
     exact provenance, three-platform numerical comparison and frozen tolerances;
     see `docs/PLATFORM_COMPATIBILITY.md` for observation status and boundaries
-  - [ ] Observe and independently verify the first Windows/Linux/Apple-Silicon
-    CPU comparison and Windows/Linux/Apple-Silicon/Intel-Mac offscreen GUI matrix
+  - [x] Observe and independently verify the first Windows/Linux/Apple-Silicon
+    CPU comparison and Windows/Linux/Apple-Silicon/Intel-Mac offscreen GUI matrix;
+    retain exact public observations in `reference/platform-compatibility-v1`
   - [x] Fresh GitHub-hosted Windows one-directory engineering freeze, complete
     frozen-process smoke contract, and independently inspected evidence artifact
   - [x] Hash-bound, noninterpreting installed-distribution metadata and
