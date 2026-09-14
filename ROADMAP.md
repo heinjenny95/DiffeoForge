@@ -355,6 +355,9 @@ scientific gates. Planning does not mark those gates complete.
   - [ ] Isolate the Intel-Mac offscreen GUI segmentation fault in CI 34834843155;
     retain the failed observation and inspect native object/thread lifetimes,
     without skipping tests or claiming a fix from an unrelated numeric CPU pass
+    - A local Windows full-suite process also aborted with a native access violation
+      during desktop tests after the CPU-policy change. Hosted CI 34837396899
+      passed all ten jobs; intermittent GUI failures remain unresolved.
   - [x] Define installed-wheel GUI and public synthetic CPU compatibility matrix,
     exact provenance, three-platform numerical comparison and frozen tolerances;
     see `docs/PLATFORM_COMPATIBILITY.md` for observation status and boundaries
@@ -372,8 +375,9 @@ scientific gates. Planning does not mark those gates complete.
   - [x] Implement the approved, process-scoped legacy-CPU COMPATIBLE setting;
     record the exact command and probe environment; prevent silent policy changes
     in prepared runs and checkpoint continuation. See `docs/REFERENCE_CPU_LAUNCH_POLICY.md`.
-    Post-change default reference CI remains to be verified; broader cross-CPU
-    qualification remains open (no implicit baseline reset).
+    Post-change default reference CI passes 10/10 byte-identically on observed
+    Intel and AMD; independently verified evidence is retained in
+    `reference/reference-cpu-policy-v1`. Broader cross-CPU qualification remains open.
   - [x] Fresh GitHub-hosted Windows one-directory engineering freeze, complete
     frozen-process smoke contract, and independently inspected evidence artifact
   - [x] Hash-bound, noninterpreting installed-distribution metadata and

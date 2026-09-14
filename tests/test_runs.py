@@ -177,6 +177,27 @@ def test_cpu_migration_guard_does_not_apply_to_gpu():
     runs._require_current_cpu_command({"runtime": {"device": "cuda"}}, {}, context="GPU")
 
 
+def test_cpu_execution_applies_and_records_mode_without_changing_host(tmp_path, monkeypatch):
+    import os
+
+    run = prepare_run(write_run_config(tmp_path), run_id="cpu-policy")
+    original = runs.build_command(verify_prepared_run(run)["effective_config"], run)
+    monkeypatch.setenv("MKL_CBWR", "AUTO")
+    monkeypatch.setattr(runs, "ensure_launcher_available", lambda config: None)
+    monkeypatch.setattr(runs, "_probe_backend_environment", lambda config: {"probe_status": "test"})
+    monkeypatch.setattr(runs, "build_command", lambda config, path: CommandSpec(
+        argv=(sys.executable, "-c", "import os; print('mode=' + os.environ['MKL_CBWR'])"),
+        working_directory=str(path), environment=original.environment,
+    ))
+    assert execute_run(run) == 0
+    assert "mode=COMPATIBLE" in (run / "logs/deformetrica.log").read_text()
+    result = json.loads((run / "result.json").read_text())
+    started = [json.loads(line) for line in (run / "events.jsonl").read_text().splitlines()][1]
+    assert result["command"] == started["command"]
+    assert result["command"]["environment"]["MKL_CBWR"] == "COMPATIBLE"
+    assert os.environ["MKL_CBWR"] == "AUTO"
+
+
 def test_prepare_creates_verifiable_immutable_run(tmp_path: Path) -> None:
     config_path = write_run_config(tmp_path)
 

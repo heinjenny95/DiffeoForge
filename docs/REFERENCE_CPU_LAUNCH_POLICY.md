@@ -49,4 +49,11 @@ observations cannot accidentally execute COMPATIBLE through duplicate Docker fla
 The normal strict reference workflow now runs on Ubuntu 22.04 and 24.04 with no
 mode override: actual CPU identity and all ten selected artifacts are retained
 for independent readback. Runner labels alone do not establish CPU coverage.
-Initial post-change CI verification is pending; no installer or release is implied.
+The [retained post-change executions](../reference/reference-cpu-policy-v1/README.md)
+passed 10/10 byte-identically on observed Intel Xeon 8573C and AMD EPYC 7763.
+Prepared/started/result commands and the actual runtime probe agree on the mode.
+All ten general CI jobs passed at the implementation commit; 127 focused local
+tests passed with two Windows symlink-permission skips. The additional local
+all-tests process hit a native desktop access violation, retained as an open
+GUI investigation rather than a clean full-suite claim. No installer or release
+is implied.
