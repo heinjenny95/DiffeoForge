@@ -8,8 +8,9 @@ from dataclasses import dataclass
 import numpy as np
 from PySide6.QtCore import QPointF, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QMouseEvent, QPainter, QPaintEvent, QPen, QWheelEvent
-from PySide6.QtWidgets import QWidget
+from PySide6.QtWidgets import QCheckBox, QWidget
 
+from diffeoforge.desktop.display_proxy import DEFAULT_DISPLAY_FACES
 from diffeoforge.desktop.mesh_preview import MeshPreviewModel
 from diffeoforge.desktop.surface_rendering import SurfaceFrameCache, SurfaceLayer, SurfaceScene
 
@@ -94,12 +95,7 @@ def pick_surface_point(
     second = ((y2 - y0) * (px - x2) + (x0 - x2) * (py - y2)) / safe_denominator
     third = 1.0 - first - second
     tolerance = 1e-8
-    inside = (
-        usable
-        & (first >= -tolerance)
-        & (second >= -tolerance)
-        & (third >= -tolerance)
-    )
+    inside = usable & (first >= -tolerance) & (second >= -tolerance) & (third >= -tolerance)
     candidate_indices = np.flatnonzero(inside)
     if candidate_indices.size == 0:
         return None
@@ -146,6 +142,13 @@ class InteractiveMeshCanvas3D(QWidget):
         self._drag_distance = 0.0
         self._interacting = False
         self._picking_enabled = True
+        self.original_detail = QCheckBox("Original detail (slower)", self)
+        self.original_detail.move(12, 38)
+        self.original_detail.setToolTip(
+            "Display proxies hide small features. "
+            "Enable original detail for exact landmark picking."
+        )
+        self.original_detail.toggled.connect(self._resolution_changed)
         self.setMinimumHeight(500)
         self.setMouseTracking(True)
         self.setCursor(Qt.CursorShape.CrossCursor)
@@ -171,6 +174,8 @@ class InteractiveMeshCanvas3D(QWidget):
         self._model = model
         self._frames.clear()
         self._presented_key = None
+        self.original_detail.setChecked(False)
+        self.original_detail.setEnabled(model is not None and not model.geometry_is_proxy)
         if model is None:
             self._vertices = np.empty((0, 3), dtype=np.float64)
             self._triangles = np.empty((0, 3), dtype=np.int64)
@@ -191,23 +196,44 @@ class InteractiveMeshCanvas3D(QWidget):
         self.update()
 
     def _frame_key(self) -> tuple:
-        return (id(self._model), self.width(), self.height(), self._yaw, self._pitch,
-                self._zoom, self._pan, self._interacting or self._wheel_timer.isActive())
+        return (
+            id(self._model),
+            self.width(),
+            self.height(),
+            self._yaw,
+            self._pitch,
+            self._zoom,
+            self._pan,
+            self.original_detail.isChecked(),
+            self._interacting or self._wheel_timer.isActive(),
+        )
+
+    def _resolution_changed(self, _checked: bool) -> None:
+        self._frames.clear()
+        self._presented_key = self._pick_view_key = None
+        self.update()
 
     @property
     def full_resolution_ready(self) -> bool:
         key = self._frame_key()
-        return bool(self._model is not None and not key[-1]
-                    and self._presented_key == key and self._frames.ready(key))
+        return bool(
+            self._model is not None
+            and not key[-1]
+            and not self._model.geometry_is_proxy
+            and (
+                self.original_detail.isChecked()
+                or self._model.triangle_count <= DEFAULT_DISPLAY_FACES
+            )
+            and self._presented_key == key
+            and self._frames.ready(key)
+        )
 
     def set_picking_enabled(self, enabled: bool) -> None:
         """Switch between landmark placement and neutral mesh viewing."""
 
         self._picking_enabled = bool(enabled)
         self.setCursor(
-            Qt.CursorShape.CrossCursor
-            if self._picking_enabled
-            else Qt.CursorShape.OpenHandCursor
+            Qt.CursorShape.CrossCursor if self._picking_enabled else Qt.CursorShape.OpenHandCursor
         )
         self.update()
 
@@ -304,9 +330,7 @@ class InteractiveMeshCanvas3D(QWidget):
         self._drag_button = None
         self._interacting = False
         self.setCursor(
-            Qt.CursorShape.CrossCursor
-            if self._picking_enabled
-            else Qt.CursorShape.OpenHandCursor
+            Qt.CursorShape.CrossCursor if self._picking_enabled else Qt.CursorShape.OpenHandCursor
         )
         # Mouse-move paints may use the bounded interactive triangle preview.
         # Always schedule a new paint after release so that preview can never
@@ -350,21 +374,52 @@ class InteractiveMeshCanvas3D(QWidget):
 
         navigation = self._interacting or self._wheel_timer.isActive()
         key = self._frame_key()
-        scene = SurfaceScene(self.width(), self.height(), self._center, self._scale,
-                             camera_rotation(self._yaw, self._pitch), self._zoom,
-                             self._pan, (SurfaceLayer(self._vertices, self._triangles),),
-                             navigation=navigation, margin=64.0)
+        proxy = self._model.display_proxy
+        vertices, triangles = self._vertices, self._triangles
+        if not self.original_detail.isChecked():
+            if proxy is not None:
+                vertices, triangles = proxy.vertices, proxy.triangles
+            elif len(triangles) > DEFAULT_DISPLAY_FACES:
+                vertices, triangles = np.empty((0, 3)), np.empty((0, 3), dtype=np.int64)
+        scene = SurfaceScene(
+            self.width(),
+            self.height(),
+            self._center,
+            self._scale,
+            camera_rotation(self._yaw, self._pitch),
+            self._zoom,
+            self._pan,
+            (SurfaceLayer(vertices, triangles),),
+            navigation=navigation,
+            margin=64.0,
+        )
         image = self._frames.request(key, scene)
         if image is not None:
             painter.drawImage(0, 0, image)
         self._presented_key = key if self._frames.ready(key) and not navigation else None
-        if navigation or not self._frames.ready(key):
+        if navigation or not self._frames.ready(key) or not self.full_resolution_ready:
             painter.fillRect(0, 0, self.width(), 34, QColor("#fff3d6"))
             painter.setPen(QColor("#705419"))
-            painter.drawText(12, 23, self._frames.error or (
-                "Navigation preview — full-resolution surface follows after movement."
-                if navigation else "Rendering full-resolution surface in background…"
-            ))
+            painter.drawText(
+                12,
+                23,
+                self._frames.error
+                or (
+                    self._model.display_proxy_error
+                    if not self.original_detail.isChecked()
+                    else None
+                )
+                or (
+                    "Navigation preview — exact picking is disabled during movement."
+                    if navigation
+                    else (
+                        "Rendering selected display resolution in background…"
+                        if not self._frames.ready(key)
+                        else f"Display proxy: {len(triangles):,} faces. "
+                        "Original detail is available for closer inspection."
+                    )
+                ),
+            )
 
         rotation = camera_rotation(self._yaw, self._pitch)
         viewport = max(1.0, min(float(self.width()), float(self.height())) - 64.0)
@@ -386,12 +441,8 @@ class InteractiveMeshCanvas3D(QWidget):
         painter.drawText(
             self.rect().adjusted(14, 10, -14, -10),
             Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignBottom,
-            (
-                "Click: place/replace landmark  ·  "
-                if self._picking_enabled
-                else ""
-            )
-            + "Drag: rotate (full surface on release)  ·  Right-drag: pan  "
+            ("Click: place/replace landmark  ·  " if self._picking_enabled else "")
+            + "Drag: rotate  ·  Right-drag: pan  "
             "·  Wheel: zoom  ·  Double-click: reset view",
         )
         painter.end()

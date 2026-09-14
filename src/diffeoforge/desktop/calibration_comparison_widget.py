@@ -13,8 +13,9 @@ from PySide6.QtGui import (
     QPaintEvent,
     QWheelEvent,
 )
-from PySide6.QtWidgets import QWidget
+from PySide6.QtWidgets import QCheckBox, QWidget
 
+from diffeoforge.desktop.display_proxy import DEFAULT_DISPLAY_FACES
 from diffeoforge.desktop.landmark_3d_widget import camera_rotation
 from diffeoforge.desktop.mesh_preview import MeshPreviewModel
 from diffeoforge.desktop.surface_rendering import SurfaceFrameCache, SurfaceLayer, SurfaceScene
@@ -51,6 +52,13 @@ class CalibrationComparisonCanvas3D(QWidget):
         self._last_position: QPointF | None = None
         self._drag_button: Qt.MouseButton | None = None
         self._interacting = False
+        self.original_detail = QCheckBox("Original detail for QC (slower)", self)
+        self.original_detail.move(12, 38)
+        self.original_detail.setToolTip(
+            "Proxies hide details and cannot authorize full-resolution QC. "
+            "Enable original detail and inspect both layers before recording a decision."
+        )
+        self.original_detail.toggled.connect(self._resolution_changed)
         self.setMinimumHeight(420)
         self.setMouseTracking(True)
         self.setCursor(Qt.CursorShape.OpenHandCursor)
@@ -78,6 +86,10 @@ class CalibrationComparisonCanvas3D(QWidget):
         self._reconstruction = reconstruction
         self._frames.clear()
         self._presented_key = None
+        self.original_detail.setChecked(False)
+        self.original_detail.setEnabled(
+            not original.geometry_is_proxy and not reconstruction.geometry_is_proxy
+        )
         self._original_vertices = np.asarray(original.vertices, dtype=np.float64)
         self._reconstruction_vertices = np.asarray(
             reconstruction.vertices,
@@ -88,9 +100,7 @@ class CalibrationComparisonCanvas3D(QWidget):
             dtype=np.int64,
         )
         self._original_edges = np.asarray(original.edges, dtype=np.int64)
-        combined = np.vstack(
-            (self._original_vertices, self._reconstruction_vertices)
-        )
+        combined = np.vstack((self._original_vertices, self._reconstruction_vertices))
         minimum = np.min(combined, axis=0)
         maximum = np.max(combined, axis=0)
         self._center = (minimum + maximum) / 2.0
@@ -111,17 +121,46 @@ class CalibrationComparisonCanvas3D(QWidget):
         self.update()
 
     def _frame_key(self) -> tuple:
-        return (id(self._original), id(self._reconstruction), self.width(), self.height(),
-                self._yaw, self._pitch, self._zoom, self._pan,
-                self._show_original, self._show_reconstruction,
-                self._interacting or self._wheel_timer.isActive())
+        return (
+            id(self._original),
+            id(self._reconstruction),
+            self.width(),
+            self.height(),
+            self._yaw,
+            self._pitch,
+            self._zoom,
+            self._pan,
+            self._show_original,
+            self._show_reconstruction,
+            self.original_detail.isChecked(),
+            self._interacting or self._wheel_timer.isActive(),
+        )
 
     @property
     def full_resolution_ready(self) -> bool:
         key = self._frame_key()
-        return bool(self._original is not None and self._show_original
-                    and self._show_reconstruction and not key[-1]
-                    and self._presented_key == key and self._frames.ready(key))
+        return bool(
+            self._original is not None
+            and self._show_original
+            and self._reconstruction is not None
+            and not self._original.geometry_is_proxy
+            and not self._reconstruction.geometry_is_proxy
+            and (
+                self.original_detail.isChecked()
+                or max(self._original.triangle_count, self._reconstruction.triangle_count)
+                <= DEFAULT_DISPLAY_FACES
+            )
+            and self._show_reconstruction
+            and not key[-1]
+            and self._presented_key == key
+            and self._frames.ready(key)
+        )
+
+    def _resolution_changed(self, _checked: bool) -> None:
+        self._frames.clear()
+        self._presented_key = None
+        self.fullResolutionReadyChanged.emit()
+        self.update()
 
     def _settle_wheel(self) -> None:
         self.update()
@@ -222,7 +261,6 @@ class CalibrationComparisonCanvas3D(QWidget):
             return
         super().mouseDoubleClickEvent(event)
 
-
     def paintEvent(self, event: QPaintEvent) -> None:  # noqa: N802
         del event
         painter = QPainter(self)
@@ -239,15 +277,46 @@ class CalibrationComparisonCanvas3D(QWidget):
             return
         key = self._frame_key()
         layers = []
+        original_vertices, original_edges = self._original_vertices, self._original_edges
+        reconstruction_vertices, reconstruction_triangles = (
+            self._reconstruction_vertices,
+            self._reconstruction_triangles,
+        )
+        if not self.original_detail.isChecked():
+            original_proxy = self._original.display_proxy
+            reconstruction_proxy = self._reconstruction.display_proxy
+            if original_proxy is not None:
+                original_vertices, original_edges = original_proxy.vertices, original_proxy.edges
+            elif self._original.triangle_count > DEFAULT_DISPLAY_FACES:
+                original_vertices, original_edges = (
+                    np.empty((0, 3)),
+                    np.empty((0, 2), dtype=np.int64),
+                )
+            if reconstruction_proxy is not None:
+                reconstruction_vertices, reconstruction_triangles = (
+                    reconstruction_proxy.vertices,
+                    reconstruction_proxy.triangles,
+                )
+            elif self._reconstruction.triangle_count > DEFAULT_DISPLAY_FACES:
+                reconstruction_vertices = np.empty((0, 3))
+                reconstruction_triangles = np.empty((0, 3), dtype=np.int64)
         if self._show_reconstruction:
-            layers.append(SurfaceLayer(self._reconstruction_vertices,
-                                       self._reconstruction_triangles, orange=True))
+            layers.append(
+                SurfaceLayer(reconstruction_vertices, reconstruction_triangles, orange=True)
+            )
         if self._show_original:
-            layers.append(SurfaceLayer(self._original_vertices, self._original_edges,
-                                       wireframe=True))
-        scene = SurfaceScene(self.width(), self.height(), self._center, self._scale,
-                             camera_rotation(self._yaw, self._pitch), self._zoom,
-                             self._pan, tuple(layers), navigation=key[-1])
+            layers.append(SurfaceLayer(original_vertices, original_edges, wireframe=True))
+        scene = SurfaceScene(
+            self.width(),
+            self.height(),
+            self._center,
+            self._scale,
+            camera_rotation(self._yaw, self._pitch),
+            self._zoom,
+            self._pan,
+            tuple(layers),
+            navigation=key[-1],
+        )
         image = self._frames.request(key, scene)
         if image is not None:
             painter.drawImage(0, 0, image)
@@ -258,11 +327,29 @@ class CalibrationComparisonCanvas3D(QWidget):
         if presented is None:
             painter.fillRect(0, 0, self.width(), 34, QColor("#fff3d6"))
             painter.setPen(QColor("#705419"))
-            painter.drawText(12, 23, self._frames.error or (
-                "Navigation preview — full-resolution QC view follows after movement."
-                if scene.navigation else "Rendering full-resolution view in background…"
-            ))
+            painter.drawText(
+                12,
+                23,
+                self._frames.error
+                or (
+                    "Navigation preview — QC decisions are disabled during movement."
+                    if scene.navigation
+                    else "Rendering selected display resolution in background…"
+                ),
+            )
         elif not self._show_original or not self._show_reconstruction:
             painter.setPen(QColor("#705419"))
             painter.drawText(12, 23, "Show both layers before confirming the QC inspection.")
+        elif not self.full_resolution_ready:
+            painter.setPen(QColor("#705419"))
+            painter.drawText(
+                12,
+                23,
+                self._original.display_proxy_error
+                or self._reconstruction.display_proxy_error
+                or (
+                    f"Display proxies: reconstruction {len(reconstruction_triangles):,} faces. "
+                    "Inspect Original detail before QC approval."
+                ),
+            )
         painter.end()

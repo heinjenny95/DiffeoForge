@@ -72,6 +72,7 @@ from diffeoforge.desktop.parameter_guidance import (
     DEFORMETRICA_PARAMETER_GUIDANCE,
     ParameterGuidance,
 )
+from diffeoforge.desktop.preview_mesh_loader import PreviewMeshLoader
 from diffeoforge.desktop.project_review import ProjectReviewResult, review_project
 from diffeoforge.desktop.project_setup import (
     DesktopEngine,
@@ -1400,6 +1401,9 @@ class DiffeoForgeWindow(QMainWindow):
         self._shown_input_preflight_fingerprints: set[str] = set()
         self._procrustes_preview: LandmarkAlignmentPreview | None = None
         self._procrustes_visual: GpaAlignmentVisual | None = None
+        self._feature_mesh_loader = PreviewMeshLoader(self)
+        self._feature_mesh_loader.loaded.connect(self._feature_mesh_ready)
+        self._feature_mesh_loader.failed.connect(self._feature_mesh_failed)
         self._procrustes_visual_reviewed_fingerprint: str | None = None
         self._reference_recommendation: ReferenceParameterRecommendation | None = None
         self._reference_recommendation_paths: tuple[Path, ...] | None = None
@@ -2630,7 +2634,9 @@ class DiffeoForgeWindow(QMainWindow):
         controls_layout.addStretch()
         for combo in (self.result_atlas_mesh_group_combo, self.result_atlas_mesh_combo):
             combo.setMinimumContentsLength(10)
-            combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+            combo.setSizeAdjustPolicy(
+                QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
+            )
         canvases = QVBoxLayout()
         canvases.addWidget(self.result_atlas_canvas)
         canvases.addWidget(self.result_registration_qc_canvas)
@@ -4469,7 +4475,8 @@ class DiffeoForgeWindow(QMainWindow):
         selected_path = Path(selected_directory)
         try:
             formats = {
-                path.suffix.casefold() for path in selected_path.iterdir()
+                path.suffix.casefold()
+                for path in selected_path.iterdir()
                 if path.is_file() and path.suffix.casefold() in {".txt", ".fcsv", ".json"}
             }
         except OSError as error:
@@ -4627,14 +4634,18 @@ class DiffeoForgeWindow(QMainWindow):
                     return
                 overwrite = True
             result = import_landmark_json_folder(
-                selected_directory, cohort, output, overwrite=overwrite,
+                selected_directory,
+                cohort,
+                output,
+                overwrite=overwrite,
             )
             self.landmark_count_spin.setValue(len(result.landmark_labels))
             self.landmarks_edit.setText(str(result.csv_path))
             self._start_input_preflight()
             ignored = (
                 f"\n\nUnmatched JSON files ignored: {len(result.ignored_json_files)}."
-                if result.ignored_json_files else ""
+                if result.ignored_json_files
+                else ""
             )
             QMessageBox.information(
                 self,
@@ -5218,8 +5229,28 @@ class DiffeoForgeWindow(QMainWindow):
                 "Analyze the current aligned meshes before measuring a feature."
             )
             return
+        self.measure_reference_feature_button.setEnabled(False)
+        self._feature_mesh_loader.request_paths(
+            id(self._reference_recommendation),
+            (self._reference_recommendation_paths[0],),
+        )
+
+    @Slot(object, str)
+    def _feature_mesh_failed(self, _key: object, message: str) -> None:
+        self._update_reference_guidance_controls()
+        self.reference_calibration_status.setText(f"Feature ruler preview unavailable: {message}")
+
+    @Slot(object, object)
+    def _feature_mesh_ready(self, key: object, models: object) -> None:
+        self._update_reference_guidance_controls()
+        if (
+            key != id(self._reference_recommendation)
+            or self._reference_recommendation is None
+            or not self._reference_recommendation_matches_current_inputs()
+        ):
+            return
         try:
-            model = load_mesh_preview(self._reference_recommendation_paths[0])
+            model = models[0]
             distance_scale = 1.0
             coordinate_unit = str(self.units_combo.currentData() or "unitless")
             if self._reference_recommendation.alignment_basis == "diffeoforge_gpa":
@@ -6805,7 +6836,8 @@ class DiffeoForgeWindow(QMainWindow):
             self.start_atlas_button.setEnabled(False)
         elif self._result_review is not None:
             self.start_atlas_button.setText(
-                "Open Results & PCA" if self._registration_results_released()
+                "Open Results & PCA"
+                if self._registration_results_released()
                 else "Review registrations before results"
             )
             self.start_atlas_button.setEnabled(self._worker is None)
@@ -7283,9 +7315,7 @@ class DiffeoForgeWindow(QMainWindow):
         for candidate in (resolved_run, *resolved_run.parents):
             if (candidate / "atlas.yaml").is_file():
                 return candidate
-        raise RuntimeError(
-            "Could not locate the DiffeoForge project folder containing atlas.yaml"
-        )
+        raise RuntimeError("Could not locate the DiffeoForge project folder containing atlas.yaml")
 
     @Slot()
     def _start_shape_space_comparison(self) -> None:
@@ -7426,9 +7456,7 @@ class DiffeoForgeWindow(QMainWindow):
         result = self._shape_space_comparison_result
         if result is None:
             return
-        QDesktopServices.openUrl(
-            QUrl.fromLocalFile(str(result.pdf_export.pdf_path))
-        )
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(result.pdf_export.pdf_path)))
 
     @Slot()
     def _open_shape_space_html_report(self) -> None:
@@ -7646,9 +7674,13 @@ class DiffeoForgeWindow(QMainWindow):
         run_directory = review.run_directory
         preferred = self._reference_calibrated_config_path
         dialog = ReferenceValidationDialog(
-            run_directory, self,
+            run_directory,
+            self,
             prepare=lambda cancelled, phase: prepare_validation_from_result(
-                run_directory, preferred, cancelled, phase,
+                run_directory,
+                preferred,
+                cancelled,
+                phase,
             ),
         )
         dialog.exec()
@@ -8175,7 +8207,12 @@ class DiffeoForgeWindow(QMainWindow):
             return
         plane = self.template_preview_plane_combo.currentData()
         try:
-            projection = model.project(plane, edge_budget=DEFAULT_EDGE_BUDGET)
+            self.template_preview_canvas.set_plane(plane)
+            self.template_preview_canvas.set_model(model)
+            display = self.template_preview_canvas._display_model
+            projection = (
+                display.project(plane, edge_budget=DEFAULT_EDGE_BUDGET) if display else None
+            )
         except (MeshPreviewError, TypeError, ValueError) as error:
             self.template_preview_canvas.set_model(None)
             self.template_preview_status_label.setObjectName("statusError")
@@ -8185,12 +8222,10 @@ class DiffeoForgeWindow(QMainWindow):
             )
             return
 
-        self.template_preview_canvas.set_plane(plane)
-        self.template_preview_canvas.set_model(model)
         sampling = (
-            "deterministically subsampled display"
-            if projection.sampled
-            else "all unique edges displayed"
+            "bounded display proxy; source geometry unchanged"
+            if model.display_proxy is not None and model.display_proxy.reduced
+            else "original small mesh"
         )
         bounds = ", ".join(f"{value:.6g}" for value in model.bounds)
         self.template_preview_detail_label.setText(
@@ -8199,8 +8234,8 @@ class DiffeoForgeWindow(QMainWindow):
             f"Geometry: {model.point_count} points · {model.triangle_count} triangles · "
             f"{model.edge_count} unique edges\n"
             f"Bounds (xmin, xmax, ymin, ymax, zmin, zmax): {bounds}\n"
-            f"Display: {projection.displayed_edge_count} of "
-            f"{projection.total_edge_count} edges · {sampling}.\n"
+            f"Display: {projection.displayed_edge_count if projection else 0} of "
+            f"{projection.total_edge_count if projection else 0} edges · {sampling}.\n"
             "Orthographic inspection preview only; not a 3D, QC, registration, landmark, "
             "or biological assessment."
         )
@@ -10044,12 +10079,14 @@ class DiffeoForgeWindow(QMainWindow):
             self._registration_qc_decisions = load_registration_qc_draft(review)
             self._registration_visual_inspections = load_visual_inspections(review)
             legacy_passes = {
-                name for name, decision in self._registration_qc_decisions.items()
+                name
+                for name, decision in self._registration_qc_decisions.items()
                 if decision == "pass" and name not in self._registration_visual_inspections
             }
             if legacy_passes:
                 self._registration_qc_decisions = {
-                    name: decision for name, decision in self._registration_qc_decisions.items()
+                    name: decision
+                    for name, decision in self._registration_qc_decisions.items()
                     if name not in legacy_passes
                 }
                 draft_warning = (
@@ -10293,9 +10330,7 @@ class DiffeoForgeWindow(QMainWindow):
         self.result_atlas_mesh_search_label.setVisible(is_specimen_group)
         self.result_atlas_mesh_search_edit.setVisible(is_specimen_group)
         self.result_qc_export_button.setVisible(is_specimen_group and bool(review.registration_qc))
-        self.result_qc_finalize_button.setVisible(
-            bool(review.registration_qc)
-        )
+        self.result_qc_finalize_button.setVisible(bool(review.registration_qc))
         self.result_qc_summary_label.setVisible(is_specimen_group and bool(review.registration_qc))
         self.result_qc_last_action_label.setVisible(
             is_specimen_group
@@ -10316,9 +10351,7 @@ class DiffeoForgeWindow(QMainWindow):
                 )
                 entries.append(
                     (
-                        (
-                            f"#{item.rank} · {item.subject_name} · {decision}"
-                        ),
+                        (f"#{item.rank} · {item.subject_name} · {decision}"),
                         f"registration-qc:{item.subject_name}",
                     )
                 )
@@ -10616,9 +10649,7 @@ class DiffeoForgeWindow(QMainWindow):
         if item is not None:
             self.result_atlas_mesh_combo.setItemText(
                 index,
-                (
-                    f"#{item.rank} · {item.subject_name} · {decision}"
-                ),
+                (f"#{item.rank} · {item.subject_name} · {decision}"),
             )
         self._update_registration_qc_summary()
         self._set_result_controls_enabled(True)
@@ -10639,9 +10670,11 @@ class DiffeoForgeWindow(QMainWindow):
         )
         required_only = self.result_atlas_mesh_group_combo.currentData() == "flagged"
         subject_order = [
-            item.subject_name for item in qc_items
+            item.subject_name
+            for item in qc_items
             if (
-                not required_only or item.subject_name in required
+                not required_only
+                or item.subject_name in required
                 or item.subject_name == subject_name
             )
         ]
@@ -10692,8 +10725,8 @@ class DiffeoForgeWindow(QMainWindow):
                 "The review will not restart automatically. The current draft is saved; "
                 + (
                     "use Approve review & release results to continue."
-                    if all_plausible else
-                    "uncertain or implausible registrations must be resolved before release. "
+                    if all_plausible
+                    else "uncertain or implausible registrations must be resolved before release. "
                     "No mesh has been excluded."
                 )
             )
@@ -10781,8 +10814,8 @@ class DiffeoForgeWindow(QMainWindow):
             eligible = True
             release_hint = (
                 "All required cases approved. Release results to continue."
-                if required else
-                "No cases flagged by this screen. Optional inspection is available; "
+                if required
+                else "No cases flagged by this screen. Optional inspection is available; "
                 "release results when ready."
             )
         except (ModernResultReviewError, KeyError) as error:
@@ -10790,7 +10823,8 @@ class DiffeoForgeWindow(QMainWindow):
             release_hint = str(error)
         self.result_qc_finalize_button.setText(
             "Approve flagged review && release results"
-            if required else "Release results (no flagged cases)"
+            if required
+            else "Release results (no flagged cases)"
         )
         self.result_qc_finalize_button.setEnabled(
             eligible and not released and self._worker is None
@@ -10806,8 +10840,8 @@ class DiffeoForgeWindow(QMainWindow):
         )
         screening = (
             f"Relative residual screen: Q3 + 1.5 x IQR = {plan['threshold']:.6g}. "
-            if plan["threshold"] is not None else
-            "Fewer than 4 specimens: screening unavailable, manual review required. "
+            if plan["threshold"] is not None
+            else "Fewer than 4 specimens: screening unavailable, manual review required. "
         )
         self.registration_release_status_label.setText(
             f"Required review: {approved_required} / {len(required)} approved; "
@@ -10867,16 +10901,20 @@ class DiffeoForgeWindow(QMainWindow):
     @Slot()
     def _sync_visual_decision_controls(self) -> None:
         enabled = bool(
-            self._worker is None and self._loaded_qc_subject is not None
+            self._worker is None
+            and self._loaded_qc_subject is not None
             and self.result_registration_qc_canvas.full_resolution_ready
             and self.result_qc_inspected_check.isChecked()
         )
         self.result_qc_inspected_check.setEnabled(
-            self._worker is None and self._loaded_qc_subject is not None
+            self._worker is None
+            and self._loaded_qc_subject is not None
             and self.result_registration_qc_canvas.full_resolution_ready
         )
         for button in (
-            self.result_qc_pass_button, self.result_qc_uncertain_button, self.result_qc_fail_button
+            self.result_qc_pass_button,
+            self.result_qc_uncertain_button,
+            self.result_qc_fail_button,
         ):
             button.setEnabled(enabled)
 
@@ -11274,9 +11312,7 @@ class DiffeoForgeWindow(QMainWindow):
         released = enabled and self._registration_results_released()
         self.page_stack.widget(5).setEnabled(released)
         self.create_scientific_report_button.setEnabled(released)
-        self.create_publication_bundle_button.setEnabled(
-            released
-        )
+        self.create_publication_bundle_button.setEnabled(released)
         self.create_pca_metadata_button.setEnabled(released)
         for button in self.result_artifact_buttons:
             button.setEnabled(released)

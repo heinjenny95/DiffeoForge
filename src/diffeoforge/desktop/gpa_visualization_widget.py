@@ -10,20 +10,17 @@ from PySide6.QtGui import (
     QColor,
     QMouseEvent,
     QPainter,
-    QPainterPath,
     QPaintEvent,
     QPen,
-    QPolygonF,
     QWheelEvent,
 )
 from PySide6.QtWidgets import QWidget
 
+from diffeoforge.desktop.display_proxy import DEFAULT_DISPLAY_FACES
 from diffeoforge.desktop.gpa_visualization import GpaAlignmentVisual
-from diffeoforge.desktop.landmark_3d_widget import (
-    INTERACTIVE_TRIANGLE_BUDGET,
-    camera_rotation,
-)
+from diffeoforge.desktop.landmark_3d_widget import camera_rotation
 from diffeoforge.desktop.mesh_preview import MeshPreviewModel
+from diffeoforge.desktop.surface_rendering import SurfaceFrameCache, SurfaceLayer, SurfaceScene
 
 
 class GpaAlignmentCanvas3D(QWidget):
@@ -49,6 +46,8 @@ class GpaAlignmentCanvas3D(QWidget):
         self._last_position: QPointF | None = None
         self._drag_button: Qt.MouseButton | None = None
         self._interacting = False
+        self._frames = SurfaceFrameCache(self)
+        self._frames.changed.connect(self.update)
         self.setMinimumHeight(580)
         self.setMouseTracking(True)
         self.setCursor(Qt.CursorShape.OpenHandCursor)
@@ -91,15 +90,27 @@ class GpaAlignmentCanvas3D(QWidget):
         self,
         index: int,
         detail: MeshPreviewModel,
+        *,
+        original_detail: bool = False,
     ) -> None:
         if self._visual is None:
             raise RuntimeError("Set the GPA visual before selecting a mesh")
         if index < 0 or index >= len(self._visual.meshes):
             raise IndexError("Selected GPA mesh is outside the cohort")
+        if (
+            not original_detail
+            and detail.display_proxy is None
+            and detail.triangle_count > DEFAULT_DISPLAY_FACES
+        ):
+            raise ValueError("Display proxy unavailable; select original detail explicitly")
         self._selected_index = index
         self._detail = detail
         self._detail_vertices = np.asarray(detail.vertices, dtype=np.float64)
         self._detail_triangles = np.asarray(detail.triangles, dtype=np.int64)
+        if not original_detail and detail.display_proxy is not None:
+            self._detail_vertices = detail.display_proxy.vertices
+            self._detail_triangles = detail.display_proxy.triangles
+        self._frames.clear()
         self.update()
 
     def set_selected_proxy(self, index: int) -> None:
@@ -114,6 +125,7 @@ class GpaAlignmentCanvas3D(QWidget):
         self._detail = None
         self._detail_vertices = mesh.vertices
         self._detail_triangles = mesh.triangles
+        self._frames.clear()
         self.update()
 
     def set_show_cohort(self, visible: bool) -> None:
@@ -214,67 +226,6 @@ class GpaAlignmentCanvas3D(QWidget):
             return
         super().mouseDoubleClickEvent(event)
 
-    def _draw_selected_surface(self, painter: QPainter) -> None:
-        if self._detail_vertices.size == 0 or self._detail_triangles.size == 0:
-            return
-        camera, screen = self._project(self._detail_vertices)
-        triangles = self._detail_triangles
-        if self._interacting and len(triangles) > INTERACTIVE_TRIANGLE_BUDGET:
-            selection = np.linspace(
-                0,
-                len(triangles) - 1,
-                INTERACTIVE_TRIANGLE_BUDGET,
-                dtype=np.int64,
-            )
-            triangles = triangles[selection]
-        camera_triangles = camera[triangles]
-        normals = np.cross(
-            camera_triangles[:, 1] - camera_triangles[:, 0],
-            camera_triangles[:, 2] - camera_triangles[:, 0],
-        )
-        normal_lengths = np.linalg.norm(normals, axis=1)
-        light = np.abs(normals[:, 2]) / np.maximum(normal_lengths, 1e-12)
-        depth = np.mean(camera_triangles[:, :, 2], axis=1)
-        for triangle_index in np.argsort(depth):
-            coordinates = screen[triangles[triangle_index]]
-            polygon = QPolygonF(
-                [QPointF(float(x), float(y)) for x, y in coordinates]
-            )
-            shade = int(205 + 32 * float(light[triangle_index]))
-            painter.setBrush(QColor(shade - 34, shade, shade - 12, 220))
-            painter.setPen(QPen(QColor(87, 137, 128, 120), 0.30))
-            painter.drawPolygon(polygon)
-
-    def _draw_wireframes(self, painter: QPainter) -> None:
-        if self._visual is None:
-            return
-        indices = (
-            range(len(self._visual.meshes))
-            if self._show_cohort
-            else (self._selected_index,)
-        )
-        for index in indices:
-            mesh = self._visual.meshes[index]
-            _camera, screen = self._project(mesh.vertices)
-            path = QPainterPath()
-            for start, end in mesh.edges:
-                first = screen[start]
-                second = screen[end]
-                path.moveTo(float(first[0]), float(first[1]))
-                path.lineTo(float(second[0]), float(second[1]))
-            selected = index == self._selected_index
-            painter.setPen(
-                QPen(
-                    cohort_overlay_color(
-                        index,
-                        len(self._visual.meshes),
-                        selected=selected,
-                    ),
-                    1.35 if selected else 0.85,
-                )
-            )
-            painter.drawPath(path)
-
     def _draw_landmarks(self, painter: QPainter) -> None:
         if self._visual is None or not self._show_landmarks:
             return
@@ -328,17 +279,54 @@ class GpaAlignmentCanvas3D(QWidget):
             painter.end()
             return
 
+        layers = []
         if self._show_selected_surface:
-            self._draw_selected_surface(painter)
-        self._draw_wireframes(painter)
+            layers.append(SurfaceLayer(self._detail_vertices, self._detail_triangles))
+        indices = range(len(self._visual.meshes)) if self._show_cohort else (self._selected_index,)
+        for index in indices:
+            mesh = self._visual.meshes[index]
+            color = cohort_overlay_color(
+                index, len(self._visual.meshes), selected=index == self._selected_index
+            )
+            layers.append(
+                SurfaceLayer(mesh.vertices, mesh.edges, wireframe=True, color=color.getRgb())
+            )
+        key = (
+            id(self._visual),
+            id(self._detail_vertices),
+            self._selected_index,
+            self.width(),
+            self.height(),
+            self._yaw,
+            self._pitch,
+            self._zoom,
+            self._pan,
+            self._show_selected_surface,
+            self._show_cohort,
+            self._interacting,
+        )
+        scene = SurfaceScene(
+            self.width(),
+            self.height(),
+            self._center,
+            self._scale,
+            camera_rotation(self._yaw, self._pitch),
+            self._zoom,
+            self._pan,
+            tuple(layers),
+            navigation=self._interacting,
+            margin=72.0,
+        )
+        image = self._frames.request(key, scene)
+        if image is not None:
+            painter.drawImage(0, 0, image)
         self._draw_landmarks(painter)
 
         painter.setPen(QColor("#52666b"))
         painter.drawText(
             self.rect().adjusted(14, 10, -14, -10),
             Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignBottom,
-            "Drag: rotate  |  Right-drag: pan  |  Wheel: zoom  |  "
-            "Double-click: reset view",
+            "Drag: rotate  |  Right-drag: pan  |  Wheel: zoom  |  Double-click: reset view",
         )
         painter.setPen(QColor("#0b302f"))
         painter.drawText(

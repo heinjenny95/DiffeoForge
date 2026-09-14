@@ -30,7 +30,7 @@ from diffeoforge.desktop.calibration_comparison_widget import (
     CalibrationComparisonCanvas3D,
 )
 from diffeoforge.desktop.info_disclosure import InfoDisclosure
-from diffeoforge.desktop.mesh_preview import load_mesh_preview
+from diffeoforge.desktop.preview_mesh_loader import PreviewMeshLoader
 from diffeoforge.desktop.reference_calibration_presentation import (
     CalibrationTradeoffAssessment,
     automatic_check_summary,
@@ -209,9 +209,7 @@ class _CalibrationStageWorker(QRunnable):
                     event_callback=self.signals.event.emit
                 )
             else:
-                result = self.runner.run_current_stage(
-                    event_callback=self.signals.event.emit
-                )
+                result = self.runner.run_current_stage(event_callback=self.signals.event.emit)
         except (OSError, RuntimeError, TypeError, ValueError) as error:
             self.signals.failed.emit(str(error))
         else:
@@ -240,6 +238,9 @@ class CalibrationCandidateViewerDialog(QDialog):
             index for index, pair in enumerate(self._pairs) if pair.required
         )
         self._review_decision: bool | None = None
+        self._mesh_loader = PreviewMeshLoader(self)
+        self._mesh_loader.loaded.connect(self._pair_loaded)
+        self._mesh_loader.failed.connect(self._pair_failed)
         self.setWindowTitle(f"Visual registration check — {candidate.candidate_id}")
         self.resize(1080, 900)
         self.setMinimumSize(760, 640)
@@ -247,9 +248,7 @@ class CalibrationCandidateViewerDialog(QDialog):
         self.body_scroll = QScrollArea()
         self.body_scroll.setWidgetResizable(True)
         self.body_scroll.setFrameShape(QFrame.Shape.NoFrame)
-        self.body_scroll.setHorizontalScrollBarPolicy(
-            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
-        )
+        self.body_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         body = QWidget()
         body.setSizePolicy(
             QSizePolicy.Policy.Ignored,
@@ -318,6 +317,7 @@ class CalibrationCandidateViewerDialog(QDialog):
         self.status.setWordWrap(True)
         layout.addWidget(self.status)
         self.canvas = CalibrationComparisonCanvas3D()
+        self.canvas.fullResolutionReadyChanged.connect(self._pair_original_presented)
         self.show_original.toggled.connect(self.canvas.set_show_original)
         self.show_reconstruction.toggled.connect(self.canvas.set_show_reconstruction)
         layout.addWidget(self.canvas, 1)
@@ -393,21 +393,39 @@ class CalibrationCandidateViewerDialog(QDialog):
         if pair_index is None:
             return
         pair = self._pairs[int(pair_index)]
-        try:
-            original = load_mesh_preview(pair.original_path)
-            reconstruction = load_mesh_preview(pair.reconstruction_path)
-        except (OSError, RuntimeError, TypeError, ValueError) as error:
-            self.status.setText(f"Comparison could not be displayed: {error}")
+        self.canvas.clear()
+        self.status.setText("Loading comparison and preparing reduced displays…")
+        self._mesh_loader.request_paths(
+            int(pair_index), (pair.original_path, pair.reconstruction_path)
+        )
+
+    @Slot(object, str)
+    def _pair_failed(self, _key: object, message: str) -> None:
+        self.canvas.clear()
+        self.status.setText(f"Comparison could not be displayed: {message}")
+
+    @Slot(object, object)
+    def _pair_loaded(self, index: object, models: object) -> None:
+        if index != self.mesh_combo.currentData():
             return
+        pair = self._pairs[int(index)]
+        original, reconstruction = models
         self.canvas.set_models(original, reconstruction)
         self.canvas.reset_view()
-        self._reviewed_pair_ids.add(pair.pair_id)
         self.status.setText(
             f"Original: {pair.original_path.name} ({original.triangle_count} faces)  |  "
             f"Reconstruction: {pair.reconstruction_path.name} "
             f"({reconstruction.triangle_count} faces)  |  read-only"
         )
         self._update_review_progress()
+
+    @Slot()
+    def _pair_original_presented(self) -> None:
+        if self.canvas.full_resolution_ready:
+            index = self.mesh_combo.currentData()
+            if index is not None:
+                self._reviewed_pair_ids.add(self._pairs[int(index)].pair_id)
+            self._update_review_progress()
 
     @Slot()
     def _navigate_required_specimen(self, direction: int) -> None:
@@ -428,12 +446,8 @@ class CalibrationCandidateViewerDialog(QDialog):
                 later_indexes = tuple(
                     index for index in unreviewed_indexes if index > current_pair_index
                 )
-                target_pair_index = (
-                    later_indexes[0] if later_indexes else unreviewed_indexes[0]
-                )
-                self.mesh_combo.setCurrentIndex(
-                    self.mesh_combo.findData(target_pair_index)
-                )
+                target_pair_index = later_indexes[0] if later_indexes else unreviewed_indexes[0]
+                self.mesh_combo.setCurrentIndex(self.mesh_combo.findData(target_pair_index))
                 return
         try:
             current_position = self._required_pair_indexes.index(int(pair_index))
@@ -558,9 +572,7 @@ class ReferenceCalibrationDialog(QDialog):
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
         self.scroll.setFrameShape(QFrame.Shape.NoFrame)
-        self.scroll.setHorizontalScrollBarPolicy(
-            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
-        )
+        self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.content = QWidget()
         self.content.setSizePolicy(
             QSizePolicy.Policy.Ignored,
@@ -579,9 +591,7 @@ class ReferenceCalibrationDialog(QDialog):
         self.review_next_button.hide()
         self.selection_combo = QComboBox()
         self.selection_combo.setMaximumWidth(360)
-        self.selection_combo.currentIndexChanged.connect(
-            self._update_stage_review_action
-        )
+        self.selection_combo.currentIndexChanged.connect(self._update_stage_review_action)
         self.selection_combo.hide()
         self.start_button = QPushButton("Run all candidates in this stage")
         self.start_button.clicked.connect(self._start)
@@ -658,13 +668,9 @@ class ReferenceCalibrationDialog(QDialog):
                 for parameter in report["recommended_parameters"]:
                     value = parameter["value"]
                     rendered = (
-                        str(value)
-                        if parameter["unit"] is None
-                        else f"{float(value):.8g} {unit}"
+                        str(value) if parameter["unit"] is None else f"{float(value):.8g} {unit}"
                     )
-                    line = QLabel(
-                        f"<b>{parameter['title']}:</b> {rendered}"
-                    )
+                    line = QLabel(f"<b>{parameter['title']}:</b> {rendered}")
                     line.setTextFormat(Qt.TextFormat.RichText)
                     line.setWordWrap(True)
                     recommendation_layout.addWidget(line)
@@ -672,9 +678,7 @@ class ReferenceCalibrationDialog(QDialog):
                 meaning_layout = QVBoxLayout(meaning)
                 meaning_layout.setContentsMargins(0, 0, 0, 0)
                 for parameter in report["recommended_parameters"]:
-                    explanation = QLabel(
-                        f"<b>{parameter['title']}</b><br>{parameter['meaning']}"
-                    )
+                    explanation = QLabel(f"<b>{parameter['title']}</b><br>{parameter['meaning']}")
                     explanation.setTextFormat(Qt.TextFormat.RichText)
                     explanation.setWordWrap(True)
                     meaning_layout.addWidget(explanation)
@@ -821,9 +825,7 @@ class ReferenceCalibrationDialog(QDialog):
             confidence.setTextFormat(Qt.TextFormat.RichText)
             confidence.setWordWrap(True)
             confidence.setObjectName(
-                "statusSuccess"
-                if assessment.automatic_selection_allowed
-                else "statusWarning"
+                "statusSuccess" if assessment.automatic_selection_allowed else "statusWarning"
             )
             self.content_layout.addWidget(confidence)
             recommended_option = self._recommended_option_text(assessment)
@@ -849,9 +851,7 @@ class ReferenceCalibrationDialog(QDialog):
                     )
                 recommendation = QLabel(recommendation_text)
                 recommendation.setObjectName(
-                    "statusSuccess"
-                    if assessment.automatic_selection_allowed
-                    else "statusWarning"
+                    "statusSuccess" if assessment.automatic_selection_allowed else "statusWarning"
                 )
                 recommendation.setWordWrap(True)
                 self.content_layout.addWidget(recommendation)
@@ -863,15 +863,12 @@ class ReferenceCalibrationDialog(QDialog):
                 if planned_stage.stage_id in self._snapshot.selected_candidate_ids
             )
             total_candidates = sum(
-                len(planned_stage.candidates)
-                for planned_stage in self._snapshot.plan.stages
+                len(planned_stage.candidates) for planned_stage in self._snapshot.plan.stages
             )
             total_completed = completed_before + completed
             self.progress.setRange(0, total_candidates)
             self.progress.setValue(total_completed)
-            self.progress.setFormat(
-                f"{total_completed} of {total_candidates} pilot runs completed"
-            )
+            self.progress.setFormat(f"{total_completed} of {total_candidates} pilot runs completed")
         else:
             self.progress.setRange(0, len(self._snapshot.candidates))
             self.progress.setValue(completed)
@@ -1006,14 +1003,12 @@ class ReferenceCalibrationDialog(QDialog):
                     option_letter = chr(ord("A") + index - 1)
                     review_suffix = (
                         " · visual QC passed"
-                        if candidate.candidate_id
-                        in self._visually_approved_candidates
+                        if candidate.candidate_id in self._visually_approved_candidates
                         else " · visual QC optional / not performed"
                     )
                     recommendation_suffix = (
                         " · DiffeoForge provisional recommendation"
-                        if candidate.candidate_id
-                        == assessment.balanced_candidate_id
+                        if candidate.candidate_id == assessment.balanced_candidate_id
                         else ""
                     )
                     self.selection_combo.addItem(
@@ -1033,9 +1028,7 @@ class ReferenceCalibrationDialog(QDialog):
                 "action is required until all calculations finish."
             )
         else:
-            self.status.setText(
-                "Next: click the green Run all candidates in this stage button."
-            )
+            self.status.setText("Next: click the green Run all candidates in this stage button.")
 
     def _candidate_card(
         self,
@@ -1093,9 +1086,7 @@ class ReferenceCalibrationDialog(QDialog):
                 comparison_details_title.setObjectName("sectionTitle")
                 option_help_layout.addWidget(comparison_details_title)
                 for tradeoff in tradeoffs:
-                    comparison = QLabel(
-                        self._tradeoff_assessment_summary_html(tradeoff)
-                    )
+                    comparison = QLabel(self._tradeoff_assessment_summary_html(tradeoff))
                     comparison.setObjectName(
                         {
                             "favorable": "tradeoffFavorable",
@@ -1106,9 +1097,7 @@ class ReferenceCalibrationDialog(QDialog):
                     comparison.setTextFormat(Qt.TextFormat.RichText)
                     comparison.setWordWrap(True)
                     layout.addWidget(comparison)
-                    comparison_detail = QLabel(
-                        self._tradeoff_assessment_html(tradeoff)
-                    )
+                    comparison_detail = QLabel(self._tradeoff_assessment_html(tradeoff))
                     comparison_detail.setTextFormat(Qt.TextFormat.RichText)
                     comparison_detail.setWordWrap(True)
                     option_help_layout.addWidget(comparison_detail)
@@ -1139,9 +1128,7 @@ class ReferenceCalibrationDialog(QDialog):
             technical_button.toggled.connect(technical.setVisible)
             technical_button.toggled.connect(
                 lambda visible, button=technical_button: button.setText(
-                    "ⓘ Hide technical measurements"
-                    if visible
-                    else "ⓘ Technical measurements"
+                    "ⓘ Hide technical measurements" if visible else "ⓘ Technical measurements"
                 )
             )
             technical_row = QHBoxLayout()
@@ -1179,9 +1166,7 @@ class ReferenceCalibrationDialog(QDialog):
                 )
             )
             visual_status.setObjectName(
-                "statusSuccess"
-                if approved
-                else ("statusError" if reviewed else "status")
+                "statusSuccess" if approved else ("statusError" if reviewed else "status")
             )
             visual_status.setWordWrap(True)
             self._approval_checks[candidate.candidate_id] = approval
@@ -1197,9 +1182,7 @@ class ReferenceCalibrationDialog(QDialog):
             layout.addWidget(error)
         else:
             detail = QLabel(
-                "Ready to run."
-                if candidate.status == "pending"
-                else "Ready for a new attempt."
+                "Ready to run." if candidate.status == "pending" else "Ready for a new attempt."
             )
             detail.setWordWrap(True)
             layout.addWidget(detail)
@@ -1214,10 +1197,7 @@ class ReferenceCalibrationDialog(QDialog):
             "caution": "↔ Context-dependent trade-off",
             "unfavorable": "⚠ Unfavorable signal",
         }[assessment.tone]
-        return (
-            f"<b>{prefix}: {assessment.label}</b><br>"
-            f"{assessment.interpretation}"
-        )
+        return f"<b>{prefix}: {assessment.label}</b><br>{assessment.interpretation}"
 
     @staticmethod
     def _tradeoff_assessment_summary_html(
@@ -1231,10 +1211,7 @@ class ReferenceCalibrationDialog(QDialog):
         return f"<b>{prefix}:</b> {assessment.label}"
 
     def _selectable_candidate_ids(self) -> set[str]:
-        explicitly_failed = (
-            self._visually_reviewed_candidates
-            - self._visually_approved_candidates
-        )
+        explicitly_failed = self._visually_reviewed_candidates - self._visually_approved_candidates
         selectable: set[str] = set()
         for candidate in self._snapshot.candidates:
             if (
@@ -1280,9 +1257,7 @@ class ReferenceCalibrationDialog(QDialog):
         self.advance_button.hide()
         if retryable:
             _set_choice_emphasis(self.selection_combo, False)
-            self.status.setText(
-                "Next: click the green Retry failed candidates button."
-            )
+            self.status.setText("Next: click the green Retry failed candidates button.")
             return
         if not selectable_ids:
             self.status.setText(
@@ -1323,9 +1298,7 @@ class ReferenceCalibrationDialog(QDialog):
     @Slot()
     def _open_next_review(self) -> None:
         completed = tuple(
-            candidate
-            for candidate in self._snapshot.candidates
-            if candidate.status == "completed"
+            candidate for candidate in self._snapshot.candidates if candidate.status == "completed"
         )
         candidate = next(
             (
@@ -1660,11 +1633,7 @@ class ReferenceCalibrationDialog(QDialog):
         visual_status = (
             "passed"
             if selected in self._visually_approved_candidates
-            else (
-                "failed"
-                if selected in self._visually_reviewed_candidates
-                else "not performed"
-            )
+            else ("failed" if selected in self._visually_reviewed_candidates else "not performed")
         )
         self.status.setText(
             f"Selection recorded: {selected}. The next calibration stage is ready. "

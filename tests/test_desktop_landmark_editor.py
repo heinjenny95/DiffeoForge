@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import time
 from pathlib import Path
 
 import numpy as np
@@ -19,6 +20,15 @@ def _triangle_centroids(path: Path) -> tuple[tuple[float, float, float], ...]:
         tuple(float(value) for value in np.mean(vertices[list(triangle)], axis=0))
         for triangle in model.triangles[:3]
     )
+
+
+def _await_preview(dialog) -> None:
+    from PySide6.QtWidgets import QApplication
+    deadline = time.monotonic() + 15
+    while dialog.canvas._model is None and time.monotonic() < deadline:
+        QApplication.instance().processEvents()
+        time.sleep(0.005)
+    assert dialog.canvas._model is not None
 
 
 def test_landmark_editor_places_complete_surface_cohort_and_writes_csv(
@@ -41,6 +51,7 @@ def test_landmark_editor_places_complete_surface_cohort_and_writes_csv(
     )
 
     for point in expected.reshape((-1, 3)):
+        _await_preview(dialog)
         dialog._place_surface_point(tuple(point))
     save = dialog.buttons.button(QDialogButtonBox.StandardButton.Save)
     assert save.isEnabled() is True
@@ -240,6 +251,7 @@ def test_landmark_editor_undo_restores_replaced_surface_point(
     dialog = LandmarkEditorDialog(paths, tmp_path / "landmarks.csv")
     first = (0.1, 0.2, 0.3)
     replacement = (0.4, 0.5, 0.6)
+    _await_preview(dialog)
     dialog._place_surface_point(first)
     dialog.label_combo.setCurrentIndex(0)
     dialog._place_surface_point(replacement)
@@ -275,6 +287,7 @@ def test_landmark_editor_uses_requested_count_and_optional_mesh_advance(
 
     assert automatic.labels == ["LM1", "LM2", "LM3", "LM4", "LM5"]
     assert automatic.auto_advance_mesh_check.isChecked() is True
+    _await_preview(automatic)
     automatic.label_combo.setCurrentIndex(4)
     automatic._place_surface_point((4.0, 0.0, 0.0))
     assert automatic.mesh_combo.currentIndex() == 0
@@ -293,6 +306,7 @@ def test_landmark_editor_uses_requested_count_and_optional_mesh_advance(
         auto_advance_mesh=False,
     )
     for index in range(5):
+        _await_preview(manual)
         manual._place_surface_point((float(index), 0.0, 0.0))
     assert manual.mesh_combo.currentIndex() == 0
     assert manual.label_combo.currentIndex() == 4
@@ -319,6 +333,7 @@ def test_landmark_editor_autosaves_and_hash_validates_resumable_draft(
         auto_advance_mesh=False,
     )
     point = _triangle_centroids(paths[0])[0]
+    _await_preview(first)
     first._place_surface_point(point)
     assert first.draft_path.is_file()
     first.close()

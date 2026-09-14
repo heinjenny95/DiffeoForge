@@ -150,7 +150,7 @@ scientific gates. Planning does not mark those gates complete.
   Support safe cancellation/resume and a concise return-to-desk summary; test
   normal progression, provisional choices, blocked stages and reopening.
   Unattended execution is not a guarantee of completion by the next morning.
-- [ ] **High priority: reduced display meshes in every renderer/viewer.** Use
+- [x] **High priority: reduced display meshes in every renderer/viewer.** Use
   cached, detail-aware simplified display proxies by default, including
   settled views, original/reconstruction QC overlays, alignment, landmark and
   result/PC viewers; inventory every rendering path so none silently falls back
@@ -299,7 +299,7 @@ scientific gates. Planning does not mark those gates complete.
     67-subject/66-PC regression render at common Windows display scales
   - [x] Explain Visual QC as a plausibility/rejection gate rather than asking an
     untrained user to rank several visually acceptable registrations
-  - [ ] Make visual GPA-review navigation finite and unmistakable: show both
+  - [x] Make visual GPA-review navigation finite and unmistakable: show both
     `Mesh N of total` and the unique viewed count prominently, stop at the last
     mesh instead of silently wrapping to the first, announce `All meshes viewed`,
     and require an explicit action before starting the sequence again

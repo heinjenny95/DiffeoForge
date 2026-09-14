@@ -7,6 +7,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from diffeoforge.desktop.display_proxy import build_display_proxy
 from diffeoforge.desktop.mesh_preview import (
     DEFAULT_GPA_TRIANGLE_BUDGET,
     MeshPreviewError,
@@ -50,6 +51,9 @@ def _aligned_model(
         triangles=source.triangles,
         edges=source.edges,
         bounds=_bounds(aligned_vertices),
+        display_proxy=build_display_proxy(aligned_vertices, source.triangles),
+        geometry_is_proxy=source.geometry_is_proxy,
+        source_triangle_count=source.source_triangle_count,
     )
 
 
@@ -272,8 +276,8 @@ def build_gpa_alignment_visual(
                 landmarks=preview.alignment.aligned_landmarks[index],
                 squared_landmark_residual=preview.alignment.residuals[index],
                 applied_scale=preview.alignment.transforms[index].scale,
-                source_point_count=source.point_count,
-                source_triangle_count=source.triangle_count,
+                source_point_count=preview.source_metadata[index].points,
+                source_triangle_count=preview.source_metadata[index].triangles,
             )
         )
         total_source_edges += preview.source_metadata[index].triangles * 3

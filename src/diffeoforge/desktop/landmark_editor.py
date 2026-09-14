@@ -24,7 +24,8 @@ from PySide6.QtWidgets import (
 from diffeoforge.analysis.landmarks import write_landmark_csv
 from diffeoforge.atomic_io import write_text_safely
 from diffeoforge.desktop.landmark_3d_widget import InteractiveMeshCanvas3D
-from diffeoforge.desktop.mesh_preview import MeshPreviewModel, load_mesh_preview
+from diffeoforge.desktop.mesh_preview import MeshPreviewModel
+from diffeoforge.desktop.preview_mesh_loader import PreviewMeshLoader
 from diffeoforge.mesh import sha256_file
 
 SurfacePoint = tuple[float, float, float]
@@ -60,14 +61,15 @@ class LandmarkEditorDialog(QDialog):
             raise ValueError("Landmark placement requires unique mesh filenames")
         self.output_path = output_path.expanduser().resolve()
         self._draft_owned = True
-        self.labels = [
-            f"LM{index}" for index in range(1, initial_landmark_count + 1)
-        ]
+        self.labels = [f"LM{index}" for index in range(1, initial_landmark_count + 1)]
         self.placements: dict[str, dict[str, SurfacePoint]] = {
             path.name: {} for path in self.mesh_paths
         }
         self._placement_history: list[tuple[str, str, SurfacePoint | None]] = []
         self.models: dict[str, MeshPreviewModel] = {}
+        self._mesh_loader = PreviewMeshLoader(self)
+        self._mesh_loader.loaded.connect(self._mesh_loaded)
+        self._mesh_loader.failed.connect(self._mesh_failed)
         self._known_mesh_hashes: dict[str, str] = {}
         self.setWindowTitle("Place homologous landmarks")
         self.resize(1180, 840)
@@ -167,18 +169,13 @@ class LandmarkEditorDialog(QDialog):
         layout.addLayout(navigation)
 
         self.buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Save
-            | QDialogButtonBox.StandardButton.Cancel
+            QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel
         )
-        self.buttons.button(QDialogButtonBox.StandardButton.Save).setText(
-            "Save landmark CSV"
-        )
+        self.buttons.button(QDialogButtonBox.StandardButton.Save).setText("Save landmark CSV")
         self.buttons.accepted.connect(self._save_and_accept)
         self.buttons.rejected.connect(self.reject)
         layout.addWidget(self.buttons)
-        self.auto_advance_mesh_check.toggled.connect(
-            self._auto_advance_mesh_changed
-        )
+        self.auto_advance_mesh_check.toggled.connect(self._auto_advance_mesh_changed)
         self._restore_draft_if_available()
         self._load_current_mesh()
 
@@ -196,10 +193,7 @@ class LandmarkEditorDialog(QDialog):
             "labels": list(self.labels),
             "auto_advance_mesh": self.auto_advance_mesh_check.isChecked(),
             "placements": {
-                mesh_name: {
-                    label: list(point)
-                    for label, point in sorted(mesh_placements.items())
-                }
+                mesh_name: {label: list(point) for label, point in sorted(mesh_placements.items())}
                 for mesh_name, mesh_placements in sorted(self.placements.items())
             },
         }
@@ -324,13 +318,27 @@ class LandmarkEditorDialog(QDialog):
     @Slot()
     def _load_current_mesh(self) -> None:
         path = self.mesh_paths[self.mesh_combo.currentIndex()]
-        model = self.models.get(path.name)
-        if model is None:
-            model = load_mesh_preview(path)
-            self.models[path.name] = model
-        self._known_mesh_hashes[path.name] = model.sha256
+        self.canvas.set_model(None)
+        self.status_label.setText("Loading source and preparing its reduced display…")
+        self._mesh_loader.request_paths(
+            path.name, (path,), expected=(self._known_mesh_hashes.get(path.name),)
+        )
+
+    @Slot(object, object)
+    def _mesh_loaded(self, name: object, models: object) -> None:
+        if name != self._current_mesh_name():
+            return
+        model = models[0]
+        self.models.clear()  # Do not retain an entire high-resolution cohort.
+        self.models[str(name)] = model
+        self._known_mesh_hashes[str(name)] = model.sha256
         self.canvas.set_model(model)
         self._sync_canvas_markers()
+
+    @Slot(object, str)
+    def _mesh_failed(self, _name: object, message: str) -> None:
+        self.canvas.set_model(None)
+        self.status_label.setText(f"Mesh preview unavailable: {message}")
 
     @Slot()
     def _change_view(self) -> None:
@@ -353,9 +361,7 @@ class LandmarkEditorDialog(QDialog):
             if self._current_label() in placements
             else "not placed"
         )
-        self.status_label.setText(
-            f"{placed} of {total} points placed · current landmark {current}"
-        )
+        self.status_label.setText(f"{placed} of {total} points placed · current landmark {current}")
         self.undo_button.setEnabled(bool(self._placement_history))
         self.buttons.button(QDialogButtonBox.StandardButton.Save).setEnabled(
             placed == total and len(self.labels) >= 3
@@ -363,6 +369,9 @@ class LandmarkEditorDialog(QDialog):
 
     @Slot(object)
     def _place_surface_point(self, point: object) -> None:
+        model = self.models.get(self._current_mesh_name())
+        if model is None or self.canvas._model is not model:
+            return  # A previous canvas/queued click must not place on the next specimen.
         values = tuple(float(value) for value in point)  # type: ignore[arg-type]
         if len(values) != 3 or not all(np.isfinite(value) for value in values):
             raise ValueError("A landmark must contain three finite surface coordinates")
@@ -470,9 +479,7 @@ class LandmarkEditorDialog(QDialog):
         self.labels.remove(label)
         for placements in self.placements.values():
             placements.pop(label, None)
-        self._placement_history = [
-            item for item in self._placement_history if item[1] != label
-        ]
+        self._placement_history = [item for item in self._placement_history if item[1] != label]
         self.label_combo.removeItem(self.label_combo.currentIndex())
         self._sync_canvas_markers()
         self._save_draft()

@@ -1,3 +1,4 @@
+import time
 from pathlib import Path
 
 import pytest
@@ -51,6 +52,15 @@ def test_comparison_canvas_binds_both_meshes_and_renders(monkeypatch, tmp_path: 
     application.processEvents()
 
 
+def _wait_pair(application, dialog) -> None:
+    deadline = time.monotonic() + 10
+    while not dialog.canvas.full_resolution_ready and time.monotonic() < deadline:
+        application.processEvents()
+        time.sleep(0.005)
+    assert dialog.canvas.full_resolution_ready
+    application.processEvents()
+
+
 def test_visual_qc_pass_is_locked_until_every_subject_pair_was_opened(
     monkeypatch,
     tmp_path: Path,
@@ -95,7 +105,7 @@ def test_visual_qc_pass_is_locked_until_every_subject_pair_was_opened(
         "collect_calibration_qc_pairs",
         lambda _study, _candidate: pairs,
     )
-    monkeypatch.setattr(dialog_module, "load_mesh_preview", _model)
+    monkeypatch.setattr("diffeoforge.desktop.preview_mesh_loader.load_mesh_preview", _model)
     candidate = CalibrationStudyCandidateState(
         candidate_id="attachment-01",
         label="center",
@@ -108,7 +118,7 @@ def test_visual_qc_pass_is_locked_until_every_subject_pair_was_opened(
     )
     dialog = CalibrationCandidateViewerDialog(tmp_path, candidate)
     dialog.show()
-    application.processEvents()
+    _wait_pair(application, dialog)
 
     assert "1 of 2" in dialog.review_progress.text()
     assert dialog.pass_check.isHidden() is True
@@ -121,7 +131,7 @@ def test_visual_qc_pass_is_locked_until_every_subject_pair_was_opened(
     )
 
     dialog.next_specimen_button.click()
-    application.processEvents()
+    _wait_pair(application, dialog)
     assert dialog.pass_check.isHidden() is True
     assert "2 of 2" in dialog.review_progress.text()
     assert dialog.next_specimen_button.isEnabled() is False
@@ -164,7 +174,7 @@ def test_visual_qc_can_record_an_explicit_failure_after_every_pair_was_opened(
         "collect_calibration_qc_pairs",
         lambda _study, _candidate: pairs,
     )
-    monkeypatch.setattr(dialog_module, "load_mesh_preview", _model)
+    monkeypatch.setattr("diffeoforge.desktop.preview_mesh_loader.load_mesh_preview", _model)
     candidate = CalibrationStudyCandidateState(
         candidate_id="attachment-01",
         label="center",
@@ -178,7 +188,7 @@ def test_visual_qc_can_record_an_explicit_failure_after_every_pair_was_opened(
 
     dialog = CalibrationCandidateViewerDialog(tmp_path, candidate)
     dialog.show()
-    application.processEvents()
+    _wait_pair(application, dialog)
 
     assert dialog.fail_button.isVisible() is True
     assert dialog.complete_button.isEnabled() is True

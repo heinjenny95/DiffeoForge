@@ -17,8 +17,11 @@ from PySide6.QtWidgets import (
 
 from diffeoforge.desktop.gpa_visualization import (
     GpaAlignmentVisual,
+    load_gpa_aligned_detail,
 )
 from diffeoforge.desktop.gpa_visualization_widget import GpaAlignmentCanvas3D
+from diffeoforge.desktop.info_disclosure import InfoDisclosure
+from diffeoforge.desktop.preview_mesh_loader import PreviewMeshLoader
 from diffeoforge.preprocessing import LandmarkAlignmentPreview
 
 
@@ -42,6 +45,9 @@ class GpaAlignmentReviewDialog(QDialog):
         self.visual = visual
         self.reviewed_fingerprint: str | None = None
         self._viewed_indices: set[int] = {0}
+        self._detail_loader = PreviewMeshLoader(self)
+        self._detail_loader.loaded.connect(self._original_loaded)
+        self._detail_loader.failed.connect(self._original_failed)
         self.setWindowTitle("Review GPA-aligned meshes")
         self.resize(1420, 930)
         self.setMinimumSize(1000, 720)
@@ -60,7 +66,10 @@ class GpaAlignmentReviewDialog(QDialog):
         )
         explanation.setWordWrap(True)
         explanation.setObjectName("boundaryText")
-        layout.addWidget(explanation)
+        layout.addWidget(
+            QLabel("Check position, size and orientation; inspect unusual alignments.")
+        )
+        layout.addWidget(InfoDisclosure("How to review alignment", explanation))
 
         controls = QHBoxLayout()
         self.mesh_combo = QComboBox()
@@ -87,9 +96,7 @@ class GpaAlignmentReviewDialog(QDialog):
         self.restart_sequence_button.hide()
         worst_button = QPushButton("Highest residual")
         worst_button.setObjectName("secondary")
-        worst_button.setToolTip(
-            "Select the specimen with the largest squared landmark residual."
-        )
+        worst_button.setToolTip("Select the specimen with the largest squared landmark residual.")
         worst_button.clicked.connect(self._select_highest_residual)
         self.view_combo = QComboBox()
         for label, preset in (
@@ -118,9 +125,7 @@ class GpaAlignmentReviewDialog(QDialog):
         layout.addLayout(controls)
 
         display_controls = QHBoxLayout()
-        self.cohort_overlay_check = QCheckBox(
-            "Show all meshes simultaneously (colored overlay)"
-        )
+        self.cohort_overlay_check = QCheckBox("Show all meshes simultaneously (colored overlay)")
         self.cohort_overlay_check.setChecked(True)
         self.cohort_overlay_check.toggled.connect(self._set_cohort_visible)
         self.selected_surface_check = QCheckBox(
@@ -128,9 +133,7 @@ class GpaAlignmentReviewDialog(QDialog):
         )
         self.selected_surface_check.setChecked(False)
         self.selected_surface_check.toggled.connect(self._set_selected_surface_visible)
-        self.landmarks_check = QCheckBox(
-            "Show selected, cohort, and consensus landmarks"
-        )
+        self.landmarks_check = QCheckBox("Show selected, cohort, and consensus landmarks")
         self.landmarks_check.setChecked(True)
         self.landmarks_check.toggled.connect(self._set_landmarks_visible)
         self.sampling_label = QLabel(
@@ -145,6 +148,9 @@ class GpaAlignmentReviewDialog(QDialog):
         display_controls.addStretch()
         display_controls.addWidget(self.sampling_label)
         layout.addLayout(display_controls)
+        self.original_detail_check = QCheckBox("Original detail for selected mesh (slower)")
+        self.original_detail_check.toggled.connect(self._original_detail_changed)
+        layout.addWidget(self.original_detail_check)
 
         self.canvas = GpaAlignmentCanvas3D()
         self.canvas.set_visual(visual)
@@ -154,9 +160,7 @@ class GpaAlignmentReviewDialog(QDialog):
         review_status = QHBoxLayout()
         self.mesh_status_label = QLabel()
         self.mesh_status_label.setWordWrap(True)
-        self.mesh_status_label.setTextInteractionFlags(
-            Qt.TextInteractionFlag.TextSelectableByMouse
-        )
+        self.mesh_status_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         self.inspection_progress_label = QLabel()
         self.inspection_progress_label.setObjectName("gpaReviewProgressLabel")
         self.inspection_progress_label.setAlignment(
@@ -168,8 +172,7 @@ class GpaAlignmentReviewDialog(QDialog):
 
         completion = QHBoxLayout()
         self.review_complete_check = QCheckBox(
-            "I visually reviewed the cohort overlay and inspected relevant individual "
-            "meshes"
+            "I visually reviewed the cohort overlay and inspected relevant individual meshes"
         )
         self.review_complete_check.setObjectName("gpaVisualReviewCompleteCheck")
         self.review_complete_check.toggled.connect(self._update_completion_button)
@@ -195,9 +198,38 @@ class GpaAlignmentReviewDialog(QDialog):
         if combo_index < 0:
             return
         index = int(self.mesh_combo.itemData(combo_index))
+        self._detail_loader.cancel()
+        self.original_detail_check.setChecked(False)
         self.canvas.set_selected_proxy(index)
         self._viewed_indices.add(index)
         self._update_mesh_status(index)
+
+    @Slot(bool)
+    def _original_detail_changed(self, checked: bool) -> None:
+        index = self.mesh_combo.currentIndex()
+        if not checked:
+            self._detail_loader.cancel()
+            self.canvas.set_selected_proxy(index)
+            return
+        self.mesh_status_label.setText("Verifying and loading original aligned detail…")
+        preview = self.preview
+        self._detail_loader.request_operation(
+            index, lambda: load_gpa_aligned_detail(preview, index)
+        )
+
+    @Slot(object, object)
+    def _original_loaded(self, index: object, detail: object) -> None:
+        if index != self.mesh_combo.currentIndex() or not self.original_detail_check.isChecked():
+            return
+        self.canvas.set_selected_detail(int(index), detail, original_detail=True)
+        self.selected_surface_check.setChecked(True)
+        self._update_mesh_status(int(index))
+        self.mesh_status_label.setText(self.mesh_status_label.text() + " · ORIGINAL detail")
+
+    @Slot(object, str)
+    def _original_failed(self, _index: object, message: str) -> None:
+        self.original_detail_check.setChecked(False)
+        self.mesh_status_label.setText(f"Original detail unavailable: {message}")
 
     def _update_mesh_status(self, index: int) -> None:
         mesh = self.visual.meshes[index]

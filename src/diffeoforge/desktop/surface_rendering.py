@@ -23,6 +23,7 @@ class SurfaceLayer:
     indices: np.ndarray
     wireframe: bool = False
     orange: bool = False
+    color: tuple[int, int, int, int] | None = None
 
 
 @dataclass(frozen=True)
@@ -67,7 +68,7 @@ def render_surface_scene(scene: SurfaceScene, cancelled: threading.Event) -> QIm
             screen[:, 0] = scene.width / 2 + scene.pan[0] + camera[:, 0] * factor
             screen[:, 1] = scene.height / 2 + scene.pan[1] - camera[:, 1] * factor
             if layer.wireframe:
-                painter.setPen(QPen(QColor(17, 94, 163, 220), 1.05))
+                painter.setPen(QPen(QColor(*(layer.color or (17, 94, 163, 220))), 1.05))
                 # Bounded chunks allow cancellation during very dense wireframes.
                 for offset in range(0, len(indices), 1024):
                     if cancelled.is_set():

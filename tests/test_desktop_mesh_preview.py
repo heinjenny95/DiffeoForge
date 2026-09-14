@@ -91,7 +91,9 @@ def test_mesh_preview_triangle_budget_creates_display_only_proxy(tmp_path: Path)
 
     assert proxy.sha256 == exact.sha256
     assert proxy.bounds == exact.bounds
-    assert proxy.triangle_count == 4
+    assert 0 < proxy.triangle_count <= 4
+    assert proxy.geometry_is_proxy
+    assert proxy.source_triangle_count == exact.triangle_count
     assert proxy.triangle_count < exact.triangle_count
     assert proxy.point_count <= 12
 

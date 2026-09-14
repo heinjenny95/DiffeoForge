@@ -34,6 +34,13 @@ in the existing Google Docs Project log. Partial implementation is not completio
 
 ## Larger roadmap: planned work, not automatically completed by this version
 
+Large-mesh viewing is implemented as bounded, cached, display-only quadric
+clustering, shared background rendering/loading and explicit original-detail
+inspection. See `LARGE_MESH_VIEWER.md` for the measured private-mandible example
+and limits: fine anatomical detail can be lost in a proxy, so exact picking and
+QC confirmation still require the original view. This is not scientific mesh
+decimation, GPU rendering or a hard frame-latency guarantee.
+
 | Workstream | Dependencies and next work | Acceptance gate |
 | --- | --- | --- |
 | Modern/reference qualification | Review frozen Weevil continuation, then execute the authorized continuation; predeclare numerical and geometric comparisons | Converged, independently recomputed gradient/objective/deformation and performance evidence; inconclusive runs remain inconclusive |

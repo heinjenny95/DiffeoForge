@@ -7,6 +7,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
@@ -1247,6 +1248,10 @@ def test_desktop_requires_exact_procrustes_preview_approval_and_rejects_drift(
         FakeFeatureScaleRulerDialog,
     )
     window._measure_reference_feature()
+    deadline = time.monotonic() + 15
+    while "scale" not in measured and time.monotonic() < deadline:
+        application.processEvents()
+        time.sleep(0.005)
     expected_scale = window._procrustes_preview.alignment.transforms[0].scale
     assert measured["scale"] == pytest.approx(expected_scale)
     assert window.reference_feature_scale_spin.value() == pytest.approx(10.0 * expected_scale)
