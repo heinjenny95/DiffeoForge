@@ -224,3 +224,4 @@ jobs:
           tests/test_desktop_optional_engine.py tests/test_desktop_mesh_preview.py
           tests/test_display_proxy.py tests/test_desktop_surface_rendering.py
           tests/test_desktop_landmark_editor.py tests/test_validation_progress.py
+          tests/test_reference_validation.py::test_validation_dialog_shows_first_iteration_activity_and_live_eta

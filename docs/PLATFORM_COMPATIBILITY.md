@@ -91,6 +91,9 @@ Windows-branch unit tests now replace only the tested module's OS facade, rather
 than modifying global `os.name` and breaking Linux pytest/pathlib itself. WSL path
 translation has separate drive/space/Unicode/network-share tests; these mocked
 tests do not claim real WSL or GPU execution on Linux/macOS.
+Five GUI-only tests now skip individually when Qt is absent, preserving their
+headless numerical peers. All five are explicitly exercised by the Qt-equipped
+desktop matrix, including the Validation Lab first-iteration/progress case.
 
 Apple Silicon initially passed 502 Modern tests but failed a legacy harness test's
 extra `max_error < 2e-14` assertion, observing `2.220446049250313e-14` instead.

@@ -53,6 +53,7 @@ def test_large_proxy_cannot_enable_qc_until_original_pixels_are_presented(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
+    pytest.importorskip("PySide6")
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
 
@@ -97,6 +98,7 @@ def test_large_proxy_cannot_enable_qc_until_original_pixels_are_presented(
 
 
 def test_preview_loader_keeps_only_latest_and_discards_cancelled_results(monkeypatch) -> None:
+    pytest.importorskip("PySide6")
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
 

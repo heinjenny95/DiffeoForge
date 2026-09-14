@@ -123,6 +123,7 @@ def pump(app: object, until: object) -> None:
 def test_preparation_keeps_ui_alive_and_cancel_discards_late_result(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    pytest.importorskip("PySide6")
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtCore import QTimer
     from PySide6.QtWidgets import QApplication
@@ -168,6 +169,7 @@ def test_preparation_keeps_ui_alive_and_cancel_discards_late_result(
 def test_cancel_after_worker_success_queued_never_launches(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    pytest.importorskip("PySide6")
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication, QMessageBox
 
