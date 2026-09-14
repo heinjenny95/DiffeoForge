@@ -101,6 +101,14 @@ The actual fixture's declared `atol=1e-12, rtol=1e-10` checks already passed. Th
 extra observation-specific assertion now uses that **existing** fixture absolute
 bound, with a negative test rejecting a `1e-6` objective perturbation. Neither the
 reference fixture nor the new cross-platform protocol's tolerances were changed.
+The Python 3.13 full suite subsequently exposed a second legacy bit-equality
+assertion in the saved-tensor memory test: standard/recomputed objective differed
+by `1.7764e-13` (relative `3.9921e-14`). That assertion now uses the same module's
+pre-existing forward parity bounds (`rtol=2e-12, atol=2e-13`), while gradient and
+memory-payload checks remain unchanged. The entire blockwise-objective test module
+is now also included in every Modern platform job. This is a documented test
+contract correction, not an engine change or a relaxation of either frozen
+reference-container or cross-platform observation tolerances.
 
 ## Observation status
 
@@ -128,3 +136,16 @@ isolated-platform-mock corrections is still pending at this evidence checkpoint.
 Native `.dmg`/`.pkg` or Linux app packaging, clean-machine install/uninstall,
 project preservation, signing, Deformetrica execution, Intel-Mac Modern engine,
 GPU/MPS and large biological workloads remain separate qualification gates.
+
+### Separate legacy reference-container gate remains unresolved
+
+After correcting its host analysis dependency,
+[reference-container run 34825794638](https://github.com/heinjenny95/DiffeoForge/actions/runs/34825794638)
+executed the frozen Deformetrica 4.3.0 CPU image but passed only **8 of 10** existing
+synthetic reference artifacts. Control points, momenta, template and five
+reconstructions were byte-identical. Convergence values differed by up to `1e-3`
+(RMS `1.3673e-4`); residuals differed by up to `9.5368e-7` (RMS `4.7684e-7`).
+The gate's frozen `max=1e-6, RMS=1e-7` contract was not changed. Cause and scientific
+implications are not established by this platform package. This failure must be
+investigated separately, not hidden by the successful Modern CPU comparison or a
+reference-baseline/tolerance reset.

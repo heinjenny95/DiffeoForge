@@ -354,6 +354,8 @@ scientific gates. Planning does not mark those gates complete.
   - [x] Observe and independently verify the first Windows/Linux/Apple-Silicon
     CPU comparison and Windows/Linux/Apple-Silicon/Intel-Mac offscreen GUI matrix;
     retain exact public observations in `reference/platform-compatibility-v1`
+  - [ ] Diagnose the separate legacy reference-container convergence/residual
+    mismatch (8/10 artifacts pass); retain frozen tolerances and reference bytes
   - [x] Fresh GitHub-hosted Windows one-directory engineering freeze, complete
     frozen-process smoke contract, and independently inspected evidence artifact
   - [x] Hash-bound, noninterpreting installed-distribution metadata and

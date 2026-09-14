@@ -290,7 +290,10 @@ def test_recompute_reduces_cc0_objective_forward_saved_tensor_payload() -> None:
     standard, standard_gradients, standard_saved = observe("standard")
     recomputed, recomputed_gradients, recomputed_saved = observe("recompute")
 
-    torch.testing.assert_close(recomputed, standard, rtol=0, atol=0)
+    # All-pairs recomputation preserves the mathematical objective, not a
+    # bitwise floating-point reduction across autograd/kernel implementations.
+    # Reuse this module's existing full-subject forward parity bounds.
+    torch.testing.assert_close(recomputed, standard, rtol=2e-12, atol=2e-13)
     for actual, expected in zip(recomputed_gradients, standard_gradients, strict=True):
         torch.testing.assert_close(actual, expected, rtol=5e-12, atol=2e-14)
     assert any(shape == (64, 64) for _, shape in standard_saved)
