@@ -233,3 +233,17 @@ it does not establish dental causality or replace the original observation.
   performed. A predefined dental-region sensitivity test is a separate follow-up
   only if a stronger dental claim is needed. Private meshes, subject metadata,
   figures and detailed results remain local; only aggregate notes are public.
+
+### Illustrated project-document record
+
+The project-document supplement carries the four existing analysis figures:
+sex/age morphospace, post hoc bone-proportion scatterplots, and top/front
+specimen contact sheets. English captions preserve selection, camera, full-face
+rendering and inferential limits. The native results table contains all six
+bone correlations, PC1-PC3 variance, age correlations, within-PC sex effect
+sizes and whole-surface residual correlations; auxiliary model results and
+verification boundaries accompany it. This extends the earlier text-only note,
+not the analysis or its evidential strength. Image panels may be embedded in
+the user-authorized project document; private source meshes, subject metadata
+and figure files are not added to this public repository. No new computation,
+mesh processing, QC approval or application change is part of this update.
