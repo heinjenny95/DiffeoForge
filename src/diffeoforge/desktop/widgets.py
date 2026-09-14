@@ -163,6 +163,7 @@ from diffeoforge.desktop.reviewed_run import (
     check_reviewed_remote_run_readiness,
     check_reviewed_run_readiness,
 )
+from diffeoforge.desktop.validation_preparation import prepare_validation_from_result
 from diffeoforge.desktop.worker_controller import (
     DesktopWorkerController,
     DesktopWorkerControllerError,
@@ -175,7 +176,6 @@ from diffeoforge.input_preflight import (
     format_mesh_input_preflight,
     inspect_mesh_input_cohort,
 )
-from diffeoforge.mesh import sha256_file
 from diffeoforge.pca_metadata import (
     PCA_METADATA_HTML,
     PCAMetadataArtifact,
@@ -246,11 +246,6 @@ from diffeoforge.reference_shape_space_pdf import (
     ReferenceShapeSpacePdfExport,
     write_reference_shape_space_pdf,
 )
-from diffeoforge.reference_validation_study import (
-    create_reference_validation_study,
-    load_reference_validation_study,
-)
-from diffeoforge.result_report import collect_run_report
 from diffeoforge.scientific_report import (
     SCIENTIFIC_REPORT_HTML,
     ScientificReportArtifact,
@@ -7646,79 +7641,16 @@ class DiffeoForgeWindow(QMainWindow):
                 "Load a completed Deformetrica result first.",
             )
             return
-        candidates: list[Path] = []
-        if self._reference_calibrated_config_path is not None:
-            candidates.append(self._reference_calibrated_config_path)
-        try:
-            report = collect_run_report(review.run_directory)
-            candidates.extend(
-                (
-                    Path(str(report.manifest["source_config"]["path"])),
-                    review.run_directory / "config" / "source-config.yaml",
-                )
-            )
-            expected_sha256 = str(report.manifest["source_config"]["sha256"])
-        except (KeyError, OSError, RuntimeError, TypeError, ValueError):
-            expected_sha256 = ""
-
-        def calibrated_candidate(path: Path) -> bool:
-            candidate = path.expanduser()
-            if not candidate.is_file():
-                return False
-            try:
-                if expected_sha256 and sha256_file(candidate) != expected_sha256:
-                    return False
-                config = load_config(candidate)
-                result = (
-                    config.get("project", {})
-                    .get("parameter_provenance", {})
-                    .get("recommendation", {})
-                    .get("calibration_result", {})
-                )
-            except (OSError, RuntimeError, TypeError, ValueError):
-                return False
-            return result.get("status") == "completed"
-
-        config_path = next(
-            (path.expanduser().resolve() for path in candidates if calibrated_candidate(path)),
-            None,
+        # Freeze arguments before dispatch; all report/input hashing and study creation
+        # happen after the dialog is visible, not in this GUI event handler.
+        run_directory = review.run_directory
+        preferred = self._reference_calibrated_config_path
+        dialog = ReferenceValidationDialog(
+            run_directory, self,
+            prepare=lambda cancelled, phase: prepare_validation_from_result(
+                run_directory, preferred, cancelled, phase,
+            ),
         )
-        if config_path is None:
-            selected, _filter = QFileDialog.getOpenFileName(
-                self,
-                "Select the pilot-calibrated atlas configuration",
-                str(review.run_directory),
-                "DiffeoForge atlas configuration (atlas*.yaml *.yml)",
-            )
-            if not selected:
-                return
-            config_path = Path(selected).expanduser().resolve()
-        digest = sha256_file(config_path)
-        validation_root = config_path.parent
-        if config_path.is_relative_to(review.run_directory):
-            validation_root = review.run_directory.parent.parent
-        study_directory = validation_root / "diffeoforge-validation-lab"
-        if study_directory.exists():
-            try:
-                existing = load_reference_validation_study(study_directory)
-            except (OSError, RuntimeError, TypeError, ValueError):
-                study_directory = validation_root / (f"diffeoforge-validation-lab-{digest[:10]}")
-            else:
-                if existing.plan.source_config_sha256 != digest:
-                    study_directory = validation_root / (
-                        f"diffeoforge-validation-lab-{digest[:10]}"
-                    )
-        try:
-            if not study_directory.exists():
-                create_reference_validation_study(config_path, study_directory)
-            dialog = ReferenceValidationDialog(study_directory, self)
-        except (OSError, RuntimeError, TypeError, ValueError) as error:
-            QMessageBox.critical(
-                self,
-                "Validation Lab could not be opened",
-                str(error),
-            )
-            return
         dialog.exec()
 
     def _open_completed_result(self, result: CompletedResultRun) -> None:

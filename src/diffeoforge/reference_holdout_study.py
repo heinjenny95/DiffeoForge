@@ -43,11 +43,13 @@ from diffeoforge.reference_validation_study import (
     _relative,
     _safe_path,
     load_reference_validation_study,
+    validation_study_writer_lock,
 )
 from diffeoforge.reference_validation_study import (
     _verify_manifest as _verify_parent_manifest,
 )
 from diffeoforge.result_report import collect_run_report
+from diffeoforge.validation_progress import backend_status
 
 HOLDOUT_STUDY_VERSION = "0.1"
 HOLDOUT_DIRECTORY_NAME = "heldout-confirmation"
@@ -249,6 +251,7 @@ class ReferenceHoldoutStudySnapshot:
     assessment: ReferenceHoldoutAssessment | None
     report_json_path: Path | None
     report_html_path: Path | None
+    completed_at: str | None = None
 
     @property
     def completed_run_count(self) -> int:
@@ -724,6 +727,8 @@ def load_reference_holdout_study(
                 attempts=len(starts),
                 evidence=evidence,
                 error=error,
+                backend_status=backend_status(run_directory, verified=evidence is not None),
+                terminal_event=latest["event"] if latest else None,
             )
         )
     completion = next(
@@ -767,6 +772,7 @@ def load_reference_holdout_study(
         assessment=assessment,
         report_json_path=report_json,
         report_html_path=report_html,
+        completed_at=completion.get("recorded_at") if completion else None,
     )
 
 
@@ -924,12 +930,24 @@ class ReferenceHoldoutStudyRunner:
         *,
         event_callback: HoldoutEventCallback | None = None,
     ) -> ReferenceHoldoutStudySnapshot:
+        with validation_study_writer_lock(self.study_directory):
+            return self._run_all(event_callback=event_callback)
+
+    def _run_all(
+        self, *, event_callback: HoldoutEventCallback | None = None,
+    ) -> ReferenceHoldoutStudySnapshot:
         snapshot = load_reference_holdout_study(self.study_directory)
         if snapshot.status == "completed":
             return snapshot
         manifest = _verify_manifest(self.study_directory)
+        recovery_required = []
         for state in snapshot.runs:
             if state.status == "completed" or self._cancel_requested:
+                continue
+            if state.backend_status == "completed":
+                recovery_required.append(state.run_id)
+                if event_callback is not None:
+                    event_callback({"event": "evidence_recovery_required", "run_id": state.run_id})
                 continue
             request = _launch_request(self.study_directory, manifest, state)
             started = _append_event(
@@ -965,6 +983,8 @@ class ReferenceHoldoutStudyRunner:
             try:
                 result = controller.run(event_callback=forward)
                 if result.completed:
+                    if event_callback is not None:
+                        event_callback({"event": "backend_completed", "run_id": state.run_id})
                     evidence = collect_reference_validation_run_evidence(
                         request.destination,
                         run_id=state.run_id,
@@ -1015,6 +1035,12 @@ class ReferenceHoldoutStudyRunner:
             if event_callback is not None:
                 event_callback(terminal)
         updated = load_reference_holdout_study(self.study_directory)
+        if recovery_required and not self._cancel_requested:
+            raise ReferenceHoldoutStudyError(
+                "Backend already finished; evidence requires review/recovery for "
+                + ", ".join(recovery_required)
+                + ". These registrations were not restarted. No holdout conclusion is released."
+            )
         if not self._cancel_requested and all(run.status == "completed" for run in updated.runs):
             updated = _finalize_study(self.study_directory)
             if event_callback is not None:

@@ -11,6 +11,7 @@ import shutil
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Protocol
 from uuid import uuid4
@@ -51,6 +52,7 @@ from diffeoforge.reference_validation import (
 from diffeoforge.reference_validation_metrics import (
     collect_reference_validation_run_evidence,
 )
+from diffeoforge.validation_progress import backend_status, ledger_start
 
 VALIDATION_STUDY_VERSION = "0.1"
 VALIDATION_EVENT_VERSION = "0.1"
@@ -230,6 +232,7 @@ def _append_event(root: Path, event: str, payload: Mapping[str, object]) -> dict
         "previous_hash": events[-1]["event_hash"] if events else None,
         "event": event,
         **dict(payload),
+        "recorded_at": datetime.now(UTC).isoformat(),
     }
     record["event_hash"] = _canonical_hash(record)
     try:
@@ -306,6 +309,8 @@ class ValidationStudyRunState:
     attempts: int
     evidence: ValidationRunEvidence | None
     error: str | None
+    backend_status: str = "unknown"
+    terminal_event: str | None = None
 
 
 @dataclass(frozen=True)
@@ -319,6 +324,8 @@ class ReferenceValidationStudySnapshot:
     assessment: ReferenceValidationAssessment | None
     report_json_path: Path | None
     report_html_path: Path | None
+    first_started_at: str | None = None
+    completed_at: str | None = None
 
     @property
     def completed_run_count(self) -> int:
@@ -1022,6 +1029,8 @@ def load_reference_validation_study(
                 attempts=len(starts),
                 evidence=evidence,
                 error=error,
+                backend_status=backend_status(run_directory, verified=evidence is not None),
+                terminal_event=latest_terminal["event"] if latest_terminal else None,
             )
         )
     completion = next(
@@ -1064,6 +1073,8 @@ def load_reference_validation_study(
         assessment=assessment,
         report_json_path=report_json,
         report_html_path=report_html,
+        first_started_at=ledger_start(events),
+        completed_at=completion.get("recorded_at") if completion else None,
     )
 def _report_payload(
     snapshot: ReferenceValidationStudySnapshot,
@@ -1253,7 +1264,7 @@ class ReferenceValidationStudyRunner:
         for state in snapshot.runs:
             if state.status == "completed" or self._cancel_requested:
                 continue
-            if state.status == "failed" and state.run_directory is not None:
+            if state.status in {"failed", "orphaned"} and state.run_directory is not None:
                 result_path = state.run_directory / "result.json"
                 if result_path.is_file():
                     result = json.loads(result_path.read_text(encoding="utf-8"))
@@ -1298,6 +1309,8 @@ class ReferenceValidationStudyRunner:
             try:
                 result = controller.run(event_callback=forward)
                 if result.completed:
+                    if event_callback is not None:
+                        event_callback({"event": "backend_completed", "run_id": state.run_id})
                     evidence = collect_reference_validation_run_evidence(
                         request.destination,
                         run_id=state.run_id,

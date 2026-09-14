@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import shutil
+import threading
+import time
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -688,13 +690,19 @@ def test_validation_dialog_shows_first_iteration_activity_and_live_eta(
         ["diffeoforge-validation-dialog-test"]
     )
     dialog = ReferenceValidationDialog(snapshot.study_directory)
+    deadline = time.monotonic() + 30
+    while dialog._worker is not None and time.monotonic() < deadline:
+        application.processEvents()
+        time.sleep(0.005)
+    assert dialog._snapshot is not None
     dialog._worker = object()
     dialog._active_mode = "training"
 
-    run_id = snapshot.runs[0].run_id
+    run_id = snapshot.runs[-1].run_id
     dialog._event({"event": "run_started", "run_id": run_id})
     assert dialog.progress.minimum() == 0
-    assert dialog.progress.maximum() == 0
+    assert dialog.progress.maximum() == len(snapshot.runs) + len(snapshot.plan.finalists)
+    assert dialog.progress.value() == 0
     assert "first complete optimizer iteration" in dialog.status_label.text()
 
     dialog._event(
@@ -711,8 +719,9 @@ def test_validation_dialog_shows_first_iteration_activity_and_live_eta(
             },
         }
     )
-    assert "Elapsed 1 min 30 s" in dialog.status_label.text()
-    assert dialog.progress.maximum() == 0
+    assert "This run elapsed 1 min 30 s" in dialog.status_label.text()
+    assert f"Run {len(snapshot.runs)} of {len(snapshot.runs)}" in dialog.status_label.text()
+    assert dialog.progress.value() == 0
 
     dialog._event(
         {
@@ -731,10 +740,37 @@ def test_validation_dialog_shows_first_iteration_activity_and_live_eta(
             },
         }
     )
-    assert dialog.progress.maximum() == len(snapshot.runs) * 1000
+    assert dialog.progress.maximum() == len(snapshot.runs) + len(snapshot.plan.finalists)
+    assert dialog.progress.value() == 0
     assert "iteration 12 of maximum 150" in dialog.status_label.text()
-    assert "current-run upper-bound ETA 34 min 30 s" in dialog.status_label.text()
+    assert "iteration-cap scenario 34 min 30 s" in dialog.status_label.text()
+    assert "not a completion estimate or upper bound" in dialog.status_label.text()
 
     dialog._worker = None
+    from PySide6.QtWidgets import QMessageBox
+
+    preflight_threads = []
+    confirmations = []
+
+    def preflight(*args: object, **kwargs: object) -> str:
+        preflight_threads.append(threading.get_ident())
+        return "Verified preflight; start?"
+
+    def decline(*args: object) -> object:
+        confirmations.append(threading.get_ident())
+        return QMessageBox.StandardButton.No
+
+    monkeypatch.setattr(dialog, "_preflight_text", preflight)
+    monkeypatch.setattr(QMessageBox, "question", decline)
+    dialog._run()
+    deadline = time.monotonic() + 30
+    while dialog._worker is not None and time.monotonic() < deadline:
+        application.processEvents()
+        time.sleep(0.005)
+    assert preflight_threads and preflight_threads[0] != threading.get_ident()
+    assert confirmations == [threading.get_ident()]
+    assert dialog._worker is None
+    reopened = load_reference_validation_study(snapshot.study_directory)
+    assert all(run.attempts == 0 for run in reopened.runs)
     dialog.close()
     application.processEvents()

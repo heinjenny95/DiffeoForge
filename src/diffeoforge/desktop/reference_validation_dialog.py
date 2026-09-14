@@ -5,9 +5,12 @@ from __future__ import annotations
 import shutil
 import statistics
 import threading
+from collections.abc import Callable
+from dataclasses import replace
+from datetime import UTC, datetime
 from pathlib import Path
 
-from PySide6.QtCore import QObject, QRunnable, Qt, QThreadPool, QUrl, Signal, Slot
+from PySide6.QtCore import QObject, QRunnable, Qt, QThreadPool, QTimer, QUrl, Signal, Slot
 from PySide6.QtGui import QCloseEvent, QDesktopServices
 from PySide6.QtWidgets import (
     QDialog,
@@ -25,6 +28,7 @@ from PySide6.QtWidgets import (
 from diffeoforge.config import load_config, validate_input_paths
 from diffeoforge.desktop.info_disclosure import InfoDisclosure
 from diffeoforge.desktop.reference_runtime_estimate import estimate_reference_runtime
+from diffeoforge.desktop.validation_preparation import check_cancelled
 from diffeoforge.reference_holdout_study import (
     HOLDOUT_DIRECTORY_NAME,
     ReferenceHoldoutStudyRunner,
@@ -38,6 +42,7 @@ from diffeoforge.reference_validation_study import (
     load_reference_validation_study,
 )
 from diffeoforge.report import collect_preflight
+from diffeoforge.validation_progress import validation_progress, wall_seconds
 
 
 def _emphasize(button: QPushButton, enabled: bool) -> None:
@@ -52,6 +57,30 @@ class _Signals(QObject):
     event = Signal(object)
     succeeded = Signal(object)
     failed = Signal(str)
+
+
+class _PreparationWorker(QRunnable):
+    """Single-flight, cooperatively cancelled preparation without engine launch."""
+
+    def __init__(self, operation: Callable) -> None:
+        super().__init__()
+        self.operation = operation
+        self.signals = _Signals()
+        self.cancelled = threading.Event()
+
+    def request_cancel(self) -> bool:
+        self.cancelled.set()
+        return True
+
+    @Slot()
+    def run(self) -> None:
+        try:
+            value = self.operation(self.cancelled, self.signals.event.emit)
+            check_cancelled(self.cancelled)
+        except Exception as error:
+            self.signals.failed.emit(str(error))
+        else:
+            self.signals.succeeded.emit(value)
 
 
 class _ValidationWorker(QRunnable):
@@ -70,8 +99,25 @@ class _ValidationWorker(QRunnable):
 
     @Slot()
     def run(self) -> None:
+        def forward(event: object) -> None:
+            self.signals.event.emit(event)
+            if isinstance(event, dict) and event.get("event") in {
+                "run_completed",
+                "run_failed",
+                "run_interrupted",
+                "evidence_recovery_required",
+            }:
+                # Hashing and geometry verification must never run on the GUI thread.
+                loader = (
+                    load_reference_holdout_study
+                    if isinstance(self.runner, ReferenceHoldoutStudyRunner)
+                    else load_reference_validation_study
+                )
+                snapshot = loader(self.runner.study_directory)
+                self.signals.event.emit({"event": "snapshot", "snapshot": snapshot})
+
         try:
-            snapshot = self.runner.run_all(event_callback=self.signals.event.emit)
+            snapshot = self.runner.run_all(event_callback=forward)
         except (OSError, RuntimeError, TypeError, ValueError) as error:
             self.signals.failed.emit(str(error))
         else:
@@ -84,15 +130,21 @@ class _ValidationWorker(QRunnable):
 class ReferenceValidationDialog(QDialog):
     """Run or resume all predeclared validation comparisons with compact guidance."""
 
-    def __init__(self, study_directory: Path, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        study_directory: Path,
+        parent: QWidget | None = None,
+        *,
+        prepare: Callable | None = None,
+    ) -> None:
         super().__init__(parent)
         self.study_directory = study_directory.expanduser().resolve()
-        self._snapshot = load_reference_validation_study(self.study_directory)
-        holdout_directory = self.study_directory / HOLDOUT_DIRECTORY_NAME
-        self._holdout_snapshot = (
-            load_reference_holdout_study(holdout_directory) if holdout_directory.is_dir() else None
-        )
-        self._worker: _ValidationWorker | None = None
+        self._snapshot: ReferenceValidationStudySnapshot | None = None
+        self._holdout_snapshot: ReferenceHoldoutStudySnapshot | None = None
+        self._worker: _ValidationWorker | _PreparationWorker | None = None
+        self._preparing = False
+        self._cancel_requested = False
+        self._evidence_run_id: str | None = None
         self._active_mode: str | None = None
         self._active_run_id: str | None = None
         self._live_status: str | None = None
@@ -108,9 +160,7 @@ class ReferenceValidationDialog(QDialog):
         title.setObjectName("title")
         root.addWidget(title)
         subtitle = QLabel(
-            "First test whether finalist preference remains stable when the training "
-            "cohort changes. Then register the untouched holdout against each trained "
-            "model while its template and control points remain frozen."
+            "Test parameter stability, then confirm it on untouched holdout subjects."
         )
         subtitle.setWordWrap(True)
         root.addWidget(subtitle)
@@ -134,8 +184,14 @@ class ReferenceValidationDialog(QDialog):
         self.status_label.setWordWrap(True)
         root.addWidget(self.status_label)
         self.progress = QProgressBar()
-        self.progress.setRange(0, max(1, len(self._snapshot.runs) * 1000))
+        self.progress.setRange(0, 1)
         root.addWidget(self.progress)
+        self.accounting_label = QLabel()
+        self.accounting_label.setWordWrap(True)
+        root.addWidget(self.accounting_label)
+        self.elapsed_label = QLabel()
+        self.elapsed_label.setWordWrap(True)
+        root.addWidget(self.elapsed_label)
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
@@ -147,13 +203,12 @@ class ReferenceValidationDialog(QDialog):
         self.design_label.setWordWrap(True)
         self.design_label.setObjectName("card")
         body_layout.addWidget(self.design_label)
-        body_layout.addWidget(
-            InfoDisclosure(
-                "See frozen finalists and decision rule",
-                self._design_details(),
-                parent=body,
-            )
+        self.design_disclosure = InfoDisclosure(
+            "See frozen finalists and decision rule",
+            "Loading frozen design…",
+            parent=body,
         )
+        body_layout.addWidget(self.design_disclosure)
         self.result_label = QLabel()
         self.result_label.setWordWrap(True)
         self.result_label.setObjectName("status")
@@ -178,9 +233,29 @@ class ReferenceValidationDialog(QDialog):
         actions.addWidget(self.close_button)
         actions.addWidget(self.run_button)
         root.addLayout(actions)
-        self._render()
+        self._clock_timer = QTimer(self)
+        self._clock_timer.setInterval(1000)
+        self._clock_timer.timeout.connect(self._render_elapsed)
+        self._clock_timer.start()
+
+        def initial(cancelled: threading.Event, phase: Callable) -> object:
+            if prepare is not None:
+                directory = prepare(cancelled, phase)
+            else:
+                directory = self.study_directory
+            phase("Verifying frozen inputs and existing evidence…")
+            check_cancelled(cancelled)
+            training = load_reference_validation_study(directory)
+            check_cancelled(cancelled)
+            holdout = directory / HOLDOUT_DIRECTORY_NAME
+            held = load_reference_holdout_study(holdout) if holdout.is_dir() else None
+            return training, held, None
+
+        self._start_preparation(initial)
 
     def _design_details(self) -> str:
+        if self._snapshot is None:
+            return "Loading frozen design…"
         lines = ["Frozen finalists:"]
         for finalist in self._snapshot.plan.finalists:
             values = finalist.values
@@ -194,26 +269,41 @@ class ReferenceValidationDialog(QDialog):
         return "\n".join(lines)
 
     def _render(self) -> None:
+        if self._preparing or self._snapshot is None:
+            self.status_label.setText(self._live_status or "Preparing Validation Lab…")
+            self.progress.setRange(0, 0 if self._preparing else 1)
+            self.run_button.setEnabled(False)
+            self.cancel_button.setVisible(self._preparing)
+            self.cancel_button.setEnabled(self._preparing and not self._cancel_requested)
+            self.close_button.setEnabled(not self._preparing)
+            self.report_button.setVisible(False)
+            return
         snapshot = self._display_snapshot()
         plan = self._snapshot.plan
         completed = snapshot.completed_run_count
         total = len(snapshot.runs)
-        if running := self._worker is not None and self._indeterminate_progress:
-            self.progress.setRange(0, 0)
-            self.progress.setFormat("Active — computing first optimizer iteration")
-        else:
-            self.progress.setRange(0, max(1, total * 1000))
-            self.progress.setValue(
-                min(
-                    total * 1000,
-                    int((completed + self._live_progress_fraction) * 1000),
-                )
-            )
-            self.progress.setFormat(
-                f"{completed} of {total} runs complete · %p% overall"
-                if self._worker is None
-                else f"{completed} of {total} complete · %p% overall"
-            )
+        progress = validation_progress(
+            self._snapshot,
+            self._holdout_snapshot,
+            active_mode=self._active_mode,
+            active_run_id=self._active_run_id,
+            evidence_run_id=self._evidence_run_id,
+        )
+        self.progress.setRange(0, max(1, progress.total))
+        self.progress.setValue(progress.verified)
+        self.progress.setFormat(
+            f"{progress.verified} of {progress.total} run results verified · %p% of frozen runs"
+            + (" · reports complete" if progress.reports_complete else " · validation not complete")
+        )
+        self.accounting_label.setText(
+            f"Training {progress.training_verified}/{progress.training_total} · "
+            f"Holdout {progress.holdout_verified}/{progress.holdout_total}\n"
+            f"Backend finished {progress.backend_finished} · evidence pending "
+            f"{progress.evidence_pending}, failed {progress.evidence_failed} · "
+            f"execution failed {progress.execution_failed} · interrupted {progress.interrupted} · "
+            f"active {progress.active} · pending {progress.pending}"
+        )
+        self._render_elapsed()
         self.design_label.setText(
             f"{len(plan.finalists)} frozen finalists • "
             f"{len(plan.training_subjects)} training subjects • "
@@ -311,7 +401,7 @@ class ReferenceValidationDialog(QDialog):
         self.status_label.setStyleSheet("")
         self.result_label.setStyleSheet("")
         self.cancel_button.setVisible(running)
-        self.cancel_button.setEnabled(running)
+        self.cancel_button.setEnabled(running and not self._cancel_requested)
         report_path = self._report_path()
         self.report_button.setVisible(report_path is not None)
         self.report_button.setEnabled(report_path is not None and not running)
@@ -339,24 +429,85 @@ class ReferenceValidationDialog(QDialog):
 
     @Slot()
     def _run(self) -> None:
-        if self._worker is not None:
+        if self._worker is not None or self._snapshot is None:
             return
-        try:
-            if self._snapshot.status != "completed":
+        directory = self.study_directory
+
+        def prepare(cancelled: threading.Event, phase: Callable) -> object:
+            phase("Verifying the frozen study and retained evidence…")
+            training = load_reference_validation_study(directory)
+            check_cancelled(cancelled)
+            held_dir = directory / HOLDOUT_DIRECTORY_NAME
+            held = load_reference_holdout_study(held_dir) if held_dir.is_dir() else None
+            if training.status != "completed":
                 mode = "training"
-                execution_snapshot = self._snapshot
-                runner = ReferenceValidationStudyRunner(self.study_directory)
+                execution_snapshot = training
+                runner = ReferenceValidationStudyRunner(directory)
             else:
                 mode = "holdout"
-                if self._holdout_snapshot is None:
-                    self._holdout_snapshot = create_reference_holdout_study(self.study_directory)
-                execution_snapshot = self._holdout_snapshot
-                runner = ReferenceHoldoutStudyRunner(self._holdout_snapshot.study_directory)
-            if not self._confirm_preflight(execution_snapshot, mode=mode):
-                self._render()
-                return
-        except (OSError, RuntimeError, TypeError, ValueError) as error:
-            QMessageBox.critical(self, "Validation Lab preflight failed", str(error))
+                if held is None:
+                    phase("Preparing fixed-template holdout inputs; no engine has started…")
+                    check_cancelled(cancelled)
+                    held = create_reference_holdout_study(directory)
+                execution_snapshot = held
+                runner = ReferenceHoldoutStudyRunner(held.study_directory)
+            check_cancelled(cancelled)
+            phase("Checking mesh geometry, storage and workload…")
+            text = self._preflight_text(execution_snapshot, mode=mode, cancelled=cancelled)
+            return training, held, (runner, mode, text)
+
+        self._start_preparation(prepare)
+
+    def _start_preparation(self, operation: Callable) -> None:
+        if self._worker is not None:
+            return
+        worker = _PreparationWorker(operation)
+        worker.signals.event.connect(self._preparation_phase)
+        worker.signals.succeeded.connect(self._prepared)
+        worker.signals.failed.connect(self._preparation_failed)
+        self._worker = worker
+        self._preparing = True
+        self._cancel_requested = False
+        self._live_status = "Preparing — no engine has started. You can cancel safely."
+        self._render()
+        self._thread_pool.start(worker)
+
+    @Slot(object)
+    def _preparation_phase(self, text: object) -> None:
+        if not self._cancel_requested:
+            self._live_status = str(text)
+            self._render()
+
+    @Slot(object)
+    def _prepared(self, value: object) -> None:
+        cancelled = self._cancel_requested
+        self._worker = None
+        self._preparing = False
+        if cancelled:
+            self._preparation_failed("Preparation cancelled. No engine was started.")
+            return
+        self._snapshot, self._holdout_snapshot, execution = value
+        self.study_directory = self._snapshot.study_directory
+        self.design_disclosure.content_widget.setText(self._design_details())
+        self._live_status = None
+        self._render()
+        if execution is None:
+            return
+        runner, mode, text = execution
+        # This is the only launch boundary: GUI confirmation after background verification.
+        if (
+            text
+            and QMessageBox.question(
+                self,
+                "Validation workload preflight",
+                text,
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            != QMessageBox.StandardButton.Yes
+        ):
+            return
+        if self._cancel_requested:
             return
         worker = _ValidationWorker(runner)
         worker.signals.event.connect(self._event)
@@ -365,18 +516,68 @@ class ReferenceValidationDialog(QDialog):
         self._worker = worker
         self._active_mode = mode
         self._active_run_id = None
+        self._evidence_run_id = None
         self._live_status = None
         self._live_progress_fraction = 0.0
         self._indeterminate_progress = False
         self._render()
         self._thread_pool.start(worker)
 
+    @Slot(str)
+    def _preparation_failed(self, message: str) -> None:
+        self._worker = None
+        self._preparing = False
+        self._live_status = message
+        self._render()
+        self.status_label.setText(message)
+        if not self._cancel_requested:
+            QMessageBox.critical(self, "Validation Lab preparation paused", message)
+
+    def _render_elapsed(self) -> None:
+        if self._snapshot is None:
+            return
+        if (
+            self._holdout_snapshot is not None
+            and self._holdout_snapshot.status == "completed"
+            and self._holdout_snapshot.completed_at is None
+        ):
+            self.elapsed_label.setText(
+                "Study finished; completion time unavailable in legacy ledger."
+            )
+            return
+        elapsed = wall_seconds(
+            self._snapshot.first_started_at,
+            end=self._holdout_snapshot.completed_at if self._holdout_snapshot else None,
+            now=datetime.now(UTC),
+        )
+        self.elapsed_label.setText(
+            "Original start time unavailable (not started or legacy untimed ledger)."
+            if elapsed is None
+            else f"Since original start: {self._format_duration(elapsed)} "
+            "(wall time, including pauses/offline time; not compute time)."
+        )
+
     @Slot(object)
     def _event(self, event: object) -> None:
         if not isinstance(event, dict):
             return
+        if event.get("event") == "snapshot":
+            snapshot = event["snapshot"]
+            if isinstance(snapshot, ReferenceHoldoutStudySnapshot):
+                self._holdout_snapshot = snapshot
+            else:
+                self._snapshot = snapshot
+            self._render()
+            return
         if event.get("event") == "run_started":
             self._active_run_id = str(event.get("run_id", "current run"))
+            self._evidence_run_id = None
+            if (
+                self._snapshot is not None
+                and not any(r.attempts for r in self._snapshot.runs)
+                and self._snapshot.first_started_at is None
+            ):
+                self._snapshot = replace(self._snapshot, first_started_at=event.get("recorded_at"))
             self._live_progress_fraction = 0.001
             self._indeterminate_progress = True
             self._live_status = (
@@ -388,18 +589,21 @@ class ReferenceValidationDialog(QDialog):
         if event.get("event") == "worker_event":
             self._render_worker_event(event)
             return
+        if event.get("event") == "backend_completed":
+            self._evidence_run_id = str(event["run_id"])
+            self._live_status = f"{self._evidence_run_id}: backend finished; verifying evidence…"
+            self._render()
+            return
         if event.get("event") in {
             "run_completed",
             "run_failed",
             "run_interrupted",
+            "evidence_recovery_required",
         }:
-            try:
-                self._reload_active_snapshot()
-            except (OSError, RuntimeError, TypeError, ValueError):
-                return
             self._live_progress_fraction = 0.0
             self._indeterminate_progress = False
             self._active_run_id = None
+            self._evidence_run_id = None
             self._live_status = None
             self._render()
 
@@ -412,6 +616,7 @@ class ReferenceValidationDialog(QDialog):
             self._snapshot = snapshot
         self._active_mode = None
         self._active_run_id = None
+        self._evidence_run_id = None
         self._live_status = None
         self._live_progress_fraction = 0.0
         self._indeterminate_progress = False
@@ -420,12 +625,9 @@ class ReferenceValidationDialog(QDialog):
     @Slot(str)
     def _failed(self, message: str) -> None:
         self._worker = None
-        try:
-            self._reload_active_snapshot()
-        except (OSError, RuntimeError, TypeError, ValueError):
-            pass
         self._active_mode = None
         self._active_run_id = None
+        self._evidence_run_id = None
         self._live_status = None
         self._live_progress_fraction = 0.0
         self._indeterminate_progress = False
@@ -435,10 +637,13 @@ class ReferenceValidationDialog(QDialog):
     @Slot()
     def _cancel(self) -> None:
         if self._worker is not None:
+            self._cancel_requested = True
             self._worker.request_cancel()
             self.cancel_button.setEnabled(False)
             self.status_label.setText(
-                "Cancellation requested. DiffeoForge is stopping the active run safely."
+                "Cancelling preparation at the next safe boundary; no engine will start."
+                if self._preparing
+                else "Cancellation requested. DiffeoForge is stopping the active run safely."
             )
 
     @Slot()
@@ -455,14 +660,6 @@ class ReferenceValidationDialog(QDialog):
         if self._holdout_snapshot is not None:
             return self._holdout_snapshot
         return self._snapshot
-
-    def _reload_active_snapshot(self) -> None:
-        if self._active_mode == "holdout" and self._holdout_snapshot is not None:
-            self._holdout_snapshot = load_reference_holdout_study(
-                self._holdout_snapshot.study_directory
-            )
-        else:
-            self._snapshot = load_reference_validation_study(self.study_directory)
 
     def _report_path(self) -> Path | None:
         if (
@@ -491,15 +688,16 @@ class ReferenceValidationDialog(QDialog):
             return f"{value / 1024**2:.0f} MiB"
         return f"{value / 1024:.0f} KiB"
 
-    def _confirm_preflight(
+    def _preflight_text(
         self,
         snapshot: ReferenceValidationStudySnapshot | ReferenceHoldoutStudySnapshot,
         *,
         mode: str,
-    ) -> bool:
+        cancelled: threading.Event,
+    ) -> str:
         pending = [run for run in snapshot.runs if run.status != "completed"]
         if not pending:
-            return True
+            return ""
         first_preflight = collect_preflight(pending[0].config_path)
         estimate = estimate_reference_runtime(first_preflight)
         completed_durations = [
@@ -526,6 +724,7 @@ class ReferenceValidationDialog(QDialog):
         subject_registrations = 0
         maximum_iterations = 0
         for run in pending:
+            check_cancelled(cancelled)
             config = load_config(run.config_path)
             inputs = validate_input_paths(config, run.config_path)
             subject_registrations += inputs.subject_count
@@ -558,20 +757,13 @@ class ReferenceValidationDialog(QDialog):
             f"{self._format_bytes(free)} is currently free.\n\n"
             "The first iteration can remain visually quiet for several minutes. Once "
             "Deformetrica logs iterations, this window will show the active run, exact "
-            "iteration, elapsed time, and a live ETA. The computer must remain awake. "
+            "iteration and separate run/study elapsed time. Iteration-cap projections "
+            "are not predicted completion times. The computer must remain awake. "
             "Safe cancellation retains every completed run for later continuation.\n\n"
             "Start now?"
         )
-        return (
-            QMessageBox.question(
-                self,
-                "Validation workload preflight",
-                text,
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No,
-            )
-            == QMessageBox.StandardButton.Yes
-        )
+        check_cancelled(cancelled)
+        return text
 
     def _render_worker_event(self, envelope: dict[str, object]) -> None:
         raw = envelope.get("worker_event")
@@ -582,10 +774,11 @@ class ReferenceValidationDialog(QDialog):
         if not isinstance(payload, dict):
             return
         snapshot = self._display_snapshot()
-        completed = snapshot.completed_run_count
         total = len(snapshot.runs)
-        run_number = min(total, completed + 1)
         run_id = str(envelope.get("run_id", self._active_run_id or "current run"))
+        run_number = next(
+            (i + 1 for i, run in enumerate(snapshot.runs) if run.run_id == run_id), "?"
+        )
         self._active_run_id = run_id
         if kind == "activity":
             elapsed = float(payload.get("elapsed_seconds", 0.0))
@@ -596,16 +789,14 @@ class ReferenceValidationDialog(QDialog):
             else:
                 self._indeterminate_progress = False
                 maximum = int(payload.get("maximum_iterations", 1))
-                self._live_progress_fraction = min(
-                    0.999, int(last) / max(1, maximum)
-                )
+                self._live_progress_fraction = min(0.999, int(last) / max(1, maximum))
                 detail = (
                     f"active between iterations; last logged iteration {last} of "
                     f"{payload.get('maximum_iterations')}"
                 )
             self._live_status = (
                 f"Run {run_number} of {total}: {run_id} — {detail}. "
-                f"Elapsed {self._format_duration(elapsed)}."
+                f"This run elapsed {self._format_duration(elapsed)}."
             )
         elif kind == "progress":
             self._indeterminate_progress = False
@@ -615,16 +806,11 @@ class ReferenceValidationDialog(QDialog):
             self._live_progress_fraction = min(0.999, iteration / max(1, maximum))
             eta = payload.get("eta_to_iteration_cap_seconds")
             eta_text = (
-                "ETA warming up"
+                "iteration-cap projection warming up"
                 if eta is None
-                else f"current-run upper-bound ETA {self._format_duration(float(eta))}"
+                else f"iteration-cap scenario {self._format_duration(float(eta))} "
+                "(not a completion estimate or upper bound)"
             )
-            total_eta_text = ""
-            rate = payload.get("seconds_per_iteration")
-            remaining_runs = max(0, total - completed - 1)
-            if rate is not None and eta is not None and remaining_runs:
-                total_eta = float(eta) + remaining_runs * float(rate) * maximum
-                total_eta_text = f"; rough remaining workload {self._format_duration(total_eta)}"
             contention = (
                 " Resource contention detected; the estimate has widened."
                 if payload.get("resource_contention_detected")
@@ -633,7 +819,7 @@ class ReferenceValidationDialog(QDialog):
             self._live_status = (
                 f"Run {run_number} of {total}: {run_id} — iteration {iteration} of "
                 f"maximum {maximum}; elapsed {self._format_duration(elapsed)}; "
-                f"{eta_text}{total_eta_text}.{contention}"
+                f"{eta_text}.{contention}"
             )
         self._render()
 

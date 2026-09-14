@@ -2,6 +2,10 @@
 
 This roadmap describes evidence gates rather than promised dates.
 
+The [next development-version plan](docs/NEXT_VERSION_PLAN.md) sequences the
+current UX work and explicitly plans the larger hardware, distribution and
+scientific gates. Planning does not mark those gates complete.
+
 ## Milestone 0: Public foundation
 
 - [x] Public repository, license, and pre-alpha warning
@@ -191,28 +195,30 @@ This roadmap describes evidence gates rather than promised dates.
   provide hash-bound post-processing recovery without rerunning completed atlases.
   See [evidence recovery](docs/reference-validation-evidence-recovery.md).
   Source implementation only; do not replace a running desktop executable.
-- [ ] Show actual study-wide Validation Lab progress, not only the current run.
-  - [ ] Separate original-start wall time (including labelled interruptions) from
+- [x] Show actual study-wide Validation Lab progress, not only the current run.
+  - [x] Separate original-start wall time (including labelled interruptions) from
     current-run elapsed time; retain it across reopening/resume.
-  - [ ] Use frozen-plan run positions, not successful-evaluation counts, for the
+  - [x] Use frozen-plan run positions, not successful-evaluation counts, for the
     current run number; retries must not double-count progress.
-  - [ ] Distinguish completed backends, verified evidence, pending/failed
+  - [x] Distinguish completed backends, verified evidence, pending/failed
     post-processing, execution failures, active and pending work. Recovery-needed
     atlases must not appear unstarted or falsely validated.
-  - [ ] Label overall execution progress and denominators, separating
+  - [x] Label overall execution progress and denominators, separating
     training/resampling from holdout and showing their combined workflow scope.
     Do not imply full validation while evidence/holdout gates remain unresolved,
     or equate an iteration-cap fraction with exact total progress or an ETA.
-  - [ ] Test evaluation failures, early convergence, retries, cancellation,
-    reopening/resume and holdout transitions. Planned only; leave live runs intact.
-- [ ] Keep Validation Lab preparation and mesh/workload preflight off the UI
-  thread. Large inputs currently can leave the window unresponsive while CPU
-  work continues, before any optimizer run has started.
-  - [ ] Use an appropriate background worker/process, show preparation phases
+  - [x] Test evaluation failures, early convergence, retries, cancellation,
+    reopening/resume and holdout transitions. Live runs remain untouched.
+  - Legacy untimed ledgers explicitly show unavailable original timing; no
+    file-mtime or resume-time substitution. Counts describe frozen run results,
+    not equal-cost compute work. See the next-version plan for limitations.
+- [x] Keep Validation Lab opening, preparation and mesh/workload preflight off
+  the UI thread; refresh terminal evidence snapshots in the execution worker.
+  - [x] Use an appropriate background worker/process, show preparation phases
     and progress, provide safe cancellation, and prevent duplicate starts.
-  - [ ] Preserve input/hash checks, geometry gates, the frozen study design,
+  - [x] Preserve input/hash checks, geometry gates, the frozen study design,
     explicit start confirmation and completed immutable evidence.
-  - [ ] Test delayed preparation, responsive UI, cancellation, errors and repeated
+  - [x] Test delayed preparation, responsive UI, cancellation, errors and repeated
     start clicks; a cancelled preparation must not launch a run afterward.
 - [ ] Local graphical interface backed by the shared core
   - [x] First non-overwriting mesh-folder and project-setup slice
