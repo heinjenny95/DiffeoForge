@@ -132,6 +132,34 @@ This roadmap describes evidence gates rather than promised dates.
 
 ## Milestone 3: Accessible application
 
+- [ ] **UX: less text, progressive disclosure.** Shorten the default copy across
+  the guided workflow to a brief summary and the next action; move explanations,
+  methods and advanced detail into collapsed, clearly labelled info boxes.
+  Keep blocking errors, required decisions and essential warnings visible.
+  Verify that users can complete the workflow without reading long text panels.
+- [ ] **Pilot: opt-in AFK / overnight mode.** After each completed stage,
+  automatically accept its eligible recommendation and start the next pilot
+  stage without another click. Declare the permitted scope and provisional-choice
+  policy before starting; log every automatic selection and its evidence.
+  Pause clearly on hard failures or missing eligible recommendations; never
+  invent visual-QC approvals or silently launch work beyond the agreed pilot.
+  Support safe cancellation/resume and a concise return-to-desk summary; test
+  normal progression, provisional choices, blocked stages and reopening.
+  Unattended execution is not a guarantee of completion by the next morning.
+- [ ] **High priority: reduced display meshes in every renderer/viewer.** Use
+  cached, detail-aware simplified display proxies by default, including
+  settled views, original/reconstruction QC overlays, alignment, landmark and
+  result/PC viewers; inventory every rendering path so none silently falls back
+  to routine all-face rendering on large inputs. The existing
+  [large-mesh viewer fix](docs/LARGE_MESH_VIEWER.md) only samples navigation frames
+  and does not fulfill this requirement.
+  Keep original meshes, registrations, landmarks, numerical QC and analyses at
+  their scientific resolution. Label display resolution and provide on-demand
+  original-detail inspection; preserve exact original-surface landmark picking
+  and prevent QC from claiming inspection of detail hidden by simplification.
+  Bound background proxy generation, memory and stale-view work; verify
+  responsiveness and preservation of relevant visible defects on large meshes.
+
 - [x] Adopt the Deformetrica-first product decision with an evidence-gated Modern engine
 - [x] Extract strict landmark CSV handling from the Modern engine
 - [x] Apply generalized Procrustes to content-addressed immutable mesh copies usable by
