@@ -44,3 +44,24 @@ arrays are retained to make the calculation reproducible after CI artifacts
 expire. This is small synthetic CPU/offscreen-wheel compatibility evidence only,
 not a native installer, real-window UX, Intel-Mac Modern, GPU/MPS, biological,
 performance or Deformetrica-replacement qualification.
+
+## Final CI follow-up
+
+[`final-ci/`](final-ci) retains the separate exact observations from
+[CI run 34827124063](https://github.com/heinjenny95/DiffeoForge/actions/runs/34827124063).
+All **ten CI jobs passed** at development head
+`e1358b84c8b31ff65cd5c6de8c6abc96b2af29b3`, tested through merge checkout
+`e0e6ccc987182ed61f28fe75258688ff327cf14f` (same main parent as above). This adds
+the full blockwise-objective module and fixes test environment/OS-mock boundaries;
+package source/schema bytes are unchanged from the first observation.
+
+Final counts: 1,432 passed / 114 expected skips on each full Python 3.11/3.13 job;
+537 passed on each Modern CPU platform; 198 passed / 14 skipped on Windows GUI,
+191 passed / 21 skipped on each other GUI target. The cross-platform comparison
+passed unchanged tolerances and independent local recomputation matched SHA-256
+`8e5b2162b00e934ce1a7bdccff92f3fbae8db0bdb268a486214ec1d8dda071f9`.
+Use `--input reference/platform-compatibility-v1/final-ci` to recompute that report.
+
+The **separate** legacy Deformetrica container workflow remains red (8/10 reference
+artifacts match; convergence/residual discrepancies remain open). No historical
+reference or frozen numerical tolerance was reset to hide that failure.

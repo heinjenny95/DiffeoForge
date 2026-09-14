@@ -129,9 +129,23 @@ job counts and limitations are retained in
 Maximum absolute objective difference was `7.11e-13`; reconstructed coordinates
 differed by at most `1.34e-15` on this unitless fixture.
 
-That CI run's separate full-suite jobs failed during collection, so it is **not**
-an overall-CI pass. Follow-up full-suite execution after explicit dependency and
-isolated-platform-mock corrections is still pending at this evidence checkpoint.
+That first CI run's separate full-suite jobs failed during collection. The final
+[CI run 34827124063](https://github.com/heinjenny95/DiffeoForge/actions/runs/34827124063)
+at development head `e1358b84c8b31ff65cd5c6de8c6abc96b2af29b3` now passes **all ten
+jobs**: **1,432 passed / 114 expected skips** on each full Python 3.11/3.13 suite,
+**537 Modern tests per CPU platform**, **198 desktop tests on Windows / 191 on each
+other GUI platform** (14/21 expected skips), plus the three-pair comparison.
+Both full-suite wheel/sdist builds and wheel-content checks passed. The skips
+cover unavailable Qt in full-suite jobs and optional/platform-specific cases;
+the separate desktop jobs exercise Qt with Torch explicitly absent.
+
+Final observations are retained under `reference/platform-compatibility-v1/final-ci`.
+Independent local recomparison again reproduced the hosted report bytes exactly
+(SHA-256 `8e5b2162b00e934ce1a7bdccff92f3fbae8db0bdb268a486214ec1d8dda071f9`).
+The final maximum differences were `7.11e-13` for objective components and
+`1.78e-15` for reconstructed coordinates. These are observations for this small
+unitless fixture, not universal error bounds. The separate legacy container gate
+below remains red and is **not** included in this ten-job CI success.
 
 Native `.dmg`/`.pkg` or Linux app packaging, clean-machine install/uninstall,
 project preservation, signing, Deformetrica execution, Intel-Mac Modern engine,
