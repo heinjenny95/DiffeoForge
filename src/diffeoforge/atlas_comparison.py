@@ -27,7 +27,6 @@ from diffeoforge.desktop.result_review import (
     verify_result_artifact,
 )
 from diffeoforge.mesh import sha256_file
-from diffeoforge.modern_pca_stability import verify_modern_pca_bundle
 from diffeoforge.reference_pca import verify_reference_pca_bundle
 from diffeoforge.reference_sensitivity_assessment import (
     compare_ordered_atlas_templates,
@@ -81,6 +80,8 @@ def _pca(review: ModernResultReview):
     try:
         if review.engine_route == "deformetrica_reference":
             return verify_reference_pca_bundle(review.bundle_directory).pca
+        from diffeoforge.modern_pca_stability import verify_modern_pca_bundle
+
         return verify_modern_pca_bundle(review.bundle_directory).pca
     except (ConfigurationError, OSError, RuntimeError, TypeError, ValueError) as error:
         raise AtlasComparisonError(f"Could not reverify PCA source: {error}") from error

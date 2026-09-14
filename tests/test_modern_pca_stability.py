@@ -6,6 +6,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+pytest.importorskip("torch")
+
 import diffeoforge.modern_pca_stability as stability_module
 from diffeoforge.analysis import principal_component_analysis
 from diffeoforge.cli import main

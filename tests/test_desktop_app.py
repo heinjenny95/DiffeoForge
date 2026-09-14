@@ -560,10 +560,20 @@ def test_desktop_window_constructs_in_offscreen_smoke() -> None:
     )
 
     assert completed.returncode == 0, completed.stderr
-    # Qt's headless Linux plugin can report unsupported native window hints.
-    # Those warnings are not a failed application start.
+    # Headless Qt can report unsupported native window hints. macOS can also
+    # report timed font-alias warmup; neither diagnostic is a failed startup.
+    # Keep the allowlist specific: other application stderr must still fail.
     assert all(
         line == "This plugin does not support propagateSizeHints()"
+        or (
+            sys.platform == "darwin"
+            and re.fullmatch(
+                r'qt\.qpa\.fonts: Populating font family aliases took \d+ ms\. '
+                r'Replace uses of missing font family "Sans Serif" '
+                r"with one that exists to avoid this cost\.\s*",
+                line,
+            )
+        )
         for line in completed.stderr.splitlines()
     ), completed.stderr
 

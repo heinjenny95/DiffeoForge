@@ -6,6 +6,8 @@ from pathlib import Path
 
 import pytest
 
+pytest.importorskip("torch")
+
 import diffeoforge.desktop.modern_cuda_runtime as cuda_runtime
 from diffeoforge.desktop.modern_cuda_runtime import (
     ModernCudaRuntimeError,

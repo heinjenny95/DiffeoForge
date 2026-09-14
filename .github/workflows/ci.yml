@@ -108,6 +108,8 @@ jobs:
           tests/test_desktop_worker_controller.py tests/test_desktop_reviewed_run.py
           tests/test_desktop_result_review.py
           tests/test_modern_continuation.py tests/test_modern_checkpoint_recovery.py
+          tests/test_modern_pca_stability.py tests/test_sobolev_template_gradient.py
+          tests/test_desktop_modern_cuda_runtime.py
           tests/test_platform_compatibility.py
 
       - name: Observe installed-wheel public CPU workflow and continuation

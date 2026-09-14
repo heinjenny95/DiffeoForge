@@ -52,3 +52,29 @@ def test_remote_controller_import_keeps_numerical_dependencies_optional() -> Non
         check=False,
     )
     assert result.returncode == 0, result.stderr
+
+
+def test_reference_cli_with_analysis_extra_does_not_import_torch() -> None:
+    pytest.importorskip("numpy")
+    code = """
+import importlib.abc
+import sys
+
+class RejectTorch(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname == 'torch' or fullname.startswith('torch.'):
+            raise ModuleNotFoundError('Torch deliberately unavailable', name='torch')
+
+sys.meta_path.insert(0, RejectTorch())
+from diffeoforge.cli import build_parser
+build_parser()
+assert 'torch' not in sys.modules
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr

@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import pytest
-import torch
 
-from diffeoforge import engine
+torch = pytest.importorskip("torch")
+
+engine = pytest.importorskip("diffeoforge.engine")
 
 
 def _inputs() -> tuple[torch.Tensor, torch.Tensor]:
