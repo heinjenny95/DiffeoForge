@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+from types import SimpleNamespace
 
 from diffeoforge import reference_runtime
 
@@ -16,7 +17,7 @@ def test_probe_wsl_launcher_verifies_exact_deformetrica_version(monkeypatch) -> 
         "distribution": "DiffeoForge-Reference-4.3",
         "executable": "/opt/diffeoforge/reference/bin/deformetrica",
     }
-    monkeypatch.setattr(reference_runtime.os, "name", "nt")
+    monkeypatch.setattr(reference_runtime, "os", SimpleNamespace(name="nt"))
     monkeypatch.setattr(reference_runtime.shutil, "which", lambda command: command)
     monkeypatch.setattr(
         reference_runtime,
@@ -44,7 +45,7 @@ def test_probe_wsl_launcher_rejects_wrong_version(monkeypatch) -> None:
         "distribution": "Ubuntu",
         "executable": "/home/researcher/deformetrica/bin/deformetrica",
     }
-    monkeypatch.setattr(reference_runtime.os, "name", "nt")
+    monkeypatch.setattr(reference_runtime, "os", SimpleNamespace(name="nt"))
     monkeypatch.setattr(reference_runtime.shutil, "which", lambda command: command)
     monkeypatch.setattr(
         reference_runtime, "installed_wsl_distributions", lambda: ("Ubuntu",)
@@ -69,7 +70,7 @@ def test_probe_reference_gpu_verifies_keops_cuda_prerequisites(monkeypatch) -> N
         "distribution": "Ubuntu",
         "executable": "/home/researcher/deformetrica/bin/deformetrica",
     }
-    monkeypatch.setattr(reference_runtime.os, "name", "nt")
+    monkeypatch.setattr(reference_runtime, "os", SimpleNamespace(name="nt"))
     monkeypatch.setattr(reference_runtime.shutil, "which", lambda command: command)
 
     def fake_run(arguments: list[str], *, timeout: int = 30):
@@ -113,7 +114,7 @@ def test_probe_reference_gpu_requires_cuda_compiler(monkeypatch) -> None:
         "distribution": "Ubuntu",
         "executable": "/home/researcher/deformetrica/bin/deformetrica",
     }
-    monkeypatch.setattr(reference_runtime.os, "name", "nt")
+    monkeypatch.setattr(reference_runtime, "os", SimpleNamespace(name="nt"))
     monkeypatch.setattr(reference_runtime.shutil, "which", lambda command: command)
     monkeypatch.setattr(
         reference_runtime,
@@ -148,7 +149,7 @@ def test_preferred_launcher_reuses_verified_same_owner_alpha_runtime(monkeypatch
         "distribution": "Ubuntu",
         "executable": "/home/researcher/deformetrica/bin/deformetrica",
     }
-    monkeypatch.setattr(reference_runtime.os, "name", "nt")
+    monkeypatch.setattr(reference_runtime, "os", SimpleNamespace(name="nt"))
     monkeypatch.setattr(
         reference_runtime, "installed_wsl_distributions", lambda: ("Ubuntu",)
     )
@@ -171,7 +172,7 @@ def test_preferred_launcher_reuses_verified_same_owner_alpha_runtime(monkeypatch
 
 
 def test_preferred_launcher_falls_back_to_installer_owned_identity(monkeypatch) -> None:
-    monkeypatch.setattr(reference_runtime.os, "name", "nt")
+    monkeypatch.setattr(reference_runtime, "os", SimpleNamespace(name="nt"))
     monkeypatch.setattr(reference_runtime, "installed_wsl_distributions", lambda: ())
     monkeypatch.setattr(
         reference_runtime,

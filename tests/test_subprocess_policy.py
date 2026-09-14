@@ -5,6 +5,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -20,7 +21,7 @@ class _StartupInfo:
 
 
 def test_hidden_windows_process_kwargs_combine_flags_and_hide_window(monkeypatch) -> None:
-    monkeypatch.setattr(subprocess_policy.os, "name", "nt")
+    monkeypatch.setattr(subprocess_policy, "os", SimpleNamespace(name="nt"))
     monkeypatch.setattr(
         subprocess_policy.subprocess, "CREATE_NO_WINDOW", 0x08000000, raising=False
     )
@@ -40,7 +41,7 @@ def test_hidden_windows_process_kwargs_combine_flags_and_hide_window(monkeypatch
 
 
 def test_hidden_windows_process_kwargs_are_empty_off_windows(monkeypatch) -> None:
-    monkeypatch.setattr(subprocess_policy.os, "name", "posix")
+    monkeypatch.setattr(subprocess_policy, "os", SimpleNamespace(name="posix"))
 
     assert subprocess_policy.hidden_windows_process_kwargs(creationflags=123) == {}
 

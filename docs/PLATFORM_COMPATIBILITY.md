@@ -87,6 +87,10 @@ The full Python 3.11/3.13 suite also includes mixed reference/Modern qualificati
 tests and now installs the CPU Modern extra explicitly. Optional-engine absence
 continues to be enforced by the independent desktop-only jobs and import-blocking
 regressions; it is not inferred from this full-suite environment.
+Windows-branch unit tests now replace only the tested module's OS facade, rather
+than modifying global `os.name` and breaking Linux pytest/pathlib itself. WSL path
+translation has separate drive/space/Unicode/network-share tests; these mocked
+tests do not claim real WSL or GPU execution on Linux/macOS.
 
 Apple Silicon initially passed 502 Modern tests but failed a legacy harness test's
 extra `max_error < 2e-14` assertion, observing `2.220446049250313e-14` instead.

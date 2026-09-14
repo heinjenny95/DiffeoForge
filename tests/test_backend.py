@@ -1,12 +1,37 @@
 from __future__ import annotations
 
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
+from types import SimpleNamespace
+
+import pytest
 
 import diffeoforge.backends.deformetrica_reference as backend
 from diffeoforge.backends.deformetrica_reference import (
     build_command,
     build_shooting_command,
 )
+from diffeoforge.config import ConfigurationError
+
+
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    [(r"C:\Project with spaces\Ä", "/mnt/c/Project with spaces/Ä"), ("D:/run", "/mnt/d/run")],
+)
+def test_wsl_path_translation_is_explicit_on_every_host(monkeypatch, source, expected):
+    monkeypatch.setattr(
+        backend, "_command_run_directory", lambda path, **kwargs: PureWindowsPath(source)
+    )
+    assert backend._windows_to_wsl(Path("unused")) == expected
+
+
+def test_wsl_path_translation_rejects_unmapped_network_share(monkeypatch):
+    monkeypatch.setattr(
+        backend,
+        "_command_run_directory",
+        lambda path, **kwargs: PureWindowsPath(r"\\server\share\run"),
+    )
+    with pytest.raises(ConfigurationError, match="Cannot translate"):
+        backend._windows_to_wsl(Path("unused"))
 
 
 def test_container_command_is_offline_read_only_and_mounts_run(tmp_path: Path) -> None:
@@ -62,8 +87,12 @@ def test_wsl_gpu_command_exposes_one_cuda_device_and_records_kernel_mode(
         },
         "output": {"retain_flow_meshes": True},
     }
-    monkeypatch.setattr(backend.os, "name", "nt")
+    # Isolate the simulated platform from pathlib and pytest's real OS state.
+    monkeypatch.setattr(backend, "os", SimpleNamespace(name="nt"))
     monkeypatch.setattr(backend.shutil, "which", lambda command: command)
+    monkeypatch.setattr(
+        backend, "_windows_to_wsl", lambda path, **kwargs: "/mnt/c/synthetic-run"
+    )
 
     command = build_command(config, tmp_path)
 
@@ -80,6 +109,7 @@ def test_wsl_gpu_command_exposes_one_cuda_device_and_records_kernel_mode(
         "USE_CUDA",
     )
     assert "CUDA_VISIBLE_DEVICES=0" in command.argv
+    assert command.argv[command.argv.index("--cd") + 1] == "/mnt/c/synthetic-run"
     assert command.argv[-1] == "INFO"
 
 
