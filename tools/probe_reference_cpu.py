@@ -41,6 +41,7 @@ def observe(repo):
 
     paths = checked_meshes(repo)
     logging.disable(logging.CRITICAL)
+    torch.set_num_threads(4)
     kernel = KeopsKernel(kernel_width=0.45, gpu_mode=GpuMode.NONE)
     source = DeformableObjectReader.create_object(str(paths["template.vtk"]), "SurfaceMesh")
     records = []
@@ -103,7 +104,13 @@ def observe(repo):
         "threads": torch.get_num_threads(),
         "environment": {
             key: os.environ.get(key)
-            for key in ("MKL_CBWR", "MKL_ENABLE_INSTRUCTIONS", "MKL_NUM_THREADS", "OMP_NUM_THREADS")
+            for key in (
+                "MKL_CBWR",
+                "MKL_ENABLE_INSTRUCTIONS",
+                "MKL_DEBUG_CPU_TYPE",
+                "MKL_NUM_THREADS",
+                "OMP_NUM_THREADS",
+            )
         },
         "subjects": records,
     }

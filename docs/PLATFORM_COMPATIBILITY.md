@@ -145,7 +145,7 @@ Independent local recomparison again reproduced the hosted report bytes exactly
 The final maximum differences were `7.11e-13` for objective components and
 `1.78e-15` for reconstructed coordinates. These are observations for this small
 unitless fixture, not universal error bounds. The separate legacy container gate
-below remains red and is **not** included in this ten-job CI success.
+below had failed and is **not** included in this ten-job CI success.
 
 Native `.dmg`/`.pkg` or Linux app packaging, clean-machine install/uninstall,
 project preservation, signing, Deformetrica execution, Intel-Mac Modern engine,
@@ -163,3 +163,18 @@ The gate's frozen `max=1e-6, RMS=1e-7` contract was not changed. Cause and scien
 implications are not established by this platform package. This failure must be
 investigated separately, not hidden by the successful Modern CPU comparison or a
 reference-baseline/tolerance reset.
+
+Follow-up: an instrumented AMD clean-runner execution passed 10/10 without a
+numeric fix, while isolated legacy-library dispatch changes reproduce the same
+geometry-pass/scalar-fail pattern locally. The cross-CPU gate remains unresolved,
+not permanently red or fixed. See [the CPU investigation](REFERENCE_CPU_DIAGNOSTICS.md).
+
+### Follow-up worker-start race
+
+[CI 34829353499](https://github.com/heinjenny95/DiffeoForge/actions/runs/34829353499)
+exposed an Intel-Mac timing case: a child could exit before the launch request was
+written, producing a generic supervision error instead of the typed process error.
+The request-write boundary now reports `DesktopWorkerProcessError`, drains bounded
+stderr and retains cleanup/fail-closed behavior. A deterministic early-exit test
+covers the race. Fake event-stream workers now consume the request first so their
+tests actually reach the intended protocol check. No engine arithmetic changed.

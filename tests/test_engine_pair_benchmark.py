@@ -36,6 +36,7 @@ def reports(benchmark):
             "values": dict.fromkeys(benchmark.VALUE_NAMES, 1.0),
             "cpu_model": "test CPU",
             "platform": "test Linux",
+            "host_kernel": ["Linux", "test kernel", "x86_64"],
             "worker_sha256": "a" * 64,
             "input_sha256": str(level) * 64,
             "timed_evaluations_seconds": [1.0, 2.0, 3.0],
@@ -62,6 +63,15 @@ def test_complete_pair_passes_frozen_protocol(benchmark, reports):
     assert result["observation_count"] == 36
     assert (result["rtol"], result["atol"]) == (1e-8, 1e-10)
     assert len(result["cases"]) == 12
+
+
+def test_runtime_libc_label_does_not_misidentify_the_host(benchmark, reports):
+    for report in reports:
+        report["platform"] = "Linux-same-kernel-runtime-label-" + report["torch"]
+    assert benchmark.compare_reports(reports)["numerical_pass"] is True
+    reports[0]["host_kernel"] = ["Linux", "different kernel", "x86_64"]
+    with pytest.raises(ValueError, match="provenance"):
+        benchmark.compare_reports(reports)
 
 
 def test_numeric_difference_is_not_concealed(benchmark, reports):

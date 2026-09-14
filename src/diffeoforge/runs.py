@@ -768,7 +768,8 @@ def _probe_backend_environment(config: Mapping[str, Any]) -> Mapping[str, Any]:
             )
     packages = ("deformetrica", "torch", "pykeops", "numpy", "scipy")
     script = (
-        "import importlib.metadata as m, json, platform, shutil, sys\n"
+        "import importlib.metadata as m, json, os, platform, shutil, sys\n"
+        "from pathlib import Path\n"
         f"names={packages!r}\n"
         f"runtime_device={runtime_device!r}\n"
         "versions={}\n"
@@ -779,6 +780,15 @@ def _probe_backend_environment(config: Mapping[str, Any]) -> Mapping[str, Any]:
         "'python_executable':sys.executable,'platform':platform.platform(),"
         "'packages':versions,'acceleration':{'mode':runtime_device,"
         "'gpu_mode':'kernel' if runtime_device=='cuda' else 'none'}}\n"
+        "value['cpu_model']=platform.processor() or 'unavailable'\n"
+        "try:\n"
+        "    cpu_lines=Path('/proc/cpuinfo').read_text().splitlines()\n"
+        "    value['cpu_model']=next((line.split(':',1)[1].strip() for line in cpu_lines "
+        "if line.startswith('model name')),value['cpu_model'])\n"
+        "except (OSError,UnicodeError): pass\n"
+        "value['probe_numerical_environment']={key:os.environ.get(key) for key in "
+        "('MKL_CBWR','MKL_ENABLE_INSTRUCTIONS','MKL_DEBUG_CPU_TYPE',"
+        "'OMP_NUM_THREADS','MKL_NUM_THREADS')}\n"
         "if runtime_device=='cuda':\n"
         "    import torch, pykeops\n"
         "    import pykeops.torch\n"

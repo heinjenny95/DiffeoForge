@@ -236,6 +236,7 @@ def observe(repo, engine, attachment, level, repeat):
         "input_sha256": inputs_hash,
         "cpu_model": cpu,
         "platform": platform.platform(),
+        "host_kernel": [platform.system(), platform.release(), platform.machine()],
         "python": platform.python_version(),
         "torch": torch.__version__,
         "threads": torch.get_num_threads(),
@@ -320,8 +321,8 @@ def compare_reports(reports):
         indexed[key] = report
     if set(indexed) != wanted:
         raise ValueError("Require all 36 predeclared fresh-process observations")
-    for field in ("cpu_model", "platform", "worker_sha256"):
-        if len({r[field] for r in reports}) != 1:
+    for field in ("cpu_model", "host_kernel", "worker_sha256"):
+        if len({json.dumps(r[field], sort_keys=True) for r in reports}) != 1:
             raise ValueError("Mixed host/platform/worker provenance")
     cases = []
     for attachment, level in itertools.product(("current", "varifold"), (0, 1)):
@@ -362,6 +363,7 @@ def compare_reports(reports):
         "observation_count": len(reports),
         "cpu_model": reports[0]["cpu_model"],
         "platform": reports[0]["platform"],
+        "host_kernel": reports[0]["host_kernel"],
         "cases": cases,
         "numerical_pass": all(c["numerical_pass"] for c in cases),
         "limits": (

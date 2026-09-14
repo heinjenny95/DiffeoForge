@@ -356,6 +356,10 @@ scientific gates. Planning does not mark those gates complete.
     retain exact public observations in `reference/platform-compatibility-v1`
   - [ ] Diagnose the separate legacy reference-container convergence/residual
     mismatch (8/10 artifacts pass); retain frozen tolerances and reference bytes
+    - CPU scalar-reduction sensitivity reproduced with unchanged geometry and
+      static gradients; an instrumented AMD CI run passed 10/10 without a fix.
+      Capture an actual failing runner's new operand/CPU evidence before closing
+      the cross-CPU gate; see `docs/REFERENCE_CPU_DIAGNOSTICS.md`.
   - [x] Fresh GitHub-hosted Windows one-directory engineering freeze, complete
     frozen-process smoke contract, and independently inspected evidence artifact
   - [x] Hash-bound, noninterpreting installed-distribution metadata and

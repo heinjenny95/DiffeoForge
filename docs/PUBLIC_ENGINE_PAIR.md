@@ -35,6 +35,13 @@ observations. This is a bounded implementation benchmark, not atlas qualificatio
   conditions, consistent input/host/worker provenance, finite values and timing,
   matching structures and fresh-process repeatability.
 
+Metadata correction before numerical assessment: the first 36-worker capture
+was rejected because `platform.platform()` included different libc labels from
+the two Python builds (2.38 versus 2.39) on the same WSL kernel. Host identity
+now compares explicit system/kernel/machine fields and CPU model; runtime-specific
+platform labels remain recorded separately. All 36 workers are recollected;
+the initial rejected files remain intact. No workload or numeric threshold changes.
+
 Use `tools/benchmark_engine_pair.py observe --help` in each isolated interpreter,
 with `OMP_NUM_THREADS=1 MKL_NUM_THREADS=1` before import and the repository `src`
 directory on `PYTHONPATH` for Modern. Use the `compare` command only after every

@@ -340,8 +340,17 @@ class DesktopWorkerController:
                     exit_code=process.poll(),
                     stderr="",
                 )
-            process.stdin.write(json.dumps(self.request.as_dict(), sort_keys=True) + "\n")
-            process.stdin.flush()
+            try:
+                process.stdin.write(json.dumps(self.request.as_dict(), sort_keys=True) + "\n")
+                process.stdin.flush()
+            except OSError as error:
+                self._stop_process(process)
+                stderr_thread.join(timeout=TERMINAL_EXIT_TIMEOUT_SECONDS)
+                raise DesktopWorkerProcessError(
+                    f"Worker request pipe closed before the request was delivered: {error}",
+                    exit_code=process.poll(),
+                    stderr=stderr_buffer.render(),
+                ) from error
             with self._lock:
                 self._request_written = True
                 if self._cancel_pending:
