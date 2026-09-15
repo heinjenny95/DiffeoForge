@@ -1,5 +1,34 @@
 # Private-alpha build numbering
 
+## v81 — pilot preparation after switching engines
+
+Private Windows build **v81**, package `0.0.0.dev81`, fixes a silent no-op in
+the guided Deformetrica pilot. After creating a Modern project and switching
+engines, stale Modern project/review objects could skip Reference preparation;
+the UI said "Checking" although no readiness worker had started.
+
+Engine changes now clear only engine-bound in-memory project/review/run evidence.
+Input paths, landmarks, approved GPA alignment and current geometry-analysis/pilot
+plan inputs are retained; existing configurations and results are never deleted.
+The pilot entry point independently rejects stale cross-engine evidence and
+prepares the correct configuration. Normal same-engine continuation is preserved.
+The engine selector is locked during a foreground worker, repeated pilot clicks
+cannot queue duplicates, and the pilot card describes the actual preparation
+worker. A readiness check without a Reference review gives an actionable warning.
+
+Eleven focused regressions cover both switch directions, stale result/review
+combinations, twenty repeated invocations, same-engine continuation, preservation
+of files/alignment, worker locking and invalid-readiness feedback. The combined
+desktop/pilot/readiness suite passed **76 tests**; one dependency-absence test was
+correctly skipped because PySide6 is installed. Local delivery is verified
+separately. No scientific parameters, solver mathematics, display geometry or
+landmark coordinates were changed; this is not a scientific validation claim.
+
+The broader source suite passed **271 tests** (the same one dependency-absence
+skip), including GPA/frame synchronization, landmark picking/rotation/drafts,
+display proxies, preprocessing, QC release gates and packaging contracts.
+Ruff and whitespace checks passed.
+
 ## v80 — synchronized GPA review overlays
 
 Private Windows build **v80**, package `0.0.0.dev80`, binds the selected,

@@ -1403,6 +1403,7 @@ class DiffeoForgeWindow(QMainWindow):
         ) = None
         self._result: ProjectSetupResult | None = None
         self._review: ProjectReviewResult | None = None
+        self._selected_setup_engine: DesktopEngine | None = None
         self._template_preview: MeshPreviewModel | None = None
         self._input_preflight: MeshInputPreflight | None = None
         self._input_preflight_signature: tuple[object, ...] | None = None
@@ -6547,7 +6548,24 @@ class DiffeoForgeWindow(QMainWindow):
 
     @Slot()
     def _update_engine_explanation(self) -> None:
-        modern = self.engine_combo.currentData() == DesktopEngine.MODERN_CPU
+        selected = self.engine_combo.currentData()
+        previous = self._selected_setup_engine
+        if previous is not None and selected != previous:
+            if self._worker is not None:
+                # Keep an in-flight project's callbacks bound to its original engine.
+                blocked = self.engine_combo.blockSignals(True)
+                self.engine_combo.setCurrentIndex(self.engine_combo.findData(previous))
+                self.engine_combo.blockSignals(blocked)
+                return
+            self._clear_engine_project_state()
+            self.status_label.setObjectName("status")
+            self.status_label.setStyleSheet("")
+            self.status_label.setText(
+                "Engine changed. Prepare a configuration for the selected engine; "
+                "existing files, landmarks and GPA alignment remain unchanged."
+            )
+        self._selected_setup_engine = selected
+        modern = selected == DesktopEngine.MODERN_CPU
         self.landmarks_edit.setEnabled(True)
         self.landmarks_button.setEnabled(True)
         self.parameter_input_form.setRowVisible(self.pairwise_box, modern)
@@ -6575,6 +6593,32 @@ class DiffeoForgeWindow(QMainWindow):
         self._update_modern_execution_explanation()
         self._update_reference_parameter_profile()
         self._update_reference_guidance_controls()
+
+    def _clear_engine_project_state(self) -> None:
+        """Forget engine-bound UI evidence, never input data or approved alignment."""
+
+        self._guided_reference_calibration_requested = False
+        self._reference_calibrated_config_path = None
+        self._reference_calibration_study_directory = None
+        self._result = None
+        self._review = None
+        self._template_preview = None
+        self._reference_readiness = None
+        self._reference_preparation_status = None
+        self._run_readiness = None
+        self._reference_run_request = None
+        self._run_result = None
+        self._result_review = None
+        self.result_card.hide()
+        self.template_preview_card.hide()
+        self.reference_readiness_card.hide()
+        self.reference_preparation_status_card.hide()
+        self.reference_preparation_approval_edit.clear()
+        self.reference_preparation_hash_edit.clear()
+        self.template_preview_canvas.set_model(None)
+        self.show_run_button.setEnabled(False)
+        self.start_atlas_button.setEnabled(False)
+        self.run_result_card.hide()
 
     @Slot()
     def _update_modern_execution_explanation(self) -> None:
@@ -6892,6 +6936,7 @@ class DiffeoForgeWindow(QMainWindow):
 
     @Slot()
     def _sync_ready_state(self) -> None:
+        self.engine_combo.setEnabled(self._worker is None)
         approved_alignment = self._approved_procrustes_fingerprint()
         alignment_ready = bool(
             not self.landmarks_edit.text().strip()
@@ -8353,6 +8398,22 @@ class DiffeoForgeWindow(QMainWindow):
             self.open_reference_calibration_button.setEnabled(False)
             return
         self.reference_calibration_execution_card.show()
+        if self._guided_reference_calibration_requested:
+            for worker_type, message in (
+                (_ProjectWorker, "Creating and validating the provisional pilot configuration…"),
+                (_ReviewWorker, "Reviewing the provisional pilot configuration…"),
+                (
+                    _ReferenceReadinessWorker,
+                    "Checking the managed Deformetrica installation before pilot execution…",
+                ),
+            ):
+                if isinstance(self._worker, worker_type):
+                    self.reference_calibration_execution_status.setObjectName("status")
+                    self.reference_calibration_execution_status.setStyleSheet("")
+                    self.reference_calibration_execution_status.setText(message)
+                    self.open_reference_calibration_button.setText("Preparing pilot calibration…")
+                    self.open_reference_calibration_button.setEnabled(False)
+                    return
         if self.reference_parameter_profile_combo.currentData() == "advanced":
             self.reference_calibration_execution_status.setObjectName("statusWarning")
             self.reference_calibration_execution_status.setStyleSheet("")
@@ -8473,8 +8534,18 @@ class DiffeoForgeWindow(QMainWindow):
     def _prepare_or_open_reference_calibration(self) -> None:
         """Advance the complete guided pre-pilot chain from one explicit action."""
 
-        if self._worker is not None:
+        if (
+            self._worker is not None
+            or self.engine_combo.currentData() != DesktopEngine.DEFORMETRICA_REFERENCE
+        ):
             return
+        # Defend this entry point as well as the combo signal: a stale Modern
+        # result must never skip Reference creation and reach a no-op check.
+        if any(
+            state is not None and state.engine is not DesktopEngine.DEFORMETRICA_REFERENCE
+            for state in (self._result, self._review)
+        ):
+            self._clear_engine_project_state()
         if not self._reference_calibration_plan_matches_current_inputs():
             self.reference_calibration_execution_status.setObjectName("statusWarning")
             self.reference_calibration_execution_status.setStyleSheet("")
@@ -8511,9 +8582,6 @@ class DiffeoForgeWindow(QMainWindow):
             )
             self._review_project()
             return
-        self.reference_calibration_execution_status.setText(
-            "Checking the managed Deformetrica installation before pilot execution…"
-        )
         self._check_reference_readiness()
 
     def _apply_reference_calibrated_configuration(self, config_path: Path) -> None:
@@ -8657,11 +8725,16 @@ class DiffeoForgeWindow(QMainWindow):
 
     @Slot()
     def _check_reference_readiness(self) -> None:
-        if (
-            self._review is None
-            or self._review.engine is not DesktopEngine.DEFORMETRICA_REFERENCE
-            or self._worker is not None
-        ):
+        if self._worker is not None:
+            return
+        if self._review is None or self._review.engine is not DesktopEngine.DEFORMETRICA_REFERENCE:
+            self._guided_reference_calibration_requested = False
+            for label in (self.status_label, self.reference_calibration_execution_status):
+                label.setObjectName("statusWarning")
+                label.setStyleSheet("")
+                label.setText(
+                    "Create and review a Deformetrica project before checking its installation."
+                )
             return
         worker = _ReferenceReadinessWorker(self._review)
         worker.signals.succeeded.connect(self._reference_readiness_succeeded)

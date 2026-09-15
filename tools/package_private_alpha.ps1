@@ -14,7 +14,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$SetupName = "DiffeoForge-v80-Windows-CPU-x86_64-Setup.exe"
+$SetupName = "DiffeoForge-v81-Windows-CPU-x86_64-Setup.exe"
 $ManifestName = "private-alpha-manifest.json"
 $SidecarName = "private-alpha-manifest.sha256"
 $ReadmeName = "PRIVATE-ALPHA-README.txt"
