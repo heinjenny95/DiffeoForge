@@ -72,6 +72,12 @@ class GpaAlignmentCanvas3D(QWidget):
 
     def set_visual(self, visual: GpaAlignmentVisual) -> None:
         self._visual = visual
+        # A different cohort must never inherit the preceding mesh/marker frame.
+        self._detail = None
+        self._detail_vertices = np.empty((0, 3), dtype=np.float64)
+        self._detail_triangles = np.empty((0, 3), dtype=np.int64)
+        self._selected_index = 0
+        self._frames.clear()
         x_min, x_max, y_min, y_max, z_min, z_max = visual.bounds
         self._center = np.asarray(
             (
@@ -129,10 +135,14 @@ class GpaAlignmentCanvas3D(QWidget):
         self.update()
 
     def set_show_cohort(self, visible: bool) -> None:
+        if self._show_cohort != bool(visible):
+            self._frames.clear()
         self._show_cohort = bool(visible)
         self.update()
 
     def set_show_selected_surface(self, visible: bool) -> None:
+        if self._show_selected_surface != bool(visible):
+            self._frames.clear()
         self._show_selected_surface = bool(visible)
         self.update()
 
@@ -180,14 +190,17 @@ class GpaAlignmentCanvas3D(QWidget):
         self._pan = (0.0, 0.0)
         self.update()
 
-    def _project(self, vertices: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-        rotation = camera_rotation(self._yaw, self._pitch)
-        camera = ((vertices - self._center) / self._scale) @ rotation.T
-        viewport = max(1.0, min(float(self.width()), float(self.height())) - 72.0)
-        factor = 0.9 * viewport * self._zoom
+    @staticmethod
+    def _project(
+        vertices: np.ndarray, scene: SurfaceScene
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Project overlays with the presented image, never the pending camera."""
+        camera = ((vertices - scene.center) / scene.scale) @ scene.rotation.T
+        viewport = max(1.0, min(scene.width, scene.height) - scene.margin)
+        factor = 0.9 * viewport * scene.zoom
         screen = np.empty((vertices.shape[0], 2), dtype=np.float64)
-        screen[:, 0] = self.width() / 2.0 + self._pan[0] + camera[:, 0] * factor
-        screen[:, 1] = self.height() / 2.0 + self._pan[1] - camera[:, 1] * factor
+        screen[:, 0] = scene.width / 2.0 + scene.pan[0] + camera[:, 0] * factor
+        screen[:, 1] = scene.height / 2.0 + scene.pan[1] - camera[:, 1] * factor
         return camera, screen
 
     def mousePressEvent(self, event: QMouseEvent) -> None:  # noqa: N802
@@ -244,7 +257,8 @@ class GpaAlignmentCanvas3D(QWidget):
         super().mouseDoubleClickEvent(event)
 
     def _draw_landmarks(self, painter: QPainter) -> None:
-        if self._visual is None or not self._show_landmarks:
+        scene = self._frames.image_scene
+        if self._visual is None or not self._show_landmarks or scene is None:
             return
         if self._show_cohort:
             painter.setPen(Qt.PenStyle.NoPen)
@@ -256,18 +270,18 @@ class GpaAlignmentCanvas3D(QWidget):
                         selected=False,
                     )
                 )
-                _camera, points = self._project(mesh.landmarks)
+                _camera, points = self._project(mesh.landmarks, scene)
                 for x, y in points:
                     painter.drawEllipse(QPointF(float(x), float(y)), 2.2, 2.2)
 
         selected = self._visual.meshes[self._selected_index]
-        _camera, selected_points = self._project(selected.landmarks)
+        _camera, selected_points = self._project(selected.landmarks, scene)
         painter.setPen(QPen(QColor("#ffffff"), 1.2))
         painter.setBrush(QColor("#d9481c"))
         for x, y in selected_points:
             painter.drawEllipse(QPointF(float(x), float(y)), 5.0, 5.0)
 
-        _camera, mean_points = self._project(self._visual.mean_landmarks)
+        _camera, mean_points = self._project(self._visual.mean_landmarks, scene)
         painter.setPen(QPen(QColor("#0b302f"), 1.5))
         painter.setBrush(QColor("#54c6a1"))
         for label, (x, y) in zip(
@@ -338,6 +352,14 @@ class GpaAlignmentCanvas3D(QWidget):
         if image is not None:
             painter.drawImage(0, 0, image)
         self._draw_landmarks(painter)
+
+        if not self._frames.ready(key):
+            painter.setPen(QColor("#705419"))
+            painter.drawText(
+                14, 44,
+                "View could not be updated." if self._frames.error
+                else "Updating view…",
+            )
 
         painter.setPen(QColor("#52666b"))
         painter.drawText(

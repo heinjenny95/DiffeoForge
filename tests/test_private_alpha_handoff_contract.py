@@ -8,7 +8,10 @@ from pathlib import Path
 
 import pytest
 
+from diffeoforge import __version__
+
 ROOT = Path(__file__).resolve().parents[1]
+SETUP_NAME = f"DiffeoForge-v{__version__.rsplit('dev', 1)[1]}-Windows-CPU-x86_64-Setup.exe"
 
 
 def test_private_alpha_contract_is_same_owner_nonrelease_and_exact() -> None:
@@ -37,7 +40,7 @@ def test_private_alpha_contract_is_same_owner_nonrelease_and_exact() -> None:
     assert contract["security_observation"]["malware_clearance_claim"] is False
     assert contract["output"]["exact_files"] == sorted(
         [
-            "DiffeoForge-v78-Windows-CPU-x86_64-Setup.exe",
+            SETUP_NAME,
             "LICENSE.txt",
             "PRIVATE-ALPHA-README.txt",
             "private-alpha-manifest.json",
@@ -74,7 +77,7 @@ def test_private_alpha_wrapper_is_fail_closed_and_never_executes_setup() -> None
 def test_private_alpha_retained_verifier_accepts_exact_and_rejects_mutation(
     tmp_path: Path,
 ) -> None:
-    setup_name = "DiffeoForge-v78-Windows-CPU-x86_64-Setup.exe"
+    setup_name = SETUP_NAME
     root = tmp_path / "Private Alpha"
     root.mkdir()
 

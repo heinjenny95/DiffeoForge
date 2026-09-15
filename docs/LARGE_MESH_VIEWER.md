@@ -8,6 +8,13 @@ not modified or decimated.
 
 ## Behaviour and safeguards
 
+- GPA review overlays use the displayed frame's camera and viewport too (v80):
+  selected, cohort and consensus landmarks and their labels update together
+  with the mesh. New cohorts, selected meshes, detail modes and geometry-layer
+  toggles clear the previous frame; no orphan landmarks appear while loading.
+  Failed or superseded views retain the preceding synchronized image. A small
+  pending/error caption distinguishes that image from the requested camera.
+  This does not change GPA coordinates, transforms, residuals or review decisions.
 - Landmark rotation uses incremental screen/camera axes (v79), so the visible
   near surface follows the drag after arbitrary rotations, including upside-down
   and polar views. Rendering and picking share the same orientation matrix;
@@ -57,6 +64,13 @@ pixels while an intentionally delayed renderer holds the old mesh frame, then
 checks the replacement frame. Both reduced and original-detail modes cover
 rotation, pan, zoom, resize and view presets; source arrays and marker coordinates
 must remain unchanged. Picking and scientific QC still reject pending views.
+
+`tests/test_gpa_frame_sync.py` extends painted-pixel delay checks to GPA cohort
+and selected wireframes, reduced and original-detail surfaces, rotation, pan,
+zoom, resize, presets and reset. It also checks frame invalidation, hidden
+landmarks, failed/superseded renders and unchanged geometry/landmark arrays.
+This prevents relative drift, not all rendering latency: a large cohort can
+still take time to rasterize, with meshes and markers now waiting together.
 
 ## Reduced-display observation
 

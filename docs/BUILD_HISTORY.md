@@ -1,5 +1,34 @@
 # Private-alpha build numbering
 
+## v80 — synchronized GPA review overlays
+
+Private Windows build **v80**, package `0.0.0.dev80`, binds the selected,
+cohort and consensus GPA landmarks (including labels) to the camera and viewport
+of the displayed mesh image. Pending rotation, pan, zoom, resize, preset and
+reset requests no longer move markers ahead of the asynchronous surface frame.
+Cohort/selection, resolution and geometry-layer changes invalidate stale images;
+markers stay hidden until a matching frame exists. Failed/cancelled frames never
+advance the overlay, and pending/error views are labelled.
+
+This is display-only: source meshes, landmark coordinates, GPA transforms,
+residuals and review approvals are unchanged. Large cohorts can still render
+slowly, with surfaces and markers now waiting together; no frame-rate guarantee
+or scientific validation is claimed. The existing v79 landmark-editor rotation
+behaviour is retained; this update does not redesign GPA rotation controls.
+
+Two new painted-pixel delay checks reproduce the bug against the committed v79
+GPA canvas (rotation and resize). The focused GPA suite passes **38 tests** with
+the fix. Coverage includes all overlay roles, reduced/original display modes,
+visibility/selection changes, failed/superseded frames and array immutability.
+The private-alpha packaging tests now derive the expected filename from the
+current package version, replacing stale v78 fixture literals without weakening
+the exact-file or tamper checks. Installed delivery is verified separately.
+
+The final targeted source suite passed **195 tests**, including existing GPA,
+preprocessing, landmark/picking/draft, background-render, QC release and packaging
+safeguards. Ruff and whitespace checks passed. Package metadata was refreshed to
+v80 before freezing; runtime dependencies were not upgraded.
+
 ## v79 — screen-relative landmark rotation
 
 Private Windows build **v79**, package `0.0.0.dev79`, changes the landmark
