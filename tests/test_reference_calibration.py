@@ -1,0 +1,1013 @@
+from copy import deepcopy
+from dataclasses import replace
+from pathlib import Path
+
+import pytest
+
+from diffeoforge.config import ConfigurationError
+from diffeoforge.mesh import read_vtk_polydata, sha256_file
+from diffeoforge.reference_calibration import (
+    CalibrationCandidateEvidence,
+    PilotSubjectDeclaration,
+    assess_calibration_stage,
+    bind_axis_separated_width_refinement_plan,
+    bind_calibration_search_extension_plan,
+    bind_reference_calibration_plan_to_inputs,
+    build_reference_calibration_plan,
+    calibration_plan_json,
+    propose_axis_separated_width_refinement,
+    propose_calibration_search_extension,
+    read_pilot_subject_declarations,
+    reference_calibration_plan_from_provenance,
+    select_representative_pilot_subjects,
+    verify_reference_calibration_plan_provenance,
+)
+from diffeoforge.reference_recommendation import recommend_reference_parameters
+
+ROOT = Path(__file__).parents[1]
+MESH_DIRECTORY = ROOT / "examples" / "synthetic" / "meshes"
+
+
+def _cohort() -> tuple[Path, ...]:
+    return (
+        MESH_DIRECTORY / "template.vtk",
+        *sorted(MESH_DIRECTORY.glob("subject-*.vtk")),
+    )
+
+
+def _recommendation():
+    return recommend_reference_parameters(
+        _cohort(),
+        alignment_basis="declared_gpa",
+        surface_detail_intent="balanced",
+        deformation_scale_intent="balanced",
+    )
+
+
+def _write_ply_cohort(directory: Path) -> tuple[Path, ...]:
+    directory.mkdir()
+    result: list[Path] = []
+    for source in _cohort():
+        mesh = read_vtk_polydata(source)
+        destination = directory / source.with_suffix(".ply").name
+        destination.write_text(
+            "\n".join(
+                (
+                    "ply",
+                    "format ascii 1.0",
+                    f"element vertex {len(mesh.vertices)}",
+                    "property double x",
+                    "property double y",
+                    "property double z",
+                    f"element face {len(mesh.triangles)}",
+                    "property list uchar int vertex_indices",
+                    "end_header",
+                    *(f"{x} {y} {z}" for x, y, z in mesh.vertices),
+                    *(f"3 {a} {b} {c}" for a, b, c in mesh.triangles),
+                )
+            )
+            + "\n",
+            encoding="ascii",
+            newline="\n",
+        )
+        result.append(destination)
+    return tuple(result)
+
+
+def test_calibration_plan_can_bind_published_effective_input_bytes(
+    tmp_path: Path,
+) -> None:
+    recommendation = _recommendation()
+    plan = build_reference_calibration_plan(
+        recommendation,
+        coordinate_unit="unitless",
+        requested_pilot_subject_count=3,
+    )
+    cohort = _cohort()
+    effective = tmp_path / "effective"
+    effective.mkdir()
+    published = []
+    for source in cohort:
+        destination = effective / source.name
+        destination.write_bytes(source.read_bytes() + b"\n")
+        published.append(destination)
+
+    rebound = bind_reference_calibration_plan_to_inputs(
+        plan,
+        template=published[0],
+        subjects=published[1:],
+    )
+
+    assert rebound.fingerprint != plan.fingerprint
+    assert rebound.template_sha256 == sha256_file(published[0])
+    by_name = {path.name: path for path in published[1:]}
+    assert all(
+        selected.sha256 == sha256_file(by_name[selected.filename])
+        for selected in rebound.selected_pilot_subjects
+    )
+    assert (
+        verify_reference_calibration_plan_provenance(rebound.provenance)
+        == rebound.fingerprint
+    )
+
+
+def test_calibration_plan_treats_ply_and_canonical_vtk_as_the_same_surfaces(
+    tmp_path: Path,
+) -> None:
+    ply_cohort = _write_ply_cohort(tmp_path / "ply")
+    recommendation = recommend_reference_parameters(
+        ply_cohort,
+        alignment_basis="declared_gpa",
+        surface_detail_intent="balanced",
+        deformation_scale_intent="balanced",
+    )
+    declaration = PilotSubjectDeclaration(ply_cohort[1].name, "declared", True)
+    plan = build_reference_calibration_plan(
+        recommendation,
+        coordinate_unit="unitless",
+        requested_pilot_subject_count=3,
+        pilot_subject_declarations=(declaration,),
+    )
+
+    rebound = bind_reference_calibration_plan_to_inputs(
+        plan,
+        template=_cohort()[0],
+        subjects=_cohort()[1:],
+    )
+
+    assert rebound.template_filename == "template.vtk"
+    assert all(item.filename.endswith(".vtk") for item in rebound.selected_pilot_subjects)
+    assert rebound.pilot_subject_declarations[0].filename.endswith(".vtk")
+    assert (
+        verify_reference_calibration_plan_provenance(rebound.provenance)
+        == rebound.fingerprint
+    )
+
+
+def test_calibration_plan_reports_both_names_for_a_real_template_mismatch(
+    tmp_path: Path,
+) -> None:
+    plan = build_reference_calibration_plan(
+        _recommendation(),
+        coordinate_unit="unitless",
+        requested_pilot_subject_count=3,
+    )
+    wrong = tmp_path / "different-template.vtk"
+    wrong.write_bytes(_cohort()[0].read_bytes())
+
+    with pytest.raises(ConfigurationError) as error:
+        bind_reference_calibration_plan_to_inputs(
+            plan,
+            template=wrong,
+            subjects=_cohort()[1:],
+        )
+
+    message = str(error.value)
+    assert "template.vtk" in message
+    assert "different-template.vtk" in message
+
+
+def test_axis_separated_width_refinement_brackets_each_parameter_independently() -> None:
+    plan = build_reference_calibration_plan(
+        _recommendation(),
+        coordinate_unit="unitless",
+        requested_pilot_subject_count=3,
+    )
+    attachment_values = sorted(
+        {
+            candidate.values["attachment_kernel_width"]
+            for stage in plan.stages
+            for candidate in stage.candidates
+            if "attachment_kernel_width" in candidate.values
+        }
+    )
+    deformation_values = sorted(
+        {
+            candidate.values["deformation_kernel_width"]
+            for stage in plan.stages
+            for candidate in stage.candidates
+            if "deformation_kernel_width" in candidate.values
+        }
+    )
+    spacing_values = sorted(
+        {
+            candidate.values["initial_control_point_spacing"]
+            for stage in plan.stages
+            for candidate in stage.candidates
+            if "initial_control_point_spacing" in candidate.values
+        }
+    )
+    center = {
+        "attachment_kernel_width": attachment_values[-2],
+        "deformation_kernel_width": deformation_values[0],
+        "initial_control_point_spacing": spacing_values[0],
+    }
+
+    proposal = propose_axis_separated_width_refinement(
+        plan,
+        selected_values=center,
+        source_assessment_fingerprint="a" * 64,
+    )
+
+    assert len(proposal.candidates) == 7
+    assert proposal.candidates[0].candidate_id == "width-center"
+    assert proposal.candidates[1].values["attachment_kernel_width"] == pytest.approx(
+        attachment_values[-3]
+    )
+    assert proposal.candidates[2].values["attachment_kernel_width"] == pytest.approx(
+        attachment_values[-1]
+    )
+    ratio = deformation_values[1] / deformation_values[0]
+    assert proposal.candidates[3].values["deformation_kernel_width"] == pytest.approx(
+        deformation_values[0] / ratio
+    )
+    assert proposal.candidates[4].values["deformation_kernel_width"] == pytest.approx(
+        deformation_values[1]
+    )
+    spacing_ratio = spacing_values[1] / spacing_values[0]
+    assert proposal.candidates[5].values[
+        "initial_control_point_spacing"
+    ] == pytest.approx(spacing_values[0] / spacing_ratio)
+    assert proposal.candidates[6].values[
+        "initial_control_point_spacing"
+    ] == pytest.approx(spacing_values[1])
+    for candidate in proposal.candidates[1:]:
+        changed = [
+            name
+            for name, value in candidate.values.items()
+            if value != pytest.approx(center[name])
+        ]
+        assert len(changed) == 1
+
+    successor = bind_axis_separated_width_refinement_plan(plan, proposal)
+    refinement = next(stage for stage in successor.stages if stage.stage_id == "attachment")
+    assert refinement.candidates == proposal.candidates
+    assert dict(successor.search_extension_lineage)["proposal_fingerprint"] == (
+        proposal.fingerprint
+    )
+    assert verify_reference_calibration_plan_provenance(successor.provenance) == (
+        successor.fingerprint
+    )
+def test_pilot_selection_is_deterministic_unique_and_excludes_template() -> None:
+    recommendation = _recommendation()
+
+    first = select_representative_pilot_subjects(recommendation, requested_count=4)
+    second = select_representative_pilot_subjects(recommendation, requested_count=4)
+
+    assert first == second
+    assert len(first) == 4
+    assert len({subject.filename for subject in first}) == 4
+    assert recommendation.template_filename not in {
+        subject.filename for subject in first
+    }
+    assert first[0].selection_role == "geometry-descriptor medoid"
+    assert all(
+        subject.selection_role == "farthest-first geometry-descriptor extreme"
+        for subject in first[1:]
+    )
+    assert [subject.selection_order for subject in first] == [1, 2, 3, 4]
+    assert all(subject.sha256 for subject in first)
+
+
+def test_pilot_selection_caps_at_the_available_subject_count() -> None:
+    recommendation = _recommendation()
+
+    selected = select_representative_pilot_subjects(
+        recommendation,
+        requested_count=100,
+    )
+
+    assert len(selected) == recommendation.subject_count
+
+
+def test_pilot_selection_guarantees_declared_extremes_and_strata() -> None:
+    recommendation = _recommendation()
+    names = [item.filename for item in recommendation.observations[1:5]]
+    declarations = (
+        PilotSubjectDeclaration(names[0], "small-bodied", False),
+        PilotSubjectDeclaration(names[1], "small-bodied", True),
+        PilotSubjectDeclaration(names[2], "large-bodied", False),
+        PilotSubjectDeclaration(names[3], "large-bodied", False),
+    )
+
+    selected = select_representative_pilot_subjects(
+        recommendation,
+        requested_count=3,
+        pilot_subject_declarations=declarations,
+    )
+
+    selected_names = {item.filename for item in selected}
+    assert names[1] in selected_names
+    assert selected_names & {names[2], names[3]}
+    assert any("biological extreme" in item.selection_role for item in selected)
+    assert any("large-bodied" in item.selection_role for item in selected)
+
+
+def test_pilot_selection_refuses_silent_declaration_omission() -> None:
+    recommendation = _recommendation()
+    names = [item.filename for item in recommendation.observations[1:4]]
+    declarations = tuple(
+        PilotSubjectDeclaration(name, None, True) for name in names
+    )
+
+    with pytest.raises(ConfigurationError, match="need 3, requested 2"):
+        select_representative_pilot_subjects(
+            recommendation,
+            requested_count=2,
+            pilot_subject_declarations=declarations,
+        )
+    with pytest.raises(ConfigurationError, match="unknown subject"):
+        select_representative_pilot_subjects(
+            recommendation,
+            requested_count=4,
+            pilot_subject_declarations=(
+                PilotSubjectDeclaration("absent.vtk", "unknown", False),
+            ),
+        )
+
+
+def test_pilot_declaration_csv_and_plan_provenance_are_hash_bound(
+    tmp_path: Path,
+) -> None:
+    recommendation = _recommendation()
+    names = [item.filename for item in recommendation.observations[1:4]]
+    csv_path = tmp_path / "pilot-declarations.csv"
+    csv_path.write_text(
+        "filename,stratum,is_extreme\n"
+        f"{names[0]},early-diverging,yes\n"
+        f"{names[1]},derived,no\n"
+        f"{names[2]},derived,false\n",
+        encoding="utf-8",
+    )
+
+    declarations = read_pilot_subject_declarations(csv_path)
+    plan = build_reference_calibration_plan(
+        recommendation,
+        coordinate_unit="unitless",
+        requested_pilot_subject_count=3,
+        pilot_subject_declarations=declarations,
+    )
+    rebound = reference_calibration_plan_from_provenance(plan.provenance)
+
+    assert plan.version == "0.5"
+    assert plan.pilot_subject_declarations == declarations
+    assert rebound == plan
+    assert "2 strata; 1 explicit extremes" in plan.summary_text()
+    assert verify_reference_calibration_plan_provenance(plan.provenance) == plan.fingerprint
+
+
+def test_pilot_declaration_csv_rejects_ambiguous_rows(tmp_path: Path) -> None:
+    source = tmp_path / "pilot-declarations.csv"
+    source.write_text(
+        "filename,stratum,is_extreme\nsubject.vtk,,maybe\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ConfigurationError, match="invalid is_extreme"):
+        read_pilot_subject_declarations(source)
+
+
+def test_calibration_plan_is_deterministic_staged_and_hash_bound() -> None:
+    recommendation = _recommendation()
+
+    first = build_reference_calibration_plan(
+        recommendation,
+        coordinate_unit="millimeter",
+        requested_pilot_subject_count=4,
+        smallest_relevant_feature=0.2,
+    )
+    second = build_reference_calibration_plan(
+        recommendation,
+        coordinate_unit="millimeter",
+        requested_pilot_subject_count=4,
+        smallest_relevant_feature=0.2,
+    )
+
+    assert first == second
+    assert len(first.fingerprint) == 64
+    assert first.recommendation_fingerprint == recommendation.fingerprint
+    assert first.pilot_subject_count == 4
+    assert first.smallest_relevant_feature == pytest.approx(0.2)
+    assert first.attachment_center_source == "researcher_measured_feature"
+    assert [stage.stage_id for stage in first.stages] == [
+        "attachment",
+        "deformation",
+        "noise",
+        "timepoints",
+    ]
+    assert len(first.stages[0].candidates) == 18
+    assert [len(stage.candidates) for stage in first.stages[1:]] == [5, 5, 3]
+    assert all(
+        {
+            "attachment_kernel_width",
+            "deformation_kernel_width",
+            "initial_control_point_spacing",
+        }
+        == set(candidate.values)
+        for candidate in first.stages[0].candidates
+    )
+    assert first.stages[1].candidates[2].values[
+        "initial_control_point_spacing"
+    ] == pytest.approx(
+        first.stages[1].candidates[2].values["deformation_kernel_width"]
+    )
+    assert first.provenance["status"] == "planned_not_executed"
+    assert first.provenance["fingerprint"] == first.fingerprint
+    assert "not executed" in first.summary_text().lower()
+
+    serialized = calibration_plan_json(first)
+    assert serialized.endswith("\n")
+    assert f'"fingerprint": "{first.fingerprint}"' in serialized
+    assert '"status": "planned_not_executed"' in serialized
+
+
+def test_feature_measurement_changes_attachment_candidates_not_deformation_center() -> None:
+    recommendation = _recommendation()
+    unmeasured = build_reference_calibration_plan(
+        recommendation,
+        coordinate_unit="unitless",
+        requested_pilot_subject_count=3,
+    )
+    measured = build_reference_calibration_plan(
+        recommendation,
+        coordinate_unit="unitless",
+        requested_pilot_subject_count=3,
+        smallest_relevant_feature=(
+            2.0 * recommendation.effective_values["attachment_kernel_width"]
+        ),
+    )
+
+    assert unmeasured.fingerprint != measured.fingerprint
+    assert unmeasured.stages[0].candidates != measured.stages[0].candidates
+    assert unmeasured.stages[1].candidates == measured.stages[1].candidates
+    assert measured.effective_values["attachment_kernel_width"] >= (
+        2.0 * recommendation.effective_values["attachment_kernel_width"]
+    )
+    assert measured.parameter_ratios["attachment_kernel_width"] == pytest.approx(
+        measured.effective_values["attachment_kernel_width"]
+        / recommendation.template_diagonal
+    )
+
+
+def test_extreme_expected_disparity_widens_search_and_does_not_penalize_amplitude() -> None:
+    moderate = build_reference_calibration_plan(
+        _recommendation(),
+        coordinate_unit="unitless",
+        requested_pilot_subject_count=3,
+    )
+    extreme_recommendation = recommend_reference_parameters(
+        _cohort(),
+        alignment_basis="declared_gpa",
+        surface_detail_intent="balanced",
+        deformation_scale_intent="balanced",
+        expected_shape_disparity="extreme",
+    )
+    extreme = build_reference_calibration_plan(
+        extreme_recommendation,
+        coordinate_unit="unitless",
+        requested_pilot_subject_count=3,
+    )
+    moderate_widths = [
+        candidate.values["deformation_kernel_width"]
+        for candidate in moderate.stages[1].candidates
+    ]
+    extreme_widths = [
+        candidate.values["deformation_kernel_width"]
+        for candidate in extreme.stages[1].candidates
+    ]
+    assert min(extreme_widths) < min(moderate_widths)
+    assert max(extreme_widths) > max(moderate_widths)
+
+    noise_stage = extreme.stages[2]
+    evidence = tuple(
+        CalibrationCandidateEvidence(
+            candidate_id=candidate.candidate_id,
+            completed=True,
+            converged=True,
+            invalid_face_count=0,
+            residual_p95=0.1 + index,
+            deformation_energy=1000.0 if index == 0 else 0.01,
+            distortion_p95=1000.0 if index == 0 else 0.01,
+            runtime_seconds=10.0 + index,
+            review_approved=None,
+        )
+        for index, candidate in enumerate(noise_stage.candidates)
+    )
+    assessment = assess_calibration_stage(
+        extreme,
+        stage_id="noise",
+        evidence=evidence,
+    )
+
+    assert assessment.balanced_candidate_id == noise_stage.candidates[0].candidate_id
+    assert set(assessment.weights) == {"residual_p95", "runtime_seconds"}
+    assert "extreme" in " ".join(assessment.cautions)
+
+
+def test_calibration_plan_rejects_invalid_inputs() -> None:
+    recommendation = _recommendation()
+
+    with pytest.raises(ValueError, match="at least 2"):
+        select_representative_pilot_subjects(recommendation, requested_count=1)
+    with pytest.raises(ValueError, match="finite and positive"):
+        build_reference_calibration_plan(
+            recommendation,
+            coordinate_unit="millimeter",
+            smallest_relevant_feature=0,
+        )
+    with pytest.raises(ValueError, match="coordinate_unit"):
+        build_reference_calibration_plan(
+            recommendation,
+            coordinate_unit=" ",
+        )
+
+
+def test_calibration_plan_provenance_verification_detects_any_changed_decision() -> None:
+    plan = build_reference_calibration_plan(
+        _recommendation(),
+        coordinate_unit="millimeter",
+        requested_pilot_subject_count=4,
+        smallest_relevant_feature=0.2,
+    )
+    provenance = deepcopy(plan.provenance)
+
+    assert verify_reference_calibration_plan_provenance(provenance) == plan.fingerprint
+
+    provenance["stages"][0]["candidates"][0]["parameter_values"][
+        "attachment_kernel_width"
+    ] *= 2
+    with pytest.raises(ConfigurationError, match="fingerprint"):
+        verify_reference_calibration_plan_provenance(provenance)
+
+
+def _stage_evidence(
+    plan,
+    stage_id: str,
+    rows: tuple[tuple[float, float, float, float], ...],
+) -> tuple[CalibrationCandidateEvidence, ...]:
+    stage = next(stage for stage in plan.stages if stage.stage_id == stage_id)
+    return tuple(
+        CalibrationCandidateEvidence(
+            candidate_id=candidate.candidate_id,
+            completed=True,
+            converged=True,
+            invalid_face_count=0,
+            residual_p95=row[0],
+            deformation_energy=row[1],
+            distortion_p95=row[2],
+            runtime_seconds=row[3],
+            resampling_sensitivity=(0.2 + index * 0.1),
+            review_approved=True,
+        )
+        for index, (candidate, row) in enumerate(
+            zip(stage.candidates, rows, strict=True)
+        )
+    )
+
+
+def test_stage_assessment_retains_pareto_candidates_and_exposes_weights() -> None:
+    plan = build_reference_calibration_plan(
+        _recommendation(),
+        coordinate_unit="unitless",
+        requested_pilot_subject_count=3,
+    )
+    stage = next(stage for stage in plan.stages if stage.stage_id == "noise")
+    assert len(stage.candidates) == 5
+    evidence = _stage_evidence(
+        plan,
+        "noise",
+        (
+            (0.08, 1.10, 0.65, 14.0),
+            (0.10, 0.90, 0.50, 10.0),
+            (0.15, 0.45, 0.20, 12.0),
+            (0.30, 0.30, 0.15, 9.0),
+            (0.42, 0.25, 0.12, 8.0),
+        ),
+    )
+
+    first = assess_calibration_stage(
+        plan,
+        stage_id="noise",
+        evidence=evidence,
+    )
+    second = assess_calibration_stage(
+        plan,
+        stage_id="noise",
+        evidence=evidence,
+    )
+
+    assert first == second
+    assert first.status == "selection_required"
+    assert first.balanced_candidate_id in first.pareto_candidate_ids
+    assert set(first.weights) == {
+        "residual_p95",
+        "deformation_energy",
+        "distortion_p95",
+        "runtime_seconds",
+    }
+    assert sum(first.weights.values()) == pytest.approx(1.0)
+    assert all(candidate.eligible for candidate in first.candidates)
+    cautions = " ".join(first.cautions)
+    assert "robust recommendation" in cautions
+    assert first.weight_scenario_count > 1
+    assert first.recommendation_confidence == "ambiguous"
+    assert first.automatic_selection_allowed is False
+    assert first.sensitivity_flags
+    assert len(first.fingerprint) == 64
+
+
+def test_stage_assessment_requires_stable_evidence_before_automatic_selection() -> None:
+    plan = build_reference_calibration_plan(
+        _recommendation(),
+        coordinate_unit="unitless",
+        requested_pilot_subject_count=3,
+    )
+    stage = next(stage for stage in plan.stages if stage.stage_id == "noise")
+    evidence = tuple(
+        CalibrationCandidateEvidence(
+            candidate_id=candidate.candidate_id,
+            completed=True,
+            converged=True,
+            invalid_face_count=0,
+            residual_p95=0.1 + abs(index - 2),
+            deformation_energy=0.2 + abs(index - 2),
+            distortion_p95=0.3 + abs(index - 2),
+            runtime_seconds=10.0 + abs(index - 2),
+            review_approved=None,
+            subject_residual_p95=(
+                ("subject-a.vtk", 0.10 + abs(index - 2)),
+                ("subject-b.vtk", 0.11 + abs(index - 2)),
+                ("subject-c.vtk", 0.09 + abs(index - 2)),
+            ),
+        )
+        for index, candidate in enumerate(stage.candidates)
+    )
+
+    assessment = assess_calibration_stage(
+        plan,
+        stage_id="noise",
+        evidence=evidence,
+    )
+
+    assert assessment.recommendation_confidence == "robust"
+    assert assessment.automatic_selection_allowed is True
+    assert assessment.search_range_status == "bounded"
+    assert assessment.search_boundary_parameters == ()
+    assert assessment.weight_stability == pytest.approx(1.0)
+    assert assessment.subject_bootstrap_stability == pytest.approx(1.0)
+    assert assessment.subject_bootstrap_iterations == 256
+    selected = next(
+        candidate
+        for candidate in assessment.candidates
+        if candidate.candidate_id == assessment.balanced_candidate_id
+    )
+    assert selected.weight_win_fraction == pytest.approx(1.0)
+    assert selected.subject_bootstrap_win_fraction == pytest.approx(1.0)
+
+
+def test_robust_boundary_winner_is_reported_as_search_range_not_bounded() -> None:
+    plan = build_reference_calibration_plan(
+        _recommendation(),
+        coordinate_unit="unitless",
+        requested_pilot_subject_count=3,
+    )
+    stage = next(stage for stage in plan.stages if stage.stage_id == "noise")
+    evidence = tuple(
+        CalibrationCandidateEvidence(
+            candidate_id=candidate.candidate_id,
+            completed=True,
+            converged=True,
+            invalid_face_count=0,
+            residual_p95=0.1 + index,
+            deformation_energy=0.2 + index,
+            distortion_p95=0.3 + index,
+            runtime_seconds=10.0 + index,
+            subject_residual_p95=(
+                ("subject-a.vtk", 0.10 + index),
+                ("subject-b.vtk", 0.11 + index),
+                ("subject-c.vtk", 0.09 + index),
+            ),
+        )
+        for index, candidate in enumerate(stage.candidates)
+    )
+
+    assessment = assess_calibration_stage(plan, stage_id="noise", evidence=evidence)
+
+    assert assessment.balanced_candidate_id == stage.candidates[0].candidate_id
+    assert assessment.recommendation_confidence == "robust"
+    assert assessment.automatic_selection_allowed is False
+    assert assessment.search_range_status == "not_bounded"
+    assert assessment.search_boundary_parameters == ("noise_std:minimum",)
+    assert "search range not bounded" in " ".join(
+        assessment.sensitivity_flags
+    ).lower()
+    assert assessment.as_manifest()["search_boundary_parameters"] == [
+        "noise_std:minimum"
+    ]
+    extension = propose_calibration_search_extension(plan, assessment)
+    assert extension.plan_fingerprint == plan.fingerprint
+    assert extension.assessment_fingerprint == assessment.fingerprint
+    assert extension.source_candidate_id == stage.candidates[0].candidate_id
+    assert extension.outward_steps == 2
+    assert len(extension.fingerprint) == 64
+    assert len(extension.candidates) == 2
+    noise_values = [candidate.values["noise_std"] for candidate in stage.candidates]
+    ratio = noise_values[1] / noise_values[0]
+    assert extension.candidates[0].values["noise_std"] == pytest.approx(
+        noise_values[0] / ratio
+    )
+    assert extension.candidates[1].values["noise_std"] == pytest.approx(
+        noise_values[0] / ratio**2
+    )
+    assert all("outward" in candidate.candidate_id for candidate in extension.candidates)
+
+    with pytest.raises(ValueError, match="one or two"):
+        propose_calibration_search_extension(plan, assessment, outward_steps=3)
+
+    successor = bind_calibration_search_extension_plan(
+        plan,
+        assessment,
+        extension,
+    )
+    successor_noise = next(
+        stage for stage in successor.stages if stage.stage_id == "noise"
+    )
+    assert successor.version == "0.4"
+    assert successor.fingerprint != plan.fingerprint
+    assert successor_noise.candidates[-2:] == extension.candidates
+    assert dict(successor.search_extension_lineage) == {
+        "parent_plan_fingerprint": plan.fingerprint,
+        "source_assessment_fingerprint": assessment.fingerprint,
+        "proposal_fingerprint": extension.fingerprint,
+        "stage_id": "noise",
+    }
+    provenance = successor.provenance
+    assert verify_reference_calibration_plan_provenance(provenance) == (
+        successor.fingerprint
+    )
+    assert reference_calibration_plan_from_provenance(provenance) == successor
+
+    successor_evidence = tuple(
+        CalibrationCandidateEvidence(
+            candidate_id=candidate.candidate_id,
+            completed=True,
+            converged=True,
+            invalid_face_count=0,
+            residual_p95=float(len(successor_noise.candidates) - index),
+            deformation_energy=float(len(successor_noise.candidates) - index),
+            distortion_p95=float(len(successor_noise.candidates) - index),
+            runtime_seconds=float(len(successor_noise.candidates) - index),
+            subject_residual_p95=(
+                ("subject-a.vtk", float(len(successor_noise.candidates) - index)),
+                ("subject-b.vtk", float(len(successor_noise.candidates) - index)),
+                ("subject-c.vtk", float(len(successor_noise.candidates) - index)),
+            ),
+        )
+        for index, candidate in enumerate(successor_noise.candidates)
+    )
+    successor_assessment = assess_calibration_stage(
+        successor,
+        stage_id="noise",
+        evidence=successor_evidence,
+    )
+    assert successor_assessment.search_range_status == "not_bounded"
+    second_extension = propose_calibration_search_extension(
+        successor,
+        successor_assessment,
+    )
+    assert not {
+        candidate.candidate_id for candidate in extension.candidates
+    } & {candidate.candidate_id for candidate in second_extension.candidates}
+    second_successor = bind_calibration_search_extension_plan(
+        successor,
+        successor_assessment,
+        second_extension,
+    )
+    second_noise = next(
+        stage for stage in second_successor.stages if stage.stage_id == "noise"
+    )
+    assert len(second_noise.candidates) == len(successor_noise.candidates) + 2
+
+
+def test_trochanter_236_selected_attachment_and_noise_edges_are_unbounded() -> None:
+    """Regression for the recorded 236-subject pilot search grid."""
+
+    plan = build_reference_calibration_plan(
+        _recommendation(),
+        coordinate_unit="unitless",
+        requested_pilot_subject_count=3,
+    )
+    attachment_stage = next(
+        stage for stage in plan.stages if stage.stage_id == "attachment"
+    )
+    attachment_widths = (
+        0.03544482253673162,
+        0.05274707660694372,
+        0.07849535958871082,
+        0.12934533,
+        0.17383417481003907,
+        0.25869065999999996,
+    )
+    deformation_widths = (
+        0.080328079501734,
+        0.321312318006936,
+        1.285249272027744,
+    )
+    attachment_candidates = tuple(
+        replace(
+            candidate,
+            parameter_values=(
+                ("attachment_kernel_width", attachment_widths[index // 3]),
+                ("deformation_kernel_width", deformation_widths[index % 3]),
+                ("initial_control_point_spacing", deformation_widths[index % 3]),
+            ),
+        )
+        for index, candidate in enumerate(attachment_stage.candidates)
+    )
+    attachment_stage = replace(
+        attachment_stage,
+        candidates=attachment_candidates,
+    )
+    trochanter_plan = replace(
+        plan,
+        stages=(attachment_stage, *plan.stages[1:]),
+    )
+    attachment_evidence = tuple(
+        CalibrationCandidateEvidence(
+            candidate_id=candidate.candidate_id,
+            completed=True,
+            converged=True,
+            invalid_face_count=0,
+            residual_p95=0.1 if candidate.candidate_id == "attachment-17" else 1.0,
+            resampling_sensitivity=(
+                0.1 if candidate.candidate_id == "attachment-17" else 1.0
+            ),
+            deformation_energy=(
+                0.1 if candidate.candidate_id == "attachment-17" else 1.0
+            ),
+            distortion_p95=(
+                0.1 if candidate.candidate_id == "attachment-17" else 1.0
+            ),
+            runtime_seconds=(
+                0.1 if candidate.candidate_id == "attachment-17" else 1.0
+            ),
+        )
+        for candidate in attachment_candidates
+    )
+    attachment_assessment = assess_calibration_stage(
+        trochanter_plan,
+        stage_id="attachment",
+        evidence=attachment_evidence,
+    )
+
+    assert attachment_candidates[16].values["attachment_kernel_width"] == pytest.approx(
+        0.25869066
+    )
+    assert attachment_assessment.balanced_candidate_id == "attachment-17"
+    assert attachment_assessment.search_range_status == "not_bounded"
+    assert attachment_assessment.search_boundary_parameters == (
+        "attachment_kernel_width:maximum",
+    )
+
+    noise_stage = next(stage for stage in plan.stages if stage.stage_id == "noise")
+    noise_values = (
+        0.008084083125,
+        0.01616816625,
+        0.0323363325,
+        0.064672665,
+        0.12934533,
+    )
+    noise_stage = replace(
+        noise_stage,
+        candidates=tuple(
+            replace(candidate, parameter_values=(("noise_std", noise_values[index]),))
+            for index, candidate in enumerate(noise_stage.candidates)
+        ),
+    )
+    trochanter_plan = replace(
+        plan,
+        stages=(*plan.stages[:2], noise_stage, plan.stages[3]),
+    )
+    noise_evidence = tuple(
+        CalibrationCandidateEvidence(
+            candidate_id=candidate.candidate_id,
+            completed=True,
+            converged=True,
+            invalid_face_count=0,
+            residual_p95=0.1 + index,
+            deformation_energy=0.1 + index,
+            distortion_p95=0.1 + index,
+            runtime_seconds=0.1 + index,
+        )
+        for index, candidate in enumerate(noise_stage.candidates)
+    )
+    noise_assessment = assess_calibration_stage(
+        trochanter_plan,
+        stage_id="noise",
+        evidence=noise_evidence,
+    )
+
+    assert noise_stage.candidates[0].values["noise_std"] == pytest.approx(
+        0.008084083125
+    )
+    assert noise_assessment.balanced_candidate_id == "noise-01"
+    assert noise_assessment.search_range_status == "not_bounded"
+    assert noise_assessment.search_boundary_parameters == ("noise_std:minimum",)
+
+
+def test_stage_assessment_fails_closed_on_missing_metrics_without_requiring_review() -> None:
+    plan = build_reference_calibration_plan(
+        _recommendation(),
+        coordinate_unit="unitless",
+        requested_pilot_subject_count=3,
+    )
+    stage = next(stage for stage in plan.stages if stage.stage_id == "attachment")
+    evidence = tuple(
+        CalibrationCandidateEvidence(
+            candidate_id=candidate.candidate_id,
+            completed=True,
+            converged=True,
+            invalid_face_count=0,
+            residual_p95=0.1,
+            deformation_energy=0.2,
+            distortion_p95=0.3,
+            runtime_seconds=10.0,
+            resampling_sensitivity=None,
+            review_approved=None,
+        )
+        for candidate in stage.candidates
+    )
+
+    assessment = assess_calibration_stage(
+        plan,
+        stage_id="attachment",
+        evidence=evidence,
+    )
+
+    assert assessment.status == "no_eligible_candidate"
+    assert assessment.balanced_candidate_id is None
+    assert assessment.pareto_candidate_ids == ()
+    assert all(not candidate.eligible for candidate in assessment.candidates)
+    assert all(
+        all(
+            "visual registration review" not in reason
+            for reason in candidate.rejection_reasons
+        )
+        for candidate in assessment.candidates
+    )
+    assert all(
+        any("resampling_sensitivity" in reason for reason in candidate.rejection_reasons)
+        for candidate in assessment.candidates
+    )
+
+
+def test_stage_assessment_rejects_an_explicit_visual_qc_failure() -> None:
+    plan = build_reference_calibration_plan(
+        _recommendation(),
+        coordinate_unit="unitless",
+        requested_pilot_subject_count=3,
+    )
+    stage = next(stage for stage in plan.stages if stage.stage_id == "noise")
+    evidence = tuple(
+        CalibrationCandidateEvidence(
+            candidate_id=candidate.candidate_id,
+            completed=True,
+            converged=True,
+            invalid_face_count=0,
+            residual_p95=0.1,
+            deformation_energy=0.2,
+            distortion_p95=0.3,
+            runtime_seconds=10.0,
+            review_approved=False,
+        )
+        for candidate in stage.candidates
+    )
+
+    assessment = assess_calibration_stage(
+        plan,
+        stage_id="noise",
+        evidence=evidence,
+    )
+
+    assert assessment.status == "no_eligible_candidate"
+    assert all(not candidate.eligible for candidate in assessment.candidates)
+    assert all(
+        candidate.rejection_reasons
+        == ("optional visual registration review explicitly failed",)
+        for candidate in assessment.candidates
+    )
+
+
+def test_stage_assessment_requires_exact_candidate_evidence() -> None:
+    plan = build_reference_calibration_plan(
+        _recommendation(),
+        coordinate_unit="unitless",
+        requested_pilot_subject_count=3,
+    )
+
+    with pytest.raises(ValueError, match="must match"):
+        assess_calibration_stage(
+            plan,
+            stage_id="noise",
+            evidence=(),
+        )

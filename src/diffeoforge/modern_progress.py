@@ -71,8 +71,19 @@ class ModernOptimizerProgress:
     line_search_evaluations: int
 
     def __post_init__(self) -> None:
-        if self.maximum_decisions != self.max_cycles * 3:
-            raise ValueError("maximum_decisions must equal max_cycles * 3 parameter blocks")
+        if self.max_cycles < 0:
+            raise ValueError("max_cycles must be nonnegative")
+        if self.max_cycles == 0:
+            if self.maximum_decisions != 0:
+                raise ValueError("zero optimizer cycles require zero maximum decisions")
+        elif (
+            self.maximum_decisions % self.max_cycles != 0
+            or not 1 <= self.maximum_decisions // self.max_cycles <= 102
+        ):
+            raise ValueError(
+                "maximum_decisions must equal max_cycles times one to 102 configured "
+                "block decisions per cycle"
+            )
         if not 0 <= self.completed_decisions <= self.maximum_decisions:
             raise ValueError("completed_decisions must be within the configured maximum")
         if not 0 <= self.cycle <= self.max_cycles:

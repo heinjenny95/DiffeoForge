@@ -2,13 +2,28 @@
 
 from __future__ import annotations
 
+import json
 import math
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from diffeoforge.desktop.modern_cuda_runtime import (
+    ModernCudaRuntime,
+    ModernCudaRuntimeError,
+    discover_modern_cuda_runtime,
+)
 from diffeoforge.desktop.project_setup import DesktopEngine
+from diffeoforge.desktop.reference_production_readiness import (
+    ReferenceProductionReadiness,
+    assess_reference_production_readiness,
+)
+from diffeoforge.desktop.reference_runtime_estimate import (
+    ReferenceRuntimeEstimate,
+    estimate_reference_runtime,
+)
 from diffeoforge.desktop.worker_protocol import sha256_file
+from diffeoforge.mesh_scaling_contract import scaling_mode_label
 from diffeoforge.report import (
     collect_preflight,
     default_preflight_report_path,
@@ -40,6 +55,9 @@ class ProjectReviewResult:
     workload: tuple[ReviewItem, ...]
     warnings: tuple[str, ...]
     scientific_boundary: str
+    runtime_estimate: ReferenceRuntimeEstimate | None = None
+    production_readiness: ReferenceProductionReadiness | None = None
+    modern_cuda_runtime: ModernCudaRuntime | None = None
 
 
 def _number(value: int | float) -> str:
@@ -61,6 +79,24 @@ def _bytes(value: int | None) -> str:
     return f"{amount:.3g} {unit}"
 
 
+def _duration(seconds: float) -> str:
+    rounded = max(0, int(round(float(seconds))))
+    if rounded < 60:
+        return f"{rounded} s"
+    minutes = rounded // 60
+    if minutes < 60:
+        return f"{minutes} min"
+    hours, remaining_minutes = divmod(minutes, 60)
+    if hours < 24:
+        return (
+            f"{hours} h"
+            if remaining_minutes == 0
+            else f"{hours} h {remaining_minutes} min"
+        )
+    days, remaining_hours = divmod(hours, 24)
+    return f"{days} d" if remaining_hours == 0 else f"{days} d {remaining_hours} h"
+
+
 def _setting(value: Any, *, none: str = "automatic maximum") -> str:
     if value is None:
         return none
@@ -73,8 +109,175 @@ def _setting(value: Any, *, none: str = "automatic maximum") -> str:
     return str(value)
 
 
+def _reference_alignment_items(preflight) -> tuple[ReviewItem, ...]:
+    """Verify and summarize an optional DiffeoForge Procrustes input cohort."""
+
+    directory = preflight.inputs.input_directory
+    evidence_path = directory / "procrustes.json"
+    if not evidence_path.exists() and directory.name == "aligned-vtk":
+        evidence_path = directory.parent / "procrustes.json"
+    if not evidence_path.exists():
+        return ()
+    try:
+        evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
+        version = evidence.get("preprocessing_version")
+        settings = evidence["settings"]
+        records = evidence["meshes"]
+        labels = evidence["landmark_labels"]
+        fingerprint = evidence["fingerprint"]
+        expected_names = (
+            preflight.inputs.template.name,
+            *(path.name for path in preflight.inputs.subjects),
+        )
+        if version not in {"0.1", "0.2", "0.3"}:
+            raise ValueError("unsupported preprocessing evidence version")
+        if evidence.get("method") != "generalized_procrustes":
+            raise ValueError("unexpected alignment method")
+        if evidence.get("converged") is not True:
+            raise ValueError("alignment is not recorded as converged")
+        if not isinstance(fingerprint, str) or len(fingerprint) != 64:
+            raise ValueError("invalid alignment fingerprint")
+        root = directory if version == "0.1" else directory.parent
+        if version in {"0.2", "0.3"} and (
+            (root / "raw").is_symlink() or (root / "aligned-vtk").is_symlink()
+        ):
+            raise ValueError("alignment raw or aligned directory is a symbolic link")
+        prefix = root.name.removeprefix("aligned-")
+        if root.name.startswith("aligned-") and not fingerprint.startswith(prefix):
+            raise ValueError("alignment directory does not match its fingerprint")
+        if not isinstance(records, list) or tuple(
+            record.get("filename") for record in records
+        ) != expected_names:
+            raise ValueError("alignment evidence lists a different mesh cohort")
+        for record in records:
+            aligned_path = (
+                directory / record["filename"]
+                if version == "0.1"
+                else root / "aligned-vtk" / record["filename"]
+            )
+            if version in {"0.2", "0.3"} and record.get("aligned_path") != (
+                f"aligned-vtk/{record['filename']}"
+            ):
+                raise ValueError("aligned mesh path does not match its canonical filename")
+            if (
+                not aligned_path.is_file()
+                or aligned_path.is_symlink()
+                or sha256_file(aligned_path) != record.get("aligned_sha256")
+            ):
+                raise ValueError(f"aligned mesh no longer matches: {aligned_path.name}")
+            if version in {"0.2", "0.3"}:
+                source_filename = record.get("source_filename")
+                if (
+                    not isinstance(source_filename, str)
+                    or not source_filename
+                    or Path(source_filename).name != source_filename
+                    or record.get("raw_copy_path") != f"raw/{source_filename}"
+                ):
+                    raise ValueError("raw mesh path or source filename is unsafe")
+                raw_path = root / "raw" / source_filename
+                if (
+                    not raw_path.is_file()
+                    or raw_path.is_symlink()
+                    or sha256_file(raw_path) != record.get("raw_copy_sha256")
+                    or record.get("raw_copy_sha256") != record.get("source_sha256")
+                ):
+                    raise ValueError(
+                        f"raw mesh copy no longer matches: {record.get('source_filename')}"
+                    )
+        landmark_copy = root / "landmarks.csv"
+        if (
+            not landmark_copy.is_file()
+            or landmark_copy.is_symlink()
+            or sha256_file(landmark_copy) != evidence.get("landmark_copy_sha256")
+        ):
+            raise ValueError("landmark copy no longer matches its evidence")
+        if not isinstance(labels, list) or len(labels) < 3:
+            raise ValueError("fewer than three landmark labels are recorded")
+        scale = settings["scale_to_unit_centroid_size"]
+        reflection = settings["allow_reflection"]
+        tolerance = settings["tolerance"]
+        max_iterations = settings["max_iterations"]
+        if not isinstance(scale, bool) or not isinstance(reflection, bool):
+            raise ValueError("invalid Procrustes boolean settings")
+        if isinstance(tolerance, bool) or float(tolerance) <= 0:
+            raise ValueError("invalid Procrustes tolerance")
+        if (
+            isinstance(max_iterations, bool)
+            or not isinstance(max_iterations, int)
+            or max_iterations < 1
+        ):
+            raise ValueError("invalid Procrustes iteration limit")
+        scaling_label = (
+            scaling_mode_label(settings["scaling_mode"])
+            if version == "0.3"
+            else (
+                "legacy landmark-centroid-size similarity scaling"
+                if scale
+                else "legacy size-preserving landmark GPA"
+            )
+        )
+        target_size = float(settings.get("target_size", 1.0))
+        if not math.isfinite(target_size) or target_size <= 0:
+            raise ValueError("invalid Procrustes target size")
+        if version == "0.3":
+            sensitivity = evidence.get("scaling_sensitivity")
+            sensitivity_path = root / "scaling-sensitivity.csv"
+            if (
+                not isinstance(sensitivity, dict)
+                or sensitivity.get("csv_path") != sensitivity_path.name
+                or not sensitivity_path.is_file()
+                or sensitivity_path.is_symlink()
+                or sha256_file(sensitivity_path) != sensitivity.get("csv_sha256")
+            ):
+                raise ValueError("scaling-sensitivity evidence does not verify")
+    except (KeyError, OSError, TypeError, ValueError, json.JSONDecodeError) as error:
+        raise RuntimeError(
+            f"Landmark-alignment evidence cannot be verified: {evidence_path}: {error}"
+        ) from error
+    return (
+        ReviewItem(
+            "Landmark alignment",
+            f"generalized Procrustes · {len(labels)} landmarks · {len(records)} meshes",
+            (
+                "Verified content-addressed aligned VTK copies are used as atlas input. "
+                "Byte-identical raw source copies and original formats remain recorded."
+                if version in {"0.2", "0.3"}
+                else "Verified content-addressed aligned copies are used as atlas input. "
+                "The raw source meshes remain unchanged."
+            ),
+        ),
+        ReviewItem(
+            "Procrustes settings",
+            (
+                f"size treatment {scaling_label} · target {_number(target_size)} · "
+                f"reflections {_setting(reflection)} · "
+                f"tolerance {_number(float(tolerance))} · max. {max_iterations} iterations"
+            ),
+            "These are the effective alignment settings recorded in the verified "
+            "preprocessing evidence.",
+        ),
+        *(
+            (
+                ReviewItem(
+                    "Scaling sensitivity",
+                    (
+                        f"{len(evidence['scaling_sensitivity']['modes'])} policies assessed · "
+                        f"{len(evidence['scaling_sensitivity']['warnings'])} warning(s)"
+                    ),
+                    "A deterministic preprocessing-only comparison is verified. It does "
+                    "not replace complete atlas reruns when conclusions depend on size treatment.",
+                ),
+            )
+            if version == "0.3"
+            else ()
+        ),
+    )
+
+
 def _reference_review(config_path: Path, config_sha256: str) -> ProjectReviewResult:
     preflight = collect_preflight(config_path)
+    runtime_estimate = estimate_reference_runtime(preflight)
+    production_readiness = assess_reference_production_readiness(preflight)
     config = preflight.config
     model = config["model"]
     deformation = model["deformation"]
@@ -82,10 +285,180 @@ def _reference_review(config_path: Path, config_sha256: str) -> ProjectReviewRes
     runtime = config["runtime"]
     diagonal = preflight.template.bounding_box_diagonal
     ratios = preflight.parameter_ratios
+    provenance = config["project"].get("parameter_provenance")
+    provenance_profile = (
+        str(provenance["profile"]).replace("_", " ")
+        if provenance is not None
+        else "legacy configuration"
+    )
+    recommendation = (
+        provenance.get("recommendation") if provenance is not None else None
+    )
+    recommendation_items: tuple[ReviewItem, ...] = ()
+    recommendation_warnings: tuple[str, ...] = ()
+    if recommendation is not None:
+        measurements = recommendation["measurements"]
+        calibration_plan = recommendation.get("calibration_plan")
+        calibration_result = recommendation.get("calibration_result")
+        alignment_basis = str(recommendation["alignment_basis"])
+        alignment_value = (
+            "DiffeoForge GPA evidence"
+            if alignment_basis == "diffeoforge_gpa"
+            else "researcher-declared external GPA"
+        )
+        expected_disparity = str(
+            recommendation.get("expected_shape_disparity", "moderate")
+        ).replace("_", " ")
+        recommendation_items = (
+            ReviewItem(
+                "Recommendation evidence",
+                (
+                    f"{alignment_value} · {recommendation['subject_count']} subjects · "
+                    f"fingerprint {str(recommendation['fingerprint'])[:12]}…"
+                ),
+                "Binds the displayed proposal to the analyzed aligned cohort and the "
+                "recorded alignment basis.",
+            ),
+            ReviewItem(
+                "Measured geometry",
+                (
+                    f"median diagonal {_number(measurements['cohort_median_diagonal'])} · "
+                    f"size CV {measurements['cohort_diagonal_cv']:.2%} · centroid "
+                    f"dispersion {measurements['normalized_centroid_dispersion']:.2%}"
+                ),
+                "Read-only cohort measurements; they diagnose scale and gross residual "
+                "translation but cannot prove anatomical correspondence.",
+            ),
+            ReviewItem(
+                "Researcher decisions",
+                (
+                    f"{str(recommendation['surface_detail_intent']).replace('_', ' ')} "
+                    "surface detail · "
+                    f"{str(recommendation['deformation_scale_intent']).replace('_', ' ')} "
+                    "deformation reach · "
+                    f"{expected_disparity} "
+                    "expected difference amplitude"
+                ),
+                "These biological scale choices are not inferred from mesh geometry.",
+            ),
+            ReviewItem(
+                "Sampling diagnostic",
+                f"conservative four-edge scale {measurements['sampling_floor_ratio']:.3%}",
+                "Derived from sampled triangle-edge lengths. It expands the pilot search "
+                "but no longer excludes finer attachment widths before they are tested.",
+            ),
+            ReviewItem(
+                (
+                    "Pilot calibration result"
+                    if calibration_result is not None
+                    else "Pilot calibration"
+                ),
+                (
+                    "predeclared · not executed · "
+                    f"{calibration_plan['pilot_subject_count']} selected subjects · "
+                    f"fingerprint {str(calibration_plan['fingerprint'])[:12]}…"
+                    if calibration_result is None and calibration_plan is not None
+                    else (
+                        "completed / researcher-selected staged pilot / "
+                        f"decision {str(calibration_result['decision_event_hash'])[:12]}..."
+                        if calibration_result is not None
+                        else "required"
+                    )
+                ),
+                (
+                    "The bound plan records a deterministic pilot cohort, neighboring "
+                    "values, evidence requirements, and decision rules. It is not an "
+                    "execution result or parameter approval."
+                    if calibration_plan is not None
+                    else "Noise, registration residuals, visual correspondence, "
+                    "convergence, and neighboring kernel widths still require a "
+                    "representative pilot."
+                ),
+            ),
+        )
+        if calibration_result is not None:
+            selection_modes = calibration_result.get("selection_modes", {})
+            automatic_count = sum(
+                str(mode).startswith("automatic_provisional")
+                for mode in selection_modes.values()
+            )
+            researcher_count = len(selection_modes) - automatic_count
+            automatic_calibration = automatic_count > 0
+            if automatic_count and researcher_count:
+                calibration_label = (
+                    "completed / mixed staged pilot "
+                    f"({automatic_count} automatic provisional, "
+                    f"{researcher_count} researcher-authorized)"
+                )
+                calibration_explanation = (
+                    "The displayed values combine transparent automatic provisional "
+                    "selections with explicit researcher decisions. Per-stage provenance "
+                    "is retained; a separate full-cohort confirmation is still required."
+                )
+            elif automatic_count:
+                calibration_label = "completed / automatic provisional staged pilot"
+                calibration_explanation = (
+                    "The selected values are bound to a completed staged pilot and a "
+                    "transparent automatic provisional recommendation. They still "
+                    "require researcher review and a separate full-cohort confirmation."
+                )
+            else:
+                calibration_label = "completed / researcher-selected staged pilot"
+                calibration_explanation = (
+                    "The selected values are bound to a completed staged pilot and "
+                    "explicit researcher decisions. They still require a separate "
+                    "full-cohort confirmation."
+                )
+            recommendation_items = tuple(
+                (
+                    ReviewItem(
+                        "Pilot calibration result",
+                        (
+                            f"{calibration_label} / "
+                            f"decision "
+                            f"{str(calibration_result['decision_event_hash'])[:12]}..."
+                        ),
+                        calibration_explanation,
+                    )
+                    if item.label == "Pilot calibration result"
+                    else item
+                )
+                for item in recommendation_items
+            )
+        recommendation_warnings = tuple(
+            str(warning) for warning in recommendation["warnings"]
+        )
+        if calibration_result is not None:
+            recommendation_warnings = (
+                *recommendation_warnings,
+                (
+                    "The staged calibration contains an automatic provisional "
+                    "recommendation, but the selected settings still require researcher "
+                    "review and a full-cohort confirmation run."
+                    if automatic_calibration
+                    else "The staged calibration has an explicit researcher selection, "
+                    "but the selected settings still require a full-cohort confirmation "
+                    "run."
+                ),
+            )
+        elif calibration_plan is not None:
+            recommendation_warnings = (
+                *recommendation_warnings,
+                "The stored calibration plan has status planned-not-executed; no "
+                "candidate has been validated or approved.",
+                *(str(item) for item in calibration_plan["limitations"]),
+            )
     report_path = default_preflight_report_path(config_path)
     write_preflight_report(preflight, report_path, overwrite=report_path.exists())
 
     parameters = (
+        ReviewItem(
+            "Parameter source",
+            provenance_profile,
+            "Identifies the visible starter profile or manual mode used to derive the "
+            "effective values; it is not a claim of scientific suitability.",
+        ),
+        *recommendation_items,
         ReviewItem(
             "Coordinate unit",
             str(config["input"]["units"]),
@@ -129,13 +502,48 @@ def _reference_review(config_path: Path, config_sha256: str) -> ProjectReviewRes
             "plausibility must be reviewed.",
         ),
         ReviewItem(
+            "Optimizer safeguards",
+            (
+                f"tolerance {_number(optimization['convergence_tolerance'])} · "
+                f"line search {optimization['max_line_search_iterations']} · "
+                f"scale step {_setting(optimization['scale_initial_step_size'])}"
+            ),
+            "Controls stopping and step selection; these settings do not themselves prove "
+            "scientific convergence.",
+        ),
+        ReviewItem(
+            "Regularization and updates",
+            (
+                f"Sobolev {_setting(optimization['use_sobolev_gradient'])} "
+                f"(ratio {_number(optimization['sobolev_kernel_width_ratio'])}) · "
+                f"freeze template {_setting(optimization['freeze_template'])} · "
+                f"freeze control points {_setting(optimization['freeze_control_points'])}"
+            ),
+            "Expert controls for the optimized parameter blocks and gradient smoothing.",
+        ),
+        ReviewItem(
+            "Output cadence",
+            (
+                f"save every {optimization['save_every_n_iterations']} · "
+                f"log every {optimization['print_every_n_iterations']} iterations"
+            ),
+            "Controls checkpoint and log frequency, not mathematical convergence.",
+        ),
+        ReviewItem(
             "Reproducibility",
             (
-                f"Seed {runtime['random_seed']} · {runtime['threads']} Threads · "
-                f"{runtime['precision']}"
+                (
+                    "NVIDIA KeOps GPU kernels"
+                    if runtime["device"] == "cuda"
+                    else "CPU only"
+                )
+                + f" · Seed {runtime['random_seed']} · {runtime['threads']} CPU Threads · "
+                + f"{runtime['precision']}"
             ),
-            "Explicit runtime parameters for the external reference route.",
+            "Explicit acceleration and engine-execution settings for the external "
+            "reference route.",
         ),
+        *_reference_alignment_items(preflight),
     )
     subject_points = [subject.points for subject in preflight.subjects]
     subject_faces = [subject.cells for subject in preflight.subjects]
@@ -172,21 +580,60 @@ def _reference_review(config_path: Path, config_sha256: str) -> ProjectReviewRes
         ReviewItem(
             "Source data",
             _bytes(preflight.total_input_bytes),
-            "File size of the reviewed meshes; not a RAM or runtime forecast.",
+            "File size of the reviewed meshes; not a RAM or computation-time forecast.",
         ),
         ReviewItem(
             "Compute cost",
-            "not modeled",
-            "Execution occurs in the external Deformetrica 4.3 environment; "
-            "a pilot measurement is required.",
+            (
+                f"roughly {_duration(runtime_estimate.typical_seconds)} typical "
+                f"({_duration(runtime_estimate.lower_seconds)} to "
+                f"{_duration(runtime_estimate.upper_seconds)} broad range)"
+            ),
+            "Low-confidence engineering planning estimate from mesh faces, cohort size, "
+            "time points, control spacing, acceleration, threads, and an expected early-stop "
+            "window. It is not a convergence prediction and is replaced by observed timing "
+            "during the run.",
+        ),
+        ReviewItem(
+            "Production-scale recovery gate",
+            (
+                "ready"
+                if production_readiness.ready
+                else "blocked"
+            )
+            + (
+                f" · checkpoint every {production_readiness.checkpoint_interval} "
+                f"· {production_readiness.projected_vtk_file_count} projected VTK files"
+                if production_readiness.production_scale
+                else " · not triggered for this cohort size and resolution"
+            ),
+            "For at least 250 subjects near 10,000 faces, DiffeoForge requires frequent "
+            "checkpoints and enough free disk for both the immutable run and one resume "
+            "successor.",
+        ),
+        ReviewItem(
+            "Production storage reserve",
+            (
+                f"{_bytes(production_readiness.observed_free_bytes)} free · "
+                f"{_bytes(production_readiness.required_free_bytes)} required"
+                if production_readiness.production_scale
+                else "not required at pilot scale"
+            ),
+            "The production requirement includes staged inputs, projected retained flow "
+            "meshes, one immutable resume successor, and a fixed free-space reserve.",
         ),
     )
     warnings = (
-        "Geometry-scaled starter values are exploratory and are not scientifically "
-        "validated presets.",
+        *recommendation_warnings,
+        (
+            "Geometry-scaled starter values are exploratory and are not scientifically "
+            "validated presets."
+        ),
         *preflight.notices,
-        "DiffeoForge did not start Deformetrica and does not forecast peak RAM or "
-        "runtime here.",
+        "The computation-time range is an uncalibrated planning heuristic. Actual runtime "
+        "depends on GPU/CPU hardware, line search, stopping behavior, and numerical workload.",
+        *production_readiness.blockers,
+        *production_readiness.warnings,
     )
     return ProjectReviewResult(
         engine=DesktopEngine.DEFORMETRICA_REFERENCE,
@@ -204,6 +651,8 @@ def _reference_review(config_path: Path, config_sha256: str) -> ProjectReviewRes
             "It confirms neither parameter suitability nor biological validity and does not "
             "execute the external Deformetrica engine."
         ),
+        runtime_estimate=runtime_estimate,
+        production_readiness=production_readiness,
     )
 
 
@@ -236,6 +685,13 @@ def _modern_review(config_path: Path, config_sha256: str) -> ProjectReviewResult
     optimization = config["optimization"]
     analysis = config["analysis"]
     runtime = config["runtime"]
+    cuda_runtime_error: str | None = None
+    cuda_runtime = None
+    if runtime["device"] == "cuda":
+        try:
+            cuda_runtime = discover_modern_cuda_runtime()
+        except ModernCudaRuntimeError as error:
+            cuda_runtime_error = str(error)
     procrustes = config["preprocessing"]["procrustes"]
     pairwise = report["engine"]["pairwise_evaluation"]
     pairwise_value = "dense · complete pair matrices"
@@ -244,6 +700,15 @@ def _modern_review(config_path: Path, config_sha256: str) -> ProjectReviewResult
             f"blockwise · tiles {pairwise['query_tile_size']} × {pairwise['source_tile_size']}"
         )
     noise_std = math.sqrt(model["noise_variance"])
+    sobolev_ratio = optimization.get("sobolev_kernel_width_ratio", 1.0)
+    template_gradient_value = (
+        "Euclidean · raw template gradient"
+        if optimization.get("template_gradient", "euclidean") == "euclidean"
+        else (
+            f"Sobolev · ratio {_number(sobolev_ratio)} · effective width "
+            f"{_number(deformation['kernel_width'] * sobolev_ratio)}"
+        )
+    )
     parameters = (
         ReviewItem(
             "Coordinate unit",
@@ -262,6 +727,12 @@ def _modern_review(config_path: Path, config_sha256: str) -> ProjectReviewResult
             "Deformation kernel",
             _number(deformation["kernel_width"]),
             "Controls the spatial smoothness of the diffeomorphic deformation.",
+        ),
+        ReviewItem(
+            "Template update gradient",
+            template_gradient_value,
+            "The Sobolev option smooths template-vertex updates with a Gaussian whose "
+            "width is the deformation-kernel width times the displayed ratio.",
         ),
         ReviewItem(
             "Control points",
@@ -308,8 +779,9 @@ def _modern_review(config_path: Path, config_sha256: str) -> ProjectReviewResult
         ),
         ReviewItem(
             "Execution",
-            f"CPU · float64 · {runtime['threads']} Threads · Seed {runtime['random_seed']}",
-            "Effective, reproducible runtime contract for the experimental Modern engine.",
+            f"{runtime['device'].upper()} · float64 · {runtime['threads']} Threads · "
+            f"Seed {runtime['random_seed']}",
+            "Effective, reproducible execution contract for the experimental Modern engine.",
         ),
         ReviewItem(
             "Pairwise evaluation",
@@ -359,10 +831,10 @@ def _modern_review(config_path: Path, config_sha256: str) -> ProjectReviewResult
             (
                 f"{logical['rows']} × {logical['columns']} · "
                 f"{_bytes(logical['float64_xyz_difference_tensor_bytes'])} "
-                "XYZ differences"
+                "dense-equivalent XYZ payload"
             ),
-            "Logical all-pairs dimensions; blockwise evaluation does not necessarily "
-            "allocate this all at once.",
+            "Logical all-pairs dimensions and conservative rank-3 equivalent; the centered "
+            "matrix kernel does not allocate that complete XYZ tensor.",
         ),
         ReviewItem(
             "Largest execution tile",
@@ -370,13 +842,14 @@ def _modern_review(config_path: Path, config_sha256: str) -> ProjectReviewResult
                 f"{tile['tile_rows']} × {tile['tile_columns']} · "
                 f"{_bytes(tile['float64_xyz_difference_tensor_bytes'])}"
             ),
-            "Exact upper bound for one configured XYZ-difference tile, not total peak RAM.",
+            "Conservative rank-3 equivalent for one configured tile, not an allocation or "
+            "total peak-RAM claim.",
         ),
         ReviewItem(
-            "Known payload arithmetic",
+            "Conservative payload arithmetic",
             _bytes(payload["known_payload_arithmetic_subtotal_bytes"]),
-            "Explicitly accounted tensor payloads; Autograd, allocator, BLAS, and the "
-            "operating system are intentionally excluded.",
+            "Versioned dense-equivalent accounting for planning continuity; Autograd, "
+            "allocator, BLAS, and the operating system are intentionally excluded.",
         ),
         ReviewItem(
             "Objective/gradient upper bound",
@@ -403,7 +876,7 @@ def _modern_review(config_path: Path, config_sha256: str) -> ProjectReviewResult
             "Host observation at planning time; not a promise that these resources are free.",
         ),
         ReviewItem(
-            "Peak RAM and runtime",
+            "Peak RAM and computation time",
             "unknown · pilot measurement required",
             "DiffeoForge does not invent forecasts from incomplete memory and time models.",
         ),
@@ -419,12 +892,30 @@ def _modern_review(config_path: Path, config_sha256: str) -> ProjectReviewResult
         else:
             high_detail_warning = (
                 "High-face-count input uses explicit blockwise tiles. The reported tile "
-                "bound is not a total-RAM or runtime guarantee; a representative benchmark "
-                "is still required before production.",
+                "bound is not a total-RAM or computation-time guarantee; a representative "
+                "benchmark is still required before production.",
             )
     warnings = (
         "Geometry-scaled starter values are exploratory and are not scientifically "
         "validated presets.",
+        *(
+            (
+                "CUDA execution uses a separately verified local runtime: "
+                f"{cuda_runtime.summary}. This is an engineering binding, not a "
+                "validated public GPU distribution.",
+            )
+            if cuda_runtime is not None
+            else ()
+        ),
+        *(
+            (
+                "No verified local CUDA runtime is currently bound. Local execution is "
+                f"blocked ({cuda_runtime_error}); a separately reviewed remote CUDA server "
+                "can still execute this exact request.",
+            )
+            if cuda_runtime_error is not None
+            else ()
+        ),
         *high_detail_warning,
         *(str(warning) for warning in report["warnings"]),
     )
@@ -440,12 +931,15 @@ def _modern_review(config_path: Path, config_sha256: str) -> ProjectReviewResult
         workload=workload,
         warnings=warnings,
         scientific_boundary=(
-            "This view shows exact all-pairs operation counts and known tensor payloads for "
-            "the configured CPU/float64 plan. It is not a peak-RAM forecast, runtime "
-            "prediction, benchmark measurement, or guarantee for 300 subjects. Autograd, "
-            "memory management, BLAS threads, and operating-system load can change real "
-            f"resource use. Original report contract: {SCIENTIFIC_BOUNDARY}"
+            "This view shows exact all-pairs operation counts and conservative "
+            "dense-equivalent payload arithmetic for the configured "
+            f"{runtime['device'].upper()}/float64 plan. It is "
+            "not an allocation claim, peak-RAM forecast, computation-time prediction, "
+            "benchmark measurement, or guarantee for 300 subjects. Autograd, memory "
+            "management, BLAS threads, and operating-system load can change real resource "
+            f"use. Original report contract: {SCIENTIFIC_BOUNDARY}"
         ),
+        modern_cuda_runtime=cuda_runtime,
     )
 
 

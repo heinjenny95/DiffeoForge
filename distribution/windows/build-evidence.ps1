@@ -15,6 +15,16 @@ param(
 
 $ErrorActionPreference = "Stop"
 $repository = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
+$originalPath = $env:PATH
+$pythonExecutable = (Get-Command $Python -CommandType Application -ErrorAction Stop |
+    Select-Object -First 1).Source
+$gitExecutable = (Get-Command git -CommandType Application -ErrorAction Stop |
+    Select-Object -First 1).Source
+$controlledPath = @(
+    (Split-Path -Parent $pythonExecutable),
+    [Environment]::SystemDirectory,
+    $env:SystemRoot
+) -join ";"
 Push-Location $repository
 try {
     $windows = [System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform(
@@ -23,30 +33,33 @@ try {
     if (-not $windows -or -not [Environment]::Is64BitProcess) {
         throw "The evidence freeze requires a 64-bit Windows Python process."
     }
-    $dirty = & git status --porcelain=v1 --untracked-files=all
+    $dirty = & $gitExecutable status --porcelain=v1 --untracked-files=all
     if ($LASTEXITCODE -ne 0) {
         throw "Could not inspect the Git worktree."
     }
     if ($dirty) {
         throw "The evidence freeze requires a clean Git worktree."
     }
+    # Do not let unrelated developer tools contribute same-named native DLLs
+    # to PyInstaller analysis or to the frozen smoke processes.
+    $env:PATH = $controlledPath
     if ([bool]$SmokeConfig -ne [bool]$SmokeDestination) {
         throw "SmokeConfig and SmokeDestination must be supplied together."
     }
     $resolvedPreparationApproval = (Resolve-Path -LiteralPath $PreparationApproval).Path
     $resolvedPreparationConfig = (Resolve-Path -LiteralPath $PreparationConfig).Path
     $expectedPreparationApprovalSha256 = $PreparationApprovalSha256.ToLowerInvariant()
-    & $Python -c "import platform, PyInstaller, torch; assert platform.python_version_tuple()[:2] == ('3', '12'); assert PyInstaller.__version__ == '6.21.0'; assert torch.version.cuda is None"
+    & $pythonExecutable -c "import platform, PyInstaller, torch; assert platform.python_version_tuple()[:2] == ('3', '12'); assert PyInstaller.__version__ == '6.21.0'; assert torch.version.cuda is None"
     if ($LASTEXITCODE -ne 0) {
         throw "Python 3.12, PyInstaller 6.21.0, or the CPU-only Torch boundary differs."
     }
-    $observedPreparationApprovalSha256 = (& $Python -c `
+    $observedPreparationApprovalSha256 = (& $pythonExecutable -c `
         "import hashlib, pathlib, sys; print(hashlib.sha256(pathlib.Path(sys.argv[1]).read_bytes()).hexdigest())" `
         $resolvedPreparationApproval).Trim()
     if ($LASTEXITCODE -ne 0 -or $observedPreparationApprovalSha256 -ne $expectedPreparationApprovalSha256) {
         throw "Preparation approval does not match PreparationApprovalSha256."
     }
-    & $Python -m diffeoforge reference-plan-approval-verify `
+    & $pythonExecutable -m diffeoforge reference-plan-approval-verify `
         $resolvedPreparationApproval --current-config $resolvedPreparationConfig
     if ($LASTEXITCODE -ne 0) {
         throw "Preparation approval/config preverification failed."
@@ -57,7 +70,7 @@ try {
     if (Test-Path -LiteralPath $WorkPath) {
         throw "WorkPath already exists and will not be overwritten: $WorkPath"
     }
-    & $Python -m PyInstaller --clean --noconfirm `
+    & $pythonExecutable -m PyInstaller --clean --noconfirm `
         --distpath $DistPath --workpath $WorkPath `
         distribution\windows\DiffeoForge.spec
     if ($LASTEXITCODE -ne 0) {
@@ -71,53 +84,66 @@ try {
         throw "Frozen desktop smoke failed with exit code $($process.ExitCode)."
     }
     if ($SmokeConfig) {
-        & $Python tools\smoke_frozen_desktop_worker.py `
+        & $pythonExecutable tools\smoke_frozen_desktop_worker.py `
             (Join-Path $bundle "DiffeoForgeWorker.exe") `
             $SmokeConfig $SmokeDestination
         if ($LASTEXITCODE -ne 0) {
             throw "Frozen worker/controller smoke failed."
         }
     }
-    & $Python tools\smoke_frozen_reference_worker.py `
+    & $pythonExecutable tools\smoke_frozen_reference_worker.py `
         (Join-Path $bundle "DiffeoForgeReferenceWorker.exe") `
         examples\minimal-atlas-container.yaml
     if ($LASTEXITCODE -ne 0) {
         throw "Frozen nonnumerical reference worker/controller smoke failed."
     }
-    & $Python tools\audit_frozen_reference_parent_death.py `
+    & $pythonExecutable tools\audit_frozen_reference_parent_death.py `
         (Join-Path $bundle "DiffeoForgeReferenceWorker.exe") `
         examples\minimal-atlas-container.yaml
     if ($LASTEXITCODE -ne 0) {
         throw "Frozen reference worker hard-parent-death audit failed."
     }
-    & $Python tools\audit_frozen_reference_preparation_parent_death.py `
+    & $pythonExecutable tools\audit_frozen_reference_parent_death.py `
+        (Join-Path $bundle "DiffeoForgeReferenceExecutionWorker.exe") `
+        examples\minimal-atlas-container.yaml --execution
+    if ($LASTEXITCODE -ne 0) {
+        throw "Frozen reference execution worker hard-parent-death audit failed."
+    }
+    & $pythonExecutable tools\smoke_frozen_reference_execution_worker.py `
+        (Join-Path $bundle "DiffeoForgeReferenceExecutionWorker.exe") `
+        examples\minimal-atlas-container.yaml
+    if ($LASTEXITCODE -ne 0) {
+        throw "Frozen reference execution worker cancel-before-prepare smoke failed."
+    }
+    & $pythonExecutable tools\audit_frozen_reference_preparation_parent_death.py `
         (Join-Path $bundle "DiffeoForgeReferencePreparationWorker.exe") `
         $resolvedPreparationApproval $resolvedPreparationConfig `
         --expect-request-sha256 $expectedPreparationApprovalSha256
     if ($LASTEXITCODE -ne 0) {
         throw "Frozen preparation worker hard-parent-death audit failed."
     }
-    & $Python tools\smoke_frozen_reference_preparation_worker.py `
+    & $pythonExecutable tools\smoke_frozen_reference_preparation_worker.py `
         (Join-Path $bundle "DiffeoForgeReferencePreparationWorker.exe") `
         $resolvedPreparationApproval $resolvedPreparationConfig `
         --expect-request-sha256 $expectedPreparationApprovalSha256
     if ($LASTEXITCODE -ne 0) {
         throw "Frozen approval-bound reference preparation worker/controller smoke failed."
     }
-    $commit = (& git rev-parse HEAD).Trim()
+    $commit = (& $gitExecutable rev-parse HEAD).Trim()
     if ($LASTEXITCODE -ne 0) {
         throw "Could not resolve the source commit."
     }
-    & $Python tools\desktop_bundle_evidence.py create $bundle `
+    & $pythonExecutable tools\desktop_bundle_evidence.py create $bundle `
         --source-commit $commit
     if ($LASTEXITCODE -ne 0) {
         throw "Desktop evidence creation failed."
     }
-    & $Python tools\desktop_bundle_evidence.py verify $bundle
+    & $pythonExecutable tools\desktop_bundle_evidence.py verify $bundle
     if ($LASTEXITCODE -ne 0) {
         throw "Desktop evidence verification failed."
     }
     Write-Output "Evidence-only Windows bundle verified: $bundle"
 } finally {
+    $env:PATH = $originalPath
     Pop-Location
 }

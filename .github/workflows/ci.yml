@@ -11,6 +11,10 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      OMP_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
     strategy:
       fail-fast: false
       matrix:
@@ -28,8 +32,13 @@ jobs:
 
       - name: Install package and development tools
         run: |
+          sudo apt-get update
+          sudo apt-get install -y libcairo2-dev pkg-config
           python -m pip install --upgrade pip
-          python -m pip install -e ".[dev,sbom-builder]"
+          # The full suite includes paired Modern/reference qualification tests.
+          # Desktop-only jobs separately enforce operation with Torch absent.
+          python -m pip install torch==2.13.0 --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install -e ".[analysis,modern-engine,dev,sbom-builder]"
 
       - name: Lint
         run: ruff check .
@@ -49,7 +58,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-24.04, windows-2025, macos-15]
+    timeout-minutes: 25
+    env:
+      PYTHONUTF8: "1"
+      QT_QPA_PLATFORM: offscreen
+      OMP_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
 
     steps:
       - name: Check out repository
@@ -62,29 +77,109 @@ jobs:
           cache: pip
 
       - name: Install modern engine and test tools
+        shell: bash
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -e ".[dev,modern-engine]"
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            python -m pip install torch==2.13.0
+          else
+            python -m pip install torch==2.13.0 --index-url https://download.pytorch.org/whl/cpu
+          fi
+          python -m pip install numpy==2.5.1 build pytest
+          python -m build --wheel
+          python tools/verify_wheel.py dist/*.whl
+          python -c "import glob,subprocess,sys; wheels=glob.glob('dist/*.whl'); assert len(wheels)==1; subprocess.run([sys.executable,'-m','pip','install',wheels[0]+'[modern-engine]'],check=True)"
+          python -c "from pathlib import Path; import diffeoforge; assert 'site-packages' in Path(diffeoforge.__file__).parts"
 
       - name: Test modern engine
         run: >-
           pytest tests/test_modern_engine.py tests/test_atlas_objective.py
           tests/test_blockwise_engine.py
+          tests/test_blockwise_objective.py
           tests/test_momenta_optimizer.py tests/test_atlas_optimizer.py
           tests/test_procrustes.py tests/test_pca.py
           tests/test_pca_visualization.py tests/test_modern_bundle.py
           tests/test_modern_workflow.py tests/test_mesh_quality.py
           tests/test_modern_workload.py tests/test_modern_progress.py
-          tests/test_modern_benchmark.py tests/test_desktop_project_setup.py
+          tests/test_modern_benchmark.py tests/test_modern_benchmark_design.py
+          tests/test_modern_benchmark_progress.py
+          tests/test_modern_benchmark_study.py
+          tests/test_modern_benchmark_matrix_design.py
+          tests/test_modern_benchmark_matrix_progress.py
+          tests/test_modern_benchmark_matrix_study.py
+          tests/test_modern_optimizer_benchmark.py
+          tests/test_modern_optimizer_benchmark_design.py
+          tests/test_modern_optimizer_benchmark_progress.py
+          tests/test_modern_optimizer_benchmark_study.py
+          tests/test_desktop_project_setup.py
           tests/test_desktop_project_review.py tests/test_desktop_worker.py
           tests/test_desktop_worker_controller.py tests/test_desktop_reviewed_run.py
           tests/test_desktop_result_review.py
+          tests/test_modern_continuation.py tests/test_modern_checkpoint_recovery.py
+          tests/test_modern_pca_stability.py tests/test_sobolev_template_gradient.py
+          tests/test_desktop_modern_cuda_runtime.py
+          tests/test_platform_compatibility.py
+
+      - name: Observe installed-wheel public CPU workflow and continuation
+        run: >-
+          python tools/platform_compatibility.py observe
+          --output "${{ runner.temp }}/platform-observation"
+          --source-commit "${{ github.sha }}"
+
+      - name: Upload compact public numerical observations only
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: platform-numerics-${{ matrix.os }}
+          path: |
+            ${{ runner.temp }}/platform-observation/observation.json
+            ${{ runner.temp }}/platform-observation/observation.sha256
+          if-no-files-found: error
+          retention-days: 14
+
+  platform-comparison:
+    name: Cross-platform synthetic CPU agreement
+    needs: modern-engine
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.12"
+      - name: Install numerical comparison dependency
+        run: python -m pip install numpy==2.5.1
+      - name: Download this run's public observations
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with:
+          pattern: platform-numerics-*
+          path: platform-observations
+      - name: Compare all three platform pairs with frozen tolerances
+        run: >-
+          python tools/platform_compatibility.py compare
+          --input platform-observations --output platform-comparison.json
+      - name: Retain compact comparison
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: platform-numerical-comparison
+          path: |
+            platform-comparison.json
+            platform-comparison.sha256
+          if-no-files-found: error
+          retention-days: 14
 
   desktop:
-    name: Desktop smoke (Windows)
-    runs-on: windows-latest
+    name: Desktop without optional engine (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2025, ubuntu-24.04, macos-15, macos-15-intel]
     env:
       QT_QPA_PLATFORM: offscreen
+      PYTHONUTF8: "1"
 
     steps:
       - name: Check out repository
@@ -96,17 +191,38 @@ jobs:
           python-version: "3.12"
           cache: pip
 
-      - name: Install desktop and test tools
+      - name: Install Linux rendering build prerequisites
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libcairo2-dev pkg-config libegl1 libopengl0
+
+      - name: Install macOS rendering build prerequisites
+        if: runner.os == 'macOS'
+        run: brew install cairo pkgconf
+
+      - name: Install desktop-only wheel and test tools
+        shell: bash
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -e ".[dev,desktop]"
+          python -m pip install build pytest
+          python -m build --wheel
+          python tools/verify_wheel.py dist/*.whl
+          python -c "import glob,subprocess,sys; wheels=glob.glob('dist/*.whl'); assert len(wheels)==1; subprocess.run([sys.executable,'-m','pip','install',wheels[0]+'[desktop]'],check=True)"
+          python -c "import importlib.util; assert importlib.util.find_spec('torch') is None"
 
-      - name: Test desktop setup, review, compute, and result screens
+      - name: Test desktop setup, review, viewer and worker lifecycle
         run: >-
           pytest tests/test_desktop_app.py tests/test_desktop_project_setup.py
           tests/test_desktop_project_review.py tests/test_desktop_reviewed_run.py
           tests/test_desktop_worker_controller.py tests/test_windows_parent_death.py
+          tests/test_desktop_reference_execution_worker.py
+          tests/test_desktop_reference_execution_controller.py
           tests/test_desktop_reference_preparation_request.py
           tests/test_desktop_reference_preparation_worker_protocol.py
           tests/test_desktop_reference_preparation_worker_harness.py
           tests/test_desktop_reference_preparation_worker_controller.py
+          tests/test_desktop_optional_engine.py tests/test_desktop_mesh_preview.py
+          tests/test_display_proxy.py tests/test_desktop_surface_rendering.py
+          tests/test_desktop_landmark_editor.py tests/test_validation_progress.py
+          tests/test_reference_validation.py::test_validation_dialog_shows_first_iteration_activity_and_live_eta

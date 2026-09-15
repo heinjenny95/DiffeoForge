@@ -15,7 +15,8 @@
     "desktop": "configuration, validation, review, progress, reports",
     "modern_worker": "separate child process for numerical compute and cancellation",
     "reference_worker": "external version-checked Deformetrica adapter/container only",
-    "reference_preparation_worker": "separate child for externally approved preparation only; engine execution unauthorized"
+    "reference_preparation_worker": "separate child for externally approved preparation only; engine execution unauthorized",
+    "reference_execution_worker": "separate contained child for supervised external Deformetrica execution and phase-dependent cancellation"
   },
   "variants": [
     {

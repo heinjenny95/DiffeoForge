@@ -233,11 +233,11 @@ def write_optimizer_convergence_svg(
         for index, record in enumerate(history)
         if record.gradient_norm is not None
     )
+    tolerance = float(result.settings.gradient_tolerance)
     if gradient_records:
         if any(not math.isfinite(value) or value < 0 for _, value in gradient_records):
             raise ValueError("optimizer history contains an invalid gradient norm")
         positive_values = [value for _, value in gradient_records if value > 0]
-        tolerance = float(result.settings.gradient_tolerance)
         if tolerance > 0:
             positive_values.append(tolerance)
         floor = min(positive_values) / 10.0 if positive_values else 1e-16
@@ -304,9 +304,16 @@ def write_optimizer_convergence_svg(
                 f'data-gradient-norm="{_data_number(value)}"/>'
             )
     else:
-        body.append(
-            '  <text x="500" y="555" text-anchor="middle" class="subtitle">'
-            "No block-gradient observations were recorded.</text>"
+        body.extend(
+            [
+                (
+                    f'  <g data-gradient-tolerance="{_data_number(tolerance)}"/>'
+                    if tolerance > 0
+                    else ""
+                ),
+                '  <text x="500" y="555" text-anchor="middle" class="subtitle">'
+                "No block-gradient observations were recorded.</text>",
+            ]
         )
     body.extend(
         [
