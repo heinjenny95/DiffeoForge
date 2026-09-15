@@ -59,7 +59,7 @@ test suppression, mesh decimation or numerical/analysis changes are introduced.
   all real-data workflows are resolved. In particular, a later green Intel-Mac
   run does not prove the cause of its historical segmentation fault. No installer
   changed during that code-verification stage; the later authorized same-owner
-  build/install observation and outstanding interactive check are recorded below.
+  build/install and subsequent interactive observations are recorded below.
 
 Repetition recipe, run in a fresh process from the source checkout (diagnostic only):
 
@@ -98,11 +98,11 @@ the repaired desktop. The private unsigned build is pinned to
   a restart. All 2,687 files of the previous installation were moved to the
   existing local backup folder and hash-verified. Study data, checkpoints and
   the separate reference runtime were not changed.
-- Interactive viewer manipulation is **not yet verified**: the Windows
+- Interactive viewer manipulation was **not verified on 14 September**: the Windows
   computer-use service rejected both launch attempts with `GetCursorPos`
   access denied (`0x80070005`). This is a desktop-access limitation, not an
-  observed DiffeoForge crash. Rotation and close/reopen checks await an accessible
-  desktop; the offscreen startup test is not a substitute for them.
+  observed DiffeoForge crash. Rotation and close/reopen checks were deferred until
+  desktop access returned; the offscreen startup test was not a substitute.
 
 Exact SHA-256 identities:
 
@@ -113,3 +113,32 @@ Exact SHA-256 identities:
 Local build/install receipts remain under `artifacts/renderer_install_20260914`.
 This same-owner installation does not establish public redistribution approval,
 code signing, clean-machine support, real-cohort performance or biological validity.
+
+## Interactive installed-viewer observation
+
+On 15 September 2026 Windows desktop access was available again. The same installed
+EXE hash above was rechecked, and the following bounded checks ran through its
+normal visible UI, not an offscreen test harness. No rebuild or reinstall occurred.
+Inputs were six public synthetic VTK ellipsoids (162 vertices / 320 triangles each)
+and three corresponding landmarks per mesh, not private research specimens.
+
+- Landmark editor: the template rendered; drag rotation visibly changed its
+  orientation; Next mesh loaded `subject-01.vtk`; the Front preset changed the
+  view. Cancel and reopen restored a fresh template render. The point count stayed
+  at zero and the dialog reported that no landmark draft had been written.
+- Read-only GPA preview: six meshes / three landmarks converged in four iterations.
+  The GPA viewer rendered the cohort overlay and followed drag rotation. Enabling
+  the selected shaded surface, selecting Highest residual (`subject-04.vtk`),
+  hiding the overlay and wheel zoom all produced updated visible frames. Closing
+  without completing review and reopening restored the template overlay.
+- No app crash or visible freeze occurred during these checks. The app closed
+  normally and relaunched with an empty new-project form. No alignment approval,
+  project publication, atlas or Validation Lab execution was requested.
+- Minor open UI issue: after hiding the cohort overlay, the in-canvas legend still
+  says that all six meshes are shown. The actual view switches to the selected
+  mesh; the label needs to reflect the display mode.
+
+This checks two installed viewer families on small synthetic inputs. It is not a
+large-mesh performance measurement, direct interactive coverage of every QC/PCA/
+calibration viewer, or proof that every intermittent native crash is resolved.
+The historical Intel-Mac crash still lacks an established native root cause.

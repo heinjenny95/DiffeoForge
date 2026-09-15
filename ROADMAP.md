@@ -366,7 +366,12 @@ scientific gates. Planning does not mark those gates complete.
       ten jobs, including all four GUI platforms. See `docs/DESKTOP_RENDER_LIFETIME.md`;
       the exact historical Intel-Mac cause remains unproven. A same-owner Windows
       build at `063143a` was subsequently installed and hash/startup-verified;
-      interactive viewer checks await restored Windows desktop access.
+      interactive landmark and GPA viewer checks then passed on 15 September
+      with six small synthetic meshes (rotation, view/specimen changes and
+      close/reopen). No large-cohort performance claim follows from that smoke.
+  - [ ] Make the GPA viewer's in-canvas legend reflect the current overlay mode;
+    it still says all meshes are displayed after the overlay is disabled
+    (observed in the installed `063143a` build during the synthetic viewer smoke)
   - [x] Define installed-wheel GUI and public synthetic CPU compatibility matrix,
     exact provenance, three-platform numerical comparison and frozen tolerances;
     see `docs/PLATFORM_COMPATIBILITY.md` for observation status and boundaries
