@@ -96,6 +96,19 @@ A separate 200,000-triangle synthetic nearest-surface query took 0.068 s on the
 development workstation; this is a kernel observation, not an end-to-end latency
 or anatomical-accuracy guarantee. No private study data was used in these tests.
 
+The user-authorized local Windows CPU update was built from `3f31712` and
+installed on the same day. All five Python modules changed since the previous
+installed runtime matched their embedded bytecode; 27 isolated landmark tests
+also passed against the embedded modules. Frozen startup, public synthetic Modern
+execution, reference preparation, cancellation and parent-death checks passed.
+All 2,676 installed bundle files were hash-verified, the startup smoke exited 0,
+and the desktop shortcut targets the updated EXE. Its SHA-256 is
+`174c37296e615f41b07528c0d878ef5bbffcbe395b7aa6dc211bcf1927588836`.
+The previous 2,687 application files were backed up and hash-verified; the user's
+landmark draft was separately preserved. This is an unsigned local test build,
+not a public release or scientific validation. Private data, installers and
+backup paths remain outside GitHub.
+
 ## Synthetic size/viewer matrix (15 September 2026)
 
 All nine 10k/100k/200k-face observations completed using the three production
