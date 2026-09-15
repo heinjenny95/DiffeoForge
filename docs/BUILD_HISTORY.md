@@ -29,6 +29,31 @@ skip), including GPA/frame synchronization, landmark picking/rotation/drafts,
 display proxies, preprocessing, QC release gates and packaging contracts.
 Ruff and whitespace checks passed.
 
+### Verified local v81 delivery
+
+Runtime snapshot
+[`375249a`](https://github.com/heinjenny95/DiffeoForge/commit/375249ae41e33591ed8aebfdb7a4fd4d0eda51e9)
+was clean-built, packaged, installed and reopened with the user's approval on
+2026-09-15. The same **271 regressions passed** against the embedded window and
+shared rendering modules (one dependency-absence skip). Both changed Python
+modules matched the committed source exactly; all **62 versioned JSON schemas**
+and **2,676 installed bundle files** were verified. Startup, worker and
+preparation smoke checks passed. The previous **2,687-file installation** was
+retained in a separate, hash-verified backup.
+
+All **170 existing study/input/project files** remained byte-identical through
+installation; landmark, configuration and GPA evidence files were additionally
+backed up. Original input paths and alignment settings were restored in the
+native app. In-memory visual GPA approval must be reconfirmed by the user after
+restart; no approval was fabricated and no scientific pilot or atlas was started.
+This remains an unsigned, same-owner Windows private alpha, not a public release.
+Private inputs and local installer artifacts are excluded from GitHub.
+
+- Installed executable SHA-256:
+  `86b54db2478e4a934830796c4057ca2f1af7553d78f1a0e40b003bca22663b20`.
+- Local setup SHA-256:
+  `86afa8c69bfabaff21c763c4ffdf14b83bf6a0d83b3d3e0c1c2d9341f2211b2f`.
+
 ## v80 — synchronized GPA review overlays
 
 Private Windows build **v80**, package `0.0.0.dev80`, binds the selected,
