@@ -142,6 +142,19 @@ scientific gates. Planning does not mark those gates complete.
   Keep blocking errors, required decisions and essential warnings visible.
   Internal UI/regression review covers visible decisions and collapsed guidance;
   independent usability evaluation remains an open roadmap gate.
+  - [ ] **Further text reduction (user feedback after v80).** The default UI
+    still feels overloaded, especially the "Project created successfully" card.
+    Show a short status and clear next action; move full paths, provenance and
+    routine technical notices into collapsed details. Remove repeated guidance
+    across the workflow while keeping actionable warnings, blocking errors and
+    required decisions visible. Verify the collapsed default on representative
+    screens with user review; the first disclosure pass is not sufficient.
+- [ ] **Default new projects to Deformetrica Reference.** Preselect the reference
+  engine so the familiar guided parameter-calibration workflow is available by
+  default. Keep Modern explicitly opt-in and labelled experimental; explain that
+  its technical smoke pilot is not the staged parameter calibration. Preserve
+  the recorded engine when opening or resuming existing projects; never silently
+  convert them. Verify fresh-project defaults and both engine-selection paths.
 - [x] **Pilot: opt-in AFK / overnight mode.** After each completed stage,
   automatically accept its eligible recommendation and start the next pilot
   stage without another click. Declare the permitted scope and provisional-choice
