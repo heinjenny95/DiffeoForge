@@ -140,6 +140,23 @@ class GpaAlignmentCanvas3D(QWidget):
         self._show_landmarks = bool(visible)
         self.update()
 
+    @property
+    def legend_text(self) -> str:
+        """Describe only layers currently enabled in this view."""
+
+        if self._visual is None:
+            return "No GPA-aligned cohort has been loaded."
+        parts = (
+            [f"Colored lines: all {len(self._visual.meshes)} aligned meshes",
+             "Thicker/brighter: selected mesh"]
+            if self._show_cohort else ["Colored lines: selected mesh only"]
+        )
+        if self._show_selected_surface:
+            parts.append("Shaded surface: selected mesh")
+        if self._show_landmarks:
+            parts.append("Green: GPA consensus landmarks")
+        return "  |  ".join(parts)
+
     def reset_view(self) -> None:
         self._yaw = -0.55
         self._pitch = 0.30
@@ -332,8 +349,7 @@ class GpaAlignmentCanvas3D(QWidget):
         painter.drawText(
             self.rect().adjusted(14, 10, -14, -10),
             Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop,
-            f"Colored lines: all {len(self._visual.meshes)} aligned meshes simultaneously  |  "
-            "Thicker/brighter: selected mesh  |  Green: GPA consensus landmarks",
+            self.legend_text,
         )
         painter.end()
 

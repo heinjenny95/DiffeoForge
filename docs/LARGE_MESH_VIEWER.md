@@ -63,6 +63,25 @@ ran alongside build/test work and shows remaining short stalls, not zero-latency
 interaction. The new private build is documented in
 `NEXT_VERSION_BUILD_2026-09-14.md`; it has not been installed.
 
+## Synthetic size/viewer matrix (15 September 2026)
+
+All nine 10k/100k/200k-face observations completed using the three production
+canvas families and native offscreen Qt event loops. At 200k, sampled navigation
+frames took approximately 30–80 ms; the explicit original-detail QC pair took
+2.38 s and incurred a maximum 0.49 s GUI-timer gap. Default displays stayed below
+8k faces, source hashes were unchanged, and proxies could not satisfy
+original-detail QC readiness. These are observations, not latency guarantees.
+
+The installed Windows landmark editor also passed a bounded 200k-face check:
+rotate, next specimen, original detail, close and reopen into a fresh proxy.
+No landmark draft or project was saved. The GPA legend now follows all three
+layer switches in source; the installed `063143a` binary remains unchanged.
+
+See [the retained matrix](../reference/desktop-viewer-matrix-v1/README.md) for
+timings, memory interpretation, public synthetic screenshots and reproduction.
+The shared QC/PCA surface canvases were exercised, not full installed result-bundle
+opening, new PCA calculations or anatomical defect-detection accuracy.
+
 ## Earlier full-frame-cache observation (before default proxies)
 
 One private completed-atlas pair (246,464 original faces; 229,324 reconstructed

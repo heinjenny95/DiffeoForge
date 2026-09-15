@@ -369,9 +369,14 @@ scientific gates. Planning does not mark those gates complete.
       interactive landmark and GPA viewer checks then passed on 15 September
       with six small synthetic meshes (rotation, view/specimen changes and
       close/reopen). No large-cohort performance claim follows from that smoke.
-  - [ ] Make the GPA viewer's in-canvas legend reflect the current overlay mode;
-    it still says all meshes are displayed after the overlay is disabled
-    (observed in the installed `063143a` build during the synthetic viewer smoke)
+  - [x] Make the GPA viewer's in-canvas legend reflect the current overlay mode,
+    selected surface and landmark visibility; test all eight layer combinations.
+    This source correction is not yet in the installed `063143a` build.
+  - [x] Observe 10k/100k/200k synthetic meshes across the three production canvas
+    families, including proxy/original-detail gates, navigation, switching and
+    active-render destruction. See `reference/desktop-viewer-matrix-v1` for all
+    nine observations and their scope; full installed QC/PCA flows and large
+    biological cohorts remain follow-up checks, not established by this matrix.
   - [x] Define installed-wheel GUI and public synthetic CPU compatibility matrix,
     exact provenance, three-platform numerical comparison and frozen tolerances;
     see `docs/PLATFORM_COMPATIBILITY.md` for observation status and boundaries

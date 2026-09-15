@@ -142,3 +142,20 @@ This checks two installed viewer families on small synthetic inputs. It is not a
 large-mesh performance measurement, direct interactive coverage of every QC/PCA/
 calibration viewer, or proof that every intermittent native crash is resolved.
 The historical Intel-Mac crash still lacks an established native root cause.
+
+### Large synthetic follow-up, same day
+
+The next bounded installed landmark-editor check used 200k-face synthetic meshes:
+the template displayed a labelled 5,224-face proxy, drag rotation changed its
+orientation, Next mesh displayed the 5,069-face subject proxy, and explicit
+Original detail rendered all 200,000 faces. Closing and reopening restored the
+template proxy with Original detail unchecked. The point count remained zero,
+no draft was written, and the test project path was never created. The app closed
+normally. Its installed binary was not replaced.
+
+Separately, nine offscreen production-canvas observations (three sizes across
+three viewer families) completed 27 reopen cycles and nine explicit owner
+destructions with rendering outstanding. The source-only GPA legend fix covers
+all eight combinations of cohort, surface and landmark visibility. Measurements,
+reproduction and remaining scope gaps are in
+[desktop-viewer-matrix-v1](../reference/desktop-viewer-matrix-v1/README.md).

@@ -223,3 +223,34 @@ def test_gpa_review_navigation_stops_at_last_mesh_and_restarts_explicitly(
 
     dialog.close()
     application.processEvents()
+
+
+def test_gpa_legend_tracks_visible_layers(monkeypatch, tmp_path: Path) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from itertools import product
+
+    from PySide6.QtWidgets import QApplication
+
+    from diffeoforge.desktop.gpa_visualization_widget import GpaAlignmentCanvas3D
+
+    application = QApplication.instance() or QApplication(["gpa-legend-test"])
+    canvas = GpaAlignmentCanvas3D()
+    assert canvas.legend_text == "No GPA-aligned cohort has been loaded."
+    landmarks = _write_landmarks(tmp_path / "landmarks.csv")
+    visual = build_gpa_alignment_visual(
+        preview_landmark_alignment(MESH_DIRECTORY, landmarks_file=landmarks)
+    )
+    canvas.set_visual(visual)
+    for cohort, surface, markers in product((False, True), repeat=3):
+        canvas.set_show_cohort(cohort)
+        canvas.set_show_selected_surface(surface)
+        canvas.set_show_landmarks(markers)
+        legend = canvas.legend_text
+        assert ("all 6 aligned meshes" in legend) == cohort
+        assert ("selected mesh only" in legend) == (not cohort)
+        assert ("Thicker/brighter" in legend) == cohort
+        assert ("Shaded surface" in legend) == surface
+        assert ("consensus landmarks" in legend) == markers
+    canvas.close()
+    application.processEvents()
