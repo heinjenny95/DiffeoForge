@@ -23,6 +23,9 @@ A further 66 viewer/QC/CLI tests passed. The first installer-plan attempt correc
 stopped because its legacy schema allowed nine arguments, while the numbered
 alpha adds a tenth display-label define. The schema now permits that extra
 argument; exact plan reconstruction still rejects arbitrary argument changes.
+The compiler-observation wrapper and retained build-evidence verifier/schema
+also accept exactly ten arguments for numbered alphas, keeping nine for legacy
+and release versions. Both version families run through the full evidence tests.
 A full create/validate/reconstruct regression covers v78, and the clean binary
 is rebuilt with the corrected schema before installation. The stopped attempt
 was not installed or distributed.
