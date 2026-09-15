@@ -312,6 +312,19 @@ def test_plan_is_canonical_reconstructable_deterministic_and_non_executing(
         )
 
 
+def test_numbered_private_alpha_plan_validates_and_reconstructs(tmp_path: Path) -> None:
+    # Exercise the complete schema, not only argument/filename helper functions.
+    sources = _sources(tmp_path, version="0.0.0.dev78")
+    path = _create(sources, tmp_path / "numbered private alpha")
+    plan = verify_desktop_installer_build_plan(
+        path, expected_plan_sha256=_sha256(path.read_bytes())
+    )
+    assert plan["source"]["application_version"] == "0.0.0.dev78"
+    assert plan["output"]["setup_filename"] == "DiffeoForge-v78-Windows-CPU-x86_64-Setup.exe"
+    assert "/DAppDisplayVersion=v78 (Private Alpha)" in plan["compiler"]["arguments"]
+    assert len(plan["compiler"]["arguments"]) == 10
+
+
 def test_plan_can_be_reconstructed_against_exact_post_build_boundary(
     tmp_path: Path,
 ) -> None:

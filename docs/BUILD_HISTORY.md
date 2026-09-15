@@ -19,6 +19,14 @@ editor drafts, main-window behavior and installer/freeze/SBOM contracts. Ruff an
 whitespace checks passed. Installed-binary verification is recorded separately;
 these tests are not a completed anatomical or end-to-end scientific validation.
 
+A further 66 viewer/QC/CLI tests passed. The first installer-plan attempt correctly
+stopped because its legacy schema allowed nine arguments, while the numbered
+alpha adds a tenth display-label define. The schema now permits that extra
+argument; exact plan reconstruction still rejects arbitrary argument changes.
+A full create/validate/reconstruct regression covers v78, and the clean binary
+is rebuilt with the corrected schema before installation. The stopped attempt
+was not installed or distributed.
+
 ## Reconstructed numbering gap
 
 On 2026-09-15, the local installation backups were inspected to recover the
