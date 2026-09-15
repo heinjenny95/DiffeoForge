@@ -156,7 +156,7 @@ def test_proxy_stale_frame_and_proxy_only_model_remain_unpickable(application):
     canvas = _canvas(application)
     points = []
     canvas.surfacePointPicked.connect(points.append)
-    canvas._yaw += 0.1
+    canvas.rotate_view(12.0, 0.0)
     _click(canvas)
     assert not canvas._pick_pending
     canvas.set_model(replace(_model(), geometry_is_proxy=True))

@@ -47,6 +47,24 @@ def camera_rotation(yaw: float, pitch: float) -> np.ndarray:
     return pitch_matrix @ yaw_matrix
 
 
+def screen_drag_rotation(dx: float, dy: float) -> np.ndarray:
+    """Rotate the visible surface with a drag in screen pixels, independent of pose.
+
+    Camera +z faces the viewer and screen +y points down. Thus a positive
+    horizontal drag turns about camera +y; a downward drag about camera +x.
+    A single axis-angle rotation also makes diagonal drags reversible.
+    """
+    distance = math.hypot(dx, dy)
+    if not math.isfinite(distance):
+        raise ValueError("drag displacement must be finite")
+    if distance == 0.0:
+        return np.eye(3, dtype=np.float64)
+    x, y = dy / distance, dx / distance
+    cross = np.array(((0.0, 0.0, y), (0.0, 0.0, -x), (-y, x, 0.0)))
+    angle = distance * 0.009
+    return np.eye(3) + math.sin(angle) * cross + (1 - math.cos(angle)) * (cross @ cross)
+
+
 def project_surface(
     vertices: np.ndarray,
     triangles: np.ndarray,
@@ -59,6 +77,7 @@ def project_surface(
     pan: tuple[float, float],
     width: int,
     height: int,
+    rotation: np.ndarray | None = None,
 ) -> ProjectedSurface:
     """Project exact 3D geometry into one aspect-preserving orthographic viewport."""
 
@@ -68,7 +87,7 @@ def project_surface(
         raise ValueError("triangles must have shape (m, 3)")
     if not math.isfinite(scale) or scale <= 0:
         raise ValueError("scale must be finite and positive")
-    rotation = camera_rotation(yaw, pitch)
+    rotation = camera_rotation(yaw, pitch) if rotation is None else rotation
     camera = ((vertices - center) / scale) @ rotation.T
     viewport = max(1.0, min(float(width), float(height)) - 64.0)
     factor = 0.9 * viewport * zoom
@@ -140,8 +159,7 @@ class InteractiveMeshCanvas3D(QWidget):
         self._wheel_timer.timeout.connect(self.update)
         self._center = np.zeros(3, dtype=np.float64)
         self._scale = 1.0
-        self._yaw = -0.55
-        self._pitch = 0.30
+        self._rotation = camera_rotation(-0.55, 0.30)
         self._zoom = 1.0
         self._pan = (0.0, 0.0)
         self._markers: dict[str, tuple[float, float, float]] = {}
@@ -169,12 +187,9 @@ class InteractiveMeshCanvas3D(QWidget):
         return self._picking_enabled
 
     @property
-    def yaw(self) -> float:
-        return self._yaw
-
-    @property
-    def pitch(self) -> float:
-        return self._pitch
+    def rotation(self) -> np.ndarray:
+        """A copy of the current world-to-camera orientation."""
+        return self._rotation.copy()
 
     @property
     def zoom(self) -> float:
@@ -225,8 +240,7 @@ class InteractiveMeshCanvas3D(QWidget):
             id(self._model),
             self.width(),
             self.height(),
-            self._yaw,
-            self._pitch,
+            tuple(self._rotation.ravel()),
             self._zoom,
             self._pan,
             self.original_detail.isChecked(),
@@ -282,8 +296,7 @@ class InteractiveMeshCanvas3D(QWidget):
         self.update()
 
     def reset_view(self) -> None:
-        self._yaw = -0.55
-        self._pitch = 0.30
+        self._rotation = camera_rotation(-0.55, 0.30)
         self._zoom = 1.0
         self._pan = (0.0, 0.0)
         self.update()
@@ -300,8 +313,13 @@ class InteractiveMeshCanvas3D(QWidget):
         }
         if preset not in presets:
             raise ValueError(f"Unsupported 3D view preset: {preset!r}")
-        self._yaw, self._pitch = presets[preset]
+        self._rotation = camera_rotation(*presets[preset])
         self._pan = (0.0, 0.0)
+        self.update()
+
+    def rotate_view(self, dx: float, dy: float) -> None:
+        """Apply a screen-axis drag without transforming any stored geometry."""
+        self._rotation = screen_drag_rotation(dx, dy) @ self._rotation
         self.update()
 
     def _display_geometry(self) -> tuple[np.ndarray, np.ndarray]:
@@ -324,12 +342,13 @@ class InteractiveMeshCanvas3D(QWidget):
             triangles,
             center=self._center,
             scale=self._scale,
-            yaw=self._yaw,
-            pitch=self._pitch,
+            yaw=0.0,
+            pitch=0.0,
             zoom=self._zoom,
             pan=self._pan,
             width=self.width(),
             height=self.height(),
+            rotation=self._rotation,
         )
 
     def pick_at(self, position: QPointF) -> tuple[float, float, float] | None:
@@ -399,11 +418,10 @@ class InteractiveMeshCanvas3D(QWidget):
         self._last_position = event.position()
         self._drag_distance += abs(delta.x()) + abs(delta.y())
         if self._drag_button == Qt.MouseButton.LeftButton:
-            self._yaw += delta.x() * 0.009
-            self._pitch += delta.y() * 0.009
+            self.rotate_view(delta.x(), delta.y())
         else:
             self._pan = (self._pan[0] + delta.x(), self._pan[1] + delta.y())
-        self.update()
+            self.update()
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:  # noqa: N802 - Qt API name
         if event.button() != self._drag_button:
@@ -468,7 +486,7 @@ class InteractiveMeshCanvas3D(QWidget):
             self.height(),
             self._center,
             self._scale,
-            camera_rotation(self._yaw, self._pitch),
+            self._rotation.copy(),
             self._zoom,
             self._pan,
             (SurfaceLayer(vertices, triangles),),

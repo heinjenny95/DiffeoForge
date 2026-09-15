@@ -88,7 +88,7 @@ def test_marker_and_mesh_use_same_presented_camera_during_delayed_render(
     monkeypatch.setattr(surface_rendering, "render_surface_scene", delayed)
     try:
         if motion == "rotate":
-            canvas._yaw, canvas._pitch = 1.1, 0.6
+            canvas.rotate_view(120.0, 65.0)
             canvas._interacting = True
         elif motion == "pan":
             canvas._pan = (60.0, -35.0)

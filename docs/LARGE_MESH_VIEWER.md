@@ -8,6 +8,10 @@ not modified or decimated.
 
 ## Behaviour and safeguards
 
+- Landmark rotation uses incremental screen/camera axes (v79), so the visible
+  near surface follows the drag after arbitrary rotations, including upside-down
+  and polar views. Rendering and picking share the same orientation matrix;
+  only the view changes. Right/middle-drag pan and wheel zoom are unchanged.
 - Landmark markers use the camera snapshot of the **displayed cached image**,
   not the latest requested camera. Image and camera are accepted together;
   rotation, pan, zoom and viewport resizing cannot move markers ahead of a

@@ -1,8 +1,36 @@
 # Private-alpha build numbering
 
+## v79 — screen-relative landmark rotation
+
+Private Windows build **v79**, package `0.0.0.dev79`, changes the landmark
+canvas from accumulated fixed-axis yaw/pitch to composed camera-axis rotations.
+The visible near surface follows left/right/up/down mouse drags even after
+turning the specimen upside down or viewing it from a pole. Diagonal drags use
+one reversible axis-angle increment. Drag sensitivity, pan, zoom, view presets,
+stored mesh coordinates and saved landmark coordinates are unchanged.
+
+Rendering, surface picking and frame-cache identity use the same complete
+orientation matrix. The v78 displayed-frame marker synchronization remains in
+place. This also affects neutral viewers using `InteractiveMeshCanvas3D`; other
+independent comparison/GPA canvases are not changed by this targeted repair.
+
+The screen-displacement regression reproduces v78's inverted horizontal movement
+in an upside-down view (two expected failures with the previous canvas), then
+passes with the repair. The initial focused suite passed **74 tests**, covering
+all seven view presets, upside-down/mixed drags, 10,000 orthogonal rotations,
+inverse diagonals, pan, picking, delayed rendered markers, drafts and build labels.
+Build/installation evidence will be recorded after verification. Existing user
+landmarks must be backed up and restored, not discarded for this update.
+
+The expanded final source suite passed **197 tests, with one unavailable-Windows-
+symlink-privilege skip**, including an independent analytic ray/cube check after
+composed rotations, viewer/QC release safeguards and packaging/evidence contracts.
+Ruff and whitespace checks passed. This is display/input verification, not a
+scientific validation or a claim that every independent viewer was redesigned.
+
 ## v78 — synchronized landmark overlays and visible build identity
 
-The installed private Windows test build is **v78**, package version
+The previous private Windows test build is **v78**, package version
 `0.0.0.dev78`. The main window and landmark editor show `v78 (Private Alpha)`;
 the installer name is `DiffeoForge-v78-Windows-CPU-x86_64-Setup.exe` and its
 installation entry shows the same label. CLI/Qt metadata retain the PEP 440

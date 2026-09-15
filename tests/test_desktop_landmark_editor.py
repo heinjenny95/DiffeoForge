@@ -127,7 +127,7 @@ def test_3d_canvas_click_emits_an_arbitrary_surface_point(monkeypatch, tmp_path:
 
     center = QPoint(canvas.width() // 2, canvas.height() // 2)
     # A pending/new camera image must never place a landmark against stale pixels.
-    canvas._yaw += 0.01
+    canvas.rotate_view(1.0, 0.0)
     QTest.mouseClick(canvas, Qt.MouseButton.LeftButton, pos=center)
     assert observed == []
     canvas.set_view_preset("front")
@@ -225,14 +225,14 @@ def test_3d_canvas_neutral_viewer_mode_rotates_without_picking(
 
     center = QPoint(canvas.width() // 2, canvas.height() // 2)
     QTest.mouseClick(canvas, Qt.MouseButton.LeftButton, pos=center)
-    initial_yaw = canvas.yaw
+    initial_rotation = canvas.rotation
     QTest.mousePress(canvas, Qt.MouseButton.LeftButton, pos=QPoint(150, 180))
     QTest.mouseMove(canvas, QPoint(220, 180))
     QTest.mouseRelease(canvas, Qt.MouseButton.LeftButton, pos=QPoint(220, 180))
 
     assert canvas.picking_enabled is False
     assert picked == []
-    assert canvas.yaw != initial_yaw
+    assert not np.array_equal(canvas.rotation, initial_rotation)
     canvas.close()
     application.processEvents()
 
