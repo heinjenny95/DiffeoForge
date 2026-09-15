@@ -155,6 +155,15 @@ scientific gates. Planning does not mark those gates complete.
   its technical smoke pilot is not the staged parameter calibration. Preserve
   the recorded engine when opening or resuming existing projects; never silently
   convert them. Verify fresh-project defaults and both engine-selection paths.
+- [ ] **Immediate loading feedback / animated busy cursor.** Acknowledge slow
+  actions as soon as clicked, before mesh loading or preparation begins: show an
+  animated busy cursor and a short task-specific status or inline spinner. Bind
+  the indication to real task state, not a cosmetic timer or invented progress;
+  keep the UI responsive and prevent duplicate starts of the same action.
+  Restore the cursor and controls on success, cancellation and failure, including
+  overlapping jobs; show errors explicitly. Test delayed large-mesh loading,
+  rejected clicks, repeated clicks and every exit path so a busy task cannot be
+  mistaken for an unresponsive or broken button.
 - [x] **Pilot: opt-in AFK / overnight mode.** After each completed stage,
   automatically accept its eligible recommendation and start the next pilot
   stage without another click. Declare the permitted scope and provisional-choice
