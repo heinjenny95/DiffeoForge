@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import time
 from dataclasses import replace
 from pathlib import Path
 from threading import Event
@@ -9,9 +8,8 @@ import numpy as np
 import pytest
 
 pytest.importorskip("PySide6")
-from PySide6.QtCore import QThreadPool
+from PySide6.QtCore import QEventLoop, QThreadPool, QTimer
 from PySide6.QtGui import QColor
-from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 
 from diffeoforge.desktop import surface_rendering
@@ -34,14 +32,31 @@ def app(monkeypatch):
 
 
 def wait(app, condition, canvas=None):
-    deadline = time.monotonic() + 10
-    while time.monotonic() < deadline:
-        app.processEvents()
+    # A tight QTest.qWait/repaint loop can starve the Python render worker.
+    # Use the application's native event loop, with the same bounded deadline.
+    del app
+    loop = QEventLoop()
+    timer = QTimer()
+    timeout = QTimer()
+    timeout.setSingleShot(True)
+    timeout.timeout.connect(loop.quit)
+
+    def poll():
         if canvas is not None:
             canvas.grab()
         if condition():
-            return
-        QTest.qWait(5)
+            loop.quit()
+
+    if canvas is not None:
+        canvas.grab()
+    if condition():
+        return
+    timer.timeout.connect(poll)
+    timer.start(20)
+    timeout.start(10000)
+    loop.exec()
+    timer.stop()
+    timeout.stop()
     assert condition()
 
 

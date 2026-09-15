@@ -29,6 +29,35 @@ preprocessing, landmark/picking/draft, background-render, QC release and packagi
 safeguards. Ruff and whitespace checks passed. Package metadata was refreshed to
 v80 before freezing; runtime dependencies were not upgraded.
 
+### Verified local v80 delivery
+
+On 2026-09-15, runtime snapshot
+[`cfe369b`](https://github.com/heinjenny95/DiffeoForge/commit/cfe369b23675c4612bf7cc4ffabc35f6b25cbb6e)
+was clean-built, packaged, installed and reopened with the user's approval.
+All **2,676 installed bundle files** were hash-verified, all **62 versioned JSON
+schemas** matched source, and startup/worker/preparation smoke checks passed.
+The previous installation was retained in a separate, hash-verified backup.
+
+The final **195 regressions passed without skips** using the embedded GPA and
+rendering modules. A test-only tight polling loop had starved a render worker;
+switching the wait helper to a native Qt event loop fixed that timeout while
+retaining the same ten-second deadline. This later test/documentation change
+does not change the installed runtime snapshot.
+
+Saved landmarks and mesh inputs remained byte-identical. Restoring the original
+inputs/settings reproduced the exact pre-update read-only GPA fingerprint.
+The reopened native GPA viewer passed a rotate/reset smoke check: overlays stayed
+with the old frame while pending, then followed the newly rendered surface.
+Visual approval must be reconfirmed by the user; no project, atlas or validation
+run was started. This remains an unsigned, same-owner Windows private alpha,
+not a public release or scientific validation. Private study data and local
+installer artifacts are excluded from GitHub.
+
+- Installed executable SHA-256:
+  `e5040b32bb786430f6409aa5e906cd36aab76038aa4004e2de3564ff41d2e8ef`.
+- Local setup SHA-256:
+  `2a70de9fea192f830ccddc648703f4572b480b9cbea6effdc4da40c62d426446`.
+
 ## v79 — screen-relative landmark rotation
 
 Private Windows build **v79**, package `0.0.0.dev79`, changes the landmark
