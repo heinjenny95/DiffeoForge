@@ -3677,7 +3677,8 @@ def test_desktop_window_verifies_and_renders_step_five_before_artifact_handoff(
     application.processEvents()
 
 
-def test_desktop_can_select_a_saved_completed_run(monkeypatch, tmp_path) -> None:
+@pytest.mark.parametrize("reference", [False, True])
+def test_desktop_can_select_a_saved_completed_run(monkeypatch, tmp_path, reference) -> None:
     pytest.importorskip("PySide6")
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication, QFileDialog
@@ -3688,14 +3689,17 @@ def test_desktop_can_select_a_saved_completed_run(monkeypatch, tmp_path) -> None
     project = tmp_path / "study"
     run = project / "diffeoforge-project" / "runs" / "desktop-ref-complete"
     run.mkdir(parents=True)
-    (run / "manifest.json").write_text(
-        '{"backend":{"id":"deformetrica_reference"}}\n',
-        encoding="utf-8",
-    )
-    (run / "result.json").write_text(
-        '{"status":"completed","return_code":0}\n',
-        encoding="utf-8",
-    )
+    if reference:
+        (run / "manifest.json").write_text(
+            '{"backend":{"id":"deformetrica_reference"}}\n',
+            encoding="utf-8",
+        )
+        (run / "result.json").write_text(
+            '{"status":"completed","return_code":0}\n',
+            encoding="utf-8",
+        )
+    else:
+        (run / "workflow-manifest.json").write_text('{}\n', encoding="utf-8")
     queued = []
 
     class FakePool:
@@ -3717,11 +3721,20 @@ def test_desktop_can_select_a_saved_completed_run(monkeypatch, tmp_path) -> None
     assert isinstance(window._worker, _ResultReviewWorker)
     assert queued == [window._worker]
     assert window._worker.directory == run.resolve()
-    assert window._worker.reference is True
-    assert "Reverifying the complete Deformetrica run" in window.status_label.text()
+    assert window._worker.reference is reference
+    expected_route = "Deformetrica run" if reference else "Modern workflow"
+    assert f"Reverifying the complete {expected_route}" in window.status_label.text()
+    assert window.data_status_label.text() == window.status_label.text()
+    assert "No atlas is being recomputed" in window.data_status_label.text()
+    assert window.open_completed_run_button.text() == "Verifying completed run…"
+    # Refreshing the empty setup form must not conceal active result verification.
+    window._sync_ready_state()
+    assert window.data_status_label.text() == window.status_label.text()
+    assert "Missing required" not in window.data_status_label.text()
     assert window.open_completed_run_button.isEnabled() is False
     window._completed_result_review_failed("test failure")
     assert window.open_completed_run_button.isEnabled() is True
+    assert window.open_completed_run_button.text() == "Open completed run…"
     assert "full verification failed" in window.status_label.text()
     assert "full verification failed" in window.data_status_label.text()
     window.close()

@@ -784,6 +784,17 @@ class _ResultReviewWorker(QRunnable):
         self.reference = reference
         self.signals = _WorkerSignals()
 
+    @property
+    def verification_message(self) -> str:
+        scope = (
+            "the complete Deformetrica run and its bound PCA snapshot"
+            if self.reference else "the complete Modern workflow and result bundle"
+        )
+        return (
+            f"Reverifying {scope}… Large runs can take several minutes. "
+            "No atlas is being recomputed."
+        )
+
     @Slot()
     def run(self) -> None:
         try:
@@ -6918,7 +6929,10 @@ class DiffeoForgeWindow(QMainWindow):
         loaded_project = bool(self._result is not None or self._review is not None)
         self.new_parameter_workflow_button.setVisible(loaded_project)
         self.new_parameter_workflow_button.setEnabled(loaded_project and self._worker is None)
-        if (
+        if isinstance(self._worker, _ResultReviewWorker):
+            self.data_status_label.setObjectName("status")
+            self.data_status_label.setText(self._worker.verification_message)
+        elif (
             raw_data_ready
             and self._input_preflight_worker is not None
             and self._input_preflight_worker.signature == current_preflight_signature
@@ -6977,6 +6991,10 @@ class DiffeoForgeWindow(QMainWindow):
         self._sync_reference_preparation_status_controls()
         self._sync_saved_reference_status_verification_controls()
         self.open_completed_run_button.setEnabled(self._worker is None)
+        self.open_completed_run_button.setText(
+            "Verifying completed run…"
+            if isinstance(self._worker, _ResultReviewWorker) else "Open completed run…"
+        )
         self.resume_interrupted_run_button.setEnabled(self._worker is None)
         self.recover_abandoned_run_button.setEnabled(self._worker is None)
 
@@ -7694,11 +7712,7 @@ class DiffeoForgeWindow(QMainWindow):
         self._worker = worker
         self.status_label.setObjectName("status")
         self.status_label.setStyleSheet("")
-        self.status_label.setText(
-            "Reverifying the complete Deformetrica run and rebuilding its bound PCA snapshot…"
-            if result.reference
-            else "Reverifying the complete Modern workflow and result bundle…"
-        )
+        self.status_label.setText(worker.verification_message)
         self._sync_ready_state()
         self._thread_pool.start(worker)
 

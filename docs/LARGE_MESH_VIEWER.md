@@ -82,6 +82,56 @@ timings, memory interpretation, public synthetic screenshots and reproduction.
 The shared QC/PCA surface canvases were exercised, not full installed result-bundle
 opening, new PCA calculations or anatomical defect-detection accuracy.
 
+## Installed completed-result check (15 September 2026)
+
+A fresh instance of the unchanged installed Windows runtime `063143a` opened an
+existing completed 100-subject human-mandible run through **Open completed run**.
+Its existing PCA bundle and finalized flagged-case review were verified; no atlas,
+Validation Lab, PCA calculation or PC-shape Shooting job was started.
+
+The full pre-viewer verification took approximately **11 minutes**. Periodic
+process observations reached a working set of **6,421,585,920 bytes (5.98 GiB)**;
+after verification it fell to approximately 447 MB. These are one-run,
+coarse-grained observations, not exact peak-memory or controlled latency
+benchmarks. The process remained responding during the probes and did not crash.
+
+Installed UI checks passed:
+
+- Atlas-template display and rotation: 229,324 source faces, 4,430-face display
+  proxy.
+- Two flagged-case overlays, rotation, original-detail rendering and hiding the
+  original layer. One pair contained 246,464 original and 229,324 reconstructed
+  faces; its reconstruction display proxy contained 5,027 faces.
+- Switching specimens cleared the previous geometry while loading and reset to
+  proxy display with both layers visible. Proxy/pending/hidden-layer views could
+  not confirm inspection; original-detail readiness enabled the inspection
+  checkbox, but it was deliberately left unchecked.
+- Existing scree, PC1-versus-PC2 and PC2-versus-PC3 plots, plus QC/results page
+  re-entry in the same session. The existing 9 approved flagged cases and 91
+  unreviewed cases remained unchanged; all 100 specimens remained included.
+
+Before/after inventories matched every path, size and SHA-256 for **1,269 files
+(10,616,332,159 bytes)**, with no additions or removals. The installed EXE hash
+also remained unchanged. Private meshes, screenshots, inventory hashes and local
+paths are not published. The application was left open at the verified results.
+
+The check exposed an unrelated loading-status defect: the empty setup page
+displayed missing-input errors while completed-run verification was active.
+The source fix keeps an engine-specific verification message and busy button
+caption visible through form refreshes, explicitly stating that no atlas is being
+recomputed. The targeted desktop/release/result/rendering suite passed **104
+tests, with 2 environment-specific skips**; Ruff and whitespace checks passed.
+This fix is source-only and does **not** accelerate full-run verification.
+
+Next: profile full-run verification, including QC metric collection that currently
+retains all reconstruction meshes. Bound memory and report truthful stage progress
+without weakening artifact verification or changing scientific QC definitions.
+This check did not repeat the large-run open after an application restart, exercise
+rapid selection races in the installed app, or test generated PC endpoint meshes
+(none existed in this run). It is an engineering smoke test, not anatomical QC
+approval or scientific validation. Synthetic lifecycle/race coverage remains
+separate evidence above.
+
 ## Earlier full-frame-cache observation (before default proxies)
 
 One private completed-atlas pair (246,464 original faces; 229,324 reconstructed

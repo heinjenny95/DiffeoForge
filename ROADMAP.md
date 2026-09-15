@@ -163,6 +163,15 @@ scientific gates. Planning does not mark those gates complete.
   and prevent QC from claiming inspection of detail hidden by simplification.
   Bound background proxy generation, memory and stale-view work; verify
   responsiveness and preservation of relevant visible defects on large meshes.
+- [x] Keep completed-run verification visible on the empty project-setup page
+  for both engines; show a verifying button caption instead of idle input errors.
+  Source correction only until included in a later installed build.
+- [ ] Profile and reduce full completed-run reopening time and peak memory,
+  separately from display-frame speed. The large installed-cohort check exposed
+  a minutes-long pre-viewer verification phase; QC metric collection currently
+  retains all reconstruction meshes. Add truthful stage/progress reporting and
+  bounded-memory processing without weakening file verification or changing QC
+  definitions. Do not skip scientific checks to make the viewer appear sooner.
 
 - [x] Adopt the Deformetrica-first product decision with an evidence-gated Modern engine
 - [x] Extract strict landmark CSV handling from the Modern engine
