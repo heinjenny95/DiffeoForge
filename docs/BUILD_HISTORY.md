@@ -2,7 +2,7 @@
 
 ## v78 — synchronized landmark overlays and visible build identity
 
-The next private Windows test build is **v78**, package version
+The installed private Windows test build is **v78**, package version
 `0.0.0.dev78`. The main window and landmark editor show `v78 (Private Alpha)`;
 the installer name is `DiffeoForge-v78-Windows-CPU-x86_64-Setup.exe` and its
 installation entry shows the same label. CLI/Qt metadata retain the PEP 440
@@ -27,8 +27,47 @@ The compiler-observation wrapper and retained build-evidence verifier/schema
 also accept exactly ten arguments for numbered alphas, keeping nine for legacy
 and release versions. Both version families run through the full evidence tests.
 A full create/validate/reconstruct regression covers v78, and the clean binary
-is rebuilt with the corrected schema before installation. The stopped attempt
+was rebuilt with the corrected schemas before installation. The stopped attempt
 was not installed or distributed.
+
+### Verified local delivery
+
+On 2026-09-15, the final runtime source snapshot
+[`9250632`](https://github.com/heinjenny95/DiffeoForge/commit/9250632bdaceb418e92cea93aeba743d0c080238)
+was clean-built, packaged and installed for the existing local user. Later
+documentation-only commits record delivery; they are not the runtime snapshot.
+
+- Consolidated source regressions: **222 passed, 2 environment skips**. The final
+  numbered-alpha packaging/evidence checks passed (**33 tests**), as did
+  distribution/Windows/reference-installer contracts (**15 tests**). These
+  overlapping suites are not an additive unique-test count.
+- **48 landmark/render tests passed against the embedded executable modules**.
+  All six changed runtime modules matched the committed source after compilation,
+  and all **62 versioned JSON schemas** matched byte-for-byte. Build-only modules
+  were correctly absent from the application bundle.
+- Installed startup smoke passed; all **2,676 bundled files** were hash-verified.
+  App/editor titles visibly show `v78 (Private Alpha)`, and the Desktop shortcut
+  points to the verified installed executable.
+- The previous application was backed up and all **2,687 previous files** checked.
+  The existing on-disk landmark draft was separately preserved; unsaved trial
+  placements were discarded with the user's permission. The editor reopened with
+  **0/159 points**, LM1-LM3, auto-advance enabled, a reduced display and no paused
+  autosave warning. No fictitious anatomical points were placed for verification.
+- All 106 original/prepared mesh hashes remained unchanged. No study atlas or
+  Validation Lab computation was started; anatomy and QC still require review.
+
+Retained local artifact identities (SHA-256):
+
+```text
+DiffeoForge.exe
+63fa9a43b73f3222dcc1367f8a1cc42e461e076b069bcc19093d399958cd5f6e
+DiffeoForge-v78-Windows-CPU-x86_64-Setup.exe
+72bd5beeba7c8425904f56641b86c6b0052d7bf9dfdc0235cc3d523877d9cd63
+```
+
+This is an unsigned, same-owner private-alpha test installation, not a public
+release or completed scientific validation. Installer artifacts and private
+research data remain outside GitHub.
 
 ## Reconstructed numbering gap
 
