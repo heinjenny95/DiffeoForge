@@ -19,14 +19,51 @@ in an upside-down view (two expected failures with the previous canvas), then
 passes with the repair. The initial focused suite passed **74 tests**, covering
 all seven view presets, upside-down/mixed drags, 10,000 orthogonal rotations,
 inverse diagonals, pan, picking, delayed rendered markers, drafts and build labels.
-Build/installation evidence will be recorded after verification. Existing user
-landmarks must be backed up and restored, not discarded for this update.
+Existing user landmarks are backed up and restored, not discarded for this update.
 
 The expanded final source suite passed **197 tests, with one unavailable-Windows-
 symlink-privilege skip**, including an independent analytic ray/cube check after
 composed rotations, viewer/QC release safeguards and packaging/evidence contracts.
 Ruff and whitespace checks passed. This is display/input verification, not a
 scientific validation or a claim that every independent viewer was redesigned.
+
+### Verified local v79 delivery
+
+On 2026-09-15, runtime snapshot
+[`70b9fbd`](https://github.com/heinjenny95/DiffeoForge/commit/70b9fbd7a2e347a91da11a87da5327196f1f82a5)
+was clean-built, packaged, installed and reopened with the user's approval.
+Later documentation-only commits record delivery, not a different runtime.
+
+- **91 tests passed against the final embedded landmark/render modules**. Both
+  changed runtime modules matched compiled committed source; all **62 versioned
+  JSON schemas** matched byte-for-byte. These overlap the source tests above.
+- Installed startup smoke passed; all **2,676 bundled files** were hash-verified.
+  App and editor titles show `v79 (Private Alpha)`; the Desktop shortcut targets
+  the verified executable. A native drag rotated the displayed mesh without
+  adding, replacing or dropping landmarks; the view was reset afterwards.
+- The previous application was preserved and all **2,687 previous files** checked.
+  The existing landmark draft was separately backed up, natively validated and
+  resumed at the previous specimen. Its bytes and saved coordinates remained
+  unchanged after reopening. Reduced-view picking and auto-advance are active;
+  no anatomical points, QC approvals or study computations were created.
+- The first packaging attempt correctly stopped on stale v78 editable-package
+  metadata in the local build environment. After refreshing that local metadata
+  to v79 without dependency upgrades, a fresh build passed all package/version
+  guards. The rejected attempt was never installed or distributed. Future
+  numbered builds must check editable metadata against `pyproject.toml` first.
+
+Retained local v79 artifact identities (SHA-256):
+
+```text
+DiffeoForge.exe
+d85fe022818a94462098d48c5db790a7c605331cd411db0469c2c94387c2d0a5
+DiffeoForge-v79-Windows-CPU-x86_64-Setup.exe
+50288443d09bf9ae9a87ad646ca17139bc69da6fe0b3c83d27e4d7b6513e0ea9
+```
+
+This remains an unsigned, same-owner Windows private-alpha installation, not a
+public release or scientific validation. Private data and installer artifacts
+remain outside GitHub. User landmarking and anatomical review are the next step.
 
 ## v78 — synchronized landmark overlays and visible build identity
 
