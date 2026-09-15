@@ -79,12 +79,14 @@ class LandmarkEditorDialog(QDialog):
         explanation = QLabel(
             "Place each label on the same anatomical location for every mesh. Rotate and "
             "zoom the specimen, then click the visible surface. A new click replaces the "
-            "selected point. DiffeoForge stores exact 3D surface coordinates and never "
-            "modifies the source meshes. Progress is autosaved; Cancel keeps the draft."
+            "selected point. Reduced-view clicks snap to the nearest original surface point "
+            "in the background. Original detail is optional for inspecting small features. "
+            "DiffeoForge stores original-surface coordinates and never modifies the source "
+            "meshes. Progress is autosaved; Cancel keeps the draft."
         )
         explanation.setWordWrap(True)
         summary = QLabel(
-            "Place matching anatomical landmarks. For large meshes, enable Original detail to pick."
+            "Click to place landmarks — reduced-view clicks snap to the original surface."
         )
         summary.setWordWrap(True)
         layout.addWidget(summary)
@@ -509,6 +511,11 @@ class LandmarkEditorDialog(QDialog):
 
     @Slot()
     def _save_and_accept(self) -> None:
+        if self.canvas._pick_pending:
+            self.status_label.setText(
+                "Transferring the last landmark — save again when it appears."
+            )
+            return
         if not self.buttons.button(QDialogButtonBox.StandardButton.Save).isEnabled():
             return
         for path in self.mesh_paths:

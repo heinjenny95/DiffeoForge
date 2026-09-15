@@ -26,12 +26,12 @@ not modified or decimated.
   a large full surface. Proxy-generation failure does not enable a full fallback.
 - Original-detail inspection is an explicit slower option. It resets on specimen
   changes and invalidates the old frame. Original vertices/triangles are retained
-  separately for exact picking; a reduced model can never impersonate them.
+  separately for picking and transfer; a display-only model cannot place landmarks.
 - QC confirmation requires the current, fully rendered view to have been painted,
   with both overlay layers visible. Loading, navigation, errors and stale views
-  cannot approve a case. Landmark clicks likewise require a full-resolution view
-  at mouse press with unchanged camera/geometry at release. Exact surface picking
-  continues to use the original geometry.
+  cannot approve a case. Landmark clicks require the selected display frame to be
+  presented at mouse press, with unchanged camera/geometry at release; reduced
+  views are supported through original-surface transfer described below.
 - Pilot visual-QC progress counts original-detail presentations, not merely opened
   proxies. The final pass/fail decision remains explicit. GPA proxies support an
   alignment review only, not approval of hidden anatomical detail; original aligned
@@ -49,7 +49,8 @@ One private human mandible with 477,334 faces produced a 4,541-face display prox
 3.55 s and the proxy 45 ms. Loading plus first simplification took 3.58 s, in a
 separate engineering process. The side-by-side image was inspected and the source
 SHA-256 remained unchanged. Teeth are visibly less detailed; this is precisely
-why proxy viewing cannot stand in for original-detail QC or landmark picking.
+why proxy viewing cannot stand in for original-detail QC or fine anatomical
+inspection. Alignment landmarks now support the explicit reduced-view transfer below.
 
 These are single-view observations, not universal frame-rate, memory or anatomical
 accuracy guarantees. Reproduce with `tools/benchmark_display_proxy.py`, writing
@@ -62,6 +63,38 @@ maximum gap 0.66 s). Source hash and original-picking lock were preserved. This
 ran alongside build/test work and shows remaining short stalls, not zero-latency
 interaction. The new private build is documented in
 `NEXT_VERSION_BUILD_2026-09-14.md`; it has not been installed.
+
+## Reduced-view alignment landmarks (15 September 2026)
+
+Landmark placement no longer requires switching each specimen to Original detail.
+The click first intersects the frontmost triangle of the actually displayed proxy.
+A background, cancellable nearest-surface search then transfers that 3D location
+to the unchanged original triangles, including face interiors and edges, not only
+vertices. Temporary arrays cover at most 32,768 source triangles at a time. The
+full original is not rendered to place the point. Original-detail clicks retain
+direct surface intersection.
+
+The displayed frame must be settled and current at press and release. Pending
+transfers are invalidated on mesh/label changes, undo/clear, resolution changes,
+neutral-view mode and editor closure. Failed transfers show an error rather than
+storing a proxy coordinate. Save waits for a pending replacement; autosave,
+auto-advance, undo and CSV export keep original-coordinate behaviour. A proxy-only
+model without original geometry remains unpickable. Full-detail QC gates are
+unchanged.
+
+This is approximate anatomical placement for alignment, not recovery of hidden
+detail or proof of landmark homology. On thin, nearby or overlapping surfaces,
+the nearest face can differ from the intended anatomical feature. Inspect Original
+detail when necessary. Original meshes, source hashes and existing points are not
+modified.
+
+Verification: 132 targeted tests passed, with one environment-specific skip,
+covering displaced proxies, surface interiors/edges, translated and scaled source
+coordinates, background execution, stale-result rejection, consecutive specimens,
+real Qt editor clicks, autosave and CSV export, plus existing rendering/QC tests.
+A separate 200,000-triangle synthetic nearest-surface query took 0.068 s on the
+development workstation; this is a kernel observation, not an end-to-end latency
+or anatomical-accuracy guarantee. No private study data was used in these tests.
 
 ## Synthetic size/viewer matrix (15 September 2026)
 
