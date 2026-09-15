@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
+from diffeoforge import display_version
 from diffeoforge.analysis.landmarks import write_landmark_csv
 from diffeoforge.atomic_io import write_text_safely
 from diffeoforge.desktop.info_disclosure import InfoDisclosure
@@ -72,7 +73,7 @@ class LandmarkEditorDialog(QDialog):
         self._mesh_loader.loaded.connect(self._mesh_loaded)
         self._mesh_loader.failed.connect(self._mesh_failed)
         self._known_mesh_hashes: dict[str, str] = {}
-        self.setWindowTitle("Place homologous landmarks")
+        self.setWindowTitle(f"Place homologous landmarks — DiffeoForge {display_version()}")
         self.resize(1180, 840)
 
         layout = QVBoxLayout(self)

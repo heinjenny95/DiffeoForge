@@ -156,6 +156,7 @@ class SurfaceFrameCache(QObject):
         self._wanted: tuple | None = None
         self._image_key: tuple | None = None
         self._image: QImage | None = None
+        self._image_scene: SurfaceScene | None = None
         self.error = ""
         self.render_count = 0
         self._mailbox = _FrameMailbox()
@@ -167,12 +168,18 @@ class SurfaceFrameCache(QObject):
     def clear(self) -> None:
         self._wanted = self._image_key = None
         self._image = self._pending = None
+        self._image_scene = None
         self.error = ""
         if self._active is not None:
             self._active.cancelled.set()
 
     def ready(self, key: tuple) -> bool:
         return self._image is not None and self._image_key == key
+
+    @property
+    def image_scene(self) -> SurfaceScene | None:
+        """The camera snapshot belonging to the returned image, never the pending view."""
+        return self._image_scene
 
     def request(self, key: tuple, scene: SurfaceScene) -> QImage | None:
         if key != self._wanted:
@@ -203,10 +210,12 @@ class SurfaceFrameCache(QObject):
 
     def _finished(self, key: tuple, image: QImage | None, error: str) -> None:
         cancelled = self._active is None or self._active.cancelled.is_set()
+        scene = self._active.scene if self._active is not None else None
         self._active = None
         self._mailbox.cancelled = None
         if not cancelled and key == self._wanted and image is not None:
             self._image_key, self._image = key, image
+            self._image_scene = scene
         if not cancelled and key == self._wanted:
             self.error = error
         if self._pending is not None:

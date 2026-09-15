@@ -36,6 +36,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from diffeoforge import display_version
 from diffeoforge.analysis.landmarks import (
     import_landmark_fcsv_folder,
     import_landmark_txt_folder,
@@ -1365,7 +1366,7 @@ class DiffeoForgeWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
         self.setObjectName("diffeoforgeWindow")
-        self.setWindowTitle("DiffeoForge Desktop")
+        self.setWindowTitle(f"DiffeoForge {display_version()}")
         self.resize(1120, 780)
         self.setMinimumSize(900, 650)
         self.setStyleSheet(_STYLE)

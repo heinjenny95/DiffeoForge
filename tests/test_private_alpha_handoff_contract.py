@@ -37,7 +37,7 @@ def test_private_alpha_contract_is_same_owner_nonrelease_and_exact() -> None:
     assert contract["security_observation"]["malware_clearance_claim"] is False
     assert contract["output"]["exact_files"] == sorted(
         [
-            "DiffeoForge-0.0.0.dev0-Windows-CPU-x86_64-Setup.exe",
+            "DiffeoForge-v78-Windows-CPU-x86_64-Setup.exe",
             "LICENSE.txt",
             "PRIVATE-ALPHA-README.txt",
             "private-alpha-manifest.json",
@@ -74,7 +74,7 @@ def test_private_alpha_wrapper_is_fail_closed_and_never_executes_setup() -> None
 def test_private_alpha_retained_verifier_accepts_exact_and_rejects_mutation(
     tmp_path: Path,
 ) -> None:
-    setup_name = "DiffeoForge-0.0.0.dev0-Windows-CPU-x86_64-Setup.exe"
+    setup_name = "DiffeoForge-v78-Windows-CPU-x86_64-Setup.exe"
     root = tmp_path / "Private Alpha"
     root.mkdir()
 

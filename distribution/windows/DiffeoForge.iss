@@ -22,6 +22,9 @@
 #ifndef OutputBaseFilename
   #error OutputBaseFilename compiler define is required
 #endif
+#ifndef AppDisplayVersion
+  #define AppDisplayVersion AppVersion
+#endif
 #ifdef ReferenceRuntimeArchive
   #ifndef ReferenceRuntimeSha256
     #error ReferenceRuntimeSha256 is required when ReferenceRuntimeArchive is supplied
@@ -35,7 +38,7 @@
 AppId=DiffeoForge.WindowsCPU.x86_64
 AppName=DiffeoForge
 AppVersion={#AppVersion}
-AppVerName=DiffeoForge {#AppVersion} (Windows CPU x86-64)
+AppVerName=DiffeoForge {#AppDisplayVersion} (Windows CPU x86-64)
 AppPublisher=DiffeoForge contributors
 AppPublisherURL=https://github.com/heinjenny95/DiffeoForge
 AppSupportURL=https://github.com/heinjenny95/DiffeoForge/issues
@@ -52,7 +55,7 @@ DisableProgramGroupPage=auto
 AllowNoIcons=yes
 LicenseFile={#LicenseFile}
 Uninstallable=yes
-UninstallDisplayName=DiffeoForge {#AppVersion} (Windows CPU x86-64)
+UninstallDisplayName=DiffeoForge {#AppDisplayVersion} (Windows CPU x86-64)
 UninstallDisplayIcon={app}\DiffeoForge.exe
 SetupLogging=yes
 UninstallLogging=yes

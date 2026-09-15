@@ -512,16 +512,12 @@ class InteractiveMeshCanvas3D(QWidget):
                 ),
             )
 
-        rotation = camera_rotation(self._yaw, self._pitch)
-        viewport = max(1.0, min(float(self.width()), float(self.height())) - 64.0)
-        factor = 0.9 * viewport * self._zoom
-        for marker_number, (label, value) in enumerate(self._markers.items(), start=1):
-            normalized = (np.asarray(value, dtype=np.float64) - self._center) / self._scale
-            camera = normalized @ rotation.T
-            rendered = QPointF(
-                self.width() / 2.0 + self._pan[0] + float(camera[0]) * factor,
-                self.height() / 2.0 + self._pan[1] - float(camera[1]) * factor,
-            )
+        # The cache may still display the preceding camera while rendering a new
+        # one. Project overlays with that image's camera too, including its old
+        # viewport after a resize. Never draw floating markers before an image.
+        for marker_number, (label, rendered) in enumerate(
+            self._displayed_marker_positions().items(), start=1
+        ):
             painter.setPen(QPen(QColor("#ffffff"), 2.0))
             painter.setBrush(QColor("#d9481c"))
             painter.drawEllipse(rendered, 6.5, 6.5)
@@ -537,3 +533,18 @@ class InteractiveMeshCanvas3D(QWidget):
             "·  Wheel: zoom  ·  Double-click: reset view",
         )
         painter.end()
+
+    def _displayed_marker_positions(self) -> dict[str, QPointF]:
+        scene = self._frames.image_scene
+        if scene is None:
+            return {}
+        factor = 0.9 * max(1.0, min(scene.width, scene.height) - scene.margin) * scene.zoom
+        positions = {}
+        for label, value in self._markers.items():
+            normalized = (np.asarray(value, dtype=np.float64) - scene.center) / scene.scale
+            camera = normalized @ scene.rotation.T
+            positions[label] = QPointF(
+                scene.width / 2.0 + scene.pan[0] + float(camera[0]) * factor,
+                scene.height / 2.0 + scene.pan[1] - float(camera[1]) * factor,
+            )
+        return positions

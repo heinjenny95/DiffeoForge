@@ -634,7 +634,9 @@ def test_desktop_window_exposes_required_project_controls(monkeypatch) -> None:
     application = QApplication.instance() or QApplication(["diffeoforge-desktop-test"])
     window = DiffeoForgeWindow()
 
-    assert window.windowTitle() == "DiffeoForge Desktop"
+    from diffeoforge import display_version
+
+    assert window.windowTitle() == f"DiffeoForge {display_version()}"
     assert window.findChild(QLineEdit, "meshDirectoryEdit") is not None
     assert window.findChild(QLineEdit, "projectDirectoryEdit") is not None
     assert window.required_fields_legend.text() == "* Required"

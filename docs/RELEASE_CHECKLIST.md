@@ -21,6 +21,8 @@ applicable only with a written justification.
 ## 1. Scope and change control
 
 - [ ] The candidate commit and version are fixed for the review.
+- [ ] Private build numbering follows `BUILD_HISTORY.md`; runtime/package,
+  window/editor titles and installer identity agree (`test_build_version.py`).
 - [ ] User-visible, configuration, schema, and artifact changes are listed.
 - [ ] Breaking changes and migration steps are explicit.
 - [ ] Open blocking issues are resolved or documented as release limitations.

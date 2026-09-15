@@ -8,6 +8,12 @@ not modified or decimated.
 
 ## Behaviour and safeguards
 
+- Landmark markers use the camera snapshot of the **displayed cached image**,
+  not the latest requested camera. Image and camera are accepted together;
+  rotation, pan, zoom and viewport resizing cannot move markers ahead of a
+  background mesh frame. No markers appear before the first frame or after a
+  specimen/cache clear. Failed/cancelled renders never advance the overlay camera.
+  This fixes visual drift; saved world coordinates are not transformed or rewritten.
 - Result geometry is verified and parsed outside the GUI thread. Only the latest
   selection may be displayed; rapid selection changes do not create a job backlog.
 - An LRU geometry cache retains at most four models and one million aggregate
@@ -41,6 +47,12 @@ not modified or decimated.
   stale results discarded; the landmark editor no longer retains a whole cohort
   of full meshes. GPA's shaded surface and cohort wireframes render in the shared
   background frame cache.
+
+Regression `tests/test_landmark_frame_sync.py` checks actual painted landmark
+pixels while an intentionally delayed renderer holds the old mesh frame, then
+checks the replacement frame. Both reduced and original-detail modes cover
+rotation, pan, zoom, resize and view presets; source arrays and marker coordinates
+must remain unchanged. Picking and scientific QC still reject pending views.
 
 ## Reduced-display observation
 
