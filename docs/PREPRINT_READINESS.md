@@ -145,9 +145,23 @@ expectation, fixed in `cd8c1be`, and the isolated lifecycle rerun passed. See
 [installer evidence](INSTALLER_LIFECYCLE_REPAIR.md). Existing offscreen/source CI
 is not native distribution qualification for every OS.
 
-**Next acceptance task:** consolidate and exercise the bounded end-to-end
-Reference workflow in item 1. The [v83 usability package](V83_WORKFLOW_USABILITY.md)
-addresses default engine selection, concise summaries, activity feedback and QC
-mesh retention; it does not close all interactive acceptance gates. Do not restart private
-atlas studies, change their scientific settings or rebuild/install the app as
-part of merely recording this plan.
+## Engineering progress — 2026-09-16
+
+The [v83 usability package](V83_WORKFLOW_USABILITY.md),
+[public walkthrough](PUBLIC_REFERENCE_WALKTHROUGH.md) and
+[real-engine observation](PUBLIC_REFERENCE_OBSERVATION.md) now cover additional
+automatable portions of the gates. Keep the parent checkboxes open until their
+human/release acceptance conditions are met.
+
+| Gate | Engineering evidence available | Still requires acceptance |
+| --- | --- | --- |
+| P0.1 Reference route | Repaired installer lifecycle passed in isolated CI; public GPA, 31-candidate AFK, atlas, QC metrics and nine-method PDF completed; recovery/cancellation regressions passed. | Independent native first-use walkthrough, including actual visual decisions and cancellation/reopening. |
+| P0.2 Data/reproducibility | 154 release/render/import/execution/recovery checks plus 56 analysis/alignment invariants passed; direct versus guided same-XML output matched in all ten observations. | Independent implementation review; this is not validation of anatomical correspondence. |
+| P0.3 Scientific claims | New-project/AFK/Validation summaries distinguish provisional choices, numerical checks and human judgement. Real AFK warnings remained recorded and no visual approval was manufactured. | Co-author review of Methods and user-facing wording. |
+| P0.4 Usability | Reference default, collapsed detail, activity indicators, narrow-window controls and streaming full-mesh QC collection implemented/tested. | Representative native viewer interaction and first-user review; not a measured large-cohort speedup claim. |
+| P0.5 Comparison | 74 PCA/comparison/stability checks passed; variable method rank, 1D reporting, exact caches/CSVs/PDF and tamper rejection covered. Nine public PDF pages visually checked. | Independent mathematical review and selection of manuscript figures from existing authorized studies. |
+
+**Next acceptance task:** use the small public walkthrough with an independent
+reviewer, then consolidate the three existing case studies. Do not restart private
+atlas studies or change their scientific settings merely to fill this checklist.
+Do not install or distribute a new build without the corresponding approval.
