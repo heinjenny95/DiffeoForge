@@ -372,12 +372,6 @@ def _read_method_cache(
         raise ReferenceShapeSpaceComparisonError(
             f"Cached shape-space method scores are invalid: {method_id}"
         ) from error
-    if scores.shape != (inputs.subject_count, exported_components) or not bool(
-        np.isfinite(scores).all()
-    ):
-        raise ReferenceShapeSpaceComparisonError(
-            f"Cached shape-space method score shape differs: {method_id}"
-        )
     method = dict(value["method"])
     _validate_method_document(
         method,
@@ -385,7 +379,29 @@ def _read_method_cache(
         subject_count=inputs.subject_count,
         deformation_kernel_width=_deformation_kernel_width(inputs),
     )
+    _validate_cached_score_shape(
+        scores,
+        method,
+        subject_count=inputs.subject_count,
+        exported_components=exported_components,
+    )
     return method, scores
+
+
+def _validate_cached_score_shape(
+    scores: np.ndarray,
+    method: dict[str, object],
+    *,
+    subject_count: int,
+    exported_components: int,
+) -> None:
+    # The export setting is a cap, not a promise that every method has that rank.
+    # Validate the method document first; never infer missing axes from the data.
+    dimensions = min(exported_components, int(method["available_dimensions"]))
+    if scores.shape != (subject_count, dimensions) or not bool(np.isfinite(scores).all()):
+        raise ReferenceShapeSpaceComparisonError(
+            f"Cached shape-space method score shape differs: {method['method_id']}"
+        )
 
 
 def _write_method_cache(
@@ -396,6 +412,18 @@ def _write_method_cache(
     *,
     exported_components: int,
 ) -> None:
+    _validate_method_document(
+        method,
+        method_id=method_id,
+        subject_count=inputs.subject_count,
+        deformation_kernel_width=_deformation_kernel_width(inputs),
+    )
+    _validate_cached_score_shape(
+        np.asarray(scores, dtype=np.float64),
+        method,
+        subject_count=inputs.subject_count,
+        exported_components=exported_components,
+    )
     target = _method_cache_directory(inputs, method_id)
     if target.exists():
         _read_method_cache(
@@ -1300,14 +1328,18 @@ def _comparison_payload(
             return False
         document, values = cached_methods[method_id]
         array = np.asarray(values, dtype=np.float64)
-        if (
-            document.get("method_id") != method_id
-            or array.shape != (count, exported)
-            or not bool(np.isfinite(array).all())
-        ):
-            raise ReferenceShapeSpaceComparisonError(
-                f"Cached shape-space method is invalid: {method_id}"
-            )
+        _validate_method_document(
+            document,
+            method_id=method_id,
+            subject_count=count,
+            deformation_kernel_width=width,
+        )
+        _validate_cached_score_shape(
+            array,
+            document,
+            subject_count=count,
+            exported_components=exported,
+        )
         methods.append(dict(document))
         scores[method_id] = np.array(array, dtype=np.float64, copy=True)
         progress(method_id)
@@ -1719,6 +1751,21 @@ def _method_labels(manifest: dict[str, object]) -> dict[str, str]:
     return {str(method["method_id"]): str(method["label"]) for method in manifest["methods"]}
 
 
+def _profile_evaluation(method: dict[str, object], dimensions: int) -> dict[str, object]:
+    evaluation = method["evaluations"].get(str(dimensions))
+    if evaluation is not None:
+        return evaluation
+    # Legacy method caches record 2D/3D/full-rank fidelity, not necessarily 1D.
+    # Keep those immutable; never label a 2D fidelity value as a 1D observation.
+    return {
+        "dimensions": dimensions,
+        "distance_correlation": None,
+        "normalized_stress_after_scale": None,
+        "centered_kernel_alignment_to_lddmm_pca": None,
+        "top_outlier_overlap": None,
+    }
+
+
 def _pairwise_row_to_reference(
     rows: list[dict[str, object]],
     *,
@@ -1751,6 +1798,13 @@ def _comparison_report_html(manifest: dict[str, object]) -> str:
     labels = _method_labels(manifest)
     pairwise_rows = list(agreement["pairwise"])
     summary_by_dimension = {int(item["dimensions"]): item for item in agreement["summaries"]}
+    fidelity_note = (
+        '<p class="muted">n/a: fidelity was not recorded at this dimension; '
+        "see method-metrics.csv for the recorded per-method dimensions. "
+        "Pairwise agreement uses the displayed number of axes.</p>"
+        if any(str(profile_dimension) not in method["evaluations"] for method in methods)
+        else ""
+    )
 
     def metric(value: object) -> str:
         if value is None:
@@ -1789,7 +1843,7 @@ def _comparison_report_html(manifest: dict[str, object]) -> str:
     profile_rows: list[str] = []
     for method in methods:
         method_id = str(method["method_id"])
-        evaluation = method["evaluations"][str(profile_dimension)]
+        evaluation = _profile_evaluation(method, profile_dimension)
         pair = _pairwise_row_to_reference(
             pairwise_rows,
             method_id=method_id,
@@ -1878,7 +1932,7 @@ def _comparison_report_html(manifest: dict[str, object]) -> str:
     <table><thead><tr><th>Dimensions</th><th>Pairs</th><th>Median distance r</th><th>Minimum distance r</th><th>Median Procrustes r</th><th>Median 5-NN overlap</th><th>Median outlier overlap</th><th>Weakest pair</th></tr></thead>
     <tbody>{"".join(summary_rows)}</tbody></table>
   </section>
-  <section><h2>Methods versus the visual reference at {profile_dimension} dimensions</h2>
+  <section><h2>Methods versus the visual reference at {profile_dimension} dimensions</h2>{fidelity_note}
     <table><thead><tr><th>Method</th><th>Tangent distance r</th><th>Stress (lower better)</th><th>CKA to default</th><th>Tangent outliers</th><th>Distance r to reference</th><th>Procrustes r</th><th>5-NN overlap</th><th>Pairwise outliers</th><th>Heuristic grade</th></tr></thead>
     <tbody>{"".join(profile_rows)}</tbody></table>
   </section>
@@ -1904,7 +1958,7 @@ def _comparison_visual_documents(
     method_ids = tuple(str(method["method_id"]) for method in manifest["methods"])
     labels = _method_labels(manifest)
     evaluations = {
-        str(method["method_id"]): method["evaluations"][str(profile_dimension)]
+        str(method["method_id"]): _profile_evaluation(method, profile_dimension)
         for method in manifest["methods"]
     }
     outlier_count = min(
@@ -1950,7 +2004,7 @@ def _read_v03_scores(
     *,
     method_ids: tuple[str, ...],
     subject_labels: tuple[str, ...],
-    exported_components: int,
+    method_dimensions: dict[str, int],
 ) -> dict[str, np.ndarray]:
     try:
         with path.open("r", encoding="utf-8", errors="strict", newline="") as handle:
@@ -1959,12 +2013,12 @@ def _read_v03_scores(
         raise ReferenceShapeSpaceComparisonError("Could not read comparison scores CSV") from error
     if not rows or rows[0] != ["method_id", "subject_label", "component", "score"]:
         raise ReferenceShapeSpaceComparisonError("Comparison scores CSV header differs")
-    expected_rows = len(method_ids) * len(subject_labels) * exported_components
+    expected_rows = len(subject_labels) * sum(method_dimensions.values())
     if len(rows) != expected_rows + 1:
         raise ReferenceShapeSpaceComparisonError("Comparison scores CSV row count differs")
     scores = {
         method_id: np.empty(
-            (len(subject_labels), exported_components),
+            (len(subject_labels), method_dimensions[method_id]),
             dtype=np.float64,
         )
         for method_id in method_ids
@@ -1972,7 +2026,7 @@ def _read_v03_scores(
     cursor = 1
     for method_id in method_ids:
         for subject_index, subject_label in enumerate(subject_labels):
-            for component_index in range(exported_components):
+            for component_index in range(method_dimensions[method_id]):
                 row = rows[cursor]
                 cursor += 1
                 expected_identity = [
@@ -2109,7 +2163,10 @@ def _verify_selection_structure_and_documents(
         root / SCORES_CSV,
         method_ids=method_ids,
         subject_labels=inputs.subject_labels,
-        exported_components=exported,
+        method_dimensions={
+            method_id: min(exported, int(method["available_dimensions"]))
+            for method_id, method in zip(method_ids, methods, strict=True)
+        },
     )
     for method_id, method in zip(method_ids, methods, strict=True):
         cached = _read_method_cache(

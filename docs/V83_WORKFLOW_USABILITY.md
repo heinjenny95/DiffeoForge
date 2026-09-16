@@ -31,6 +31,9 @@ researcher's installed application was not changed while developing this package
   They neither rerank choices nor create anatomical approval. Validation Lab is
   explicitly optional and describes nearby kernel/control-point tests with fixed
   noise; method-comparison help distinguishes feature-space variance definitions.
+- Method comparison preserves each method's actual available dimensions, including
+  lower-rank Isomap/PCoA and one-axis reporting, without padding scientific scores
+  or weakening source-bound cache checks. See [dimension handling](SHAPE_SPACE_DIMENSION_HANDLING.md).
 
 ## Verification
 

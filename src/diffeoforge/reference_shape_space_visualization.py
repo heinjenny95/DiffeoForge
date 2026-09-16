@@ -357,12 +357,14 @@ def default_profile_svg(
             else pair_index[frozenset((method_id, reference_method_id))]
         )
         values = {
-            "distance_correlation": float(evaluation["distance_correlation"]),
-            "fit_after_stress": 1.0 - float(evaluation["normalized_stress_after_scale"]),
-            "centered_kernel_alignment_to_lddmm_pca": float(
-                evaluation["centered_kernel_alignment_to_lddmm_pca"]
-            ),
-            "top_outlier_overlap": float(evaluation["top_outlier_overlap"]),
+            "distance_correlation": evaluation["distance_correlation"],
+            "fit_after_stress": None
+            if evaluation["normalized_stress_after_scale"] is None
+            else 1.0 - float(evaluation["normalized_stress_after_scale"]),
+            "centered_kernel_alignment_to_lddmm_pca": evaluation[
+                "centered_kernel_alignment_to_lddmm_pca"
+            ],
+            "top_outlier_overlap": evaluation["top_outlier_overlap"],
             "pairwise_distance_correlation": 1.0
             if pair is None
             else float(pair["pairwise_distance_correlation"]),
@@ -376,6 +378,15 @@ def default_profile_svg(
         for column_index, (key, _label) in enumerate(columns):
             value = values[key]
             x = left + column_index * cell_width
+            if value is None:
+                body.extend(
+                    [
+                        f'  <rect x="{x}" y="{y}" width="{cell_width}" height="{cell_height}" fill="#edf3f3" stroke="#ffffff"/>',
+                        f'  <text x="{x + cell_width / 2}" y="{y + cell_height / 2 + 4}" text-anchor="middle" class="cell-text" fill="#17343a">n/a<title>Fidelity not recorded at this dimension; see per-method metrics.</title></text>',
+                    ]
+                )
+                continue
+            value = float(value)
             color = _agreement_color(value)
             text_color = "#ffffff" if value >= 0.88 or value < 0.30 else "#17343a"
             body.extend(

@@ -26,6 +26,7 @@ from diffeoforge.reference_shape_space_comparison import (
     REPORT_HTML,
     SCORE_OVERVIEW_SVG,
     ReferenceShapeSpaceComparison,
+    _profile_evaluation,
     verify_reference_shape_space_comparison,
 )
 from diffeoforge.strict_json import load_strict_json_object
@@ -288,7 +289,9 @@ def _pdf_bytes(comparison: ReferenceShapeSpaceComparison) -> bytes:
             )
             drawing = svg2rlg(io.BytesIO(sanitized.encode("ascii")))
         except (OSError, UnicodeError, ValueError) as error:
-            raise ReferenceShapeSpacePdfError(f"Could not render comparison figure: {name}") from error
+            raise ReferenceShapeSpacePdfError(
+                f"Could not render comparison figure: {name}"
+            ) from error
         if drawing is None or not drawing.width or not drawing.height:
             raise ReferenceShapeSpacePdfError(f"Comparison figure is empty: {name}")
         maximum_width = available_width
@@ -334,9 +337,18 @@ def _pdf_bytes(comparison: ReferenceShapeSpaceComparison) -> bytes:
         [paragraph("Run", small_style), paragraph(run_id, small_style)],
         [paragraph("Subjects", small_style), paragraph(subject_count, small_style)],
         [paragraph("Selected methods", small_style), paragraph(len(methods), small_style)],
-        [paragraph("Visual reference", small_style), paragraph(labels[reference_method_id], small_style)],
-        [paragraph("Comparison created", small_style), paragraph(manifest.get("created_at", "unknown"), small_style)],
-        [paragraph("Comparison manifest SHA-256", small_style), paragraph(manifest_hash, small_style)],
+        [
+            paragraph("Visual reference", small_style),
+            paragraph(labels[reference_method_id], small_style),
+        ],
+        [
+            paragraph("Comparison created", small_style),
+            paragraph(manifest.get("created_at", "unknown"), small_style),
+        ],
+        [
+            paragraph("Comparison manifest SHA-256", small_style),
+            paragraph(manifest_hash, small_style),
+        ],
     ]
     metadata_table = Table(metadata, colWidths=(42 * mm, available_width - 42 * mm))
     metadata_table.setStyle(table_style(header=False))
@@ -367,8 +379,14 @@ def _pdf_bytes(comparison: ReferenceShapeSpaceComparison) -> bytes:
     figure_pages = (
         ("Aligned two-axis score overview", SCORE_OVERVIEW_SVG),
         (f"Methods versus the reference at {profile_dimension} dimensions", DEFAULT_PROFILE_SVG),
-        (f"Pairwise distance agreement at {profile_dimension} dimensions", AGREEMENT_HEATMAP_2D_SVG),
-        (f"Pairwise distance agreement at {dimensions[-1]} dimensions", AGREEMENT_HEATMAP_HIGH_DIM_SVG),
+        (
+            f"Pairwise distance agreement at {profile_dimension} dimensions",
+            AGREEMENT_HEATMAP_2D_SVG,
+        ),
+        (
+            f"Pairwise distance agreement at {dimensions[-1]} dimensions",
+            AGREEMENT_HEATMAP_HIGH_DIM_SVG,
+        ),
     )
     for title, filename in figure_pages:
         story.extend([paragraph(title, h1_style), svg_drawing(filename), PageBreak()])
@@ -401,18 +419,31 @@ def _pdf_bytes(comparison: ReferenceShapeSpaceComparison) -> bytes:
                 paragraph(summary["pair_count"], small_style),
                 paragraph(_metric(summary["median_pairwise_distance_correlation"]), small_style),
                 paragraph(_metric(summary["minimum_pairwise_distance_correlation"]), small_style),
-                paragraph(_metric(summary["median_orthogonal_procrustes_correlation"]), small_style),
+                paragraph(
+                    _metric(summary["median_orthogonal_procrustes_correlation"]), small_style
+                ),
                 paragraph(_metric(summary["median_nearest_neighbor_overlap"]), small_style),
                 paragraph(_metric(summary["median_top_outlier_overlap"]), small_style),
                 paragraph(weakest_text, small_style),
             ]
         )
     summary_widths = [17, 13, 23, 23, 25, 25, 25, 94]
-    summary_table = Table(summary_data, colWidths=[width * mm for width in summary_widths], repeatRows=1)
+    summary_table = Table(
+        summary_data, colWidths=[width * mm for width in summary_widths], repeatRows=1
+    )
     summary_table.setStyle(table_style())
     story.extend([summary_table, Spacer(1, 7 * mm)])
 
     story.append(paragraph(f"Methods versus the visual reference ({profile_dimension}D)", h1_style))
+    if any(str(profile_dimension) not in method["evaluations"] for method in methods):
+        story.append(
+            paragraph(
+                "n/a: fidelity was not recorded at this dimension; see method-metrics.csv "
+                "for the recorded per-method dimensions. Pairwise agreement uses the "
+                "displayed number of axes.",
+                small_style,
+            )
+        )
     profile_header = [
         "Method",
         "Tangent distance r",
@@ -428,7 +459,7 @@ def _pdf_bytes(comparison: ReferenceShapeSpaceComparison) -> bytes:
     profile_data: list[list[Any]] = [[paragraph(item, tiny_style) for item in profile_header]]
     for method in methods:
         method_id = str(method["method_id"])
-        evaluation = method["evaluations"][str(profile_dimension)]
+        evaluation = _profile_evaluation(method, profile_dimension)
         pair = next(
             (
                 row
@@ -454,7 +485,9 @@ def _pdf_bytes(comparison: ReferenceShapeSpaceComparison) -> bytes:
         ]
         profile_data.append([paragraph(value, tiny_style) for value in values])
     profile_widths = [61, 19, 17, 15, 19, 24, 19, 18, 18, 24]
-    profile_table = Table(profile_data, colWidths=[width * mm for width in profile_widths], repeatRows=1)
+    profile_table = Table(
+        profile_data, colWidths=[width * mm for width in profile_widths], repeatRows=1
+    )
     profile_table.setStyle(table_style(tiny=True))
     story.extend([profile_table, PageBreak()])
 
@@ -535,7 +568,9 @@ def _pdf_bytes(comparison: ReferenceShapeSpaceComparison) -> bytes:
         pdf_canvas.setSubject(f"Verified comparison for run {run_id}")
         pdf_canvas.setFont("Helvetica", 6.5)
         pdf_canvas.setFillColor(colors.HexColor("#52666b"))
-        pdf_canvas.drawString(left_margin, 7 * mm, f"DiffeoForge | run {run_id} | manifest {footer_hash}")
+        pdf_canvas.drawString(
+            left_margin, 7 * mm, f"DiffeoForge | run {run_id} | manifest {footer_hash}"
+        )
         pdf_canvas.drawRightString(page_width - right_margin, 7 * mm, f"Page {document.page}")
         pdf_canvas.restoreState()
 
@@ -555,7 +590,9 @@ def _pdf_bytes(comparison: ReferenceShapeSpaceComparison) -> bytes:
         author="DiffeoForge",
     )
     try:
-        document.build(story, onFirstPage=page_frame, onLaterPages=page_frame, canvasmaker=InvariantCanvas)
+        document.build(
+            story, onFirstPage=page_frame, onLaterPages=page_frame, canvasmaker=InvariantCanvas
+        )
     except Exception as error:
         if isinstance(error, ReferenceShapeSpacePdfError):
             raise
@@ -615,8 +652,7 @@ def write_reference_shape_space_pdf(
         if all(existing):
             return verify_reference_shape_space_pdf(target, verified)
         raise FileExistsError(
-            "Shape-space PDF export is incomplete and will not be overwritten: "
-            f"{target}"
+            f"Shape-space PDF export is incomplete and will not be overwritten: {target}"
         )
 
     pdf_payload = _pdf_bytes(verified)
@@ -737,9 +773,7 @@ def verify_reference_shape_space_pdf(
     expected_values = {
         "source_artifact_version": verified.manifest["artifact_version"],
         "source_comparison_directory": str(verified.artifact_directory),
-        "source_manifest_sha256": sha256_file(
-            verified.artifact_directory / COMPARISON_MANIFEST
-        ),
+        "source_manifest_sha256": sha256_file(verified.artifact_directory / COMPARISON_MANIFEST),
         "source_run_id": expected_source["run_id"],
         "source_selection_fingerprint": expected_selection["selection_fingerprint"],
         "source_created_at": verified.manifest["created_at"],
@@ -751,9 +785,7 @@ def verify_reference_shape_space_pdf(
             )
     regenerated = _pdf_bytes(verified)
     if target.read_bytes() != regenerated:
-        raise ReferenceShapeSpacePdfError(
-            "Shape-space PDF differs from deterministic regeneration"
-        )
+        raise ReferenceShapeSpacePdfError("Shape-space PDF differs from deterministic regeneration")
     return ReferenceShapeSpacePdfExport(
         pdf_path=target,
         provenance_path=provenance_path,

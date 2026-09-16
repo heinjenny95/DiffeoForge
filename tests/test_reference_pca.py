@@ -101,7 +101,7 @@ from diffeoforge.reference_shape_space_pdf import (
 from diffeoforge.runs import prepare_run
 
 
-def _completed_reference_run(tmp_path: Path) -> Path:
+def _completed_reference_run(tmp_path: Path, *, linear_momenta: bool = False) -> Path:
     example = Path(__file__).parents[1] / "examples" / "minimal-atlas.yaml"
     run = prepare_run(example, run_id="reference-pca-test", output_directory=tmp_path)
     manifest = json.loads((run / "manifest.json").read_text(encoding="utf-8"))
@@ -114,7 +114,9 @@ def _completed_reference_run(tmp_path: Path) -> Path:
             momenta_rows.append(
                 (
                     0.25 + subject_index + point_index * 0.1,
-                    -0.5 + subject_index**2 * 0.2 - point_index * 0.05,
+                    -0.5
+                    + (subject_index if linear_momenta else subject_index**2) * 0.2
+                    - point_index * 0.05,
                     subject_index * 0.4 + point_index**2 * 0.3,
                 )
             )
@@ -470,6 +472,94 @@ def test_reference_shape_space_v03_selection_bundle_remains_verifiable(
         "scores.csv",
         "README.md",
     }
+
+
+@pytest.mark.parametrize("export_cap", (1, 2, 4))
+@pytest.mark.parametrize("linear_momenta", (False, True))
+def test_reference_shape_space_preserves_method_specific_dimensions(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    export_cap: int,
+    linear_momenta: bool,
+) -> None:
+    run = _completed_reference_run(tmp_path, linear_momenta=linear_momenta)
+    first = write_reference_shape_space_comparison(
+        run,
+        tmp_path / "first",
+        method_ids=ALL_METHOD_IDS,
+        maximum_exported_components=export_cap,
+    )
+    verified = verify_reference_shape_space_comparison(first)
+    methods = {m["method_id"]: m for m in verified.manifest["methods"]}
+    assert methods["isomap"]["available_dimensions"] == (1 if linear_momenta else 3)
+    assert methods["lddmm_tangent_pcoa"]["available_dimensions"] == (1 if linear_momenta else 2)
+    with (first / "scores.csv").open(encoding="utf-8", newline="") as handle:
+        rows = list(csv.DictReader(handle))
+    for method_id, method in methods.items():
+        dimensions = min(export_cap, method["available_dimensions"])
+        cache = json.loads(
+            (run / CACHE_DIRECTORY / method_id / "method.json").read_text(encoding="utf-8")
+        )
+        assert np.asarray(cache["scores"]).shape == (5, dimensions)
+        assert len([row for row in rows if row["method_id"] == method_id]) == 5 * dimensions
+    project = tmp_path / "project"
+    project.mkdir()
+    pdf = write_reference_shape_space_pdf(verified, project)
+    assert verify_reference_shape_space_pdf(pdf.pdf_path) == pdf
+
+    def no_recompute(*_args: object, **_kwargs: object) -> None:
+        pytest.fail("Completed method caches must be reused without refitting")
+
+    monkeypatch.setattr(comparison_module, "lddmm_momenta_squared_distances", no_recompute)
+    second = write_reference_shape_space_comparison(
+        run,
+        tmp_path / "second",
+        method_ids=ALL_METHOD_IDS,
+        maximum_exported_components=export_cap,
+    )
+    repeated = verify_reference_shape_space_comparison(second)
+    assert repeated.manifest["methods"] == verified.manifest["methods"]
+    assert repeated.manifest["agreement_analysis"] == verified.manifest["agreement_analysis"]
+    assert (second / "scores.csv").read_bytes() == (first / "scores.csv").read_bytes()
+    if export_cap == 1 or linear_momenta:
+        assert "fidelity was not recorded" in (first / REPORT_HTML).read_text(encoding="utf-8")
+        assert ">n/a<" in (first / DEFAULT_PROFILE_SVG).read_text(encoding="utf-8")
+
+
+def test_reference_shape_space_lower_rank_cache_still_rejects_missing_scores(
+    tmp_path: Path,
+) -> None:
+    run = _completed_reference_run(tmp_path)
+    artifact = write_reference_shape_space_comparison(run, method_ids=ALL_METHOD_IDS)
+    cache_path = run / CACHE_DIRECTORY / "isomap" / "method.json"
+    cache = json.loads(cache_path.read_text(encoding="utf-8"))
+    assert cache["method"]["available_dimensions"] == 3
+    cache["scores"] = [row[:-1] for row in cache["scores"]]
+    cache_path.write_text(json.dumps(cache), encoding="utf-8")
+    (cache_path.parent / "method.sha256").write_text(sha256_file(cache_path) + "\n")
+    with pytest.raises(ReferenceShapeSpaceComparisonError, match="score shape differs: isomap"):
+        verify_reference_shape_space_comparison(artifact)
+
+
+def test_reference_shape_space_lower_rank_csv_still_rejects_missing_scores(
+    tmp_path: Path,
+) -> None:
+    run = _completed_reference_run(tmp_path)
+    artifact = write_reference_shape_space_comparison(run, method_ids=ALL_METHOD_IDS)
+    scores_path = artifact / "scores.csv"
+    rows = list(csv.reader(scores_path.read_text(encoding="utf-8").splitlines()))
+    missing = next(i for i, row in enumerate(rows) if row[:1] == ["isomap"] and row[2] == "3")
+    del rows[missing]
+    with scores_path.open("w", encoding="utf-8", newline="") as handle:
+        csv.writer(handle, lineterminator="\n").writerows(rows)
+    manifest_path = artifact / COMPARISON_MANIFEST
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    record = next(item for item in manifest["artifacts"] if item["path"] == "scores.csv")
+    record.update(bytes=scores_path.stat().st_size, sha256=sha256_file(scores_path))
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    (artifact / COMPARISON_SIDECAR).write_text(sha256_file(manifest_path) + "\n")
+    with pytest.raises(ReferenceShapeSpaceComparisonError, match="CSV row count differs"):
+        verify_reference_shape_space_comparison(artifact)
 
 
 def test_reference_shape_space_metrics_are_stable_across_json_cache_order() -> None:
