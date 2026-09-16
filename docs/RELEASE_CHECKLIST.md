@@ -2,6 +2,10 @@
 
 Status: **pre-alpha evidence gate**
 
+For the scoped manuscript priorities, see [Preprint readiness](PREPRINT_READINESS.md).
+A preprint and a public binary release are different decisions; a manuscript does
+not waive the applicable distribution gates below.
+
 This checklist defines the minimum evidence required before publishing a
 DiffeoForge release. It does not imply that the current software is validated
 for scientific production. Every checked item must be supported by a link,

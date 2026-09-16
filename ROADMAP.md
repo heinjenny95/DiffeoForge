@@ -2,6 +2,12 @@
 
 This roadmap describes evidence gates rather than promised dates.
 
+For the immediate publication priorities, use the
+[preprint-readiness checklist](docs/PREPRINT_READINESS.md). It scopes the paper
+to a guided, reproducible Deformetrica workflow and separates essential evidence
+and usability work from larger Modern-engine/platform research. Its acceptance
+items remain open until verified; planning does not implement them.
+
 The [next development-version plan](docs/NEXT_VERSION_PLAN.md) sequences the
 current UX work and explicitly plans the larger hardware, distribution and
 scientific gates. Planning does not mark those gates complete.
