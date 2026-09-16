@@ -519,7 +519,12 @@ def test_reference_shape_space_preserves_method_specific_dimensions(
     )
     repeated = verify_reference_shape_space_comparison(second)
     assert repeated.manifest["methods"] == verified.manifest["methods"]
-    assert repeated.manifest["agreement_analysis"] == verified.manifest["agreement_analysis"]
+    # Cache materialization can change BLAS memory layout and the last float64
+    # digit (observed delta 1e-15 on Linux). Use the existing production
+    # re-verification contract; scores, identities and discrete labels stay exact.
+    assert comparison_module._agreement_analysis_matches(
+        repeated.manifest["agreement_analysis"], verified.manifest["agreement_analysis"]
+    )
     assert (second / "scores.csv").read_bytes() == (first / "scores.csv").read_bytes()
     if export_cap == 1 or linear_momenta:
         assert "fidelity was not recorded" in (first / REPORT_HTML).read_text(encoding="utf-8")

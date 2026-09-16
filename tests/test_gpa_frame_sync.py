@@ -64,27 +64,62 @@ def ready(canvas):
     return canvas._frames.ready(canvas._frames._wanted)
 
 
+def tessellated_triangle(base, subdivisions=91):
+    # Exceed the proxy threshold with a real tiling, not thousands of identical
+    # screen-filling faces (which made this synchronization test an overdraw test).
+    points = [(i, j) for i in range(subdivisions + 1)
+              for j in range(subdivisions + 1 - i)]
+    lookup = {point: index for index, point in enumerate(points)}
+    vertices = np.array([
+        base[0] + (i * (base[1] - base[0]) + j * (base[2] - base[0])) / subdivisions
+        for i, j in points
+    ])
+    faces = []
+    for i in range(subdivisions):
+        for j in range(subdivisions - i):
+            faces.append((lookup[i, j], lookup[i + 1, j], lookup[i, j + 1]))
+            if i + j < subdivisions - 1:
+                faces.append((lookup[i + 1, j], lookup[i + 1, j + 1], lookup[i, j + 1]))
+    triangles = np.array(faces)
+    edges = np.unique(np.sort(np.concatenate((
+        triangles[:, (0, 1)], triangles[:, (1, 2)], triangles[:, (2, 0)],
+    )), axis=1), axis=0)
+    return vertices, triangles, edges
+
+
+def test_original_frame_fixture_preserves_surface_and_exceeds_proxy_budget():
+    base = np.array(((-1., -1., 0.), (1., -1., 0.), (0., 1., 0.)))
+    vertices, triangles, _edges = tessellated_triangle(base)
+    assert len(triangles) == 8281 > 8000
+    assert len(np.unique(np.sort(triangles, axis=1), axis=0)) == len(triangles)
+    normals = np.cross(vertices[triangles[:, 1]] - vertices[triangles[:, 0]],
+                       vertices[triangles[:, 2]] - vertices[triangles[:, 0]])
+    assert np.all(normals[:, 2] > 0)
+    assert np.sum(normals[:, 2]) / 2 == pytest.approx(2.0)
+
+
 @pytest.fixture
 def canvas(app):
     vertices = np.array(((-1., -1., 0.), (1., -1., 0.), (0., 1., 0.)))
     triangles = np.array(((0, 1, 2),))
     edges = np.array(((0, 1), (1, 2), (0, 2)))
-    proxy = DisplayProxy(vertices, triangles, edges, 8193, 8000, "synthetic proxy")
+    full_vertices, full_triangles, full_edges = tessellated_triangle(vertices)
+    proxy = DisplayProxy(vertices, triangles, edges, len(full_triangles), 8000, "synthetic proxy")
     detail = MeshPreviewModel(
-        Path("synthetic.obj"), "0" * 64, vertices,
-        np.tile(triangles, (8193, 1)), edges, (-1, 1, -1, 1, -1, 1), proxy,
+        Path("synthetic.obj"), "0" * 64, full_vertices,
+        full_triangles, full_edges, (-1, 1, -1, 1, -1, 1), proxy,
     )
     meshes = tuple(
         GpaAlignedWireframe(
             f"synthetic-{index}.obj", "0" * 64, "obj", vertices, triangles,
-            edges, np.array((point,)), 0.1, 1, 3, 8193,
+            edges, np.array((point,)), 0.1, 1, len(full_vertices), len(full_triangles),
         )
         for index, point in enumerate(((-0.6, -0.45, 0.4), (0.2, 0.1, -0.15)))
     )
     visual = GpaAlignmentVisual(
         "0" * 64, meshes, ("LM1",),
         np.mean([mesh.landmarks for mesh in meshes], axis=0),
-        (-1, 1, -1, 1, -1, 1), detail, 6, 6, 16386, 8000,
+        (-1, 1, -1, 1, -1, 1), detail, 6, 2 * len(full_edges), 2 * len(full_triangles), 8000,
     )
     widget = GpaAlignmentCanvas3D()
     widget.resize(800, 650)
@@ -183,6 +218,8 @@ def test_gpa_pixels_stay_with_presented_mesh_during_delayed_frame(
     final = canvas.grab().toImage()
     scene = canvas._frames.image_scene
     assert scene is not old_scene
+    if mode == "shaded-original":
+        assert [len(layer.indices) for layer in scene.layers if not layer.wireframe] == [8281]
     assert_markers(final, canvas, scene)
     selected = canvas._visual.meshes[0].landmarks[0]
     assert np.linalg.norm(point_pixel(selected, scene) - point_pixel(selected, old_scene)) > 10

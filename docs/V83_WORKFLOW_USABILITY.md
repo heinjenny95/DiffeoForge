@@ -56,6 +56,16 @@ researcher's installed application was not changed while developing this package
 - The follow-up narrow-window pass passed 88 UI/version regressions (one expected
   dependency skip), including both engines at 900, 1120 and 1440 pixels. Format
   support remains available in landmark-button tooltips and accessible names.
+- Broader checks exposed two test-harness issues: an exact-float assertion differed
+  by 1e-15 on Linux after cache materialization, and the GPA original-detail fixture
+  overpainted 8,193 identical full-screen faces. The comparison test now uses the
+  existing production roundoff contract while keeping score bytes exact. The GPA
+  test uses 8,281 nonoverlapping faces over the same surface, verifies area/unique
+  faces/full-detail rendering, and preserves delayed-frame pixel assertions and
+  time limits. All 33 GPA frame tests pass; this is not an application speedup claim.
+  GPA/landmark frame, proxy-picking and rotation tests are now included explicitly
+  in the four-platform desktop CI matrix. All 96 tests in that combined local
+  suite and eight comparison roundoff/cache/tamper checks passed.
 
 ## Limits and next acceptance
 
