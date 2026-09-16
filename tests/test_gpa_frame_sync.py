@@ -8,9 +8,11 @@ import numpy as np
 import pytest
 
 pytest.importorskip("PySide6")
-from PySide6.QtCore import QEventLoop, QThreadPool, QTimer
+from PySide6.QtCore import QThreadPool
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import QApplication
+from surface_frame_helpers import tessellated_triangle
+from surface_frame_helpers import wait_for_frame as wait
 
 from diffeoforge.desktop import surface_rendering
 from diffeoforge.desktop.display_proxy import DisplayProxy
@@ -31,60 +33,8 @@ def app(monkeypatch):
     application.processEvents()
 
 
-def wait(app, condition, canvas=None):
-    # A tight QTest.qWait/repaint loop can starve the Python render worker.
-    # Use the application's native event loop, with the same bounded deadline.
-    del app
-    loop = QEventLoop()
-    timer = QTimer()
-    timeout = QTimer()
-    timeout.setSingleShot(True)
-    timeout.timeout.connect(loop.quit)
-
-    def poll():
-        if canvas is not None:
-            canvas.grab()
-        if condition():
-            loop.quit()
-
-    if canvas is not None:
-        canvas.grab()
-    if condition():
-        return
-    timer.timeout.connect(poll)
-    timer.start(20)
-    timeout.start(10000)
-    loop.exec()
-    timer.stop()
-    timeout.stop()
-    assert condition()
-
-
 def ready(canvas):
     return canvas._frames.ready(canvas._frames._wanted)
-
-
-def tessellated_triangle(base, subdivisions=91):
-    # Exceed the proxy threshold with a real tiling, not thousands of identical
-    # screen-filling faces (which made this synchronization test an overdraw test).
-    points = [(i, j) for i in range(subdivisions + 1)
-              for j in range(subdivisions + 1 - i)]
-    lookup = {point: index for index, point in enumerate(points)}
-    vertices = np.array([
-        base[0] + (i * (base[1] - base[0]) + j * (base[2] - base[0])) / subdivisions
-        for i, j in points
-    ])
-    faces = []
-    for i in range(subdivisions):
-        for j in range(subdivisions - i):
-            faces.append((lookup[i, j], lookup[i + 1, j], lookup[i, j + 1]))
-            if i + j < subdivisions - 1:
-                faces.append((lookup[i + 1, j], lookup[i + 1, j + 1], lookup[i, j + 1]))
-    triangles = np.array(faces)
-    edges = np.unique(np.sort(np.concatenate((
-        triangles[:, (0, 1)], triangles[:, (1, 2)], triangles[:, (2, 0)],
-    )), axis=1), axis=0)
-    return vertices, triangles, edges
 
 
 def test_original_frame_fixture_preserves_surface_and_exceeds_proxy_budget():

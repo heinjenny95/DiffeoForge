@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import time
 from dataclasses import replace
 from threading import Event
 
@@ -9,8 +8,9 @@ import pytest
 
 pytest.importorskip("PySide6")
 from PySide6.QtCore import QThreadPool
-from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
+from surface_frame_helpers import tessellated_triangle
+from surface_frame_helpers import wait_for_frame as wait
 
 from diffeoforge.desktop import surface_rendering
 from diffeoforge.desktop.display_proxy import DisplayProxy
@@ -27,18 +27,6 @@ def app(monkeypatch):
     application.processEvents()
 
 
-def wait(app, condition, canvas=None):
-    deadline = time.monotonic() + 10
-    while time.monotonic() < deadline:
-        app.processEvents()
-        if canvas is not None:
-            canvas.grab()
-        if condition():
-            return
-        QTest.qWait(5)
-    assert condition()
-
-
 def marker_pixel(image, point):
     x, y = np.rint(point).astype(int)
     return image.pixelColor(int(x), int(y)).name() == "#d9481c"
@@ -47,24 +35,25 @@ def marker_pixel(image, point):
 @pytest.mark.parametrize("original", [False, True])
 @pytest.mark.parametrize("motion", ["rotate", "pan", "zoom", "resize", "preset"])
 def test_marker_and_mesh_use_same_presented_camera_during_delayed_render(
-    app, monkeypatch, tmp_path, original, motion
+    app, monkeypatch, tmp_path, original, motion, request
 ):
     # Real rendered pixels, not just a camera formula: hold a frame in flight
     # while the GUI is asked to present a different view.
     path = tmp_path / "synthetic.obj"
     path.write_text("v -1 -1 0\nv 1 -1 0\nv 0 1 0\nf 1 2 3\n", encoding="utf-8")
     canvas = InteractiveMeshCanvas3D()
+    request.addfinalizer(canvas.close)
     canvas.resize(500, 500)
     model = load_mesh_preview(path)
     # A genuinely reduced display backed by a >8k-face original, with the same
     # planar surface so approximation cannot explain any pixel discrepancy.
-    triangles = np.tile(np.asarray(model.triangles), (8193, 1))
+    vertices, triangles, edges = tessellated_triangle(np.asarray(model.vertices))
     proxy = DisplayProxy(
         np.asarray(model.vertices), np.asarray(model.triangles),
         np.array(((0, 1), (1, 2), (0, 2))), len(triangles), 8000,
-        "synthetic coincident-face stress surface",
+        "synthetic tessellated surface",
     )
-    model = replace(model, triangles=triangles, display_proxy=proxy)
+    model = replace(model, vertices=vertices, triangles=triangles, edges=edges, display_proxy=proxy)
     canvas.set_model(model)
     canvas.original_detail.setChecked(original)
     canvas.set_view_preset("front")
@@ -114,6 +103,9 @@ def test_marker_and_mesh_use_same_presented_camera_during_delayed_render(
     final = canvas.grab().toImage()
     scene = canvas._frames.image_scene
     assert scene is not old_scene
+    assert [len(layer.indices) for layer in scene.layers if not layer.wireframe] == (
+        [8281] if original else [1]
+    )
     camera = ((np.asarray(point) - scene.center) / scene.scale) @ scene.rotation.T
     factor = 0.9 * (min(scene.width, scene.height) - 64) * scene.zoom
     new_pixel = np.array((scene.width / 2, scene.height / 2)) + scene.pan

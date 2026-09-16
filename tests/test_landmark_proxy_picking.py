@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import time
 from dataclasses import replace
 from pathlib import Path
 from threading import Event, get_ident
@@ -13,6 +12,7 @@ pytest.importorskip("PySide6")
 from PySide6.QtCore import QPoint, Qt
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
+from surface_frame_helpers import wait_for_frame as _wait
 
 from diffeoforge.desktop.display_proxy import DisplayProxy
 from diffeoforge.desktop.landmark_3d_widget import InteractiveMeshCanvas3D
@@ -25,18 +25,6 @@ def application(monkeypatch):
     app = QApplication.instance() or QApplication(["proxy-landmark-test"])
     yield app
     app.processEvents()
-
-
-def _wait(application, condition, canvas=None):
-    deadline = time.monotonic() + 10
-    while time.monotonic() < deadline:
-        application.processEvents()
-        if canvas is not None:
-            canvas.grab()
-        if condition():
-            return
-        QTest.qWait(5)
-    assert condition()
 
 
 def _model():
@@ -187,6 +175,7 @@ def test_transfer_error_is_visible_without_emitting_proxy_coordinate(application
 def test_reduced_editor_clicks_autosave_advance_and_export_original_coordinates(
     application,
     tmp_path,
+    request,
 ):
     from diffeoforge.analysis.landmarks import read_landmark_csv
     from diffeoforge.desktop.landmark_editor import LandmarkEditorDialog
@@ -204,6 +193,7 @@ def test_reduced_editor_clicks_autosave_advance_and_export_original_coordinates(
     originals = [path.read_bytes() for path in paths]
     output = tmp_path / "landmarks.csv"
     dialog = LandmarkEditorDialog(tuple(paths), output, auto_advance_mesh=True)
+    request.addfinalizer(dialog.close)
     dialog.canvas.set_view_preset("front")
     dialog.show()
     canvas = dialog.canvas

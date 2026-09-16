@@ -66,6 +66,12 @@ researcher's installed application was not changed while developing this package
   GPA/landmark frame, proxy-picking and rotation tests are now included explicitly
   in the four-platform desktop CI matrix. All 96 tests in that combined local
   suite and eight comparison roundoff/cache/tamper checks passed.
+- Enabling that matrix also exposed the same coincident-face fixture and tight
+  repaint-loop starvation in landmark tests on CI runners. GPA/landmark tests
+  now share the validated tiling and a native Qt event-loop wait with the unchanged
+  ten-second deadline. Proxy clicks still verify asynchronous transfer, autosave,
+  specimen advance and original-surface coordinates. No production renderer was
+  changed to accommodate the tests.
 
 ## Limits and next acceptance
 
