@@ -4,6 +4,10 @@ Agreed planning scope: 2026-09-16. Status: **three existing workflow case studie
 remaining acceptance and manuscript-preparation tasks below**. This is not a
 claim of universal scientific or release qualification.
 
+The [manuscript outline](MANUSCRIPT_OUTLINE.md) and
+[annotated literature search](MANUSCRIPT_REFERENCES.md) provide the editorial
+starting point. They do not mark the acceptance items below as complete.
+
 DiffeoForge guides users through a reproducible Deformetrica workflow. It helps
 them prepare inputs, choose defensible starting parameters, inspect registrations
 and compare shape-space methods. It does **not** identify universally correct
@@ -92,8 +96,7 @@ is required merely to fill this checklist.
   figures, Methods summaries and limitations; do not commission new case studies.
   Reuse an existing public/synthetic example for the short end-to-end tutorial.
   Report cohort sizes, mesh face counts, hardware, elapsed time, memory/storage and
-  relevant
-  failures where measured; do not extrapolate unmeasured performance. Explain
+  relevant failures where measured; do not extrapolate unmeasured performance. Explain
   disagreements with landmark-based analyses as questions to investigate, not
   automatic failure or proof of superiority.
   **Done when:** the already completed applications are presented consistently,
