@@ -11,6 +11,38 @@ from diffeoforge.reference_calibration import CalibrationStage
 from diffeoforge.reference_calibration_study import CalibrationStudyCandidateState
 
 
+def afk_return_summary(report: Mapping[str, object]) -> str | None:
+    """Expose recorded overnight limitations without re-ranking or approving anything."""
+    stages = report.get("stage_decisions", [])
+    automatic = [
+        stage for stage in stages
+        if stage.get("selection_mode") == "automatic_provisional_afk_v1"
+    ]
+    if not automatic:
+        return None
+    lines = [f"AFK return summary: {len(automatic)} stages selected provisionally."]
+    for stage in stages:
+        concerns = []
+        confidence = stage.get("recommendation_confidence", "not_assessed")
+        if confidence != "robust":
+            concerns.append(f"confidence: {confidence}")
+        search = stage.get("search_range_status", "not_evaluated")
+        if search == "not_bounded":
+            concerns.append("best tested value at search boundary")
+        elif search == "not_evaluated":
+            concerns.append("search boundary not assessed")
+        if stage.get("sensitivity_flags"):
+            concerns.append("sensitivity warnings")
+        if concerns:
+            lines.append(f"{stage.get('title', stage.get('stage_id', 'Stage'))}: "
+                         + "; ".join(concerns) + ".")
+    lines.append(
+        "Next: review these choices and their evidence. No visual approval was created; "
+        "the atlas has not been started."
+    )
+    return "\n".join(lines)
+
+
 @dataclass(frozen=True)
 class CalibrationStageGuidance:
     """Plain-language explanation of one staged calibration decision."""

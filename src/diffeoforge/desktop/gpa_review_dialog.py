@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
+from diffeoforge.desktop.activity import ActivityIndicator
 from diffeoforge.desktop.gpa_visualization import (
     GpaAlignmentVisual,
     load_gpa_aligned_detail,
@@ -53,6 +54,9 @@ class GpaAlignmentReviewDialog(QDialog):
         self.setMinimumSize(1000, 720)
 
         layout = QVBoxLayout(self)
+        self.activity = ActivityIndicator(self)
+        self.activity.bind_loader(self._detail_loader, "Loading original alignment detail")
+        layout.addWidget(self.activity)
         explanation = QLabel(
             "This window renders the exact in-memory transforms from the numerical GPA "
             "preview. By default, every aligned mesh is shown simultaneously as an "

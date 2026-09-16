@@ -678,6 +678,11 @@ def test_desktop_window_exposes_required_project_controls(monkeypatch) -> None:
     assert all(step.isEnabled() is False for step in window.rail_steps[1:])
     assert window.rail_steps[4].accessibleName() == "Go to step 5: Visual quality review"
     assert window.rail_steps[5].accessibleName() == "Go to step 6: Results & PCA"
+    from diffeoforge.desktop.project_setup import DesktopEngine
+
+    assert window.engine_combo.currentData() == DesktopEngine.DEFORMETRICA_REFERENCE
+    assert window._request().engine == DesktopEngine.DEFORMETRICA_REFERENCE
+    window.engine_combo.setCurrentIndex(window.engine_combo.findData(DesktopEngine.MODERN_CPU))
     assert "CPU/float64" in window.engine_hint.text()
     assert window.landmarks_edit.isEnabled() is True
     assert window.procrustes_box.isHidden() is True
@@ -1837,6 +1842,9 @@ def test_desktop_project_overwrite_requires_explicit_confirmation(monkeypatch, t
             queued.append(worker)
 
     window = DiffeoForgeWindow()
+    from diffeoforge.desktop.project_setup import DesktopEngine
+
+    window.engine_combo.setCurrentIndex(window.engine_combo.findData(DesktopEngine.MODERN_CPU))
     window._thread_pool = FakePool()  # type: ignore[assignment]
     window.mesh_edit.setText(str(ROOT / "examples" / "synthetic" / "meshes"))
     window.project_edit.setText(str(project_directory))
@@ -3887,9 +3895,15 @@ def test_completed_shape_space_comparison_opens_pdf_and_exposes_html(
     assert window.open_shape_space_html_button.isHidden() is False
     window.open_shape_space_html_button.click()
     assert opened == [pdf, report]
-    assert "PDF report has been saved" in (
+    assert "PDF saved in the project folder" in (
         window.shape_space_comparison_status_label.text()
     )
+    assert "does not validate registration" in window.shape_space_comparison_status_label.text()
+    assert "Test evidence passed" in window.shape_space_comparison_details.text()
+    artifact.manifest["default_decision"]["status"] = "not_supported"
+    window._shape_space_comparison_succeeded(result)
+    assert window.shape_space_comparison_status_label.objectName() == "statusWarning"
+    assert "not fully supported" in window.shape_space_comparison_status_label.text()
     window.close()
     application.processEvents()
 

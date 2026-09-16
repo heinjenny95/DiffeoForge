@@ -140,10 +140,14 @@ At planning baseline `c843e4cfaeee00c58bf6b84ee9c815a32cc148dd` (v81),
 passed, but the
 [Windows installer lifecycle workflow](https://github.com/heinjenny95/DiffeoForge/actions/runs/34973901460)
 failed at "Observe isolated current-user install smoke and uninstall".
-The failure's cause remains undiagnosed. Existing offscreen/source CI is not
-native distribution qualification for every OS.
+The failure was subsequently diagnosed as the observer's stale dev0 registration
+expectation, fixed in `cd8c1be`, and the isolated lifecycle rerun passed. See
+[installer evidence](INSTALLER_LIFECYCLE_REPAIR.md). Existing offscreen/source CI
+is not native distribution qualification for every OS.
 
-**Next implementation task:** diagnose that installer/evidence failure, then
-execute the bounded end-to-end acceptance test in item 1. Do not restart private
+**Next acceptance task:** consolidate and exercise the bounded end-to-end
+Reference workflow in item 1. The [v83 usability package](V83_WORKFLOW_USABILITY.md)
+addresses default engine selection, concise summaries, activity feedback and QC
+mesh retention; it does not close all interactive acceptance gates. Do not restart private
 atlas studies, change their scientific settings or rebuild/install the app as
 part of merely recording this plan.

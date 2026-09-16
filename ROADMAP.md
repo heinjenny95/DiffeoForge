@@ -155,12 +155,15 @@ scientific gates. Planning does not mark those gates complete.
     across the workflow while keeping actionable warnings, blocking errors and
     required decisions visible. Verify the collapsed default on representative
     screens with user review; the first disclosure pass is not sufficient.
-- [ ] **Default new projects to Deformetrica Reference.** Preselect the reference
+    The v83 project-created card now collapses paths/provenance; comparison
+    numerical detail is also collapsed. Researcher review remains open.
+- [x] **Default new GUI projects to Deformetrica Reference.** Preselect the reference
   engine so the familiar guided parameter-calibration workflow is available by
   default. Keep Modern explicitly opt-in and labelled experimental; explain that
   its technical smoke pilot is not the staged parameter calibration. Preserve
   the recorded engine when opening or resuming existing projects; never silently
   convert them. Verify fresh-project defaults and both engine-selection paths.
+  Implemented in v83; programmatic request defaults remain backward-compatible.
 - [ ] **Immediate loading feedback / animated busy cursor.** Acknowledge slow
   actions as soon as clicked, before mesh loading or preparation begins: show an
   animated busy cursor and a short task-specific status or inline spinner. Bind
@@ -170,6 +173,10 @@ scientific gates. Planning does not mark those gates complete.
   overlapping jobs; show errors explicitly. Test delayed large-mesh loading,
   rejected clicks, repeated clicks and every exit path so a busy task cannot be
   mistaken for an unresponsive or broken button.
+  V83 tracks main-window, pilot and Validation Lab workers, plus landmark/GPA
+  and result-preview loaders, with window-scoped cursors and visible activity.
+  Offscreen overlap/failure/cancellation/teardown checks pass; full native
+  interaction and every synchronous action still need acceptance review.
 - [x] **Pilot: opt-in AFK / overnight mode.** After each completed stage,
   automatically accept its eligible recommendation and start the next pilot
   stage without another click. Declare the permitted scope and provisional-choice
@@ -196,8 +203,10 @@ scientific gates. Planning does not mark those gates complete.
   Source correction only until included in a later installed build.
 - [ ] Profile and reduce full completed-run reopening time and peak memory,
   separately from display-frame speed. The large installed-cohort check exposed
-  a minutes-long pre-viewer verification phase; QC metric collection currently
-  retains all reconstruction meshes. Add truthful stage/progress reporting and
+  a minutes-long pre-viewer verification phase. V83 streams QC mesh objects
+  instead of retaining the cohort, and reports real verification stages and
+  per-subject counts; aggregate metric arrays are still retained. Complete
+  representative runtime/RAM profiling in addition to the regression-tested
   bounded-memory processing without weakening file verification or changing QC
   definitions. Do not skip scientific checks to make the viewer appear sooner.
 

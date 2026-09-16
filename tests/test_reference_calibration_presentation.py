@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from diffeoforge.desktop.reference_calibration_presentation import (
+    afk_return_summary,
     automatic_check_summary,
     candidate_parameter_summary,
     candidate_tradeoff_assessments,
@@ -10,6 +11,37 @@ from diffeoforge.desktop.reference_calibration_presentation import (
 )
 from diffeoforge.reference_calibration import CalibrationCandidate, CalibrationStage
 from diffeoforge.reference_calibration_study import CalibrationStudyCandidateState
+
+
+def test_afk_summary_exposes_recorded_uncertainty_without_approving_anatomy() -> None:
+    report = {"stage_decisions": [
+        {"title": "Attachment", "selection_mode": "automatic_provisional_afk_v1",
+         "recommendation_confidence": "ambiguous", "search_range_status": "not_bounded",
+         "sensitivity_flags": ["weight_sensitive"]},
+        {"title": "Time points", "selection_mode": "automatic_provisional_afk_v1",
+         "recommendation_confidence": "robust", "search_range_status": "bounded"},
+    ]}
+    summary = afk_return_summary(report)
+    assert "2 stages" in summary
+    assert "Attachment: confidence: ambiguous" in summary
+    assert "search boundary" in summary
+    assert "sensitivity warnings" in summary
+    assert "No visual approval was created" in summary
+    assert "atlas has not been started" in summary
+    assert "Time points:" not in summary
+    assert report["stage_decisions"][0]["recommendation_confidence"] == "ambiguous"
+
+
+def test_afk_summary_keeps_unassessed_evidence_explicit_and_manual_mode_unchanged() -> None:
+    assert afk_return_summary({"stage_decisions": []}) is None
+    assert afk_return_summary(
+        {"stage_decisions": [{"selection_mode": "researcher_manual"}]}
+    ) is None
+    summary = afk_return_summary({"stage_decisions": [
+        {"selection_mode": "automatic_provisional_afk_v1", "title": "Legacy stage"}
+    ]})
+    assert "not_assessed" in summary
+    assert "boundary not assessed" in summary
 
 
 def _stage() -> CalibrationStage:

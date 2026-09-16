@@ -72,6 +72,7 @@ class ResultMeshLoader(QObject):
 
     loaded = Signal(object, str, object)
     failed = Signal(object, str, str)
+    activity_changed = Signal(bool)
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
@@ -95,6 +96,7 @@ class ResultMeshLoader(QObject):
         self._active = _LoadWorker(self._pending, self._cache)
         self._pending = None
         self._active.signals.finished.connect(self._finished)
+        self.activity_changed.emit(True)
         QThreadPool.globalInstance().start(self._active)
 
     @Slot(object, object, object, str)
@@ -107,3 +109,4 @@ class ResultMeshLoader(QObject):
             else:
                 self.loaded.emit(review, key, models)
         self._start_pending()
+        self.activity_changed.emit(self._active is not None)

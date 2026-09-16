@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import uuid
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
@@ -491,7 +491,11 @@ def _pca_items(bundle_manifest: dict, ratios: tuple[float, ...]) -> tuple[Result
         ResultReviewItem(
             "Total variance",
             f"{float(pca['total_variance']):.6g}",
-            "Variance in the documented control-point/Cartesian momenta feature space.",
+            (
+                "Variance measured with the fitted deformation-kernel tangent metric."
+                if str(pca["method_id"]) == "lddmm_deformation_kernel_pca"
+                else "Variance in the documented Cartesian momenta feature space."
+            ),
         ),
     ]
     cumulative = 0.0
@@ -536,11 +540,14 @@ def review_reference_result(
     run_directory: Path | str,
     *,
     create_pca_if_missing: bool = True,
+    progress_callback: Callable[[int, int, str], None] | None = None,
 ) -> ModernResultReview:
     """Verify one Deformetrica run and its deterministic, source-bound PCA snapshot."""
 
     run = Path(run_directory).expanduser().resolve()
     bundle_directory = run / DEFAULT_REFERENCE_PCA_DIRECTORY
+    if progress_callback is not None:
+        progress_callback(0, 0, "Verifying run files and PCA provenance")
     try:
         if create_pca_if_missing and not bundle_directory.exists():
             write_reference_pca_bundle(run)
@@ -554,6 +561,8 @@ def review_reference_result(
     deformation_result_directory = run / DEFAULT_PCA_DEFORMATION_RESULT_DIRECTORY
     deformation_result: Mapping[str, object] | None = None
     if deformation_result_directory.exists():
+        if progress_callback is not None:
+            progress_callback(0, 0, "Verifying PC deformation files")
         try:
             deformation_result = verify_reference_pca_deformation_result(
                 deformation_result_directory,
@@ -573,11 +582,15 @@ def review_reference_result(
     qc_metrics: ReferenceCalibrationRunMetrics | None = None
     qc_unavailable_reason: str | None = None
     try:
-        qc_metrics = collect_reference_calibration_run_metrics(run)
+        qc_metrics = collect_reference_calibration_run_metrics(
+            run, progress_callback=progress_callback
+        )
     except (OSError, RuntimeError, TypeError, ValueError) as error:
         qc_unavailable_reason = str(error)
 
     manifest = dict(verified.manifest)
+    if progress_callback is not None:
+        progress_callback(0, 0, "Assembling verified result review")
     records = {str(record["path"]): record for record in manifest["artifacts"]}
     if len(records) != len(manifest["artifacts"]):
         raise ModernResultReviewError("Reference PCA contains duplicate artifact records")

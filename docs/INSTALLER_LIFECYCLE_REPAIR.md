@@ -12,9 +12,12 @@ duplicate, empty or inconsistent version defines fail closed. The setup, source,
 installed-file inventory, shortcut, uninstall and project-sentinel checks remain.
 
 Regression tests cover dev0, v82, a future numbered alpha and release-style
-versions, plus invalid defines. A fresh ephemeral Windows CI lifecycle run is
-still required before recording install/start/uninstall as observed for a new
-candidate. No installer is run against the researcher's installed application.
+versions, plus invalid defines. The fresh [ephemeral Windows lifecycle run on
+cd8c1be](https://github.com/heinjenny95/DiffeoForge/actions/runs/35081181366)
+passed isolated installation, smoke start, uninstall and project preservation.
+General CI and the public Reference-container comparison also passed on that
+commit. Repeat candidate-specific evidence after relevant changes. No installer
+was run against the researcher's installed application.
 
 Failure evidence: [v82 lifecycle run](https://github.com/heinjenny95/DiffeoForge/actions/runs/35069224019).
 This diagnosis does not establish signing, public release readiness, native

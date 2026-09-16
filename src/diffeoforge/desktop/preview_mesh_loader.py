@@ -34,6 +34,7 @@ class _Worker(QRunnable):
 
 
 class PreviewMeshLoader(QObject):
+    activity_changed = Signal(bool)
     loaded = Signal(object, object)
     failed = Signal(object, str)
 
@@ -46,6 +47,7 @@ class PreviewMeshLoader(QObject):
     def cancel(self) -> None:
         self._token += 1
         self._pending = None
+        self.activity_changed.emit(self._active is not None)
 
     def request_paths(
         self,
@@ -75,6 +77,7 @@ class PreviewMeshLoader(QObject):
         self._active = _Worker(*self._pending)
         self._pending = None
         self._active.signals.finished.connect(self._finished)
+        self.activity_changed.emit(True)
         QThreadPool.globalInstance().start(self._active)
 
     @Slot(int, object, object, str)
@@ -86,3 +89,4 @@ class PreviewMeshLoader(QObject):
             else:
                 self.loaded.emit(key, value)
         self._start()
+        self.activity_changed.emit(self._active is not None)

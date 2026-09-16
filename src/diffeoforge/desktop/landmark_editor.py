@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
 from diffeoforge import display_version
 from diffeoforge.analysis.landmarks import write_landmark_csv
 from diffeoforge.atomic_io import write_text_safely
+from diffeoforge.desktop.activity import ActivityIndicator
 from diffeoforge.desktop.info_disclosure import InfoDisclosure
 from diffeoforge.desktop.landmark_3d_widget import InteractiveMeshCanvas3D
 from diffeoforge.desktop.mesh_preview import MeshPreviewModel
@@ -77,6 +78,9 @@ class LandmarkEditorDialog(QDialog):
         self.resize(1180, 840)
 
         layout = QVBoxLayout(self)
+        self.activity = ActivityIndicator(self)
+        self.activity.bind_loader(self._mesh_loader, "Loading landmark mesh")
+        layout.addWidget(self.activity)
         explanation = QLabel(
             "Place each label on the same anatomical location for every mesh. Rotate and "
             "zoom the specimen, then click the visible surface. A new click replaces the "

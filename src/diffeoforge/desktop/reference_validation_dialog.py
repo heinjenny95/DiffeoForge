@@ -10,7 +10,7 @@ from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 
-from PySide6.QtCore import QObject, QRunnable, Qt, QThreadPool, QTimer, QUrl, Signal, Slot
+from PySide6.QtCore import QObject, QRunnable, Qt, QTimer, QUrl, Signal, Slot
 from PySide6.QtGui import QCloseEvent, QDesktopServices
 from PySide6.QtWidgets import (
     QDialog,
@@ -26,6 +26,7 @@ from PySide6.QtWidgets import (
 )
 
 from diffeoforge.config import load_config, validate_input_paths
+from diffeoforge.desktop.activity import ActivityPool
 from diffeoforge.desktop.info_disclosure import InfoDisclosure
 from diffeoforge.desktop.reference_runtime_estimate import estimate_reference_runtime
 from diffeoforge.desktop.validation_preparation import check_cancelled
@@ -150,7 +151,7 @@ class ReferenceValidationDialog(QDialog):
         self._live_status: str | None = None
         self._live_progress_fraction = 0.0
         self._indeterminate_progress = False
-        self._thread_pool = QThreadPool.globalInstance()
+        self._thread_pool = ActivityPool(self)
         self.setWindowTitle("DiffeoForge Validation Lab")
         self.resize(940, 760)
         self.setMinimumSize(760, 600)
@@ -159,8 +160,10 @@ class ReferenceValidationDialog(QDialog):
         title = QLabel("Validation Lab")
         title.setObjectName("title")
         root.addWidget(title)
+        root.addWidget(self._thread_pool.indicator)
         subtitle = QLabel(
-            "Test parameter stability, then confirm it on untouched holdout subjects."
+            "Optional: compare nearby kernel settings across resamples and untouched holdout. "
+            "Noise stays fixed; this is not a test of every parameter."
         )
         subtitle.setWordWrap(True)
         root.addWidget(subtitle)

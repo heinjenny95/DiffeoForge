@@ -10,6 +10,7 @@ or current metric.
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
@@ -252,6 +253,8 @@ def _run_duration(report: RunReport) -> float:
 
 def collect_reference_calibration_run_metrics(
     run_directory: Path | str,
+    *,
+    progress_callback: Callable[[int, int, str], None] | None = None,
 ) -> ReferenceCalibrationRunMetrics:
     """Verify a completed run and derive deterministic calibration evidence."""
 
@@ -303,10 +306,26 @@ def collect_reference_calibration_run_metrics(
 
     distance_parts: list[np.ndarray] = []
     subject_residuals: list[tuple[str, float]] = []
-    reconstruction_meshes: dict[str, TriangleMesh] = {}
-    for subject in sorted(subjects):
+    atlas_path = templates[0][1]
+    initial_template = read_vtk_polydata(template_path)
+    invalid_faces = 0
+    distortion_parts: list[np.ndarray] = []
+
+    def assess_surface(surface: TriangleMesh) -> None:
+        nonlocal invalid_faces
+        quality = assess_triangle_mesh(surface.vertices, surface.triangles)
+        invalid_faces += (
+            quality.zero_area_faces
+            + quality.zero_length_edge_faces
+            + quality.undefined_angle_faces
+        )
+        distortion_parts.append(_surface_log_area_distortion(initial_template, surface))
+
+    assess_surface(read_vtk_polydata(atlas_path))
+    if progress_callback is not None:
+        progress_callback(0, len(subjects), "Checking registration geometry")
+    for index, subject in enumerate(sorted(subjects), start=1):
         reconstruction = read_vtk_polydata(by_subject[subject])
-        reconstruction_meshes[subject] = reconstruction
         subject_distances = symmetric_nearest_vertex_distances(
             read_vtk_polydata(subjects[subject]),
             reconstruction,
@@ -318,6 +337,10 @@ def collect_reference_calibration_run_metrics(
                 float(np.quantile(subject_distances, 0.95, method="linear")),
             )
         )
+        assess_surface(reconstruction)
+        del reconstruction
+        if progress_callback is not None:
+            progress_callback(index, len(subjects), subject)
     distances = np.concatenate(distance_parts)
     residual_p95 = float(np.quantile(distances, 0.95, method="linear"))
     residual_median = float(np.quantile(distances, 0.5, method="linear"))
@@ -326,22 +349,6 @@ def collect_reference_calibration_run_metrics(
     sensitivity_denominator = max(first_half, second_half, np.finfo(float).eps)
     resampling_sensitivity = abs(first_half - second_half) / sensitivity_denominator
 
-    atlas_path = templates[0][1]
-    atlas = read_vtk_polydata(atlas_path)
-    initial_template = read_vtk_polydata(template_path)
-    evaluated_surfaces = (atlas, *reconstruction_meshes.values())
-    invalid_faces = 0
-    distortion_parts: list[np.ndarray] = []
-    for surface in evaluated_surfaces:
-        quality = assess_triangle_mesh(surface.vertices, surface.triangles)
-        invalid_faces += (
-            quality.zero_area_faces
-            + quality.zero_length_edge_faces
-            + quality.undefined_angle_faces
-        )
-        distortion_parts.append(
-            _surface_log_area_distortion(initial_template, surface)
-        )
     distortion = float(
         np.quantile(
             np.concatenate(distortion_parts),

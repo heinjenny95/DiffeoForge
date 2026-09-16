@@ -7,7 +7,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
-from PySide6.QtCore import QObject, QRunnable, Qt, QThreadPool, QUrl, Signal, Slot
+from PySide6.QtCore import QObject, QRunnable, Qt, QUrl, Signal, Slot
 from PySide6.QtGui import QCloseEvent, QDesktopServices
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -26,6 +26,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from diffeoforge.desktop.activity import ActivityPool
 from diffeoforge.desktop.calibration_comparison_widget import (
     CalibrationComparisonCanvas3D,
 )
@@ -33,6 +34,7 @@ from diffeoforge.desktop.info_disclosure import InfoDisclosure
 from diffeoforge.desktop.preview_mesh_loader import PreviewMeshLoader
 from diffeoforge.desktop.reference_calibration_presentation import (
     CalibrationTradeoffAssessment,
+    afk_return_summary,
     automatic_check_summary,
     candidate_parameter_summary,
     candidate_tradeoff_assessments,
@@ -528,7 +530,7 @@ class ReferenceCalibrationDialog(QDialog):
         self.study_directory = study_directory.resolve()
         self._snapshot = load_reference_calibration_study(self.study_directory)
         self._worker: _CalibrationStageWorker | None = None
-        self._thread_pool = QThreadPool.globalInstance()
+        self._thread_pool = ActivityPool(self)
         self._approval_checks: dict[str, QCheckBox] = {}
         self._review_buttons: dict[str, QPushButton] = {}
         self._visually_reviewed_candidates: set[str] = set()
@@ -541,6 +543,7 @@ class ReferenceCalibrationDialog(QDialog):
         title = QLabel("Automatic staged pilot calibration")
         title.setObjectName("title")
         root.addWidget(title)
+        root.addWidget(self._thread_pool.indicator)
         boundary = QLabel(
             "Standard mode runs all four parameter comparisons in one operation. "
             "Candidate sets are centered on the biological priorities you already "
@@ -684,16 +687,10 @@ class ReferenceCalibrationDialog(QDialog):
             recommendation_title.setObjectName("title")
             recommendation_layout.addWidget(recommendation_title)
             if report is not None:
-                afk_count = sum(
-                    stage.get("selection_mode") == "automatic_provisional_afk_v1"
-                    for stage in report.get("stage_decisions", [])
-                )
-                if afk_count:
-                    notice = QLabel(
-                        f"AFK return summary: {afk_count} stages selected provisionally. "
-                        "Review confidence, search boundaries and anatomy in the report. "
-                        "The atlas has not been started."
-                    )
+                afk_summary = afk_return_summary(report)
+                if afk_summary:
+                    notice = QLabel(afk_summary)
+                    notice.setTextFormat(Qt.TextFormat.PlainText)
                     notice.setWordWrap(True)
                     notice.setObjectName("statusWarning")
                     recommendation_layout.addWidget(notice)

@@ -9,7 +9,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QObject, QRunnable, Qt, QThreadPool, QTimer, QUrl, Signal, Slot
+from PySide6.QtCore import QEvent, QObject, QRunnable, Qt, QTimer, QUrl, Signal, Slot
 from PySide6.QtGui import QCloseEvent, QDesktopServices
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -44,6 +44,7 @@ from diffeoforge.analysis.landmarks import (
 from diffeoforge.analysis.mesh_scaling import MeshScalingMode
 from diffeoforge.analysis.slicer_json import import_landmark_json_folder
 from diffeoforge.config import load_config
+from diffeoforge.desktop.activity import ActivityPool
 from diffeoforge.desktop.aspect_svg_widget import AspectRatioSvgWidget
 from diffeoforge.desktop.calibration_comparison_widget import (
     CalibrationComparisonCanvas3D,
@@ -800,7 +801,12 @@ class _ResultReviewWorker(QRunnable):
     def run(self) -> None:
         try:
             review = (
-                review_reference_result(self.directory)
+                review_reference_result(
+                    self.directory,
+                    progress_callback=lambda completed, total, message: self.signals.progress.emit(
+                        (completed, total, message)
+                    ),
+                )
                 if self.reference
                 else review_modern_result(self.directory)
             )
@@ -1370,7 +1376,7 @@ class DiffeoForgeWindow(QMainWindow):
         self.resize(1120, 780)
         self.setMinimumSize(900, 650)
         self.setStyleSheet(_STYLE)
-        self._thread_pool = QThreadPool.globalInstance()
+        self._thread_pool = ActivityPool(self)
         self._result_mesh_loader = ResultMeshLoader(self)
         self._result_mesh_loader.loaded.connect(self._atlas_mesh_loaded)
         self._result_mesh_loader.failed.connect(self._atlas_mesh_load_failed)
@@ -1463,6 +1469,11 @@ class DiffeoForgeWindow(QMainWindow):
         self.reference_parameter_help_panels: dict[str, _ExpandableParameterHelp] = {}
         self._reference_parameter_field_pairs: list[tuple[QWidget, QWidget]] = []
         self._build_ui()
+        self.statusBar().addWidget(self._thread_pool.indicator, 1)
+        self._thread_pool.indicator.bind_loader(self._result_mesh_loader, "Loading result meshes")
+        self._thread_pool.indicator.bind_loader(
+            self._feature_mesh_loader, "Loading feature preview"
+        )
         self._form_control_wheel_guard = _FormControlWheelGuard(self)
         for control_type in (QComboBox, QSpinBox, QDoubleSpinBox):
             for control in self.findChildren(control_type):
@@ -2826,12 +2837,23 @@ class DiffeoForgeWindow(QMainWindow):
                     "Generic RBF, Isomap, and diffusion-map views remain exploratory because "
                     "their tuning changes the view and they have no automatic momenta preimage. "
                     "The Roberts preset reproduces a published postprocessing choice; it is not "
-                    "an automatic claim that this choice is best for another dataset."
+                    "an automatic claim that this choice is best for another dataset. "
+                    "PCoA agreement checks the same atlas metric, not biological validity. "
+                    "RBF kernel PCA uses a different feature space: its variance percentages "
+                    "are not interchangeable with the default deformation-kernel PCA. "
+                    "All views inherit the atlas registration and its QC concerns."
                 ),
                 parent=self.shape_space_comparison_card,
             )
         )
         shape_space_layout.addWidget(self.shape_space_comparison_status_label)
+        self.shape_space_comparison_details = QLabel()
+        self.shape_space_comparison_details.setWordWrap(True)
+        self.shape_space_comparison_disclosure = InfoDisclosure(
+            "Numerical method-check details", self.shape_space_comparison_details
+        )
+        self.shape_space_comparison_disclosure.hide()
+        shape_space_layout.addWidget(self.shape_space_comparison_disclosure)
         shape_space_layout.addWidget(self.shape_space_comparison_progress)
         shape_space_actions = QHBoxLayout()
         shape_space_actions.addWidget(self.create_shape_space_comparison_button)
@@ -2898,10 +2920,9 @@ class DiffeoForgeWindow(QMainWindow):
         validation_title = QLabel("DiffeoForge Validation Lab")
         validation_title.setObjectName("sectionTitle")
         validation_summary = QLabel(
-            "After pilot calibration, test the frozen finalist parameters across a "
-            "predeclared training comparison and deterministic cohort resamples. The "
-            "result is an uncertainty-aware robustness report, not an automatic claim "
-            "of universal biological optimality."
+            "Optional robustness check of nearby kernel/control-point settings. "
+            "Noise stays fixed. This does not replace visual QC or identify universally "
+            "correct parameters."
         )
         validation_summary.setWordWrap(True)
         self.open_validation_lab_button = QPushButton("Open Validation Lab…")
@@ -3262,6 +3283,10 @@ class DiffeoForgeWindow(QMainWindow):
         self.engine_combo.addItem(
             "Deformetrica 4.3 (recommended backend)",
             DesktopEngine.DEFORMETRICA_REFERENCE,
+        )
+        # This is a fresh-form default, not a migration of existing configurations.
+        self.engine_combo.setCurrentIndex(
+            self.engine_combo.findData(DesktopEngine.DEFORMETRICA_REFERENCE)
         )
         self.engine_combo.currentIndexChanged.connect(self._update_engine_explanation)
         engine_box = QWidget()
@@ -4231,6 +4256,16 @@ class DiffeoForgeWindow(QMainWindow):
         self.result_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         self.result_label.setWordWrap(True)
         layout.addWidget(self.result_label)
+        self.result_details_label = QLabel()
+        self.result_details_label.setWordWrap(True)
+        self.result_details_label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+        )
+        self.result_details = InfoDisclosure(
+            "Project files and preparation details", self.result_details_label,
+            accessible_name="Project paths, provenance and preparation notices",
+        )
+        layout.addWidget(self.result_details)
         button_row = QHBoxLayout()
         open_config = QPushButton("Open configuration")
         open_config.setObjectName("secondary")
@@ -6592,9 +6627,9 @@ class DiffeoForgeWindow(QMainWindow):
         self.parameter_input_form.setRowVisible(self.reference_parameter_box, not modern)
         if modern:
             self.engine_hint.setText(
-                "Evidence-gated Modern engine. CPU/float64 is contained in the app; CUDA is "
-                "started only through a separately verified local runtime. PCA is part "
-                "of the verified result bundle."
+                "Experimental, opt-in engine. Its technical pilot is not the guided "
+                "Deformetrica parameter calibration. CPU/float64 is included; CUDA "
+                "requires a separately verified runtime."
             )
         else:
             self.engine_hint.setText(
@@ -7513,13 +7548,23 @@ class DiffeoForgeWindow(QMainWindow):
         self.shape_space_comparison_status_label.setObjectName("statusSuccess")
         self.shape_space_comparison_status_label.setStyleSheet("")
         self.shape_space_comparison_status_label.setText(
-            f"{decision['status']}: {decision['reason']} The generic RBF variants remain "
-            "exploratory; the Roberts et al. preset is exported as a named compatibility "
-            "view. The verified PDF report has been saved in the DiffeoForge project folder "
-            "and is available after visual result release. Local HTML and exact statistics "
-            "remain in "
-            "the immutable comparison bundle."
+            f"{method_count} method(s) compared. PDF saved in the project folder. "
+            "Method agreement does not validate registration or biological interpretation."
         )
+        self.shape_space_comparison_details.setText(
+            f"{decision['status']}: {decision['reason']} "
+            "Generic RBF variants are exploratory; the Roberts preset is a compatibility view. "
+            "HTML, scores and exact agreement statistics remain in the immutable bundle."
+        )
+        self.shape_space_comparison_disclosure.toggle_button.setChecked(False)
+        self.shape_space_comparison_disclosure.show()
+        if decision["status"] != "validated_for_default":
+            self.shape_space_comparison_status_label.setObjectName("statusWarning")
+            self.shape_space_comparison_status_label.setText(
+                self.shape_space_comparison_status_label.text()
+                + " The default-method numerical checks were not fully supported; review details."
+            )
+            self.shape_space_comparison_status_label.setStyleSheet("")
         self._open_shape_space_pdf_report()
         if self._close_after_shape_space_comparison:
             self._close_after_shape_space_comparison = False
@@ -8090,7 +8135,19 @@ class DiffeoForgeWindow(QMainWindow):
             else ""
         )
         notices = "\n".join(f"• {notice}" for notice in result.notices)
+        next_action = (
+            "Next: review the pilot calibration."
+            if result.engine is DesktopEngine.DEFORMETRICA_REFERENCE
+            and self.reference_parameter_profile_combo.currentData() != "advanced"
+            else "Next: review the configuration before starting the atlas."
+        )
         self.result_label.setText(
+            f"{result.engine_label} · {result.subject_count} subjects. Atlas not started.\n"
+            f"{next_action} Parameters remain provisional."
+            + ("\n" + "\n".join(result.warnings) if result.warnings else "")
+        )
+        self.result_details.toggle_button.setChecked(False)
+        self.result_details_label.setText(
             f"Engine: {result.engine_label}\n"
             f"Template: {result.template_path}\n"
             f"Configuration: {result.config_path}{report}{preprocessing}\n\n"
@@ -10312,6 +10369,8 @@ class DiffeoForgeWindow(QMainWindow):
         self._shape_space_comparison_result = None
         self.open_shape_space_pdf_button.hide()
         self.open_shape_space_html_button.hide()
+        self.shape_space_comparison_details.clear()
+        self.shape_space_comparison_disclosure.hide()
         self.shape_space_comparison_card.setVisible(reference_result)
         self.create_shape_space_comparison_button.setEnabled(reference_result)
         if reference_result:

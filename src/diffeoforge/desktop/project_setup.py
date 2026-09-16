@@ -110,6 +110,7 @@ class ProjectSetupResult:
     notices: tuple[str, ...]
     preprocessing_report_path: Path | None = None
     modern_runtime_device: str | None = None
+    warnings: tuple[str, ...] = ()
 
     @property
     def engine_label(self) -> str:
@@ -662,6 +663,7 @@ def _create_reference_project(
         report_path=report_path,
         preprocessing_report_path=preprocessing_report_path,
         notices=tuple(notices),
+        warnings=tuple(initialized.preflight.notices),
     )
 
 
@@ -886,6 +888,11 @@ def _create_modern_project(
         report_path=None,
         preprocessing_report_path=preprocessing_report_path,
         notices=tuple(notices),
+        warnings=tuple(
+            notice for notice in notices
+            if notice.startswith(("Units are declared", "This is a large cohort",
+                                  "The selected three-cycle", "Modern CUDA/float64"))
+        ),
         modern_runtime_device=request.modern_runtime_device,
     )
 
