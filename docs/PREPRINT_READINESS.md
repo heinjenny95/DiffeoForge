@@ -1,23 +1,42 @@
 # Preprint readiness: priority checklist
 
-Agreed planning scope: 2026-09-16. Status: **open acceptance checklist**, not a
-claim that the software or its scientific results are already qualified.
+Agreed planning scope: 2026-09-16. Status: **three existing workflow case studies;
+remaining acceptance and manuscript-preparation tasks below**. This is not a
+claim of universal scientific or release qualification.
 
 DiffeoForge guides users through a reproducible Deformetrica workflow. It helps
 them prepare inputs, choose defensible starting parameters, inspect registrations
 and compare shape-space methods. It does **not** identify universally correct
 parameters, approve biological interpretations or replace researcher judgement.
 
-Existing implementations count as a starting point: the tasks below may require
-verification and clearer wording rather than new algorithms. Close each item
-only with a candidate commit, linked evidence and a named reviewer. Do not start
-new large studies just to fill the checklist.
+## Already demonstrated — reuse this evidence
+
+- [x] Workflow application to **ant mandibles**, with an existing evaluation.
+- [x] Workflow application to **mouse skulls**, with an existing atlas,
+  landmark/shape-space comparison and Validation Lab evaluation.
+- [x] Workflow application to **human mandibles**, with an existing large-mesh
+  feasibility evaluation and documented limitations.
+
+These are completed applications, not proposed future studies. The existing
+project-document tabs **Ant Mandibles**, **mice skull** and **Human mandibles**
+contain the evaluations and figures; the owner reaffirmed their status when
+reviewing this checklist. The human-mandible record does not establish clinical
+validation, cohort-wide anatomical sign-off or a causal dental explanation.
+
+The remaining work is to consolidate this evidence for the manuscript and close
+specific software/reproducibility gaps, not to demonstrate the workflow from
+scratch. Reuse existing implementations, runs, figures and checks before adding
+new work. Close remaining acceptance items with a candidate commit, linked
+evidence and a named reviewer. No fourth dataset or repeat of all three studies
+is required merely to fill this checklist.
 
 ## P0 — settle before freezing the preprint evidence
 
 - [ ] **1. Make the advertised installation and complete Reference workflow reliable.**
   Diagnose the failed Windows installer lifecycle check; distinguish a packaging
-  defect from an evidence-harness failure, fix the cause and rerun it. Exercise
+  defect from an evidence-harness failure, fix the cause and rerun it. Reuse the
+  three case studies for application evidence. Exercise remaining release-path
+  and regression gaps on a bounded example:
   import → alignment → manual/AFK pilot → atlas → visual QC → comparison/export,
   including cancellation, interruption, reopening and continuation.
   **Done when:** a clean-machine test of the advertised route and relevant CI
@@ -68,14 +87,17 @@ new large studies just to fill the checklist.
 
 ## P1 — complete the evidence and author review before submission
 
-- [ ] **6. Assemble a compact, shareable demonstration package.**
-  Provide one public/synthetic end-to-end tutorial plus a small selection of
-  existing case studies illustrating capabilities and limitations. Report cohort
-  sizes, mesh face counts, hardware, elapsed time, memory/storage and relevant
+- [ ] **6. Turn the three existing case studies into a compact manuscript package.**
+  Select and harmonize the existing ant-mandible, mouse-skull and human-mandible
+  figures, Methods summaries and limitations; do not commission new case studies.
+  Reuse an existing public/synthetic example for the short end-to-end tutorial.
+  Report cohort sizes, mesh face counts, hardware, elapsed time, memory/storage and
+  relevant
   failures where measured; do not extrapolate unmeasured performance. Explain
   disagreements with landmark-based analyses as questions to investigate, not
   automatic failure or proof of superiority.
-  **Done when:** manuscript figures and numerical claims map to recorded runs;
+  **Done when:** the already completed applications are presented consistently,
+  manuscript figures and numerical claims map to recorded runs, and
   public example data and redistribution permissions are checked. Unpublished
   colleague data remain private unless separately authorized.
 
