@@ -3,24 +3,27 @@
 Search checked 2026-09-16. This is a broad, targeted narrative literature search,
 not a systematic review or a claim of exhaustive coverage. Queries combined
 Deformetrica/LDDMM, landmark-free morphometrics, shape modelling software,
-alignment/scaling, kernel PCA, reproducibility and the three original datasets.
+alignment/scaling, kernel PCA, reproducibility and the original datasets, with
+the weevil-trochanter preprint added for the fourth existing application.
 Publisher pages, original articles, author-hosted papers and official repositories
 were used to verify titles, dates and identifiers. Citation chaining expanded the
 search. Reviews and software/data resources are labelled separately.
 
-Thirty-one scholarly sources follow. Selection prioritizes direct method credit,
+Thirty-two scholarly sources follow, including the explicitly labelled trochanter
+preprint. Selection prioritizes direct method credit,
 closest prior workflows, challenges to broad claims, and case-study provenance.
 The suggested uses are editorial recommendations, not findings of DiffeoForge.
 An abstract/metadata check supports only the limited annotation provided; it is
 not a claim to have critically reviewed every full paper or supplement. References
-are a selection pool, not a requirement to cite all 31 in the final manuscript.
+are a selection pool, not a requirement to cite all 32 in the final manuscript.
 
 ## Read first
 
 - **R01, R03:** Credit the engine and the deformation representation.
 - **R07, R08, R09:** Establish existing workflows and an honest software comparison.
 - **R16, R17:** Address alignment/scaling and landmark-free versus landmark results.
-- **R13, R25, R26:** Cite the original studies behind the three applications.
+- **R13, R25, R26, R32:** Cite the original studies behind the four applications;
+  R32 is a preprint, not evidence of completed peer review.
 - **R21:** Credit kernel PCA while keeping it distinct from the LDDMM metric.
 
 ## A. Deformetrica, registration and shape geometry
@@ -363,6 +366,22 @@ Research 22(74):1–6.
 - **Use:** Methods when KeOps was actually used; kernel-reduction engineering.
   Official journal metadata/abstract checked. Does not imply unlimited memory,
   universal GPU compatibility or guaranteed performance of our whole workflow.
+
+### R32 — Hein et al. (2026) · trochanter-study provenance, preprint
+
+Hein J et al. **Evolutionary diversification of the biological screw joint in
+weevils.** bioRxiv, version 1.
+[DOI: 10.64898/2026.08.21.746137](https://doi.org/10.64898/2026.08.21.746137).
+
+- **Use:** Trochanter Methods/Results/Discussion; original screw-joint study and
+  atlas-based surface-morphometric context. The bioRxiv abstract and metadata
+  identify 68 specimens and combine shape, functional and phylogenetic analyses.
+  Full methods were not retrieved in this check; the owner's historical linear
+  PCA description still needs reconciliation with the exact analysis code/run.
+  Do not call this a landmark-based reference or imply peer-reviewed status.
+- Compare matched shape representations, not the complete evolutionary argument.
+  Cite the inspected preprint version; verify any later publication and the data
+  access/redistribution terms before freezing the manuscript evidence.
 
 ## G. Data records and software resources — not additional research papers
 

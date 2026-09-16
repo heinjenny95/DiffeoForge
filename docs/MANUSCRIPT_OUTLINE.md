@@ -12,8 +12,9 @@ Reference IDs below resolve in [Annotated literature](MANUSCRIPT_REFERENCES.md).
   shape-space comparison and provenance accessible within one guided workflow.
 - Deformetrica provides the registration engine. DiffeoForge does not introduce
   a new LDDMM theory, certify universally correct parameters or interpret biology.
-- Use the three completed applications: ant mandibles, mouse skulls and human
-  mandibles. Consolidate existing evidence rather than require a fourth dataset.
+- Reuse four existing applications: ant mandibles, mouse skulls, human mandibles
+  and weevil trochanters. The trochanter comparison adds an earlier atlas/linear
+  PCA baseline; reconcile historical runs rather than require a new atlas.
 
 ## Abstract — bullet draft
 
@@ -23,8 +24,10 @@ Reference IDs below resolve in [Annotated literature](MANUSCRIPT_REFERENCES.md).
   alignment, pilot exploration, atlas execution, visual QC and analysis exports.
 - **Distinctive analysis feature:** Compare several shape-space representations
   from the same completed atlas without repeating registration.
-- **Evidence:** Present three completed biological/medical-mesh applications,
-  their landmark comparisons where available, and practical limitations.
+- **Evidence:** Present four existing biological/medical-mesh applications,
+  landmark comparisons where available, the historical trochanter workflow
+  comparison, and practical limitations. Final figures remain subject to run/QC
+  reconciliation.
 - **Conclusion:** Support transparent, defensible researcher decisions; numerical
   success, stable embeddings and anatomical validity are different questions.
 - Insert final verified headline results only after figure/run reconciliation;
@@ -46,7 +49,7 @@ Reference IDs below resolve in [Annotated literature](MANUSCRIPT_REFERENCES.md).
 - Motivation for transparency: alignment, scaling, representation and mesh
   preparation can affect inferences; parameter choice is study-dependent
   [R16–R18].
-- State scope: a workflow/software contribution demonstrated on three existing
+- State scope: a workflow/software contribution illustrated by four existing
   applications, not a new biological theory or automated optimal-parameter oracle.
 
 ## 2. Materials and methods
@@ -118,6 +121,10 @@ Reference IDs below resolve in [Annotated literature](MANUSCRIPT_REFERENCES.md).
   inclusion lists before any claim of direct replication or method ranking.
 - Human mandibles: MARGO data and the published landmark/semilandmark analysis
   [R26, D03]. Document paired-cohort selection, dental scope and QC coverage.
+- Weevil trochanters: the screw-joint preprint [R32] and existing atlas analyses.
+  Treat this as a historical surface-workflow comparison, not automatically a
+  landmark baseline. Match specimens, mesh resolution/repairs, alignment/scaling,
+  atlas parameters and PCA definitions before quantitative cross-run claims.
 
 ## 3. Results — reuse completed evidence
 
@@ -153,7 +160,24 @@ Reference IDs below resolve in [Annotated literature](MANUSCRIPT_REFERENCES.md).
 - State incomplete QC and absence of clinical validation. Do not turn this
   demonstration into a new tooth-segmentation study merely to complete the paper.
 
-### 3.5 Same-atlas shape-space comparison
+### 3.5 Weevil trochanters
+
+- Reuse the earlier atlas and owner-reported linear PCA as a historical baseline;
+  confirm its exact feature definition and source bundle against the preprint
+  before labelling it Cartesian momenta PCA or reproducing published figures.
+- Keep historical paper-versus-DiffeoForge comparisons separate from comparing
+  ordinations of one fixed atlas. Different preparation or atlas parameters make
+  cross-run differences inseparable from a change in PCA alone.
+- Reuse the existing later method-comparison bundle where appropriate. Distinguish
+  Cartesian momenta PCA, LDDMM deformation-kernel metric-tangent PCA and generic
+  nonlinear RBF KernelPCA; do not silently replace the historical analysis.
+- Assess matched-specimen distances, neighborhoods and subspaces, not identical
+  PC axes. Existing momenta/control points may support missing postprocessing
+  after provenance checks; no atlas rerun is requested by this editorial addition.
+- Do not claim replication of the preprint's functional/phylogenetic conclusions
+  or independent external validation from a reused development dataset [R32].
+
+### 3.6 Same-atlas shape-space comparison
 
 - Showcase where methods preserve similar relationships and where neighborhoods
   or axes change. Explain any mathematical equivalences and scale effects.
@@ -173,6 +197,9 @@ Reference IDs below resolve in [Annotated literature](MANUSCRIPT_REFERENCES.md).
   variation [R18]; sign alignment alone cannot explain every discrepancy.
 - Emphasize the value of method comparisons as sensitivity evidence, not an
   algorithmic replacement for biological interpretation [R17, R20–R24].
+- Use trochanters to distinguish workflow continuity from representation
+  sensitivity. A change of PCA can alter the morphospace without demonstrating
+  that the earlier biological study was wrong or the newer method is superior.
 - Limitations: mesh/segmentation content, uncertain correspondence, parameter
   coverage, incomplete QC, diagnostic sampling and high computational cost.
 - Delimit claims: no universal optimal settings, clinical readiness, guaranteed
@@ -182,7 +209,7 @@ Reference IDs below resolve in [Annotated literature](MANUSCRIPT_REFERENCES.md).
 ## 5. Conclusion
 
 - DiffeoForge connects established methods in a guided and auditable workflow.
-- Three existing applications illustrate utility and limitations; researchers
+- Four existing applications illustrate utility and limitations; researchers
   retain responsibility for parameter justification and interpretation.
 
 ## Figures, tables and supplementary material — planned
@@ -190,10 +217,12 @@ Reference IDs below resolve in [Annotated literature](MANUSCRIPT_REFERENCES.md).
 - **Figure 1:** Workflow and human decision points, including optional Validation
   Lab and same-atlas comparison; distinguish automated steps from human approval.
 - **Figure 2:** Compact pilot/QC interface example with the recorded decision trail.
-- **Figure 3:** Three existing case-study panels with matched labels and explicit
+- **Figure 3:** Four existing case-study panels with matched labels and explicit
   reference definitions; reuse current project-document figures where suitable.
 - **Figure 4:** Shape-space agreement/comparison, showing both stability and
-  disagreement rather than only favorable examples.
+  disagreement rather than only favorable examples. A trochanter panel can
+  contrast historical linear PCA and current representations, explicitly marking
+  whether they share one atlas or come from different runs.
 - **Table 1:** Cohort/source, analysis faces, landmark role, alignment, exact
   parameters, backend/hardware, measured time/resources and QC status per case.
 - **Supplement:** Versioned configurations, transforms, inclusion lists,

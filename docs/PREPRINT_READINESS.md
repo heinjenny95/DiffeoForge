@@ -1,6 +1,6 @@
 # Preprint readiness: priority checklist
 
-Agreed planning scope: 2026-09-16. Status: **three existing workflow case studies;
+Agreed planning scope: 2026-09-16. Status: **four existing workflow applications;
 remaining acceptance and manuscript-preparation tasks below**. This is not a
 claim of universal scientific or release qualification.
 
@@ -20,26 +20,32 @@ parameters, approve biological interpretations or replace researcher judgement.
   landmark/shape-space comparison and Validation Lab evaluation.
 - [x] Workflow application to **human mandibles**, with an existing large-mesh
   feasibility evaluation and documented limitations.
+- [x] Existing **weevil-trochanter** atlas application, added to manuscript scope
+  at the owner's request. Reconcile its historical linear-PCA baseline and later
+  same-atlas method comparison before making cross-run or paper-replication claims.
 
 These are completed applications, not proposed future studies. The existing
 project-document tabs **Ant Mandibles**, **mice skull** and **Human mandibles**
 contain the evaluations and figures; the owner reaffirmed their status when
 reviewing this checklist. The human-mandible record does not establish clinical
 validation, cohort-wide anatomical sign-off or a causal dental explanation.
+Trochanter source/run distinctions are recorded in **Manuscript** and the
+**Project log**; the original study is currently cited as a preprint
+([R32](MANUSCRIPT_REFERENCES.md)). Adding it does not complete scientific review.
 
 The remaining work is to consolidate this evidence for the manuscript and close
 specific software/reproducibility gaps, not to demonstrate the workflow from
 scratch. Reuse existing implementations, runs, figures and checks before adding
 new work. Close remaining acceptance items with a candidate commit, linked
-evidence and a named reviewer. No fourth dataset or repeat of all three studies
-is required merely to fill this checklist.
+evidence and a named reviewer. No additional dataset or blanket repeat of these
+studies is required merely to fill this checklist.
 
 ## P0 — settle before freezing the preprint evidence
 
 - [ ] **1. Make the advertised installation and complete Reference workflow reliable.**
   Diagnose the failed Windows installer lifecycle check; distinguish a packaging
   defect from an evidence-harness failure, fix the cause and rerun it. Reuse the
-  three case studies for application evidence. Exercise remaining release-path
+  existing case studies for application evidence. Exercise remaining release-path
   and regression gaps on a bounded example:
   import → alignment → manual/AFK pilot → atlas → visual QC → comparison/export,
   including cancellation, interruption, reopening and continuation.
@@ -91,8 +97,8 @@ is required merely to fill this checklist.
 
 ## P1 — complete the evidence and author review before submission
 
-- [ ] **6. Turn the three existing case studies into a compact manuscript package.**
-  Select and harmonize the existing ant-mandible, mouse-skull and human-mandible
+- [ ] **6. Turn the four existing applications into a compact manuscript package.**
+  Select and harmonize the existing ant-mandible, mouse-skull, human-mandible and trochanter
   figures, Methods summaries and limitations; do not commission new case studies.
   Reuse an existing public/synthetic example for the short end-to-end tutorial.
   Report cohort sizes, mesh face counts, hardware, elapsed time, memory/storage and
@@ -162,6 +168,6 @@ human/release acceptance conditions are met.
 | P0.5 Comparison | 74 PCA/comparison/stability checks passed; variable method rank, 1D reporting, exact caches/CSVs/PDF and tamper rejection covered. Nine public PDF pages visually checked. | Independent mathematical review and selection of manuscript figures from existing authorized studies. |
 
 **Next acceptance task:** use the small public walkthrough with an independent
-reviewer, then consolidate the three existing case studies. Do not restart private
+reviewer, then consolidate the four existing applications. Do not restart private
 atlas studies or change their scientific settings merely to fill this checklist.
 Do not install or distribute a new build without the corresponding approval.
