@@ -643,8 +643,11 @@ def _claim_matrix(
             or "The external engine completed; exact optimizer convergence is not established."
         )
     reviewed = sum(value != "unreviewed" for value in decisions.values())
+    implausible = sum(value == "fail" for value in decisions.values())
+    uncertain = sum(value == "uncertain" for value in decisions.values())
     registration_status: ClaimStatus = (
-        "supported" if subjects and reviewed == len(subjects) else "partial"
+        "not_supported" if implausible else
+        "supported" if subjects and reviewed == len(subjects) and not uncertain else "partial"
     )
     sensitivity_status: ClaimStatus = "not_assessed"
     sensitivity_evidence = "No verified neighboring-parameter study was supplied."
@@ -701,8 +704,10 @@ def _claim_matrix(
             "registration_quality",
             "Full-cohort registration plausibility",
             registration_status,
-            f"{len(subjects)} subject residuals; {reviewed} explicit researcher decisions.",
-            "Residual rank is an inspection aid, not an exclusion rule.",
+            f"{len(subjects)} subject residuals; {reviewed} explicit researcher decisions; "
+            f"{implausible} implausible, {uncertain} uncertain.",
+            "Review completion is not plausibility approval. Residual rank is an inspection "
+            "aid, not an exclusion rule.",
         ),
         ScientificClaim(
             "parameter_sensitivity",
@@ -938,6 +943,12 @@ def render_scientific_report_html(report: ScientificAtlasReport) -> str:
         or "No explicit researcher registration-QC decisions were supplied."
     )
     optimizer_plot = _embedded_artifact_svg(report, "optimizer-convergence-plot")
+    qc_warning = (
+        '<div class="summary not_supported"><strong>Exploratory results — QC concerns:</strong> '
+        f'{html.escape(decision_summary)}. All specimens remain included. Review completion '
+        'is not scientific approval; interpret and share plots with this QC status.</div>'
+        if any(value in {"uncertain", "fail"} for value in decisions.values()) else ""
+    )
     pca_plot = _embedded_artifact_svg(report, "pca-scree")
     figures = [
         f'<figure><img src="{_data_uri_svg(_residual_svg(report))}" alt="Ranked subject residuals">'
@@ -1038,6 +1049,7 @@ code{{word-break:break-all}}
 <div class="summary"><strong>Interpretation:</strong> This report separates verified technical
 evidence from scientific claims. A completed run, low residual, or stable PCA is never treated
 as automatic biological validation.</div>
+{qc_warning}
 <h2>Claim matrix</h2><table><thead><tr><th>Question</th><th>Status</th>
 <th>Evidence</th><th>Boundary</th></tr></thead><tbody>{claim_rows}</tbody></table>
 <h2>Robustness evidence</h2><div class="grid">{"".join(evidence_cards)}</div>

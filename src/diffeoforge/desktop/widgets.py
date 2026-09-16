@@ -130,7 +130,7 @@ from diffeoforge.desktop.registration_release import (
     registration_inspection_plan,
     release_registration_results,
     require_registration_release,
-    require_visual_approvals,
+    require_visual_review,
     required_registration_inspections,
 )
 from diffeoforge.desktop.remote_atlas_controller import (
@@ -2454,6 +2454,11 @@ class DiffeoForgeWindow(QMainWindow):
         )
         boundary_layout.addWidget(self.result_boundary_label)
         layout.addWidget(boundary)
+        self.result_qc_warning_label = QLabel()
+        self.result_qc_warning_label.setObjectName("statusWarning")
+        self.result_qc_warning_label.setWordWrap(True)
+        self.result_qc_warning_label.hide()
+        layout.addWidget(self.result_qc_warning_label)
 
         summary = QFrame()
         summary.setObjectName("card")
@@ -2589,7 +2594,7 @@ class DiffeoForgeWindow(QMainWindow):
         self.result_qc_export_button.clicked.connect(self._export_registration_qc_status)
         self.result_qc_export_button.hide()
         decision_controls.addWidget(self.result_qc_export_button)
-        self.result_qc_finalize_button = QPushButton("Approve review && release results")
+        self.result_qc_finalize_button = QPushButton("Finish review && view results")
         self.result_qc_finalize_button.setObjectName("primary")
         self.result_qc_finalize_button.clicked.connect(self._finalize_registration_qc_review)
         self.result_qc_finalize_button.hide()
@@ -2599,6 +2604,13 @@ class DiffeoForgeWindow(QMainWindow):
         )
         self.result_qc_inspected_check.setObjectName("registrationVisualInspectionCheck")
         self.result_qc_inspected_check.toggled.connect(self._sync_visual_decision_controls)
+        self.result_qc_decision_hint = QLabel()
+        self.result_qc_decision_hint.setWordWrap(True)
+        self.result_qc_decision_hint.setObjectName("status")
+        # Keep render-ready feedback from resizing the canvas and invalidating its frame.
+        self.result_qc_decision_hint.setFixedHeight(
+            3 * self.result_qc_decision_hint.fontMetrics().lineSpacing()
+        )
         self.result_qc_summary_label = QLabel("QC review has not started.")
         self.result_qc_summary_label.setObjectName("status")
         self.result_qc_summary_label.setWordWrap(True)
@@ -2652,6 +2664,7 @@ class DiffeoForgeWindow(QMainWindow):
         visual_body.addWidget(controls)
         visual_body.addLayout(canvases, 1)
         atlas_viewer_layout.addLayout(visual_body)
+        atlas_viewer_layout.addWidget(self.result_qc_decision_hint)
         atlas_viewer_layout.addWidget(self.result_qc_inspected_check)
         atlas_viewer_layout.addLayout(decision_controls)
         atlas_viewer_layout.addWidget(self.result_qc_summary_label)
@@ -3100,8 +3113,8 @@ class DiffeoForgeWindow(QMainWindow):
         hint.setObjectName("subtitle")
         hint.setWordWrap(True)
         boundary = QLabel(
-            "Unreviewed, uncertain or implausible flagged cases keep results locked. "
-            "No specimens are silently removed."
+            "Record a decision for each required case to continue. Uncertain or implausible "
+            "cases remain visible as QC warnings; no specimens are removed."
         )
         boundary.setObjectName("boundaryText")
         boundary.setWordWrap(True)
@@ -3117,8 +3130,10 @@ class DiffeoForgeWindow(QMainWindow):
             InfoDisclosure(
                 "QC scope and limitations",
                 (
-                    "Resolve flagged cases through closer inspection or a separately corrected "
-                    "atlas run. "
+                    "Finishing review is not scientific approval. With uncertain or implausible "
+                    "cases, results are exploratory. Inspect alignment, template anatomy and "
+                    "local fit; compare a separately documented run if changes are needed. "
+                    "Back to atlas run only navigates; it does not rerun or repair the atlas. "
                     "A filtered PCA plot is not a substitute for review. Not flagged does not mean "
                     "visually reviewed: relative screening can miss uniformly poor fits. "
                     "Reduced displays "
@@ -10809,10 +10824,10 @@ class DiffeoForgeWindow(QMainWindow):
                 f"All {len(subject_order)} registration-QC meshes in this queue have a decision. "
                 "The review will not restart automatically. The current draft is saved; "
                 + (
-                    "use Approve review & release results to continue."
+                    "use Finish review & view results to continue."
                     if all_plausible
-                    else "uncertain or implausible registrations must be resolved before release. "
-                    "No mesh has been excluded."
+                    else "use Finish review & view with QC warnings to continue. "
+                    "Negative decisions remain recorded; no mesh has been excluded."
                 )
             )
 
@@ -10837,6 +10852,7 @@ class DiffeoForgeWindow(QMainWindow):
 
     def _update_registration_qc_summary(self) -> None:
         review = self._result_review
+        self.result_qc_warning_label.hide()
         if review is None or not review.registration_qc:
             self.result_qc_summary_label.setText("QC review is unavailable.")
             self.registration_release_status_label.setText(
@@ -10854,6 +10870,14 @@ class DiffeoForgeWindow(QMainWindow):
             current[item.subject_name] = decision
         status = "Draft not finalized."
         status_style = "statusWarning"
+        has_concerns = bool(counts["uncertain"] or counts["fail"])
+        self.result_qc_warning_label.setText(
+            f"Exploratory results — QC concerns: {counts['fail']} implausible, "
+            f"{counts['uncertain']} uncertain; {counts['unreviewed']} not visually reviewed. "
+            "All specimens remain in the atlas and PCA. Review completion is not scientific "
+            "approval. Share QC status alongside exported plots."
+        )
+        self.result_qc_warning_label.setVisible(has_concerns)
         released = self._registration_results_released()
         try:
             finalized = load_finalized_registration_qc_review(review)
@@ -10863,11 +10887,11 @@ class DiffeoForgeWindow(QMainWindow):
         else:
             if finalized is not None and dict(finalized.decisions) == current:
                 status = (
-                    "Finalized and bound to scientific reports; flagged-review policy complete."
+                    "Finalized and bound to scientific reports; required review complete."
                     if released
                     else "Saved QC snapshot exists; current visual result release is still pending."
                 )
-                status_style = "statusSuccess" if released else "statusWarning"
+                status_style = "statusSuccess" if released and not has_concerns else "statusWarning"
             elif finalized is not None:
                 status = (
                     "Draft differs from the finalized review; finalize again to rebind reports."
@@ -10893,12 +10917,12 @@ class DiffeoForgeWindow(QMainWindow):
                 flagged_group, f"Required review ({len(required)})"
             )
         try:
-            require_visual_approvals(
+            require_visual_review(
                 review, self._registration_qc_decisions, self._registration_visual_inspections
             )
             eligible = True
             release_hint = (
-                "All required cases approved. Release results to continue."
+                "All required decisions recorded. Finish review to continue."
                 if required
                 else "No cases flagged by this screen. Optional inspection is available; "
                 "release results when ready."
@@ -10907,19 +10931,20 @@ class DiffeoForgeWindow(QMainWindow):
             eligible = False
             release_hint = str(error)
         self.result_qc_finalize_button.setText(
-            "Approve flagged review && release results"
-            if required
-            else "Release results (no flagged cases)"
+            "Finish review && view with QC warnings" if has_concerns else (
+                "Finish review && view results" if required
+                else "View results (no flagged cases)"
+            )
         )
         self.result_qc_finalize_button.setEnabled(
             eligible and not released and self._worker is None
         )
         self.registration_release_status_label.setObjectName(
-            "statusSuccess" if released else "statusWarning"
+            "statusSuccess" if released and not has_concerns else "statusWarning"
         )
         self.registration_release_status_label.setStyleSheet("")
-        approved_required = sum(
-            self._registration_qc_decisions.get(name) == "pass"
+        reviewed_required = sum(
+            name in self._registration_qc_decisions
             and name in self._registration_visual_inspections
             for name in required
         )
@@ -10929,11 +10954,15 @@ class DiffeoForgeWindow(QMainWindow):
             else "Fewer than 4 specimens: screening unavailable, manual review required. "
         )
         self.registration_release_status_label.setText(
-            f"Required review: {approved_required} / {len(required)} approved; "
+            f"Required review: {reviewed_required} / {len(required)} reviewed; "
             f"{len(review.registration_qc) - len(self._registration_visual_inspections)} "
             "specimens not visually reviewed. "
             + screening
-            + ("Results released; every specimen remains included." if released else release_hint)
+            + (
+                "Exploratory results available with QC concerns; every specimen remains included."
+                if released and has_concerns else
+                "Results available; every specimen remains included." if released else release_hint
+            )
         )
 
     @Slot()
@@ -10951,11 +10980,17 @@ class DiffeoForgeWindow(QMainWindow):
             QMessageBox.warning(self, "Results could not be released", str(error))
             return
         self._update_registration_qc_summary()
-        self.result_atlas_status_label.setObjectName("statusSuccess")
+        has_concerns = any(
+            value in {"uncertain", "fail"} for value in self._registration_qc_decisions.values()
+        )
+        self.result_atlas_status_label.setObjectName(
+            "statusWarning" if has_concerns else "statusSuccess"
+        )
         self.result_atlas_status_label.setStyleSheet("")
         self.result_atlas_status_label.setText(
-            "Flagged-review policy completed; results released without changing "
-            "atlas or PCA evidence. "
+            ("Review completed with QC concerns; results are exploratory. " if has_concerns else
+             "Required review completed. ")
+            + "Atlas, PCA and all specimen decisions are unchanged. "
             "Scientific reports now bind to this exact finalized review."
         )
         self._set_result_controls_enabled(True)
@@ -10985,12 +11020,29 @@ class DiffeoForgeWindow(QMainWindow):
 
     @Slot()
     def _sync_visual_decision_controls(self) -> None:
+        canvas = self.result_registration_qc_canvas
         enabled = bool(
             self._worker is None
             and self._loaded_qc_subject is not None
             and self.result_registration_qc_canvas.full_resolution_ready
             and self.result_qc_inspected_check.isChecked()
         )
+        if self._worker is not None:
+            hint = "Please wait for the current operation to finish."
+        elif self._loaded_qc_subject is None:
+            hint = "Select a case and wait for both verified meshes to load."
+        elif not canvas.full_resolution_ready:
+            hint = (
+                "Ratings need both meshes in Original detail. Enable Original detail above, "
+                "show both layers and wait for the render to finish after rotating."
+            )
+        elif not self.result_qc_inspected_check.isChecked():
+            hint = "To enable ratings, confirm below that you inspected both meshes."
+        else:
+            hint = (
+                "Choose a decision. Uncertain and implausible ratings also allow review completion."
+            )
+        self.result_qc_decision_hint.setText(hint)
         self.result_qc_inspected_check.setEnabled(
             self._worker is None
             and self._loaded_qc_subject is not None
@@ -11002,6 +11054,7 @@ class DiffeoForgeWindow(QMainWindow):
             self.result_qc_fail_button,
         ):
             button.setEnabled(enabled)
+            button.setToolTip(hint)
 
     def _require_current_finalized_registration_qc(self) -> None:
         review = self._result_review

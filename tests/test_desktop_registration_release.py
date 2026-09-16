@@ -68,17 +68,47 @@ def _approvals(review):
     return decisions, {name: inspection_binding(review, name) for name in decisions}
 
 
-@pytest.mark.parametrize("decision", [None, "uncertain", "fail"])
-def test_unresolved_registration_cannot_release_or_exclude(visual_review, decision):
+def test_unreviewed_registration_cannot_release_or_exclude(visual_review):
     decisions, inspections = _approvals(visual_review)
-    if decision is None:
-        decisions.pop("subject-2")
-    else:
-        decisions["subject-2"] = decision
+    decisions.pop("subject-2")
     with pytest.raises(ModernResultReviewError, match="Results remain locked"):
         release_registration_results(visual_review, decisions, inspections)
     assert not (registration_qc_directory(visual_review) / RELEASE_NAME).exists()
     assert len(visual_review.registration_qc) == 2
+
+
+@pytest.mark.parametrize("engine", ["deformetrica_reference", "modern"])
+@pytest.mark.parametrize("decision", ["uncertain", "fail"])
+def test_negative_decision_completes_review_without_changing_or_excluding_data(
+    visual_review, engine, decision,
+):
+    review = replace(visual_review, engine_route=engine)
+    decisions, inspections = _approvals(review)
+    decisions["subject-2"] = decision
+    before = {a.path: sha256_file(a.path) for a in review.artifacts}
+    save_registration_qc_draft(review, decisions, visual_inspections=inspections)
+    release_registration_results(review, decisions, inspections)
+    require_registration_release(
+        review, load_registration_qc_draft(review), load_visual_inspections(review)
+    )
+    final = load_finalized_registration_qc_review(review)
+    assert dict(final.decisions) == decisions
+    payload = json.loads(final.path.read_text(encoding="utf-8"))
+    scope = payload["visual_review_scope"]
+    assert scope["required_review_complete"] is True
+    assert scope["all_required_plausible"] is False
+    assert scope["review_outcome"] == "reviewed_with_concerns"
+    assert scope["concern_subjects"] == {"subject-2": decision}
+    assert before == {a.path: sha256_file(a.path) for a in review.artifacts}
+
+
+@pytest.mark.parametrize("decision", ["uncertain", "fail"])
+def test_negative_decision_still_requires_bound_visual_inspection(visual_review, decision):
+    decisions, inspections = _approvals(visual_review)
+    decisions["subject-2"] = decision
+    inspections.pop("subject-2")
+    with pytest.raises(ModernResultReviewError, match="acknowledgement"):
+        release_registration_results(visual_review, decisions, inspections)
 
 
 @pytest.mark.parametrize("engine", ["deformetrica_reference", "modern"])
@@ -246,9 +276,19 @@ def test_search_does_not_hide_unresolved_subject_from_release_policy(review_wind
     window.result_atlas_mesh_search_edit.setText("subject-2")
     _wait_for_view(window)
     assert window.result_atlas_mesh_combo.count() == 1
-    assert not window.result_qc_finalize_button.isEnabled()
+    assert window.result_qc_finalize_button.isEnabled()
+    assert "QC warnings" in window.result_qc_finalize_button.text()
+    assert "1 implausible" in window.result_qc_warning_label.text()
     assert not window._registration_results_released()
     assert len(window._result_review.registration_qc) == 2
+    window._finalize_registration_qc_review()
+    assert window.page_stack.currentIndex() == 5
+    assert window._registration_qc_decisions["subject-1"] == "fail"
+    assert not window.result_qc_warning_label.isHidden()
+    window._result_review_succeeded(window._result_review)
+    assert window.page_stack.currentIndex() == 5
+    assert not window.result_qc_warning_label.isHidden()
+    assert window._registration_qc_decisions["subject-1"] == "fail"
 
 
 def test_pending_camera_or_navigation_preview_cannot_be_approved(review_window):
@@ -476,7 +516,8 @@ def test_optional_concern_becomes_required_and_cannot_be_hidden(flagged_window):
     assert set(required_registration_inspections(
         window._result_review, window._registration_qc_decisions
     )) == {"subject-1", "subject-2"}
-    assert not window.result_qc_finalize_button.isEnabled()
+    assert window.result_qc_finalize_button.isEnabled()
+    assert "1 uncertain" in window.result_qc_warning_label.text()
     flagged_group = window.result_atlas_mesh_group_combo.findData("flagged")
     assert window.result_atlas_mesh_group_combo.itemText(flagged_group) == "Required review (2)"
     window.result_atlas_mesh_group_combo.setCurrentIndex(flagged_group)
@@ -523,3 +564,41 @@ def test_malformed_release_scope_is_rejected(flagged_review, scope):
     path.write_text(json.dumps(payload), encoding="utf-8")
     with pytest.raises(ModernResultReviewError):
         require_registration_release(flagged_review, decisions, inspections)
+
+
+def test_valid_legacy_approval_release_still_opens(visual_review):
+    from diffeoforge.desktop.registration_release import LEGACY_POLICY, _visual_review_scope
+
+    decisions, inspections = _approvals(visual_review)
+    release_registration_results(visual_review, decisions, inspections)
+    path = registration_qc_directory(visual_review) / RELEASE_NAME
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    scope = _visual_review_scope(visual_review, decisions, inspections, policy=LEGACY_POLICY)
+    final = finalize_registration_qc_review(
+        visual_review, decisions, allow_incomplete=True, visual_review_scope=scope
+    )
+    payload.update(schema_version="0.2", policy=LEGACY_POLICY, visual_review_scope=scope,
+                   finalized_review_sha256=final.sha256)
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    require_registration_release(visual_review, decisions, inspections)
+
+
+def test_cannot_relabel_concerns_as_all_plausible(visual_review):
+    decisions, inspections = _approvals(visual_review)
+    decisions["subject-2"] = "fail"
+    release_registration_results(visual_review, decisions, inspections)
+    path = registration_qc_directory(visual_review) / RELEASE_NAME
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload["visual_review_scope"]["all_required_plausible"] = True
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    with pytest.raises(ModernResultReviewError):
+        require_registration_release(visual_review, decisions, inspections)
+
+
+def test_disabled_ratings_explain_inspection_requirement(review_window):
+    window = review_window
+    assert not window.result_qc_fail_button.isEnabled()
+    assert "confirm below" in window.result_qc_decision_hint.text()
+    window.result_qc_inspected_check.setChecked(True)
+    assert window.result_qc_fail_button.isEnabled()
+    assert "implausible" in window.result_qc_decision_hint.text()

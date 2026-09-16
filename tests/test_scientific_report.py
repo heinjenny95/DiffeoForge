@@ -102,3 +102,20 @@ def test_scientific_report_verify_cli(tmp_path: Path, capsys: pytest.CaptureFixt
 
     assert main(["scientific-report-verify", str(artifact.directory)]) == 0
     assert "Scientific report verified" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("decision,status", [("fail", "not_supported"), ("uncertain", "partial")])
+def test_review_completion_does_not_claim_plausibility(tmp_path: Path, decision, status) -> None:
+    from diffeoforge.desktop.reference_result_review import finalize_registration_qc_review
+    from diffeoforge.scientific_report import render_scientific_report_html
+
+    run = _run_result(tmp_path)
+    initial = collect_scientific_atlas_report(run, created_at=FIXED_TIME)
+    decisions = {item.subject: "pass" for item in initial.subjects}
+    decisions[initial.subjects[0].subject] = decision
+    finalize_registration_qc_review(initial.review, decisions)
+    report = collect_scientific_atlas_report(run, created_at=FIXED_TIME)
+    assert next(c.status for c in report.claims if c.claim_id == "registration_quality") == status
+    assert len(report.subjects) == len(initial.subjects)
+    assert "Exploratory results" in render_scientific_report_html(report)
+    assert "All specimens remain included" in render_scientific_report_html(report)

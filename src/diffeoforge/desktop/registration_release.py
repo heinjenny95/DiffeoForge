@@ -18,7 +18,8 @@ from diffeoforge.mesh import sha256_file
 from diffeoforge.registration_screening import inspection_threshold
 
 RELEASE_NAME = "registration-results-release.json"
-POLICY = "flagged-registration-visual-approval-v1"
+LEGACY_POLICY = "flagged-registration-visual-approval-v1"
+POLICY = "flagged-registration-visual-review-v2"
 
 
 def registration_inspection_plan(review: ModernResultReview) -> dict:
@@ -63,13 +64,20 @@ def required_registration_inspections(
     reasons = dict(registration_inspection_plan(review)["flagged_subjects"])
     for name, decision in decisions.items():
         if decision in {"uncertain", "fail"}:
-            reasons.setdefault(name, f"Researcher decision is {decision}; resolve before release.")
+            reasons.setdefault(name, f"Researcher decision is {decision}; retain this QC concern.")
     return reasons
 
 
-def _visual_review_scope(review, decisions, inspections) -> dict:
-    return {
-        "policy": POLICY,
+def registration_concerns(decisions: Mapping[str, str]) -> dict[str, str]:
+    """Recorded concerns remain visible; review completion never converts them to passes."""
+    return dict(sorted(
+        (name, value) for name, value in decisions.items() if value in {"uncertain", "fail"}
+    ))
+
+
+def _visual_review_scope(review, decisions, inspections, *, policy=POLICY) -> dict:
+    scope = {
+        "policy": policy,
         "screening": registration_inspection_plan(review),
         "required_subjects": sorted(required_registration_inspections(review, decisions)),
         "required_review_complete": True,
@@ -79,6 +87,16 @@ def _visual_review_scope(review, decisions, inspections) -> dict:
             if item.subject_name not in inspections
         ),
     }
+    if policy == POLICY:
+        concerns = registration_concerns(decisions)
+        scope.update(
+            review_outcome="reviewed_with_concerns" if concerns else "no_reported_concerns",
+            concern_subjects=concerns,
+            all_required_plausible=all(
+                decisions.get(name) == "pass" for name in scope["required_subjects"]
+            ),
+        )
+    return scope
 
 
 def inspection_binding(review: ModernResultReview, subject: str) -> dict[str, str]:
@@ -116,31 +134,38 @@ def load_visual_inspections(review: ModernResultReview) -> dict[str, dict[str, s
     return inspections
 
 
-def require_visual_approvals(
+def require_visual_review(
     review: ModernResultReview,
     decisions: Mapping[str, str],
     inspections: Mapping[str, Mapping[str, str]],
 ) -> None:
-    """Only flagged cases require approval; other specimens remain unreviewed."""
+    """Require acknowledged decisions, not favorable decisions, for required cases."""
     names = {item.subject_name for item in review.registration_qc}
     required = required_registration_inspections(review, decisions)
     if set(decisions) - names or any(
         value not in {"pass", "uncertain", "fail"} for value in decisions.values()
     ):
         raise ModernResultReviewError("Visual review decisions contain unknown subjects or values")
-    if any(decisions.get(name) != "pass" for name in required):
+    if any(name not in decisions for name in required):
         raise ModernResultReviewError(
-            "Results remain locked: inspect the flagged registrations and resolve all uncertain "
-            "or implausible decisions. Unflagged specimens do not require visual approval."
+            "Results remain locked: inspect each required registration and record a decision. "
+            "Uncertain and implausible decisions are allowed and remain visible as warnings."
         )
     if set(inspections) != set(decisions) or any(
         binding != inspection_binding(review, name) for name, binding in inspections.items()
     ) or any(name not in inspections for name in required):
         raise ModernResultReviewError(
-            "Results remain locked: each recorded approval needs an explicit visual-inspection "
+            "Results remain locked: each recorded decision needs an explicit visual-inspection "
             "acknowledgement. Unflagged cases can remain unreviewed; do not mark them as passed "
             "without inspection. Older QC decisions alone do not release results."
         )
+
+
+def require_visual_approvals(review, decisions, inspections) -> None:
+    """Preserve the strict meaning of legacy approval records and callers."""
+    require_visual_review(review, decisions, inspections)
+    if registration_concerns(decisions):
+        raise ModernResultReviewError("Legacy visual approval cannot contain QC concerns")
 
 
 def release_registration_results(
@@ -148,21 +173,21 @@ def release_registration_results(
     decisions: Mapping[str, str],
     inspections: Mapping[str, Mapping[str, str]],
 ) -> None:
-    """Finalize an immutable review and atomically record explicit result release."""
-    require_visual_approvals(review, decisions, inspections)
+    """Record explicit access to results, retaining negative QC and the entire cohort."""
+    require_visual_review(review, decisions, inspections)
     for path, expected in (
         (review.workflow_manifest_path, review.workflow_manifest_sha256),
         (review.bundle_manifest_path, review.bundle_manifest_sha256),
         *review.additional_manifest_bindings,
     ):
         if sha256_file(path) != expected:
-            raise ModernResultReviewError("Atlas evidence changed; reload before visual approval")
+            raise ModernResultReviewError("Atlas evidence changed; reload before finishing review")
     scope = _visual_review_scope(review, decisions, inspections)
     finalized = finalize_registration_qc_review(
         review, decisions, allow_incomplete=True, visual_review_scope=scope
     )
     payload = {
-        "schema_version": "0.2",
+        "schema_version": "0.3",
         "policy": POLICY,
         "released_at": datetime.now(UTC).isoformat(),
         "source": _source(review),
@@ -170,8 +195,9 @@ def release_registration_results(
         "visual_inspections": dict(inspections),
         "visual_review_scope": scope,
         "scientific_boundary": (
-            "Flagged cases have researcher visual plausibility approval, "
-            "not biological validation. "
+            "Required cases have recorded visual decisions, not necessarily plausibility "
+            "approval. Uncertain or implausible cases remain QC concerns; results with "
+            "concerns are exploratory, not scientifically approved. "
             "Unflagged, uninspected cases remain explicitly unreviewed. "
             "All atlas/PCA specimens and source evidence remain unchanged."
         ),
@@ -188,23 +214,29 @@ def require_registration_release(
     decisions: Mapping[str, str],
     inspections: Mapping[str, Mapping[str, str]],
 ) -> None:
-    """Fail closed for missing, legacy, changed or superseded approvals."""
-    require_visual_approvals(review, decisions, inspections)
+    """Verify explicit review completion; retain valid historical all-plausible releases."""
+    require_visual_review(review, decisions, inspections)
     path = registration_qc_directory(review) / RELEASE_NAME
     try:
         if path.is_symlink() or not path.is_file():
-            raise ValueError("Use Approve review & release results in Step 5 first")
+            raise ValueError("Use Finish review & view results in Step 5 first")
         payload = json.loads(path.read_text(encoding="utf-8"))
         finalized = load_finalized_registration_qc_review(review)
+        legacy = isinstance(payload, dict) and (
+            payload.get("schema_version"), payload.get("policy")
+        ) == ("0.2", LEGACY_POLICY)
+        if legacy:
+            require_visual_approvals(review, decisions, inspections)
+        expected_policy = LEGACY_POLICY if legacy else POLICY
         if (
             not isinstance(payload, dict)
-            or payload.get("schema_version") != "0.2"
-            or payload.get("policy") != POLICY
+            or payload.get("schema_version") != ("0.2" if legacy else "0.3")
+            or payload.get("policy") != expected_policy
             or payload.get("source") != _source(review)
             or payload.get("visual_inspections") != dict(inspections)
             or finalized is None
             or payload.get("visual_review_scope")
-            != _visual_review_scope(review, decisions, inspections)
+            != _visual_review_scope(review, decisions, inspections, policy=expected_policy)
             or dict(finalized.decisions) != {
                 item.subject_name: decisions.get(item.subject_name, "unreviewed")
                 for item in review.registration_qc
