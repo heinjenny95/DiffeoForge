@@ -13,6 +13,10 @@ researcher's installed application was not changed while developing this package
   actionable warnings. Paths, provenance and routine notices start collapsed.
   Comparison summaries distinguish numerical method checks from registration or
   biological validation; unsuccessful checks remain visible warnings.
+- Narrow data/parameter forms can wrap long rows; compact landmark action labels
+  retain format details in tooltips. GPA size settings use separate rows. Main
+  workflow pages permit horizontal scrolling as a fallback instead of silently
+  clipping controls at small window sizes or enlarged text.
 - Actual worker and preview-loader signals drive a window-scoped busy cursor
   and short activity row. Overlapping jobs do not clear each other's state.
   Unknown-duration operations use an indeterminate indicator, not invented ETA.
@@ -46,6 +50,9 @@ researcher's installed application was not changed while developing this package
 - Repository Ruff check passed. Offscreen screenshots confirm the fresh Reference
   selection and collapsed project card with warnings visible. This is not a
   substitute for native interactive acceptance with representative inputs.
+- The follow-up narrow-window pass passed 88 UI/version regressions (one expected
+  dependency skip), including both engines at 900, 1120 and 1440 pixels. Format
+  support remains available in landmark-button tooltips and accessible names.
 
 ## Limits and next acceptance
 

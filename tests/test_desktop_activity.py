@@ -156,3 +156,33 @@ def test_project_summary_collapses_paths_but_retains_warnings(application, tmp_p
     assert window.result_details.panel.isHidden()
     assert window._result is result
     window.close()
+
+
+@pytest.mark.parametrize("width", [900, 1120, 1440])
+@pytest.mark.parametrize("engine_index", [0, 1])
+def test_narrow_pages_never_silently_clip_overwide_controls(application, width, engine_index):
+    from PySide6.QtWidgets import QFormLayout, QScrollArea
+
+    from diffeoforge.desktop.widgets import DiffeoForgeWindow
+
+    window = DiffeoForgeWindow()
+    window.resize(width, 780)
+    window.engine_combo.setCurrentIndex(engine_index)
+    window.procrustes_box.show()
+    window.show()
+    application.processEvents()
+    pages = [scroll for scroll in window.findChildren(QScrollArea) if scroll.widget() is not None]
+    assert len(pages) >= 6
+    for scroll in pages:
+        assert scroll.horizontalScrollBarPolicy() == Qt.ScrollBarPolicy.ScrollBarAsNeeded
+        if scroll.isVisible():
+            assert (scroll.widget().width() <= scroll.viewport().width()
+                    or scroll.horizontalScrollBar().maximum() > 0)
+    forms = window.procrustes_box.findChildren(QFormLayout)
+    assert forms and all(
+        form.rowWrapPolicy() == QFormLayout.RowWrapPolicy.WrapLongRows for form in forms
+    )
+    assert "CSV" in window.landmarks_button.toolTip()
+    assert "planned landmarks" in window.landmark_auto_advance_check.toolTip()
+    window.close()
+    application.processEvents()

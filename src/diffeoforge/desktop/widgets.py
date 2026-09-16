@@ -1559,11 +1559,11 @@ class DiffeoForgeWindow(QMainWindow):
         self.setup_scroll = scroll
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         container = QWidget()
         container.setObjectName("content")
         layout = QVBoxLayout(container)
-        layout.setContentsMargins(52, 40, 52, 24)
+        layout.setContentsMargins(24, 24, 24, 24)
         layout.setSpacing(15)
 
         eyebrow = QLabel("STEP 1 OF 6")
@@ -1615,7 +1615,7 @@ class DiffeoForgeWindow(QMainWindow):
             "continue a verified checkpoint as a new run."
         )
         self.recover_abandoned_run_button.clicked.connect(self._select_abandoned_run)
-        resume_layout.addWidget(resume_label)
+        layout.addWidget(resume_label)
         resume_layout.addWidget(self.open_completed_run_button)
         resume_layout.addWidget(self.resume_interrupted_run_button)
         resume_layout.addWidget(self.recover_abandoned_run_button)
@@ -1663,11 +1663,11 @@ class DiffeoForgeWindow(QMainWindow):
         self.parameter_scroll = scroll
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         container = QWidget()
         container.setObjectName("content")
         layout = QVBoxLayout(container)
-        layout.setContentsMargins(52, 40, 52, 24)
+        layout.setContentsMargins(24, 24, 24, 24)
         layout.setSpacing(15)
 
         eyebrow = QLabel("STEP 2 OF 6")
@@ -1903,7 +1903,7 @@ class DiffeoForgeWindow(QMainWindow):
         self.review_scroll = scroll
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         container = QWidget()
         layout = QVBoxLayout(container)
         layout.setContentsMargins(52, 40, 52, 24)
@@ -2185,7 +2185,7 @@ class DiffeoForgeWindow(QMainWindow):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         container = QWidget()
         layout = QVBoxLayout(container)
         layout.setContentsMargins(52, 40, 52, 24)
@@ -2433,7 +2433,7 @@ class DiffeoForgeWindow(QMainWindow):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         container = QWidget()
         layout = QVBoxLayout(container)
         layout.setContentsMargins(52, 40, 52, 24)
@@ -3119,7 +3119,7 @@ class DiffeoForgeWindow(QMainWindow):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         content = QWidget()
         layout = QVBoxLayout(content)
         layout.setContentsMargins(52, 32, 52, 24)
@@ -3273,6 +3273,7 @@ class DiffeoForgeWindow(QMainWindow):
         data_form = QFormLayout()
         parameter_form = QFormLayout()
         for form in (data_form, parameter_form):
+            form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
             form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
             form.setHorizontalSpacing(22)
             form.setVerticalSpacing(12)
@@ -3748,7 +3749,8 @@ class DiffeoForgeWindow(QMainWindow):
         self.landmarks_edit.textChanged.connect(self._invalidate_input_preflight)
         self.landmarks_edit.textChanged.connect(self._update_procrustes_visibility)
         self.landmarks_edit.editingFinished.connect(self._start_input_preflight)
-        landmarks_button = QPushButton("Select CSV/TXT/FCSV/JSON…")
+        landmarks_button = QPushButton("Select file…")
+        landmarks_button.setAccessibleName("Select landmark CSV, TXT, FCSV or JSON file")
         landmarks_button.setObjectName("secondary")
         landmarks_button.setToolTip(
             "Select a canonical cohort CSV or any one tagged per-mesh TXT or Slicer "
@@ -3757,7 +3759,10 @@ class DiffeoForgeWindow(QMainWindow):
         )
         landmarks_button.clicked.connect(self._choose_landmarks)
         self.landmarks_button = landmarks_button
-        self.import_landmark_txt_button = QPushButton("Import TXT/FCSV/JSON folder…")
+        self.import_landmark_txt_button = QPushButton("Import folder…")
+        self.import_landmark_txt_button.setAccessibleName(
+            "Import landmark TXT, FCSV or JSON folder"
+        )
         self.import_landmark_txt_button.setObjectName("importLandmarkTxtButton")
         self.import_landmark_txt_button.setToolTip(
             "Match one tagged TXT or Slicer FCSV/Markups JSON file per mesh by exact "
@@ -3785,7 +3790,10 @@ class DiffeoForgeWindow(QMainWindow):
             "Procrustes. DiffeoForge imposes no study-specific ten-landmark cap."
         )
         self.landmark_auto_advance_check = QCheckBox(
-            "Automatically load the next mesh after all planned landmarks are placed"
+            "Load next mesh automatically"
+        )
+        self.landmark_auto_advance_check.setToolTip(
+            "Load the next mesh after all planned landmarks on the current mesh are placed."
         )
         self.landmark_auto_advance_check.setObjectName("autoAdvanceLandmarkMeshCheck")
         self.landmark_auto_advance_check.setChecked(True)
@@ -3843,13 +3851,14 @@ class DiffeoForgeWindow(QMainWindow):
         self.procrustes_target_size_spin.valueChanged.connect(self._procrustes_inputs_changed)
         self.procrustes_reflection_check = QCheckBox("Allow reflections")
         self.procrustes_reflection_check.toggled.connect(self._procrustes_inputs_changed)
-        procrustes_settings = QHBoxLayout()
-        procrustes_settings.addWidget(QLabel("Size treatment"))
-        procrustes_settings.addWidget(self.procrustes_scaling_combo, 1)
-        procrustes_settings.addWidget(QLabel("Working size"))
-        procrustes_settings.addWidget(self.procrustes_target_size_spin)
-        procrustes_settings.addWidget(self.procrustes_reflection_check)
-        procrustes_settings.addStretch()
+        procrustes_settings = QFormLayout()
+        procrustes_settings.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
+        procrustes_settings.addRow("Size treatment", self.procrustes_scaling_combo)
+        working_size = QHBoxLayout()
+        working_size.addWidget(self.procrustes_target_size_spin)
+        working_size.addWidget(self.procrustes_reflection_check)
+        working_size.addStretch()
+        procrustes_settings.addRow("Working size", working_size)
         procrustes_advanced = QHBoxLayout()
         self.procrustes_tolerance_spin = QDoubleSpinBox()
         self.procrustes_tolerance_spin.setDecimals(12)

@@ -1,5 +1,20 @@
 # Private-alpha build numbering
 
+## v83 — workflow clarity, activity feedback and QC mesh retention
+
+Development candidate v83 (`0.0.0.dev83`) defaults new GUI projects to Reference,
+collapses routine project/comparison detail, shows real window-scoped activity,
+and streams QC mesh objects without changing metric definitions. AFK uncertainty
+and optional fixed-noise Validation Lab scope are explicit. See the
+[implementation and limitations](V83_WORKFLOW_USABILITY.md).
+
+Initial runtime candidate `16a3a1b` passed CI, public container comparison and
+160 regressions against its frozen changed modules (one expected dependency
+skip). Its private installer was built and verified, not installed or published.
+Follow-up candidate work addresses narrow-window control clipping; candidate
+source commits and package hashes must be distinguished even before first local
+installation. No researcher project or scientific input was changed.
+
 ## v81 — pilot preparation after switching engines
 
 Private Windows build **v81**, package `0.0.0.dev81`, fixes a silent no-op in

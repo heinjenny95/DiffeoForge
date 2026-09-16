@@ -671,7 +671,11 @@ def test_desktop_window_exposes_required_project_controls(monkeypatch) -> None:
     assert auto_advance.isChecked() is True
     assert "next mesh" in auto_advance.text()
     assert window.place_landmarks_button.text().startswith("Place landmarks")
-    assert window.import_landmark_txt_button.text().startswith("Import TXT/FCSV/JSON folder")
+    assert window.import_landmark_txt_button.text().startswith("Import folder")
+    assert all(
+        format_name in window.import_landmark_txt_button.toolTip()
+        for format_name in ("TXT", "FCSV", "JSON")
+    )
     assert window.create_button.isEnabled() is False
     assert all(isinstance(step, QPushButton) for step in window.rail_steps)
     assert window.rail_steps[0].isEnabled() is True
