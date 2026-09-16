@@ -15,6 +15,32 @@ Follow-up candidate work addresses narrow-window control clipping; candidate
 source commits and package hashes must be distinguished even before first local
 installation. No researcher project or scientific input was changed.
 
+### Verified local v83 delivery
+
+On 2026-09-16, the user authorized installation of the tested private candidate
+from clean runtime snapshot `e6e322b215512e19c28198354f5a9e9dc2967aa4`.
+Subsequent `9cecc6e` changes concern tests/CI/docs only; application, installer
+and dependency files are identical to that runtime build. All three final CI
+workflows passed, including the isolated Windows installer lifecycle.
+
+The existing v82 app was closed normally after desktop access was restored.
+Its complete 2,687-file installation was preserved in a separate, hash-verified
+backup. The v83 setup completed without a Windows restart. All 2,676 bundled
+application files match the built inventory; source/version evidence, the desktop
+shortcut and Windows registration were verified. The installed startup smoke
+passed and the native app reopened as **DiffeoForge v83 (Private Alpha)**, with
+Deformetrica Reference selected on the empty new-project page.
+
+Protected research files remained byte-identical; saved landmark/configuration/
+review metadata were separately backed up. No atlas or Validation Lab run was
+started. This is authorized same-owner local delivery, not a signed public
+release, independent first-use acceptance or scientific validation.
+
+- Installed executable SHA-256:
+  `90392c5a2daad734976190d4d6054321be44860c2955b95d6ec6bb108258fb66`.
+- Installed setup SHA-256:
+  `5615ade86a4ceb508f0e767676720dc3475f7aa4995e690b2432ce21df88594f`.
+
 ## v81 — pilot preparation after switching engines
 
 Private Windows build **v81**, package `0.0.0.dev81`, fixes a silent no-op in
