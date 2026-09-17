@@ -83,6 +83,13 @@ from diffeoforge.desktop.project_setup import (
     create_project,
     load_existing_reference_project,
 )
+from diffeoforge.desktop.recent_projects import (
+    MODERN_ENGINE,
+    RecentProject,
+    available_recent_projects,
+    record_recent_project,
+    recent_project_from_inputs,
+)
 from diffeoforge.desktop.reference_calibration_dialog import (
     ReferenceCalibrationDialog,
 )
@@ -1481,6 +1488,7 @@ class DiffeoForgeWindow(QMainWindow):
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setFocus(Qt.FocusReason.OtherFocusReason)
         self._update_engine_explanation()
+        self._restore_recent_project_inputs()
         self._sync_ready_state()
 
     def _build_ui(self) -> None:
@@ -1596,6 +1604,14 @@ class DiffeoForgeWindow(QMainWindow):
         resume_layout.setSpacing(10)
         resume_label = QLabel("Returning to an existing analysis?")
         resume_label.setObjectName("hint")
+        self.recent_projects_button = QPushButton("Recent projects…")
+        self.recent_projects_button.setObjectName("secondary")
+        self.recent_projects_button.setToolTip(
+            "Fill the fields below with the inputs of a recently opened project. "
+            "Nothing is loaded, verified, or changed until you choose explicitly."
+        )
+        self.recent_projects_button.clicked.connect(self._select_recent_project)
+        self.recent_projects_button.hide()
         self.open_completed_run_button = QPushButton("Open completed run…")
         self.open_completed_run_button.setObjectName("secondary")
         self.open_completed_run_button.setToolTip(
@@ -1616,6 +1632,7 @@ class DiffeoForgeWindow(QMainWindow):
         )
         self.recover_abandoned_run_button.clicked.connect(self._select_abandoned_run)
         layout.addWidget(resume_label)
+        resume_layout.addWidget(self.recent_projects_button)
         resume_layout.addWidget(self.open_completed_run_button)
         resume_layout.addWidget(self.resume_interrupted_run_button)
         resume_layout.addWidget(self.recover_abandoned_run_button)
@@ -6843,6 +6860,113 @@ class DiffeoForgeWindow(QMainWindow):
             return False
         return True
 
+    def _restore_recent_project_inputs(self) -> None:
+        """Offer the most recently opened project instead of an empty first screen.
+
+        This only fills in the inputs the researcher chose before. It never opens,
+        verifies, or changes a project: the existing resume path still runs every
+        check it ran before, and it still requires an explicit click.
+        """
+
+        try:
+            entries = available_recent_projects()
+        except Exception:  # noqa: BLE001 - convenience state must never block startup
+            entries = ()
+        self._recent_projects = entries
+        self.recent_projects_button.setVisible(bool(entries))
+        if not entries:
+            return
+        self._apply_recent_project(entries[0], announce=True)
+
+    def _apply_recent_project(self, entry: RecentProject, *, announce: bool) -> None:
+        """Copy one remembered entry into the first-screen fields."""
+
+        engine = (
+            DesktopEngine.MODERN_CPU
+            if entry.engine == MODERN_ENGINE
+            else DesktopEngine.DEFORMETRICA_REFERENCE
+        )
+        engine_index = self.engine_combo.findData(engine)
+        if engine_index >= 0:
+            self.engine_combo.setCurrentIndex(engine_index)
+        self.mesh_edit.setText(str(entry.mesh_directory))
+        self.project_edit.setText(str(entry.project_directory))
+        self.pattern_edit.setText(entry.subject_pattern)
+        unit_index = self.units_combo.findData(entry.coordinate_unit)
+        if unit_index >= 0:
+            self.units_combo.setCurrentIndex(unit_index)
+        self.name_edit.setText(entry.project_name or "")
+        self.template_edit.setText(str(entry.template) if entry.template else "")
+        self.landmarks_edit.setText(str(entry.landmarks) if entry.landmarks else "")
+        if announce:
+            self.data_status_label.setObjectName("status")
+            self.data_status_label.setStyleSheet("")
+            self.data_status_label.setText(
+                "Filled in from the project you opened last. Nothing has been loaded or "
+                "changed yet — check the fields, then choose an action below."
+            )
+
+    @Slot()
+    def _select_recent_project(self) -> None:
+        """Let the researcher pick one remembered project without loading it."""
+
+        if self._worker is not None:
+            return
+        try:
+            entries = available_recent_projects()
+        except Exception:  # noqa: BLE001 - convenience state must never block the screen
+            entries = ()
+        self._recent_projects = entries
+        self.recent_projects_button.setVisible(bool(entries))
+        if not entries:
+            self.data_status_label.setObjectName("status")
+            self.data_status_label.setStyleSheet("")
+            self.data_status_label.setText(
+                "No remembered project folder still contains a generated configuration."
+            )
+            return
+        labels = [entry.label for entry in entries]
+        chosen, accepted = QInputDialog.getItem(
+            self,
+            "Recent projects",
+            "Fill the fields with the inputs of:",
+            labels,
+            0,
+            False,
+        )
+        if not accepted:
+            return
+        self._apply_recent_project(entries[labels.index(chosen)], announce=True)
+        self._sync_ready_state()
+
+    def _remember_current_project(self, result: ProjectSetupResult) -> None:
+        """Record the inputs of a project that was just created or reopened.
+
+        Recording is best-effort convenience state. A failure here must never
+        affect the project, so every error is swallowed deliberately.
+        """
+
+        project_text = self.project_edit.text().strip()
+        mesh_text = self.mesh_edit.text().strip()
+        unit = self.units_combo.currentData()
+        if not project_text or not mesh_text or unit is None:
+            return
+        try:
+            entry = recent_project_from_inputs(
+                engine=str(result.engine),
+                project_directory=project_text,
+                mesh_directory=mesh_text,
+                subject_pattern=self.pattern_edit.text().strip() or "*.vtk",
+                coordinate_unit=str(unit),
+                project_name=self.name_edit.text().strip() or None,
+                template=self.template_edit.text().strip() or None,
+                landmarks=self.landmarks_edit.text().strip() or None,
+            )
+            self._recent_projects = record_recent_project(entry)
+        except Exception:  # noqa: BLE001 - never let convenience state break a project
+            return
+        self.recent_projects_button.setVisible(bool(self._recent_projects))
+
     def _existing_configuration_path_from_form(self) -> Path | None:
         project_text = self.project_edit.text().strip()
         if not project_text:
@@ -8132,6 +8256,7 @@ class DiffeoForgeWindow(QMainWindow):
     def _project_succeeded(self, result: ProjectSetupResult) -> None:
         self._worker = None
         self._result = result
+        self._remember_current_project(result)
         self.status_label.setObjectName("statusSuccess")
         self.status_label.setStyleSheet("")
         self.status_label.setText(
