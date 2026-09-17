@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "diffeoforge"
-version = "0.0.0.dev83"
+version = "0.0.0.dev84"
 description = "Reproducible diffeomorphic atlas workflows for 3D surface meshes"
 readme = "README.md"
 requires-python = ">=3.11"

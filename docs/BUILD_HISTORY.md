@@ -1,5 +1,22 @@
 # Private-alpha build numbering
 
+## v84 — recent projects on the first screen and unattended outward search
+
+Development candidate v84 (`0.0.0.dev84`) packages two merged changes: the first
+screen now offers up to eight recently opened projects and prefills the last one
+(#190), and an unattended AFK pilot may widen a boundary-limited search up to
+four times the tested maximum, writing `automatic_search_budget_exhausted` when
+that budget ends (#191). No metric definition, engine, protocol or schema
+version changed.
+
+Both pull requests passed all ten CI jobs on their own heads and were
+squash-merged into `codex/deformetrica-first-workflow` as `c607efd` and
+`e31ac9b`. This version bump is the first run that exercises the combined state.
+Nothing has been frozen, built, installed or published at this point; the
+freeze, dependency-metadata/SBOM, installer-build and installation evidence for
+v84 are still outstanding, and no researcher project or scientific input was
+changed.
+
 ## v83 — workflow clarity, activity feedback and QC mesh retention
 
 Development candidate v83 (`0.0.0.dev83`) defaults new GUI projects to Reference,
