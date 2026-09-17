@@ -23,7 +23,7 @@ import json
 import os
 from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from importlib.resources import files
 from pathlib import Path
 from typing import Any
@@ -244,9 +244,7 @@ def recent_project_from_inputs(
 
     if engine not in _CONFIG_FILENAMES:
         raise ValueError(f"Unsupported desktop engine identifier: {engine}")
-    stamp = recorded_at or datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace(
-        "+00:00", "Z"
-    )
+    stamp = recorded_at or datetime.now(UTC).isoformat(timespec="seconds")
     return RecentProject(
         engine=engine,
         project_directory=Path(project_directory),
