@@ -87,8 +87,8 @@ from diffeoforge.desktop.recent_projects import (
     MODERN_ENGINE,
     RecentProject,
     available_recent_projects,
-    record_recent_project,
     recent_project_from_inputs,
+    record_recent_project,
 )
 from diffeoforge.desktop.reference_calibration_dialog import (
     ReferenceCalibrationDialog,
