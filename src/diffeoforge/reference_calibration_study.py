@@ -390,6 +390,104 @@ def _append_event(
     return record
 
 
+def _validated_outward_safety_limits(
+    limits: Mapping[str, tuple[float, float]] | None,
+) -> dict[str, tuple[float, float]] | None:
+    """Check the feasibility intervals an unattended outward search may explore.
+
+    These intervals are the researcher's declaration that a parameter stops being
+    anatomically meaningful beyond them.  They are the only thing that terminates
+    an automatic outward search whose comparison score keeps preferring the
+    outermost candidate, so they are validated strictly rather than coerced.
+    """
+
+    if limits is None:
+        return None
+    if not isinstance(limits, Mapping) or not limits:
+        raise ValueError("Outward safety limits must be a non-empty mapping")
+    validated: dict[str, tuple[float, float]] = {}
+    for parameter, bounds in limits.items():
+        if not isinstance(parameter, str) or not parameter:
+            raise ValueError("Each outward safety limit must name a parameter")
+        if isinstance(bounds, (str, bytes)) or len(tuple(bounds)) != 2:
+            raise ValueError(
+                f"Outward safety limit for {parameter!r} must be a (low, high) pair"
+            )
+        low, high = (float(value) for value in bounds)
+        if not math.isfinite(low) or not math.isfinite(high):
+            raise ValueError(
+                f"Outward safety limit for {parameter!r} must be finite"
+            )
+        if low <= 0.0 or high <= 0.0:
+            raise ValueError(
+                f"Outward safety limit for {parameter!r} must be positive"
+            )
+        if low >= high:
+            raise ValueError(
+                f"Outward safety limit for {parameter!r} must be an increasing interval"
+            )
+        validated[parameter] = (low, high)
+    return validated
+
+
+DEFAULT_OUTWARD_SAFETY_FACTOR = 4.0
+
+
+def default_outward_safety_limits(
+    plan: ReferenceCalibrationPlan,
+    *,
+    factor: float = DEFAULT_OUTWARD_SAFETY_FACTOR,
+) -> dict[str, tuple[float, float]]:
+    """Derive feasibility intervals from the tested grid, without inventing scale.
+
+    Each interval spans ``factor`` times outward from the smallest and largest value
+    the plan already tests for that parameter. The result is a deterministic
+    starting proposal for an unattended outward search; it is displayed before the
+    researcher authorizes it and is never applied silently.
+    """
+
+    if not isinstance(factor, (int, float)) or isinstance(factor, bool):
+        raise TypeError("Outward safety factor must be a number")
+    if not math.isfinite(float(factor)) or float(factor) <= 1.0:
+        raise ValueError("Outward safety factor must be greater than one")
+    observed: dict[str, list[float]] = {}
+    for stage in plan.stages:
+        for candidate in stage.candidates:
+            for parameter, value in candidate.parameter_values.items():
+                numeric = float(value)
+                if not math.isfinite(numeric) or numeric <= 0.0:
+                    continue
+                observed.setdefault(parameter, []).append(numeric)
+    limits: dict[str, tuple[float, float]] = {}
+    for parameter, values in observed.items():
+        if len(values) < 2:
+            continue
+        limits[parameter] = (min(values) / float(factor), max(values) * float(factor))
+    return limits
+
+
+def _outward_budget_exhausted_reason(
+    boundary_parameters: tuple[str, ...],
+    limits: Mapping[str, tuple[float, float]] | None,
+) -> str:
+    """Explain in the recorded selection why no further outward evidence exists."""
+
+    declared = ", ".join(
+        f"{parameter} in [{low:g}, {high:g}]"
+        for parameter, (low, high) in sorted((limits or {}).items())
+    )
+    reached = ", ".join(boundary_parameters) or "the tested boundary"
+    return (
+        "Unattended outward search exhausted: the preferred candidate still sits on "
+        f"{reached}, and the next outward neighbors would leave the feasibility "
+        f"limits declared before the run ({declared}). The boundary candidate below "
+        "was recorded so the pilot could finish; it is NOT an enclosed optimum. Treat "
+        "a repeated boundary win as evidence that the comparison score, not the "
+        "anatomy, is driving the result, and review the residuals and reconstructions "
+        "before using these values. "
+    )
+
+
 def _find_plan(config: Mapping[str, Any]) -> ReferenceCalibrationPlan:
     try:
         provenance = config["project"]["parameter_provenance"]["recommendation"][
@@ -1469,6 +1567,7 @@ class ReferenceCalibrationStudyRunner:
         event_callback: StudyEventCallback | None = None,
         afk: bool = False,
         visual_approvals: Mapping[str, bool] | None = None,
+        afk_outward_safety_limits: Mapping[str, tuple[float, float]] | None = None,
     ) -> ReferenceCalibrationStudySnapshot:
         """Run every remaining stage and record provisional automatic selections.
 
@@ -1485,6 +1584,13 @@ class ReferenceCalibrationStudyRunner:
         )
         if not isinstance(afk, bool):
             raise TypeError("AFK authorization must be an explicit boolean")
+        declared_outward_limits = _validated_outward_safety_limits(
+            afk_outward_safety_limits
+        )
+        if declared_outward_limits is not None and not afk:
+            raise ReferenceCalibrationStudyError(
+                "Outward safety limits only authorize the unattended AFK route"
+            )
         approvals = {}
         for event in _load_events(self.study_directory) if afk else ():
             if (
@@ -1504,7 +1610,11 @@ class ReferenceCalibrationStudyRunner:
                 self.study_directory,
                 "afk_policy_authorized",
                 {
-                    "policy": "bounded-pilot-provisional-v1",
+                    "policy": (
+                        "bounded-pilot-outward-v1"
+                        if declared_outward_limits is not None
+                        else "bounded-pilot-provisional-v1"
+                    ),
                     "remaining_stage_ids": [
                         stage.stage_id
                         for stage in initial.plan.stages
@@ -1512,13 +1622,26 @@ class ReferenceCalibrationStudyRunner:
                     ],
                     "plan_fingerprint": initial.plan.fingerprint,
                     "accept_eligible_ambiguous_or_boundary_recommendations": True,
-                    "outward_search": False,
+                    "outward_search": declared_outward_limits is not None,
+                    "outward_safety_limits": (
+                        {
+                            parameter: list(bounds)
+                            for parameter, bounds in sorted(
+                                declared_outward_limits.items()
+                            )
+                        }
+                        if declared_outward_limits is not None
+                        else None
+                    ),
                     "visual_approval_implied": False,
                     "atlas_launch_authorized": False,
                     "visual_review_stage_id": initial_stage,
                     "visual_approvals": approvals,
                 },
             )
+        outward_budget_exhausted = False
+        exhausted_stage_id: str | None = None
+        exhausted_boundary_parameters: tuple[str, ...] = ()
         while True:
             snapshot = load_reference_calibration_study(self.study_directory)
             if snapshot.status == "completed" or self._cancel_requested:
@@ -1555,17 +1678,26 @@ class ReferenceCalibrationStudyRunner:
                     + ", ".join(candidate.candidate_id for candidate in incomplete)
                 )
             assessment = assess_reference_calibration_snapshot(snapshot)
+            # A study that already descends from an outward successor carries its own
+            # inherited limits.  The first study in an unattended series has none, so
+            # the limits the researcher declared before the run authorize it instead.
+            available_limits = (
+                snapshot.search_extension_safety_limits
+                if snapshot.search_extension_safety_limits is not None
+                else declared_outward_limits
+            )
             if (
-                not afk
+                (not afk or declared_outward_limits is not None)
                 and not assessment.automatic_selection_allowed
                 and assessment.search_range_status == "not_bounded"
-                and snapshot.search_extension_safety_limits is not None
+                and available_limits is not None
+                and exhausted_stage_id != assessment.stage_id
             ):
                 boundary_parameters = {
                     value.split(":", maxsplit=1)[0]
                     for value in assessment.search_boundary_parameters
                 }
-                inherited_limits = dict(snapshot.search_extension_safety_limits)
+                inherited_limits = dict(available_limits)
                 missing = sorted(boundary_parameters - set(inherited_limits))
                 if missing:
                     raise ReferenceCalibrationStudyError(
@@ -1595,32 +1727,62 @@ class ReferenceCalibrationStudyRunner:
                 except ReferenceCalibrationStudyError as error:
                     if "Safety limit reached" not in str(error):
                         raise
-                    raise ReferenceCalibrationStudyError(
-                        "Search range not bounded: the preferred candidate remains on "
-                        "the tested boundary, but the next outward candidates would "
-                        f"cross the declared feasibility limit. {error}"
-                    ) from error
-                source = self.study_directory
-                self.study_directory = successor.study_directory
-                if event_callback is not None:
-                    event_callback(
+                    if declared_outward_limits is None:
+                        raise ReferenceCalibrationStudyError(
+                            "Search range not bounded: the preferred candidate remains "
+                            "on the tested boundary, but the next outward candidates "
+                            f"would cross the declared feasibility limit. {error}"
+                        ) from error
+                    # The unattended route exhausted the outward budget the researcher
+                    # declared.  Stopping here would leave the pilot half-finished
+                    # overnight without adding evidence, so the boundary candidate is
+                    # recorded with an explicit exhaustion notice instead.
+                    outward_budget_exhausted = True
+                    exhausted_boundary_parameters = tuple(
+                        sorted(assessment.search_boundary_parameters)
+                    )
+                    exhausted_stage_id = assessment.stage_id
+                    exhaustion = _append_event(
+                        self.study_directory,
+                        "automatic_search_budget_exhausted",
                         {
-                            "event": "automatic_search_extended",
-                            "source_study_directory": str(source),
-                            "study_directory": str(successor.study_directory),
-                            "extension_round": successor.search_extension_round,
                             "stage_id": assessment.stage_id,
                             "boundary_parameters": list(
                                 assessment.search_boundary_parameters
                             ),
-                            "pending_candidate_ids": [
-                                candidate.candidate_id
-                                for candidate in successor.candidates
-                                if candidate.status != "completed"
-                            ],
-                        }
+                            "declared_safety_limits": {
+                                parameter: list(bounds)
+                                for parameter, bounds in sorted(active_limits.items())
+                            },
+                            "consequence": (
+                                "boundary_candidate_recorded_without_further_outward_search"
+                            ),
+                        },
                     )
-                continue
+                    if event_callback is not None:
+                        event_callback(exhaustion)
+                else:
+                    source = self.study_directory
+                    self.study_directory = successor.study_directory
+                    if event_callback is not None:
+                        event_callback(
+                            {
+                                "event": "automatic_search_extended",
+                                "source_study_directory": str(source),
+                                "study_directory": str(successor.study_directory),
+                                "extension_round": successor.search_extension_round,
+                                "stage_id": assessment.stage_id,
+                                "boundary_parameters": list(
+                                    assessment.search_boundary_parameters
+                                ),
+                                "pending_candidate_ids": [
+                                    candidate.candidate_id
+                                    for candidate in successor.candidates
+                                    if candidate.status != "completed"
+                                ],
+                            }
+                        )
+                    continue
             stage_id = snapshot.current_stage.stage_id if snapshot.current_stage else ""
             if self._cancel_requested:
                 return snapshot
@@ -1629,6 +1791,15 @@ class ReferenceCalibrationStudyRunner:
                     self.study_directory,
                     afk=True,
                     visual_approvals=approvals if stage_id == initial_stage else {},
+                    selection_reason_prefix=(
+                        _outward_budget_exhausted_reason(
+                            exhausted_boundary_parameters,
+                            declared_outward_limits,
+                        )
+                        if outward_budget_exhausted
+                        and exhausted_stage_id == stage_id
+                        else ""
+                    ),
                 )
             else:
                 updated, assessment = select_reference_calibration_stage_automatically(
@@ -2463,6 +2634,7 @@ def select_reference_calibration_stage_automatically(
     *,
     afk: bool = False,
     visual_approvals: Mapping[str, bool] | None = None,
+    selection_reason_prefix: str = "",
 ) -> tuple[ReferenceCalibrationStudySnapshot, CalibrationStageAssessment]:
     """Advance one stage using the transparent provisional balanced recommendation."""
 
@@ -2488,7 +2660,8 @@ def select_reference_calibration_stage_automatically(
         )
         if (
             consent is None
-            or consent.get("policy") != "bounded-pilot-provisional-v1"
+            or consent.get("policy")
+            not in {"bounded-pilot-provisional-v1", "bounded-pilot-outward-v1"}
             or consent.get("plan_fingerprint") != snapshot.plan.fingerprint
             or snapshot.current_stage.stage_id
             not in consent.get("remaining_stage_ids", [])
@@ -2530,10 +2703,11 @@ def select_reference_calibration_stage_automatically(
             else "automatic_provisional_balanced_score"
         ),
         selection_reason=(
-            (
+            str(selection_reason_prefix)
+            + (
                 "Pre-authorized AFK policy: accept the eligible balanced recommendation "
                 "within the existing pilot grid, including ambiguous or boundary-limited "
-                "evidence; no outward search, visual approval or atlas launch. "
+                "evidence; no visual approval or atlas launch. "
                 if afk
                 else ""
             )

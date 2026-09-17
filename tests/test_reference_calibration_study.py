@@ -1290,3 +1290,266 @@ def test_automatic_pilot_pauses_on_subject_tail_ambiguity_then_continues(
         True,
         False,
     ]
+
+
+def _outward_stub_environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Stub one boundary-limited stage so only the loop's decision is exercised."""
+
+    source_directory = tmp_path / "pilot-outward"
+    source_directory.mkdir()
+    destination = tmp_path / "pilot-outward-extension-01"
+    stage = SimpleNamespace(stage_id="attachment")
+    completed_candidate = SimpleNamespace(
+        candidate_id="attachment-01", status="completed"
+    )
+    pending_candidate = SimpleNamespace(
+        candidate_id="attachment-outward-r01-01", status="pending"
+    )
+    source = SimpleNamespace(
+        study_directory=source_directory,
+        status="awaiting_review",
+        current_stage=stage,
+        candidates=(completed_candidate,),
+        search_extension_safety_limits=None,
+        selected_candidate_ids={},
+        plan=SimpleNamespace(stages=(stage,), fingerprint="fingerprint"),
+    )
+    successor = SimpleNamespace(
+        study_directory=destination,
+        status="ready",
+        current_stage=stage,
+        candidates=(completed_candidate, pending_candidate),
+        search_extension_safety_limits={"attachment_kernel_width": (0.01, 1.0)},
+        search_extension_round=1,
+        selected_candidate_ids={},
+        plan=source.plan,
+    )
+    successor_awaiting = SimpleNamespace(
+        **{
+            **successor.__dict__,
+            "status": "awaiting_review",
+            "candidates": (completed_candidate,),
+        }
+    )
+    completed = SimpleNamespace(
+        study_directory=destination,
+        status="completed",
+        current_stage=None,
+        candidates=(),
+        selected_candidate_ids={"attachment": "attachment-01"},
+        plan=source.plan,
+    )
+    bounded = SimpleNamespace(
+        automatic_selection_allowed=True,
+        search_range_status="bounded",
+        search_boundary_parameters=(),
+        stage_id="attachment",
+        balanced_candidate_id="attachment-01",
+    )
+    boundary = SimpleNamespace(
+        automatic_selection_allowed=False,
+        search_range_status="not_bounded",
+        search_boundary_parameters=("attachment_kernel_width:maximum",),
+        stage_id="attachment",
+        balanced_candidate_id="attachment-01",
+    )
+    appended: list[dict[str, object]] = []
+    monkeypatch.setattr(study_module, "_load_events", lambda _root: ())
+    monkeypatch.setattr(
+        study_module,
+        "_append_event",
+        lambda _root, event, payload: appended.append({"event": event, **dict(payload)})
+        or appended[-1],
+    )
+    monkeypatch.setattr(
+        study_module,
+        "load_reference_calibration_study",
+        lambda directory: (
+            source
+            if Path(directory).resolve() == source_directory.resolve()
+            else successor_awaiting
+        ),
+    )
+    monkeypatch.setattr(
+        study_module,
+        "assess_reference_calibration_snapshot",
+        lambda snapshot: boundary if snapshot is source else bounded,
+    )
+    monkeypatch.setattr(
+        study_module,
+        "next_reference_calibration_search_extension_destination",
+        lambda _directory: destination,
+    )
+    selections: list[dict[str, object]] = []
+
+    def select(directory, **kwargs):
+        selections.append(dict(kwargs))
+        return completed, boundary
+
+    monkeypatch.setattr(
+        study_module, "select_reference_calibration_stage_automatically", select
+    )
+    return SimpleNamespace(
+        source_directory=source_directory,
+        destination=destination,
+        successor=successor,
+        successor_awaiting=successor_awaiting,
+        completed=completed,
+        appended=appended,
+        selections=selections,
+    )
+
+
+def test_unattended_outward_search_widens_a_boundary_stage_when_declared(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    env = _outward_stub_environment(tmp_path, monkeypatch)
+    created: list[dict[str, tuple[float, float]]] = []
+
+    def create_successor(_source, _destination, *, safety_limits):
+        created.append(dict(safety_limits))
+        return env.successor
+
+    monkeypatch.setattr(
+        study_module,
+        "create_reference_calibration_search_extension_study",
+        create_successor,
+    )
+    runner = ReferenceCalibrationStudyRunner(env.source_directory)
+    monkeypatch.setattr(
+        runner, "run_current_stage", lambda *, event_callback=None: env.completed
+    )
+    observed: list[dict[str, object]] = []
+
+    result = runner.run_complete_automatic_pilot(
+        event_callback=observed.append,
+        afk=True,
+        afk_outward_safety_limits={"attachment_kernel_width": (0.01, 1.0)},
+    )
+
+    assert result is env.completed
+    assert created == [{"attachment_kernel_width": (0.01, 1.0)}]
+    assert runner.study_directory == env.destination
+    assert any(e["event"] == "automatic_search_extended" for e in observed)
+    consent = next(e for e in env.appended if e["event"] == "afk_policy_authorized")
+    assert consent["policy"] == "bounded-pilot-outward-v1"
+    assert consent["outward_search"] is True
+    assert consent["outward_safety_limits"] == {
+        "attachment_kernel_width": [0.01, 1.0]
+    }
+
+
+def test_unattended_outward_search_stays_off_unless_limits_are_declared(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    env = _outward_stub_environment(tmp_path, monkeypatch)
+
+    def create_successor(*_args, **_kwargs):  # pragma: no cover - must not run
+        raise AssertionError("AFK widened the search without declared limits")
+
+    monkeypatch.setattr(
+        study_module,
+        "create_reference_calibration_search_extension_study",
+        create_successor,
+    )
+    runner = ReferenceCalibrationStudyRunner(env.source_directory)
+    monkeypatch.setattr(
+        runner, "run_current_stage", lambda *, event_callback=None: env.completed
+    )
+
+    result = runner.run_complete_automatic_pilot(afk=True)
+
+    assert result is env.completed
+    consent = next(e for e in env.appended if e["event"] == "afk_policy_authorized")
+    assert consent["policy"] == "bounded-pilot-provisional-v1"
+    assert consent["outward_search"] is False
+    assert consent["outward_safety_limits"] is None
+
+
+def test_exhausted_outward_budget_records_the_boundary_choice_with_a_notice(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    env = _outward_stub_environment(tmp_path, monkeypatch)
+
+    def refuse(*_args, **_kwargs):
+        raise ReferenceCalibrationStudyError(
+            "Safety limit reached for attachment_kernel_width"
+        )
+
+    monkeypatch.setattr(
+        study_module, "create_reference_calibration_search_extension_study", refuse
+    )
+    runner = ReferenceCalibrationStudyRunner(env.source_directory)
+    monkeypatch.setattr(
+        runner, "run_current_stage", lambda *, event_callback=None: env.completed
+    )
+    observed: list[dict[str, object]] = []
+
+    result = runner.run_complete_automatic_pilot(
+        event_callback=observed.append,
+        afk=True,
+        afk_outward_safety_limits={"attachment_kernel_width": (0.01, 1.0)},
+    )
+
+    assert result is env.completed
+    exhausted = next(
+        e for e in env.appended if e["event"] == "automatic_search_budget_exhausted"
+    )
+    assert exhausted["stage_id"] == "attachment"
+    assert exhausted["boundary_parameters"] == ["attachment_kernel_width:maximum"]
+    assert any(
+        e["event"] == "automatic_search_budget_exhausted" for e in observed
+    )
+    prefix = env.selections[-1]["selection_reason_prefix"]
+    assert "Unattended outward search exhausted" in prefix
+    assert "NOT an enclosed optimum" in prefix
+
+
+def test_outward_limits_require_the_unattended_route(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    env = _outward_stub_environment(tmp_path, monkeypatch)
+    runner = ReferenceCalibrationStudyRunner(env.source_directory)
+
+    with pytest.raises(
+        ReferenceCalibrationStudyError, match="only authorize the unattended AFK route"
+    ):
+        runner.run_complete_automatic_pilot(
+            afk_outward_safety_limits={"attachment_kernel_width": (0.01, 1.0)}
+        )
+
+
+@pytest.mark.parametrize(
+    "limits",
+    [
+        {},
+        {"x": (1.0,)},
+        {"x": (-1.0, 2.0)},
+        {"x": (2.0, 1.0)},
+        {"x": (0.0, 1.0)},
+        {"": (1.0, 2.0)},
+    ],
+)
+def test_outward_safety_limits_are_validated_strictly(limits) -> None:
+    with pytest.raises(ValueError):
+        study_module._validated_outward_safety_limits(limits)
+
+
+def test_default_outward_limits_come_from_the_tested_grid() -> None:
+    plan = SimpleNamespace(
+        stages=(
+            SimpleNamespace(
+                candidates=(
+                    SimpleNamespace(parameter_values={"noise_std": 0.02}),
+                    SimpleNamespace(parameter_values={"noise_std": 0.08}),
+                    SimpleNamespace(parameter_values={"fixed": 1.0}),
+                )
+            ),
+        )
+    )
+
+    limits = study_module.default_outward_safety_limits(plan, factor=4.0)
+
+    assert limits == {"noise_std": (0.005, 0.32)}
+    # A parameter that never varies gets no interval to widen.
+    assert "fixed" not in limits

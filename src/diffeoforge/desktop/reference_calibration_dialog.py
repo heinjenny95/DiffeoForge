@@ -51,6 +51,7 @@ from diffeoforge.reference_calibration_study import (
     ReferenceCalibrationStudySnapshot,
     assess_reference_calibration_snapshot,
     create_reference_calibration_search_extension_study,
+    default_outward_safety_limits,
     load_reference_calibration_report,
     load_reference_calibration_study,
     next_reference_calibration_search_extension_destination,
@@ -191,11 +192,15 @@ class _CalibrationStageWorker(QRunnable):
         complete_automatic_pilot: bool = False,
         afk: bool = False,
         visual_approvals: Mapping[str, bool] | None = None,
+        outward_safety_limits: Mapping[str, tuple[float, float]] | None = None,
     ) -> None:
         super().__init__()
         self.runner = runner
         self.complete_automatic_pilot = complete_automatic_pilot
         self.afk = afk
+        self.outward_safety_limits = (
+            dict(outward_safety_limits) if outward_safety_limits is not None else None
+        )
         self.visual_approvals = dict(visual_approvals or {})
         self.signals = _CalibrationSignals()
         self._lock = threading.Lock()
@@ -214,7 +219,13 @@ class _CalibrationStageWorker(QRunnable):
                 result = self.runner.run_complete_automatic_pilot(
                     event_callback=self.signals.event.emit,
                     **(
-                        {"afk": True, "visual_approvals": self.visual_approvals} if self.afk else {}
+                        {
+                            "afk": True,
+                            "visual_approvals": self.visual_approvals,
+                            "afk_outward_safety_limits": self.outward_safety_limits,
+                        }
+                        if self.afk
+                        else {}
                     ),
                 )
             else:
@@ -581,6 +592,20 @@ class ReferenceCalibrationDialog(QDialog):
             lambda checked: self.afk_mode.setChecked(False) if checked else None
         )
         root.addWidget(self.afk_mode)
+        self.outward_mode = QCheckBox(
+            "…and widen the search outward when the best value sits at a boundary"
+        )
+        self.outward_mode.setToolTip(
+            "Without this, an unattended pilot accepts a boundary winner and the "
+            "opportunity to widen the search is spent. With it, the pilot keeps adding "
+            "outward candidates until the winner is no longer at the edge, or until it "
+            "reaches the feasibility limits shown at Start."
+        )
+        self.outward_mode.setEnabled(False)
+        self.afk_mode.toggled.connect(
+            lambda checked: self.outward_mode.setChecked(False) if not checked else None
+        )
+        root.addWidget(self.outward_mode)
         self.progress = QProgressBar()
         self.progress.setRange(0, 1)
         self.progress.setValue(0)
@@ -1345,6 +1370,7 @@ class ReferenceCalibrationDialog(QDialog):
     def _afk_toggled(self, checked: bool) -> None:
         if checked:
             self.advanced_mode.setChecked(False)
+        self.outward_mode.setEnabled(checked)
 
     @Slot()
     def _start(self) -> None:
@@ -1352,29 +1378,59 @@ class ReferenceCalibrationDialog(QDialog):
             return
         automatic_mode = not self.advanced_mode.isChecked()
         afk = automatic_mode and self.afk_mode.isChecked()
-        if (
-            afk
-            and QMessageBox.question(
-                self,
-                "Authorize bounded AFK pilot",
-                "Run the remaining pilot stages without further selection prompts?\n\n"
-                "Accept eligible balanced recommendations provisionally, even when evidence is "
-                "ambiguous or the best tested value is at a search boundary. Keep the existing "
-                "candidate grid and iteration caps; do not add outward tests. Recorded visual "
-                "rejections remain binding. Stop on failed runs or no eligible candidate.\n\n"
-                "This does not approve anatomy or start the atlas. Review the report afterwards. "
-                "Completion by morning is not guaranteed; the computer must remain awake.",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No,
+        outward_limits: dict[str, tuple[float, float]] | None = None
+        if afk and self.outward_mode.isChecked():
+            proposed = default_outward_safety_limits(self._snapshot.plan)
+            if not proposed:
+                QMessageBox.warning(
+                    self,
+                    "Outward search unavailable",
+                    "This plan does not vary any parameter over enough values to derive "
+                    "feasibility limits, so an outward search cannot be authorized.",
+                )
+                return
+            outward_limits = proposed
+        if afk:
+            outward_text = (
+                "Widen the search outward whenever the best tested value sits at a "
+                "boundary, repeating until the winner is no longer at the edge or these "
+                "declared feasibility limits are reached:\n"
+                + "\n".join(
+                    f"    {parameter}: {low:.6g} to {high:.6g}"
+                    for parameter, (low, high) in sorted(outward_limits.items())
+                )
+                + "\n\nBeyond those limits a parameter no longer describes your anatomy, so "
+                "the run stops widening, records the boundary candidate with an explicit "
+                "exhaustion notice, and finishes. A repeated boundary win is evidence about "
+                "the comparison score, not a validated optimum.\n\n"
+                if outward_limits is not None
+                else "Keep the existing candidate grid; do not add outward tests. A boundary "
+                "winner is accepted provisionally and the chance to widen the search is "
+                "spent.\n\n"
             )
-            != QMessageBox.StandardButton.Yes
-        ):
-            return
+            if (
+                QMessageBox.question(
+                    self,
+                    "Authorize bounded AFK pilot",
+                    "Run the remaining pilot stages without further selection prompts?\n\n"
+                    "Accept eligible balanced recommendations provisionally, even when "
+                    "evidence is ambiguous. Keep the existing iteration caps. Recorded "
+                    "visual rejections remain binding. Stop on failed runs or no eligible "
+                    "candidate.\n\n" + outward_text + "This does not approve anatomy or "
+                    "start the atlas. Review the report afterwards. Completion by morning "
+                    "is not guaranteed; the computer must remain awake.",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.No,
+                )
+                != QMessageBox.StandardButton.Yes
+            ):
+                return
         runner = ReferenceCalibrationStudyRunner(self.study_directory)
         worker = _CalibrationStageWorker(
             runner,
             complete_automatic_pilot=automatic_mode,
             afk=afk,
+            outward_safety_limits=outward_limits,
             visual_approvals={
                 key: value
                 for key, value in self._visual_approvals().items()
