@@ -79,6 +79,40 @@ def test_resumable_discovery_ignores_completed_and_unverifiable_runs(
 
     assert discover_resumable_reference_runs(tmp_path) == ()
 
+    inspected = resumable_results.inspect_resumable_reference_runs(tmp_path)
+    assert inspected.runs == ()
+    assert [(item.run_directory.name, item.reason) for item in inspected.rejected] == [
+        ("interrupted", "checkpoint mismatch")
+    ]
+
+
+def test_abandoned_inspection_reports_why_a_started_run_was_rejected(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    source = tmp_path / "runs" / "unclean-001"
+    source.mkdir(parents=True)
+    (source / "manifest.json").write_text(
+        json.dumps({"backend": {"id": "deformetrica_reference"}}),
+        encoding="utf-8",
+    )
+    (source / "events.jsonl").write_text(
+        json.dumps({"timestamp": "2026-08-11T12:00:00Z", "event": "started"}) + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        resumable_results,
+        "inspect_abandoned_run",
+        lambda _path: (_ for _ in ()).throw(RuntimeError("protected input changed")),
+    )
+
+    inspected = resumable_results.inspect_abandoned_reference_runs(tmp_path)
+
+    assert inspected.runs == ()
+    assert [(item.run_directory.name, item.reason) for item in inspected.rejected] == [
+        ("unclean-001", "protected input changed")
+    ]
+
 
 def test_abandoned_discovery_returns_only_verified_started_reference_run(
     tmp_path: Path,

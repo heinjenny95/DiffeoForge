@@ -45,6 +45,30 @@ class AbandonedReferenceRun:
 
 
 @dataclass(frozen=True)
+class RejectedRunCandidate:
+    """One plausible run folder that failed full verification, with the reason."""
+
+    run_directory: Path
+    reason: str
+
+
+@dataclass(frozen=True)
+class ResumableRunDiscovery:
+    """Verified resumable runs plus the plausible candidates that were rejected."""
+
+    runs: tuple[ResumableReferenceRun, ...]
+    rejected: tuple[RejectedRunCandidate, ...]
+
+
+@dataclass(frozen=True)
+class AbandonedRunDiscovery:
+    """Verified nonterminal runs plus the plausible candidates that were rejected."""
+
+    runs: tuple[AbandonedReferenceRun, ...]
+    rejected: tuple[RejectedRunCandidate, ...]
+
+
+@dataclass(frozen=True)
 class RecoveredReferenceRun:
     """Terminal recovery result with an optional fully verified resume source."""
 
@@ -121,6 +145,13 @@ def _looks_abandoned(candidate: Path) -> bool:
     )
 
 
+def _rejection_reason(error: BaseException) -> str:
+    text = str(error).strip()
+    if isinstance(error, KeyError):
+        return f"A required manifest field is missing: {text}"
+    return text or type(error).__name__
+
+
 def _resumable_from_evidence(evidence: ResumeSourceEvidence) -> ResumableReferenceRun:
     manifest = evidence.manifest
     source_config = manifest["source_config"]
@@ -140,6 +171,12 @@ def discover_resumable_reference_runs(
 ) -> tuple[ResumableReferenceRun, ...]:
     """Find and fully verify resumable runs without recursive traversal or mutation."""
 
+    return inspect_resumable_reference_runs(directory).runs
+
+
+def inspect_resumable_reference_runs(directory: Path | str) -> ResumableRunDiscovery:
+    """Like discovery, but also report why each plausible candidate was rejected."""
+
     selected = Path(directory).expanduser()
     if selected.is_symlink() or not selected.is_dir():
         raise ResumableResultDiscoveryError(
@@ -153,22 +190,27 @@ def discover_resumable_reference_runs(
         ) from error
 
     discovered: list[ResumableReferenceRun] = []
+    rejected: list[RejectedRunCandidate] = []
     for candidate in _candidate_directories(selected):
         if not _looks_resumable(candidate):
             continue
         try:
             evidence = inspect_resume_source(candidate)
             result = _resumable_from_evidence(evidence)
-        except (KeyError, OSError, RuntimeError, TypeError, ValueError):
+        except (KeyError, OSError, RuntimeError, TypeError, ValueError) as error:
+            rejected.append(RejectedRunCandidate(candidate, _rejection_reason(error)))
             continue
         discovered.append(result)
     try:
-        return tuple(
-            sorted(
-                discovered,
-                key=lambda result: result.run_directory.stat().st_mtime_ns,
-                reverse=True,
-            )
+        return ResumableRunDiscovery(
+            tuple(
+                sorted(
+                    discovered,
+                    key=lambda result: result.run_directory.stat().st_mtime_ns,
+                    reverse=True,
+                )
+            ),
+            tuple(rejected),
         )
     except OSError as error:
         raise ResumableResultDiscoveryError(
@@ -180,6 +222,12 @@ def discover_abandoned_reference_runs(
     directory: Path | str,
 ) -> tuple[AbandonedReferenceRun, ...]:
     """Find fully verified nonterminal reference runs without changing them."""
+
+    return inspect_abandoned_reference_runs(directory).runs
+
+
+def inspect_abandoned_reference_runs(directory: Path | str) -> AbandonedRunDiscovery:
+    """Like discovery, but also report why each plausible candidate was rejected."""
 
     selected = Path(directory).expanduser()
     if selected.is_symlink() or not selected.is_dir():
@@ -194,6 +242,7 @@ def discover_abandoned_reference_runs(
         ) from error
 
     discovered: list[AbandonedReferenceRun] = []
+    rejected: list[RejectedRunCandidate] = []
     for candidate in _candidate_directories(selected):
         if not _looks_abandoned(candidate):
             continue
@@ -214,15 +263,19 @@ def discover_abandoned_reference_runs(
                     ),
                 )
             )
-        except (KeyError, OSError, RuntimeError, TypeError, ValueError):
+        except (KeyError, OSError, RuntimeError, TypeError, ValueError) as error:
+            rejected.append(RejectedRunCandidate(candidate, _rejection_reason(error)))
             continue
     try:
-        return tuple(
-            sorted(
-                discovered,
-                key=lambda result: result.run_directory.stat().st_mtime_ns,
-                reverse=True,
-            )
+        return AbandonedRunDiscovery(
+            tuple(
+                sorted(
+                    discovered,
+                    key=lambda result: result.run_directory.stat().st_mtime_ns,
+                    reverse=True,
+                )
+            ),
+            tuple(rejected),
         )
     except OSError as error:
         raise ResumableResultDiscoveryError(

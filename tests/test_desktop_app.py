@@ -22,6 +22,31 @@ from diffeoforge.mesh import read_vtk_polydata
 ROOT = Path(__file__).parents[1]
 
 
+class _InlineRunLookupPool:
+    """Run folder lookups synchronously; queue every other worker unstarted."""
+
+    def __init__(self) -> None:
+        self.queued: list = []
+
+    def start(self, worker) -> None:
+        from diffeoforge.desktop.widgets import _RunLookupWorker
+
+        if isinstance(worker, _RunLookupWorker):
+            worker.run()
+        else:
+            self.queued.append(worker)
+
+
+def _answer_yes_and_record(shown: list):
+    from PySide6.QtWidgets import QMessageBox
+
+    def warning(_parent, title, message, *_args, **_kwargs):
+        shown.append((title, message))
+        return QMessageBox.StandardButton.Yes
+
+    return warning
+
+
 def _wait_for_result_mesh(window):
     from PySide6.QtTest import QTest
     from PySide6.QtWidgets import QApplication
@@ -3986,7 +4011,10 @@ def test_desktop_can_bind_interrupted_run_to_immutable_resume_successor(
     from PySide6.QtWidgets import QApplication, QFileDialog
 
     from diffeoforge.desktop.reference_prelaunch import DesktopReferenceLaunchRequest
-    from diffeoforge.desktop.resumable_results import ResumableReferenceRun
+    from diffeoforge.desktop.resumable_results import (
+        ResumableReferenceRun,
+        ResumableRunDiscovery,
+    )
     from diffeoforge.desktop.widgets import DiffeoForgeWindow
 
     application = QApplication.instance() or QApplication(["diffeoforge-resume-run-test"])
@@ -4019,8 +4047,8 @@ def test_desktop_can_bind_interrupted_run_to_immutable_resume_successor(
         lambda *_args, **_kwargs: str(source),
     )
     monkeypatch.setattr(
-        "diffeoforge.desktop.widgets.discover_resumable_reference_runs",
-        lambda _path: (resumable,),
+        "diffeoforge.desktop.widgets.inspect_resumable_reference_runs",
+        lambda _path: ResumableRunDiscovery((resumable,), ()),
     )
     monkeypatch.setattr(
         "diffeoforge.desktop.widgets.build_reference_resume_launch_request",
@@ -4028,6 +4056,7 @@ def test_desktop_can_bind_interrupted_run_to_immutable_resume_successor(
     )
 
     window = DiffeoForgeWindow()
+    window._thread_pool = _InlineRunLookupPool()  # type: ignore[assignment]
     assert window.resume_interrupted_run_button.text() == "Resume interrupted run…"
 
     window.resume_interrupted_run_button.click()
@@ -4053,7 +4082,10 @@ def test_desktop_requires_explicit_confirmation_before_crash_recovery(
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication, QFileDialog, QMessageBox
 
-    from diffeoforge.desktop.resumable_results import AbandonedReferenceRun
+    from diffeoforge.desktop.resumable_results import (
+        AbandonedReferenceRun,
+        AbandonedRunDiscovery,
+    )
     from diffeoforge.desktop.widgets import (
         DiffeoForgeWindow,
         _AbandonedReferenceRecoveryWorker,
@@ -4069,11 +4101,8 @@ def test_desktop_requires_explicit_confirmation_before_crash_recovery(
         started_at="2026-08-11T12:00:00Z",
         checkpoint_bytes=456_789,
     )
-    queued = []
-
-    class FakePool:
-        def start(self, worker) -> None:
-            queued.append(worker)
+    pool = _InlineRunLookupPool()
+    queued = pool.queued
 
     monkeypatch.setattr(
         QFileDialog,
@@ -4081,17 +4110,12 @@ def test_desktop_requires_explicit_confirmation_before_crash_recovery(
         lambda *_args, **_kwargs: str(source),
     )
     monkeypatch.setattr(
-        "diffeoforge.desktop.widgets.discover_abandoned_reference_runs",
-        lambda _path: (abandoned,),
+        "diffeoforge.desktop.widgets.inspect_abandoned_reference_runs",
+        lambda _path: AbandonedRunDiscovery((abandoned,), ()),
     )
-    monkeypatch.setattr(
-        QMessageBox,
-        "warning",
-        lambda *_args, **_kwargs: QMessageBox.StandardButton.Yes,
-    )
-
+    monkeypatch.setattr(QMessageBox, "warning", _answer_yes_and_record(shown := []))
     window = DiffeoForgeWindow()
-    window._thread_pool = FakePool()  # type: ignore[assignment]
+    window._thread_pool = pool  # type: ignore[assignment]
     assert window.recover_abandoned_run_button.text() == "Recover after crash…"
 
     window.recover_abandoned_run_button.click()
@@ -4105,5 +4129,142 @@ def test_desktop_requires_explicit_confirmation_before_crash_recovery(
     window._abandoned_recovery_failed("test stop")
     assert window.recover_abandoned_run_button.isEnabled() is True
     assert "without declaring the run terminal" in window.status_label.text()
+    assert "without declaring the run terminal" in window.data_status_label.text()
+    assert [title for title, _message in shown] == [
+        "Confirm Deformetrica is stopped",
+        "Crash recovery stopped",
+    ]
+    window.close()
+    application.processEvents()
+
+
+@pytest.mark.parametrize(
+    ("button_name", "expected_action"),
+    [
+        ("open_completed_run_button", "Open completed run…"),
+        ("resume_interrupted_run_button", "Resume interrupted run…"),
+        ("recover_abandoned_run_button", "Recover after crash…"),
+    ],
+)
+def test_desktop_explains_a_selected_run_that_cannot_be_continued(
+    monkeypatch,
+    tmp_path,
+    button_name,
+    expected_action,
+) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QFileDialog, QMessageBox
+
+    from diffeoforge.desktop.widgets import DiffeoForgeWindow
+
+    application = QApplication.instance() or QApplication(["diffeoforge-run-lookup-test"])
+    run = tmp_path / "selected" / "runs" / "desktop-ref-crashed"
+    run.mkdir(parents=True)
+    (run / "manifest.json").write_text(
+        '{"backend":{"id":"deformetrica_reference"}}\n', encoding="utf-8"
+    )
+    (run / "result.json").write_text(
+        '{"status":"interrupted","checkpoint":{"available":false},"convergence_rows":6}\n',
+        encoding="utf-8",
+    )
+    (run / "events.jsonl").write_text('{"event":"interrupted"}\n', encoding="utf-8")
+    before = {path.name: path.read_bytes() for path in run.iterdir()}
+    monkeypatch.setattr(
+        QFileDialog, "getExistingDirectory", lambda *_args, **_kwargs: str(run)
+    )
+    monkeypatch.setattr(QMessageBox, "warning", _answer_yes_and_record(shown := []))
+    # A run without any checkpoint is rejected by the real verifier before hashing.
+    monkeypatch.setattr(
+        "diffeoforge.desktop.resumable_results.inspect_resume_source",
+        lambda _path: (_ for _ in ()).throw(
+            RuntimeError("The source run has no unique inventoried Deformetrica checkpoint")
+        ),
+    )
+
+    window = DiffeoForgeWindow()
+    pool = _InlineRunLookupPool()
+    window._thread_pool = pool  # type: ignore[assignment]
+    getattr(window, button_name).click()
+    application.processEvents()
+
+    assert window._worker is None
+    assert pool.queued == []
+    assert [title for title, _message in shown] == ["No matching run was found"]
+    message = shown[0][1]
+    assert f"“{expected_action}” found nothing it can use" in message
+    assert str(run.resolve()) in message
+    assert "desktop-ref-crashed" in message
+    assert "cannot be continued" in message or "no unique inventoried" in message
+    assert "Nothing was loaded and nothing was changed." in message
+    for label in (window.status_label, window.data_status_label):
+        assert label.objectName() == "statusError"
+        assert "found nothing it can use" in label.text()
+    # A later form refresh keeps the explanation until the user edits the form.
+    window._sync_ready_state()
+    assert "found nothing it can use" in window.data_status_label.text()
+    window.project_edit.setText(str(tmp_path / "other"))
+    assert "found nothing it can use" not in window.data_status_label.text()
+    for name in ("open_completed_run_button", "resume_interrupted_run_button",
+                 "recover_abandoned_run_button"):
+        assert getattr(window, name).isEnabled() is True
+    assert {path.name: path.read_bytes() for path in run.iterdir()} == before
+    window.close()
+    application.processEvents()
+
+
+def test_desktop_shows_progress_and_blocks_repeats_while_a_folder_is_inspected(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QFileDialog, QMessageBox
+
+    from diffeoforge.desktop.widgets import DiffeoForgeWindow, _RunLookupWorker
+
+    application = QApplication.instance() or QApplication(["diffeoforge-run-lookup-busy-test"])
+    selections = []
+
+    def choose(*_args, **_kwargs):
+        selections.append(True)
+        return str(tmp_path)
+
+    monkeypatch.setattr(QFileDialog, "getExistingDirectory", choose)
+    monkeypatch.setattr(QMessageBox, "warning", _answer_yes_and_record(shown := []))
+    queued = []
+
+    class HoldingPool:
+        def start(self, worker) -> None:
+            queued.append(worker)
+
+    window = DiffeoForgeWindow()
+    window._thread_pool = HoldingPool()  # type: ignore[assignment]
+    window.resume_interrupted_run_button.click()
+    application.processEvents()
+
+    assert isinstance(window._worker, _RunLookupWorker)
+    assert queued == [window._worker]
+    assert window.resume_interrupted_run_button.text() == "Inspecting selected folder…"
+    assert window.recover_abandoned_run_button.text() == "Recover after crash…"
+    for label in (window.status_label, window.data_status_label):
+        assert str(tmp_path) in label.text()
+        assert "read-only" in label.text()
+    for name in ("open_completed_run_button", "resume_interrupted_run_button",
+                 "recover_abandoned_run_button"):
+        assert getattr(window, name).isEnabled() is False
+    window._select_interrupted_run()
+    window._select_abandoned_run()
+    window._select_completed_run()
+    assert selections == [True]
+    assert queued == [window._worker]
+
+    window._run_lookup_failed("test failure")
+
+    assert window._worker is None
+    assert window.resume_interrupted_run_button.text() == "Resume interrupted run…"
+    assert window.resume_interrupted_run_button.isEnabled() is True
+    assert [title for title, _message in shown] == ["The selected folder could not be inspected"]
+    assert "test failure" in window.data_status_label.text()
     window.close()
     application.processEvents()
