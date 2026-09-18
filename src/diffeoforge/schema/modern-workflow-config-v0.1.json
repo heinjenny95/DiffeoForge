@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "DiffeoForge modern workflow configuration",
-  "description": "Explicit configuration for the experimental CPU/float64 mesh-folder atlas workflow.",
+  "description": "Explicit configuration for the experimental declared-device/float64 mesh-folder atlas workflow.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -18,7 +18,7 @@
     "output"
   ],
   "properties": {
-    "schema_version": {"enum": ["0.1", "0.2"]},
+    "schema_version": {"enum": ["0.1", "0.2", "0.3", "0.4", "0.5", "0.6", "0.7", "0.8"]},
     "project": {
       "type": "object",
       "additionalProperties": false,
@@ -63,6 +63,16 @@
               ]
             },
             "scale_to_unit_centroid_size": {"type": "boolean"},
+            "scaling_mode": {
+              "enum": [
+                "pams_surface_area_weighted_rms",
+                "pams_surface_vertex_centroid_size",
+                "preserve_size",
+                "landmark_centroid_size_legacy",
+                "landmark_rigid_gpa_legacy"
+              ]
+            },
+            "target_size": {"type": "number", "exclusiveMinimum": 0},
             "allow_reflection": {"type": "boolean"},
             "tolerance": {"type": "number", "minimum": 0},
             "max_iterations": {"type": "integer", "minimum": 1}
@@ -72,6 +82,36 @@
               "if": {"properties": {"enabled": {"const": true}}},
               "then": {"properties": {"landmarks_file": {"type": "string", "minLength": 1}}},
               "else": {"properties": {"landmarks_file": {"type": "null"}}}
+            },
+            {
+              "if": {
+                "required": ["scaling_mode"],
+                "properties": {
+                  "scaling_mode": {
+                    "enum": [
+                      "pams_surface_area_weighted_rms",
+                      "pams_surface_vertex_centroid_size",
+                      "landmark_centroid_size_legacy"
+                    ]
+                  }
+                }
+              },
+              "then": {
+                "properties": {"scale_to_unit_centroid_size": {"const": true}}
+              }
+            },
+            {
+              "if": {
+                "required": ["scaling_mode"],
+                "properties": {
+                  "scaling_mode": {
+                    "enum": ["preserve_size", "landmark_rigid_gpa_legacy"]
+                  }
+                }
+              },
+              "then": {
+                "properties": {"scale_to_unit_centroid_size": {"const": false}}
+              }
             }
           ]
         }
@@ -133,15 +173,42 @@
       "required": ["control_points", "momenta"],
       "properties": {
         "control_points": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["method", "count"],
-          "properties": {
-            "method": {"const": "farthest_template_vertices"},
-            "count": {"type": "integer", "minimum": 1}
-          }
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["method", "count"],
+              "properties": {
+                "method": {"const": "farthest_template_vertices"},
+                "count": {"type": "integer", "minimum": 1}
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["method", "count", "path"],
+              "properties": {
+                "method": {"const": "file"},
+                "count": {"type": "integer", "minimum": 1},
+                "path": {"type": "string", "minLength": 1}
+              }
+            }
+          ]
         },
-        "momenta": {"const": "zeros"}
+        "momenta": {
+          "oneOf": [
+            {"const": "zeros"},
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["method", "path"],
+              "properties": {
+                "method": {"const": "file"},
+                "path": {"type": "string", "minLength": 1}
+              }
+            }
+          ]
+        }
       }
     },
     "model": {
@@ -191,11 +258,12 @@
         "max_cycles": {"type": "integer", "minimum": 0},
         "block_order": {
           "type": "array",
-          "minItems": 3,
+          "minItems": 1,
           "maxItems": 3,
           "uniqueItems": true,
           "items": {"enum": ["momenta", "template", "control_points"]}
         },
+        "momenta_updates_per_cycle": {"type": "integer", "minimum": 1, "maximum": 100},
         "momenta_step_size": {"type": "number", "exclusiveMinimum": 0},
         "template_step_size": {"type": "number", "exclusiveMinimum": 0},
         "control_points_step_size": {"type": "number", "exclusiveMinimum": 0},
@@ -203,7 +271,44 @@
         "armijo_constant": {"type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 1},
         "gradient_tolerance": {"type": "number", "minimum": 0},
         "minimum_step_size": {"type": "number", "exclusiveMinimum": 0},
-        "max_line_search_iterations": {"type": "integer", "minimum": 1}
+        "max_line_search_iterations": {"type": "integer", "minimum": 1},
+        "step_initialization": {"enum": ["fixed", "previous_accepted"]},
+        "direction_update": {"enum": ["steepest", "lbfgs"]},
+        "lbfgs_history_size": {"type": "integer", "minimum": 1, "maximum": 100},
+        "lbfgs_curvature_tolerance": {"type": "number", "minimum": 0},
+        "lbfgs_initial_step_size": {"type": "number", "exclusiveMinimum": 0},
+        "line_search_condition": {"enum": ["armijo", "strong_wolfe"]},
+        "strong_wolfe_curvature_constant": {"type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 1},
+        "strong_wolfe_maximum_step_size": {"type": "number", "exclusiveMinimum": 0},
+        "relative_objective_tolerance": {"type": ["number", "null"], "exclusiveMinimum": 0, "exclusiveMaximum": 1},
+        "subject_batch_size": {"type": ["integer", "null"], "minimum": 1},
+        "subject_batch_workers": {"type": "integer", "minimum": 1, "maximum": 64},
+        "shared_step_scaling": {"enum": ["none", "inverse_subject_count"]},
+        "template_gradient": {"enum": ["euclidean", "sobolev"]},
+        "sobolev_kernel_width_ratio": {"type": "number", "exclusiveMinimum": 0},
+        "checkpoint_interval_cycles": {"type": "integer", "minimum": 1},
+        "checkpoint_retention": {"enum": ["all", "latest"]},
+        "resume_state": {
+          "oneOf": [
+            {"type": "null"},
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "checkpoint_directory",
+                "checkpoint_manifest_sha256",
+                "source_effective_config",
+                "source_effective_config_sha256"
+              ],
+              "properties": {
+                "checkpoint_directory": {"type": "string", "minLength": 1},
+                "checkpoint_manifest_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                "source_effective_config": {"type": "string", "minLength": 1},
+                "source_effective_config_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+              }
+            }
+          ]
+        }
       }
     },
     "analysis": {
@@ -234,7 +339,7 @@
       "additionalProperties": false,
       "required": ["device", "precision", "threads", "random_seed"],
       "properties": {
-        "device": {"const": "cpu"},
+        "device": {"enum": ["cpu", "cuda"]},
         "precision": {"const": "float64"},
         "threads": {"type": "integer", "minimum": 1},
         "random_seed": {"type": "integer", "minimum": 0},
@@ -247,7 +352,8 @@
               "properties": {
                 "mode": {"const": "dense"},
                 "query_tile_size": {"type": "null"},
-                "source_tile_size": {"type": "null"}
+                "source_tile_size": {"type": "null"},
+                "autograd_strategy": {"const": "standard"}
               }
             },
             {
@@ -257,7 +363,8 @@
               "properties": {
                 "mode": {"const": "blockwise"},
                 "query_tile_size": {"type": "integer", "minimum": 1},
-                "source_tile_size": {"type": "integer", "minimum": 1}
+                "source_tile_size": {"type": "integer", "minimum": 1},
+                "autograd_strategy": {"enum": ["standard", "recompute"]}
               }
             }
           ]
@@ -275,11 +382,104 @@
     {
       "if": {
         "required": ["schema_version"],
+        "properties": {"schema_version": {"enum": ["0.1", "0.2", "0.3"]}}
+      },
+      "then": {
+        "properties": {
+          "initialization": {
+            "properties": {"momenta": {"const": "zeros"}}
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": ["schema_version"],
+        "properties": {"schema_version": {"const": "0.8"}}
+      },
+      "then": {
+        "properties": {
+          "preprocessing": {
+            "properties": {
+              "procrustes": {
+                "required": ["scaling_mode", "target_size"]
+              }
+            }
+          },
+          "runtime": {"required": ["pairwise_evaluation"]},
+          "optimization": {
+            "required": [
+              "step_initialization",
+              "shared_step_scaling",
+              "template_gradient",
+              "sobolev_kernel_width_ratio"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": ["schema_version"],
         "properties": {"schema_version": {"const": "0.2"}}
       },
       "then": {
         "properties": {
           "runtime": {"required": ["pairwise_evaluation"]}
+        }
+      }
+    },
+    {
+      "if": {
+        "required": ["schema_version"],
+        "properties": {"schema_version": {"const": "0.3"}}
+      },
+      "then": {
+        "properties": {
+          "runtime": {"required": ["pairwise_evaluation"]}
+        }
+      }
+    },
+    {
+      "if": {
+        "required": ["schema_version"],
+        "properties": {"schema_version": {"const": "0.4"}}
+      },
+      "then": {
+        "properties": {
+          "runtime": {"required": ["pairwise_evaluation"]},
+          "optimization": {"required": ["step_initialization"]}
+        }
+      }
+    },
+    {
+      "if": {
+        "required": ["schema_version"],
+        "properties": {"schema_version": {"const": "0.6"}}
+      },
+      "then": {
+        "properties": {
+          "runtime": {"required": ["pairwise_evaluation"]},
+          "optimization": {"required": ["step_initialization", "shared_step_scaling"]}
+        }
+      }
+    },
+    {
+      "if": {
+        "required": ["schema_version"],
+        "properties": {"schema_version": {"const": "0.7"}}
+      },
+      "then": {
+        "properties": {
+          "runtime": {"required": ["pairwise_evaluation"]},
+          "optimization": {
+            "required": [
+              "step_initialization",
+              "shared_step_scaling",
+              "template_gradient",
+              "sobolev_kernel_width_ratio"
+            ]
+          }
         }
       }
     }

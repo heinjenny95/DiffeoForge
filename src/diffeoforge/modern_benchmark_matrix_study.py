@@ -19,6 +19,7 @@ from typing import Any
 import jsonschema
 import psutil
 
+from diffeoforge.atomic_io import replace_atomically
 from diffeoforge.mesh import sha256_file
 from diffeoforge.modern_benchmark import (
     REPORT_CSV_NAME,
@@ -100,7 +101,7 @@ def _write_text_atomic(path: Path, value: str) -> None:
     temporary = path.with_name(f".{path.name}.tmp-{uuid.uuid4().hex}")
     try:
         temporary.write_text(value, encoding="utf-8", newline="\n")
-        os.replace(temporary, path)
+        replace_atomically(temporary, path)
     finally:
         if temporary.exists():
             temporary.unlink()
@@ -283,6 +284,12 @@ def _verify_condition_report(
         ) from error
     if report["benchmark_version"] != TILE_OVERRIDE_BENCHMARK_VERSION:
         raise ModernBenchmarkStudyError("Matrix condition report is not benchmark v0.4")
+    if report["environment"].get("engine_implementation") != design["software"].get(
+        "engine_implementation"
+    ):
+        raise ModernBenchmarkStudyError(
+            "Matrix condition engine implementation differs from the frozen design"
+        )
     count = condition["subject_count"]
     if report["source_config"] != design["source_config"]:
         raise ModernBenchmarkStudyError("Condition source config differs from the frozen design")
@@ -316,6 +323,8 @@ def _verify_condition_report(
         "effective_pairwise_evaluation": condition["effective_pairwise_evaluation"],
         "tile_autograd_strategy": condition["tile_autograd_strategy"],
     }
+    if "device" in frozen:
+        expected_configuration["device"] = frozen["device"]
     if config != expected_configuration:
         raise ModernBenchmarkStudyError("Condition protocol differs from the frozen design")
     return report

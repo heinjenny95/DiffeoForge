@@ -102,7 +102,13 @@
     ],
     "project_or_mesh_data_inside_application_directory": false,
     "network_fetched_payload": false,
-    "external_deformetrica_environment": false
+    "external_deformetrica_environment": false,
+    "managed_reference_runtime": {
+      "distribution": "DiffeoForge-Reference-4.3",
+      "offline_hash_verified_payload_required": true,
+      "separate_deformetrica_license_required": true,
+      "overwrite_existing_distribution": false
+    }
   },
   "uninstall_boundary": {
     "remove_application_files_shortcuts_and_uninstall_registration_only": true,

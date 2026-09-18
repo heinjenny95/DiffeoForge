@@ -1,0 +1,341 @@
+{
+  "analysis_performed": false,
+  "completed_at": "2026-07-22T17:00:56.675+00:00",
+  "conditions": [
+    {
+      "artifacts": {
+        "benchmark.html": "267a61040faf0e042030fb66af7f3091013b26765c77ee5df3427938eb1e7a5a",
+        "benchmark.json": "ba58320e3534ddc5b8a45ece991abe3dbb80303940712994a6a5dd130ec98c0c",
+        "samples.csv": "4c7a8b9738222c6f4d6ae3d529aac9dcd9907e26d5e37264e359f8f35c7127bd"
+      },
+      "cell_id": "subjects-000005-tiles-q000128-s000128",
+      "condition_id": "condition-0001-subjects-000005-tiles-q000128-s000128-recompute",
+      "effective_pairwise_evaluation": {
+        "mode": "blockwise",
+        "query_tile_size": 128,
+        "source_tile_size": 128
+      },
+      "report_directory": "conditions/condition-0001-subjects-000005-tiles-q000128-s000128-recompute",
+      "sequence": 1,
+      "subject_count": 5,
+      "tile_autograd_strategy": "recompute"
+    },
+    {
+      "artifacts": {
+        "benchmark.html": "0c40ac842b0313ac7afdc3e46fe10694000686d579bdf278132a6fafe8cc690c",
+        "benchmark.json": "49fd610d304e52b08553c0446d7815574c8b1579b698808dc6dc5f7c3c403983",
+        "samples.csv": "327ba94ddaad0936c6772a0791cb3b020d10204c66adfdf0b064fe85f1a409c5"
+      },
+      "cell_id": "subjects-000005-tiles-q000128-s000128",
+      "condition_id": "condition-0002-subjects-000005-tiles-q000128-s000128-standard",
+      "effective_pairwise_evaluation": {
+        "mode": "blockwise",
+        "query_tile_size": 128,
+        "source_tile_size": 128
+      },
+      "report_directory": "conditions/condition-0002-subjects-000005-tiles-q000128-s000128-standard",
+      "sequence": 2,
+      "subject_count": 5,
+      "tile_autograd_strategy": "standard"
+    },
+    {
+      "artifacts": {
+        "benchmark.html": "ba60cc02ca0fbef1e274d029c3b0763fb342ae220574c5077f8e42cf40a750a5",
+        "benchmark.json": "cf4a4154da57124b0f0d0958ff21994e633b44aafe9253b01265a8181cd765ea",
+        "samples.csv": "d1612c558b7d29512ef38f6edc14735c68f87d9e28d18c0099a1e7e97ebd6407"
+      },
+      "cell_id": "subjects-000005-tiles-q000032-s000032",
+      "condition_id": "condition-0003-subjects-000005-tiles-q000032-s000032-recompute",
+      "effective_pairwise_evaluation": {
+        "mode": "blockwise",
+        "query_tile_size": 32,
+        "source_tile_size": 32
+      },
+      "report_directory": "conditions/condition-0003-subjects-000005-tiles-q000032-s000032-recompute",
+      "sequence": 3,
+      "subject_count": 5,
+      "tile_autograd_strategy": "recompute"
+    },
+    {
+      "artifacts": {
+        "benchmark.html": "70db48915336462316729f7ffba39a46244efd86b1fb608e332d01d3038fcff5",
+        "benchmark.json": "42b8ffcfcd41d60941eebefa0f4bb8e93fb7eac2b3770deb42e4d634be24c02a",
+        "samples.csv": "b90815b90572df266e53df6573a43f2fb4f814339270e29e5861981fb629d3a0"
+      },
+      "cell_id": "subjects-000005-tiles-q000032-s000032",
+      "condition_id": "condition-0004-subjects-000005-tiles-q000032-s000032-standard",
+      "effective_pairwise_evaluation": {
+        "mode": "blockwise",
+        "query_tile_size": 32,
+        "source_tile_size": 32
+      },
+      "report_directory": "conditions/condition-0004-subjects-000005-tiles-q000032-s000032-standard",
+      "sequence": 4,
+      "subject_count": 5,
+      "tile_autograd_strategy": "standard"
+    },
+    {
+      "artifacts": {
+        "benchmark.html": "fdfed378bd37d3fdbac08e656d6f03e8c92e363b28379a99b0018b4602c87941",
+        "benchmark.json": "241577dcc5757e0b5a1376621febd555bd0546c80479549636ed89c3eeec5b0a",
+        "samples.csv": "9135be85dfa34a701d133513745d9f420d9262686b0c76ea25452fe83954fcc3"
+      },
+      "cell_id": "subjects-000003-tiles-q000032-s000032",
+      "condition_id": "condition-0005-subjects-000003-tiles-q000032-s000032-standard",
+      "effective_pairwise_evaluation": {
+        "mode": "blockwise",
+        "query_tile_size": 32,
+        "source_tile_size": 32
+      },
+      "report_directory": "conditions/condition-0005-subjects-000003-tiles-q000032-s000032-standard",
+      "sequence": 5,
+      "subject_count": 3,
+      "tile_autograd_strategy": "standard"
+    },
+    {
+      "artifacts": {
+        "benchmark.html": "5d43e1f917a7eaa7fcfbee77922d35348e49b973ff1e926e15b0d65cc7dafa13",
+        "benchmark.json": "36a6f998213c823f78c1d74a56296f4ff85c4b6df924dbc195b62254545fdb17",
+        "samples.csv": "0dbf3cf81ce1aa4638856ed2509b2e433f545f65f32654167b3fe1ee8f3f9f3c"
+      },
+      "cell_id": "subjects-000003-tiles-q000032-s000032",
+      "condition_id": "condition-0006-subjects-000003-tiles-q000032-s000032-recompute",
+      "effective_pairwise_evaluation": {
+        "mode": "blockwise",
+        "query_tile_size": 32,
+        "source_tile_size": 32
+      },
+      "report_directory": "conditions/condition-0006-subjects-000003-tiles-q000032-s000032-recompute",
+      "sequence": 6,
+      "subject_count": 3,
+      "tile_autograd_strategy": "recompute"
+    },
+    {
+      "artifacts": {
+        "benchmark.html": "c0794562d2c8c3b353d6f502c356c04f3510d6ca357e8ec9de6e752fca3f905e",
+        "benchmark.json": "f3bc5a5f1ea4e62c6528a20925f312e91c1b206151b14187ace3fc774f923c96",
+        "samples.csv": "3e07f11dea8193288749bebabcbea624b380af998ca9fef0581b07f55d526891"
+      },
+      "cell_id": "subjects-000005-tiles-q000064-s000064",
+      "condition_id": "condition-0007-subjects-000005-tiles-q000064-s000064-standard",
+      "effective_pairwise_evaluation": {
+        "mode": "blockwise",
+        "query_tile_size": 64,
+        "source_tile_size": 64
+      },
+      "report_directory": "conditions/condition-0007-subjects-000005-tiles-q000064-s000064-standard",
+      "sequence": 7,
+      "subject_count": 5,
+      "tile_autograd_strategy": "standard"
+    },
+    {
+      "artifacts": {
+        "benchmark.html": "49abb0670ec2365b68098ce13525ad94b03060fe6080271a96bb76c9474aff94",
+        "benchmark.json": "3cf920428cb3affc4f2c20604695092defe8a40b1278f0cae73ccbbc45604966",
+        "samples.csv": "fc79b2e4803500c50ae5382a5f03a5154cd10394686875b02ec6fbeadc102943"
+      },
+      "cell_id": "subjects-000005-tiles-q000064-s000064",
+      "condition_id": "condition-0008-subjects-000005-tiles-q000064-s000064-recompute",
+      "effective_pairwise_evaluation": {
+        "mode": "blockwise",
+        "query_tile_size": 64,
+        "source_tile_size": 64
+      },
+      "report_directory": "conditions/condition-0008-subjects-000005-tiles-q000064-s000064-recompute",
+      "sequence": 8,
+      "subject_count": 5,
+      "tile_autograd_strategy": "recompute"
+    },
+    {
+      "artifacts": {
+        "benchmark.html": "d2df0acd748c924b0d53f6e35fa5647a5ce97c47d00c3686737a129d1d6cd48d",
+        "benchmark.json": "f3aa9c9d89307557d36def3011b7ac13fdf906b9dd4f2749dcde51546fcd8355",
+        "samples.csv": "a21622608e5050b6be13f7f89817b2c3fc14989fb756cf4e40234a224a6a2bfd"
+      },
+      "cell_id": "subjects-000001-tiles-q000128-s000128",
+      "condition_id": "condition-0009-subjects-000001-tiles-q000128-s000128-standard",
+      "effective_pairwise_evaluation": {
+        "mode": "blockwise",
+        "query_tile_size": 128,
+        "source_tile_size": 128
+      },
+      "report_directory": "conditions/condition-0009-subjects-000001-tiles-q000128-s000128-standard",
+      "sequence": 9,
+      "subject_count": 1,
+      "tile_autograd_strategy": "standard"
+    },
+    {
+      "artifacts": {
+        "benchmark.html": "9ae865faaa8429223b38eedab420edf56e8514ec561dc4d771144b4b5425295f",
+        "benchmark.json": "be6c6186fb1249238332f6bd640d91d9a5e43534394fe2d13dd89674d8867ebb",
+        "samples.csv": "dad3e865a2f6de43d64a40e2f92d45998dbb84e9d63325d38600bb722fcdda21"
+      },
+      "cell_id": "subjects-000001-tiles-q000128-s000128",
+      "condition_id": "condition-0010-subjects-000001-tiles-q000128-s000128-recompute",
+      "effective_pairwise_evaluation": {
+        "mode": "blockwise",
+        "query_tile_size": 128,
+        "source_tile_size": 128
+      },
+      "report_directory": "conditions/condition-0010-subjects-000001-tiles-q000128-s000128-recompute",
+      "sequence": 10,
+      "subject_count": 1,
+      "tile_autograd_strategy": "recompute"
+    },
+    {
+      "artifacts": {
+        "benchmark.html": "354e5b09f5217060208a270c989538c1b555a0db274ee92c966397427a1915dd",
+        "benchmark.json": "8e65c9709cd35285d560e6e0924b978c06729c31e6a5fd9692c6dd7b17d55bd5",
+        "samples.csv": "88d299a0e62e0daa9adfccd9dca7ad9688c891211684ea7bd0aad25777c44573"
+      },
+      "cell_id": "subjects-000001-tiles-q000064-s000064",
+      "condition_id": "condition-0011-subjects-000001-tiles-q000064-s000064-standard",
+      "effective_pairwise_evaluation": {
+        "mode": "blockwise",
+        "query_tile_size": 64,
+        "source_tile_size": 64
+      },
+      "report_directory": "conditions/condition-0011-subjects-000001-tiles-q000064-s000064-standard",
+      "sequence": 11,
+      "subject_count": 1,
+      "tile_autograd_strategy": "standard"
+    },
+    {
+      "artifacts": {
+        "benchmark.html": "c28451cd7c6cd67375bf897b0327341fac645e4e8e6ed46267514912bc9681da",
+        "benchmark.json": "2852aad3871cab4b1082117b4c9479cfb54413bd03c4015e6a6ad2873aba2dd3",
+        "samples.csv": "b56868c81059ddbf10485eebe06927571acdf4c4116c5258f75a40d562b2398f"
+      },
+      "cell_id": "subjects-000001-tiles-q000064-s000064",
+      "condition_id": "condition-0012-subjects-000001-tiles-q000064-s000064-recompute",
+      "effective_pairwise_evaluation": {
+        "mode": "blockwise",
+        "query_tile_size": 64,
+        "source_tile_size": 64
+      },
+      "report_directory": "conditions/condition-0012-subjects-000001-tiles-q000064-s000064-recompute",
+      "sequence": 12,
+      "subject_count": 1,
+      "tile_autograd_strategy": "recompute"
+    },
+    {
+      "artifacts": {
+        "benchmark.html": "4517206503ab302209b9d35407fb9a43a82969ac0abcce2b62fc8b2448f64dd0",
+        "benchmark.json": "7cbff248be313c24a6cd472f283e0174aadaf372e2ab1f49fa463166ab9e621a",
+        "samples.csv": "5580839aeafd18cd51e7a33c06a6374fed2987e79a3cac1aa6dc74d4656da968"
+      },
+      "cell_id": "subjects-000003-tiles-q000064-s000064",
+      "condition_id": "condition-0013-subjects-000003-tiles-q000064-s000064-standard",
+      "effective_pairwise_evaluation": {
+        "mode": "blockwise",
+        "query_tile_size": 64,
+        "source_tile_size": 64
+      },
+      "report_directory": "conditions/condition-0013-subjects-000003-tiles-q000064-s000064-standard",
+      "sequence": 13,
+      "subject_count": 3,
+      "tile_autograd_strategy": "standard"
+    },
+    {
+      "artifacts": {
+        "benchmark.html": "874b98c8e55c96a8e0a8a7400674f37f6365f7bc2f4d11882dab25a327f54f2b",
+        "benchmark.json": "0def3f6fd0c301b235a06bb3198629694e58101300531b6d63e0261f3e5bc1ef",
+        "samples.csv": "0aa09e954adc6d88df74f7002e19057808482590b6db1fdf63d0b8e390b717e9"
+      },
+      "cell_id": "subjects-000003-tiles-q000064-s000064",
+      "condition_id": "condition-0014-subjects-000003-tiles-q000064-s000064-recompute",
+      "effective_pairwise_evaluation": {
+        "mode": "blockwise",
+        "query_tile_size": 64,
+        "source_tile_size": 64
+      },
+      "report_directory": "conditions/condition-0014-subjects-000003-tiles-q000064-s000064-recompute",
+      "sequence": 14,
+      "subject_count": 3,
+      "tile_autograd_strategy": "recompute"
+    },
+    {
+      "artifacts": {
+        "benchmark.html": "b479001dbbe394d383124e847ad606dbbac2e0822c60eaee15229488067810e1",
+        "benchmark.json": "0627b8d29cb71edaaa28895b86134c9e47db51fd575d9166fc247310a2803934",
+        "samples.csv": "f8d63edcf91c188da2e569dcf96c9d03c6e2e866387818372252a02cc5ab8785"
+      },
+      "cell_id": "subjects-000001-tiles-q000032-s000032",
+      "condition_id": "condition-0015-subjects-000001-tiles-q000032-s000032-recompute",
+      "effective_pairwise_evaluation": {
+        "mode": "blockwise",
+        "query_tile_size": 32,
+        "source_tile_size": 32
+      },
+      "report_directory": "conditions/condition-0015-subjects-000001-tiles-q000032-s000032-recompute",
+      "sequence": 15,
+      "subject_count": 1,
+      "tile_autograd_strategy": "recompute"
+    },
+    {
+      "artifacts": {
+        "benchmark.html": "0e75d144005c3ef7ced92c58d5675db174f85cecc7fe240f6d0098adebfcd657",
+        "benchmark.json": "14ae316adf4ad5d31cd1224568e25cb4da65a3b605589612ef275217bc28baae",
+        "samples.csv": "dbfbf64ae9b080abdfa0c93f5e768266c9c105260c736e018973166f1872ce2a"
+      },
+      "cell_id": "subjects-000001-tiles-q000032-s000032",
+      "condition_id": "condition-0016-subjects-000001-tiles-q000032-s000032-standard",
+      "effective_pairwise_evaluation": {
+        "mode": "blockwise",
+        "query_tile_size": 32,
+        "source_tile_size": 32
+      },
+      "report_directory": "conditions/condition-0016-subjects-000001-tiles-q000032-s000032-standard",
+      "sequence": 16,
+      "subject_count": 1,
+      "tile_autograd_strategy": "standard"
+    },
+    {
+      "artifacts": {
+        "benchmark.html": "0399b55cdf7223f604e381b737f272a4b0e6775033596cbbf6e9b7f2e271903e",
+        "benchmark.json": "d8e97831dabe2a80fe76f8c2c985642629daebe1337f89f80dec053b05beaae5",
+        "samples.csv": "d7c3d2a2c2a8b55f267ca94c12611a09a05041d15c1da04a925bde263a208dca"
+      },
+      "cell_id": "subjects-000003-tiles-q000128-s000128",
+      "condition_id": "condition-0017-subjects-000003-tiles-q000128-s000128-recompute",
+      "effective_pairwise_evaluation": {
+        "mode": "blockwise",
+        "query_tile_size": 128,
+        "source_tile_size": 128
+      },
+      "report_directory": "conditions/condition-0017-subjects-000003-tiles-q000128-s000128-recompute",
+      "sequence": 17,
+      "subject_count": 3,
+      "tile_autograd_strategy": "recompute"
+    },
+    {
+      "artifacts": {
+        "benchmark.html": "c7cc0adf70d52c4474e683d8a34e23c0bd68d57a27f57e16cb744bd76dc0fdf7",
+        "benchmark.json": "aab633b359e48c582575bc4698844eabdf2f5f4f2aa65f788626df7bf5fc2b56",
+        "samples.csv": "41f45c2e934346d166812a9c54e4792e3bfafb6f6f9dcf15523763bae0c9aebb"
+      },
+      "cell_id": "subjects-000003-tiles-q000128-s000128",
+      "condition_id": "condition-0018-subjects-000003-tiles-q000128-s000128-standard",
+      "effective_pairwise_evaluation": {
+        "mode": "blockwise",
+        "query_tile_size": 128,
+        "source_tile_size": 128
+      },
+      "report_directory": "conditions/condition-0018-subjects-000003-tiles-q000128-s000128-standard",
+      "sequence": 18,
+      "subject_count": 3,
+      "tile_autograd_strategy": "standard"
+    }
+  ],
+  "design": {
+    "path": "design/matrix-design.json",
+    "sha256": "e8c9f70d0cb4b93263f5cb20c465351f4c03fc09025d810890e672b5babb994a"
+  },
+  "scientific_boundary": "This run preserves separate raw v0.4 objective/gradient benchmark reports in a frozen full-factorial matrix order. It performs no automatic comparison, winner selection, speedup or significance calculation, safe-preset selection, peak-memory inference, full-workflow measurement, scaling extrapolation, or 300-subject feasibility test.",
+  "source_config": {
+    "path": "source-config.yaml",
+    "sha256": "80484b95e4ed113752372df7e8597e9049c7e16133f3d8fd8b35ceb8e8b3472a"
+  },
+  "status": "complete",
+  "study_run_version": "0.2"
+}

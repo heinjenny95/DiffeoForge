@@ -20,6 +20,7 @@ from diffeoforge.desktop.worker_protocol import (
     parse_json_object,
     sha256_file,
 )
+from diffeoforge.subprocess_policy import hidden_windows_process_kwargs
 
 DesktopWorkerControllerState = Literal[
     "idle",
@@ -206,7 +207,7 @@ class _EventLedger:
 
 
 class DesktopWorkerController:
-    """Launch and fail-closed supervise one Modern CPU desktop worker."""
+    """Launch and fail-closed supervise one Modern desktop worker."""
 
     def __init__(
         self,
@@ -282,11 +283,8 @@ class DesktopWorkerController:
                 f"Worker launch request is no longer valid: {error}"
             ) from error
 
-        creationflags = 0
         worker_job = None
         process: subprocess.Popen[str] | None = None
-        if os.name == "nt":
-            creationflags = subprocess.CREATE_NO_WINDOW
         try:
             worker_job = _create_windows_worker_job()
             process = subprocess.Popen(
@@ -299,7 +297,7 @@ class DesktopWorkerController:
                 encoding="utf-8",
                 errors="replace",
                 bufsize=1,
-                creationflags=creationflags,
+                **hidden_windows_process_kwargs(),
             )
             if worker_job is not None:
                 worker_job.assign(process)
@@ -342,8 +340,17 @@ class DesktopWorkerController:
                     exit_code=process.poll(),
                     stderr="",
                 )
-            process.stdin.write(json.dumps(self.request.as_dict(), sort_keys=True) + "\n")
-            process.stdin.flush()
+            try:
+                process.stdin.write(json.dumps(self.request.as_dict(), sort_keys=True) + "\n")
+                process.stdin.flush()
+            except OSError as error:
+                self._stop_process(process)
+                stderr_thread.join(timeout=TERMINAL_EXIT_TIMEOUT_SECONDS)
+                raise DesktopWorkerProcessError(
+                    f"Worker request pipe closed before the request was delivered: {error}",
+                    exit_code=process.poll(),
+                    stderr=stderr_buffer.render(),
+                ) from error
             with self._lock:
                 self._request_written = True
                 if self._cancel_pending:

@@ -76,6 +76,42 @@ def _terminal(
     )
 
 
+def _progress(sequence: int, iteration: int):
+    return DesktopReferenceWorkerEvent(
+        request_id=REQUEST_ID,
+        sequence=sequence,
+        kind="progress",
+        payload={
+            "iteration": iteration,
+            "maximum_iterations": 100,
+            "log_likelihood": -10.0 + iteration,
+            "attachment": -8.0,
+            "regularity": -2.0,
+            "elapsed_seconds": 10.0 + iteration,
+            "seconds_per_iteration": None,
+            "eta_to_iteration_cap_seconds": None,
+            "estimate_status": "warming_up",
+        },
+    )
+
+
+def _activity(sequence: int, elapsed_seconds: float, *, resources=None):
+    return DesktopReferenceWorkerEvent(
+        request_id=REQUEST_ID,
+        sequence=sequence,
+        kind="activity",
+        payload={
+            "state": "computing_first_iteration",
+            "elapsed_seconds": elapsed_seconds,
+            "maximum_iterations": 100,
+            "latest_message": "Started estimator: GradientAscent",
+            "log_source": "output/reference_info.log",
+            "last_iteration": None,
+            **({} if resources is None else {"resources": resources}),
+        },
+    )
+
+
 def _ledger_with_phases(*phases: str) -> ReferenceWorkerEventLedger:
     ledger = ReferenceWorkerEventLedger(REQUEST)
     ledger.accept(_accepted())
@@ -115,6 +151,68 @@ def test_reference_worker_completed_lifecycle() -> None:
 
     assert ledger.reconcile() == terminal
     assert len(ledger.events) == 8
+
+
+def test_reference_worker_accepts_strictly_increasing_progress_only_during_execute() -> None:
+    ledger = _ledger_with_phases("verify_request", "preflight", "prepare", "execute")
+    ledger.accept(_progress(5, 0))
+    ledger.accept(_progress(6, 1))
+    with pytest.raises(DesktopReferenceWorkerProtocolError, match="increase strictly"):
+        ledger.accept(_progress(7, 1))
+
+    before_execute = _ledger_with_phases("verify_request", "preflight", "prepare")
+    with pytest.raises(DesktopReferenceWorkerProtocolError, match="execute phase"):
+        before_execute.accept(_progress(4, 0))
+
+
+def test_reference_worker_accepts_increasing_activity_only_during_execute() -> None:
+    ledger = _ledger_with_phases("verify_request", "preflight", "prepare", "execute")
+    ledger.accept(_activity(5, 10.0))
+    ledger.accept(_activity(6, 20.0))
+    with pytest.raises(DesktopReferenceWorkerProtocolError, match="increase strictly"):
+        ledger.accept(_activity(7, 20.0))
+
+    before_execute = _ledger_with_phases("verify_request", "preflight", "prepare")
+    with pytest.raises(DesktopReferenceWorkerProtocolError, match="execute phase"):
+        before_execute.accept(_activity(4, 10.0))
+
+
+def test_reference_worker_accepts_bounded_resource_observation() -> None:
+    resources = {
+        "backend_process_id": 42,
+        "requested_device": "cuda",
+        "process_tree": {
+            "status": "observed",
+            "reason": None,
+            "process_count": 3,
+            "cpu_percent": 175.0,
+            "rss_bytes": 123456,
+            "system_memory_percent": 61.5,
+            "system_memory_available_bytes": 1000,
+            "system_memory_total_bytes": 2000,
+        },
+        "gpu": {
+            "status": "observed",
+            "scope": "device_total_not_attributed_to_run",
+            "utilization_percent": 80.0,
+            "memory_used_bytes": 3000,
+            "memory_total_bytes": 8000,
+            "reason": "device-wide only",
+        },
+        "boundary": "Observation, not a peak-memory guarantee.",
+    }
+    ledger = _ledger_with_phases("verify_request", "preflight", "prepare", "execute")
+
+    ledger.accept(_activity(5, 10.0, resources=resources))
+
+    assert ledger.events[-1].payload["resources"]["gpu"]["utilization_percent"] == 80.0
+
+
+def test_reference_worker_progress_rejects_nonfinite_json_numbers() -> None:
+    payload = _progress(0, 1).as_dict()
+    payload["payload"]["log_likelihood"] = float("nan")
+    with pytest.raises(DesktopReferenceWorkerProtocolError, match="strict JSON"):
+        DesktopReferenceWorkerEvent.from_dict(payload)
 
 
 @pytest.mark.parametrize(

@@ -70,16 +70,17 @@ def _thaw_json(value: Any) -> Any:
 
 @dataclass(frozen=True)
 class DesktopWorkerRequest:
-    """One immutable Modern CPU worker launch request."""
+    """One immutable Modern CPU or CUDA worker launch request."""
 
     request_id: str
     config_path: Path
     destination: Path
     expected_config_sha256: str
+    runtime_device: Literal["cpu", "cuda"] = "cpu"
 
     @property
     def engine(self) -> str:
-        return "modern_cpu"
+        return f"modern_{self.runtime_device}"
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -112,6 +113,7 @@ class DesktopWorkerRequest:
             config_path=config_path.resolve(),
             destination=destination.resolve(),
             expected_config_sha256=str(value["expected_config_sha256"]),
+            runtime_device=("cuda" if value["engine"] == "modern_cuda" else "cpu"),
         )
 
     def verify_launch_inputs(self) -> None:
@@ -163,6 +165,7 @@ def build_worker_request(
         config_path=source,
         destination=output,
         expected_config_sha256=hash_after_validation,
+        runtime_device=config["runtime"]["device"],
     )
     request.verify_launch_inputs()
     return request

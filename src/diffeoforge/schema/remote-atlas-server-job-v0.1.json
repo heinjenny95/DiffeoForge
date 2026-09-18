@@ -1,0 +1,154 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://diffeoforge.org/schema/remote-atlas-server-job-v0.1.json",
+  "title": "DiffeoForge remote atlas server job state",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "server_job_version",
+    "job_id",
+    "status",
+    "created_at",
+    "updated_at",
+    "request",
+    "progress",
+    "result",
+    "error",
+    "cancel_requested",
+    "retention"
+  ],
+  "properties": {
+    "server_job_version": { "const": "0.1" },
+    "job_id": { "type": "string", "pattern": "^[0-9a-f]{32}$" },
+    "status": {
+      "enum": [
+        "queued",
+        "running",
+        "cancel_requested",
+        "completed",
+        "failed",
+        "cancelled",
+        "interrupted"
+      ]
+    },
+    "created_at": { "type": "string", "format": "date-time" },
+    "updated_at": { "type": "string", "format": "date-time" },
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "archive_bytes",
+        "archive_sha256",
+        "manifest_sha256",
+        "subjects",
+        "device",
+        "precision",
+        "engine_implementation"
+      ],
+      "properties": {
+        "archive_bytes": { "type": "integer", "minimum": 1 },
+        "archive_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "manifest_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "subjects": { "type": "integer", "minimum": 1 },
+        "device": { "enum": ["cpu", "cuda"] },
+        "precision": { "const": "float64" },
+        "engine_implementation": { "type": "string", "minLength": 1 }
+      }
+    },
+    "progress": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["event_count", "latest"],
+      "properties": {
+        "event_count": { "type": "integer", "minimum": 1 },
+        "latest": {
+          "oneOf": [
+            { "type": "null" },
+            { "type": "object" }
+          ]
+        }
+      }
+    },
+    "result": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "archive_bytes",
+            "archive_sha256",
+            "workflow_manifest_sha256"
+          ],
+          "properties": {
+            "archive_bytes": { "type": "integer", "minimum": 1 },
+            "archive_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "workflow_manifest_sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          }
+        }
+      ]
+    },
+    "error": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "message"],
+          "properties": {
+            "type": { "type": "string", "minLength": 1, "maxLength": 128 },
+            "message": { "type": "string", "minLength": 1, "maxLength": 2048 }
+          }
+        }
+      ]
+    },
+    "cancel_requested": { "type": "boolean" },
+    "retention": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["automatic_deletion_enabled", "delete_after"],
+      "properties": {
+        "automatic_deletion_enabled": { "const": false },
+        "delete_after": { "type": "null" }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "status": { "const": "completed" } } },
+      "then": {
+        "properties": {
+          "result": { "type": "object" },
+          "error": { "type": "null" }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "status": { "enum": ["failed", "interrupted"] } } },
+      "then": {
+        "properties": {
+          "result": { "type": "null" },
+          "error": { "type": "object" }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "enum": ["queued", "running", "cancel_requested", "cancelled"]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "result": { "type": "null" },
+          "error": { "type": "null" }
+        }
+      }
+    }
+  ]
+}
