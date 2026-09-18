@@ -283,7 +283,15 @@ def test_afk_gui_requires_explicit_confirmation_and_reopen_defaults_off(
     )
 
     class UndispatchedWorker:
-        def __init__(self, runner, *, complete_automatic_pilot, afk, visual_approvals):
+        def __init__(
+            self,
+            runner,
+            *,
+            complete_automatic_pilot,
+            afk,
+            visual_approvals,
+            outward_safety_limits=None,
+        ):
             self.afk = afk
             # This test observes dispatch, not execution. Do not construct a real
             # QRunnable with Qt signal connections and then abandon it unstarted.

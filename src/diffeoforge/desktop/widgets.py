@@ -159,11 +159,12 @@ from diffeoforge.desktop.result_review import (
 )
 from diffeoforge.desktop.resumable_results import (
     AbandonedReferenceRun,
+    AbandonedRunDiscovery,
     RecoveredReferenceRun,
     ResumableReferenceRun,
-    ResumableResultDiscoveryError,
-    discover_abandoned_reference_runs,
-    discover_resumable_reference_runs,
+    ResumableRunDiscovery,
+    inspect_abandoned_reference_runs,
+    inspect_resumable_reference_runs,
     recover_abandoned_reference_run,
 )
 from diffeoforge.desktop.reviewed_run import (
@@ -172,6 +173,11 @@ from diffeoforge.desktop.reviewed_run import (
     DesktopReviewedRunReadiness,
     check_reviewed_remote_run_readiness,
     check_reviewed_run_readiness,
+)
+from diffeoforge.desktop.run_location import (
+    RunLookupPurpose,
+    describe_run_location,
+    explain_missing_run,
 )
 from diffeoforge.desktop.validation_preparation import prepare_validation_from_result
 from diffeoforge.desktop.worker_controller import (
@@ -1151,6 +1157,37 @@ class _AbandonedReferenceRecoveryWorker(QRunnable):
         self.signals.succeeded.emit(recovered)
 
 
+class _RunLookupWorker(QRunnable):
+    """Verify candidate runs at one selected location outside the GUI thread."""
+
+    def __init__(self, purpose: RunLookupPurpose, directory: Path) -> None:
+        super().__init__()
+        self.purpose = purpose
+        self.directory = directory
+        self.signals = _WorkerSignals()
+
+    @property
+    def lookup_message(self) -> str:
+        return (
+            f"Inspecting {self.directory} read-only… Every retained file of a matching "
+            "run is hashed, so large runs can take several minutes. Nothing is being "
+            "loaded, restarted, or changed yet."
+        )
+
+    @Slot()
+    def run(self) -> None:
+        try:
+            discovery = (
+                inspect_resumable_reference_runs(self.directory)
+                if self.purpose is RunLookupPurpose.RESUME_INTERRUPTED
+                else inspect_abandoned_reference_runs(self.directory)
+            )
+        except (OSError, RuntimeError, TypeError, ValueError) as error:
+            self.signals.failed.emit(str(error))
+            return
+        self.signals.succeeded.emit(discovery)
+
+
 class _ArtifactWorker(QRunnable):
     """Recheck one reviewed artifact immediately before handing it to the OS."""
 
@@ -1384,6 +1421,7 @@ class DiffeoForgeWindow(QMainWindow):
         self.setMinimumSize(900, 650)
         self.setStyleSheet(_STYLE)
         self._thread_pool = ActivityPool(self)
+        self._run_lookup_notice: tuple[str, str] | None = None
         self._result_mesh_loader = ResultMeshLoader(self)
         self._result_mesh_loader.loaded.connect(self._atlas_mesh_loaded)
         self._result_mesh_loader.failed.connect(self._atlas_mesh_load_failed)
@@ -1615,20 +1653,27 @@ class DiffeoForgeWindow(QMainWindow):
         self.open_completed_run_button = QPushButton("Open completed run…")
         self.open_completed_run_button.setObjectName("secondary")
         self.open_completed_run_button.setToolTip(
-            "Select a completed run folder or its DiffeoForge project folder."
+            "Select the run folder itself (the folder that contains manifest.json and "
+            "result.json, e.g. …/runs/desktop-ref-…) or the folder that directly contains "
+            "its “runs” folder. If nothing fits, a message names what was found instead."
         )
         self.open_completed_run_button.clicked.connect(self._select_completed_run)
         self.resume_interrupted_run_button = QPushButton("Resume interrupted run…")
         self.resume_interrupted_run_button.setObjectName("secondary")
         self.resume_interrupted_run_button.setToolTip(
-            "Select an interrupted Deformetrica run with a verified checkpoint."
+            "Select an interrupted Deformetrica run with a verified checkpoint: the run "
+            "folder itself (it contains manifest.json and result.json) or the folder that "
+            "directly contains its “runs” folder. A run stopped before its first "
+            "checkpoint cannot be continued; a message will say so."
         )
         self.resume_interrupted_run_button.clicked.connect(self._select_interrupted_run)
         self.recover_abandoned_run_button = QPushButton("Recover after crash…")
         self.recover_abandoned_run_button.setObjectName("secondary")
         self.recover_abandoned_run_button.setToolTip(
             "Finalize a run left nonterminal by a power loss or hard process stop, then "
-            "continue a verified checkpoint as a new run."
+            "continue a verified checkpoint as a new run. Select the run folder itself or "
+            "the folder that directly contains its “runs” folder. Use this only once per "
+            "crashed run; afterwards the run counts as interrupted."
         )
         self.recover_abandoned_run_button.clicked.connect(self._select_abandoned_run)
         layout.addWidget(resume_label)
@@ -3679,6 +3724,7 @@ class DiffeoForgeWindow(QMainWindow):
         self.mesh_edit = QLineEdit()
         self.mesh_edit.setObjectName("meshDirectoryEdit")
         self.mesh_edit.setPlaceholderText(r"e.g. C:\Data\Beetles\meshes")
+        self.mesh_edit.textChanged.connect(self._clear_run_lookup_notice)
         self.mesh_edit.textChanged.connect(self._sync_ready_state)
         self.mesh_edit.textChanged.connect(self._invalidate_input_preflight)
         self.mesh_edit.textChanged.connect(self._invalidate_procrustes_preview)
@@ -3724,6 +3770,7 @@ class DiffeoForgeWindow(QMainWindow):
         self.project_edit = QLineEdit()
         self.project_edit.setObjectName("projectDirectoryEdit")
         self.project_edit.setPlaceholderText("Folder for configuration and later results")
+        self.project_edit.textChanged.connect(self._clear_run_lookup_notice)
         self.project_edit.textChanged.connect(self._sync_ready_state)
         project_button = QPushButton("Browse…")
         project_button.setObjectName("secondary")
@@ -7161,6 +7208,12 @@ class DiffeoForgeWindow(QMainWindow):
         if isinstance(self._worker, _ResultReviewWorker):
             self.data_status_label.setObjectName("status")
             self.data_status_label.setText(self._worker.verification_message)
+        elif isinstance(self._worker, _RunLookupWorker):
+            self.data_status_label.setObjectName("status")
+            self.data_status_label.setText(self._worker.lookup_message)
+        elif self._run_lookup_notice is not None:
+            self.data_status_label.setObjectName(self._run_lookup_notice[0])
+            self.data_status_label.setText(self._run_lookup_notice[1])
         elif (
             raw_data_ready
             and self._input_preflight_worker is not None
@@ -7224,8 +7277,79 @@ class DiffeoForgeWindow(QMainWindow):
             "Verifying completed run…"
             if isinstance(self._worker, _ResultReviewWorker) else "Open completed run…"
         )
+        looking_up = (
+            self._worker.purpose if isinstance(self._worker, _RunLookupWorker) else None
+        )
         self.resume_interrupted_run_button.setEnabled(self._worker is None)
+        self.resume_interrupted_run_button.setText(
+            "Inspecting selected folder…"
+            if looking_up is RunLookupPurpose.RESUME_INTERRUPTED
+            else "Resume interrupted run…"
+        )
         self.recover_abandoned_run_button.setEnabled(self._worker is None)
+        self.recover_abandoned_run_button.setText(
+            "Inspecting selected folder…"
+            if looking_up is RunLookupPurpose.RECOVER_CRASHED
+            else "Recover after crash…"
+        )
+
+    @Slot()
+    def _clear_run_lookup_notice(self) -> None:
+        self._run_lookup_notice = None
+
+    def _report_run_lookup_problem(
+        self,
+        title: str,
+        message: str,
+        *,
+        level: str = "statusError",
+    ) -> None:
+        """Make the outcome of a run lookup impossible to miss on any page."""
+
+        notice = " ".join(part.strip() for part in message.splitlines() if part.strip())
+        self._run_lookup_notice = (level, notice)
+        self.status_label.setObjectName(level)
+        self.status_label.setStyleSheet("")
+        self.status_label.setText(notice)
+        self._sync_ready_state()
+        QMessageBox.warning(self, title, message)
+
+    def _report_missing_run(
+        self,
+        purpose: RunLookupPurpose,
+        selected: Path,
+        rejected: tuple = (),
+    ) -> None:
+        message = explain_missing_run(
+            purpose,
+            describe_run_location(selected),
+            tuple((candidate.run_directory, candidate.reason) for candidate in rejected),
+        )
+        self._report_run_lookup_problem("No matching run was found", message)
+
+    def _start_run_lookup(self, purpose: RunLookupPurpose, selected: Path) -> None:
+        worker = _RunLookupWorker(purpose, selected)
+        if purpose is RunLookupPurpose.RESUME_INTERRUPTED:
+            worker.signals.succeeded.connect(self._interrupted_run_lookup_succeeded)
+        else:
+            worker.signals.succeeded.connect(self._abandoned_run_lookup_succeeded)
+        worker.signals.failed.connect(self._run_lookup_failed)
+        self._clear_run_lookup_notice()
+        self._worker = worker
+        self.status_label.setObjectName("status")
+        self.status_label.setStyleSheet("")
+        self.status_label.setText(worker.lookup_message)
+        self._sync_ready_state()
+        self._thread_pool.start(worker)
+
+    @Slot(str)
+    def _run_lookup_failed(self, message: str) -> None:
+        self._worker = None
+        self._report_run_lookup_problem(
+            "The selected folder could not be inspected",
+            f"The selected folder could not be inspected: {message}\n\n"
+            "Nothing was loaded and nothing was changed.",
+        )
 
     @Slot()
     def _select_completed_run(self) -> None:
@@ -7234,29 +7358,23 @@ class DiffeoForgeWindow(QMainWindow):
         initial = self.project_edit.text().strip() or self.mesh_edit.text().strip()
         selected = QFileDialog.getExistingDirectory(
             self,
-            "Select a completed run or DiffeoForge project folder",
+            "Select a completed run folder, or the folder that contains its runs folder",
             initial,
         )
         if not selected:
             return
+        self._clear_run_lookup_notice()
         try:
             results = discover_completed_results(selected)
         except CompletedResultDiscoveryError as error:
-            message = f"Completed runs could not be inspected: {error}"
-            for label in (self.status_label, self.data_status_label):
-                label.setObjectName("statusError")
-                label.setStyleSheet("")
-                label.setText(message)
+            self._report_run_lookup_problem(
+                "Completed runs could not be inspected",
+                f"Completed runs could not be inspected: {error}\n\n"
+                "Nothing was loaded and nothing was changed.",
+            )
             return
         if not results:
-            message = (
-                "No completed DiffeoForge run was found there. Select either the exact "
-                "completed run folder or the project folder that contains its runs."
-            )
-            for label in (self.status_label, self.data_status_label):
-                label.setObjectName("statusError")
-                label.setStyleSheet("")
-                label.setText(message)
+            self._report_missing_run(RunLookupPurpose.OPEN_COMPLETED, Path(selected))
             return
         result = results[0]
         if len(results) > 1:
@@ -7284,24 +7402,24 @@ class DiffeoForgeWindow(QMainWindow):
         initial = self.project_edit.text().strip() or self.mesh_edit.text().strip()
         selected = QFileDialog.getExistingDirectory(
             self,
-            "Select an interrupted Deformetrica run or project folder",
+            "Select an interrupted run folder, or the folder that contains its runs folder",
             initial,
         )
         if not selected:
             return
-        try:
-            results = discover_resumable_reference_runs(selected)
-        except ResumableResultDiscoveryError as error:
-            self.status_label.setObjectName("statusError")
-            self.status_label.setStyleSheet("")
-            self.status_label.setText(f"Interrupted runs could not be inspected: {error}")
-            return
+        self._start_run_lookup(RunLookupPurpose.RESUME_INTERRUPTED, Path(selected))
+
+    @Slot(object)
+    def _interrupted_run_lookup_succeeded(self, discovery: ResumableRunDiscovery) -> None:
+        worker = self._worker
+        self._worker = None
+        self._sync_ready_state()
+        results = discovery.runs
         if not results:
-            self.status_label.setObjectName("statusError")
-            self.status_label.setStyleSheet("")
-            self.status_label.setText(
-                "No fully verified interrupted Deformetrica run with an inventoried "
-                "checkpoint was found there."
+            self._report_missing_run(
+                RunLookupPurpose.RESUME_INTERRUPTED,
+                worker.directory if isinstance(worker, _RunLookupWorker) else Path(),
+                discovery.rejected,
             )
             return
         result = results[0]
@@ -7333,31 +7451,31 @@ class DiffeoForgeWindow(QMainWindow):
         initial = self.project_edit.text().strip() or self.mesh_edit.text().strip()
         selected = QFileDialog.getExistingDirectory(
             self,
-            "Select a crashed Deformetrica run or project folder",
+            "Select a crashed run folder, or the folder that contains its runs folder",
             initial,
         )
         if not selected:
             return
-        try:
-            results = discover_abandoned_reference_runs(selected)
-        except ResumableResultDiscoveryError as error:
-            self.status_label.setObjectName("statusError")
-            self.status_label.setStyleSheet("")
-            self.status_label.setText(f"Crashed runs could not be inspected: {error}")
-            return
+        self._start_run_lookup(RunLookupPurpose.RECOVER_CRASHED, Path(selected))
+
+    @Slot(object)
+    def _abandoned_run_lookup_succeeded(self, discovery: AbandonedRunDiscovery) -> None:
+        worker = self._worker
+        self._worker = None
+        self._sync_ready_state()
+        results = discovery.runs
         if not results:
-            self.status_label.setObjectName("statusError")
-            self.status_label.setStyleSheet("")
-            self.status_label.setText(
-                "No fully verified Deformetrica run left in the nonterminal 'started' "
-                "state was found there."
+            self._report_missing_run(
+                RunLookupPurpose.RECOVER_CRASHED,
+                worker.directory if isinstance(worker, _RunLookupWorker) else Path(),
+                discovery.rejected,
             )
             return
         result = results[0]
         if len(results) > 1:
             labels = [
                 (
-                    f"{candidate.run_directory.name} â€” started {candidate.started_at} â€” "
+                    f"{candidate.run_directory.name} — started {candidate.started_at} — "
                     + (
                         f"retained {candidate.retained_terminal_status} result"
                         if candidate.retained_terminal_status is not None
@@ -7416,7 +7534,7 @@ class DiffeoForgeWindow(QMainWindow):
         self.status_label.setStyleSheet("")
         self.status_label.setText(
             "Finalizing the stopped run and hashing retained output. Nothing is being "
-            "restarted or overwrittenâ€¦"
+            "restarted or overwritten…"
         )
         self._sync_ready_state()
         self.data_status_label.setObjectName("status")
@@ -7439,12 +7557,13 @@ class DiffeoForgeWindow(QMainWindow):
         if recovered.resumable is None:
             self.status_label.setObjectName("statusWarning")
             self.status_label.setStyleSheet("")
-            self.status_label.setText(
+            self._report_run_lookup_problem(
+                "Run recorded as interrupted",
                 "The stopped run is now recorded as interrupted, but no checkpoint was "
                 "available. Its retained artifacts remain unchanged and it cannot be "
-                "continued."
+                f"continued.\n\n{recovered.run_directory}",
+                level="statusWarning",
             )
-            self._sync_ready_state()
             return
         self._prepare_reference_resume(recovered.resumable)
 
@@ -7453,10 +7572,10 @@ class DiffeoForgeWindow(QMainWindow):
         self._worker = None
         self.status_label.setObjectName("statusError")
         self.status_label.setStyleSheet("")
-        self.status_label.setText(
-            "Crash recovery stopped without declaring the run terminal: " + message
+        self._report_run_lookup_problem(
+            "Crash recovery stopped",
+            "Crash recovery stopped without declaring the run terminal: " + message,
         )
-        self._sync_ready_state()
 
     def _prepare_reference_resume(self, result: ResumableReferenceRun) -> None:
         run_id = f"{result.run_directory.name[:100]}-resume-{uuid.uuid4().hex[:8]}"

@@ -1,5 +1,36 @@
 # Private-alpha build numbering
 
+## v85 — a selected run folder always gets a visible answer
+
+Development candidate v85 (`0.0.0.dev85`) addresses #193. A researcher selected
+the correct folder of a crashed Deformetrica run several times and saw no
+reaction. Read-only inspection found the run already recorded as `interrupted`
+without any checkpoint, so none of the three entry points could use it. The
+outcome of **Resume interrupted run…** and **Recover after crash…** was written
+only to a status label on the parameter page, not to the first screen that holds
+the buttons, and named only what was *not* found.
+
+- Both verifying lookups now run in a background worker. The selected path and a
+  read-only notice appear on the first screen, the clicked button reads
+  *Inspecting selected folder…*, and all three entry points are locked so repeated
+  clicks cannot queue duplicates.
+- Every outcome without a usable run is shown in a dialog and kept in the
+  first-screen status line until the form is edited. It states what the action
+  looks for, which folder level to select, what the location contains instead
+  (completed / stopped with checkpoint / stopped **without checkpoint, cannot be
+  continued** / still `started` / prepared / unrecognized), which action fits
+  that state, and the verifier's reason when a matching run was rejected.
+- A selection inside a run folder, at the `runs` folder, or one level above a
+  project is answered with the folder to select instead.
+- Classification reads only `manifest.json`, `result.json` and the tail of
+  `events.jsonl`; it never hashes, traverses recursively, or writes. Discovery
+  keeps its fail-closed verification and additionally returns rejection reasons.
+- Two mis-encoded separators in the crash-recovery dialog were corrected.
+
+No metric definition, engine, protocol or schema version changed. A run that
+stops before its first completed checkpoint remains unrecoverable; v85 only says
+so. Nothing has been frozen, built, installed or published at this point.
+
 ## v84 — recent projects on the first screen and unattended outward search
 
 Development candidate v84 (`0.0.0.dev84`) packages two merged changes: the first
@@ -16,6 +47,37 @@ Nothing has been frozen, built, installed or published at this point; the
 freeze, dependency-metadata/SBOM, installer-build and installation evidence for
 v84 are still outstanding, and no researcher project or scientific input was
 changed.
+
+**Delivery observation (2026-09-17).** v84 was built from `b6a26dd` with a clean
+worktree and installed locally; nothing was published.
+
+- The first packaging attempt correctly stopped at the installer plan on stale
+  v83 editable-package metadata in the local build environment, as in v79. The
+  metadata was refreshed with `pip install --no-deps -e .`; the dependency
+  freeze before and after was identical. A fresh freeze then passed every guard.
+  The rejected attempt was never installed or distributed.
+- Frozen bundle: **2,677 files**, 764,809,085 bytes, inventory SHA-256
+  `044f1474a95fcd9f2df33186b561ad8bfcfefaa7a97ea153a85c3718a9dc0686`; SBOM with
+  27 components. The portable Inno toolchain evidence observed on 2026-09-05 was
+  reused unchanged.
+- `DiffeoForge-v84-Windows-CPU-x86_64-Setup.exe`: 322,987,739 bytes, SHA-256
+  `c90850f2e33457b243f5b5149a6c0a585d2f5d7b49b23d9c9dcc6239a46f1f22`,
+  Authenticode `NotSigned` as intended for the private alpha.
+- The closed v83 installation (**2,687 files**) was copied to a separate backup
+  and every file hash-compared without a mismatch.
+- The silent per-user setup exited 0 without a restart. All 2,677 inventoried
+  files plus the freeze-evidence pair are byte-identical to the built bundle; the
+  only other installed files are the licence, the uninstaller pair and six
+  evidence files, with no v83 remnants. Installed `DiffeoForge.exe` SHA-256:
+  `b80f163ce8e95790699687d499153dcb6eecfcfbb6b1a95e04556176eb788c08`. The window
+  title read **DiffeoForge v84 (Private Alpha)**.
+- Not observed: the preselected Reference engine, the **Recent projects…** entry
+  and the AFK outward-search checkbox were not inspected on screen, and
+  researcher landmark/configuration/review metadata were not separately backed
+  up. The installer writes only to the per-user installation directory.
+- `tools/desktop_installer_plan.py --output-directory` and
+  `tools/observe_installer_build.ps1 -EvidenceOutputDirectory` require an
+  existing empty directory, unlike the other steps, which require a new path.
 
 ## v83 — workflow clarity, activity feedback and QC mesh retention
 
