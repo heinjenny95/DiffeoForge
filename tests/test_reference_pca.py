@@ -951,6 +951,62 @@ def test_reference_shape_space_v04_accepts_cross_runtime_agreement_roundoff(
     assert verify_reference_shape_space_comparison(artifact).artifact_directory == artifact
 
 
+@pytest.mark.parametrize("correlation", [-0.006, 0.0, 0.006])
+def test_shape_space_agreement_accepts_absolute_roundoff_near_zero(correlation: float) -> None:
+    # Identical float64 scores can produce this much BLAS-layout roundoff.
+    # A relative tolerance alone becomes too restrictive near zero.
+    observed = {
+        "pairwise": [{"pairwise_distance_correlation": correlation}],
+        "summaries": [
+            {
+                "minimum_pairwise_distance_correlation": correlation,
+                "weakest_pair_by_distance_correlation": {
+                    "method_a_id": "a",
+                    "method_b_id": "b",
+                    "pairwise_distance_correlation": correlation,
+                    "agreement_grade": "low",
+                },
+            }
+        ],
+    }
+    expected = json.loads(json.dumps(observed))
+    expected["pairwise"][0]["pairwise_distance_correlation"] += 2.5e-14
+    expected["summaries"][0]["minimum_pairwise_distance_correlation"] += 2.5e-14
+    expected["summaries"][0]["weakest_pair_by_distance_correlation"][
+        "pairwise_distance_correlation"
+    ] += 2.5e-14
+
+    assert comparison_module._agreement_analysis_matches(observed, expected)
+    assert comparison_module._agreement_analysis_matches(expected, observed)
+
+
+@pytest.mark.parametrize("correlation", [-0.006, 0.0, 0.006, 0.99])
+def test_shape_space_agreement_rejects_changes_beyond_roundoff(correlation: float) -> None:
+    assert not comparison_module._agreement_analysis_matches(
+        {"pairwise_distance_correlation": correlation},
+        {"pairwise_distance_correlation": correlation + 1e-10},
+    )
+
+
+@pytest.mark.parametrize(
+    ("observed", "expected"),
+    [
+        ({"dimensions": 2}, {"dimensions": 3}),
+        ({"dimensions": 2}, {"dimensions": 2.0}),
+        ({"agreement_grade": "low"}, {"agreement_grade": "moderate"}),
+        ({"method_id": "a"}, {"method_id": "b"}),
+        ({"unrecognized_field": 0.0}, {"unrecognized_field": 2.5e-14}),
+        ({"pairwise_distance_correlation": 0.0}, {"pairwise_distance_correlation": False}),
+        ({"pairwise_distance_correlation": 0.0}, {"pairwise_distance_correlation": math.nan}),
+        ({"pairwise_distance_correlation": 0.0}, {"pairwise_distance_correlation": math.inf}),
+    ],
+)
+def test_shape_space_agreement_roundoff_does_not_relax_other_checks(
+    observed: object, expected: object
+) -> None:
+    assert not comparison_module._agreement_analysis_matches(observed, expected)
+
+
 def test_reference_shape_space_v03_rejects_coordinated_score_tampering(
     tmp_path: Path,
 ) -> None:

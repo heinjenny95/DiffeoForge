@@ -1,5 +1,30 @@
 # Private-alpha build numbering
 
+## v86 — near-zero agreement roundoff no longer blocks comparison
+
+Development candidate v86 (`0.0.0.dev86`) corrects a false rejection in the
+post-atlas shape-space comparison. Identical exported float64 scores can yield
+slightly different distance correlations with equivalent BLAS memory layouts.
+Near zero, the former `1e-15` absolute floor could reject differences of a few
+`1e-14`, despite the existing `1e-12` relative tolerance.
+
+- Only the allowlisted recomputed agreement metrics now use an absolute
+  tolerance of `1e-12`; their relative tolerance is unchanged.
+- Exact score/cache equality, source and artifact hashes, field types,
+  dimensions, method identities and categorical decisions remain enforced.
+- Regression coverage includes positive, negative and zero correlations,
+  nested summary values, rejection beyond the tolerance and unchanged
+  structural/type/non-finite checks. No private specimen scores enter tests.
+
+No PCA calculation, atlas parameter, scientific input or artifact schema changes.
+The existing completed atlas and verified method caches can be reused; successful
+comparison verification is not scientific QC approval. Local delivery and test
+observations are recorded after verification; this is not a public release.
+
+Source verification: 80 reference-PCA/shape-space tests and three build-version
+tests passed; Ruff lint and formatting checks passed. The near-zero regression
+tests failed on the prior tolerance and passed after this change.
+
 ## v85 — a selected run folder always gets a visible answer
 
 Development candidate v85 (`0.0.0.dev85`) addresses #193. A researcher selected

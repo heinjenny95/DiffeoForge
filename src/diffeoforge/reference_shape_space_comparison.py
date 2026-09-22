@@ -197,7 +197,11 @@ V04_VERIFICATION_CONTRACT = (
     "numerically recomputed unless their source or parameters change."
 )
 _AGREEMENT_VERIFICATION_RELATIVE_TOLERANCE = 1e-12
-_AGREEMENT_VERIFICATION_ABSOLUTE_TOLERANCE = 1e-15
+# These dimensionless agreement metrics are bounded by [-1, 1]. Equivalent
+# score memory layouts can change a near-zero correlation by a few 1e-14,
+# where relative tolerance provides almost no allowance. Keep a small absolute
+# floor for recomputed metrics only; scores, hashes and structure remain exact.
+_AGREEMENT_VERIFICATION_ABSOLUTE_TOLERANCE = 1e-12
 _AGREEMENT_RECOMPUTED_FLOAT_FIELDS = {
     "centered_kernel_alignment",
     "median_nearest_neighbor_overlap",
