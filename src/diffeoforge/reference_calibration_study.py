@@ -453,7 +453,7 @@ def default_outward_safety_limits(
     observed: dict[str, list[float]] = {}
     for stage in plan.stages:
         for candidate in stage.candidates:
-            for parameter, value in candidate.parameter_values.items():
+            for parameter, value in candidate.values.items():
                 numeric = float(value)
                 if not math.isfinite(numeric) or numeric <= 0.0:
                     continue

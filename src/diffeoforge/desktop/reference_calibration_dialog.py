@@ -1376,6 +1376,25 @@ class ReferenceCalibrationDialog(QDialog):
     def _start(self) -> None:
         if self._worker is not None:
             return
+        try:
+            self._start_pilot()
+        except Exception as error:
+            # Qt reports uncaught slot exceptions only to stderr, which the
+            # windowed executable hides. Keep startup failures visible and
+            # retryable without bypassing consent or starting a second worker.
+            self._worker = None
+            self.advanced_mode.setEnabled(True)
+            self.afk_mode.setEnabled(True)
+            self.outward_mode.setEnabled(self.afk_mode.isChecked())
+            self.start_button.setEnabled(True)
+            _set_action_emphasis(self.start_button, True)
+            self.cancel_button.setEnabled(False)
+            self.cancel_button.hide()
+            message = f"Pilot start failed: {type(error).__name__}: {error}"
+            self.status.setText(message)
+            QMessageBox.critical(self, "Pilot could not start", message)
+
+    def _start_pilot(self) -> None:
         automatic_mode = not self.advanced_mode.isChecked()
         afk = automatic_mode and self.afk_mode.isChecked()
         outward_limits: dict[str, tuple[float, float]] | None = None

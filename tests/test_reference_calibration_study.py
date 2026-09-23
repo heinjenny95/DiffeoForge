@@ -270,8 +270,9 @@ def afk_qt_application():
         os.environ["QT_QPA_PLATFORM"] = previous
 
 
+@pytest.mark.parametrize("outward", [False, True])
 def test_afk_gui_requires_explicit_confirmation_and_reopen_defaults_off(
-    tmp_path, monkeypatch, afk_qt_application
+    tmp_path, monkeypatch, afk_qt_application, outward
 ):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtCore import QCoreApplication, QEvent
@@ -293,6 +294,7 @@ def test_afk_gui_requires_explicit_confirmation_and_reopen_defaults_off(
             outward_safety_limits=None,
         ):
             self.afk = afk
+            self.outward_safety_limits = outward_safety_limits
             # This test observes dispatch, not execution. Do not construct a real
             # QRunnable with Qt signal connections and then abandon it unstarted.
             signal = SimpleNamespace(connect=lambda _receiver: None)
@@ -306,19 +308,27 @@ def test_afk_gui_requires_explicit_confirmation_and_reopen_defaults_off(
     assert not dialog.afk_mode.isChecked()
     dialog.advanced_mode.setChecked(True)
     dialog.afk_mode.setChecked(True)
+    dialog.outward_mode.setChecked(outward)
     assert not dialog.advanced_mode.isChecked()
     queued = []
     dialog._thread_pool = SimpleNamespace(start=queued.append)
     monkeypatch.setattr(
         QMessageBox, "question", lambda *a: QMessageBox.StandardButton.No
     )
-    dialog._start()
+    dialog.start_button.click()
     assert not queued and dialog._worker is None
     monkeypatch.setattr(
         QMessageBox, "question", lambda *a: QMessageBox.StandardButton.Yes
     )
-    dialog._start()
+    dialog.start_button.click()
     assert len(queued) == 1 and queued[0].afk
+    assert queued[0].outward_safety_limits == (
+        study_module.default_outward_safety_limits(dialog._snapshot.plan)
+        if outward else None
+    )
+    dialog.start_button.click()
+    dialog._start()
+    assert len(queued) == 1
     assert not dialog.afk_mode.isEnabled()
     dialog._worker = None  # Fake worker was never dispatched.
     dialog.close()
@@ -329,6 +339,56 @@ def test_afk_gui_requires_explicit_confirmation_and_reopen_defaults_off(
     reopened.deleteLater()
     QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
     app.processEvents()
+
+
+@pytest.mark.parametrize("failure_point", ["limits", "runner", "dispatch"])
+def test_afk_start_errors_are_visible_and_retryable(
+    tmp_path, monkeypatch, afk_qt_application, failure_point
+):
+    from unittest.mock import Mock
+
+    from PySide6.QtCore import QCoreApplication, QEvent
+    from PySide6.QtWidgets import QMessageBox
+
+    import diffeoforge.desktop.reference_calibration_dialog as dialog_module
+
+    runner = _afk_runner(tmp_path, monkeypatch)
+    events_path = runner.study_directory / "events.jsonl"
+    events_before = events_path.read_bytes()
+    dialog = dialog_module.ReferenceCalibrationDialog(runner.study_directory)
+    dialog.afk_mode.setChecked(True)
+    dialog.outward_mode.setChecked(True)
+    monkeypatch.setattr(QMessageBox, "question", lambda *a: QMessageBox.StandardButton.Yes)
+    messages = []
+    monkeypatch.setattr(QMessageBox, "critical", lambda *a: messages.append(a[1:]))
+    worker = Mock()
+    monkeypatch.setattr(dialog_module, "_CalibrationStageWorker", lambda *a, **kw: worker)
+    queued = []
+    dialog._thread_pool = SimpleNamespace(start=queued.append)
+
+    def fail(*args, **kwargs):
+        raise AttributeError("synthetic startup error")
+
+    if failure_point == "limits":
+        monkeypatch.setattr(dialog_module, "default_outward_safety_limits", fail)
+    elif failure_point == "runner":
+        monkeypatch.setattr(dialog_module, "ReferenceCalibrationStudyRunner", fail)
+    else:
+        dialog._thread_pool = SimpleNamespace(start=fail)
+    dialog.start_button.click()
+    assert len(messages) == 1
+    assert messages[0][0] == "Pilot could not start"
+    assert "AttributeError: synthetic startup error" in messages[0][1]
+    assert "Pilot start failed" in dialog.status.text()
+    assert not queued and dialog._worker is None
+    assert dialog.start_button.isEnabled()
+    assert dialog.afk_mode.isEnabled() and dialog.outward_mode.isEnabled()
+    assert not dialog.cancel_button.isEnabled() and dialog.cancel_button.isHidden()
+    assert events_path.read_bytes() == events_before
+    dialog.close()
+    dialog.deleteLater()
+    QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+    afk_qt_application.processEvents()
 
 
 def test_study_creation_binds_inputs_and_prepares_only_first_stage(
@@ -1544,13 +1604,18 @@ def test_outward_safety_limits_are_validated_strictly(limits) -> None:
 
 
 def test_default_outward_limits_come_from_the_tested_grid() -> None:
+    from diffeoforge.reference_calibration import CalibrationCandidate
+
+    def candidate(name, value):
+        return CalibrationCandidate(name, name, ((name, value),), "Test real plan storage")
+
     plan = SimpleNamespace(
         stages=(
             SimpleNamespace(
                 candidates=(
-                    SimpleNamespace(parameter_values={"noise_std": 0.02}),
-                    SimpleNamespace(parameter_values={"noise_std": 0.08}),
-                    SimpleNamespace(parameter_values={"fixed": 1.0}),
+                    candidate("noise_std", 0.02),
+                    candidate("noise_std", 0.08),
+                    candidate("fixed", 1.0),
                 )
             ),
         )

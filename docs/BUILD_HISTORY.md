@@ -1,5 +1,24 @@
 # Private-alpha build numbering
 
+## v87 — AFK outward-search start and visible startup errors
+
+Development candidate v87 (`0.0.0.dev87`) fixes an exception before pilot
+dispatch when AFK and outward search are both enabled. Default outward limits
+now use the real calibration candidate's mapping accessor instead of treating
+its immutable tuple storage as a dictionary. The existing factor and search
+policy are unchanged.
+
+- GUI startup exceptions now produce a visible error and restore retryable
+  controls instead of disappearing into the windowed application's stderr.
+- Regression tests use real candidate storage and exercise the actual start
+  button with outward search on/off, consent rejection/acceptance, duplicate
+  clicks, and failures during limit calculation, runner creation and dispatch.
+- No input, landmark, pilot-plan, parameter-grid, engine or scientific metric
+  changes. No anatomy is approved and no atlas is started by the update.
+
+Build and installation verification are recorded separately; this entry alone
+does not assert that the installer has been delivered or published.
+
 ## v86 — near-zero agreement roundoff no longer blocks comparison
 
 Development candidate v86 (`0.0.0.dev86`) corrects a false rejection in the

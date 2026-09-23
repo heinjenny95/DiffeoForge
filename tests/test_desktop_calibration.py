@@ -8,6 +8,8 @@ ROOT = Path(__file__).parents[1]
 def _prepared_window(monkeypatch, tmp_path):
     pytest.importorskip("PySide6")
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    # Real recent-project history must not replace the synthetic input defaults.
+    monkeypatch.setenv("DIFFEOFORGE_STATE_HOME", str(tmp_path / "desktop-state"))
     from PySide6.QtWidgets import QApplication
 
     from diffeoforge.desktop.project_setup import DesktopEngine
