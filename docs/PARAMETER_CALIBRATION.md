@@ -377,6 +377,44 @@ reconstructions, use a common view, disclose any per-symbol size normalization,
 and use leaders when symbols are displaced for readability. Carry unresolved
 QC caveats forward; a communication figure does not approve an atlas.
 
+### Matching-detail follow-up when local projections remain mismatched
+
+A lower global surface-distance summary can coexist with a persistent local
+anatomical error. A reconstructed surface is a deformed template, not a newly
+segmented copy of the observed surface. Inspect the initial template, learned
+template, observation and reconstruction in identical views when an unwanted
+projection persists. Preserved mesh connectivity does not, by itself, imply
+that the number of geometric protrusions must remain unchanged.
+
+After an attachment-weight diagnostic, a separately authorized, bounded 2x2
+comparison can test matching detail: halve and quarter the original attachment
+kernel width, each paired with the previously examined half and quarter noise
+standard deviation. Use the same declared in-sample cohort, learned template,
+explicit control points, zero-momentum initialization and numerical limits.
+Keep the template and control points frozen. Verify that only the two declared
+parameters and administrative paths differ; preserve existing runs and reviews.
+Execute the four candidates sequentially, stop on failure, and do not retry or
+expand the grid automatically. Check disk headroom before every candidate.
+
+Changing attachment width changes the data-term geometry and scale. The 4x and
+16x noise-coefficient labels apply relative to the original noise at a fixed
+attachment kernel; they do not imply equal effective fit strength across
+kernels. Compare geometric and anatomical evidence, not raw total objectives.
+
+Evaluate both directions of local surface mismatch, higher-percentile tails,
+common-view overlays, template-relative distortion and numerical stop evidence.
+Declare regions of interest from the observations before comparing candidate
+outcomes, and report their definitions and sample counts. Check all comparison
+specimens: a better global p95 can hide a worse p99 or a displaced local feature.
+Neither a small global error nor no detected triangle self-intersections is
+anatomical approval or proof of correct correspondence.
+
+If matching detail is insufficient, investigate deformation resolution with
+adequate control-point support, or template dependence, in another separately
+declared experiment. These are not implicit next jobs. A final common-cohort
+atlas, human QC and shape-space stability comparison remain separate steps;
+do not mix independently tuned subject momenta into one atlas PCA.
+
 The workflow automates computation and a transparent provisional parameter
 recommendation, not anatomical judgment. The balanced multi-metric score can
 select an eligible candidate in the standard route because the candidate set is
