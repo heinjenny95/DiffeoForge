@@ -409,6 +409,26 @@ specimens: a better global p95 can hide a worse p99 or a displaced local feature
 Neither a small global error nor no detected triangle self-intersections is
 anatomical approval or proof of correct correspondence.
 
+For an exploratory elongated-surface comparison, geometric end bands can be
+defined from the observed surface's area-weighted longest principal axis, for
+example the first and last 20% of its projected span. Fix the origin, axis sign,
+cutoffs, view and scale for each observation before inspecting the new candidates.
+These are geometric regions, not homologous anatomical landmarks; tied leading
+eigenvalues and features outside the bands require explicit visual review.
+Do not recalculate a separate coordinate frame or size normalization for each
+reconstruction. Document any later region changes as sensitivity analyses.
+
+Sample uniformly by triangle area in each direction. Assign each source sample
+to its region, but measure distance to the **complete** opposite surface, not a
+cropped target. Report both directions and their sample counts separately. If
+pooling regional distances, give each direction half the total probability mass;
+unequal region counts must not silently change that weighting. Specify the
+quantile convention. An empty direction is undefined, and sparsely sampled tail
+quantiles must be flagged rather than ranked. Repeat with an independent seed
+to assess sampling sensitivity, not biological uncertainty. A sampled maximum
+is not the exact Hausdorff distance. Keep quantitative distances on the full
+triangulations even when overview rendering uses documented display copies.
+
 If matching detail is insufficient, investigate deformation resolution with
 adequate control-point support, or template dependence, in another separately
 declared experiment. These are not implicit next jobs. A final common-cohort
