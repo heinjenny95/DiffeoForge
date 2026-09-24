@@ -83,10 +83,32 @@ therefore keeps three sources of information separate:
     full-cohort confirmation run.
 
 Changing meshes, template, GPA evidence, units, research intent, feature
-measurement, pilot count, or biological pilot declarations invalidates the
+measurement, pilot count, manual inclusion, or biological pilot declarations invalidates the
 current plan.
 
 ## Representative pilot selection
+
+### Direct manual inclusion (v90)
+
+After aligned-mesh analysis, use **Always include these meshes**: choose/search
+a target mesh in the dropdown, then **Add**. Select a listed mesh and **Remove**
+to undo it. No CSV is needed. Choices are mandatory subjects, not biological
+outlier labels. They occupy slots within the pilot total (for example, one
+manual subject plus seven automatic subjects in an eight-subject pilot).
+The visible total increases when needed for manual choices, up to the existing
+20-subject desktop limit. The template is already used separately and is not
+listed as a target. Only subjects matching the analyzed input cohort are shown.
+
+Changes invalidate the draft plan. Re-analysis of the same input cohort keeps
+the choices; switching cohorts clears them with a visible notice. Optional CSV
+strata/extremes are combined without duplicate slots; insufficient capacity for
+all requirements produces an explicit error, never silent exclusion. Manual
+names are bound into plan fingerprints, reports, canonical VTK conversion and
+stored study provenance. Existing plans without manual choices keep their
+fingerprints. This selects pilot coverage only; it does not start computation,
+change full-cohort membership, approve anatomy or overwrite an existing study.
+
+### Automatic shape coverage
 
 The template is excluded. Newly analyzed cohorts use `aligned-area-shape-v1`:
 translation- and uniform-scale-normalized **surface shape**, retaining the
@@ -118,7 +140,7 @@ factor matters, the optional declaration CSV adds researcher-authored evidence
 before selection. Every row names one exact subject and may assign a stratum,
 mark the subject as an explicit biological extreme, or both. Selection then:
 
-1. includes every declared extreme;
+1. includes manually chosen subjects and every declared extreme;
 2. adds a deterministic within-stratum medoid for each stratum not already
    represented by an included extreme;
 3. adds the whole-cohort descriptor medoid when space remains; and

@@ -95,6 +95,21 @@ def render_reference_calibration_plan_html(plan: ReferenceCalibrationPlan) -> st
         declaration_section = declaration_section.replace(
             "Researcher-declared coverage", "Required QC follow-up coverage"
         ).replace("Declared extreme", "Required inclusion (not a biological outlier label)")
+    if plan.required_subject_filenames:
+        if not plan.selection_method:
+            pilot_description = (
+                "Manually included subjects are selected first. Declared strata/extremes "
+                "are covered next; remaining slots use the legacy geometry medoid and "
+                "farthest-first heuristic. This establishes coverage, not biological validity."
+            )
+        manual_names = ", ".join(escape(name) for name in plan.required_subject_filenames)
+        declaration_section += (
+            "<h3>Manually included subjects</h3>"
+            f"<p>{manual_names}</p>"
+            "<p>These subjects occupy slots within the pilot total; they are not "
+            "automatically labelled biological outliers. Remaining slots use automatic "
+            "coverage, including any declared strata/extremes.</p>"
+        )
     baseline_rows = "\n".join(
         (
             "<tr>"

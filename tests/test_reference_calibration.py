@@ -127,6 +127,7 @@ def test_calibration_plan_treats_ply_and_canonical_vtk_as_the_same_surfaces(
         coordinate_unit="unitless",
         requested_pilot_subject_count=3,
         pilot_subject_declarations=(declaration,),
+        required_subject_filenames=(ply_cohort[2].name,),
     )
 
     rebound = bind_reference_calibration_plan_to_inputs(
@@ -138,6 +139,8 @@ def test_calibration_plan_treats_ply_and_canonical_vtk_as_the_same_surfaces(
     assert rebound.template_filename == "template.vtk"
     assert all(item.filename.endswith(".vtk") for item in rebound.selected_pilot_subjects)
     assert rebound.pilot_subject_declarations[0].filename.endswith(".vtk")
+    assert rebound.required_subject_filenames == (_cohort()[2].name,)
+    assert reference_calibration_plan_from_provenance(rebound.provenance) == rebound
     assert (
         verify_reference_calibration_plan_provenance(rebound.provenance)
         == rebound.fingerprint

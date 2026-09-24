@@ -74,6 +74,7 @@ from diffeoforge.desktop.parameter_guidance import (
     DEFORMETRICA_PARAMETER_GUIDANCE,
     ParameterGuidance,
 )
+from diffeoforge.desktop.pilot_subject_picker import PilotSubjectPicker
 from diffeoforge.desktop.preview_mesh_loader import PreviewMeshLoader
 from diffeoforge.desktop.project_review import ProjectReviewResult, review_project
 from diffeoforge.desktop.project_setup import (
@@ -4275,9 +4276,9 @@ class DiffeoForgeWindow(QMainWindow):
         self.reference_pilot_subject_count_spin.setRange(2, 20)
         self.reference_pilot_subject_count_spin.setValue(8)
         self.reference_pilot_subject_count_spin.setToolTip(
-            "Requested pilot size. DiffeoForge selects a geometry-descriptor medoid "
-            "plus deterministic farthest-first extremes and caps the request at the "
-            "available subject count."
+            "Total pilot subjects, including manual choices. Remaining slots use "
+            "automatic shape coverage. Capped at the available subject count; "
+            "the template is included separately."
         )
         self.reference_pilot_subject_count_spin.valueChanged.connect(
             self._reference_calibration_inputs_changed
@@ -4286,6 +4287,12 @@ class DiffeoForgeWindow(QMainWindow):
             "Representative pilot subjects",
             self.reference_pilot_subject_count_spin,
         )
+
+        self.reference_pilot_subject_picker = PilotSubjectPicker(maximum=20)
+        self.reference_pilot_subject_picker.selectionChanged.connect(
+            self._reference_manual_pilot_subjects_changed
+        )
+        calibration_form.addRow("Always include these meshes", self.reference_pilot_subject_picker)
 
         self.reference_pilot_declarations_edit = QLineEdit()
         self.reference_pilot_declarations_edit.setObjectName("referencePilotDeclarationsEdit")
@@ -5258,6 +5265,8 @@ class DiffeoForgeWindow(QMainWindow):
             == self.reference_pilot_subject_count_spin.value()
             and plan.smallest_relevant_feature == self._current_reference_feature_scale()
             and plan.pilot_subject_declarations == self._reference_pilot_subject_declarations
+            and plan.required_subject_filenames
+            == self.reference_pilot_subject_picker.selected_filenames
         )
 
     def _invalidate_reference_calibration_plan(
@@ -5293,6 +5302,15 @@ class DiffeoForgeWindow(QMainWindow):
 
     @Slot()
     def _reference_calibration_inputs_changed(self) -> None:
+        self._invalidate_reference_calibration_plan()
+
+    @Slot()
+    def _reference_manual_pilot_subjects_changed(self) -> None:
+        # Manual subjects occupy slots; increase the visible total only if
+        # needed. They are never silently dropped to fit a smaller pilot.
+        self.reference_pilot_subject_count_spin.setMinimum(
+            max(2, len(self.reference_pilot_subject_picker.selected_filenames))
+        )
         self._invalidate_reference_calibration_plan()
 
     @Slot()
@@ -5387,6 +5405,7 @@ class DiffeoForgeWindow(QMainWindow):
         self.measure_reference_feature_button.setEnabled(pilot_design_ready)
         self.reference_feature_scale_spin.setEnabled(pilot_design_ready)
         self.reference_pilot_subject_count_spin.setEnabled(pilot_design_ready)
+        self.reference_pilot_subject_picker.setEnabled(pilot_design_ready)
         self.reference_pilot_declarations_edit.setEnabled(pilot_design_ready)
         self.load_reference_pilot_declarations_button.setEnabled(pilot_design_ready)
         self.clear_reference_pilot_declarations_button.setEnabled(
@@ -5492,6 +5511,7 @@ class DiffeoForgeWindow(QMainWindow):
                 requested_pilot_subject_count=(self.reference_pilot_subject_count_spin.value()),
                 smallest_relevant_feature=self._current_reference_feature_scale(),
                 pilot_subject_declarations=self._reference_pilot_subject_declarations,
+                required_subject_filenames=self.reference_pilot_subject_picker.selected_filenames,
             )
         except (OSError, RuntimeError, TypeError, ValueError) as error:
             self._reference_calibration_plan = None
@@ -5665,6 +5685,10 @@ class DiffeoForgeWindow(QMainWindow):
         self._reference_calibrated_config_path = None
         self._reference_recommendation = recommendation
         self._reference_recommendation_paths = current_paths
+        self.reference_pilot_subject_picker.set_subjects(
+            [item.filename for item in recommendation.observations[1:]],
+            cohort_key=tuple(str(path) for path in current_paths),
+        )
         self.reference_parameter_profile_combo.blockSignals(True)
         self.reference_parameter_profile_combo.setCurrentIndex(
             self.reference_parameter_profile_combo.findData("data_assisted")

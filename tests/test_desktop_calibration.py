@@ -197,3 +197,111 @@ def test_desktop_binds_optional_biological_pilot_coverage(
 
     window.close()
     application.processEvents()
+
+
+def test_desktop_manual_picker_builds_hash_bound_plan_without_csv(monkeypatch, tmp_path):
+    application, window, queued = _prepared_window(monkeypatch, tmp_path)
+    picker = window.reference_pilot_subject_picker
+    assert not picker.isEnabled()
+    window.analyze_reference_parameters_button.click()
+    queued[0].run()
+    application.processEvents()
+    assert picker.isEnabled()
+    names = [item.filename for item in window._reference_recommendation.observations[1:]]
+    assert picker.combo.count() == len(names)
+    assert window._reference_recommendation.template_filename not in [
+        picker.combo.itemText(i) for i in range(picker.combo.count())
+    ]
+    window.reference_pilot_subject_count_spin.setValue(2)
+    for name in names[:3]:
+        picker.combo.setCurrentText(name)
+        picker.add_button.click()
+    assert picker.selected_filenames == tuple(sorted(names[:3]))
+    assert window.reference_pilot_subject_count_spin.value() == 3
+    assert not picker.add_button.isEnabled()  # duplicate choice
+    window.build_reference_calibration_button.click()
+    plan = window._reference_calibration_plan
+    assert plan is not None
+    assert plan.required_subject_filenames == picker.selected_filenames
+    assert window._reference_calibration_plan_matches_current_inputs()
+    assert len(queued) == 1  # only geometry analysis, never a pilot/atlas
+    from diffeoforge.config import load_config
+    from diffeoforge.desktop.project_setup import create_project
+    from diffeoforge.reference_calibration import reference_calibration_plan_from_provenance
+
+    project = create_project(window._request())
+    config = load_config(project.config_path)
+    stored = config["project"]["parameter_provenance"]["recommendation"]["calibration_plan"]
+    reopened = reference_calibration_plan_from_provenance(stored)
+    assert reopened.required_subject_filenames == plan.required_subject_filenames
+    from diffeoforge.reference_calibration_study import (
+        create_reference_calibration_study,
+        load_reference_calibration_study,
+    )
+
+    study = create_reference_calibration_study(project.config_path, tmp_path / "manual-study")
+    assert study.plan.required_subject_filenames == plan.required_subject_filenames
+    assert load_reference_calibration_study(study.study_directory).plan == study.plan
+    picker.selected_list.setCurrentRow(0)
+    picker.remove_button.click()
+    assert window._reference_calibration_plan is None
+    assert not window.export_reference_calibration_button.isEnabled()
+    assert window.reference_pilot_subject_count_spin.minimum() == 2
+    window.close()
+    application.processEvents()
+
+
+def test_manual_picker_rejects_free_text_caps_and_resets_only_changed_cohort(monkeypatch, tmp_path):
+    application, window, _queued = _prepared_window(monkeypatch, tmp_path)
+    from diffeoforge.desktop.pilot_subject_picker import PilotSubjectPicker
+
+    picker = PilotSubjectPicker(maximum=2)
+    names = ["first.ply", "second.stl", "third.vtk"]
+    changed = []
+    picker.selectionChanged.connect(lambda: changed.append(True))
+    picker.set_subjects(names, cohort_key=("cohort-a",))
+    picker.combo.setCurrentText("made-up.stl")
+    assert not picker.add_button.isEnabled()
+    picker._add()
+    assert not picker.selected_filenames
+    for name in names:
+        picker.combo.setCurrentText(name)
+        picker.add_button.click()
+    assert picker.selected_filenames == tuple(names[:2])
+    assert len(changed) == 2
+    assert "Limit: 2" in picker.hint.text()
+    picker.set_subjects(names, cohort_key=("cohort-a",))
+    assert picker.selected_filenames == tuple(names[:2])
+    assert len(changed) == 2
+    picker.set_subjects(names, cohort_key=("cohort-b",))
+    assert picker.selected_filenames == ()
+    assert len(changed) == 3
+    assert "cohort changed" in picker.hint.text()
+    picker.close()
+    window.close()
+    application.processEvents()
+
+
+def test_reanalysis_preserves_manual_choice_but_disables_stale_picker(monkeypatch, tmp_path):
+    application, window, queued = _prepared_window(monkeypatch, tmp_path)
+    window.analyze_reference_parameters_button.click()
+    queued[0].run()
+    application.processEvents()
+    picker = window.reference_pilot_subject_picker
+    name = picker.combo.itemText(0)
+    picker.combo.setCurrentText(name)
+    picker.add_button.click()
+    window.reference_surface_detail_combo.setCurrentIndex(
+        window.reference_surface_detail_combo.findData("fine")
+    )
+    assert not picker.isEnabled()
+    assert picker.selected_filenames == (name,)
+    window.analyze_reference_parameters_button.click()
+    queued[-1].run()
+    application.processEvents()
+    assert picker.isEnabled()
+    assert picker.selected_filenames == (name,)
+    window.build_reference_calibration_button.click()
+    assert window._reference_calibration_plan.required_subject_filenames == (name,)
+    window.close()
+    application.processEvents()

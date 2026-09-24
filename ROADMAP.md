@@ -319,6 +319,8 @@ scientific gates. Planning does not mark those gates complete.
 - [x] V89: add a hash-bound QC-to-recalibration successor with all concerns,
   retained controls, 11 bounded candidates, mandatory stage visual review,
   and a new full-cohort atlas/QC requirement; never splice fits into old PCA
+- [x] V90: searchable pilot-mesh dropdown with add/remove, mandatory inclusion
+  within the pilot total, hash-bound provenance and retained CSV coverage support
 - [ ] Prospectively evaluate shape-coverage selection on diverse large cohorts;
   synthetic invariance/local-feature tests do not guarantee anatomical coverage
 - [ ] Prospectively validate dataset-specific settings before any safe-preset claim

@@ -287,6 +287,7 @@ class ReferenceCalibrationPlan:
     search_extension_lineage: tuple[tuple[str, str], ...] = ()
     qc_recalibration_source: tuple[tuple[str, str], ...] = ()
     selection_method: str | None = None
+    required_subject_filenames: tuple[str, ...] = ()
 
     @property
     def pilot_subject_count(self) -> int:
@@ -335,6 +336,8 @@ class ReferenceCalibrationPlan:
             provenance["qc_recalibration_source"] = dict(self.qc_recalibration_source)
         if self.selection_method is not None:
             provenance["selection_method"] = self.selection_method
+        if self.required_subject_filenames:
+            provenance["required_subject_filenames"] = list(self.required_subject_filenames)
         if self.pilot_subject_declarations:
             provenance["pilot_subject_declarations"] = [
                 declaration.as_manifest()
@@ -362,6 +365,11 @@ class ReferenceCalibrationPlan:
                 "range, independently of local/global deformation reach."
             ),
         ]
+        if self.required_subject_filenames:
+            lines.append(
+                "Manually included subjects (within the pilot total): "
+                + ", ".join(self.required_subject_filenames)
+            )
         if self.pilot_subject_declarations:
             strata = sorted(
                 {
@@ -545,11 +553,34 @@ def _normalize_pilot_subject_declarations(
     return tuple(sorted(normalized, key=lambda item: item.filename.casefold()))
 
 
+def _normalize_required_subjects(
+    observations: tuple[MeshGeometryObservation, ...],
+    filenames: Sequence[str],
+) -> tuple[str, ...]:
+    if isinstance(filenames, (str, bytes)):
+        raise TypeError("required_subject_filenames must be a sequence of filenames")
+    known = {item.filename.casefold(): item.filename for item in observations}
+    normalized: set[str] = set()
+    for filename in filenames:
+        if not isinstance(filename, str):
+            raise TypeError("Required subject filenames must be strings")
+        key = filename.strip().casefold()
+        if key not in known:
+            raise ConfigurationError(
+                f"Manually included subject is not in the cohort: {filename!r}"
+            )
+        if known[key] in normalized:
+            raise ConfigurationError(f"Duplicate manually included subject: {filename!r}")
+        normalized.add(known[key])
+    return tuple(sorted(normalized, key=str.casefold))
+
+
 def select_representative_pilot_subjects(
     recommendation: ReferenceParameterRecommendation,
     *,
     requested_count: int = 8,
     pilot_subject_declarations: Sequence[PilotSubjectDeclaration] = (),
+    required_subject_filenames: Sequence[str] = (),
 ) -> tuple[RepresentativePilotSubject, ...]:
     """Select a deterministic medoid plus farthest-first descriptor extremes.
 
@@ -570,6 +601,7 @@ def select_representative_pilot_subjects(
             "Recommendation observations do not match the declared subject count"
         )
     selected_count = min(requested_count, len(observations))
+    required = _normalize_required_subjects(observations, required_subject_filenames)
     declarations = _normalize_pilot_subject_declarations(
         observations,
         pilot_subject_declarations,
@@ -589,11 +621,14 @@ def select_representative_pilot_subjects(
     medoid_index = min(medoid_candidates, key=lambda index: filenames[index])
     selected: list[int] = []
     selection_roles: list[str] = []
-    if declarations:
+    if declarations or required:
         index_by_filename = {
             observation.filename.casefold(): index
             for index, observation in enumerate(observations)
         }
+        for filename in required:
+            selected.append(index_by_filename[filename.casefold()])
+            selection_roles.append("researcher-selected mandatory subject")
         declaration_by_index = {
             index_by_filename[declaration.filename.casefold()]: declaration
             for declaration in declarations
@@ -606,6 +641,8 @@ def select_representative_pilot_subjects(
             ),
             key=lambda item: filenames[item],
         ):
+            if index in selected:
+                continue
             selected.append(index)
             selection_roles.append("researcher-declared biological extreme")
         strata: dict[str, tuple[str, list[int]]] = {}
@@ -631,7 +668,8 @@ def select_representative_pilot_subjects(
             selection_roles.append(f"researcher-declared stratum representative: {label}")
         if len(selected) > selected_count:
             raise ConfigurationError(
-                "Requested pilot size cannot include every declared extreme and at "
+                "Requested pilot size cannot include every manually included subject, "
+                "every declared extreme and at "
                 f"least one subject from each declared stratum; need {len(selected)}, "
                 f"requested {selected_count}"
             )
@@ -721,6 +759,7 @@ def _plan_payload(
     final_confirmation_required: tuple[str, ...],
     limitations: tuple[str, ...],
     pilot_subject_declarations: tuple[PilotSubjectDeclaration, ...],
+    required_subject_filenames: tuple[str, ...],
 ) -> dict[str, object]:
     payload: dict[str, object] = {
         "version": version,
@@ -745,6 +784,8 @@ def _plan_payload(
             declaration.as_manifest()
             for declaration in pilot_subject_declarations
         ]
+    if required_subject_filenames:
+        payload["required_subject_filenames"] = list(required_subject_filenames)
     if recommendation.observations[0].shape_descriptor:
         payload["selection_method"] = "aligned-area-shape-v1"
     return payload
@@ -757,6 +798,7 @@ def build_reference_calibration_plan(
     requested_pilot_subject_count: int = 8,
     smallest_relevant_feature: float | None = None,
     pilot_subject_declarations: Sequence[PilotSubjectDeclaration] = (),
+    required_subject_filenames: Sequence[str] = (),
 ) -> ReferenceCalibrationPlan:
     """Build a deterministic staged pilot plan from aligned-mesh evidence."""
 
@@ -768,6 +810,7 @@ def build_reference_calibration_plan(
             "smallest_relevant_feature", smallest_relevant_feature
         )
     observations = recommendation.observations[1:]
+    required = _normalize_required_subjects(observations, required_subject_filenames)
     declarations = _normalize_pilot_subject_declarations(
         observations,
         pilot_subject_declarations,
@@ -776,6 +819,7 @@ def build_reference_calibration_plan(
         recommendation,
         requested_count=requested_pilot_subject_count,
         pilot_subject_declarations=declarations,
+        required_subject_filenames=required,
     )
     plan_version = (
         STRATIFIED_CALIBRATION_PLAN_VERSION
@@ -1108,6 +1152,7 @@ def build_reference_calibration_plan(
         final_confirmation_required=final_confirmation_required,
         limitations=limitations,
         pilot_subject_declarations=declarations,
+        required_subject_filenames=required,
     )
     return ReferenceCalibrationPlan(
         version=plan_version,
@@ -1128,6 +1173,7 @@ def build_reference_calibration_plan(
         limitations=limitations,
         expected_shape_disparity=recommendation.expected_shape_disparity,
         pilot_subject_declarations=declarations,
+        required_subject_filenames=required,
         selection_method=(
             "aligned-area-shape-v1" if recommendation.observations[0].shape_descriptor else None
         ),
@@ -1250,6 +1296,10 @@ def bind_reference_calibration_plan_to_inputs(
         template_sha256=hashes[0],
         selected_pilot_subjects=selected,
         pilot_subject_declarations=declarations,
+        required_subject_filenames=tuple(
+            by_key[canonical_vtk_filename(name).casefold()].name
+            for name in plan.required_subject_filenames
+        ),
     )
     payload = rebound.provenance
     payload.pop("fingerprint")
@@ -1385,6 +1435,17 @@ def reference_calibration_plan_from_provenance(
         ):
             raise ValueError("pilot-subject declarations contain an empty declaration")
         selected_names = {item.filename.casefold() for item in selected}
+        required_value = provenance.get("required_subject_filenames", [])
+        if not isinstance(required_value, list) or any(
+            not isinstance(name, str) or not name.strip() for name in required_value
+        ):
+            raise ValueError("Manually included subject filenames must be a list of names")
+        required = tuple(required_value)
+        required_keys = [name.casefold() for name in required]
+        if len(set(required_keys)) != len(required_keys):
+            raise ValueError("Manually included subject filenames must be unique")
+        if not set(required_keys).issubset(selected_names):
+            raise ValueError("A manually included subject is absent from the pilot")
         if any(
             item.is_extreme and item.filename.casefold() not in selected_names
             for item in declarations
@@ -1462,6 +1523,7 @@ def reference_calibration_plan_from_provenance(
             limitations=tuple(str(value) for value in provenance["limitations"]),
             expected_shape_disparity=str(provenance.get("expected_shape_disparity", "moderate")),
             pilot_subject_declarations=declarations,
+            required_subject_filenames=required,
             search_extension_lineage=tuple(
                 (str(name), str(value)) for name, value in lineage_value.items()
             ),
