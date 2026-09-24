@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from statistics import median
@@ -16,9 +16,10 @@ import numpy as np
 from diffeoforge.analysis.procrustes import SimilarityTransform
 from diffeoforge.config import ConfigurationError
 from diffeoforge.mesh import sha256_file
+from diffeoforge.shape_descriptor import SHAPE_DESCRIPTOR_VERSION, surface_shape_descriptor
 from diffeoforge.surface_io import load_surface_mesh
 
-RECOMMENDATION_VERSION = "0.3"
+RECOMMENDATION_VERSION = "0.4"
 SurfaceDetailIntent = Literal["fine", "balanced", "coarse"]
 DeformationScaleIntent = Literal["local", "balanced", "global"]
 ExpectedShapeDisparity = Literal["low", "moderate", "high", "extreme"]
@@ -47,6 +48,7 @@ class MeshGeometryObservation:
     bounding_box_diagonal: float
     rms_radius: float
     median_sampled_edge_length: float
+    shape_descriptor: tuple[float, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -205,6 +207,7 @@ def recommend_reference_parameters(
     transforms: Sequence[SimilarityTransform] | None = None,
     alignment_fingerprint: str | None = None,
     triangle_budget_per_mesh: int = 20_000,
+    progress_callback: Callable[[int, int, str], None] | None = None,
 ) -> ReferenceParameterRecommendation:
     """Analyze one GPA-aligned cohort and produce transparent starting guidance.
 
@@ -274,6 +277,7 @@ def recommend_reference_parameters(
             bounding_box_diagonal=diagonal,
             rms_radius=rms_radius,
             median_sampled_edge_length=edge_median,
+            shape_descriptor=surface_shape_descriptor(points, loaded.geometry.triangles),
         )
         observations.append(observation)
         centroids.append(centroid)
@@ -287,12 +291,16 @@ def recommend_reference_parameters(
                 "triangles": loaded.metadata.triangles,
                 "aligned_diagonal": diagonal,
                 "median_sampled_edge_length": edge_median,
+                "shape_descriptor_version": SHAPE_DESCRIPTOR_VERSION,
+                "shape_descriptor": observation.shape_descriptor,
             }
         )
         if sha256_file(path) != loaded.metadata.sha256:
             raise ConfigurationError(
                 f"Mesh changed while parameter guidance was computed: {path}"
             )
+        if progress_callback:
+            progress_callback(index + 1, len(paths), f"Measured surface shape: {path.name}")
 
     cohort_diagonal = float(median(diagonals))
     template_diagonal = diagonals[0]

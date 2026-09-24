@@ -33,6 +33,7 @@ from diffeoforge.reference_recommendation import (
     MeshGeometryObservation,
     ReferenceParameterRecommendation,
 )
+from diffeoforge.shape_descriptor import normalized_shape_matrix
 from diffeoforge.surface_io import canonical_vtk_filename
 
 CALIBRATION_PLAN_VERSION = "0.3"
@@ -284,6 +285,8 @@ class ReferenceCalibrationPlan:
     expected_shape_disparity: str = "moderate"
     pilot_subject_declarations: tuple[PilotSubjectDeclaration, ...] = ()
     search_extension_lineage: tuple[tuple[str, str], ...] = ()
+    qc_recalibration_source: tuple[tuple[str, str], ...] = ()
+    selection_method: str | None = None
 
     @property
     def pilot_subject_count(self) -> int:
@@ -328,6 +331,10 @@ class ReferenceCalibrationPlan:
             provenance["search_extension_lineage"] = dict(
                 self.search_extension_lineage
             )
+        if self.qc_recalibration_source:
+            provenance["qc_recalibration_source"] = dict(self.qc_recalibration_source)
+        if self.selection_method is not None:
+            provenance["selection_method"] = self.selection_method
         if self.pilot_subject_declarations:
             provenance["pilot_subject_declarations"] = [
                 declaration.as_manifest()
@@ -390,7 +397,7 @@ class ReferenceCalibrationPlan:
                 "(researcher measurement)."
             )
         for stage in self.stages:
-            if stage.stage_id == "attachment":
+            if stage.stage_id == "attachment" and not self.qc_recalibration_source:
                 attachment_values = sorted(
                     {
                         candidate.values["attachment_kernel_width"]
@@ -441,7 +448,17 @@ class ReferenceCalibrationPlan:
 def _descriptor_matrix(
     observations: tuple[MeshGeometryObservation, ...],
 ) -> np.ndarray:
-    """Return robustly scaled, inexpensive shape/sampling descriptors."""
+    """Prefer normalized surface shape; retain explicit legacy-plan compatibility."""
+
+    available = [bool(observation.shape_descriptor) for observation in observations]
+    if any(available):
+        if not all(available):
+            raise ConfigurationError(
+                "Mixed legacy and surface-shape observations; reanalyze inputs"
+            )
+        return normalized_shape_matrix(
+            [observation.shape_descriptor for observation in observations]
+        )
 
     raw = np.asarray(
         [
@@ -537,7 +554,8 @@ def select_representative_pilot_subjects(
     """Select a deterministic medoid plus farthest-first descriptor extremes.
 
     The first recommendation observation is the template.  Selection is made
-    only among subjects and uses inexpensive geometry/sampling descriptors.
+    only among subjects and uses normalized surface-shape descriptors for new
+    observations (legacy observations retain their historical geometry rule).
     This is a reproducible diversity heuristic, not proof of biological group
     representativeness.
     """
@@ -619,10 +637,18 @@ def select_representative_pilot_subjects(
             )
         if len(selected) < selected_count and medoid_index not in selected:
             selected.append(medoid_index)
-            selection_roles.append("geometry-descriptor medoid")
+            selection_roles.append(
+                "surface-shape medoid"
+                if observations[0].shape_descriptor
+                else "geometry-descriptor medoid"
+            )
     else:
         selected.append(medoid_index)
-        selection_roles.append("geometry-descriptor medoid")
+        selection_roles.append(
+            "surface-shape medoid"
+            if observations[0].shape_descriptor
+            else "geometry-descriptor medoid"
+        )
     while len(selected) < selected_count:
         remaining = [index for index in range(len(observations)) if index not in selected]
         minimum_to_selected = {
@@ -636,7 +662,11 @@ def select_representative_pilot_subjects(
         ]
         chosen = min(tied, key=lambda index: filenames[index])
         selected.append(chosen)
-        selection_roles.append("farthest-first geometry-descriptor extreme")
+        selection_roles.append(
+            "farthest-first surface-shape coverage"
+            if observations[0].shape_descriptor
+            else "farthest-first geometry-descriptor extreme"
+        )
 
     result: list[RepresentativePilotSubject] = []
     for position, (subject_index, role) in enumerate(
@@ -715,6 +745,8 @@ def _plan_payload(
             declaration.as_manifest()
             for declaration in pilot_subject_declarations
         ]
+    if recommendation.observations[0].shape_descriptor:
+        payload["selection_method"] = "aligned-area-shape-v1"
     return payload
 
 
@@ -1096,6 +1128,9 @@ def build_reference_calibration_plan(
         limitations=limitations,
         expected_shape_disparity=recommendation.expected_shape_disparity,
         pilot_subject_declarations=declarations,
+        selection_method=(
+            "aligned-area-shape-v1" if recommendation.observations[0].shape_descriptor else None
+        ),
     )
 
 
@@ -1289,11 +1324,25 @@ def reference_calibration_plan_from_provenance(
         raise ConfigurationError(
             "Calibration search-extension lineage must be a mapping"
         )
+    qc_source = provenance.get("qc_recalibration_source", {})
+    if not isinstance(qc_source, Mapping) or (
+        qc_source
+        and (
+            set(qc_source) != {"run_manifest_sha256", "analysis_manifest_sha256", "request_sha256"}
+            or any(
+                not isinstance(value, str)
+                or len(value) != 64
+                or any(c not in "0123456789abcdef" for c in value)
+                for value in qc_source.values()
+            )
+        )
+    ):
+        raise ConfigurationError("QC recalibration requires three source SHA-256 bindings")
+    if provenance.get("selection_method") not in {None, "aligned-area-shape-v1"}:
+        raise ConfigurationError("Unknown calibration shape-selection method")
     declarations_value = provenance.get("pilot_subject_declarations", [])
     if not isinstance(declarations_value, list):
-        raise ConfigurationError(
-            "Calibration pilot-subject declarations must be a list"
-        )
+        raise ConfigurationError("Calibration pilot-subject declarations must be a list")
     try:
         declarations = tuple(
             PilotSubjectDeclaration(
@@ -1389,46 +1438,38 @@ def reference_calibration_plan_from_provenance(
         return ReferenceCalibrationPlan(
             version=version,
             fingerprint=str(provenance["fingerprint"]),
-            recommendation_fingerprint=str(
-                provenance["recommendation_fingerprint"]
-            ),
+            recommendation_fingerprint=str(provenance["recommendation_fingerprint"]),
             template_filename=str(provenance["template_filename"]),
             template_sha256=str(provenance["template_sha256"]),
             coordinate_unit=str(provenance["coordinate_unit"]),
             subject_count=int(provenance["subject_count"]),
-            requested_pilot_subject_count=int(
-                provenance["requested_pilot_subject_count"]
-            ),
+            requested_pilot_subject_count=int(provenance["requested_pilot_subject_count"]),
             selected_pilot_subjects=selected,
-            smallest_relevant_feature=(
-                None if feature is None else float(feature)
-            ),
+            smallest_relevant_feature=(None if feature is None else float(feature)),
             attachment_center_source=str(provenance["attachment_center_source"]),
             baseline_parameter_ratios=tuple(
                 (str(name), float(value))
-                for name, value in provenance[
-                    "baseline_parameter_ratios"
-                ].items()  # type: ignore[union-attr]
+                for name, value in provenance["baseline_parameter_ratios"].items()  # type: ignore[union-attr]
             ),
             baseline_effective_values=tuple(
                 (str(name), float(value))
-                for name, value in provenance[
-                    "baseline_effective_values"
-                ].items()  # type: ignore[union-attr]
+                for name, value in provenance["baseline_effective_values"].items()  # type: ignore[union-attr]
             ),
             stages=stages,
             final_confirmation_required=tuple(
                 str(value) for value in provenance["final_confirmation_required"]
             ),
             limitations=tuple(str(value) for value in provenance["limitations"]),
-            expected_shape_disparity=str(
-                provenance.get("expected_shape_disparity", "moderate")
-            ),
+            expected_shape_disparity=str(provenance.get("expected_shape_disparity", "moderate")),
             pilot_subject_declarations=declarations,
             search_extension_lineage=tuple(
-                (str(name), str(value))
-                for name, value in lineage_value.items()
+                (str(name), str(value)) for name, value in lineage_value.items()
             ),
+            qc_recalibration_source=tuple(
+                (str(name), str(value))
+                for name, value in qc_source.items()
+            ),
+            selection_method=provenance.get("selection_method"),
         )
     except (KeyError, TypeError, ValueError) as error:
         raise ConfigurationError(

@@ -83,6 +83,7 @@ from diffeoforge.desktop.project_setup import (
     create_project,
     load_existing_reference_project,
 )
+from diffeoforge.desktop.qc_recalibration import prepare_qc_recalibration, recalibration_concerns
 from diffeoforge.desktop.recent_projects import (
     MODERN_ENGINE,
     RecentProject,
@@ -192,6 +193,7 @@ from diffeoforge.input_preflight import (
     format_mesh_input_preflight,
     inspect_mesh_input_cohort,
 )
+from diffeoforge.mesh import sha256_file
 from diffeoforge.pca_metadata import (
     PCA_METADATA_HTML,
     PCAMetadataArtifact,
@@ -504,6 +506,34 @@ class _ProjectWorker(QRunnable):
                 ),
             )
         except (OSError, RuntimeError, TypeError, ValueError) as error:
+            self.signals.failed.emit(str(error))
+            return
+        self.signals.succeeded.emit(result)
+
+
+class _QcRecalibrationWorker(QRunnable):
+    """Prepare a successor outside the GUI thread without starting an atlas."""
+
+    def __init__(self, review, decisions, inspections, destination, reason):
+        super().__init__()
+        self.review, self.destination, self.reason = review, destination, reason
+        self.decisions, self.inspections = dict(decisions), dict(inspections)
+        self.signals = _WorkerSignals()
+
+    @Slot()
+    def run(self):
+        try:
+            path = prepare_qc_recalibration(
+                self.review,
+                self.decisions,
+                self.inspections,
+                self.destination,
+                reason=self.reason,
+                technical_checks_confirmed=True,
+                progress_callback=lambda *args: self.signals.progress.emit(args),
+            )
+            result = load_existing_reference_project(path)
+        except (OSError, RuntimeError, KeyError, TypeError, ValueError) as error:
             self.signals.failed.emit(str(error))
             return
         self.signals.succeeded.emit(result)
@@ -2669,6 +2699,15 @@ class DiffeoForgeWindow(QMainWindow):
         self.result_qc_export_button.clicked.connect(self._export_registration_qc_status)
         self.result_qc_export_button.hide()
         decision_controls.addWidget(self.result_qc_export_button)
+        self.result_qc_recalibrate_button = QPushButton("Recalibrate QC concerns…")
+        self.result_qc_recalibrate_button.setObjectName("secondary")
+        self.result_qc_recalibrate_button.setToolTip(
+            "Prepare a separate pilot with all Uncertain/Implausible cases and controls. "
+            "The current atlas and PCA remain unchanged."
+        )
+        self.result_qc_recalibrate_button.clicked.connect(self._prepare_qc_recalibration)
+        self.result_qc_recalibrate_button.hide()
+        decision_controls.addWidget(self.result_qc_recalibrate_button)
         self.result_qc_finalize_button = QPushButton("Finish review && view results")
         self.result_qc_finalize_button.setObjectName("primary")
         self.result_qc_finalize_button.clicked.connect(self._finalize_registration_qc_review)
@@ -5189,6 +5228,28 @@ class DiffeoForgeWindow(QMainWindow):
         plan = self._reference_calibration_plan
         recommendation = self._reference_recommendation
         if plan is None or recommendation is None:
+            # A QC successor is restored from its verified stored plan, not a
+            # fresh setup recommendation. Reopening it must not demand another
+            # geometry analysis (which would discard its required stress cases).
+            context = self._reference_calibration_context()
+            if context is not None and context[0].qc_recalibration_source and self._review:
+                try:
+                    config = load_config(self._review.config_path)
+                    inputs = config["input"]
+                    return bool(
+                        sha256_file(self._review.config_path) == self._review.config_sha256
+                        and Path(self.mesh_edit.text()).resolve()
+                        == Path(inputs["directory"]).resolve()
+                        and Path(self.template_edit.text()).resolve()
+                        == Path(inputs["template"]).resolve()
+                        and Path(self.project_edit.text()).resolve()
+                        == self._review.config_path.parent.resolve()
+                        and self.pattern_edit.text() == inputs["subject_pattern"]
+                        and self.units_combo.currentData() == inputs["units"]
+                        and not self.landmarks_edit.text().strip()
+                    )
+                except (OSError, RuntimeError, TypeError, ValueError):
+                    return False
             return False
         return bool(
             plan.recommendation_fingerprint == recommendation.fingerprint
@@ -11183,6 +11244,113 @@ class DiffeoForgeWindow(QMainWindow):
             )
 
     @Slot()
+    def _prepare_qc_recalibration(self) -> None:
+        review = self._result_review
+        if review is None or self._worker is not None:
+            return
+        concerns = recalibration_concerns(review, self._registration_qc_decisions)
+        if not concerns:
+            return
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Recalibrate QC concerns")
+        layout = QVBoxLayout(dialog)
+        info = QLabel(
+            f"Include all {len(concerns)} QC concern(s), previous pilot cases and controls.\n"
+            "11 bounded comparisons around the previous settings; up to 150 iterations each.\n"
+            "Visual review after each stage. Then a new full-cohort atlas and QC.\n"
+            "The old atlas/PCA stay unchanged. No calculation starts at Prepare."
+        )
+        info.setWordWrap(True)
+        layout.addWidget(info)
+        reason = QPlainTextEdit()
+        reason.setPlaceholderText("What does not fit? e.g. an extra protrusion or a missing region")
+        reason.setMaximumHeight(95)
+        layout.addWidget(reason)
+        checked = QCheckBox("I checked orientation, coordinate scale and input quality")
+        layout.addWidget(checked)
+        prepare = QPushButton("Prepare separate pilot")
+        prepare.setObjectName("primary")
+        prepare.setEnabled(False)
+        for signal in (checked.toggled, reason.textChanged):
+            signal.connect(
+                lambda *_args: prepare.setEnabled(
+                    checked.isChecked() and bool(reason.toPlainText().strip())
+                )
+            )
+        prepare.clicked.connect(dialog.accept)
+        cancel = QPushButton("Back to QC")
+        cancel.clicked.connect(dialog.reject)
+        row = QHBoxLayout()
+        row.addWidget(cancel)
+        row.addWidget(prepare)
+        layout.addLayout(row)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        destination = review.run_directory.parent / f"qc-recalibration-{uuid.uuid4().hex[:12]}"
+        worker = _QcRecalibrationWorker(
+            review,
+            self._registration_qc_decisions,
+            self._registration_visual_inspections,
+            destination,
+            reason.toPlainText().strip(),
+        )
+        worker.signals.succeeded.connect(self._qc_recalibration_prepared)
+        worker.signals.failed.connect(self._qc_recalibration_failed)
+        worker.signals.progress.connect(
+            lambda data: self.result_atlas_status_label.setText(f"{data[2]}: {data[0]} / {data[1]}")
+        )
+        self._worker = worker
+        self._set_result_controls_enabled(False)
+        self.result_atlas_status_label.setText(
+            "Preparing separate QC follow-up; source results are unchanged…"
+        )
+        self._thread_pool.start(worker)
+
+    @Slot(str)
+    def _qc_recalibration_failed(self, message: str) -> None:
+        self._worker = None
+        self._set_result_controls_enabled(True)
+        self.result_atlas_status_label.setText(
+            f"QC follow-up could not be prepared: {message}. Source results are unchanged."
+        )
+        QMessageBox.warning(self, "QC follow-up unavailable", message)
+
+    @Slot(object)
+    def _qc_recalibration_prepared(self, result: ProjectSetupResult) -> None:
+        self._worker = None
+        try:
+            config = load_config(result.config_path)
+        except (OSError, RuntimeError, TypeError, ValueError) as error:
+            self._qc_recalibration_failed(str(error))
+            return
+        self._clear_engine_project_state()
+        self.engine_combo.setCurrentIndex(
+            self.engine_combo.findData(DesktopEngine.DEFORMETRICA_REFERENCE)
+        )
+        self._invalidate_reference_recommendation(sync=False)
+        for widget, value in (
+            (self.mesh_edit, config["input"]["directory"]),
+            (self.template_edit, config["input"]["template"]),
+            (self.pattern_edit, "*.vtk"),
+            (self.project_edit, str(result.config_path.parent)),
+            (self.landmarks_edit, ""),
+            (self.name_edit, config["project"]["name"]),
+        ):
+            widget.blockSignals(True)
+            widget.setText(value)
+            widget.blockSignals(False)
+        self.already_gpa_check.setChecked(True)
+        self.procrustes_apply_check.setChecked(False)
+        self.units_combo.setCurrentIndex(self.units_combo.findData(config["input"]["units"]))
+        profile_index = self.reference_parameter_profile_combo.findData("data_assisted")
+        self.reference_parameter_profile_combo.setCurrentIndex(profile_index)
+        self.reference_parameter_profile_combo.setItemText(
+            profile_index, "Guided pilot calibration (recommended)"
+        )
+        self._guided_reference_calibration_requested = True
+        self._project_succeeded(result)
+
+    @Slot()
     def _export_registration_qc_status(self) -> None:
         if self._result_review is None:
             return
@@ -11203,6 +11371,15 @@ class DiffeoForgeWindow(QMainWindow):
 
     def _update_registration_qc_summary(self) -> None:
         review = self._result_review
+        can_recalibrate = bool(
+            review is not None
+            and review.engine_route == "deformetrica_reference"
+            and any(
+                value in {"fail", "uncertain"} for value in self._registration_qc_decisions.values()
+            )
+        )
+        self.result_qc_recalibrate_button.setVisible(can_recalibrate)
+        self.result_qc_recalibrate_button.setEnabled(can_recalibrate and self._worker is None)
         self.result_qc_warning_label.hide()
         if review is None or not review.registration_qc:
             self.result_qc_summary_label.setText("QC review is unavailable.")

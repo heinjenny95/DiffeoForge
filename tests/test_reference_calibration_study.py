@@ -694,6 +694,7 @@ def test_automatic_pilot_reuses_declared_limits_until_boundary_is_interior(
         status="awaiting_review",
         current_stage=stage,
         candidates=(completed_candidate,),
+        plan=SimpleNamespace(qc_recalibration_source=()),
         search_extension_safety_limits=inherited_limits,
     )
     successor_ready = SimpleNamespace(
@@ -717,7 +718,7 @@ def test_automatic_pilot_reuses_declared_limits_until_boundary_is_interior(
         current_stage=None,
         candidates=(),
         selected_candidate_ids={"attachment": "attachment-02"},
-        plan=SimpleNamespace(stages=(stage,)),
+        plan=SimpleNamespace(stages=(stage,), qc_recalibration_source=()),
     )
     boundary_assessment = SimpleNamespace(
         automatic_selection_allowed=False,
@@ -1380,7 +1381,9 @@ def _outward_stub_environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         candidates=(completed_candidate,),
         search_extension_safety_limits=None,
         selected_candidate_ids={},
-        plan=SimpleNamespace(stages=(stage,), fingerprint="fingerprint"),
+        plan=SimpleNamespace(
+            stages=(stage,), fingerprint="fingerprint", qc_recalibration_source=()
+        ),
     )
     successor = SimpleNamespace(
         study_directory=destination,

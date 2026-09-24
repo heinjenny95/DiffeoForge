@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import threading
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path, PurePosixPath
 
 from PySide6.QtCore import QObject, QRunnable, Qt, QUrl, Signal, Slot
@@ -602,6 +602,21 @@ class ReferenceCalibrationDialog(QDialog):
             "reaches the feasibility limits shown at Start."
         )
         self.outward_mode.setEnabled(False)
+        if self._snapshot.plan.qc_recalibration_source:
+            self.advanced_mode.blockSignals(True)
+            self.advanced_mode.setChecked(True)
+            self.advanced_mode.blockSignals(False)
+            title.setText("QC follow-up calibration")
+            boundary.setText(
+                "Bounded neighboring settings around the previous atlas. All recorded QC "
+                "concerns and retained controls are included. Inspect the selected candidate "
+                "after each stage. No automatic anatomical approval or outward search. "
+                "The original template is retained; unresolved fits may require template review. "
+                "After selection, run a new full-cohort atlas and repeat QC."
+            )
+            self.advanced_mode.hide()
+            self.afk_mode.hide()
+            self.outward_mode.hide()
         self.afk_mode.toggled.connect(
             lambda checked: self.outward_mode.setChecked(False) if not checked else None
         )
@@ -745,7 +760,12 @@ class ReferenceCalibrationDialog(QDialog):
                     )
                 )
                 method = QLabel(
-                    "DiffeoForge first screened attachment and deformation scales "
+                    "This bounded QC follow-up varied attachment width, deformation/control "
+                    "spacing, noise and time points around the previous settings. "
+                    "Each selected stage required visual review. It is adaptive calibration, "
+                    "not independent validation; a new full-cohort atlas and QC are still required."
+                    if self._snapshot.plan.qc_recalibration_source
+                    else "DiffeoForge first screened attachment and deformation scales "
                     "together, then refined deformation, regularization, and numerical "
                     "accuracy. Standard automatic choices require stability; AFK can accept "
                     "eligible ambiguous or boundary-limited choices provisionally. "
@@ -804,13 +824,29 @@ class ReferenceCalibrationDialog(QDialog):
         stage = self._snapshot.current_stage
         assert stage is not None
         automatic_mode = not self.advanced_mode.isChecked()
-        self.advanced_mode.setEnabled(not running)
+        self.advanced_mode.setEnabled(
+            not running and not self._snapshot.plan.qc_recalibration_source
+        )
         heading = QLabel(
             f"Stage {stage.order} of {len(self._snapshot.plan.stages)} — {stage.title}"
         )
         heading.setObjectName("sectionTitle")
         self.content_layout.addWidget(heading)
         guidance = stage_guidance(stage)
+        if self._snapshot.plan.qc_recalibration_source:
+            guidance = replace(
+                guidance,
+                action="Run this bounded stage, choose an eligible option, and inspect all "
+                "of its pilot reconstructions before advancing. No automatic selection.",
+            )
+            if stage.stage_id == "attachment":
+                guidance = replace(
+                    guidance,
+                    question="Which matching-detail width preserves the anatomy?",
+                    explanation="Compare half, unchanged and double the previous attachment "
+                    "width. Deformation settings stay fixed in this stage. This local "
+                    "follow-up does not test every interaction between parameters.",
+                )
         question = QLabel(guidance.question)
         question.setObjectName("title")
         question.setWordWrap(True)
@@ -1322,6 +1358,18 @@ class ReferenceCalibrationDialog(QDialog):
             )
             return
         self.selection_combo.show()
+        if self._snapshot.plan.qc_recalibration_source:
+            self.collect_evidence_button.hide()
+            approved = self._visual_approvals().get(selected) is True
+            self.advance_button.setVisible(selected_is_selectable)
+            self.advance_button.setEnabled(ready and approved)
+            self.review_next_button.show()
+            self.status.setText(
+                "Choose an option and review its reconstructions, including all QC concerns "
+                "and controls. A visually plausible selection is required to continue. "
+                "If none fits, stop and review inputs/template; the old QC remains unresolved."
+            )
+            return
         if not selected_is_selectable:
             _set_choice_emphasis(self.selection_combo, True)
             assessment = assess_reference_calibration_snapshot(
@@ -1355,6 +1403,12 @@ class ReferenceCalibrationDialog(QDialog):
         completed = tuple(
             candidate for candidate in self._snapshot.candidates if candidate.status == "completed"
         )
+        if self._snapshot.plan.qc_recalibration_source:
+            selected = self.selection_combo.currentData()
+            chosen = next((item for item in completed if item.candidate_id == selected), None)
+            if chosen is not None:
+                self._open_candidate(chosen)
+                return
         candidate = next(
             (
                 item
@@ -1585,6 +1639,14 @@ class ReferenceCalibrationDialog(QDialog):
 
     @Slot()
     def _collect_more_evidence(self) -> None:
+        if self._snapshot.plan.qc_recalibration_source:
+            QMessageBox.information(
+                self,
+                "Bounded QC follow-up",
+                "This follow-up does not widen automatically. If no candidate fits, retain "
+                "the unresolved QC and review alignment, inputs and template suitability.",
+            )
+            return
         assessment = assess_reference_calibration_snapshot(
             self._snapshot,
             visual_approvals=self._visual_approvals(),

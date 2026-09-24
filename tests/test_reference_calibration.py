@@ -260,10 +260,9 @@ def test_pilot_selection_is_deterministic_unique_and_excludes_template() -> None
     assert recommendation.template_filename not in {
         subject.filename for subject in first
     }
-    assert first[0].selection_role == "geometry-descriptor medoid"
+    assert first[0].selection_role == "surface-shape medoid"
     assert all(
-        subject.selection_role == "farthest-first geometry-descriptor extreme"
-        for subject in first[1:]
+        subject.selection_role == "farthest-first surface-shape coverage" for subject in first[1:]
     )
     assert [subject.selection_order for subject in first] == [1, 2, 3, 4]
     assert all(subject.sha256 for subject in first)

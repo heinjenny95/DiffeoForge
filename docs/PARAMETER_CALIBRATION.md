@@ -88,16 +88,30 @@ current plan.
 
 ## Representative pilot selection
 
-The template is excluded. Each subject is described by bounding-box diagonal,
-root-mean-square radius, median sampled edge length, point count, and face
-count. Robustly scaled descriptors are used to select:
+The template is excluded. Newly analyzed cohorts use `aligned-area-shape-v1`:
+translation- and uniform-scale-normalized **surface shape**, retaining the
+shared anatomical alignment. The descriptor combines exact area-weighted
+surface moments, supports in 26 directions, and radial/directional distribution
+quantiles from 4,096 deterministic area-uniform samples. Robustly scaled,
+equally weighted feature families are used to select:
 
 1. the descriptor medoid;
 2. successive farthest-first descriptor extremes.
 
 Filename ordering resolves exact ties. The same bytes and settings therefore
-produce the same selection and fingerprint. This is deliberately described as
-a geometric-diversity heuristic.
+produce the same selection and fingerprint. Vertex/triangle count and absolute
+size no longer drive this selection; sampling scale still informs parameter
+planning separately. Canonical triangle ordering removes vertex/face-order
+dependence, not all remeshing dependence. Local concavities can contribute even
+when bounding boxes match, but a finite descriptor can miss small features.
+This is a shape-diversity heuristic, not correspondence, a universal outlier
+detector, or anatomical validation. Incorrect orientation can dominate it.
+The synthetic regression tests are not a 300-specimen performance or biological
+validation claim. Known difficult cases remain useful optional declarations.
+
+Stored legacy plans retain their original selections and fingerprints. Legacy
+geometry-only observations keep their historical descriptor; mixing old and
+new observations is refused and requires a fresh aligned-mesh analysis.
 
 When sex, species, treatment, locality, known morphology, or another manuscript
 factor matters, the optional declaration CSV adds researcher-authored evidence
@@ -117,6 +131,51 @@ and a pilot count too small for the declared coverage fail explicitly. A
 stratum declaration guarantees pilot inclusion coverage only; it does not
 prove biological representativeness or make the labels outcomes for automatic
 parameter scoring.
+
+## From atlas QC to bounded recalibration (v89)
+
+For a completed Deformetrica atlas, record and visually inspect an
+**Implausible** or **Uncertain** case, then choose **Recalibrate QC concerns…**.
+Describe the fitting problem and confirm orientation, coordinate scale and
+input quality were checked. Preparation happens in a worker with progress;
+it creates a separate sibling project and does not launch a numerical run.
+
+Every recorded concern is mandatory. The previous pilot cohort, up to two
+explicitly plausible controls, and additional shape-diversity cases are retained
+where available. At most 20 pilot subjects are supported; preparation refuses
+to drop required cases if that cap is exceeded. Required inclusion does not
+label an animal a biological outlier. Run/analysis manifest hashes, inspection
+bindings, decisions, reason and the parent plan identify the source. The request
+is hash-bound and copied into the resumable study. Original meshes, template,
+atlas, QC decisions and PCA are not overwritten or selectively replaced.
+
+The successor uses the **already staged/aligned coordinates**, never repeats
+GPA, and starts from the previous effective parameter values. It tests a finite
+11-candidate grid in four sequential stages, up to 150 iterations per run:
+
+1. Attachment width: 0.5, 1, 2 times the previous value.
+2. Deformation width and control-point spacing together: 0.5, 1, 2 times.
+3. Noise standard deviation: 0.5, 1, 2 times.
+4. Integration time points: 1, 2 times.
+
+This is a bounded local follow-up, not a joint factorial search or proof that
+the optimum was found. Earlier selections stay fixed in later stages. There
+is no AFK selection or automatic outward expansion here: inspect the chosen
+candidate's reconstructions of **all pilot cases** before advancing each stage.
+Numerical eligibility and visual approval are both required. No larger
+deformation is automatically equated with anatomical failure.
+
+The initial template remains unchanged; this workflow is not automatic template
+search. Explicit initial control-point files require a separately reviewed
+diagnostic. If none of the options is anatomically defensible, stop and review
+alignment, geometry, template suitability and model limitations. Do not force
+a visually rejected case into the morphospace or endlessly widen parameters.
+
+The final selected configuration retains the **entire cohort** for a new common
+atlas, followed by QC and fresh analysis. A repaired individual reconstruction
+must not be spliced into the old PCA. This adaptive follow-up uses failed cases
+to calibrate and is therefore **not independent validation**. Old and new
+results remain separate and reopening the project retains the required cohort.
 
 ## Sequential stages
 

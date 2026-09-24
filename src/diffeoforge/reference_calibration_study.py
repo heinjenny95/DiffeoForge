@@ -658,6 +658,14 @@ def create_reference_calibration_study(
     try:
         source_copy = root / "source" / "atlas.yaml"
         _copy_bound(source, source_copy, sha256_file(source))
+        if plan.qc_recalibration_source:
+            request_path = source.parent / "qc-request.json"
+            request = _read_json(request_path, "QC recalibration request")
+            if _canonical_hash(request) != dict(plan.qc_recalibration_source)["request_sha256"]:
+                raise ReferenceCalibrationStudyError("QC recalibration request binding differs")
+            _copy_bound(
+                request_path, root / "source" / "qc-request.json", sha256_file(request_path)
+            )
         template_copy = root / "inputs" / "template" / inputs.template.name
         _copy_bound(inputs.template, template_copy, plan.template_sha256)
         subject_records: list[dict[str, object]] = []
@@ -755,6 +763,11 @@ def create_reference_calibration_search_extension_study(
 
     source_root = Path(source_study_directory).expanduser().resolve()
     source_snapshot = load_reference_calibration_study(source_root)
+    if source_snapshot.plan.qc_recalibration_source:
+        raise ReferenceCalibrationStudyError(
+            "QC recalibration uses a bounded grid; review the failed fit or template "
+            "before proposing another study"
+        )
     if (
         source_snapshot.status != "awaiting_review"
         or source_snapshot.current_stage is None
@@ -1042,6 +1055,15 @@ def _verify_manifest(root: Path) -> dict[str, Any]:
             "Calibration study does not contain a plan"
         )
     plan = reference_calibration_plan_from_provenance(plan_value)
+    if plan.qc_recalibration_source:
+        request = _read_json(root / "source" / "qc-request.json", "QC recalibration request")
+        binding = dict(plan.qc_recalibration_source)
+        if (
+            _canonical_hash(request) != binding["request_sha256"]
+            or request.get("run_manifest_sha256") != binding["run_manifest_sha256"]
+            or request.get("analysis_manifest_sha256") != binding["analysis_manifest_sha256"]
+        ):
+            raise ReferenceCalibrationStudyError("QC recalibration request binding differs")
     if manifest.get("plan_fingerprint") != plan.fingerprint:
         raise ReferenceCalibrationStudyError("Calibration study plan binding differs")
     extension_source = manifest.get("search_extension_source")
@@ -1579,6 +1601,10 @@ class ReferenceCalibrationStudyRunner:
         """
 
         initial = load_reference_calibration_study(self.study_directory)
+        if initial.plan.qc_recalibration_source and initial.status != "completed":
+            raise ReferenceCalibrationStudyError(
+                "QC recalibration requires visual stage review; run one stage at a time"
+            )
         initial_stage = (
             initial.current_stage.stage_id if initial.current_stage else None
         )
@@ -2230,16 +2256,18 @@ def _calibration_report_payload(
         "plan_fingerprint": plan.fingerprint,
         "status": "provisional_pilot_recommendation",
         "summary": (
-            "All four staged pilot comparisons completed. Standard automatic choices "
+            "Bounded QC follow-up completed with explicit visual selection at each stage. "
+            "This is adaptive recalibration, not independent validation or approval of a "
+            "final atlas. A new full-cohort atlas and QC remain required."
+            if plan.qc_recalibration_source
+            else "All four staged pilot comparisons completed. Standard automatic choices "
             "require the robustness gate; AFK choices use an explicitly pre-authorized "
             "provisional policy and may remain ambiguous or search-boundary limited. "
             "Consult each recorded selection mode and evidence grade. No visual approval "
             "is implied. Full-cohort confirmation remains required."
         ),
         "coordinate_unit": plan.coordinate_unit,
-        "pilot_subjects": [
-            subject.filename for subject in plan.selected_pilot_subjects
-        ],
+        "pilot_subjects": [subject.filename for subject in plan.selected_pilot_subjects],
         "declared_priorities": declared_priorities,
         "recommended_parameters": parameters,
         "stage_decisions": stages,
@@ -2247,6 +2275,11 @@ def _calibration_report_payload(
         "full_cohort_confirmation_required": True,
         "next_steps": list(plan.final_confirmation_required),
         "limitations": list(plan.limitations),
+        **(
+            {"qc_recalibration_source": dict(plan.qc_recalibration_source)}
+            if plan.qc_recalibration_source
+            else {}
+        ),
     }
 
 
@@ -2461,6 +2494,14 @@ def _record_reference_calibration_stage_selection(
         raise ReferenceCalibrationStudyError(
             "The current calibration stage is not awaiting review"
         )
+    if snapshot.plan.qc_recalibration_source and (
+        visual_approvals.get(selected_candidate_id) is not True
+        or not selection_mode.startswith("researcher_")
+    ):
+        raise ReferenceCalibrationStudyError(
+            "QC recalibration requires explicit visual approval of the selected candidate, "
+            "including concerns and controls"
+        )
     candidate_ids = {candidate.candidate_id for candidate in snapshot.candidates}
     unexpected_review_ids = set(visual_approvals) - candidate_ids
     if unexpected_review_ids:
@@ -2508,7 +2549,9 @@ def _record_reference_calibration_stage_selection(
             "candidate_id": selected_candidate_id,
             "parameter_values": selected.values,
             "visual_approvals": dict(visual_approvals),
-            "visual_review_policy": "optional",
+            "visual_review_policy": "required_qc_followup"
+            if snapshot.plan.qc_recalibration_source
+            else "optional",
             "visual_review_status": {
                 candidate.candidate_id: (
                     "passed"

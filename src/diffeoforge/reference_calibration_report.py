@@ -79,6 +79,22 @@ def render_reference_calibration_plan_html(plan: ReferenceCalibrationPlan) -> st
             "diversity heuristic, not proof of biological group representation."
         )
         declaration_section = ""
+    if plan.selection_method:
+        pilot_description = (
+            "Deterministic medoid/farthest-first coverage of normalized aligned surface shape "
+            "(area moments, directional supports and area-sampled distribution quantiles). "
+            "Vertex/face count and absolute size do not drive selection. Known required "
+            "cases are included first. Alignment, tessellation and small missed features "
+            "remain limitations; this is not anatomical correspondence or QC approval."
+        )
+    if plan.qc_recalibration_source:
+        pilot_description += (
+            " This is adaptive QC follow-up, not independent validation: all recorded "
+            "concerns and retained controls must be assessed. New full-cohort atlas/QC required."
+        )
+        declaration_section = declaration_section.replace(
+            "Researcher-declared coverage", "Required QC follow-up coverage"
+        ).replace("Declared extreme", "Required inclusion (not a biological outlier label)")
     baseline_rows = "\n".join(
         (
             "<tr>"

@@ -313,6 +313,14 @@ scientific gates. Planning does not mark those gates complete.
   staged candidates, explicit decision rules, and publication-oriented export
 - [x] Automate approval-bound calibration candidate execution and verified
   residual/distortion/runtime evidence ingestion
+- [x] V89: use normalized area-weighted surface-shape coverage for newly
+  analyzed pilot cohorts, independently of triangle count or absolute size;
+  retain legacy plan fingerprints and optional required-case declarations
+- [x] V89: add a hash-bound QC-to-recalibration successor with all concerns,
+  retained controls, 11 bounded candidates, mandatory stage visual review,
+  and a new full-cohort atlas/QC requirement; never splice fits into old PCA
+- [ ] Prospectively evaluate shape-coverage selection on diverse large cohorts;
+  synthetic invariance/local-feature tests do not guarantee anatomical coverage
 - [ ] Prospectively validate dataset-specific settings before any safe-preset claim
 - [ ] Add a prospective multi-resolution mesh sensitivity workflow and guided
   evidence report: compare researcher-approved face-count levels without silent

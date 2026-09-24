@@ -291,6 +291,7 @@ def test_staged_calibration_allows_selection_without_visual_qc(
         study_directory=tmp_path,
         study_id="guided-test",
         plan=SimpleNamespace(
+            qc_recalibration_source=(),
             stages=(stage,),
             coordinate_unit="unitless",
             fingerprint="a" * 64,
