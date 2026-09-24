@@ -435,6 +435,31 @@ declared experiment. These are not implicit next jobs. A final common-cohort
 atlas, human QC and shape-space stability comparison remain separate steps;
 do not mix independently tuned subject momenta into one atlas PCA.
 
+### Bounded deformation-support follow-up
+
+With explicit authorization, separate support density from deformation scale
+using two fixed-template diagnostic cases. Retain the previous matching settings
+and original control-point coordinates; add a deterministic, padded lattice at
+half the reference deformation width. Use the same explicit enlarged support
+in both cases: first retain the reference deformation width, then halve it.
+An explicit control-point file takes precedence over an initialization-spacing
+setting: changing spacing alone does not densify a supplied point set.
+
+Record lattice origin, bounds, padding, spacing, point count, deduplication rule
+and template coverage; verify finite coordinates, original-point retention and
+resource caps before launch. Hash-bind the explicit point file and confirm its
+path in the generated engine XML. Use independent zero-momentum starts with the
+same optimizer and numerical limits. Retaining the old basis at the old width
+preserves its representability, not a guarantee of optimizer success. A narrower
+deformation kernel changes the metric and regularization as well as locality.
+
+Reuse the declared observation regions, full-resolution bidirectional distances,
+common-view anatomy checks and comparison specimens. Run only the bounded cases,
+sequentially, with stop-on-failure and no automatic parameter adoption. A promising
+finer deformation still needs integration-sensitivity checks, anatomical review
+and a common-cohort atlas before interpreting a replacement morphospace. Keep
+template and optimizer-initialization effects separate from this comparison.
+
 The workflow automates computation and a transparent provisional parameter
 recommendation, not anatomical judgment. The balanced multi-metric score can
 select an eligible candidate in the standard route because the candidate set is
