@@ -460,6 +460,45 @@ finer deformation still needs integration-sensitivity checks, anatomical review
 and a common-cohort atlas before interpreting a replacement morphospace. Keep
 template and optimizer-initialization effects separate from this comparison.
 
+### Integration audit before a bounded adaptive-template comparison
+
+With explicit authorization, re-integrate the stored final control points and
+momenta before fitting another model. Keep the seed surface, deformation kernel,
+precision, device mode and integration scheme fixed. Compare inclusive time grids
+such as 20, 40 and 80 points over the same interval, from zero to one. First
+reproduce each stored reconstruction on the original grid within a declared
+roundoff tolerance. Read the real final endpoint; do not infer it from a setting
+that a different backend command may ignore. Bind subject order to the dataset
+XML, not file-system order or the order of a diagnostic selection list.
+
+Use the installed deformation implementation, test zero flow and a simple known
+translation, and record input/code hashes, endpoint time, grid size and finite
+coordinates. Report area-weighted displacement between corresponding vertices,
+tails and maxima, normalized by each observation's bounding-box diagonal. Set
+screening thresholds and a refinement trend before inspecting the new endpoints.
+These thresholds assess numerical sensitivity, not anatomical accuracy. A failed
+screen stops that branch; a passing stored flow does not guarantee stability of
+later refitted momenta. Re-audit any promising refitted flow.
+
+If an authorized integration gate passes, a finite pair of small, in-sample atlas
+fits can investigate practical template initialization. Allow template vertices
+to update; use the same observation cohort, explicit padded control support,
+zero-momentum initialization, matching parameters, numerical settings and caps
+in both cases. Fix control-point positions if isolating the seed surface from
+support optimization. A previously learned seed and an independently preselected
+pilot medoid are possible starting surfaces. If their native triangulations
+differ, disclose vertex count, sampling and discretization as confounds: this is
+not a pure vertex-position or topology experiment. Do not silently remesh them.
+
+Compare all selected observations, not merely the seed specimen's self-fit.
+Preserve the observation-defined regions and views; inspect bidirectional local
+residuals, unsupported projections, comparator harm, distortion, intersections
+and optimizer termination. A decreasing objective is not anatomical approval.
+Run only the declared cases, sequentially, with integrity checks and disk reserve;
+stop on failure and after the finite pair. No automatic retry, expansion, winner,
+full-cohort atlas or PCA follows. An unresolved case retains its QC caveat; never
+hide the point or splice separately tuned momenta into an existing morphospace.
+
 The workflow automates computation and a transparent provisional parameter
 recommendation, not anatomical judgment. The balanced multi-metric score can
 select an eligible candidate in the standard route because the candidate set is
