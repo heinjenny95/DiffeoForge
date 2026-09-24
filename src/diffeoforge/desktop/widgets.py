@@ -823,8 +823,10 @@ class _ResultReviewWorker(QRunnable):
                 if self.reference
                 else review_modern_result(self.directory)
             )
-        except (ModernResultReviewError, OSError, RuntimeError, TypeError, ValueError) as error:
-            self.signals.failed.emit(str(error))
+        except Exception as error:
+            # This is an asynchronous task boundary: an unexpected import error
+            # must also release the UI instead of silently abandoning a busy state.
+            self.signals.failed.emit(f"{type(error).__name__}: {error}")
             return
         self.signals.succeeded.emit(review)
 
@@ -7965,7 +7967,7 @@ class DiffeoForgeWindow(QMainWindow):
         self.result_status_label.setText(
             "PC shapes were published; the complete result snapshot is being reverified…"
         )
-        self._thread_pool.start(worker)
+        self._dispatch_result_review(worker, self._reference_pca_deformation_reload_failed)
 
     @Slot(str)
     def _reference_pca_deformation_reload_failed(self, message: str) -> None:
@@ -8071,8 +8073,46 @@ class DiffeoForgeWindow(QMainWindow):
         self.status_label.setObjectName("status")
         self.status_label.setStyleSheet("")
         self.status_label.setText(worker.verification_message)
-        self._sync_ready_state()
-        self._thread_pool.start(worker)
+        self._dispatch_result_review(worker, self._completed_result_review_failed)
+
+    def _dispatch_result_review(self, worker: _ResultReviewWorker, failed) -> None:
+        """Connect real progress and make dispatch failures visible on every route."""
+        worker.signals.progress.connect(self._result_review_progress)
+        self.run_stage_label.setText("Atlas saved · preparing QC and PCA; no atlas rerun")
+        self.run_optimizer_label.setText(
+            "Atlas execution has finished. Previous backend resource readings are no longer live."
+        )
+        self.run_progress_bar.setRange(0, 0)
+        self.run_progress_bar.setFormat("Preparing results")
+        try:
+            self._sync_ready_state()
+            self._thread_pool.start(worker)
+        except Exception as error:
+            failed(f"Could not start result verification: {type(error).__name__}: {error}")
+
+    @Slot(object)
+    def _result_review_progress(self, value: object) -> None:
+        if not isinstance(self._worker, _ResultReviewWorker):
+            return
+        if not isinstance(value, tuple) or len(value) != 3:
+            return
+        completed, total, message = value
+        if (
+            not isinstance(completed, int)
+            or not isinstance(total, int)
+            or not 0 <= completed <= total
+            or not isinstance(message, str)
+        ):
+            return
+        count = f"{completed} of {total} · " if total else ""
+        text = f"Preparing results · {count}{message}. No atlas is being recomputed."
+        self.run_stage_label.setText(text)
+        self.data_status_label.setText(text)
+        self.status_label.setText(text)
+        self.run_progress_bar.setRange(0, total)
+        if total:
+            self.run_progress_bar.setValue(completed)
+            self.run_progress_bar.setFormat("Result preparation: %v of %m")
 
     @Slot()
     def _setup_primary_action(self) -> None:
@@ -10457,8 +10497,7 @@ class DiffeoForgeWindow(QMainWindow):
             else "Workflow, bundle, inventory, mesh QC, and static SVGs are being "
             "fully reverified before the results view is enabled."
         )
-        self._sync_ready_state()
-        self._thread_pool.start(worker)
+        self._dispatch_result_review(worker, self._result_review_failed)
 
     @Slot(object)
     def _result_review_succeeded(self, review: ModernResultReview) -> None:

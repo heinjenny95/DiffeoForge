@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import weakref
+from itertools import count
 
 from PySide6.QtCore import QObject, Qt, QThreadPool, Slot
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QProgressBar, QWidget
@@ -89,9 +90,12 @@ class ActivityIndicator(QWidget):
 
 
 class _Ticket(QObject):
-    def __init__(self, pool: ActivityPool, key: int) -> None:
+    def __init__(self, pool: ActivityPool, key: int, worker: object) -> None:
         super().__init__(pool.indicator)
         self._pool, self.key = weakref.ref(pool), key
+        # Terminal signals are queued to the GUI. Keep the Python wrapper alive
+        # until that delivery, including while a completion slot starts its successor.
+        self.worker: object | None = worker
 
     @Slot(object)
     def progress(self, value: object) -> None:
@@ -107,9 +111,11 @@ class _Ticket(QObject):
     @Slot()
     def finish(self) -> None:
         pool = self._pool()
-        if pool is not None and pool._tickets.pop(self.key, None) is not None:
+        if pool is not None and pool._tickets.get(self.key) is self:
+            pool._tickets.pop(self.key)
             pool.indicator.set_task(self.key, None)
-            self.deleteLater()
+        self.worker = None
+        self.deleteLater()
 
 
 class _LoaderBinding(QObject):
@@ -132,12 +138,15 @@ class ActivityPool:
         self.indicator = ActivityIndicator(owner)
         self._pool = pool if pool is not None else QThreadPool.globalInstance()
         self._tickets: dict[int, _Ticket] = {}
+        self._keys = count()
 
     def start(self, worker) -> None:
-        key = id(worker)
-        if key in self._tickets:
+        if any(ticket.worker is worker for ticket in self._tickets.values()):
             return  # The same runnable must never be queued twice.
-        ticket = _Ticket(self, key)
+        # Object addresses can be reused before an older queued finish arrives.
+        # A monotonically assigned ticket cannot suppress or clear another task.
+        key = next(self._keys)
+        ticket = _Ticket(self, key, worker)
         worker.signals.succeeded.connect(ticket.finish)
         worker.signals.failed.connect(ticket.finish)
         if hasattr(worker.signals, "progress"):

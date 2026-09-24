@@ -1,5 +1,28 @@
 # Private-alpha build numbering
 
+## v88 — reliable atlas-to-QC handoff and visible result preparation
+
+Development candidate v88 (`0.0.0.dev88`) fixes a task-identity race during
+the transition from a finished atlas to result preparation. Activity tickets
+now retain their worker until terminal signal delivery and use independent,
+monotonically assigned identifiers. A new task cannot be silently skipped
+because a completed worker's Python object address was reused before cleanup.
+The same runnable still cannot be dispatched twice.
+
+- Result import reports unexpected exceptions and dispatch failures visibly,
+  restoring retryable controls rather than leaving a permanent busy state.
+- All result-review entry points show the actual preparation phase and available
+  subject counts, and explicitly retire stale atlas resource readings.
+- Regressions cover wrapper retention, simulated address reuse, duplicate
+  dispatch, 25 real queued successor tasks, exception reporting and progress.
+- The reproduced handoff failure is consistent with an observed post-atlas
+  stall; an object-address collision was not captured from that live process.
+
+No atlas input, parameter, numerical method or QC criterion changes. Opening an
+existing completed run verifies and prepares its derived results; it does not
+rerun the atlas or approve scientific QC. Build and installation observations
+are recorded separately; this entry is not a public release announcement.
+
 ## v87 — AFK outward-search start and visible startup errors
 
 Development candidate v87 (`0.0.0.dev87`) fixes an exception before pilot

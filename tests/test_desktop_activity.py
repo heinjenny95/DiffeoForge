@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import gc
 import threading
+import weakref
 from types import SimpleNamespace
 
 import pytest
@@ -24,6 +26,52 @@ class Signals(QObject):
     succeeded = Signal(object)
     failed = Signal(str)
     progress = Signal(object)
+
+
+def test_pending_ticket_retains_worker_until_terminal_delivery(application):
+    """A queued GUI completion can outlive QRunnable's Python wrapper otherwise."""
+    owner = QWidget()
+    pool = ActivityPool(owner, pool=SimpleNamespace(start=lambda worker: None))
+
+    class Worker:
+        def __init__(self):
+            self.signals = Signals()
+
+    worker = Worker()
+    signals = worker.signals
+    reference = weakref.ref(worker)
+    pool.start(worker)
+    del worker
+    gc.collect()
+    assert reference() is not None
+    signals.succeeded.emit(None)
+    application.processEvents()
+    gc.collect()
+    assert not pool.indicator.tasks
+    assert reference() is None
+
+
+def test_legacy_identity_reuse_cannot_silently_drop_a_distinct_worker(
+    application,
+    monkeypatch,
+):
+    """Deterministically simulate id reuse before an old ticket's queued cleanup."""
+    import diffeoforge.desktop.activity as activity
+
+    monkeypatch.setattr(activity, "id", lambda _worker: 42, raising=False)
+    owner = QWidget()
+    queued = []
+    pool = ActivityPool(owner, pool=SimpleNamespace(start=queued.append))
+    first = SimpleNamespace(signals=Signals())
+    followup = SimpleNamespace(signals=Signals())
+    pool.start(first)
+    pool.start(followup)
+    pool.start(followup)
+    assert queued == [first, followup]
+    first.signals.succeeded.emit(None)
+    assert len(pool.indicator.tasks) == 1
+    followup.signals.failed.emit("test cleanup")
+    assert not pool.indicator.tasks
 
 
 def test_activity_tracks_overlap_duplicates_failures_and_existing_cursor(application):
