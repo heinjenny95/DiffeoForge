@@ -333,6 +333,50 @@ selectable for methods reporting.
 
 ## Scientific and implementation boundary
 
+### Targeted follow-up when one reconstruction is implausible
+
+A large deformation is not, by itself, an anatomical failure. The regularity
+term is part of the model's fit-versus-complexity trade-off, not a biological
+verdict. Increasing expected disparity does not guarantee a defensible fit.
+Inspect the original and reconstructed surface, alignment, input identity,
+topology, local distortion and optimizer stop signal together. Check whether
+the problematic specimen was actually included in the original pilot subset.
+
+Before repeating an entire atlas, a bounded **in-sample diagnostic** can isolate
+the attachment/regularity trade-off:
+
+1. Preserve the completed atlas, its QC decisions and PCA unchanged. Copy and
+   hash-bind its learned template, control points and selected aligned inputs
+   into a separate diagnostic directory. Include the problematic specimen and
+   explicitly chosen comparison specimens; unreviewed is not equivalent to
+   visually approved.
+2. Freeze both the learned template and control points. Use identical initial
+   momenta, subject order, runtime, integration settings and optimization caps
+   for every candidate. Default zero-momentum initialization is not a resume
+   of the original fitted momenta and can follow a different optimizer path.
+3. First vary only noise standard deviation, for example the existing value,
+   half and one quarter. In the same attachment model these multiply the
+   attachment coefficient by 1, 4 and 16; they do not guarantee correspondingly
+   improved geometry. Kernel widths and control-point spacing stay fixed.
+4. Compare geometric residuals, anatomical overlays, distortion and convergence
+   per specimen. Do not rank different noise settings by raw total objective
+   values, because the objective's weighting changes. Stop on execution failure;
+   do not silently expand the grid or approve QC.
+
+This diagnostic is conditional on the old atlas and uses previously fitted
+subjects. It is neither an untouched holdout test nor a new group atlas. A
+promising setting still needs a common full-cohort run and human QC. Do not
+replace one subject's momenta with a separately tuned fit and present the mixed
+results as the original coherent atlas morphospace. If attachment weighting is
+insufficient, investigate deformation scale, initialization/template dependence
+or a topology mismatch in a separately declared comparison.
+
+For preliminary mesh-symbol morphospaces, retain the exported scores and their
+method identity. State whether symbols depict observed meshes or model
+reconstructions, use a common view, disclose any per-symbol size normalization,
+and use leaders when symbols are displaced for readability. Carry unresolved
+QC caveats forward; a communication figure does not approve an atlas.
+
 The workflow automates computation and a transparent provisional parameter
 recommendation, not anatomical judgment. The balanced multi-metric score can
 select an eligible candidate in the standard route because the candidate set is
