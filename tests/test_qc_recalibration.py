@@ -23,6 +23,17 @@ from diffeoforge.reference_calibration_study import (
 )
 
 
+@pytest.mark.parametrize(
+    "total,mandatory,expected", [(5, 4, 5), (300, 3, 8), (300, 19, 20), (300, 20, 20)]
+)
+def test_optional_coverage_respects_cap_without_dropping_required_cases(total, mandatory, expected):
+    from diffeoforge.desktop.qc_recalibration import _pilot_count
+
+    assert _pilot_count(total, mandatory) == expected
+    with pytest.raises(ValueError, match="no cases were dropped"):
+        _pilot_count(300, 21)
+
+
 @pytest.fixture
 def source(tmp_path):
     config_path = _project(tmp_path)

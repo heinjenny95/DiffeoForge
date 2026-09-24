@@ -48,6 +48,17 @@ def recalibration_concerns(review, decisions) -> tuple[str, ...]:
     )
 
 
+def _pilot_count(total: int, mandatory: int) -> int:
+    if mandatory > 20:
+        raise ValueError(
+            "More than 20 cases are required to retain QC concerns and controls. "
+            "Review global alignment/template suitability before another small pilot; "
+            "no cases were dropped."
+        )
+    # Extra shape-diversity cases are optional, unlike concerns and controls.
+    return min(total, 20, max(8, mandatory + 2))
+
+
 def prepare_qc_recalibration(
     review: ModernResultReview,
     decisions,
@@ -132,13 +143,7 @@ def prepare_qc_recalibration(
     mandatory.update(i.subject_name for i in good[:2])
     if not mandatory <= set(by_name):
         raise ValueError("QC subject names do not map exactly to the stored original meshes")
-    count = min(len(paths), max(8, len(mandatory) + min(2, len(paths) - len(mandatory))))
-    if count > 20:
-        raise ValueError(
-            "More than 20 cases are required to retain QC concerns and controls. "
-            "Review global alignment/template suitability before another small pilot; "
-            "no cases were dropped."
-        )
+    count = _pilot_count(len(paths), len(mandatory))
     declarations = tuple(PilotSubjectDeclaration(name, None, True) for name in sorted(mandatory))
     if progress_callback:
         progress_callback(0, len(paths) + 1, "Measuring aligned surface shape")
