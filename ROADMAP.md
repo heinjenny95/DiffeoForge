@@ -389,6 +389,25 @@ scientific gates. Planning does not mark those gates complete.
     do not present raw deformation energy or surface-area change as universally
     negative; evaluate the fit improvement against smoothness, topology/Jacobian
     validity, and subject-tail failures, especially for high-disparity cohorts
+  - [ ] **Further pilot recommendation audit (v90 feedback, 2026-09-25).**
+    Make deformation-cost badges neutral and consistent with the scoring policy:
+    high-disparity scoring already omits energy, but lowest/highest-cost badges
+    still assign favorable/caution tones. Interpret area change in context too.
+    Investigate anatomical-fit adequacy before comparing cost or runtime, with
+    explicit researcher review and separately validated automatic criteria;
+    this does not mean removing backend regularization. Evaluate per-subject
+    and local-feature evidence alongside pooled distances, including similar
+    and highly disparate shapes. Show ambiguous/provisional recommendations
+    clearly instead of implying an anatomically established best option.
+    Audit existing disagreements between visual review and metric ranking on
+    the same inputs/reconstructions, checking identity, display geometry and
+    aggregation before attributing the cause to the metrics. Keep private case
+    details local; do not retune weights solely to reproduce one preferred choice.
+    **Done when:** discrepancies have a documented explanation, presentation
+    matches the actual policy, and prospectively specified or independently
+    reviewed checks address anatomically unacceptable fits hidden by favorable
+    aggregate metrics. This is open design/validation work, not a scoring fix,
+    universal parameter rule or authorization for new scientific runs.
   - [x] Let the researcher declare expected biological disparity and carry it
     into pilot range, scoring, explanations, and full-cohort confirmation
   - [ ] Add optional researcher-declared biological strata/extremes to the
