@@ -49,11 +49,16 @@ Documentation-only work does not create a new application version. Private-alpha
 Drive distribution is not a GitHub Release, manuscript submission or authorization
 to expose research data. Do not change existing sharing permissions implicitly.
 
+The recorded v71 distribution lag was closed on 2026-09-25 using the unchanged
+tested v90 installer. The complete four-part package, reconstruction and downloads
+were verified before switching the existing current-README link; v71 remains
+recoverable. See [v90 distribution evidence](V90_DRIVE_DELIVERY.md).
+
 ## Next work, in priority order
 
-1. Reconcile any distribution lag before claiming that collaborators can download
-   the installed version; verify the entire installer package and companion
-   instructions, not just a renamed file.
+1. Keep distribution synchronized with the latest tested build; the v90 gap is
+   closed. Verify the entire installer package and companion instructions for
+   each later delivery, not just a renamed file.
 2. Complete native acceptance of the v90 selection workflow and the v89 QC return
    path, including reopening, cancellation, counts and clear next actions. Preserve
    human anatomical decisions and existing run evidence.
