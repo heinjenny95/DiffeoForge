@@ -177,6 +177,17 @@ scientific gates. Planning does not mark those gates complete.
   and result-preview loaders, with window-scoped cursors and visible activity.
   Offscreen overlap/failure/cancellation/teardown checks pass; full native
   interaction and every synchronous action still need acceptance review.
+- [ ] **Pilot window: allow minimization and prevent unwanted foreground activation.**
+  User-reported in v90 on 2026-09-25: the pilot-calibration window cannot be
+  minimized, and the whole application reappears in the foreground when another
+  window is opened, for example a folder in Windows File Explorer. Reproduce
+  and diagnose the window behavior; the cause is not yet established.
+  **Done when:** the pilot window can be minimized/restored normally, switching
+  to another application keeps focus there, and DiffeoForge only returns to
+  the foreground on explicit user activation. Verify native Windows behavior
+  with an idle and a running pilot while preserving pilot state/progress and
+  avoiding cancellation, restarts or duplicate jobs. This item records a bug;
+  it does not claim a fix or authorize starting a scientific run.
 - [x] **Pilot: opt-in AFK / overnight mode.** After each completed stage,
   automatically accept its eligible recommendation and start the next pilot
   stage without another click. Declare the permitted scope and provisional-choice
