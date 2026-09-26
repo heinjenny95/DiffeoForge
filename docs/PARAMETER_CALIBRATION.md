@@ -458,11 +458,13 @@ reconstructions, use a common view, disclose any per-symbol size normalization,
 and use leaders when symbols are displaced for readability. Carry unresolved
 QC caveats forward; a communication figure does not approve an atlas.
 
-For distance-focused PC1/PC3 and PC2/PC3 mesh-symbol figures, center the image
+For distance-focused mesh-symbol figures of selected PC pairs, center the image
 itself on each unchanged exported score, rather than centering an image-plus-label
 box. Use equal axis units and a common physical score scale across panels. Small,
 aspect-preserving symbols and a separate numbered specimen key reduce clutter
-without moving observations. Check rendered symbol centers and overlaps, retain
+without moving observations. If symbols need additional shrinking in a dense
+region, disclose this display-only adjustment and keep score coordinates fixed.
+Check rendered symbol centers and overlaps, retain
 all scored subjects, label each component's explained variation, and bind the
 source meshes, score table, PCA method and current review record by hashes. These
 are projections into the selected PC planes, not full shape-space distances.
