@@ -6,6 +6,31 @@ The first-run commands turn a mesh directory into an explicit configuration and
 a reviewable input report without requiring Python, XML, or notebook editing.
 They use the same public core that a future graphical interface will call.
 
+## Desktop intake before landmarks exist
+
+1. Preserve the received archive and extracted originals. If repairs are
+   required, use separate documented working copies, record their hashes and
+   operations, and rerun the structural gates. Do not silently simplify,
+   smooth, rescale, mirror, or remove anatomical components.
+2. Confirm the coordinate unit with the data provider; do not infer it from
+   mesh size. Set the working mesh folder, matching file pattern, explicit
+   template, project folder, and unit on **Data & engine**.
+3. Choose the homologous landmark scheme and open **Place landmarks**. The
+   planned count is editable; reduced-view clicks snap to the original surface.
+   The editor exports `landmarks.csv` in the selected project folder. A separate
+   template copy is another annotation entry, not another independent specimen;
+   its source specimen may remain in the target cohort.
+4. Keep anatomical outliers and component advisories visible for user review.
+   Passing structural gates does not establish anatomical completeness or
+   justify excluding a specimen. Do not assert existing GPA alignment merely
+   because the surfaces look similarly oriented.
+5. After annotation, review and approve the landmark-GPA preview before project
+   creation and pilot calibration. Preparing paths or opening the editor does
+   not start an atlas or validate its parameters.
+
+Keep unpublished meshes, specimen identifiers, landmarks, and private intake
+reports out of public repository updates.
+
 ## 1. Diagnose the computer
 
 From the intended project directory, run:
@@ -62,11 +87,11 @@ The default subject pattern is `*.vtk`; the resolved template is excluded from
 the subject list. Use `--subject-pattern` when a directory contains unrelated
 VTK files.
 
-## Exploratory starting values
+## Command-line exploratory fallback values
 
 Four model parameters cannot be inferred scientifically from file validity.
-When they are not supplied, `init` creates clearly labelled exploratory values
-from the template bounding-box diagonal:
+When they are not supplied to the command-line `init` command, it creates
+clearly labelled compatibility values from the template bounding-box diagonal:
 
 | Parameter | Exploratory ratio |
 | --- | ---: |
@@ -87,6 +112,23 @@ diffeoforge init "C:\path\to\meshes" `
   --control-point-spacing 0.60 `
   --noise-std 0.10
 ```
+
+The desktop Deformetrica workflow no longer presents these ratios as
+“recommended.” It first requires either a user declaration that the selected
+coordinates are already GPA aligned or an exact approved DiffeoForge
+landmark-GPA preview. It then analyzes the aligned coordinates and combines:
+
+- measured cohort and template scale;
+- centroid and bounding-box size dispersion;
+- deterministic sampled triangle-edge resolution;
+- the researcher-selected surface-detail scale;
+- the researcher-selected local, balanced, or global deformation scale.
+
+The resulting configuration uses the `data_assisted` provenance profile and
+stores the recommendation fingerprint, measurements, user decisions, warnings,
+and parameters that still require pilot validation. Noise standard deviation
+and optimization behavior are not claimed to be inferable from geometry.
+See [Data-assisted Deformetrica parameter guidance](DATA_ASSISTED_PARAMETERS.md).
 
 ## 3. Regenerate or relocate the report
 

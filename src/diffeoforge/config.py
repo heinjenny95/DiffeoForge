@@ -25,6 +25,7 @@ class InputSummary:
     template: Path
     subject_count: int
     subjects: tuple[Path, ...]
+    initial_control_points: Path | None = None
 
 
 def _schema() -> Mapping[str, Any]:
@@ -88,6 +89,14 @@ def validate_input_paths(config: Mapping[str, Any], config_path: Path | str) -> 
     input_config = config["input"]
     input_directory = _resolve_from_config(input_config["directory"], source_path)
     template = _resolve_from_config(input_config["template"], source_path)
+    control_points_value = config["model"]["deformation"].get(
+        "initial_control_points"
+    )
+    initial_control_points = (
+        None
+        if control_points_value is None
+        else _resolve_from_config(str(control_points_value), source_path)
+    )
 
     if not input_directory.is_dir():
         raise ConfigurationError(f"Input directory does not exist: {input_directory}")
@@ -95,6 +104,21 @@ def validate_input_paths(config: Mapping[str, Any], config_path: Path | str) -> 
         raise ConfigurationError(f"Template mesh does not exist: {template}")
     if template.suffix.lower() != ".vtk":
         raise ConfigurationError(f"Template must be a VTK file: {template}")
+    if initial_control_points is not None:
+        if not initial_control_points.is_file():
+            raise ConfigurationError(
+                "Initial control-points file does not exist: "
+                f"{initial_control_points}"
+            )
+        if initial_control_points.suffix.lower() != ".txt":
+            raise ConfigurationError(
+                "Initial control points must be a Deformetrica TXT file: "
+                f"{initial_control_points}"
+            )
+        if initial_control_points.stat().st_size < 1:
+            raise ConfigurationError(
+                f"Initial control-points file is empty: {initial_control_points}"
+            )
 
     pattern = input_config["subject_pattern"]
     try:
@@ -132,4 +156,5 @@ def validate_input_paths(config: Mapping[str, Any], config_path: Path | str) -> 
         template=template,
         subject_count=len(subjects),
         subjects=subjects,
+        initial_control_points=initial_control_points,
     )

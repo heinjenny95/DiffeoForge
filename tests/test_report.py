@@ -3,9 +3,11 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+import yaml
 
 from diffeoforge.cli import main
 from diffeoforge.config import ConfigurationError
+from diffeoforge.mesh import write_vtk_polydata
 from diffeoforge.report import collect_preflight, render_preflight_html, write_preflight_report
 
 REPOSITORY_ROOT = Path(__file__).parents[1]
@@ -20,7 +22,12 @@ def test_preflight_report_contains_geometry_parameters_and_boundary() -> None:
     assert "Engineering preflight passed" in html
     assert "Subject meshes</span><strong>5" in html
     assert "Attachment kernel width / template diagonal" in html
+    assert "Parameter provenance" in html
     assert result.template.sha256 in html
+    assert len(result.mesh_quality) == 6
+    assert "Structural mesh quality" in html
+    assert "Non-manifold edges" in html
+    assert "never edits an input mesh" in html
     assert "does not establish biological validity" in html
     assert "<script" not in html
     assert "https://" not in html
@@ -74,3 +81,30 @@ def test_schema_only_rejects_report_request(capsys, tmp_path: Path) -> None:
     captured = capsys.readouterr()
     assert return_code == 2
     assert "cannot be combined" in captured.err
+
+
+def test_preflight_blocks_structurally_invalid_mesh_before_execution(
+    tmp_path: Path,
+) -> None:
+    mesh_directory = tmp_path / "meshes"
+    mesh_directory.mkdir()
+    vertices = (
+        (0.0, 0.0, 0.0),
+        (1.0, 0.0, 0.0),
+        (0.0, 1.0, 0.0),
+        (0.0, 0.0, 1.0),
+        (0.0, -1.0, 0.0),
+    )
+    valid_faces = ((0, 2, 1), (0, 1, 3), (1, 2, 3), (2, 0, 3))
+    invalid_faces = ((0, 1, 2), (1, 0, 3), (0, 1, 4))
+    write_vtk_polydata(mesh_directory / "template.vtk", vertices[:4], valid_faces)
+    write_vtk_polydata(mesh_directory / "subject-01.vtk", vertices, invalid_faces)
+    write_vtk_polydata(mesh_directory / "subject-02.vtk", vertices[:4], valid_faces)
+    config = yaml.safe_load(EXAMPLE_CONFIG.read_text(encoding="utf-8"))
+    config["input"]["directory"] = str(mesh_directory)
+    config["input"]["template"] = str(mesh_directory / "template.vtk")
+    config_path = tmp_path / "atlas.yaml"
+    config_path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+
+    with pytest.raises(ConfigurationError, match="non-manifold edges"):
+        collect_preflight(config_path)

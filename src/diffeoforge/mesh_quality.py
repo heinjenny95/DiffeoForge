@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import math
-from collections import Counter, defaultdict, deque
 from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass
 from numbers import Integral, Real
@@ -182,6 +181,17 @@ def _optional_finite(
     return normalized
 
 
+ATLAS_INPUT_MESH_QUALITY_SETTINGS = MeshQualitySettings(
+    require_no_duplicate_faces=True,
+    require_no_isolated_vertices=True,
+    require_edge_manifold=True,
+    require_consistent_orientation=True,
+    require_single_component=False,
+    require_closed_surface=False,
+    reject_zero_area_faces=True,
+)
+
+
 def _normalized_geometry(
     vertices: Sequence[Sequence[Real]],
     triangles: Sequence[Sequence[Integral]],
@@ -295,16 +305,42 @@ def _connectivity_sha256(triangles: tuple[tuple[int, int, int], ...]) -> str:
     return digest.hexdigest()
 
 
-def assess_triangle_mesh(
-    vertices: Sequence[Sequence[Real]],
-    triangles: Sequence[Sequence[Integral]],
+def _assess_normalized_triangle_mesh(
+    points: tuple[tuple[float, float, float], ...],
+    faces: tuple[tuple[int, int, int], ...],
 ) -> MeshQualityResult:
-    """Compute exact topology counts and deterministic triangle-quality summaries."""
+    """Compute quality after the input reader has already normalized geometry."""
 
-    points, faces = _normalized_geometry(vertices, triangles)
-    edge_faces: dict[tuple[int, int], list[tuple[int, int]]] = defaultdict(list)
-    referenced_vertices: set[int] = set()
-    canonical_faces: Counter[tuple[int, int, int]] = Counter()
+    point_count = len(points)
+    parents = list(range(len(faces)))
+    ranks = bytearray(len(faces))
+
+    def find(face_index: int) -> int:
+        root = face_index
+        while parents[root] != root:
+            root = parents[root]
+        while parents[face_index] != face_index:
+            parent = parents[face_index]
+            parents[face_index] = root
+            face_index = parent
+        return root
+
+    def union(first: int, second: int) -> None:
+        first_root = find(first)
+        second_root = find(second)
+        if first_root == second_root:
+            return
+        if ranks[first_root] < ranks[second_root]:
+            first_root, second_root = second_root, first_root
+        parents[second_root] = first_root
+        if ranks[first_root] == ranks[second_root]:
+            ranks[first_root] += 1
+
+    # Integer keys avoid retaining millions of two-integer tuple objects.  Each
+    # value is [incidence count, first face, first direction, inconsistent pair].
+    edge_state: dict[int, list[int]] = {}
+    referenced_vertices = bytearray(point_count)
+    canonical_faces: dict[int, int] = {}
     areas: list[float] = []
     minimum_angles: list[float] = []
     edge_ratios: list[float] = []
@@ -312,12 +348,27 @@ def assess_triangle_mesh(
     zero_length_edge_faces = 0
     undefined_angle_faces = 0
     for face_index, face in enumerate(faces):
-        referenced_vertices.update(face)
-        canonical_faces[tuple(sorted(face))] += 1
+        for vertex in face:
+            referenced_vertices[vertex] = 1
+        ordered_face = sorted(face)
+        face_key = (
+            (ordered_face[0] * point_count + ordered_face[1]) * point_count
+            + ordered_face[2]
+        )
+        canonical_faces[face_key] = canonical_faces.get(face_key, 0) + 1
         for start, end in ((face[0], face[1]), (face[1], face[2]), (face[2], face[0])):
-            key = (min(start, end), max(start, end))
-            direction = 1 if (start, end) == key else -1
-            edge_faces[key].append((face_index, direction))
+            low = min(start, end)
+            high = max(start, end)
+            key = low * point_count + high
+            direction = 1 if start == low else -1
+            state = edge_state.get(key)
+            if state is None:
+                edge_state[key] = [1, face_index, direction, 0]
+            else:
+                union(state[1], face_index)
+                state[0] += 1
+                if state[0] == 2 and state[2] == direction:
+                    state[3] = 1
         area = _triangle_area(points, face)
         areas.append(area)
         if area == 0.0:
@@ -338,33 +389,17 @@ def assess_triangle_mesh(
         else:
             minimum_angles.append(minimum_angle)
 
-    adjacency: list[set[int]] = [set() for _ in faces]
     boundary_edges = manifold_edges = nonmanifold_edges = 0
     inconsistent_edges = 0
-    for incidences in edge_faces.values():
-        if len(incidences) == 1:
+    for count, _first_face, _first_direction, inconsistent_pair in edge_state.values():
+        if count == 1:
             boundary_edges += 1
-        elif len(incidences) == 2:
+        elif count == 2:
             manifold_edges += 1
-            if incidences[0][1] == incidences[1][1]:
-                inconsistent_edges += 1
+            inconsistent_edges += inconsistent_pair
         else:
             nonmanifold_edges += 1
-        incident_faces = [face_index for face_index, _ in incidences]
-        for position, face_index in enumerate(incident_faces):
-            adjacency[face_index].update(incident_faces[:position])
-            adjacency[face_index].update(incident_faces[position + 1 :])
-
-    remaining = set(range(len(faces)))
-    components = 0
-    while remaining:
-        components += 1
-        queue = deque([remaining.pop()])
-        while queue:
-            current = queue.popleft()
-            connected = adjacency[current] & remaining
-            remaining.difference_update(connected)
-            queue.extend(connected)
+    components = sum(find(face_index) == face_index for face_index in range(len(faces)))
 
     minima = [min(point[axis] for point in points) for axis in range(3)]
     maxima = [max(point[axis] for point in points) for axis in range(3)]
@@ -378,15 +413,15 @@ def assess_triangle_mesh(
     return MeshQualityResult(
         points=len(points),
         triangles=len(faces),
-        unique_edges=len(edge_faces),
+        unique_edges=len(edge_state),
         connectivity_sha256=_connectivity_sha256(faces),
-        isolated_vertices=len(points) - len(referenced_vertices),
+        isolated_vertices=point_count - sum(referenced_vertices),
         duplicate_faces=sum(count - 1 for count in canonical_faces.values()),
         boundary_edges=boundary_edges,
         manifold_edges=manifold_edges,
         nonmanifold_edges=nonmanifold_edges,
         face_connected_components=components,
-        euler_characteristic=len(points) - len(edge_faces) + len(faces),
+        euler_characteristic=point_count - len(edge_state) + len(faces),
         inconsistently_oriented_manifold_edges=inconsistent_edges,
         zero_area_faces=zero_area_faces,
         zero_length_edge_faces=zero_length_edge_faces,
@@ -400,6 +435,30 @@ def assess_triangle_mesh(
         minimum_angle_degrees=_summary(minimum_angles),
         edge_ratio=_summary(edge_ratios),
     )
+
+
+def assess_triangle_mesh(
+    vertices: Sequence[Sequence[Real]],
+    triangles: Sequence[Sequence[Integral]],
+) -> MeshQualityResult:
+    """Compute exact topology counts and deterministic triangle-quality summaries."""
+
+    points, faces = _normalized_geometry(vertices, triangles)
+    return _assess_normalized_triangle_mesh(points, faces)
+
+
+def assess_normalized_triangle_mesh(
+    vertices: tuple[tuple[float, float, float], ...],
+    triangles: tuple[tuple[int, int, int], ...],
+) -> MeshQualityResult:
+    """Assess geometry already validated by a DiffeoForge surface reader.
+
+    This internal-data fast path avoids duplicating every vertex and triangle before
+    exact topology analysis.  External callers should use :func:`assess_triangle_mesh`,
+    which retains complete input validation.
+    """
+
+    return _assess_normalized_triangle_mesh(vertices, triangles)
 
 
 def mesh_quality_failures(

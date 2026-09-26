@@ -180,6 +180,32 @@ def test_worker_refuses_an_existing_destination_before_started_event(tmp_path: P
     assert "already exists" in events[0].payload["message"]
 
 
+def test_worker_rejects_runtime_device_mismatch_before_started_event(
+    tmp_path: Path,
+) -> None:
+    cpu_request = _request(tmp_path)
+    forged = DesktopWorkerRequest(
+        request_id=cpu_request.request_id,
+        config_path=cpu_request.config_path,
+        destination=cpu_request.destination,
+        expected_config_sha256=cpu_request.expected_config_sha256,
+        runtime_device="cuda",
+    )
+    stdout = io.StringIO()
+
+    return_code = run_worker(
+        stdin=io.StringIO(json.dumps(forged.as_dict()) + "\n"),
+        stdout=stdout,
+        stderr=io.StringIO(),
+    )
+
+    events = _events(stdout.getvalue())
+    assert return_code == 1
+    assert [event.kind for event in events] == ["failed"]
+    assert "device does not match" in events[0].payload["message"]
+    assert not forged.destination.exists()
+
+
 def test_worker_subprocess_transports_progress_and_verified_completion(tmp_path: Path) -> None:
     request = _request(tmp_path)
     process = subprocess.Popen(
@@ -297,6 +323,10 @@ def test_worker_cancel_command_emits_terminal_nonresumable_event(
         "diffeoforge.modern_workflow.run_modern_workflow",
         wait_for_cancel,
     )
+    monkeypatch.setattr(
+        "diffeoforge.modern_workflow.load_modern_workflow_config",
+        lambda _path: {"runtime": {"device": "cpu"}},
+    )
     stdout = io.StringIO()
     stderr = io.StringIO()
     return_code = run_worker(
@@ -337,6 +367,10 @@ def test_malformed_worker_command_cancels_work_and_reports_protocol_failure(
     monkeypatch.setattr(
         "diffeoforge.modern_workflow.run_modern_workflow",
         wait_for_cancel,
+    )
+    monkeypatch.setattr(
+        "diffeoforge.modern_workflow.load_modern_workflow_config",
+        lambda _path: {"runtime": {"device": "cpu"}},
     )
     stdout = io.StringIO()
     return_code = run_worker(

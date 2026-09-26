@@ -111,7 +111,7 @@
         "arguments": {
           "type": "array",
           "minItems": 9,
-          "maxItems": 9,
+          "maxItems": 10,
           "items": { "type": "string", "minLength": 1 }
         },
         "shell": { "const": false },

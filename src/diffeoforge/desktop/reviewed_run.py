@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from diffeoforge.desktop.modern_cuda_runtime import (
+    verify_modern_cuda_runtime_binding,
+)
 from diffeoforge.desktop.project_review import ProjectReviewResult
 from diffeoforge.desktop.project_setup import DesktopEngine
 from diffeoforge.desktop.worker_protocol import (
@@ -21,6 +24,25 @@ class DesktopReviewedRunError(RuntimeError):
 @dataclass(frozen=True)
 class DesktopReviewedRunReadiness:
     """Exact reviewed request plus observational destination safety state."""
+
+    request: DesktopWorkerRequest
+    discovery: PrivateRunDiscovery
+    worker_command: tuple[str, ...] | None = None
+
+    def __post_init__(self) -> None:
+        if self.request.destination.resolve() != self.discovery.destination.resolve():
+            raise ValueError("Reviewed request and private-run discovery target different paths")
+        if self.request.runtime_device == "cuda" and self.worker_command is None:
+            raise ValueError("Modern CUDA readiness requires a bound worker command")
+
+    @property
+    def ready_for_worker(self) -> bool:
+        return self.discovery.ready_for_new_run
+
+
+@dataclass(frozen=True)
+class DesktopReviewedRemoteRunReadiness:
+    """Reviewed Modern request and destination state without a local runtime binding."""
 
     request: DesktopWorkerRequest
     discovery: PrivateRunDiscovery
@@ -45,7 +67,7 @@ def build_reviewed_worker_request(
         raise TypeError("review must be a ProjectReviewResult")
     if review.engine is not DesktopEngine.MODERN_CPU:
         raise DesktopReviewedRunError(
-            "Desktop worker launch is currently available only for Modern CPU projects"
+            "Desktop worker launch is available only for Modern projects"
         )
     try:
         observed_hash = sha256_file(review.config_path)
@@ -77,4 +99,31 @@ def check_reviewed_run_readiness(
 
     request = build_reviewed_worker_request(review, request_id=request_id)
     discovery = discover_private_runs(request.destination)
-    return DesktopReviewedRunReadiness(request=request, discovery=discovery)
+    worker_command: tuple[str, ...] | None = None
+    if request.runtime_device == "cuda":
+        runtime = review.modern_cuda_runtime
+        if runtime is None:
+            raise DesktopReviewedRunError(
+                "The reviewed CUDA project has no verified external runtime binding"
+            )
+        verify_modern_cuda_runtime_binding(runtime)
+        worker_command = runtime.worker_command
+    return DesktopReviewedRunReadiness(
+        request=request,
+        discovery=discovery,
+        worker_command=worker_command,
+    )
+
+
+def check_reviewed_remote_run_readiness(
+    review: ProjectReviewResult,
+    *,
+    request_id: str,
+) -> DesktopReviewedRemoteRunReadiness:
+    """Bind reviewed bytes and destination without requiring a local CUDA runtime."""
+
+    request = build_reviewed_worker_request(review, request_id=request_id)
+    return DesktopReviewedRemoteRunReadiness(
+        request=request,
+        discovery=discover_private_runs(request.destination),
+    )

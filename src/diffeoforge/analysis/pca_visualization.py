@@ -52,6 +52,45 @@ def _extent(values: np.ndarray) -> tuple[float, float]:
     return minimum - padding, maximum + padding
 
 
+def _scree_label_indices(component_count: int, *, bar_slot: float) -> tuple[int, ...]:
+    """Choose x-axis labels that remain separated at the fixed SVG viewBox size.
+
+    The previous fixed target of roughly twenty labels could place the penultimate
+    periodic label immediately beside the always-present final component (for
+    example PC65 and PC66).  SVG text is scaled with the viewBox, so solving the
+    spacing once in viewBox coordinates also keeps it valid at Windows display
+    scales other than 100%.
+    """
+
+    if component_count < 1:
+        raise ValueError("component_count must be positive")
+    if component_count == 1:
+        return (0,)
+    widest_label = f"PC{component_count}"
+    # Arial 14 is about eight viewBox units per glyph at this label length.  The
+    # extra gap avoids labels merely touching under platform font substitution.
+    minimum_center_gap = len(widest_label) * 8.0 + 10.0
+    maximum_labels = max(2, int(_PLOT_WIDTH // minimum_center_gap))
+    stride = max(1, math.ceil((component_count - 1) / (maximum_labels - 1)))
+    candidates = list(range(0, component_count, stride))
+    if candidates[-1] != component_count - 1:
+        candidates.append(component_count - 1)
+
+    selected: list[int] = []
+    for index in candidates:
+        center = (index + 0.5) * bar_slot
+        if not selected:
+            selected.append(index)
+            continue
+        previous_center = (selected[-1] + 0.5) * bar_slot
+        if center - previous_center >= minimum_center_gap:
+            selected.append(index)
+            continue
+        if index == component_count - 1:
+            selected[-1] = index
+    return tuple(selected)
+
+
 def _map(value: float, low: float, high: float, start: float, length: float) -> float:
     return start + ((float(value) - low) / (high - low)) * length
 
@@ -64,20 +103,20 @@ def _svg_document(title: str, body: list[str]) -> str:
             (
                 f'<svg xmlns="http://www.w3.org/2000/svg" width="{_WIDTH}" '
                 f'height="{_HEIGHT}" viewBox="0 0 {_WIDTH} {_HEIGHT}" '
-                'role="img">'
+                'role="img" shape-rendering="geometricPrecision">'
             ),
             f"  <title>{escaped_title}</title>",
             "  <style>",
-            "    .axis { stroke: #263238; stroke-width: 1.5; }",
-            "    .grid { stroke: #dce4e7; stroke-width: 1; }",
-            "    .label { fill: #263238; font-family: Arial; font-size: 14px; }",
-            "    .small { fill: #455a64; font-family: Arial; font-size: 12px; }",
+            "    .axis { stroke: #31535a; stroke-width: 1.25; }",
+            "    .grid { stroke: #e3ebec; stroke-width: 1; }",
+            "    .label { fill: #17343a; font-family: Arial; font-size: 14px; }",
+            "    .small { fill: #52666b; font-family: Arial; font-size: 11px; }",
             (
-                "    .title { fill: #102a43; font-family: Arial; font-size: 22px; "
-                "font-weight: bold; }"
+                "    .title { fill: #17343a; font-family: Arial; font-size: 19px; "
+                "font-weight: 700; }"
             ),
-            "    .bar { fill: #1976d2; }",
-            "    .point { fill: #d84315; stroke: #ffffff; stroke-width: 1; }",
+            "    .bar { fill: #178a78; }",
+            "    .point { fill: #087f6b; stroke: #ffffff; stroke-width: 1.25; }",
             "  </style>",
             f'  <rect width="{_WIDTH}" height="{_HEIGHT}" fill="#ffffff"/>',
             *body,
@@ -104,7 +143,9 @@ def write_pca_scree_svg(path: Path | str, pca: PCAResult) -> Path:
     maximum = max(float(np.max(ratios)) * 1.12, 0.01)
     bar_slot = _PLOT_WIDTH / pca.number_of_components
     bar_width = min(bar_slot * 0.68, 80.0)
-    label_stride = max(1, math.ceil(pca.number_of_components / 20))
+    label_indices = set(
+        _scree_label_indices(pca.number_of_components, bar_slot=bar_slot)
+    )
     show_percent_labels = pca.number_of_components <= 20
     body = [
         '  <text x="450" y="38" text-anchor="middle" class="title">PCA scree plot</text>',
@@ -142,7 +183,7 @@ def write_pca_scree_svg(path: Path | str, pca: PCAResult) -> Path:
                 "  </rect>",
             ]
         )
-        if index % label_stride == 0 or index == pca.number_of_components - 1:
+        if index in label_indices:
             body.append(
                 f'  <text x="{_number(x + bar_width / 2.0)}" '
                 f'y="{_number(_TOP + _PLOT_HEIGHT + 24)}" text-anchor="middle" '
@@ -243,10 +284,14 @@ def _write_pca_score_view(
         x = _map(float(x_value), x_low, x_high, _LEFT, _PLOT_WIDTH)
         y = _TOP + _PLOT_HEIGHT - _map(float(y_value), y_low, y_high, 0.0, _PLOT_HEIGHT)
         escaped_label = html.escape(label, quote=True)
+        x_component = f"PC{x_index + 1}"
+        y_component = "" if y_index is None else f"PC{y_index + 1}"
         body.extend(
             [
-                f'  <circle cx="{_number(x)}" cy="{_number(y)}" r="5" '
-                f'class="point" data-subject-label="{escaped_label}">',
+                f'  <circle cx="{_number(x)}" cy="{_number(y)}" r="4.5" '
+                f'class="point" data-subject-label="{escaped_label}" '
+                f'data-x-axis="{x_component}" data-x-score="{_number(float(x_value))}" '
+                f'data-y-axis="{y_component}" data-y-score="{_number(float(y_value))}">',
                 f"    <title>{html.escape(label)}</title>",
                 "  </circle>",
             ]
