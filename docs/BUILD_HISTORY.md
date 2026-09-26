@@ -11,8 +11,11 @@ remain intact. A regression opens the real pilot through the production entry
 point and checks rendered title/button styles and minimization. Delivery and
 installation evidence are recorded separately in [v92 delivery](V92_DELIVERY.md).
 Nine targeted regressions, Ruff, visual inspection and frozen-build checks passed.
-The complete Drive download is verified; an active user pilot prevents replacing
-the installed v91 runtime. No running computation was stopped for this update.
+The complete Drive download and local v92 installation are verified. After the
+owner cancelled the pilot and closed the app, fresh idle checks and a complete
+v91 backup preceded installation. Registry, 2,679 bundle-file hashes and installed
+startup smoke passed; 351 checked completed-run files remained unchanged.
+No scientific run was started by the update.
 
 ## v91 — independent pilot window and anatomy-first review
 

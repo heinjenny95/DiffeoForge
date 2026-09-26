@@ -18,7 +18,7 @@ v92 fixes a v91 appearance regression: the independent pilot explicitly
 receives the existing main-window stylesheet, restoring the former fonts, cards
 and green buttons without restoring modal ownership. Nine focused regressions,
 Ruff, synthetic visual inspection and frozen-build checks passed. See
-[v92 delivery and installation blocker](V92_DELIVERY.md).
+[v92 delivery and installation verification](V92_DELIVERY.md).
 
 v91 source adds hidden PC-shooting launch, an independent minimizable pilot
 window, contextual cost labels and persistent anatomy-first pilot decisions.
@@ -29,15 +29,15 @@ The latest packaged and Drive-distributed application is **v92 / 0.0.0.dev92**,
 built from `34dd5504d225d2af65b69752f9bbd14ba95586f5`. The current download
 pointer was updated only after authenticated and anonymous downloads of all six
 package files and both installer reconstructions matched the expected hashes.
-The installed application remains **v91 / 0.0.0.dev91**, built from
-`5730920625a015e34f63d843c7435f311b89c993`. An active user pilot blocks v92
-installation; no computation was interrupted. Installation remains authorized
-once the application/backend are idle and ongoing/unsaved work is preserved.
-The previous v91 installation verification remains:
-Installation followed a verified v90 backup and a fresh idle check. Registry
+The installed application is also **v92 / 0.0.0.dev92**, from the same runtime
+commit. The owner cancelled the previously active pilot and closed the app;
+cancellation and fresh application/WSL idle checks were verified before updating.
+Installation followed a complete, hash-verified 2,688-file v91 backup. Registry
 version, all 2,679 installed bundle files and installed startup smoke passed.
-The checked completed-run files remained unchanged. Later documentation commits
-do not change the binary's source identity.
+The 351 checked completed-run files remained unchanged. Both Drive READMEs now
+record the verified installation, with IDs/sharing and installer bytes preserved.
+No scientific run was started. Later documentation commits do not change the
+binary's source identity.
 
 For v91, 174 targeted regressions passed; after generalizing the dataset-specific
 feature checks, all 49 affected study/dialog/lifecycle tests passed again.
@@ -84,8 +84,7 @@ recoverable. See [v90 distribution evidence](V90_DRIVE_DELIVERY.md).
 
 ## Next work, in priority order
 
-1. v92 distribution is verified; v91 remains installed and recoverable. Install
-   v92 only after the active user pilot has stopped and the app is idle.
+1. v92 installation and distribution are verified; v91 remains recoverable.
    Complete interactive minimize/focus acceptance across other applications;
    retain one pilot/controller and existing scientific evidence. Under the
    standing instruction in `AGENTS.md`, approval to develop a future version

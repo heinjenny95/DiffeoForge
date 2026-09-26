@@ -30,13 +30,18 @@ README updated in place and read back through both routes. Existing sharing and
 file identity were preserved; the complete prior v91 package remains recoverable.
 The installer remains unsigned and no GitHub Release or tag was created.
 
-**Installation is pending:** the owner's installed runtime remains v91 because
-an active pilot and execution worker were observed. The standing authorization
-to install tested updates applies, but does not authorize interrupting a running
-computation to update. No app or backend was closed, no study was rewritten, and
-no scientific calculation was started by this change. Source/documentation HEAD
-and the packaged runtime commit remain distinct. Install after a fresh idle check,
-verified backup and preservation of ongoing/unsaved work.
+**Installation verified:** after the owner cancelled the active pilot and closed
+the app, its cancellation event and fresh application/WSL idle checks were verified.
+The complete v91 installation was backed up and all 2,688 backup files hash-checked.
+Setup exited successfully without a Windows restart. Registry version is
+`0.0.0.dev92`; all 2,679 installed bundle files match the tested build, and the
+installed startup smoke test exited 0. All 351 checked completed-run files remain
+unchanged. Installed executable SHA-256:
+`57f8b273d3fd386010b6655c4551075202431e5e410b30c2739d244172c824e9`.
+Both Drive READMEs were updated in place and verified through authenticated and
+anonymous downloads; installer parts, file identities and sharing are unchanged.
+No scientific calculation was started. Source/documentation HEAD and the packaged
+runtime commit remain distinct; this installation record requires no rebuild.
 
 A separate usability gap was identified: opening a completed result does not
 replace the current setup inputs. The roadmap tracks clearer project context and
