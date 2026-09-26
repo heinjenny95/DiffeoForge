@@ -16,6 +16,11 @@ scientific results and historical decisions are preserved. Build/distribution
 and installation evidence are tracked separately; no automatic anatomy detector,
 independent biological qualification or public release is claimed.
 
+The verified v91 installer is now distributed through the established Drive
+channel; all six package files and both download/reconstruction routes matched
+their expected hashes before updating the stable current-README link. Installed
+v90 remains unchanged pending authorization. See [delivery evidence](V91_DELIVERY.md).
+
 ## v88 — reliable atlas-to-QC handoff and visible result preparation
 
 Development candidate v88 (`0.0.0.dev88`) fixes a task-identity race during

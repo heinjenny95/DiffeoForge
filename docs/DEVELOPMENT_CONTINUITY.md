@@ -1,4 +1,4 @@
-# Development continuity — v91 source update
+# Development continuity — v91 delivery
 
 Snapshot: 2026-09-26. This is a public, software-only continuation guide. Detailed
 research results, local paths, account destinations and run identities belong in
@@ -16,13 +16,24 @@ default supported reference route; the Modern engine remains evidence-gated.
 
 v91 source adds hidden PC-shooting launch, an independent minimizable pilot
 window, contextual cost labels and persistent anatomy-first pilot decisions.
-See [implementation and acceptance limits](V91_PILOT_REVIEW.md). Build and
-distribution completion are recorded separately; source version alone does not
-establish installed or distributed state.
+See [implementation and acceptance limits](V91_PILOT_REVIEW.md) and
+[verified build and distribution](V91_DELIVERY.md).
 
-The last packaged application is **v90 / 0.0.0.dev90**, built from
-`a17e89acca38174bf7a512d1aeab33d921aac693`. Later documentation commits do not
-change that binary's source identity.
+The latest packaged and Drive-distributed application is **v91 / 0.0.0.dev91**,
+built from `5730920625a015e34f63d843c7435f311b89c993`. The current download
+pointer was updated only after authenticated and anonymous downloads of all six
+package files and both installer reconstructions matched the expected hashes.
+The installed application remains **v90 / 0.0.0.dev90**, built from
+`a17e89acca38174bf7a512d1aeab33d921aac693`; v91 installation is awaiting separate
+owner authorization and an idle-application check. Later documentation commits
+do not change either binary's source identity.
+
+For v91, 174 targeted regressions passed; after generalizing the dataset-specific
+feature checks, all 49 affected study/dialog/lifecycle tests passed again.
+Focused Ruff, layout, native minimize/restore with simulated progress, frozen
+GUI/worker and build integrity checks passed. Actual cross-application foreground
+acceptance remains open; no automatic anatomy detector is claimed. Broader legacy
+desktop-test failures are disclosed in the implementation note.
 
 - v90 adds searchable mesh selection with Add/Remove in pilot design. Required
   subjects occupy slots within the selected total; the remaining slots retain
@@ -62,9 +73,10 @@ recoverable. See [v90 distribution evidence](V90_DRIVE_DELIVERY.md).
 
 ## Next work, in priority order
 
-1. Keep distribution synchronized with the latest tested build; the v90 gap is
-   closed. Verify the entire installer package and companion instructions for
-   each later delivery, not just a renamed file.
+1. v91 distribution is verified and v90 remains recoverable. Obtain installation
+   authorization and check live activity before changing the installed v90 app.
+   Complete interactive minimize/focus acceptance across other applications;
+   retain one pilot/controller and existing scientific evidence.
 2. Complete native acceptance of the v90 selection workflow and the v89 QC return
    path, including reopening, cancellation, counts and clear next actions. Preserve
    human anatomical decisions and existing run evidence.
