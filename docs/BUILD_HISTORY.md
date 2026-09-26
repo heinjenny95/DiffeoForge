@@ -98,6 +98,37 @@ No metric definition, engine, protocol or schema version changed. A run that
 stops before its first completed checkpoint remains unrecoverable; v85 only says
 so. Nothing has been frozen, built, installed or published at this point.
 
+**Delivery observation (2026-09-18).** v85 was built from the pull-request head
+`ffdd4e1` with a clean worktree after all ten CI jobs passed, and installed
+locally; nothing was published. The squash merge `e6cc19e` (#194) has an
+identical tree (`git diff ffdd4e1 e6cc19e` is empty).
+
+- The editable-package metadata was refreshed to `0.0.0.dev85` before freezing;
+  the dependency freeze before and after was identical, and every
+  package/version guard passed on the first attempt.
+- Frozen bundle: **2,677 files**, 764,867,860 bytes, inventory SHA-256
+  `69ff9c89d3e07e1b2218ed6de2080ef3db8fbf45deeb417efa2b99a4ff0ee5d8`; SBOM with
+  27 components. The portable Inno toolchain evidence observed on 2026-09-05 was
+  reused unchanged.
+- `DiffeoForge-v85-Windows-CPU-x86_64-Setup.exe`: 323,034,528 bytes, SHA-256
+  `60934733637329ea79acbcbb3d1aaeb081cdbe22f3f19d5b5469c3c0239f4085`,
+  Authenticode `NotSigned` as intended for the private alpha.
+- DiffeoForge was closed and no WSL distribution was running. The v84
+  installation (**2,688 files**) was copied to a separate backup and every file
+  hash-compared without a mismatch.
+- The silent per-user setup exited 0 without a restart. All 2,677 inventoried
+  files plus the freeze-evidence pair are byte-identical to the built bundle; the
+  only other installed files are the licence, the uninstaller pair and six
+  evidence files. Installed `DiffeoForge.exe` SHA-256:
+  `01a5c4e3656ee4f5b3ac745c2b934e3289c65be8f28d65c2f63c20a5cc1d40a3`. The window
+  title read **DiffeoForge v85 (Private Alpha)**.
+- A read-only dry run of the new explanation against the affected run folder
+  named the missing checkpoint, and against the folder one level above the run
+  root named the folder to select instead; the run folder was not modified.
+- Not observed: the new dialogs and button states were exercised by tests only,
+  not inspected on screen in the installed build, and researcher
+  landmark/configuration/review metadata were not separately backed up.
+
 ## v84 — recent projects on the first screen and unattended outward search
 
 Development candidate v84 (`0.0.0.dev84`) packages two merged changes: the first
