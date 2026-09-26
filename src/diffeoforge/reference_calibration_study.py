@@ -18,7 +18,7 @@ import os
 import re
 import shutil
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
 from uuid import uuid4
@@ -193,6 +193,11 @@ class ReferenceCalibrationStudySnapshot:
     report_html_path: Path | None
     search_extension_safety_limits: Mapping[str, tuple[float, float]] | None = None
     search_extension_round: int = 0
+    visual_reviews: Mapping[str, bool] = field(default_factory=dict)
+    visual_review_notes: Mapping[str, str] = field(default_factory=dict)
+    feature_observations: Mapping[str, dict[str, dict[str, Any]]] = field(
+        default_factory=dict
+    )
 
 
 def _normalized_search_extension_safety_limits(
@@ -1204,6 +1209,97 @@ def _selected_state(
     return values, candidates
 
 
+def _candidate_review_binding(candidate: CalibrationStudyCandidateState) -> dict[str, str]:
+    if candidate.status != "completed" or candidate.run_directory is None:
+        raise ReferenceCalibrationStudyError("Visual review requires a completed candidate")
+    return {
+        "config_sha256": sha256_file(candidate.config_path),
+        "run_manifest_sha256": sha256_file(candidate.run_directory / "manifest.json"),
+        "result_sha256": sha256_file(candidate.run_directory / "result.json"),
+        "inventory_sha256": sha256_file(candidate.run_directory / "output-inventory.json"),
+        "metrics_sha256": _canonical_hash(candidate.metrics),
+    }
+
+
+def _load_candidate_reviews(
+    events: tuple[dict[str, Any], ...],
+    stage_id: str,
+    candidates: tuple[CalibrationStudyCandidateState, ...],
+) -> dict[str, bool]:
+    """Restore only decisions bound to the same completed candidate evidence."""
+    by_id = {item.candidate_id: item for item in candidates}
+    decisions: dict[str, bool] = {}
+    for event in events:
+        if event["event"] != "candidate_visual_review" or event.get("stage_id") != stage_id:
+            continue
+        candidate = by_id.get(event.get("candidate_id"))
+        if candidate is None or type(event.get("approved")) is not bool:
+            raise ReferenceCalibrationStudyError("Invalid candidate visual review")
+        if event.get("source") != _candidate_review_binding(candidate):
+            raise ReferenceCalibrationStudyError("Visual review source evidence changed")
+        decisions[candidate.candidate_id] = event["approved"]
+    return decisions
+
+
+def record_reference_calibration_candidate_review(
+    study_directory: Path | str, *, candidate_id: str, approved: bool,
+    reviewed_subjects: tuple[str, ...], anatomical_notes: str = "",
+    feature_observations: Mapping[str, Mapping[str, Any]] | None = None,
+) -> ReferenceCalibrationStudySnapshot:
+    """Persist an explicit complete visual decision before any stage selection."""
+    root = Path(study_directory).expanduser().resolve()
+    snapshot = load_reference_calibration_study(root)
+    if snapshot.status != "awaiting_review" or snapshot.current_stage is None:
+        raise ReferenceCalibrationStudyError(
+            "Candidate review requires an idle completed stage"
+        )
+    expected = {subject.filename for subject in snapshot.plan.selected_pilot_subjects}
+    if (type(approved) is not bool or set(reviewed_subjects) != expected
+            or len(reviewed_subjects) != len(expected)):
+        raise ReferenceCalibrationStudyError("A decision requires review of every pilot subject")
+    if not isinstance(anatomical_notes, str) or len(anatomical_notes) > 4000:
+        raise ReferenceCalibrationStudyError(
+            "Anatomical notes must contain at most 4000 characters"
+        )
+    counts = dict(feature_observations or {})
+    if set(counts) - expected:
+        raise ReferenceCalibrationStudyError("Feature checks name an unknown pilot subject")
+    for observation in counts.values():
+        if not isinstance(observation, Mapping) or set(observation) != {
+            "original", "reconstruction", "criterion", "judgement"
+        }:
+            raise ReferenceCalibrationStudyError(
+                "Feature checks require named criteria and observations"
+            )
+        criterion = observation["criterion"]
+        if not isinstance(criterion, str) or not 1 <= len(criterion.strip()) <= 500:
+            raise ReferenceCalibrationStudyError("Feature checks require a named dataset criterion")
+        if observation["judgement"] not in {
+            "unassessed", "preserved", "not_preserved", "uncertain"
+        }:
+            raise ReferenceCalibrationStudyError("Feature checks require a valid observation")
+        if any(value is not None and (type(value) is not int or not 0 <= value <= 999)
+               for value in (observation["original"], observation["reconstruction"])):
+            raise ReferenceCalibrationStudyError("Feature counts must be integers from 0 to 999")
+        if approved and (observation["judgement"] != "preserved"
+                         or observation["original"] != observation["reconstruction"]):
+            raise ReferenceCalibrationStudyError(
+                "Cannot approve anatomy with unresolved feature checks or differing counts"
+            )
+    candidate = next((c for c in snapshot.candidates if c.candidate_id == candidate_id), None)
+    if candidate is None:
+        raise ReferenceCalibrationStudyError("Unknown candidate for visual review")
+    source = _candidate_review_binding(candidate)
+    _append_event(root, "candidate_visual_review", {
+        "stage_id": snapshot.current_stage.stage_id, "candidate_id": candidate_id,
+        "approved": approved, "reviewed_subjects": sorted(reviewed_subjects),
+        "anatomical_notes": anatomical_notes.strip(), "source": source,
+        "feature_observations": counts,
+        "policy": "researcher_original_detail_review_v1",
+    })
+    return load_reference_calibration_study(root)
+
+
 def load_reference_calibration_study(
     study_directory: Path | str,
 ) -> ReferenceCalibrationStudySnapshot:
@@ -1361,6 +1457,7 @@ def load_reference_calibration_study(
                 attempts=len(starts),
             )
         )
+    visual_reviews = _load_candidate_reviews(events, stage.stage_id, candidate_states)
     awaiting = any(
         event["event"] == "stage_awaiting_review"
         and event["stage_id"] == stage.stage_id
@@ -1382,6 +1479,19 @@ def load_reference_calibration_study(
         status=status,
         current_stage=stage,
         candidates=tuple(candidate_states),
+        visual_reviews=visual_reviews,
+        visual_review_notes={
+            event["candidate_id"]: str(event.get("anatomical_notes", ""))
+            for event in events
+            if event["event"] == "candidate_visual_review"
+            and event.get("stage_id") == stage.stage_id
+        },
+        feature_observations={
+            event["candidate_id"]: event.get("feature_observations", {})
+            for event in events
+            if event["event"] == "candidate_visual_review"
+            and event.get("stage_id") == stage.stage_id
+        },
         selected_values=selected_values,
         selected_candidate_ids=selected_candidates,
         event_count=len(events),
@@ -1855,6 +1965,7 @@ def _stage_evidence(
     snapshot: ReferenceCalibrationStudySnapshot,
     visual_approvals: Mapping[str, bool],
 ) -> tuple[CalibrationCandidateEvidence, ...]:
+    visual_approvals = {**visual_approvals, **snapshot.visual_reviews}
     completed = {
         candidate.candidate_id: candidate
         for candidate in snapshot.candidates
@@ -2494,6 +2605,7 @@ def _record_reference_calibration_stage_selection(
         raise ReferenceCalibrationStudyError(
             "The current calibration stage is not awaiting review"
         )
+    visual_approvals = {**visual_approvals, **snapshot.visual_reviews}
     if snapshot.plan.qc_recalibration_source and (
         visual_approvals.get(selected_candidate_id) is not True
         or not selection_mode.startswith("researcher_")

@@ -153,14 +153,14 @@ def test_tradeoff_labels_state_both_sides_without_declaring_a_winner() -> None:
     )
     assert tuple(item.tone for item in assessments["attachment-01"]) == (
         "favorable",
-        "unfavorable",
-        "caution",
+        "neutral",
+        "neutral",
         "unfavorable",
     )
     assert tuple(item.tone for item in assessments["attachment-02"]) == (
         "unfavorable",
-        "favorable",
-        "favorable",
+        "neutral",
+        "neutral",
         "favorable",
     )
     fastest = assessments["attachment-02"][-1]

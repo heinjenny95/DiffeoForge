@@ -1,6 +1,6 @@
-# Development continuity — v90 baseline
+# Development continuity — v91 source update
 
-Snapshot: 2026-09-25. This is a public, software-only continuation guide. Detailed
+Snapshot: 2026-09-26. This is a public, software-only continuation guide. Detailed
 research results, local paths, account destinations and run identities belong in
 the owner's private project handoff, not this repository.
 
@@ -13,6 +13,12 @@ correct parameters or interpret biology for the researcher. Deformetrica is the
 default supported reference route; the Modern engine remains evidence-gated.
 
 ## Verified software baseline
+
+v91 source adds hidden PC-shooting launch, an independent minimizable pilot
+window, contextual cost labels and persistent anatomy-first pilot decisions.
+See [implementation and acceptance limits](V91_PILOT_REVIEW.md). Build and
+distribution completion are recorded separately; source version alone does not
+establish installed or distributed state.
 
 The last packaged application is **v90 / 0.0.0.dev90**, built from
 `a17e89acca38174bf7a512d1aeab33d921aac693`. Later documentation commits do not

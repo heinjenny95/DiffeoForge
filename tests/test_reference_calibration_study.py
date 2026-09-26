@@ -179,6 +179,110 @@ def test_afk_completes_ambiguous_frozen_grid_with_auditable_provisional_choices(
     assert study_module._load_events(result.study_directory) == events
 
 
+def _review_ready_stage(tmp_path, monkeypatch):
+    runner = _afk_runner(tmp_path, monkeypatch)
+    snapshot = runner.run_current_stage()
+    # Synthetic run receipts, separate from the metrics stub used by this fixture.
+    for candidate in snapshot.candidates:
+        for name in ("manifest.json", "result.json", "output-inventory.json"):
+            (candidate.run_directory / name).write_text("{}", encoding="utf-8")
+    return runner, snapshot
+
+
+def test_visual_decisions_survive_reopen_override_stale_afk_and_bind_evidence(
+    tmp_path, monkeypatch,
+):
+    runner, snapshot = _review_ready_stage(tmp_path, monkeypatch)
+    subjects = tuple(s.filename for s in snapshot.plan.selected_pilot_subjects)
+    rejected, accepted = snapshot.candidates[:2]
+    for candidate, approval in ((rejected, False), (accepted, True)):
+        study_module.record_reference_calibration_candidate_review(
+            runner.study_directory, candidate_id=candidate.candidate_id,
+            approved=approval, reviewed_subjects=subjects,
+            anatomical_notes="Synthetic tip and branch review.",
+        )
+    reopened = load_reference_calibration_study(runner.study_directory)
+    assert reopened.visual_reviews == {
+        rejected.candidate_id: False, accepted.candidate_id: True,
+    }
+    assert reopened.visual_review_notes[accepted.candidate_id] == "Synthetic tip and branch review."
+    assessment = assess_reference_calibration_snapshot(
+        reopened, visual_approvals={rejected.candidate_id: True},
+    )
+    assert assessment.balanced_candidate_id == accepted.candidate_id
+    assert not assessment.candidates[0].eligible
+    events = study_module._load_events(runner.study_directory)
+    assert events[-1]["anatomical_notes"] == "Synthetic tip and branch review."
+    # A changed receipt cannot silently reuse an anatomical decision.
+    (accepted.run_directory / "result.json").write_text('{"changed":true}', encoding="utf-8")
+    with pytest.raises(ReferenceCalibrationStudyError, match="source evidence changed"):
+        load_reference_calibration_study(runner.study_directory)
+
+
+def test_review_requires_all_subjects_and_selection_records_saved_decisions(tmp_path, monkeypatch):
+    runner, snapshot = _review_ready_stage(tmp_path, monkeypatch)
+    subjects = tuple(s.filename for s in snapshot.plan.selected_pilot_subjects)
+    candidate = snapshot.candidates[0]
+    before = study_module._load_events(runner.study_directory)
+    for invalid in (subjects[:-1], (*subjects, subjects[0])):
+        with pytest.raises(ReferenceCalibrationStudyError, match="every pilot subject"):
+            study_module.record_reference_calibration_candidate_review(
+                runner.study_directory, candidate_id=candidate.candidate_id,
+                approved=True, reviewed_subjects=invalid,
+            )
+    assert study_module._load_events(runner.study_directory) == before
+    study_module.record_reference_calibration_candidate_review(
+        runner.study_directory, candidate_id=candidate.candidate_id,
+        approved=True, reviewed_subjects=subjects,
+    )
+    selected, _ = study_module.record_reference_calibration_provisional_override(
+        runner.study_directory, visual_approvals={}, selected_candidate_id=candidate.candidate_id,
+    )
+    assert selected.selected_candidate_ids["attachment"] == candidate.candidate_id
+    assert selected.visual_reviews == {}
+    event = next(e for e in reversed(study_module._load_events(runner.study_directory))
+                 if e["event"] == "stage_selected")
+    assert event["visual_approvals"] == {candidate.candidate_id: True}
+
+
+def test_dataset_feature_conflicts_cannot_be_approved(tmp_path, monkeypatch):
+    runner, snapshot = _review_ready_stage(tmp_path, monkeypatch)
+    subjects = tuple(s.filename for s in snapshot.plan.selected_pilot_subjects)
+    cid = snapshot.candidates[0].candidate_id
+    for original, reconstruction in ((3, 2), (3, None), (True, 2), (-1, 2)):
+        with pytest.raises(ReferenceCalibrationStudyError, match="[Ff]eature"):
+            study_module.record_reference_calibration_candidate_review(
+                runner.study_directory, candidate_id=cid, approved=True,
+                reviewed_subjects=subjects, feature_observations={subjects[0]: {
+                    "original": original, "reconstruction": reconstruction,
+                    "criterion": "Study A: distal prongs", "judgement": "preserved",
+                }},
+            )
+    counts = {subjects[0]: {"original": 3, "reconstruction": 2,
+                           "criterion": "Study A: distal prongs", "judgement": "not_preserved"}}
+    saved = study_module.record_reference_calibration_candidate_review(
+        runner.study_directory, candidate_id=cid, approved=False,
+        reviewed_subjects=subjects, feature_observations=counts,
+    )
+    assert saved.feature_observations[cid] == counts
+    assert saved.visual_reviews[cid] is False
+    assert not assess_reference_calibration_snapshot(saved).candidates[0].eligible
+    qualitative = {subjects[0]: {"original": None, "reconstruction": None,
+                               "criterion": "Study B: joint outline", "judgement": "uncertain"}}
+    with pytest.raises(ReferenceCalibrationStudyError, match="unresolved feature"):
+        study_module.record_reference_calibration_candidate_review(
+            runner.study_directory, candidate_id=cid, approved=True,
+            reviewed_subjects=subjects, feature_observations=qualitative,
+        )
+    qualitative[subjects[0]]["judgement"] = "preserved"
+    accepted = study_module.record_reference_calibration_candidate_review(
+        runner.study_directory, candidate_id=cid, approved=True,
+        reviewed_subjects=subjects, feature_observations=qualitative,
+    )
+    assert accepted.feature_observations[cid] == qualitative
+    assert accepted.visual_reviews[cid] is True
+
+
 @pytest.mark.parametrize(
     "invalid,controller,match",
     [

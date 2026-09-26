@@ -1,5 +1,21 @@
 # Private-alpha build numbering
 
+## v91 — independent pilot window and anatomy-first review
+
+Development candidate v91 (`0.0.0.dev91`) hides the injected PC-shooting WSL
+launcher, gives the pilot its own modeless minimize/restore window, and preserves
+one live controller through progress and closing actions. Deformation/area-cost
+badges are contextual. Saved anatomical acceptance takes priority in ranking;
+saved rejection cannot be overridden by stale AFK state. Optional per-specimen
+feature/region checks use researcher-defined criteria for the current dataset;
+paired counts are optional. Unresolved checks or differing counts block acceptance.
+Criteria, observations, notes and decisions survive reopening with evidence bindings.
+
+See [v91 implementation and acceptance limits](V91_PILOT_REVIEW.md). Existing
+scientific results and historical decisions are preserved. Build/distribution
+and installation evidence are tracked separately; no automatic anatomy detector,
+independent biological qualification or public release is claimed.
+
 ## v88 — reliable atlas-to-QC handoff and visible result preparation
 
 Development candidate v88 (`0.0.0.dev88`) fixes a task-identity race during

@@ -30,6 +30,7 @@ from diffeoforge.reference_pca import (
 )
 from diffeoforge.runs import publish_directory_exclusive
 from diffeoforge.strict_json import load_strict_json_object
+from diffeoforge.subprocess_policy import hidden_windows_process_kwargs
 
 DESIGN_VERSION = "0.1"
 DESIGN_NAME = "reference-pca-deformation-design.json"
@@ -607,6 +608,7 @@ def execute_reference_pca_deformation_design(
                 text=True,
                 timeout=timeout_seconds,
                 check=False,
+                **hidden_windows_process_kwargs(),
             )
         except (OSError, subprocess.SubprocessError) as error:
             raise ReferencePCADeformationExecutionError(

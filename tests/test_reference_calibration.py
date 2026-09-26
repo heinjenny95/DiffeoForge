@@ -618,6 +618,46 @@ def test_stage_assessment_retains_pareto_candidates_and_exposes_weights() -> Non
     assert len(first.fingerprint) == 64
 
 
+@pytest.mark.parametrize("disparity", ["low", "moderate", "high", "extreme"])
+def test_accepted_anatomy_takes_priority_over_numerical_economy(disparity) -> None:
+    plan = replace(build_reference_calibration_plan(
+        _recommendation(), coordinate_unit="unitless", requested_pilot_subject_count=3,
+    ), expected_shape_disparity=disparity)
+    evidence = _stage_evidence(plan, "noise", (
+        (0.02, 0.1, 0.01, 1.0), (0.1, 0.2, 0.1, 2.0),
+        (0.3, 10.0, 2.0, 30.0), (0.4, 0.4, 0.2, 4.0), (0.5, 0.5, 0.3, 5.0),
+    ))
+    unreviewed = tuple(replace(item, review_approved=None) for item in evidence)
+    numerical = assess_calibration_stage(plan, stage_id="noise", evidence=unreviewed)
+    assert numerical.balanced_candidate_id == evidence[0].candidate_id
+    accepted = list(unreviewed)
+    accepted[2] = replace(accepted[2], review_approved=True)
+    result = assess_calibration_stage(plan, stage_id="noise", evidence=tuple(accepted))
+    assert result.balanced_candidate_id == evidence[2].candidate_id
+    assert result.recommendation_confidence == "ambiguous"
+    assert not result.automatic_selection_allowed
+    assert result.candidates[0].eligible and result.candidates[0].balanced_score is None
+    # Anatomy acceptance cannot bypass a hard geometry/convergence failure.
+    accepted[2] = replace(accepted[2], invalid_face_count=1)
+    result = assess_calibration_stage(plan, stage_id="noise", evidence=tuple(accepted))
+    assert result.balanced_candidate_id == evidence[0].candidate_id
+    assert not result.candidates[2].eligible
+
+
+def test_numerical_economy_compares_only_accepted_alternatives() -> None:
+    plan = build_reference_calibration_plan(
+        _recommendation(), coordinate_unit="unitless", requested_pilot_subject_count=3,
+    )
+    evidence = _stage_evidence(plan, "noise", (
+        (0.01, 0.01, 0.01, 1.0), (0.1, 0.2, 0.1, 2.0),
+        (0.2, 0.3, 0.2, 3.0), (0.3, 0.4, 0.3, 4.0), (0.4, 0.5, 0.4, 5.0),
+    ))
+    evidence = (replace(evidence[0], review_approved=False), *evidence[1:])
+    result = assess_calibration_stage(plan, stage_id="noise", evidence=evidence)
+    assert result.balanced_candidate_id == evidence[1].candidate_id
+    assert not result.candidates[0].eligible
+
+
 def test_stage_assessment_requires_stable_evidence_before_automatic_selection() -> None:
     plan = build_reference_calibration_plan(
         _recommendation(),

@@ -141,6 +141,27 @@ def test_visual_qc_pass_is_locked_until_every_subject_pair_was_opened(
     assert dialog.next_specimen_button.isEnabled() is False
     assert dialog.complete_button.isEnabled() is True
     assert dialog.complete_button.objectName() == "primary"
+    dialog.feature_criterion.setText("Study A: distal prong count")
+    dialog.feature_judgement.setCurrentIndex(dialog.feature_judgement.findData("preserved"))
+    dialog.original_feature_count.setValue(3)
+    assert not dialog.complete_button.isEnabled()  # Incomplete pair, not assumed equal.
+    dialog.reconstruction_feature_count.setValue(2)
+    assert not dialog.complete_button.isEnabled()
+    assert "second.vtk" in dialog.review_gate.text()
+    dialog._record_visual_qc_pass()
+    assert not dialog.review_recorded
+    dialog.previous_specimen_button.click()
+    _wait_pair(application, dialog)
+    assert dialog.original_feature_count.value() == -1  # Counts belong to one specimen.
+    assert dialog.feature_criterion.text() == ""
+    assert not dialog.complete_button.isEnabled()  # Other specimen's mismatch remains.
+    dialog.mesh_combo.setCurrentIndex(dialog.mesh_combo.findData(2))
+    _wait_pair(application, dialog)
+    assert dialog.original_feature_count.value() == 3
+    assert dialog.feature_criterion.text() == "Study A: distal prong count"
+    assert dialog.reconstruction_feature_count.value() == 2
+    dialog.reconstruction_feature_count.setValue(3)
+    assert dialog.complete_button.isEnabled()
     dialog.complete_button.click()
     assert dialog.review_complete is True
     assert dialog.review_recorded is True
@@ -149,9 +170,11 @@ def test_visual_qc_pass_is_locked_until_every_subject_pair_was_opened(
     application.processEvents()
 
 
+@pytest.mark.parametrize("criterion", ["Study B: articular surface", "Study C: distal branches"])
 def test_visual_qc_can_record_an_explicit_failure_after_every_pair_was_opened(
     monkeypatch,
     tmp_path: Path,
+    criterion: str,
 ) -> None:
     pytest.importorskip("PySide6")
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
@@ -197,6 +220,12 @@ def test_visual_qc_can_record_an_explicit_failure_after_every_pair_was_opened(
     assert dialog.fail_button.isVisible() is True
     assert dialog.complete_button.isEnabled() is True
     assert "Next: record your decision" in dialog.review_gate.text()
+    dialog.feature_criterion.setText(criterion)
+    dialog.feature_judgement.setCurrentIndex(dialog.feature_judgement.findData("not_preserved"))
+    assert dialog.original_feature_count.value() == -1  # Qualitative checks need no count.
+    assert not dialog.complete_button.isEnabled()
+    dialog._record_visual_qc_pass()
+    assert not dialog.review_recorded
     dialog.fail_button.click()
     assert dialog.review_recorded is True
     assert dialog.review_passed is False
@@ -301,6 +330,7 @@ def test_staged_calibration_allows_selection_without_visual_qc(
         candidates=candidates,
         selected_values={},
         selected_candidate_ids={},
+        visual_reviews={},
         event_count=0,
     )
     monkeypatch.setattr(
@@ -380,7 +410,7 @@ def test_staged_calibration_allows_selection_without_visual_qc(
     assert dialog.selection_combo.isVisible() is True
     assert dialog.collect_evidence_button.isVisible() is True
     warning_labels = dialog.findChildren(QLabel, "statusWarning")
-    assert any("Evidence grade:" in label.text() for label in warning_labels)
+    assert any("Numerical recommendation:" in label.text() for label in warning_labels)
 
     application.processEvents()
     application.sendPostedEvents(None, QEvent.Type.DeferredDelete)
@@ -415,18 +445,20 @@ def test_staged_calibration_allows_selection_without_visual_qc(
         "DiffeoForge provisional recommendation" in dialog.selection_combo.itemText(index)
         for index in range(1, dialog.selection_combo.count())
     )
-    assert "DiffeoForge's provisional recommendation is Option" in dialog.status.text()
+    assert "Numerical shortlist leader: Option" in dialog.status.text()
     assert dialog.advance_button.isHidden() is True
     favorable = dialog.findChildren(QLabel, "tradeoffFavorable")
     caution = dialog.findChildren(QLabel, "tradeoffCaution")
+    neutral = dialog.findChildren(QLabel, "tradeoffNeutral")
     unfavorable = dialog.findChildren(QLabel, "tradeoffUnfavorable")
     legends = dialog.findChildren(QLabel, "tradeoffLegend")
-    assert len(favorable) == 4
-    assert len(caution) == 1
-    assert len(unfavorable) == 3
+    assert len(favorable) == 2
+    assert len(caution) == 0
+    assert len(unfavorable) == 2
+    assert len(neutral) == 4
     assert len(legends) == 1
     assert any("Fastest pilot run" in label.text() for label in favorable)
-    assert any("Highest deformation cost" in label.text() for label in caution)
+    assert any("Highest deformation cost" in label.text() for label in neutral)
     assert any("Largest measured mismatch" in label.text() for label in unfavorable)
     assert all("do not select" in label.text() for label in legends)
     assert all("requiring inspection" not in label.text() for label in legends)

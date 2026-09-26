@@ -69,15 +69,35 @@ def test_every_production_subprocess_call_uses_hidden_windows_policy() -> None:
     source_root = ROOT / "src" / "diffeoforge"
     for path in sorted(source_root.rglob("*.py")):
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        def is_launcher(value):
+            return (
+                isinstance(value, ast.Attribute)
+                and isinstance(value.value, ast.Name)
+                and value.value.id == "subprocess"
+                and value.attr in {"run", "Popen"}
+            )
+
+        aliases = set()
         for node in ast.walk(tree):
-            if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                args = node.args
+                positional = [*args.posonlyargs, *args.args]
+                defaults = [None] * (len(positional) - len(args.defaults)) + args.defaults
+                for arg, default in zip(
+                    [*positional, *args.kwonlyargs], [*defaults, *args.kw_defaults], strict=True
+                ):
+                    if is_launcher(default):
+                        aliases.add(arg.arg)
+            elif isinstance(node, ast.Assign) and is_launcher(node.value):
+                aliases.update(t.id for t in node.targets if isinstance(t, ast.Name))
+            elif isinstance(node, ast.ImportFrom) and node.module == "subprocess":
+                aliases.update(n.asname or n.name for n in node.names
+                               if n.name in {"run", "Popen"})
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
                 continue
-            owner = node.func.value
-            if (
-                not isinstance(owner, ast.Name)
-                or owner.id != "subprocess"
-                or node.func.attr not in {"run", "Popen"}
-            ):
+            if not (is_launcher(node.func)
+                    or isinstance(node.func, ast.Name) and node.func.id in aliases):
                 continue
             guarded = any(
                 keyword.arg is None

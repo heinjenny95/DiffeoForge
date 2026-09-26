@@ -178,6 +178,10 @@ scientific gates. Planning does not mark those gates complete.
   Offscreen overlap/failure/cancellation/teardown checks pass; full native
   interaction and every synchronous action still need acceptance review.
 - [ ] **Pilot window: allow minimization and prevent unwanted foreground activation.**
+  v91 implements an independent modeless window and one retained controller;
+  native minimize/restore and owner checks pass with simulated progress.
+  Cross-application foreground observation remains an interactive acceptance
+  check because the execution desktop does not expose a foreground handle.
   User-reported in v90 on 2026-09-25: the pilot-calibration window cannot be
   minimized, and the whole application reappears in the foreground when another
   window is opened, for example a folder in Windows File Explorer. Reproduce
@@ -390,6 +394,12 @@ scientific gates. Planning does not mark those gates complete.
     negative; evaluate the fit improvement against smoothness, topology/Jacobian
     validity, and subject-tail failures, especially for high-disparity cohorts
   - [ ] **Further pilot recommendation audit (v90 feedback, 2026-09-25).**
+    v91 implements neutral cost/area labels, anatomy-first ranking among
+    accepted options, immediate hash-bound review persistence, per-specimen
+    distances and dataset-specific feature checks with optional paired counts. Existing
+    reconstruction identity and pooled-metric limitations were audited locally.
+    Automatic feature detection and prospective independent anatomy validation
+    remain open; see `docs/V91_PILOT_REVIEW.md`.
     Make deformation-cost badges neutral and consistent with the scoring policy:
     high-disparity scoring already omits energy, but lowest/highest-cost badges
     still assign favorable/caution tones. Interpret area change in context too.

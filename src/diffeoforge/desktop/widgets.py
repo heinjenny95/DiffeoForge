@@ -375,6 +375,10 @@ QLabel#tradeoffCaution {
     background: #fff7df; border: 1px solid #e8cf86; border-radius: 7px;
     color: #765500; padding: 9px;
 }
+QLabel#tradeoffNeutral {
+    background: #eef3f4; border: 1px solid #cbd7da; border-radius: 7px;
+    color: #455e65; padding: 9px;
+}
 QLabel#tradeoffUnfavorable {
     background: #fff0ed; border: 1px solid #e2aaa1; border-radius: 7px;
     color: #91382e; padding: 9px;
@@ -1507,6 +1511,7 @@ class DiffeoForgeWindow(QMainWindow):
         self._reference_pilot_declarations_path: Path | None = None
         self._reference_calibration_export: CalibrationPlanExport | None = None
         self._reference_calibration_study_directory: Path | None = None
+        self._reference_calibration_dialog: ReferenceCalibrationDialog | None = None
         self._reference_calibrated_config_path: Path | None = None
         self._guided_reference_calibration_requested = False
         self._template_preview_worker: _TemplatePreviewWorker | None = None
@@ -9113,6 +9118,11 @@ class DiffeoForgeWindow(QMainWindow):
 
     @Slot()
     def _open_reference_calibration(self) -> None:
+        if self._reference_calibration_dialog is not None:
+            # Reuse the live controller. Only this explicit open action restores it;
+            # progress/result signals never activate or raise a window.
+            self._reference_calibration_dialog.showNormal()
+            return
         context = self._reference_calibration_context()
         if context is None or self._review is None:
             return
@@ -9134,11 +9144,12 @@ class DiffeoForgeWindow(QMainWindow):
                 )
             snapshot = load_reference_calibration_study(directory)
             if snapshot.status != "completed":
-                dialog = ReferenceCalibrationDialog(directory, self)
-                dialog.exec()
-                directory = dialog.study_directory.expanduser().resolve()
-                self._reference_calibration_study_directory = directory
-                snapshot = load_reference_calibration_study(directory)
+                dialog = ReferenceCalibrationDialog(directory)
+                self._reference_calibration_dialog = dialog
+                dialog.finished.connect(self._reference_calibration_closed)
+                self.centralWidget().setEnabled(False)
+                dialog.show()
+                return
         except (OSError, RuntimeError, TypeError, ValueError) as error:
             QMessageBox.warning(
                 self,
@@ -9147,6 +9158,25 @@ class DiffeoForgeWindow(QMainWindow):
             )
             self._refresh_reference_calibration_execution_card()
             return
+        self._finish_reference_calibration(snapshot)
+
+    @Slot(int)
+    def _reference_calibration_closed(self, _result: int) -> None:
+        dialog = self._reference_calibration_dialog
+        if dialog is None:
+            return
+        directory = dialog.study_directory.expanduser().resolve()
+        self._reference_calibration_dialog = None
+        self.centralWidget().setEnabled(True)
+        dialog.deleteLater()
+        self._reference_calibration_study_directory = directory
+        try:
+            self._finish_reference_calibration(load_reference_calibration_study(directory))
+        except (OSError, RuntimeError, TypeError, ValueError) as error:
+            QMessageBox.warning(self, "Pilot calibration unavailable", str(error))
+            self._refresh_reference_calibration_execution_card()
+
+    def _finish_reference_calibration(self, snapshot) -> None:
         self._refresh_reference_calibration_execution_card()
         if (
             snapshot.status != "completed"
@@ -9164,7 +9194,7 @@ class DiffeoForgeWindow(QMainWindow):
         self.status_label.setObjectName("statusSuccess")
         self.status_label.setStyleSheet("")
         self.status_label.setText(
-            "Pilot calibration complete. The visually selected parameter values were "
+            "Pilot calibration complete. The recorded parameter values were "
             "applied automatically and are being prepared for Step 3 review."
         )
         self._review = None
@@ -12255,6 +12285,14 @@ class DiffeoForgeWindow(QMainWindow):
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(destination)))
 
     def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802 - Qt API name
+        if self._reference_calibration_dialog is not None:
+            QMessageBox.information(
+                self, "Pilot window is open",
+                "Close the pilot window first. A running pilot must be cancelled safely "
+                "before closing; minimizing either window does not stop it.",
+            )
+            event.ignore()
+            return
         if isinstance(self._worker, _RemoteAtlasWorker):
             self._close_after_worker = True
             self._worker.request_detach()

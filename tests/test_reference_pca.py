@@ -1208,6 +1208,11 @@ def test_reference_pca_deformation_execution_publishes_verified_endpoints(
     )
 
     def complete_shooting(_argv, *, cwd, **_kwargs):
+        expected = deformation_module.hidden_windows_process_kwargs()
+        assert _kwargs.get("creationflags") == expected.get("creationflags")
+        if "startupinfo" in expected:
+            assert _kwargs["startupinfo"].dwFlags == expected["startupinfo"].dwFlags
+            assert _kwargs["startupinfo"].wShowWindow == expected["startupinfo"].wShowWindow
         root = Path(cwd)
         output = root / "output"
         header = (

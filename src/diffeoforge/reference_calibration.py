@@ -1543,8 +1543,9 @@ def reference_calibration_plan_from_provenance(
 class CalibrationCandidateEvidence:
     """Normalized run evidence supplied after one declared candidate finishes.
 
-    All scientific metrics are raw non-negative quantities for which smaller is
-    better.  The evaluator never substitutes missing measurements.
+    Metrics are raw non-negative comparison proxies, not anatomical quality
+    scores. Lower deformation cost or area change is not intrinsically better.
+    The evaluator never substitutes missing measurements.
     """
 
     candidate_id: str
@@ -1665,7 +1666,7 @@ class CalibrationStageAssessment:
         }
 
 
-_ASSESSMENT_VERSION = "0.4"
+_ASSESSMENT_VERSION = "0.5"
 _SEARCH_PARAMETERS: dict[CalibrationStageKind, tuple[str, ...]] = {
     "attachment_width": (
         "attachment_kernel_width",
@@ -2454,7 +2455,9 @@ def assess_calibration_stage(
     but never constitutes automatic anatomical approval or final scientific
     validation.  Visual QC is optional; an explicit visual failure makes a
     candidate ineligible, while an unreviewed candidate remains eligible when
-    its automatic evidence is valid.
+    its automatic evidence is valid. When valid, explicitly approved options
+    exist, rank only those options. Unreviewed alternatives remain available for
+    deliberate manual selection but cannot outrank accepted anatomy on economy.
     """
 
     matching_stages = [stage for stage in plan.stages if stage.stage_id == stage_id]
@@ -2514,6 +2517,17 @@ def assess_calibration_stage(
             eligible_ids.append(candidate_id)
             metric_rows.append(row)
 
+    selectable_ids = set(eligible_ids)
+    approved_ids = {
+        candidate_id for candidate_id in eligible_ids
+        if by_id[candidate_id].review_approved is True
+    }
+    if approved_ids:
+        metric_rows = [row for candidate_id, row in zip(eligible_ids, metric_rows, strict=True)
+                       if candidate_id in approved_ids]
+        eligible_ids = [candidate_id for candidate_id in eligible_ids
+                        if candidate_id in approved_ids]
+
     scores: dict[str, float] = {}
     score_ranges: dict[str, tuple[float, float]] = {}
     weight_win_fractions: dict[str, float] = {}
@@ -2531,6 +2545,12 @@ def assess_calibration_stage(
     confidence = "none"
     automatic_selection_allowed = False
     sensitivity_flags: list[str] = []
+    if approved_ids:
+        sensitivity_flags.append(
+            "Recommendation compares only explicitly visually accepted options; "
+            "unreviewed alternatives remain available for manual review/selection. "
+            "Numerical stability is not additional anatomical validation."
+        )
     if eligible_ids:
         values = np.asarray(metric_rows, dtype=np.float64)
         pareto_ids = tuple(
@@ -2684,7 +2704,7 @@ def assess_calibration_stage(
     assessments = tuple(
         CalibrationCandidateAssessment(
             candidate_id=candidate_id,
-            eligible=candidate_id in eligible_ids,
+            eligible=candidate_id in selectable_ids,
             pareto_optimal=candidate_id in pareto_ids,
             balanced_score=scores.get(candidate_id),
             weight_win_fraction=weight_win_fractions.get(candidate_id),

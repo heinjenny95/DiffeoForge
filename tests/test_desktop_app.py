@@ -1733,13 +1733,13 @@ def test_desktop_applies_completed_search_extension_after_dialog_closes(
         lambda: (SimpleNamespace(), source_study),
     )
 
-    class FakeDialog:
-        def __init__(self, study_directory, _parent) -> None:
+    from PySide6.QtWidgets import QDialog
+
+    class FakeDialog(QDialog):
+        def __init__(self, study_directory) -> None:
+            super().__init__()
             assert study_directory == source_study
             self.study_directory = successor_study
-
-        def exec(self) -> None:
-            return None
 
     loaded: list[Path] = []
 
@@ -1763,6 +1763,16 @@ def test_desktop_applies_completed_search_extension_after_dialog_closes(
     monkeypatch.setattr(window, "_review_project", lambda: review_calls.append(True))
 
     window._open_reference_calibration()
+
+    pilot = window._reference_calibration_dialog
+    assert pilot is not None and pilot.parent() is None
+    assert pilot.isVisible() and not pilot.isModal()
+    assert not window.centralWidget().isEnabled()
+    window._open_reference_calibration()
+    assert window._reference_calibration_dialog is pilot
+    pilot.reject()
+    assert window._reference_calibration_dialog is None
+    assert window.centralWidget().isEnabled()
 
     assert loaded[:2] == [source_study, successor_study]
     assert window._reference_calibration_study_directory == successor_study

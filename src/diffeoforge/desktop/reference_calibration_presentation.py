@@ -58,7 +58,7 @@ class CalibrationTradeoffAssessment:
     """One relative pilot observation with cautious beginner-facing meaning."""
 
     label: str
-    tone: Literal["favorable", "caution", "unfavorable"]
+    tone: Literal["favorable", "caution", "unfavorable", "neutral"]
     interpretation: str
 
 
@@ -231,20 +231,20 @@ def candidate_tradeoff_assessments(
             "distortion_p95",
             CalibrationTradeoffAssessment(
                 label="Least atlas/reconstruction area change",
-                tone="favorable",
+                tone="neutral",
                 interpretation=(
-                    "This option changes local surface area the least, which is a "
-                    "favorable stability signal and reduces concern about stretching "
-                    "or collapse."
+                    "Least measured area change is not anatomical approval. Similar shapes "
+                    "may need little change; disparate shapes may require substantial "
+                    "change. Check preserved features and local mesh validity."
                 ),
             ),
             CalibrationTradeoffAssessment(
                 label="Most atlas/reconstruction area change",
-                tone="unfavorable",
+                tone="neutral",
                 interpretation=(
-                    "This option changes local surface area the most, which raises concern "
-                    "about stretching, compression, or collapse. The optional viewer can "
-                    "show where those changes occur."
+                    "More area change may represent real shape differences or implausible "
+                    "warping. Its magnitude alone cannot distinguish them. Inspect the "
+                    "originals and reconstructions in the same regions."
                 ),
             ),
         ),
@@ -252,21 +252,20 @@ def candidate_tradeoff_assessments(
             "deformation_energy",
             CalibrationTradeoffAssessment(
                 label="Lowest deformation cost",
-                tone="favorable",
+                tone="neutral",
                 interpretation=(
-                    "This option reaches its result with the least deformation cost, "
-                    "suggesting a smoother or easier transformation. It can still "
-                    "underfit local anatomy."
+                    "Lower cost is not automatically better. It may suit similar shapes, "
+                    "but low cost with missing tips or branches can indicate underfitting. "
+                    "Compare economy only after the needed anatomy is represented."
                 ),
             ),
             CalibrationTradeoffAssessment(
                 label="Highest deformation cost",
-                tone="caution",
+                tone="neutral",
                 interpretation=(
-                    "This option needs the strongest deformation. That may capture real "
-                    "local variation or indicate excessive flexibility. Your biological "
-                    "question determines whether that trade-off is acceptable; visual QC "
-                    "is available if needed."
+                    "Higher cost is not automatically worse. Complex, disparate shapes may "
+                    "need substantial deformation to preserve their anatomy. High cost "
+                    "alone proves neither a good fit nor an invalid deformation."
                 ),
             ),
         ),
@@ -365,9 +364,24 @@ def technical_metric_text(metrics: Mapping[str, object]) -> str:
         f"Final logged iteration: {metrics.get('final_iteration', 'not reported')} "
         f"of {metrics.get('maximum_iterations', 'not reported')}\n"
         f"Invalid faces: {int(metrics.get('invalid_face_count', 0))}\n\n"
+        + subject_metric_text(metrics) + "\n\n"
         "Interpretation limits\n"
         "• Surface distance is a geometric QC proxy, not Deformetrica's configured "
         "attachment objective.\n"
         "• The regularity value is an optimizer comparison proxy, not physical energy.\n"
         "• Lower values do not prove anatomically correct registration."
     )
+
+
+def subject_metric_text(metrics: Mapping[str, object]) -> str:
+    """Expose the subject tails hidden by the pooled proxy, without grading anatomy."""
+    values = metrics.get("subject_residual_p95", {})
+    if not isinstance(values, Mapping) or not values:
+        return "Per-specimen surface-distance evidence is unavailable in this result."
+    ordered = sorted(((str(name), float(value)) for name, value in values.items()),
+                     key=lambda item: (-item[1], item[0]))
+    return ("Per-specimen nearest-vertex p95 (largest first; coordinate units)\n"
+            + "\n".join(f"{name}: {value:.6g}" for name, value in ordered)
+            + "\nPooled p95 can hide a poor specimen or a small missing feature. "
+            "These distances do not test homology, tips or branches; inspect those "
+            "regions against original-detail geometry.")
