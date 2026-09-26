@@ -9145,6 +9145,8 @@ class DiffeoForgeWindow(QMainWindow):
             snapshot = load_reference_calibration_study(directory)
             if snapshot.status != "completed":
                 dialog = ReferenceCalibrationDialog(directory)
+                # Independent windows do not inherit their former parent's theme.
+                dialog.setStyleSheet(self.styleSheet())
                 self._reference_calibration_dialog = dialog
                 dialog.finished.connect(self._reference_calibration_closed)
                 self.centralWidget().setEnabled(False)

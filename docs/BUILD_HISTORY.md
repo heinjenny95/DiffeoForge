@@ -1,5 +1,16 @@
 # Private-alpha build numbering
 
+## v92 — restore the independent pilot window's appearance
+
+v91 removed the pilot's native parent so it could minimize independently, but
+the application theme was attached to the main window. The pilot consequently
+lost inherited fonts, cards and button colors. v92 explicitly passes the existing
+main-window stylesheet to the independent pilot before showing it. No redesign
+or scientific change is intended; the modeless lifecycle and minimize controls
+remain intact. A regression opens the real pilot through the production entry
+point and checks rendered title/button styles and minimization. Delivery and
+installation evidence are recorded separately.
+
 ## v91 — independent pilot window and anatomy-first review
 
 Development candidate v91 (`0.0.0.dev91`) hides the injected PC-shooting WSL

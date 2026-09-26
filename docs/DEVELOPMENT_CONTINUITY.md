@@ -1,4 +1,4 @@
-# Development continuity — v91 delivery
+# Development continuity — v92 pilot appearance fix
 
 Snapshot: 2026-09-26. This is a public, software-only continuation guide. Detailed
 research results, local paths, account destinations and run identities belong in
@@ -13,6 +13,11 @@ correct parameters or interpret biology for the researcher. Deformetrica is the
 default supported reference route; the Modern engine remains evidence-gated.
 
 ## Verified software baseline
+
+v92 source fixes a v91 appearance regression: the independent pilot explicitly
+receives the existing main-window stylesheet, restoring the former fonts, cards
+and green buttons without restoring modal ownership. Packaged, installed and
+distributed states below remain separate until the v92 delivery is verified.
 
 v91 source adds hidden PC-shooting launch, an independent minimizable pilot
 window, contextual cost labels and persistent anatomy-first pilot decisions.
