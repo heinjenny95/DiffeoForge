@@ -12,6 +12,14 @@ The [next development-version plan](docs/NEXT_VERSION_PLAN.md) sequences the
 current UX work and explicitly plans the larger hardware, distribution and
 scientific gates. Planning does not mark those gates complete.
 
+## Immediate follow-up from v92
+
+- [ ] Make the distinction between a loaded completed result and active
+  **Data & Alignment** inputs explicit, and prevent an unintended new pilot
+  using another project's retained inputs. Opening results currently updates
+  the result view without replacing the setup form; this gap remains open.
+  Preserve existing projects and require deliberate input selection.
+
 ## Milestone 0: Public foundation
 
 - [x] Public repository, license, and pre-alpha warning

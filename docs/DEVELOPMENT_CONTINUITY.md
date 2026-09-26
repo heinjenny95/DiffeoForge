@@ -14,21 +14,26 @@ default supported reference route; the Modern engine remains evidence-gated.
 
 ## Verified software baseline
 
-v92 source fixes a v91 appearance regression: the independent pilot explicitly
+v92 fixes a v91 appearance regression: the independent pilot explicitly
 receives the existing main-window stylesheet, restoring the former fonts, cards
-and green buttons without restoring modal ownership. Packaged, installed and
-distributed states below remain separate until the v92 delivery is verified.
+and green buttons without restoring modal ownership. Nine focused regressions,
+Ruff, synthetic visual inspection and frozen-build checks passed. See
+[v92 delivery and installation blocker](V92_DELIVERY.md).
 
 v91 source adds hidden PC-shooting launch, an independent minimizable pilot
 window, contextual cost labels and persistent anatomy-first pilot decisions.
 See [implementation and acceptance limits](V91_PILOT_REVIEW.md) and
 [verified build and distribution](V91_DELIVERY.md).
 
-The latest packaged and Drive-distributed application is **v91 / 0.0.0.dev91**,
-built from `5730920625a015e34f63d843c7435f311b89c993`. The current download
+The latest packaged and Drive-distributed application is **v92 / 0.0.0.dev92**,
+built from `34dd5504d225d2af65b69752f9bbd14ba95586f5`. The current download
 pointer was updated only after authenticated and anonymous downloads of all six
 package files and both installer reconstructions matched the expected hashes.
-The installed application is also **v91 / 0.0.0.dev91** from that runtime commit.
+The installed application remains **v91 / 0.0.0.dev91**, built from
+`5730920625a015e34f63d843c7435f311b89c993`. An active user pilot blocks v92
+installation; no computation was interrupted. Installation remains authorized
+once the application/backend are idle and ongoing/unsaved work is preserved.
+The previous v91 installation verification remains:
 Installation followed a verified v90 backup and a fresh idle check. Registry
 version, all 2,679 installed bundle files and installed startup smoke passed.
 The checked completed-run files remained unchanged. Later documentation commits
@@ -79,7 +84,8 @@ recoverable. See [v90 distribution evidence](V90_DRIVE_DELIVERY.md).
 
 ## Next work, in priority order
 
-1. v91 installation and distribution are verified; v90 remains recoverable.
+1. v92 distribution is verified; v91 remains installed and recoverable. Install
+   v92 only after the active user pilot has stopped and the app is idle.
    Complete interactive minimize/focus acceptance across other applications;
    retain one pilot/controller and existing scientific evidence. Under the
    standing instruction in `AGENTS.md`, approval to develop a future version

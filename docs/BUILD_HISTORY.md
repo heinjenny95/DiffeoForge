@@ -9,7 +9,10 @@ main-window stylesheet to the independent pilot before showing it. No redesign
 or scientific change is intended; the modeless lifecycle and minimize controls
 remain intact. A regression opens the real pilot through the production entry
 point and checks rendered title/button styles and minimization. Delivery and
-installation evidence are recorded separately.
+installation evidence are recorded separately in [v92 delivery](V92_DELIVERY.md).
+Nine targeted regressions, Ruff, visual inspection and frozen-build checks passed.
+The complete Drive download is verified; an active user pilot prevents replacing
+the installed v91 runtime. No running computation was stopped for this update.
 
 ## v91 — independent pilot window and anatomy-first review
 
