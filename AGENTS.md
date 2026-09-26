@@ -29,6 +29,13 @@ Source HEAD, installed executable and distributed installer are distinct states.
 Updating one does not prove the others are current. Keep exact source/build/hash
 provenance. This checklist is not permission to schedule background tasks.
 
+Standing installation authorization (2026-09-26): an owner go-ahead to develop a
+new DiffeoForge version includes installing the resulting tested version, without
+another confirmation. Verify a recoverable backup and idle application/backends
+first. Preserve unsaved work and never interrupt a scientific computation. This
+supersedes earlier separate-confirmation requirements; it does not authorize
+unrelated software installations or starting scientific runs.
+
 ## Scientific and operational boundaries
 
 - This repository is public. Never commit private meshes, specimen-level results,

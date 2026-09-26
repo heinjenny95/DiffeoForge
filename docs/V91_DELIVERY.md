@@ -1,8 +1,9 @@
 # v91 build and distribution
 
 Verified on 2026-09-26. The established owner-managed Drive channel now offers
-**v91 / 0.0.0.dev91**. The installed application remains v90; this delivery does
-not include installation or any new scientific calculation.
+**v91 / 0.0.0.dev91**. The same build was subsequently installed after owner
+authorization, a verified v90 backup and a fresh idle check. No new scientific
+calculation was started.
 
 ## Artifact identity
 
@@ -51,5 +52,23 @@ and simulated running controllers. The test desktop provided no foreground
 window handle, so actual cross-application focus acceptance remains open.
 Feature observations are human supplied and dataset-specific; numerical scores
 do not validate anatomy or homology. Existing studies and completed atlas results
-were preserved. Installation needs owner authorization and a fresh idle check.
+were preserved.
 No GitHub Release, tag, public installer asset or research-data upload was made.
+
+## Installed verification and standing authorization
+
+The application and WSL distributions were inactive before installation. All
+2,688 files in the previous installation were copied to a recoverable backup and
+hash-compared. Setup completed with exit code zero and no restart requirement.
+The registry reports `0.0.0.dev91`; all 2,679 files in the completed bundle,
+including its two added evidence files, match the installation. The installed
+executable SHA-256 is
+`c6ded61ea5e42bdf11efe22e956accfd6b2454b0e11835a81629ddfa3633ea75`.
+The installed startup smoke passed. All 351 checked completed-run files retained
+their hashes. These checks do not close the interactive focus acceptance above.
+
+The owner also established that approval to develop a new version includes
+installing its tested build without another confirmation. This rule is persisted
+in `AGENTS.md`; backup, idle checks and preservation of ongoing/unsaved work still
+apply. The companion Drive instructions were updated in place; installer parts
+and runtime source identity remain unchanged.

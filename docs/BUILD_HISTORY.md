@@ -18,8 +18,9 @@ independent biological qualification or public release is claimed.
 
 The verified v91 installer is now distributed through the established Drive
 channel; all six package files and both download/reconstruction routes matched
-their expected hashes before updating the stable current-README link. Installed
-v90 remains unchanged pending authorization. See [delivery evidence](V91_DELIVERY.md).
+their expected hashes before updating the stable current-README link. Local v91
+installation subsequently passed bundle and startup checks, with a verified v90
+backup. See [delivery evidence](V91_DELIVERY.md).
 
 ## v88 — reliable atlas-to-QC handoff and visible result preparation
 
