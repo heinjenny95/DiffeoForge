@@ -156,7 +156,7 @@ scientific gates. Planning does not mark those gates complete.
   Keep blocking errors, required decisions and essential warnings visible.
   Internal UI/regression review covers visible decisions and collapsed guidance;
   independent usability evaluation remains an open roadmap gate.
-  - [ ] **Further text reduction (user feedback after v80).** The default UI
+  - [ ] **High priority: further text reduction (reaffirmed 2026-09-26).** The default UI
     still feels overloaded, especially the "Project created successfully" card.
     Show a short status and clear next action; move full paths, provenance and
     routine technical notices into collapsed details. Remove repeated guidance
@@ -165,6 +165,11 @@ scientific gates. Planning does not mark those gates complete.
     screens with user review; the first disclosure pass is not sufficient.
     The v83 project-created card now collapses paths/provenance; comparison
     numerical detail is also collapsed. Researcher review remains open.
+    The alignment/GPA preview is another concrete acceptance case: users should
+    not need to read its technical report to continue. Collapse fingerprints,
+    scale ranges, centroid/RMS metrics, sensitivity-method detail and repeated
+    read-only/reassurance paragraphs. Keep a short outcome, one clear next action,
+    and concise actionable warnings or required decisions in the default view.
 - [x] **Default new GUI projects to Deformetrica Reference.** Preselect the reference
   engine so the familiar guided parameter-calibration workflow is available by
   default. Keep Modern explicitly opt-in and labelled experimental; explain that
