@@ -480,6 +480,12 @@ score. If the current review record contains no specimen-level visual decisions,
 state that explicitly instead of interpreting an empty screening flag list as
 visual approval.
 
+Keep delivered figures, PDFs, sharing archives, score keys and provenance in the
+originating dataset/project folder alongside its existing run results. Verify
+copied files by hash and provide links to that project-local delivery. A compact
+local index can link the plots, atlas and PCA without duplicating run outputs;
+an assistant's working-artifact directory should not be the sole result location.
+
 ### Matching-detail follow-up when local projections remain mismatched
 
 A lower global surface-distance summary can coexist with a persistent local
