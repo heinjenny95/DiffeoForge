@@ -486,6 +486,14 @@ copied files by hash and provide links to that project-local delivery. A compact
 local index can link the plots, atlas and PCA without duplicating run outputs;
 an assistant's working-artifact directory should not be the sole result location.
 
+An input-readiness audit should distinguish the current edge-based quality gates
+from a vertex-manifold check. A mesh can have manifold edges and one connected
+surface while separate local triangle fans meet at a single vertex. Confirm such
+a finding from the vertex link before proposing a repair; record open boundaries
+separately. A prior gate pass or an unchanged file hash is not evidence that this
+additional check was performed. Preserve source geometry and existing landmarks
+during diagnosis, and do not turn a readiness inspection into automatic repair.
+
 ### Matching-detail follow-up when local projections remain mismatched
 
 A lower global surface-distance summary can coexist with a persistent local
