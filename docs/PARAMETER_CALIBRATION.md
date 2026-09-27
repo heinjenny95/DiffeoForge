@@ -494,6 +494,19 @@ separately. A prior gate pass or an unchanged file hash is not evidence that thi
 additional check was performed. Preserve source geometry and existing landmarks
 during diagnosis, and do not turn a readiness inspection into automatic repair.
 
+When a vertex-fan split is authorized, write a separate input version and retain
+the original. Verify exact equality of oriented triangle coordinates, preserve
+the vertex/face mapping, and repeat the loader and topology checks on the saved
+file. Coincident vertices may need separate indices; a format conversion that
+welds them can undo the repair.
+
+Inspect open boundary loops before filling them. Collinear loops do not bound a
+surface patch, and crossings in a local projection are not proof of a 3D
+self-intersection. A loop's signed vector area can cancel, so it must not be
+reported as missing-surface area. Record any retained boundaries separately
+from landmark-placement readiness; neither small boundary extent nor a topology
+pass establishes anatomical validity or negligible downstream effects.
+
 ### Matching-detail follow-up when local projections remain mismatched
 
 A lower global surface-distance summary can coexist with a persistent local
