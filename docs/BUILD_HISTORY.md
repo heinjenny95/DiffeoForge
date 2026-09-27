@@ -6,7 +6,9 @@ v93 (`0.0.0.dev93`) starts with empty input paths, offers explicit restoration o
 the last project's paths, and dispatches deep validation only from its button.
 It rejects invalid landmark CSVs before inspecting meshes and discards stale
 results without an automatic repeat. See [workflow and verification](V93_INPUT_VALIDATION.md).
-Build, installation and distribution evidence are recorded separately.
+All 178 scoped tests, 46 final affected tests, Ruff and synthetic visual checks
+passed. The versioned installer, local installation and complete Drive download
+are verified; v92 remains recoverable. See [delivery evidence](V93_DELIVERY.md).
 
 ## v92 — restore the independent pilot window's appearance
 

@@ -19,8 +19,7 @@ v93 source starts with empty paths and offers **Load last project paths**.
 errors and stale results never restart it. Landmark CSV compatibility is checked
 before mesh topology. All 178 scoped tests passed; 46 affected tests passed again
 after final layout review. Ruff and synthetic visual inspection passed. Build,
-installation and distribution verification follow separately; until recorded,
-the last verified installed/distributed baseline below remains v92. See
+installation and complete Drive distribution are verified. See
 [v93 workflow and acceptance limits](V93_INPUT_VALIDATION.md).
 
 v92 fixes a v91 appearance regression: the independent pilot explicitly
@@ -34,19 +33,19 @@ window, contextual cost labels and persistent anatomy-first pilot decisions.
 See [implementation and acceptance limits](V91_PILOT_REVIEW.md) and
 [verified build and distribution](V91_DELIVERY.md).
 
-The latest packaged and Drive-distributed application is **v92 / 0.0.0.dev92**,
-built from `34dd5504d225d2af65b69752f9bbd14ba95586f5`. The current download
+The latest packaged and Drive-distributed application is **v93 / 0.0.0.dev93**,
+built from `bf65eb9f85b42d36dcc97df46ed0909f20a95b4c`. The current download
 pointer was updated only after authenticated and anonymous downloads of all six
 package files and both installer reconstructions matched the expected hashes.
-The installed application is also **v92 / 0.0.0.dev92**, from the same runtime
-commit. The owner cancelled the previously active pilot and closed the app;
-cancellation and fresh application/WSL idle checks were verified before updating.
-Installation followed a complete, hash-verified 2,688-file v91 backup. Registry
-version, all 2,679 installed bundle files and installed startup smoke passed.
-The 351 checked completed-run files remained unchanged. Both Drive READMEs now
-record the verified installation, with IDs/sharing and installer bytes preserved.
-No scientific run was started. Later documentation commits do not change the
-binary's source identity.
+The installed application is also **v93 / 0.0.0.dev93**, from the same runtime
+commit. The owner saved work and closed the app; fresh application/WSL idle
+checks passed before updating. Installation followed a complete, hash-verified
+2,688-file v92 backup. Registry version, all 2,679 installed bundle files and
+installed startup smoke passed. The 351 checked completed-run files remained
+unchanged. Both Drive READMEs record the verified installation, sharing remains
+unchanged, and v92 remains recoverable. No scientific run was started. Later
+documentation commits do not change the binary's source identity. See
+[v93 delivery evidence](V93_DELIVERY.md).
 
 For v91, 174 targeted regressions passed; after generalizing the dataset-specific
 feature checks, all 49 affected study/dialog/lifecycle tests passed again.
@@ -93,7 +92,7 @@ recoverable. See [v90 distribution evidence](V90_DRIVE_DELIVERY.md).
 
 ## Next work, in priority order
 
-1. v92 installation and distribution are verified; v91 remains recoverable.
+1. v93 installation and distribution are verified; v92 remains recoverable.
    Complete interactive minimize/focus acceptance across other applications;
    retain one pilot/controller and existing scientific evidence. Under the
    standing instruction in `AGENTS.md`, approval to develop a future version

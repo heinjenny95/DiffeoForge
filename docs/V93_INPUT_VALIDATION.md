@@ -34,6 +34,6 @@ and the validation button below the input fields. A stale legacy resume-test
 fixture was updated with the existing QC-source field; production QC logic did
 not change. This is not a new full-suite or scientific-acceptance claim.
 
-The versioned build and delivery are recorded separately after verification.
-Source, installed application and Drive distribution remain distinct; the
-previously installed/distributed v92 is not claimed to contain this fix.
+The verified v93 build, local installation and complete Drive package are
+recorded in [delivery evidence](V93_DELIVERY.md). Source, installed application
+and Drive distribution remain distinct; the retained v92 does not contain this fix.
