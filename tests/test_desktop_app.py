@@ -843,11 +843,20 @@ def test_desktop_window_separates_data_parameters_review_run_and_results(
     assert window.page_stack.widget(4).isAncestorOf(window.result_registration_qc_canvas)
     assert window.page_stack.widget(5).isAncestorOf(window.result_summary_label)
 
-    window.mesh_edit.setText("C:/example/meshes")
+    directory = ROOT / "examples" / "synthetic" / "meshes"
+    window.mesh_edit.setText(str(directory))
+    window.template_edit.setText(str(directory / "template.vtk"))
     window.project_edit.setText("C:/example/project")
     window.units_combo.setCurrentIndex(window.units_combo.findData("millimeter"))
     application.processEvents()
 
+    assert window.continue_parameter_button.isEnabled() is False
+    from diffeoforge.input_preflight import inspect_mesh_input_cohort
+
+    paths, _landmarks, signature = window._input_preflight_request()
+    window._input_preflight = inspect_mesh_input_cohort(paths, template_path=paths[0])
+    window._input_preflight_signature = signature
+    window._sync_ready_state()
     assert window.continue_parameter_button.isEnabled() is True
     window.continue_parameter_button.click()
     assert window.page_stack.currentIndex() == 1
@@ -1517,7 +1526,7 @@ def test_desktop_continues_existing_reference_project_instead_of_restarting_gpa(
     monkeypatch.setattr(
         window,
         "_reference_calibration_context",
-        lambda: (SimpleNamespace(), completed_study),
+        lambda: (SimpleNamespace(qc_recalibration_source=None), completed_study),
     )
     monkeypatch.setattr(
         widgets_module,

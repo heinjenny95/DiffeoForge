@@ -33,6 +33,7 @@ def _metadata(path: Path, *, diagonal: float, triangles: int = 4) -> SurfaceMesh
 def _ready_window(tmp_path: Path, monkeypatch):
     pytest.importorskip("PySide6")
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("DIFFEOFORGE_STATE_HOME", str(tmp_path / "state"))
     from PySide6.QtWidgets import QApplication
 
     from diffeoforge.desktop.widgets import DiffeoForgeWindow
@@ -47,6 +48,112 @@ def _ready_window(tmp_path: Path, monkeypatch):
     window.units_combo.setCurrentIndex(window.units_combo.findData("millimeter"))
     paths, _landmarks, signature = window._input_preflight_request()
     return application, window, paths, signature
+
+
+class _QueuedPool:
+    def __init__(self):
+        self.workers = []
+
+    def start(self, worker):
+        self.workers.append(worker)
+
+
+def test_path_editing_enter_and_alignment_changes_never_dispatch(tmp_path, monkeypatch):
+    application, window, _paths, _signature = _ready_window(tmp_path, monkeypatch)
+    pool = _QueuedPool()
+    window._thread_pool = pool
+    for field in (window.mesh_edit, window.template_edit, window.pattern_edit,
+                  window.landmarks_edit):
+        field.editingFinished.emit()
+    window.procrustes_scaling_combo.setCurrentIndex(2)
+    window.procrustes_apply_check.setChecked(False)
+    application.processEvents()
+    assert pool.workers == []
+    assert not window.continue_parameter_button.isEnabled()
+    window.validate_meshes_button.click()
+    window.validate_meshes_button.click()
+    assert len(pool.workers) == 1
+    assert not window.validate_meshes_button.isEnabled()
+    window._input_preflight_worker = None
+    window.close()
+
+
+@pytest.mark.parametrize("outcome", ["success", "failure"])
+def test_changed_inputs_discard_result_without_queued_restart(tmp_path, monkeypatch, outcome):
+    application, window, paths, signature = _ready_window(tmp_path, monkeypatch)
+    pool = _QueuedPool()
+    window._thread_pool = pool
+    window.validate_meshes_button.click()
+    window.procrustes_scaling_combo.setCurrentIndex(2)
+    assert window._current_input_preflight_signature() != signature
+    if outcome == "success":
+        report = assess_mesh_input_metadata(tuple(_metadata(p, diagonal=1) for p in paths))
+        pool.workers[0].signals.succeeded.emit(report)
+    else:
+        pool.workers[0].signals.failed.emit("old selection failed")
+    application.processEvents()
+    assert len(pool.workers) == 1
+    assert window._input_preflight is None
+    assert window._input_preflight_worker is None
+    assert not window.continue_parameter_button.isEnabled()
+    assert window.validate_meshes_button.isEnabled()
+    assert "Click Run deep mesh validation" in window.input_preflight_status_label.text()
+    window.validate_meshes_button.click()
+    assert len(pool.workers) == 2
+    window._input_preflight_worker = None
+    window.close()
+
+
+def test_failure_focus_loss_does_not_retry_but_explicit_button_does(tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+
+    application, window, _paths, signature = _ready_window(tmp_path, monkeypatch)
+    pool = _QueuedPool()
+    window._thread_pool = pool
+    # Emulate the editingFinished signal emitted as the failure dialog takes focus.
+    monkeypatch.setattr(
+        QMessageBox, "warning", lambda *_: window.template_edit.editingFinished.emit()
+    )
+    window.validate_meshes_button.click()
+    pool.workers[0].signals.failed.emit("mismatched landmarks")
+    application.processEvents()
+    assert len(pool.workers) == 1
+    assert window._input_preflight_failed_signature == signature
+    assert not window._data_inputs_ready()
+    window.validate_meshes_button.click()
+    assert len(pool.workers) == 2
+    window._input_preflight_worker = None
+    window.close()
+
+
+def test_success_allows_progress_without_rechecking_unchanged_inputs(tmp_path, monkeypatch):
+    application, window, paths, _signature = _ready_window(tmp_path, monkeypatch)
+    pool = _QueuedPool()
+    window._thread_pool = pool
+    assert not window._data_inputs_ready()
+    window.validate_meshes_button.click()
+    report = assess_mesh_input_metadata(tuple(_metadata(p, diagonal=1) for p in paths))
+    pool.workers[0].signals.succeeded.emit(report)
+    application.processEvents()
+    assert window._data_inputs_ready()
+    assert window.continue_parameter_button.isEnabled()
+    assert not window.validate_meshes_button.isEnabled()
+    window.mesh_edit.editingFinished.emit()
+    window._start_input_preflight()
+    assert len(pool.workers) == 1
+    window.close()
+
+
+def test_missing_landmark_path_is_not_silently_ignored(tmp_path, monkeypatch):
+    application, window, _paths, _signature = _ready_window(tmp_path, monkeypatch)
+    pool = _QueuedPool()
+    window._thread_pool = pool
+    window.landmarks_edit.setText(str(tmp_path / "missing.csv"))
+    window.validate_meshes_button.click()
+    assert pool.workers == []
+    assert "Landmark CSV does not exist" in window.input_preflight_status_label.text()
+    assert not window._data_inputs_ready()
+    window.close()
 
 
 def test_mesh_size_group_warning_allows_setup_progress(tmp_path: Path, monkeypatch) -> None:
@@ -109,7 +216,7 @@ def test_alignment_scale_policy_is_part_of_preflight_signature(
     application.processEvents()
 
 
-def test_mesh_folder_selection_runs_read_only_preflight_automatically(
+def test_mesh_folder_selection_waits_for_explicit_validation(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -135,6 +242,11 @@ def test_mesh_folder_selection_runs_read_only_preflight_automatically(
     )
 
     window._choose_mesh_directory()
+
+    assert window._input_preflight is None
+    assert window._input_preflight_worker is None
+    assert window.validate_meshes_button.isEnabled()
+    window.validate_meshes_button.click()
 
     assert window._input_preflight is not None
     assert window._input_preflight.ready
@@ -193,6 +305,7 @@ def test_mesh_folder_selection_blocks_nonmanifold_source_before_parameter_step(
     window.units_combo.setCurrentIndex(window.units_combo.findData("millimeter"))
 
     window._choose_mesh_directory()
+    window.validate_meshes_button.click()
 
     assert window._input_preflight is not None
     assert not window._input_preflight.ready

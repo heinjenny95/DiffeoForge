@@ -1,9 +1,8 @@
 """Remember which project folders the researcher opened most recently.
 
 This module stores interface convenience state and nothing else. It records the
-paths and the coordinate unit a researcher already chose so the first desktop
-screen can offer them again instead of presenting empty fields after every
-restart.
+paths and the coordinate unit a researcher already chose. The first desktop
+screen starts empty and offers these values only through explicit history actions.
 
 Deliberate boundaries:
 

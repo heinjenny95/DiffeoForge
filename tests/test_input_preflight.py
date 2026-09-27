@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 from diffeoforge.input_preflight import (
     HEAVY_ATTACHMENT_INTERACTION_COUNT,
@@ -13,6 +14,32 @@ from diffeoforge.input_preflight import (
 )
 from diffeoforge.mesh import write_vtk_polydata
 from diffeoforge.surface_io import SurfaceMeshMetadata
+
+
+@pytest.mark.parametrize("kind", ["foreign", "malformed", "missing"])
+def test_invalid_landmarks_fail_before_loading_any_mesh(tmp_path, monkeypatch, kind):
+    import diffeoforge.input_preflight as preflight
+    from diffeoforge.analysis.landmarks import write_landmark_csv
+
+    paths = (tmp_path / "template.vtk", tmp_path / "subject.vtk")
+    csv = tmp_path / "landmarks.csv"
+    if kind == "foreign":
+        write_landmark_csv(
+            csv, ("unrelated.vtk", "other.vtk"), ("a", "b", "c"),
+            np.tile(np.array([[[0, 0, 0], [1, 0, 0], [0, 1, 0]]], dtype=float), (2, 1, 1)),
+        )
+    elif kind == "malformed":
+        csv.write_text("this,is,not,a,landmark,file\n", encoding="utf-8")
+    loaded = []
+
+    def unexpected_load(path):
+        loaded.append(path)
+        raise AssertionError("Mesh loading must not precede landmark validation")
+
+    monkeypatch.setattr(preflight, "load_surface_mesh", unexpected_load)
+    with pytest.raises((OSError, ValueError)):
+        inspect_mesh_input_cohort(paths, landmark_csv=csv)
+    assert loaded == []
 
 
 def _metadata(

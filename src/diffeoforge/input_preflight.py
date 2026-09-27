@@ -526,6 +526,15 @@ def inspect_mesh_input_cohort(
     paths = tuple(Path(path).expanduser().resolve() for path in mesh_paths)
     if len(paths) < 2:
         raise ConfigurationError("Mesh input preflight requires at least two meshes")
+    # Reject mismatched/invalid landmarks before any costly mesh parsing or topology work.
+    landmark_path = None
+    landmark_sha256 = None
+    labels = None
+    values = None
+    if landmark_csv is not None:
+        landmark_path = Path(landmark_csv).expanduser().resolve()
+        landmark_sha256 = hashlib.sha256(landmark_path.read_bytes()).hexdigest()
+        labels, values = read_landmark_csv(landmark_path, tuple(path.name for path in paths))
     metadata: list[SurfaceMeshMetadata] = []
     quality_observations: list[InputMeshQualityObservation] = []
     scale_observations: list[MeshScaleMetrics] = []
@@ -561,9 +570,6 @@ def inspect_mesh_input_cohort(
             scale_to_unit_centroid_size=scale_to_unit_centroid_size,
             scaling_mode=scaling_mode,
         )
-    landmark_path = Path(landmark_csv).expanduser().resolve()
-    landmark_sha256 = hashlib.sha256(landmark_path.read_bytes()).hexdigest()
-    labels, values = read_landmark_csv(landmark_path, tuple(path.name for path in paths))
     return assess_mesh_input_metadata(
         metadata_tuple,
         mesh_quality=quality_tuple,

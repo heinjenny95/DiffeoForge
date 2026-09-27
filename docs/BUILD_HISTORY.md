@@ -1,5 +1,13 @@
 # Private-alpha build numbering
 
+## v93 — blank startup and explicit deep validation
+
+v93 (`0.0.0.dev93`) starts with empty input paths, offers explicit restoration of
+the last project's paths, and dispatches deep validation only from its button.
+It rejects invalid landmark CSVs before inspecting meshes and discards stale
+results without an automatic repeat. See [workflow and verification](V93_INPUT_VALIDATION.md).
+Build, installation and distribution evidence are recorded separately.
+
 ## v92 — restore the independent pilot window's appearance
 
 v91 removed the pilot's native parent so it could minimize independently, but

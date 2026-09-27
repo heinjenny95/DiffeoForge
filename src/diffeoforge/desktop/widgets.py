@@ -1497,6 +1497,7 @@ class DiffeoForgeWindow(QMainWindow):
         self._input_preflight_signature: tuple[object, ...] | None = None
         self._input_preflight_failed_signature: tuple[object, ...] | None = None
         self._input_preflight_worker: _InputPreflightWorker | None = None
+        self._recent_projects: tuple[RecentProject, ...] = ()
         self._shown_input_preflight_fingerprints: set[str] = set()
         self._procrustes_preview: LandmarkAlignmentPreview | None = None
         self._procrustes_visual: GpaAlignmentVisual | None = None
@@ -1680,6 +1681,14 @@ class DiffeoForgeWindow(QMainWindow):
         resume_layout.setSpacing(10)
         resume_label = QLabel("Returning to an existing analysis?")
         resume_label.setObjectName("hint")
+        self.load_last_project_button = QPushButton("Load last project paths")
+        self.load_last_project_button.setObjectName("secondary")
+        self.load_last_project_button.setToolTip(
+            "Fill all input paths from the last available project. "
+            "Validation starts only when clicked."
+        )
+        self.load_last_project_button.clicked.connect(self._load_last_project_inputs)
+        self.load_last_project_button.setEnabled(False)
         self.recent_projects_button = QPushButton("Recent projects…")
         self.recent_projects_button.setObjectName("secondary")
         self.recent_projects_button.setToolTip(
@@ -1715,7 +1724,14 @@ class DiffeoForgeWindow(QMainWindow):
         )
         self.recover_abandoned_run_button.clicked.connect(self._select_abandoned_run)
         layout.addWidget(resume_label)
-        resume_layout.addWidget(self.recent_projects_button)
+        history_row = QWidget()
+        history_layout = QHBoxLayout(history_row)
+        history_layout.setContentsMargins(0, 0, 0, 0)
+        history_layout.setSpacing(10)
+        history_layout.addWidget(self.load_last_project_button)
+        history_layout.addWidget(self.recent_projects_button)
+        history_layout.addStretch()
+        layout.addWidget(history_row)
         resume_layout.addWidget(self.open_completed_run_button)
         resume_layout.addWidget(self.resume_interrupted_run_button)
         resume_layout.addWidget(self.recover_abandoned_run_button)
@@ -3776,7 +3792,6 @@ class DiffeoForgeWindow(QMainWindow):
         self.mesh_edit.textChanged.connect(self._invalidate_input_preflight)
         self.mesh_edit.textChanged.connect(self._invalidate_procrustes_preview)
         self.mesh_edit.editingFinished.connect(self._detect_template_from_text)
-        self.mesh_edit.editingFinished.connect(self._start_input_preflight)
         mesh_button = QPushButton("Browse…")
         mesh_button.setObjectName("secondary")
         mesh_button.clicked.connect(self._choose_mesh_directory)
@@ -3789,7 +3804,6 @@ class DiffeoForgeWindow(QMainWindow):
         self.template_edit.setPlaceholderText("automatic: template.vtk/.ply/.obj/.stl")
         self.template_edit.textChanged.connect(self._invalidate_input_preflight)
         self.template_edit.textChanged.connect(self._invalidate_procrustes_preview)
-        self.template_edit.editingFinished.connect(self._start_input_preflight)
         template_button = QPushButton("Browse…")
         template_button.setObjectName("secondary")
         template_button.clicked.connect(self._choose_template)
@@ -3804,15 +3818,18 @@ class DiffeoForgeWindow(QMainWindow):
         )
         self.pattern_edit.textChanged.connect(self._invalidate_input_preflight)
         self.pattern_edit.textChanged.connect(self._invalidate_procrustes_preview)
-        self.pattern_edit.editingFinished.connect(self._start_input_preflight)
         data_form.addRow("File pattern", self.pattern_edit)
 
+        self.validate_meshes_button = QPushButton("Run deep mesh validation")
+        self.validate_meshes_button.setObjectName("secondary")
+        self.validate_meshes_button.setToolTip(
+            "Fill the input paths first, then check this selection. No automatic repeat."
+        )
+        self.validate_meshes_button.clicked.connect(self._start_input_preflight)
         self.input_preflight_status_label = _ReadOnlyStatusText(
-            "Select a mesh folder to check structural quality, workload, and relative "
-            "coordinate scales."
+            "Fill the paths, then click Run deep mesh validation."
         )
         self.input_preflight_status_label.setObjectName("status")
-        data_form.addRow("Data preflight", self.input_preflight_status_label)
 
         self.project_edit = QLineEdit()
         self.project_edit.setObjectName("projectDirectoryEdit")
@@ -3859,7 +3876,6 @@ class DiffeoForgeWindow(QMainWindow):
         )
         self.landmarks_edit.textChanged.connect(self._invalidate_input_preflight)
         self.landmarks_edit.textChanged.connect(self._update_procrustes_visibility)
-        self.landmarks_edit.editingFinished.connect(self._start_input_preflight)
         landmarks_button = QPushButton("Select file…")
         landmarks_button.setAccessibleName("Select landmark CSV, TXT, FCSV or JSON file")
         landmarks_button.setObjectName("secondary")
@@ -3914,6 +3930,8 @@ class DiffeoForgeWindow(QMainWindow):
         landmark_plan.addWidget(self.landmark_count_spin)
         landmark_plan.addWidget(self.landmark_auto_advance_check, 1)
         data_form.addRow("Planned landmarks", landmark_plan)
+        data_form.addRow("Data validation", self.validate_meshes_button)
+        data_form.addRow("Data preflight", self.input_preflight_status_label)
 
         self.procrustes_box = QWidget()
         procrustes_layout = QVBoxLayout(self.procrustes_box)
@@ -4415,7 +4433,6 @@ class DiffeoForgeWindow(QMainWindow):
             mesh_directory = Path(selected)
             self.project_edit.setText(str(mesh_directory.parent / "diffeoforge-project"))
         self._detect_template_from_text()
-        self._start_input_preflight()
 
     def _input_preflight_request(
         self,
@@ -4426,22 +4443,18 @@ class DiffeoForgeWindow(QMainWindow):
         directory = Path(mesh_text).expanduser().resolve()
         if not directory.is_dir():
             raise ValueError(f"Mesh folder does not exist: {directory}")
-        try:
-            mesh_paths = self._current_surface_cohort()
-        except (OSError, TypeError, ValueError):
-            mesh_paths = tuple(
-                path.resolve()
-                for path in sorted(directory.iterdir())
-                if path.is_file() and is_supported_surface_path(path)
-            )
+        mesh_paths = self._current_surface_cohort()
         if len(mesh_paths) < 2:
             raise ValueError("Select a folder containing at least two supported meshes.")
         landmark_text = self.landmarks_edit.text().strip()
         landmark_csv: Path | None = None
         if landmark_text:
             candidate = Path(landmark_text).expanduser().resolve()
-            if candidate.suffix.casefold() == ".csv" and candidate.is_file():
-                landmark_csv = candidate
+            if candidate.suffix.casefold() != ".csv":
+                raise ValueError("Select a landmark CSV, or use Import folder first.")
+            if not candidate.is_file():
+                raise ValueError(f"Landmark CSV does not exist: {candidate}")
+            landmark_csv = candidate
         mesh_state = tuple(
             (str(path), path.stat().st_size, path.stat().st_mtime_ns) for path in mesh_paths
         )
@@ -4471,7 +4484,7 @@ class DiffeoForgeWindow(QMainWindow):
             self.input_preflight_status_label.setObjectName("status")
             self.input_preflight_status_label.setStyleSheet("")
             self.input_preflight_status_label.setText(
-                "Mesh or landmark inputs changed. Run the automatic data preflight again."
+                "Inputs changed. Click Run deep mesh validation when ready."
             )
         if hasattr(self, "continue_parameter_button"):
             self._sync_ready_state()
@@ -4485,6 +4498,9 @@ class DiffeoForgeWindow(QMainWindow):
 
     @Slot()
     def _start_input_preflight(self) -> None:
+        """Dispatch only from the explicit validation button; never queue a retry."""
+        if self._input_preflight_worker is not None or self._worker is not None:
+            return
         try:
             mesh_paths, landmark_csv, signature = self._input_preflight_request()
         except (OSError, TypeError, ValueError) as error:
@@ -4494,15 +4510,6 @@ class DiffeoForgeWindow(QMainWindow):
             self.input_preflight_status_label.setObjectName("status")
             self.input_preflight_status_label.setStyleSheet("")
             self.input_preflight_status_label.setText(str(error))
-            self._sync_ready_state()
-            return
-        if self._input_preflight_worker is not None:
-            self.input_preflight_status_label.setObjectName("status")
-            self.input_preflight_status_label.setStyleSheet("")
-            self.input_preflight_status_label.setText(
-                "Inputs changed while a read-only preflight was running. The current "
-                "inspection will finish, then DiffeoForge will inspect the new selection."
-            )
             self._sync_ready_state()
             return
         if self._input_preflight is not None and self._input_preflight_signature == signature:
@@ -4552,7 +4559,7 @@ class DiffeoForgeWindow(QMainWindow):
         self._input_preflight_worker = None
         current_signature = self._current_input_preflight_signature()
         if completed_signature != current_signature:
-            self._start_input_preflight()
+            self._invalidate_input_preflight()
             return
         self._input_preflight = report
         self._input_preflight_signature = completed_signature
@@ -4580,7 +4587,7 @@ class DiffeoForgeWindow(QMainWindow):
         self._input_preflight_worker = None
         current_signature = self._current_input_preflight_signature()
         if completed_signature != current_signature:
-            self._start_input_preflight()
+            self._invalidate_input_preflight()
             return
         self._input_preflight = None
         self._input_preflight_signature = None
@@ -4615,7 +4622,6 @@ class DiffeoForgeWindow(QMainWindow):
         if selected:
             self.template_edit.setText(selected)
             self._adopt_template_format_pattern(Path(selected))
-            self._start_input_preflight()
 
     @Slot()
     def _choose_landmarks(self) -> None:
@@ -4632,7 +4638,6 @@ class DiffeoForgeWindow(QMainWindow):
         selected_path = Path(selected).expanduser()
         if selected_path.suffix.casefold() == ".csv":
             self.landmarks_edit.setText(selected)
-            self._start_input_preflight()
             return
         if selected_path.suffix.casefold() == ".txt":
             self._complete_landmark_txt_import(selected_path.parent)
@@ -4718,7 +4723,7 @@ class DiffeoForgeWindow(QMainWindow):
             )
             self.landmark_count_spin.setValue(len(result.landmark_labels))
             self.landmarks_edit.setText(str(result.csv_path))
-            self._start_input_preflight()
+            self._invalidate_input_preflight()
             ignored = (
                 f"\n\nUnmatched TXT files ignored: {len(result.ignored_txt_files)}."
                 if result.ignored_txt_files
@@ -4772,7 +4777,7 @@ class DiffeoForgeWindow(QMainWindow):
             )
             self.landmark_count_spin.setValue(len(result.landmark_labels))
             self.landmarks_edit.setText(str(result.csv_path))
-            self._start_input_preflight()
+            self._invalidate_input_preflight()
             ignored = (
                 f"\n\nUnmatched FCSV files ignored: {len(result.ignored_fcsv_files)}."
                 if result.ignored_fcsv_files
@@ -4827,7 +4832,7 @@ class DiffeoForgeWindow(QMainWindow):
             )
             self.landmark_count_spin.setValue(len(result.landmark_labels))
             self.landmarks_edit.setText(str(result.csv_path))
-            self._start_input_preflight()
+            self._invalidate_input_preflight()
             ignored = (
                 f"\n\nUnmatched JSON files ignored: {len(result.ignored_json_files)}."
                 if result.ignored_json_files
@@ -4947,7 +4952,7 @@ class DiffeoForgeWindow(QMainWindow):
             self.landmark_auto_advance_check.setChecked(dialog.auto_advance_mesh_check.isChecked())
             if result == QDialog.DialogCode.Accepted:
                 self.landmarks_edit.setText(str(dialog.output_path))
-                self._start_input_preflight()
+                self._invalidate_input_preflight()
         except (OSError, TypeError, ValueError, MeshPreviewError) as error:
             QMessageBox.warning(self, "Landmark placement unavailable", str(error))
 
@@ -5002,7 +5007,6 @@ class DiffeoForgeWindow(QMainWindow):
         )
         self._procrustes_inputs_changed()
         self._invalidate_input_preflight()
-        self._start_input_preflight()
 
     @Slot()
     def _invalidate_procrustes_preview(self) -> None:
@@ -6983,29 +6987,17 @@ class DiffeoForgeWindow(QMainWindow):
             return False
         current_signature = self._current_input_preflight_signature()
         if current_signature is None:
-            return basic_ready
-        if (
-            self._input_preflight_worker is not None
-            and self._input_preflight_worker.signature == current_signature
-        ):
             return False
-        if self._input_preflight_failed_signature == current_signature:
-            return False
-        if (
-            self._input_preflight is not None
+        return bool(
+            self._input_preflight_worker is None
+            and self._input_preflight_failed_signature != current_signature
+            and self._input_preflight is not None
             and self._input_preflight_signature == current_signature
-            and self._input_preflight.blockers
-        ):
-            return False
-        return True
+            and not self._input_preflight.blockers
+        )
 
     def _restore_recent_project_inputs(self) -> None:
-        """Offer the most recently opened project instead of an empty first screen.
-
-        This only fills in the inputs the researcher chose before. It never opens,
-        verifies, or changes a project: the existing resume path still runs every
-        check it ran before, and it still requires an explicit click.
-        """
+        """Offer history without populating any startup fields or launching work."""
 
         try:
             entries = available_recent_projects()
@@ -7013,9 +7005,19 @@ class DiffeoForgeWindow(QMainWindow):
             entries = ()
         self._recent_projects = entries
         self.recent_projects_button.setVisible(bool(entries))
+        self.load_last_project_button.setEnabled(bool(entries) and self._worker is None)
+
+    @Slot()
+    def _load_last_project_inputs(self) -> None:
+        """Restore all recorded paths only after an explicit user click."""
+        if self._worker is not None:
+            return
+        self._restore_recent_project_inputs()
+        entries = self._recent_projects
         if not entries:
             return
         self._apply_recent_project(entries[0], announce=True)
+        self._sync_ready_state()
 
     def _apply_recent_project(self, entry: RecentProject, *, announce: bool) -> None:
         """Copy one remembered entry into the first-screen fields."""
@@ -7041,8 +7043,7 @@ class DiffeoForgeWindow(QMainWindow):
             self.data_status_label.setObjectName("status")
             self.data_status_label.setStyleSheet("")
             self.data_status_label.setText(
-                "Filled in from the project you opened last. Nothing has been loaded or "
-                "changed yet — check the fields, then choose an action below."
+                "Project paths loaded. Review them, then click Run deep mesh validation."
             )
 
     @Slot()
@@ -7057,6 +7058,7 @@ class DiffeoForgeWindow(QMainWindow):
             entries = ()
         self._recent_projects = entries
         self.recent_projects_button.setVisible(bool(entries))
+        self.load_last_project_button.setEnabled(bool(entries) and self._worker is None)
         if not entries:
             self.data_status_label.setObjectName("status")
             self.data_status_label.setStyleSheet("")
@@ -7105,6 +7107,7 @@ class DiffeoForgeWindow(QMainWindow):
         except Exception:  # noqa: BLE001 - never let convenience state break a project
             return
         self.recent_projects_button.setVisible(bool(self._recent_projects))
+        self.load_last_project_button.setEnabled(bool(self._recent_projects))
 
     def _existing_configuration_path_from_form(self) -> Path | None:
         project_text = self.project_edit.text().strip()
@@ -7278,6 +7281,27 @@ class DiffeoForgeWindow(QMainWindow):
         missing_required_fields = self._missing_required_data_fields()
         raw_data_ready = not missing_required_fields
         current_preflight_signature = self._current_input_preflight_signature()
+        validation_running = self._input_preflight_worker is not None
+        validation_current = bool(
+            current_preflight_signature is not None
+            and self._input_preflight is not None
+            and self._input_preflight_signature == current_preflight_signature
+        )
+        self.validate_meshes_button.setEnabled(
+            bool(self.mesh_edit.text().strip())
+            and not validation_running
+            and not validation_current
+            and self._worker is None
+        )
+        self.validate_meshes_button.setText(
+            "Validating meshes…" if validation_running else (
+                "Meshes checked" if validation_current else "Run deep mesh validation"
+            )
+        )
+        self.load_last_project_button.setEnabled(
+            bool(self._recent_projects) and self._worker is None
+        )
+        self.recent_projects_button.setEnabled(self._worker is None)
         existing_config = self._existing_configuration_path_from_form()
         resumable_reference_project = bool(
             self.engine_combo.currentData() == DesktopEngine.DEFORMETRICA_REFERENCE
@@ -7316,7 +7340,9 @@ class DiffeoForgeWindow(QMainWindow):
                 "Inspecting mesh topology, workload, and coordinate-scale consistency read-only."
             )
         elif (
-            raw_data_ready and self._input_preflight_failed_signature == current_preflight_signature
+            raw_data_ready
+            and current_preflight_signature is not None
+            and self._input_preflight_failed_signature == current_preflight_signature
         ):
             self.data_status_label.setObjectName("statusError")
             self.data_status_label.setText(
@@ -7349,6 +7375,11 @@ class DiffeoForgeWindow(QMainWindow):
             self.data_status_label.setText(
                 "Required data locations and coordinate unit are present. "
                 "Continue to parameter setting."
+            )
+        elif raw_data_ready:
+            self.data_status_label.setObjectName("status")
+            self.data_status_label.setText(
+                "Review the input paths, then click Run deep mesh validation."
             )
         else:
             self.data_status_label.setObjectName("status")

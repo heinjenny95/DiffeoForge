@@ -179,3 +179,39 @@ def test_store_never_lands_inside_a_project(monkeypatch: pytest.MonkeyPatch) -> 
 
     assert path.name == "recent-projects.json"
     assert "diffeoforge" in str(path).lower()
+
+
+def test_startup_is_empty_and_last_project_paths_require_a_click(tmp_path, monkeypatch):
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("DIFFEOFORGE_STATE_HOME", str(tmp_path / "state"))
+    from dataclasses import replace
+
+    from PySide6.QtWidgets import QApplication
+
+    from diffeoforge.desktop.widgets import DiffeoForgeWindow
+
+    entry = replace(_entry(tmp_path, "remembered"),
+                    template=tmp_path / "template.ply", landmarks=tmp_path / "landmarks.csv")
+    record_recent_project(entry)
+    app = QApplication.instance() or QApplication(["explicit-history-test"])
+    window = DiffeoForgeWindow()
+    assert all(not field.text() for field in
+               (window.mesh_edit, window.project_edit, window.template_edit, window.landmarks_edit))
+    assert window.units_combo.currentData() is None
+    assert window._input_preflight_worker is None
+    assert window.load_last_project_button.isEnabled()
+    window.load_last_project_button.click()
+    assert window.mesh_edit.text() == str(entry.mesh_directory)
+    assert window.project_edit.text() == str(entry.project_directory)
+    assert window.template_edit.text() == str(entry.template)
+    assert window.landmarks_edit.text() == str(entry.landmarks)
+    assert window.pattern_edit.text() == entry.subject_pattern
+    assert window.units_combo.currentData() == entry.coordinate_unit
+    assert window.name_edit.text() == entry.project_name
+    assert window._input_preflight_worker is None
+    window.close()
+    restarted = DiffeoForgeWindow()
+    assert not restarted.mesh_edit.text() and not restarted.landmarks_edit.text()
+    restarted.close()
+    app.processEvents()

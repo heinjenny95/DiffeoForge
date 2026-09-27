@@ -1,6 +1,6 @@
-# Development continuity — v92 pilot appearance fix
+# Development continuity — v93 explicit input validation
 
-Snapshot: 2026-09-26. This is a public, software-only continuation guide. Detailed
+Snapshot: 2026-09-27. This is a public, software-only continuation guide. Detailed
 research results, local paths, account destinations and run identities belong in
 the owner's private project handoff, not this repository.
 
@@ -13,6 +13,15 @@ correct parameters or interpret biology for the researcher. Deformetrica is the
 default supported reference route; the Modern engine remains evidence-gated.
 
 ## Verified software baseline
+
+v93 source starts with empty paths and offers **Load last project paths**.
+**Run deep mesh validation** is the only preflight trigger; input/focus changes,
+errors and stale results never restart it. Landmark CSV compatibility is checked
+before mesh topology. All 178 scoped tests passed; 46 affected tests passed again
+after final layout review. Ruff and synthetic visual inspection passed. Build,
+installation and distribution verification follow separately; until recorded,
+the last verified installed/distributed baseline below remains v92. See
+[v93 workflow and acceptance limits](V93_INPUT_VALIDATION.md).
 
 v92 fixes a v91 appearance regression: the independent pilot explicitly
 receives the existing main-window stylesheet, restoring the former fonts, cards
