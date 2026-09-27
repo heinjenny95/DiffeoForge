@@ -471,6 +471,15 @@ are projections into the selected PC planes, not full shape-space distances.
 Keep private figure deliveries and specimen-level provenance outside the public
 repository; this presentation workflow does not require an atlas or PCA refit.
 
+For dense cohorts, check number-label collisions separately from mesh-image
+collisions: moving a label must not move its mesh. Verify the final PDF's actual
+image draw count per panel against the score-row count, and round-trip the
+delivered specimen key against the saved score table. An initializer copy is not
+an additional observation; retain its original subject when it has an exported
+score. If the current review record contains no specimen-level visual decisions,
+state that explicitly instead of interpreting an empty screening flag list as
+visual approval.
+
 ### Matching-detail follow-up when local projections remain mismatched
 
 A lower global surface-distance summary can coexist with a persistent local
