@@ -507,6 +507,20 @@ reported as missing-surface area. Record any retained boundaries separately
 from landmark-placement readiness; neither small boundary extent nor a topology
 pass establishes anatomical validity or negligible downstream effects.
 
+For a provisional starting template, compare cohort-central geometry together
+with topology and full-mesh views. Size-normalized descriptors and sampled rigid
+surface distances are initialization heuristics, not evidence that the eventual
+atlas will preserve every local feature. Treat near-ties as uncertain and retain
+the rationale for selecting one candidate.
+
+If an owner requests a separate template copy so that its source remains a
+subject, preserve bytes and verify both roles explicitly. The chosen template
+path is excluded from subject selection; the original specimen path must still
+be present. Select the alias before opening the landmark editor so that the
+template and every subject receive rows under their actual filenames. Renaming
+a mesh does not create matching landmark rows. This preparation does not approve
+alignment or start a pilot/atlas.
+
 ### Matching-detail follow-up when local projections remain mismatched
 
 A lower global surface-distance summary can coexist with a persistent local
