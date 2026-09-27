@@ -14,6 +14,16 @@ scientific gates. Planning does not mark those gates complete.
 
 ## Immediate follow-up from v92
 
+- [ ] Prevent duplicate deep input validation after an unchanged failure.
+  A synthetic Qt reproduction shows that opening the failure dialog can move
+  focus from an edited field and emit `editingFinished`, starting a second
+  worker for the same failed signature without further user input. Check the
+  failed signature before dispatch, retain deliberate retry/input-change paths,
+  and cover modal focus changes and stale results with regressions.
+- [ ] Validate landmark CSV structure and cohort filenames before expensive mesh
+  topology inspection. In v92 an unrelated remembered CSV is rejected only
+  after all meshes are inspected. Clearly surface incompatible references when
+  changing datasets; preserve saved landmarks and full mesh-quality gates.
 - [ ] Make the distinction between a loaded completed result and active
   **Data & Alignment** inputs explicit, and prevent an unintended new pilot
   using another project's retained inputs. Opening results currently updates
