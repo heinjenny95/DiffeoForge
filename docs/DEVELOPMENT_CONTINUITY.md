@@ -18,14 +18,14 @@ v95 persists content-bound mesh inspections and recorded GPA review state in the
 project folder. Explicit history loading verifies saved state without starting
 missing computations; existing projects can resume their published alignment.
 See [v95 behavior, migration and tests](V95_PROJECT_CHECKPOINTS.md). Build,
-installation and distribution are pending verification; v94 below remains the
-last delivered version until its replacement is verified.
+installation and complete Drive distribution are verified; see
+[v95 delivery evidence](V95_DELIVERY.md).
 
 v94 makes geometric pilot ranking fit-first and requires recorded acceptance of
 every specimen before stage advancement. Local bounded refinement preserves old
 runs and the complete cohort. See [v94 scope and limits](V94_SURFACE_FIT.md).
-The installed and Drive-distributed application is now v94, verified separately
-from the source implementation. See [delivery evidence](V94_DELIVERY.md).
+v94 was delivered before this checkpoint update. Its separate historical
+verification remains in [v94 delivery evidence](V94_DELIVERY.md).
 
 ## Verified software baseline
 
@@ -48,19 +48,16 @@ window, contextual cost labels and persistent anatomy-first pilot decisions.
 See [implementation and acceptance limits](V91_PILOT_REVIEW.md) and
 [verified build and distribution](V91_DELIVERY.md).
 
-The latest packaged and Drive-distributed application is **v94 / 0.0.0.dev94**,
-built from `c977087292ae5198ce934f441b8045336bf26b12`. The current download
-pointer was updated only after authenticated and anonymous downloads of all six
-package files and both installer reconstructions matched the expected hashes.
-The installed application is also **v94 / 0.0.0.dev94**, from the same runtime
-commit. The owner saved work and closed the app; fresh application/WSL idle
-checks passed before updating. Installation followed a complete, hash-verified
-2,688-file v93 backup. Registry version, all 2,679 installed bundle files and
-installed startup smoke passed. The 2,101 checked current-study files remained
-unchanged. Both Drive READMEs record the verified installation, sharing remains
-unchanged, and v93 remains recoverable. No private scientific run was started. Later
-documentation commits do not change the binary's source identity. See
-[v94 delivery evidence](V94_DELIVERY.md).
+The latest packaged, installed and Drive-distributed application is **v95 /
+0.0.0.dev95**, built from `719e148e36f96d42194afa6cd4e0faf41b1b8283`.
+Installation followed fresh idle checks and a complete 2,688-file v94 backup.
+Registry version, all 2,679 installed bundle files and startup smoke passed;
+2,101 checked current-study files remained unchanged. All six Drive files passed
+authenticated and anonymous verification; both downloaded scripts reconstructed
+the exact installer before the stable current README was updated. Its stable ID
+and sharing remain unchanged. v94 remains recoverable. No private scientific run
+was started. Later documentation commits do not change the runtime identity.
+See [v95 delivery evidence](V95_DELIVERY.md).
 
 For v91, 174 targeted regressions passed; after generalizing the dataset-specific
 feature checks, all 49 affected study/dialog/lifecycle tests passed again.

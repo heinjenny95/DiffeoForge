@@ -47,5 +47,6 @@ writes. Two additional existing GPA/project-continuation tests passed.
 
 One older broad desktop test fails at its advanced-parameter create-button
 expectation; the identical assertion also fails with the unmodified v94 widget
-module. It is not counted as passing or as new scientific qualification. Frozen
-build and distribution evidence will be recorded separately after verification.
+module. It is not counted as passing or as new scientific qualification. Ruff,
+synthetic UI inspection and frozen checks passed. See the separate
+[verified build, installation and distribution evidence](V95_DELIVERY.md).
