@@ -181,6 +181,12 @@ from diffeoforge.desktop.run_location import (
     describe_run_location,
     explain_missing_run,
 )
+from diffeoforge.desktop.setup_checkpoint import (
+    RestoredSetup,
+    load_setup_form,
+    restore_setup_checkpoint,
+    save_setup_checkpoint,
+)
 from diffeoforge.desktop.validation_preparation import prepare_validation_from_result
 from diffeoforge.desktop.worker_controller import (
     DesktopWorkerController,
@@ -590,6 +596,7 @@ class _InputPreflightWorker(QRunnable):
         scale_to_unit_centroid_size: bool,
         scaling_mode: str,
         signature: tuple[object, ...],
+        cache_project: Path | None = None,
     ) -> None:
         super().__init__()
         self.mesh_paths = mesh_paths
@@ -599,6 +606,7 @@ class _InputPreflightWorker(QRunnable):
         self.scale_to_unit_centroid_size = scale_to_unit_centroid_size
         self.scaling_mode = scaling_mode
         self.signature = signature
+        self.cache_project = cache_project
         self.signals = _WorkerSignals()
 
     @Slot()
@@ -611,6 +619,7 @@ class _InputPreflightWorker(QRunnable):
                 procrustes_enabled=self.procrustes_enabled,
                 scale_to_unit_centroid_size=self.scale_to_unit_centroid_size,
                 scaling_mode=self.scaling_mode,
+                cache_project=self.cache_project,
                 progress_callback=lambda completed, total, path: self.signals.progress.emit(
                     (completed, total, path.name)
                 ),
@@ -619,6 +628,30 @@ class _InputPreflightWorker(QRunnable):
             self.signals.failed.emit(str(error))
             return
         self.signals.succeeded.emit(report)
+
+
+class _SetupRestoreWorker(QRunnable):
+    """Verify saved checks off the GUI thread; never dispatch a new deep scan."""
+
+    def __init__(self, project, form, paths, landmarks, signature) -> None:
+        super().__init__()
+        self.project = project
+        self.form = form
+        self.paths = paths
+        self.landmarks = landmarks
+        self.signature = signature
+        self.signals = _WorkerSignals()
+
+    @Slot()
+    def run(self) -> None:
+        try:
+            result = restore_setup_checkpoint(
+                self.project, self.form, self.paths, self.landmarks,
+            )
+        except (OSError, RuntimeError, TypeError, ValueError) as error:
+            self.signals.failed.emit(str(error))
+            return
+        self.signals.succeeded.emit(result)
 
 
 class _ProcrustesPreviewWorker(QRunnable):
@@ -1472,6 +1505,7 @@ class DiffeoForgeWindow(QMainWindow):
             | _TemplatePreviewWorker
             | _ProcrustesPreviewWorker
             | _ProcrustesVisualWorker
+            | _SetupRestoreWorker
             | _ReferenceParameterWorker
             | _ReferenceReadinessWorker
             | _ReferencePreparationStatusWorker
@@ -1497,6 +1531,8 @@ class DiffeoForgeWindow(QMainWindow):
         self._input_preflight_signature: tuple[object, ...] | None = None
         self._input_preflight_failed_signature: tuple[object, ...] | None = None
         self._input_preflight_worker: _InputPreflightWorker | None = None
+        self._restoring_setup = False
+        self._setup_checkpoint_save_error: str | None = None
         self._recent_projects: tuple[RecentProject, ...] = ()
         self._shown_input_preflight_fingerprints: set[str] = set()
         self._procrustes_preview: LandmarkAlignmentPreview | None = None
@@ -4008,7 +4044,7 @@ class DiffeoForgeWindow(QMainWindow):
             "rotation. The selected size treatment is then applied explicitly to the "
             "complete surfaces. The recommended mode removes size using an area-weighted "
             "surface measure that is stable under triangle subdivision. "
-            "It writes nothing until you review and approve the report below. Raw "
+            "Checks and review decisions are saved in the project folder. Raw "
             "meshes remain unchanged; approved project creation writes immutable "
             "aligned VTK copies and records every transform. Reflection is off by default."
         )
@@ -4044,7 +4080,7 @@ class DiffeoForgeWindow(QMainWindow):
         )
         procrustes_layout.addLayout(procrustes_advanced)
         procrustes_layout.addWidget(procrustes_hint)
-        self.preview_procrustes_button = QPushButton("Preview alignment read-only")
+        self.preview_procrustes_button = QPushButton("Preview alignment")
         self.preview_procrustes_button.setObjectName("secondary")
         self.preview_procrustes_button.clicked.connect(self._preview_procrustes)
         self.procrustes_preview_status_label = _ReadOnlyStatusText(
@@ -4060,6 +4096,7 @@ class DiffeoForgeWindow(QMainWindow):
         )
         self.approve_procrustes_check.setEnabled(False)
         self.approve_procrustes_check.toggled.connect(self._reference_recommendation_inputs_changed)
+        self.approve_procrustes_check.toggled.connect(self._save_setup_checkpoint)
         procrustes_layout.addWidget(self.preview_procrustes_button)
         procrustes_layout.addWidget(self.procrustes_preview_status_label)
         procrustes_layout.addWidget(self.review_procrustes_visual_button)
@@ -4522,6 +4559,8 @@ class DiffeoForgeWindow(QMainWindow):
             self._current_procrustes_removes_size(),
             self._current_procrustes_scaling_mode(),
             signature,
+            Path(self.project_edit.text().strip()).expanduser().resolve()
+            if self.project_edit.text().strip() else None,
         )
         worker.signals.succeeded.connect(self._input_preflight_succeeded)
         worker.signals.failed.connect(self._input_preflight_failed)
@@ -4577,6 +4616,7 @@ class DiffeoForgeWindow(QMainWindow):
             self._shown_input_preflight_fingerprints.add(report.fingerprint)
             QMessageBox.warning(self, "Mesh data preflight", rendered)
         self._sync_ready_state()
+        self._save_setup_checkpoint()
 
     @Slot(str)
     def _input_preflight_failed(self, message: str) -> None:
@@ -5892,7 +5932,7 @@ class DiffeoForgeWindow(QMainWindow):
         self.procrustes_preview_status_label.setText(
             "Landmarks are being aligned and complete source hashes are being verified "
             "outside the event loop. Existing mesh-preflight metadata is reused when "
-            "available; no file is being created or changed."
+            "available. The preview is saved in the project; input files stay unchanged."
         )
         self._sync_ready_state()
         self._thread_pool.start(worker)
@@ -5977,6 +6017,8 @@ class DiffeoForgeWindow(QMainWindow):
         self._update_procrustes_controls()
         self._sync_ready_state()
 
+        self._save_setup_checkpoint()
+
     @Slot()
     def _open_procrustes_visual_review(self) -> None:
         preview = self._procrustes_preview
@@ -6057,6 +6099,7 @@ class DiffeoForgeWindow(QMainWindow):
             if "Visual GPA review completed for this exact fingerprint." not in report:
                 self.procrustes_preview_status_label.setText(f"{report}\n{completion}")
             self.approve_procrustes_check.setChecked(False)
+        self._save_setup_checkpoint()
         self._update_procrustes_controls()
         self._sync_ready_state()
 
@@ -7010,7 +7053,7 @@ class DiffeoForgeWindow(QMainWindow):
     @Slot()
     def _load_last_project_inputs(self) -> None:
         """Restore all recorded paths only after an explicit user click."""
-        if self._worker is not None:
+        if self._worker is not None or self._input_preflight_worker is not None:
             return
         self._restore_recent_project_inputs()
         entries = self._recent_projects
@@ -7022,29 +7065,164 @@ class DiffeoForgeWindow(QMainWindow):
     def _apply_recent_project(self, entry: RecentProject, *, announce: bool) -> None:
         """Copy one remembered entry into the first-screen fields."""
 
-        engine = (
-            DesktopEngine.MODERN_CPU
-            if entry.engine == MODERN_ENGINE
-            else DesktopEngine.DEFORMETRICA_REFERENCE
-        )
-        engine_index = self.engine_combo.findData(engine)
-        if engine_index >= 0:
-            self.engine_combo.setCurrentIndex(engine_index)
-        self.mesh_edit.setText(str(entry.mesh_directory))
-        self.project_edit.setText(str(entry.project_directory))
-        self.pattern_edit.setText(entry.subject_pattern)
-        unit_index = self.units_combo.findData(entry.coordinate_unit)
-        if unit_index >= 0:
-            self.units_combo.setCurrentIndex(unit_index)
-        self.name_edit.setText(entry.project_name or "")
-        self.template_edit.setText(str(entry.template) if entry.template else "")
-        self.landmarks_edit.setText(str(entry.landmarks) if entry.landmarks else "")
-        if announce:
-            self.data_status_label.setObjectName("status")
-            self.data_status_label.setStyleSheet("")
-            self.data_status_label.setText(
-                "Project paths loaded. Review them, then click Run deep mesh validation."
+        self._restoring_setup = True
+        try:
+            self._clear_engine_project_state()
+            engine = (
+                DesktopEngine.MODERN_CPU
+                if entry.engine == MODERN_ENGINE
+                else DesktopEngine.DEFORMETRICA_REFERENCE
             )
+            engine_index = self.engine_combo.findData(engine)
+            if engine_index >= 0:
+                self.engine_combo.setCurrentIndex(engine_index)
+            self.mesh_edit.setText(str(entry.mesh_directory))
+            self.project_edit.setText(str(entry.project_directory))
+            self.pattern_edit.setText(entry.subject_pattern)
+            unit_index = self.units_combo.findData(entry.coordinate_unit)
+            if unit_index >= 0:
+                self.units_combo.setCurrentIndex(unit_index)
+            self.name_edit.setText(entry.project_name or "")
+            self.template_edit.setText(str(entry.template) if entry.template else "")
+            self.landmarks_edit.setText(str(entry.landmarks) if entry.landmarks else "")
+            saved_form = load_setup_form(entry.project_directory)
+            if saved_form is not None and all(
+                saved_form.get(key) == self._setup_checkpoint_form().get(key)
+                for key in ("meshes", "template", "landmarks", "pattern", "project", "engine")
+            ):
+                try:
+                    scaling_index = self.procrustes_scaling_combo.findData(
+                        saved_form["scaling_mode"]
+                    )
+                    if scaling_index >= 0:
+                        self.procrustes_scaling_combo.setCurrentIndex(scaling_index)
+                    self.procrustes_target_size_spin.setValue(saved_form["target_size"])
+                    self.procrustes_reflection_check.setChecked(saved_form["allow_reflection"])
+                    self.procrustes_tolerance_spin.setValue(saved_form["tolerance"])
+                    self.procrustes_iterations_spin.setValue(saved_form["max_iterations"])
+                    self.procrustes_apply_check.setChecked(saved_form["apply_alignment"])
+                except (KeyError, TypeError, ValueError, OverflowError):
+                    pass
+            if announce:
+                self.data_status_label.setObjectName("status")
+                self.data_status_label.setStyleSheet("")
+                self.data_status_label.setText(
+                    "Project paths loaded. Verifying saved checks…"
+                )
+        finally:
+            self._restoring_setup = False
+        self._restore_setup_checkpoint()
+
+    def _setup_checkpoint_form(self) -> dict[str, object]:
+        def path_text(field) -> str:
+            value = field.text().strip()
+            return str(Path(value).expanduser().resolve()) if value else ""
+
+        return {
+            "meshes": path_text(self.mesh_edit), "project": path_text(self.project_edit),
+            "template": path_text(self.template_edit), "landmarks": path_text(self.landmarks_edit),
+            "pattern": self.pattern_edit.text().strip(),
+            "engine": str(self.engine_combo.currentData()), "unit": self.units_combo.currentData(),
+            "apply_alignment": self.procrustes_apply_check.isChecked(),
+            "remove_size": self._current_procrustes_removes_size(),
+            "scaling_mode": self._current_procrustes_scaling_mode(),
+            "target_size": self.procrustes_target_size_spin.value(),
+            "allow_reflection": self.procrustes_reflection_check.isChecked(),
+            "tolerance": self.procrustes_tolerance_spin.value(),
+            "max_iterations": self.procrustes_iterations_spin.value(),
+        }
+
+    @Slot()
+    def _save_setup_checkpoint(self) -> None:
+        if self._restoring_setup or not self.project_edit.text().strip():
+            return
+        report = self._input_preflight if (
+            self._input_preflight_signature == self._current_input_preflight_signature()
+        ) else None
+        preview = (
+            self._procrustes_preview if self._preview_matches_current_procrustes_inputs() else None
+        )
+        if report is None and preview is None:
+            return
+        try:
+            save_setup_checkpoint(
+                self.project_edit.text().strip(), self._setup_checkpoint_form(), report, preview,
+                self._procrustes_visual_reviewed_fingerprint,
+                self._approved_procrustes_fingerprint() is not None,
+            )
+            self._setup_checkpoint_save_error = None
+        except (OSError, RuntimeError, TypeError, ValueError) as error:
+            self._setup_checkpoint_save_error = f"Checks could not be saved: {error}"
+        self._sync_ready_state()
+
+    def _restore_setup_checkpoint(self) -> None:
+        if self._worker is not None or self._input_preflight_worker is not None:
+            return
+        self._restoring_setup = True
+        try:
+            self._input_preflight = None
+            self._input_preflight_signature = None
+            self._setup_checkpoint_save_error = None
+            self._invalidate_procrustes_preview()
+        finally:
+            self._restoring_setup = False
+        try:
+            paths, landmarks, signature = self._input_preflight_request()
+        except (OSError, TypeError, ValueError):
+            return
+        worker = _SetupRestoreWorker(
+            Path(self.project_edit.text().strip()).expanduser().resolve(),
+            self._setup_checkpoint_form(), paths, landmarks, signature,
+        )
+        worker.signals.succeeded.connect(self._setup_checkpoint_restored)
+        worker.signals.failed.connect(self._setup_checkpoint_failed)
+        self._worker = worker
+        self.input_preflight_status_label.setText("Verifying saved checks; no deep scan…")
+        self._sync_ready_state()
+        self._thread_pool.start(worker)
+
+    @Slot(object)
+    def _setup_checkpoint_restored(self, restored: RestoredSetup) -> None:
+        worker = self._worker
+        if not isinstance(worker, _SetupRestoreWorker):
+            return
+        self._worker = None
+        if (worker.form != self._setup_checkpoint_form()
+                or worker.signature != self._current_input_preflight_signature()):
+            self._sync_ready_state()
+            return
+        self._restoring_setup = True
+        try:
+            self._input_preflight = restored.preflight
+            self._input_preflight_signature = worker.signature if restored.preflight else None
+            self._input_preflight_failed_signature = None
+            self.input_preflight_status_label.setText(
+                format_mesh_input_preflight(restored.preflight)
+                if restored.preflight else restored.message
+            )
+            if restored.preview is not None:
+                self._procrustes_preview_succeeded(restored.preview)
+                self._procrustes_visual_reviewed_fingerprint = restored.reviewed_fingerprint
+                self.approve_procrustes_check.setChecked(restored.approved)
+                self.procrustes_preview_status_label.setText(
+                    "Saved GPA and its recorded review restored."
+                    if restored.approved
+                    else "Saved GPA preview restored; review is still required."
+                )
+        finally:
+            self._restoring_setup = False
+        self._update_procrustes_controls()
+        self._sync_ready_state()
+        if restored.preflight is None or not restored.preflight.issues:
+            self.data_status_label.setText(restored.message)
+
+    @Slot(str)
+    def _setup_checkpoint_failed(self, message: str) -> None:
+        if not isinstance(self._worker, _SetupRestoreWorker):
+            return
+        self._worker = None
+        self._sync_ready_state()
+        self.data_status_label.setText(f"Saved checks are unavailable: {message}")
 
     @Slot()
     def _select_recent_project(self) -> None:
@@ -7299,9 +7477,9 @@ class DiffeoForgeWindow(QMainWindow):
             )
         )
         self.load_last_project_button.setEnabled(
-            bool(self._recent_projects) and self._worker is None
+            bool(self._recent_projects) and self._worker is None and not validation_running
         )
-        self.recent_projects_button.setEnabled(self._worker is None)
+        self.recent_projects_button.setEnabled(self._worker is None and not validation_running)
         existing_config = self._existing_configuration_path_from_form()
         resumable_reference_project = bool(
             self.engine_combo.currentData() == DesktopEngine.DEFORMETRICA_REFERENCE
@@ -7313,7 +7491,10 @@ class DiffeoForgeWindow(QMainWindow):
             if resumable_reference_project
             else "Continue to parameter setting"
         )
-        self.continue_parameter_button.setEnabled(data_ready and self._worker is None)
+        self.continue_parameter_button.setEnabled(
+            (data_ready or resumable_reference_project)
+            and self._worker is None and not validation_running
+        )
         self.new_project_instead_button.setVisible(resumable_reference_project)
         self.new_project_instead_button.setEnabled(
             resumable_reference_project and data_ready and self._worker is None
@@ -7386,6 +7567,10 @@ class DiffeoForgeWindow(QMainWindow):
             label = "field" if len(missing_required_fields) == 1 else "fields"
             self.data_status_label.setText(
                 f"Missing required {label}: {', '.join(missing_required_fields)}."
+            )
+        if self._setup_checkpoint_save_error is not None:
+            self.data_status_label.setText(
+                self.data_status_label.text() + "\n" + self._setup_checkpoint_save_error
             )
         self.data_status_label.setStyleSheet("")
         self._update_procrustes_controls()
@@ -12185,7 +12370,7 @@ class DiffeoForgeWindow(QMainWindow):
     def _continue_to_parameter_setting(self) -> None:
         """Open an existing reference project or continue one new-project form."""
 
-        if self._worker is not None or not self._data_inputs_ready():
+        if self._worker is not None or self._input_preflight_worker is not None:
             self._sync_ready_state()
             return
         config_path = self._existing_configuration_path_from_form()
@@ -12194,6 +12379,9 @@ class DiffeoForgeWindow(QMainWindow):
             or config_path is None
             or not config_path.is_file()
         ):
+            if not self._data_inputs_ready():
+                self._sync_ready_state()
+                return
             self._navigate_to_step(1)
             return
         try:

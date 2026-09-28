@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from html import escape
 from pathlib import Path
@@ -240,14 +240,24 @@ def make_preflight_result(
     )
 
 
-def collect_preflight(config_path: Path | str) -> PreflightResult:
-    """Run schema, path, and full geometry validation without executing an engine."""
+def collect_preflight(
+    config_path: Path | str, *, cache_project: Path | str | None = None,
+) -> PreflightResult:
+    """Validate inputs, optionally reusing project-local content-bound mesh checks.
+
+    Default core/engine callers retain their read-only full-validation behavior.
+    Desktop project review explicitly opts into storing reusable inspections.
+    """
 
     source = Path(config_path).expanduser().resolve()
     config = load_config(source)
     inputs = validate_input_paths(config, source)
-    template, subjects = inspect_inputs(inputs)
-    mesh_quality = _structural_quality(template, subjects)
+    if cache_project is None:
+        template, subjects = inspect_inputs(inputs)
+        mesh_quality = _structural_quality(template, subjects)
+    else:
+        metadata, mesh_quality = _cached_structural_quality(inputs, cache_project)
+        template, subjects = metadata[0], metadata[1:]
     return make_preflight_result(
         source,
         config,
@@ -256,6 +266,63 @@ def collect_preflight(config_path: Path | str) -> PreflightResult:
         subjects,
         mesh_quality=mesh_quality,
     )
+
+
+def _cached_structural_quality(
+    inputs: InputSummary, project: Path | str,
+) -> tuple[tuple[MeshMetadata, ...], tuple[PreflightMeshQuality, ...]]:
+    import hashlib
+
+    from diffeoforge.mesh import inspect_vtk, sha256_file
+    from diffeoforge.mesh_quality import QUALITY_DEFINITIONS_VERSION
+    from diffeoforge.project_checkpoint import (
+        CheckpointUnavailable,
+        load_checkpoint,
+        save_checkpoint,
+    )
+
+    metadata: list[MeshMetadata] = []
+    observations: list[PreflightMeshQuality] = []
+    for role, path in (("template", inputs.template), *(
+        ("subject", item) for item in inputs.subjects
+    )):
+        source_hash = sha256_file(path)
+        key = "vtk-1-" + hashlib.sha256(
+            f"{source_hash}:{QUALITY_DEFINITIONS_VERSION}".encode()
+        ).hexdigest()
+        cached = None
+        try:
+            candidate = load_checkpoint(project, key)
+            if (isinstance(candidate, tuple) and len(candidate) == 2
+                    and isinstance(candidate[0], MeshMetadata)
+                    and isinstance(candidate[1], MeshQualityResult)
+                    and candidate[0].sha256 == source_hash
+                    and candidate[0].bytes == path.stat().st_size
+                    and candidate[0].points == candidate[1].points
+                    and candidate[0].cells == candidate[1].triangles):
+                cached = candidate
+        except CheckpointUnavailable:
+            pass
+        if cached is None:
+            item = inspect_vtk(path)
+            if item.sha256 != source_hash:
+                raise ConfigurationError(f"Mesh changed while being checked: {path}")
+            quality = _structural_quality(item, ())[0].result
+            if sha256_file(path) != source_hash:
+                raise ConfigurationError(f"Mesh changed while being checked: {path}")
+            cached = item, quality
+            try:
+                save_checkpoint(project, key, cached)
+            except (OSError, ValueError):
+                pass
+        item, quality = cached
+        try:
+            enforce_mesh_quality(f"{role} {path.name}", quality, ATLAS_INPUT_MESH_QUALITY_SETTINGS)
+        except MeshQualityError as error:
+            raise ConfigurationError(str(error)) from error
+        metadata.append(replace(item, path=str(path)))
+        observations.append(PreflightMeshQuality(role, str(path), quality))
+    return tuple(metadata), tuple(observations)
 
 
 def default_preflight_report_path(config_path: Path | str) -> Path:

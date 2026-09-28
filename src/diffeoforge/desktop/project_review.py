@@ -275,7 +275,7 @@ def _reference_alignment_items(preflight) -> tuple[ReviewItem, ...]:
 
 
 def _reference_review(config_path: Path, config_sha256: str) -> ProjectReviewResult:
-    preflight = collect_preflight(config_path)
+    preflight = collect_preflight(config_path, cache_project=config_path.parent)
     runtime_estimate = estimate_reference_runtime(preflight)
     production_readiness = assess_reference_production_readiness(preflight)
     config = preflight.config

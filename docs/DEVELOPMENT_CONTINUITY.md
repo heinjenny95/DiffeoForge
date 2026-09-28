@@ -1,4 +1,4 @@
-# Development continuity — v94 pilot fit review
+# Development continuity — v95 project checkpoints
 
 Snapshot: 2026-09-28. This is a public, software-only continuation guide. Detailed
 research results, local paths, account destinations and run identities belong in
@@ -13,6 +13,13 @@ correct parameters or interpret biology for the researcher. Deformetrica is the
 default supported reference route; the Modern engine remains evidence-gated.
 
 ## Current source work
+
+v95 persists content-bound mesh inspections and recorded GPA review state in the
+project folder. Explicit history loading verifies saved state without starting
+missing computations; existing projects can resume their published alignment.
+See [v95 behavior, migration and tests](V95_PROJECT_CHECKPOINTS.md). Build,
+installation and distribution are pending verification; v94 below remains the
+last delivered version until its replacement is verified.
 
 v94 makes geometric pilot ranking fit-first and requires recorded acceptance of
 every specimen before stage advancement. Local bounded refinement preserves old
