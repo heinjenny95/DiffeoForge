@@ -17,8 +17,8 @@ default supported reference route; the Modern engine remains evidence-gated.
 v94 makes geometric pilot ranking fit-first and requires recorded acceptance of
 every specimen before stage advancement. Local bounded refinement preserves old
 runs and the complete cohort. See [v94 scope and limits](V94_SURFACE_FIT.md).
-The previously verified installed/distributed state below remains v93 until v94
-delivery is explicitly verified; source changes alone do not update the runtime.
+The installed and Drive-distributed application is now v94, verified separately
+from the source implementation. See [delivery evidence](V94_DELIVERY.md).
 
 ## Verified software baseline
 
@@ -41,19 +41,19 @@ window, contextual cost labels and persistent anatomy-first pilot decisions.
 See [implementation and acceptance limits](V91_PILOT_REVIEW.md) and
 [verified build and distribution](V91_DELIVERY.md).
 
-The latest packaged and Drive-distributed application is **v93 / 0.0.0.dev93**,
-built from `bf65eb9f85b42d36dcc97df46ed0909f20a95b4c`. The current download
+The latest packaged and Drive-distributed application is **v94 / 0.0.0.dev94**,
+built from `c977087292ae5198ce934f441b8045336bf26b12`. The current download
 pointer was updated only after authenticated and anonymous downloads of all six
 package files and both installer reconstructions matched the expected hashes.
-The installed application is also **v93 / 0.0.0.dev93**, from the same runtime
+The installed application is also **v94 / 0.0.0.dev94**, from the same runtime
 commit. The owner saved work and closed the app; fresh application/WSL idle
 checks passed before updating. Installation followed a complete, hash-verified
-2,688-file v92 backup. Registry version, all 2,679 installed bundle files and
-installed startup smoke passed. The 351 checked completed-run files remained
+2,688-file v93 backup. Registry version, all 2,679 installed bundle files and
+installed startup smoke passed. The 2,101 checked current-study files remained
 unchanged. Both Drive READMEs record the verified installation, sharing remains
-unchanged, and v92 remains recoverable. No scientific run was started. Later
+unchanged, and v93 remains recoverable. No private scientific run was started. Later
 documentation commits do not change the binary's source identity. See
-[v93 delivery evidence](V93_DELIVERY.md).
+[v94 delivery evidence](V94_DELIVERY.md).
 
 For v91, 174 targeted regressions passed; after generalizing the dataset-specific
 feature checks, all 49 affected study/dialog/lifecycle tests passed again.

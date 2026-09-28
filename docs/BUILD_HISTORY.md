@@ -8,7 +8,10 @@ underfit. Every specimen must pass recorded visual QC before advancing; current
 stage batches replace unattended unreviewed advancement. Bounded local refinement
 retains prior results and the complete pilot cohort, including rejected centers.
 See [workflow, scientific limits and verification](V94_SURFACE_FIT.md).
-Build, installation and distribution are pending verification for this source.
+Build, installation and complete Drive distribution are verified. Registry,
+2,679 installed bundle hashes and startup smoke passed; 2,101 checked study files
+remained unchanged. The complete v93 installation/package remain recoverable.
+See [delivery evidence and qualification limits](V94_DELIVERY.md).
 
 ## v93 — blank startup and explicit deep validation
 
