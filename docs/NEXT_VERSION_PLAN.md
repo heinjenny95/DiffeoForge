@@ -11,6 +11,31 @@ qualification claim. The established development branch remains authoritative.
 
 ## Delivery order and acceptance gates
 
+### Planned: clear pilot review, refinement and continuation
+
+Backlog recorded 2026-09-28 after first-use feedback; implementation is pending.
+
+- [ ] Separate **Review selected option**, optional **Refine fit**, and using an
+  approved option to continue. Use a neutral option chooser and visible QC status;
+  the current "Choose an option to review or refine…" omits continuation.
+- [ ] Once all specimens pass and approval is saved, emphasize a primary action
+  such as **Use this option and continue to stage 2**, adapted to the actual next
+  stage or final handoff. Keep re-review/refinement secondary. If blocked, show
+  the specific remaining requirement briefly rather than only a disabled button.
+- [ ] Explain refinement where it is offered: propose new parameter combinations
+  around the selected fit; do not imply stage advancement or direct mesh repair.
+  Distinguish preparing the comparison from starting calculations. Audit adjacent
+  controls, including **Prepare next stage**, confirmation and Run labels together.
+- [ ] Show the base option and new-option count before an explicit **Run new
+  refinement options** action; make progress, completion, current stage/round and
+  return to comparison clear. Distinguish retained results from new options and
+  preserve valid saved reviews; new options require their own QC. Refinement is
+  optional when the selected option already meets continuation requirements.
+- [ ] First-use acceptance must cover review -> approve -> continue, failed or
+  uncertain fit -> optional refinement -> run -> review, and returning to a
+  previously approved option. Preserve the theme, concise copy, existing results
+  and every-specimen approval gate; keep detailed explanations collapsed.
+
 ### Planned: discoverable axis shapes and precise method terminology
 
 Backlog recorded 2026-09-28; no implementation or new numerical run is claimed.
