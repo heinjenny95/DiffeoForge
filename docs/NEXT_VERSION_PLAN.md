@@ -9,6 +9,14 @@ Scope agreed on 2026-09-14: implement the current usability backlog and plan the
 larger roadmap. This is a development plan, not a public release or scientific
 qualification claim. The established development branch remains authoritative.
 
+## Adaptive search implementation
+
+v96 implements bounded feedback search and learned-state continuation in the
+ordinary pilot. See [behavior, evidence and limits](V96_ADAPTIVE_PILOT.md).
+Independent usability and prospective fit-quality acceptance remain open.
+The earlier manual refinement proposal below is superseded by the direct
+**Improve fit automatically** action; the other backlog items remain separate.
+
 ## Delivery order and acceptance gates
 
 ### Priority: slow pilot previews and invisible QC locks

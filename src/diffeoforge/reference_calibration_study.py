@@ -191,6 +191,7 @@ class ReferenceCalibrationStudySnapshot:
     visual_review_notes: Mapping[str, str] = field(default_factory=dict)
     subject_decisions: Mapping[str, dict[str, str]] = field(default_factory=dict)
     feature_observations: Mapping[str, dict[str, dict[str, Any]]] = field(default_factory=dict)
+    adaptive_search_status: Mapping[str, Any] = field(default_factory=dict)
 
 
 def _normalized_search_extension_safety_limits(
@@ -538,9 +539,19 @@ def _prepare_stage(
     plan: ReferenceCalibrationPlan,
     stage: CalibrationStage,
     selected_values: Mapping[str, float],
+    continuation_source: ReferenceCalibrationStudySnapshot | None = None,
+    continuation_candidate_id: str | None = None,
 ) -> dict[str, object]:
     source_config = load_config(_safe_study_path(root, manifest["source_config"]["copy"]))
     stage_directory = root / "stages" / f"{stage.order:02d}-{stage.stage_id}"
+    seed = None
+    if continuation_source is not None:
+        from diffeoforge.reference_adaptive_calibration import bind_learned_seed
+
+        seed_root = root / "stage-seeds" / stage.stage_id
+        seed = bind_learned_seed(continuation_source, continuation_candidate_id, seed_root)
+        for record in seed["files"].values():
+            record["copy"] = _relative_path(root, seed_root / record["copy"])
     records: list[dict[str, object]] = []
     for candidate in stage.candidates:
         candidate_directory = stage_directory / candidate.candidate_id
@@ -555,6 +566,36 @@ def _prepare_stage(
             candidate=candidate,
             template_diagonal=float(manifest["template_diagonal"]),
             pilot_max_iterations=int(manifest["pilot_max_iterations"]),
+        )
+        from diffeoforge.reference_adaptive_calibration import configure_adaptive_trial
+
+        if seed is not None:
+            from diffeoforge.reference_adaptive_calibration import apply_seed
+
+            deformation = config["model"]["deformation"]
+            old = seed["deformation"]
+            changed_grid = (
+                deformation["initial_control_point_spacing"] != old["initial_control_point_spacing"]
+            )
+            compatible = not changed_grid and deformation["kernel_width"] == old["kernel_width"]
+            apply_seed(
+                config,
+                root=root,
+                candidate_directory=candidate_directory,
+                seed=seed,
+                initialization="warm" if compatible else "zero",
+                regenerate_controls=changed_grid,
+            )
+            config["optimization"] = copy.deepcopy(seed["optimization"])
+            config["optimization"]["max_iterations"] = max(
+                int(manifest["pilot_max_iterations"]), seed["optimization"]["max_iterations"]
+            )
+        configure_adaptive_trial(
+            config,
+            root=root,
+            candidate_directory=candidate_directory,
+            manifest=manifest,
+            candidate_id=candidate.candidate_id,
         )
         config_path = candidate_directory / "atlas.yaml"
         _write_yaml(config_path, config, overwrite=False)
@@ -574,6 +615,7 @@ def _prepare_stage(
             "stage_id": stage.stage_id,
             "stage_order": stage.order,
             "candidates": records,
+            **({"continuation_seed": seed} if seed is not None else {}),
         },
     )
 
@@ -710,6 +752,7 @@ def create_reference_calibration_search_extension_study(
     safety_limits: Mapping[str, tuple[float, float]],
     outward_steps: int = 2,
     fit_center_candidate_id: str | None = None,
+    adaptive_context: Mapping[str, Any] | None = None,
 ) -> ReferenceCalibrationStudySnapshot:
     """Create an immutable successor that runs only new outward candidates.
 
@@ -734,7 +777,11 @@ def create_reference_calibration_search_extension_study(
             "Search extension requires every source candidate to be completed"
         )
     assessment = assess_reference_calibration_snapshot(source_snapshot)
-    if fit_center_candidate_id is None and assessment.search_range_status != "not_bounded":
+    if (
+        adaptive_context is None
+        and fit_center_candidate_id is None
+        and assessment.search_range_status != "not_bounded"
+    ):
         raise ReferenceCalibrationStudyError(
             "Search extension requires a source assessment marked not_bounded"
         )
@@ -752,20 +799,31 @@ def create_reference_calibration_search_extension_study(
             raise ReferenceCalibrationStudyError(
                 "Fit refinement requires a completed, converged, geometrically valid center"
             )
-    proposal = (
-        propose_calibration_fit_refinement(
-            source_snapshot.plan,
-            assessment,
-            source_candidate_id=fit_center_candidate_id,
-            selected_values=source_snapshot.selected_values,
+    if adaptive_context is not None:
+        from diffeoforge.adaptive_calibration import AdaptiveSearchPolicy
+        from diffeoforge.reference_adaptive_calibration import propose_adaptive_fit, study_context
+
+        verified_context = study_context(
+            source_snapshot, policy=AdaptiveSearchPolicy(**adaptive_context["policy"])
         )
-        if fit_center_candidate_id is not None
-        else propose_calibration_search_extension(
-            source_snapshot.plan,
-            assessment,
-            outward_steps=outward_steps,
+        if dict(adaptive_context) != verified_context:
+            raise ReferenceCalibrationStudyError("Adaptive context differs from bound evidence")
+        proposal = propose_adaptive_fit(source_snapshot.plan, assessment, verified_context)
+    else:
+        proposal = (
+            propose_calibration_fit_refinement(
+                source_snapshot.plan,
+                assessment,
+                source_candidate_id=fit_center_candidate_id,
+                selected_values=source_snapshot.selected_values,
+            )
+            if fit_center_candidate_id is not None
+            else propose_calibration_search_extension(
+                source_snapshot.plan,
+                assessment,
+                outward_steps=outward_steps,
+            )
         )
-    )
     boundary_parameters = {
         boundary.split(":", maxsplit=1)[0] for boundary in proposal.boundary_parameters
     }
@@ -902,6 +960,14 @@ def create_reference_calibration_search_extension_study(
                 "It remains a provisional pilot, not biological validation."
             ),
         }
+        if adaptive_context is not None:
+            from diffeoforge.reference_adaptive_calibration import bind_learned_seed
+
+            manifest["adaptive_seed"] = bind_learned_seed(
+                source_snapshot, proposal.source_candidate_id, root
+            )
+        if adaptive_context is not None or source_manifest.get("adaptive_protocol"):
+            manifest["adaptive_protocol"] = "learned_pilot_seed_v1"
         _write_json(root / STUDY_MANIFEST, manifest, overwrite=False)
         write_text_safely(
             root / STUDY_DIGEST,
@@ -1125,6 +1191,7 @@ def _verify_manifest(root: Path) -> dict[str, Any]:
         manifest["source_config"],
         manifest["inputs"]["template"],
         *manifest["inputs"]["subjects"],
+        *manifest.get("adaptive_seed", {}).get("files", {}).values(),
     ]
     for record in bound_files:
         path = _safe_study_path(root, record["copy"])
@@ -1150,6 +1217,10 @@ def _prepared_candidates(
             f"Calibration stage {stage_id!r} is not prepared exactly once"
         )
     records = {record["candidate_id"]: record for record in prepared[0]["candidates"]}
+    for bound in prepared[0].get("continuation_seed", {}).get("files", {}).values():
+        path = _safe_study_path(root, bound["copy"])
+        if not path.is_file() or sha256_file(path) != bound["sha256"]:
+            raise ReferenceCalibrationStudyError("Learned stage seed changed or is absent")
     for record in records.values():
         config = _safe_study_path(root, record["config"])
         if not config.is_file() or sha256_file(config) != record["config_sha256"]:
@@ -1404,6 +1475,19 @@ def load_reference_calibration_study(
             raise ReferenceCalibrationStudyError(
                 "Final calibrated configuration changed or is absent"
             )
+        final_value = load_config(final_config)
+        initialization = final_value["project"]["parameter_provenance"]["recommendation"][
+            "calibration_result"
+        ].get("full_cohort_initialization")
+        if initialization:
+            summary = validate_input_paths(final_value, final_config)
+            if (
+                sha256_file(summary.template) != initialization["template_sha256"]
+                or summary.initial_control_points is None
+                or sha256_file(summary.initial_control_points)
+                != initialization["control_points_sha256"]
+            ):
+                raise ReferenceCalibrationStudyError("Selected full-cohort seed changed")
         report_json: Path | None = None
         report_html: Path | None = None
         for key, digest_key, label in (
@@ -1508,6 +1592,15 @@ def load_reference_calibration_study(
         current_stage=stage,
         candidates=tuple(candidate_states),
         visual_reviews=visual_reviews,
+        adaptive_search_status=next(
+            (
+                event
+                for event in reversed(events)
+                if event["event"] == "adaptive_search_decision"
+                and event.get("stage_id") == stage.stage_id
+            ),
+            {},
+        ),
         subject_decisions={
             event["candidate_id"]: dict(event.get("subject_decisions", {}))
             for event in events
@@ -1922,6 +2015,7 @@ def _final_configuration(
     selected_candidate_ids: Mapping[str, str],
     selection_modes: Mapping[str, str],
     decision_event_hash: str,
+    continuation_source: ReferenceCalibrationStudySnapshot | None = None,
 ) -> Path:
     source = load_config(_safe_study_path(root, manifest["source_config"]["copy"]))
     config = copy.deepcopy(dict(source))
@@ -1989,6 +2083,33 @@ def _final_configuration(
             "observations": runtime_observations,
         },
     }
+    if continuation_source is not None:
+        from diffeoforge.reference_adaptive_calibration import apply_seed, bind_learned_seed
+
+        seed_root = root / "selected-seed"
+        final_candidate = selected_candidate_ids[continuation_source.current_stage.stage_id]
+        seed = bind_learned_seed(continuation_source, final_candidate, seed_root)
+        apply_seed(
+            config,
+            root=seed_root,
+            candidate_directory=root / "selected",
+            seed=seed,
+            initialization="zero",
+        )
+        original_cap = config["optimization"]["max_iterations"]
+        config["optimization"] = copy.deepcopy(seed["optimization"])
+        config["optimization"]["max_iterations"] = max(
+            original_cap, seed["optimization"]["max_iterations"]
+        )
+        result = config["project"]["parameter_provenance"]["recommendation"]["calibration_result"]
+        result["full_cohort_initialization"] = {
+            "method": "learned_pilot_template_and_controls_zero_full_cohort_momenta",
+            "source_run_manifest_sha256": seed["source_manifest_sha256"],
+            "template_sha256": seed["files"]["template"]["sha256"],
+            "control_points_sha256": seed["files"]["control_points"]["sha256"],
+            "limitation": "The full cohort starts new momenta; pilot fits do not establish "
+            "full-cohort convergence or anatomical acceptance.",
+        }
     validate_schema(config)
     final_path = root / "selected" / "atlas-calibrated.yaml"
     final_path.parent.mkdir(parents=True, exist_ok=False)
@@ -2468,6 +2589,8 @@ def _record_reference_calibration_stage_selection(
             snapshot.plan,
             next_stage,
             selected_values,
+            continuation_source=snapshot if manifest.get("adaptive_protocol") else None,
+            continuation_candidate_id=selected_candidate_id,
         )
     else:
         events = _load_events(root)
@@ -2484,6 +2607,7 @@ def _record_reference_calibration_stage_selection(
             selected_candidates,
             selection_modes,
             decision_event_hash,
+            continuation_source=snapshot if manifest.get("adaptive_protocol") else None,
         )
         report_json, report_html = _write_calibration_report(
             root,

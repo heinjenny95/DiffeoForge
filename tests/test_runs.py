@@ -206,7 +206,7 @@ def test_prepare_creates_verifiable_immutable_run(tmp_path: Path) -> None:
 
     assert run_directory == tmp_path / "runs" / "fixed-run"
     assert manifest["input_count"] == {"templates": 1, "subjects": 2}
-    assert manifest["backend"]["contract_version"] == "0.3"
+    assert manifest["backend"]["contract_version"] == "0.4"
     assert manifest["command_preview"]["environment"]["MKL_CBWR"] == "COMPATIBLE"
     assert (run_directory / "engine" / "model.xml").is_file()
     assert (run_directory / "engine" / "data_set.xml").is_file()

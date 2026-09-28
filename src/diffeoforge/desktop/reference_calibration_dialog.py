@@ -45,7 +45,6 @@ from diffeoforge.desktop.reference_calibration_presentation import (
 )
 from diffeoforge.reference_calibration import (
     CalibrationCandidate,
-    propose_calibration_fit_refinement,
 )
 from diffeoforge.reference_calibration_study import (
     CalibrationStudyCandidateState,
@@ -53,10 +52,8 @@ from diffeoforge.reference_calibration_study import (
     ReferenceCalibrationStudySnapshot,
     assess_reference_calibration_snapshot,
     calibration_candidate_run_directory,
-    create_reference_calibration_search_extension_study,
     load_reference_calibration_report,
     load_reference_calibration_study,
-    next_reference_calibration_search_extension_destination,
     normalized_candidate_subject_fit,
     record_reference_calibration_candidate_review,
     record_reference_calibration_provisional_override,
@@ -195,12 +192,14 @@ class _CalibrationStageWorker(QRunnable):
         runner: ReferenceCalibrationStudyRunner,
         *,
         complete_automatic_pilot: bool = False,
+        adaptive_fit_search: bool = False,
         afk: bool = False,
         visual_approvals: Mapping[str, bool] | None = None,
         outward_safety_limits: Mapping[str, tuple[float, float]] | None = None,
     ) -> None:
         super().__init__()
         self.runner = runner
+        self.adaptive_fit_search = adaptive_fit_search
         self.complete_automatic_pilot = complete_automatic_pilot
         self.afk = afk
         self.outward_safety_limits = (
@@ -220,7 +219,11 @@ class _CalibrationStageWorker(QRunnable):
     @Slot()
     def run(self) -> None:
         try:
-            if self.complete_automatic_pilot:
+            if self.adaptive_fit_search:
+                from diffeoforge.reference_adaptive_calibration import run_adaptive_stage
+
+                result = run_adaptive_stage(self.runner, event_callback=self.signals.event.emit)
+            elif self.complete_automatic_pilot:
                 result = self.runner.run_complete_automatic_pilot(
                     event_callback=self.signals.event.emit,
                     **(
@@ -805,6 +808,17 @@ class ReferenceCalibrationDialog(QDialog):
             lambda checked: self.outward_mode.setChecked(False) if not checked else None
         )
         root.addWidget(self.outward_mode)
+        self.adaptive_fit_search = QCheckBox(
+            "Automatically improve fit (up to 12 extra runs per stage)"
+        )
+        self.adaptive_fit_search.setChecked(not bool(self._snapshot.plan.qc_recalibration_source))
+        self.adaptive_fit_search.setVisible(not bool(self._snapshot.plan.qc_recalibration_source))
+        self.adaptive_fit_search.setToolTip(
+            "Up to 3 rounds, 300 iterations per added run. Compare every specimen, "
+            "continue useful results and test relative parameter changes within recorded bounds. "
+            "Stop at a plateau, trade-off or budget. Visual approval is still required."
+        )
+        root.addWidget(self.adaptive_fit_search)
         self.progress = QProgressBar()
         self.progress.setRange(0, 1)
         self.progress.setValue(0)
@@ -1175,6 +1189,7 @@ class ReferenceCalibrationDialog(QDialog):
             )
             self.start_button.setVisible(not awaiting or retryable)
         self.start_button.setEnabled(not running)
+        self.adaptive_fit_search.setEnabled(not running)
         self.cancel_button.setEnabled(running)
         self.cancel_button.setVisible(running)
         self.review_next_button.hide()
@@ -1196,7 +1211,7 @@ class ReferenceCalibrationDialog(QDialog):
             self.selection_combo.blockSignals(True)
             self.selection_combo.clear()
             self.selection_combo.addItem(
-                "Choose an option to review or refine…",
+                "Choose an option for visual review…",
                 None,
             )
             for index, candidate in enumerate(
@@ -1484,21 +1499,45 @@ class ReferenceCalibrationDialog(QDialog):
         self.review_next_button.setText("Review selected option")
         self.review_next_button.show()
         self.review_next_button.setEnabled(selected is not None and not retryable)
-        self.collect_evidence_button.setText("Refine fit…")
+        self.collect_evidence_button.setText("Improve fit automatically")
         self.collect_evidence_button.setVisible(
             not self._snapshot.plan.qc_recalibration_source
             and self._snapshot.current_stage.kind != "integration_accuracy"
         )
-        self.collect_evidence_button.setEnabled(selected is not None and not retryable)
+        stopped = self._snapshot.adaptive_search_status.get("stop_reason")
+        self.collect_evidence_button.setEnabled(
+            not retryable and self._worker is None and not stopped
+        )
+        self.collect_evidence_button.setToolTip(
+            "Chooses the search center from all measured fits and runs up to 12 new comparisons."
+        )
         self.status.setText(
             "Retry incomplete options first."
             if retryable
-            else "Choose an option to inspect or refine."
+            else "Review an option, or let the pilot improve the fit automatically."
             if selected is None
             else "Every specimen passed. You can prepare the next stage."
             if approved and eligible
-            else "Review every specimen. If one fails, refine the fit before advancing."
+            else "Review every specimen. After approval, use Prepare next stage."
         )
+        if stopped:
+            messages = {
+                "budget_reached": "Automatic search budget reached.",
+                "fit_plateau": "Automatic search stopped: fit no longer improved enough.",
+                "specimen_tradeoff": "Search stopped: improving one fit worsened another.",
+                "no_new_trial_within_bounds": "Search stopped at the declared parameter limits.",
+                "no_valid_fit_evidence": "Search needs complete, valid fit measurements.",
+            }
+            self.status.setText(
+                messages.get(stopped, "Automatic search stopped.")
+                + " Choose an option for visual review; this is not a fit approval."
+            )
+        if self._worker is not None:
+            self.advance_button.setEnabled(False)
+            self.review_next_button.setEnabled(False)
+            self.selection_combo.setEnabled(False)
+        else:
+            self.selection_combo.setEnabled(True)
 
     @Slot()
     def _open_next_review(self) -> None:
@@ -1550,11 +1589,14 @@ class ReferenceCalibrationDialog(QDialog):
             self.status.setText(message)
             QMessageBox.critical(self, "Pilot could not start", message)
 
-    def _start_pilot(self) -> None:
+    def _start_pilot(self, *, adaptive: bool | None = None) -> None:
         runner = ReferenceCalibrationStudyRunner(self.study_directory)
         worker = _CalibrationStageWorker(
             runner,
             complete_automatic_pilot=False,
+            adaptive_fit_search=(
+                self.adaptive_fit_search.isChecked() if adaptive is None else adaptive
+            ),
             visual_approvals={
                 key: value
                 for key, value in self._visual_approvals().items()
@@ -1567,6 +1609,11 @@ class ReferenceCalibrationDialog(QDialog):
         self._worker = worker
         self.advanced_mode.setEnabled(False)
         self.afk_mode.setEnabled(False)
+        self.adaptive_fit_search.setEnabled(False)
+        self.collect_evidence_button.setEnabled(False)
+        self.review_next_button.setEnabled(False)
+        self.advance_button.setEnabled(False)
+        self.selection_combo.setEnabled(False)
         self.start_button.setEnabled(False)
         _set_action_emphasis(self.start_button, False)
         self.cancel_button.setEnabled(True)
@@ -1583,7 +1630,16 @@ class ReferenceCalibrationDialog(QDialog):
     def _event(self, event: Mapping[str, object]) -> None:
         kind = str(event["event"])
         candidate_id = str(event.get("candidate_id", ""))
-        if kind == "candidate_started":
+        if kind == "adaptive_search_extended":
+            self.study_directory = Path(str(event["study_directory"])).resolve()
+            self._render()
+            self.status.setText(
+                f"Automatic fit search, round {event['round_index']}: "
+                f"{event['new_runs']} new comparisons. Existing fits are preserved."
+            )
+        elif kind == "adaptive_search_decision":
+            self.status.setText(str(event["rationale"]))
+        elif kind == "candidate_started":
             self.status.setText(f"{candidate_id}: immutable pilot run started.")
         elif kind == "candidate_worker_event":
             worker = event["worker_event"]
@@ -1673,58 +1729,10 @@ class ReferenceCalibrationDialog(QDialog):
 
     @Slot()
     def _collect_more_evidence(self) -> None:
-        selected = self.selection_combo.currentData()
-        if selected is None:
+        if self._worker is not None:
             return
-        try:
-            assessment = assess_reference_calibration_snapshot(self._snapshot)
-            proposal = propose_calibration_fit_refinement(
-                self._snapshot.plan,
-                assessment,
-                source_candidate_id=str(selected),
-                selected_values=self._snapshot.selected_values,
-            )
-            limits = {name: (value / 2, value * 2) for name, value in proposal.fit_center_values}
-            destination = next_reference_calibration_search_extension_destination(
-                self.study_directory
-            )
-            preview = "\n".join(
-                c.label
-                + ": "
-                + ", ".join(
-                    f"{_FEASIBILITY_PARAMETER_LABELS[k]}={v:.6g}" for k, v in c.parameter_values
-                )
-                for c in proposal.candidates
-            )
-            confirmation = QMessageBox(self)
-            confirmation.setWindowTitle("Prepare local fit refinement")
-            confirmation.setText(
-                f"Prepare {len(proposal.candidates)} new options around the selected fit?\n"
-                "Same pilot specimens. One setting changes at a time. "
-                "Existing results stay available.\n"
-                "This prepares the comparison; click Run afterwards to calculate it."
-            )
-            confirmation.setDetailedText(preview + "\n\n" + str(destination))
-            confirmation.setStandardButtons(
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-            )
-            confirmation.setDefaultButton(QMessageBox.StandardButton.No)
-            if confirmation.exec() != QMessageBox.StandardButton.Yes:
-                return
-            successor = create_reference_calibration_search_extension_study(
-                self.study_directory,
-                destination,
-                safety_limits=limits,
-                fit_center_candidate_id=str(selected),
-            )
-            self.study_directory = successor.study_directory
-            self._snapshot = successor
-            self._visually_reviewed_candidates.clear()
-            self._visually_approved_candidates.clear()
-            self._render()
-            self.status.setText("Refinement prepared. Click Run to calculate only the new options.")
-        except (OSError, RuntimeError, TypeError, ValueError) as error:
-            QMessageBox.warning(self, "Fit refinement unavailable", str(error))
+        self.adaptive_fit_search.setChecked(True)
+        self._start()
 
     @Slot()
     def _cancel(self) -> None:

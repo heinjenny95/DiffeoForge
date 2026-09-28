@@ -1,4 +1,4 @@
-# Development continuity — v95 project checkpoints
+# Development continuity — v96 adaptive pilot candidate
 
 Snapshot: 2026-09-28. This is a public, software-only continuation guide. Detailed
 research results, local paths, account destinations and run identities belong in
@@ -13,6 +13,13 @@ correct parameters or interpret biology for the researcher. Deformetrica is the
 default supported reference route; the Modern engine remains evidence-gated.
 
 ## Current source work
+
+v96 adds a bounded adaptive pilot search with compatible learned-state reuse,
+per-specimen regression protection, persistent budgets and explicit stop reasons.
+See [behavior and verification](V96_ADAPTIVE_PILOT.md). At this source checkpoint,
+build, installation and distribution of v96 are pending; the last verified
+installed/distributed runtime below remains v95. No new private scientific run
+was started by the implementation.
 
 v95 persists content-bound mesh inspections and recorded GPA review state in the
 project folder. Explicit history loading verifies saved state without starting

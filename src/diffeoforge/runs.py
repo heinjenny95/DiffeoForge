@@ -245,15 +245,16 @@ def effective_reference_config(
     template: Path,
     output_directory: Path,
     initial_control_points: Path | None = None,
+    initial_momenta: Path | None = None,
 ) -> dict[str, Any]:
     effective = deepcopy(dict(config))
     effective["input"]["directory"] = str(input_directory)
     effective["input"]["template"] = str(template)
     effective["output"]["directory"] = str(output_directory)
     if initial_control_points is not None:
-        effective["model"]["deformation"]["initial_control_points"] = str(
-            initial_control_points
-        )
+        effective["model"]["deformation"]["initial_control_points"] = str(initial_control_points)
+    if initial_momenta is not None:
+        effective["model"]["deformation"]["initial_momenta"] = str(initial_momenta)
     return effective
 
 
@@ -467,6 +468,8 @@ def _prepare_run(
             directory.mkdir(parents=True, exist_ok=False)
         if summary.initial_control_points is not None:
             input_control_points_directory.mkdir(parents=True, exist_ok=False)
+        if summary.initial_momenta is not None:
+            (temp_directory / "input" / "momenta").mkdir(parents=True, exist_ok=False)
 
         staged_template_relative = Path("input") / "template" / summary.template.name
         staged_template = temp_directory / staged_template_relative
@@ -502,6 +505,15 @@ def _prepare_run(
                 sha256_file(summary.initial_control_points),
             )
 
+        staged_momenta_relative: Path | None = None
+        if summary.initial_momenta is not None:
+            staged_momenta_relative = Path("input") / "momenta" / summary.initial_momenta.name
+            _copy_and_verify(
+                summary.initial_momenta,
+                temp_directory / staged_momenta_relative,
+                sha256_file(summary.initial_momenta),
+            )
+
         source_config_copy = config_directory / "source-config.yaml"
         shutil.copy2(source_config, source_config_copy)
         effective = effective_reference_config(
@@ -510,6 +522,7 @@ def _prepare_run(
             summary.template,
             output_root,
             summary.initial_control_points,
+            summary.initial_momenta,
         )
         effective_config_path = config_directory / "effective-config.yaml"
         with effective_config_path.open("x", encoding="utf-8", newline="\n") as handle:
@@ -525,6 +538,7 @@ def _prepare_run(
                 if staged_control_points_relative is None
                 else Path("..") / staged_control_points_relative
             ),
+            None if staged_momenta_relative is None else Path("..") / staged_momenta_relative,
         )
 
         protected_paths = [
@@ -533,6 +547,11 @@ def _prepare_run(
             staged_template,
             *(temp_directory / path for path in staged_subject_relatives),
             *(() if staged_control_points is None else (staged_control_points,)),
+            *(
+                ()
+                if staged_momenta_relative is None
+                else (temp_directory / staged_momenta_relative,)
+            ),
             *engine_files,
         ]
         command_preview = build_command(config, final_directory)

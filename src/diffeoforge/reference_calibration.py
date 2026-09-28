@@ -405,9 +405,9 @@ class ReferenceCalibrationPlan:
                 )
                 lines.append(
                     f"{stage.order}. {stage.title}: {len(stage.candidates)} combined "
-                    f"candidates; attachment {attachment_values[0]:.6g}–"
+                    f"candidates; attachment {attachment_values[0]:.6g}â€“"
                     f"{attachment_values[-1]:.6g}{unit_suffix}; deformation "
-                    f"{deformation_values[0]:.6g}–{deformation_values[-1]:.6g}"
+                    f"{deformation_values[0]:.6g}â€“{deformation_values[-1]:.6g}"
                     f"{unit_suffix}."
                 )
                 continue
@@ -432,8 +432,8 @@ class ReferenceCalibrationPlan:
             lineage = dict(self.search_extension_lineage)
             lines.append(
                 "Search extension: hash-bound successor of plan "
-                f"{lineage['parent_plan_fingerprint'][:12]}… from assessment "
-                f"{lineage['source_assessment_fingerprint'][:12]}…."
+                f"{lineage['parent_plan_fingerprint'][:12]}â€¦ from assessment "
+                f"{lineage['source_assessment_fingerprint'][:12]}â€¦."
             )
         return "\n".join(lines)
 
@@ -1649,6 +1649,7 @@ class CalibrationSearchExtensionProposal:
     limitations: tuple[str, ...]
     fit_center_values: tuple[tuple[str, float], ...] = ()
     fit_base_values: tuple[tuple[str, float], ...] = ()
+    adaptive_context: str = ""
 
     def as_manifest(self) -> dict[str, object]:
         return {
@@ -1662,6 +1663,11 @@ class CalibrationSearchExtensionProposal:
             "boundary_parameters": list(self.boundary_parameters),
             "candidates": [candidate.as_manifest() for candidate in self.candidates],
             "limitations": list(self.limitations),
+            **(
+                {"adaptive_context": json.loads(self.adaptive_context)}
+                if self.adaptive_context
+                else {}
+            ),
             **(
                 {
                     "fit_center_values": dict(self.fit_center_values),
@@ -2027,7 +2033,7 @@ def propose_calibration_search_extension(
                 _candidate(
                     candidate_prefix,
                     len(additions) + 1,
-                    f"{group_label} beyond tested {direction} · step {step}",
+                    f"{group_label} beyond tested {direction} Â· step {step}",
                     proposed_values,
                     (
                         f"Extends the {group_label} logarithmic search one observed grid "
@@ -2155,20 +2161,27 @@ def bind_calibration_search_extension_plan(
         raise ValueError("extension proposal is bound to a different assessment")
     if proposal.stage_id != assessment.stage_id:
         raise ValueError("extension proposal stage differs from its assessment")
-    expected_proposal = (
-        propose_calibration_fit_refinement(
-            plan,
-            assessment,
-            source_candidate_id=proposal.source_candidate_id,
-            selected_values=dict(proposal.fit_base_values),
+    if proposal.adaptive_context:
+        from diffeoforge.reference_adaptive_calibration import propose_adaptive_fit
+
+        expected_proposal = propose_adaptive_fit(
+            plan, assessment, json.loads(proposal.adaptive_context)
         )
-        if proposal.fit_center_values
-        else propose_calibration_search_extension(
-            plan,
-            assessment,
-            outward_steps=proposal.outward_steps,
+    else:
+        expected_proposal = (
+            propose_calibration_fit_refinement(
+                plan,
+                assessment,
+                source_candidate_id=proposal.source_candidate_id,
+                selected_values=dict(proposal.fit_base_values),
+            )
+            if proposal.fit_center_values
+            else propose_calibration_search_extension(
+                plan,
+                assessment,
+                outward_steps=proposal.outward_steps,
+            )
         )
-    )
     if proposal != expected_proposal:
         raise ValueError("extension proposal differs from its deterministic derivation")
     stages = []
@@ -2199,7 +2212,7 @@ def bind_calibration_search_extension_plan(
     )
     successor = replace(
         plan,
-        version=("0.6" if plan.version == STRATIFIED_CALIBRATION_PLAN_VERSION else "0.4"),
+        version=("0.6" if plan.pilot_subject_declarations else "0.4"),
         fingerprint="",
         stages=tuple(stages),
         search_extension_lineage=lineage,

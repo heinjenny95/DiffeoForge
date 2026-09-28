@@ -65,7 +65,7 @@
           "const": "deformetrica_reference"
         },
         "contract_version": {
-          "enum": ["0.1", "0.2", "0.3"]
+          "enum": ["0.1", "0.2", "0.3", "0.4"]
         },
         "engine_constants": {
           "type": "object",

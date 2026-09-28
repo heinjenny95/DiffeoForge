@@ -240,7 +240,7 @@ def test_staged_calibration_requires_saved_fit_and_can_refine_rejected_center(
     monkeypatch, tmp_path
 ):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
-    from PySide6.QtWidgets import QApplication, QMessageBox
+    from PySide6.QtWidgets import QApplication
     from test_reference_calibration_study import _approve_for_test, _review_ready_stage
 
     import diffeoforge.desktop.reference_calibration_dialog as dialog_module
@@ -275,17 +275,14 @@ def test_staged_calibration_requires_saved_fit_and_can_refine_rejected_center(
     assert dialog.selection_combo.currentData() == cid  # Rejected center remains inspectable.
     assert dialog.collect_evidence_button.isEnabled()
     starts = []
-    monkeypatch.setattr(dialog, "_start", lambda: starts.append(True))
-    monkeypatch.setattr(QMessageBox, "exec", lambda self: QMessageBox.StandardButton.Yes)
-    warnings = []
-    monkeypatch.setattr(QMessageBox, "warning", lambda *args: warnings.append(args[1:]))
+    monkeypatch.setattr(dialog, "_start_pilot", lambda **kwargs: starts.append(kwargs))
+    assert dialog.collect_evidence_button.text() == "Improve fit automatically"
+    dialog.selection_combo.setCurrentIndex(0)
+    assert dialog.collect_evidence_button.isEnabled()  # No hand-picked center required.
     dialog.collect_evidence_button.click()
-    assert warnings == []
-    assert starts == []  # Preparation never silently starts new engine work.
-    assert dialog.study_directory != runner.study_directory
+    assert starts == [{}]
+    assert dialog.adaptive_fit_search.isChecked()
+    assert dialog.study_directory == runner.study_directory
     assert dialog.snapshot.visual_reviews[cid] is False
-    assert dialog.snapshot.status == "ready"
-    assert "calculate only the new options" in dialog.status.text()
-    assert dialog.start_button.isEnabled()
     dialog.close()
     application.processEvents()

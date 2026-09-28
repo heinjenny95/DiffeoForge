@@ -51,7 +51,7 @@
       "required": ["id", "contract_version", "engine_constants"],
       "properties": {
         "id": { "const": "deformetrica_reference" },
-        "contract_version": { "enum": ["0.1", "0.2", "0.3"] },
+        "contract_version": { "enum": ["0.1", "0.2", "0.3", "0.4"] },
         "engine_constants": {
           "type": "object",
           "additionalProperties": false,
@@ -96,6 +96,12 @@
             "logs",
             "output",
             "input/control-points"
+          ]
+        },
+        {
+          "const": [
+            "config", "engine", "input/template", "input/subjects", "logs", "output",
+            "input/momenta", "input/control-points"
           ]
         }
       ]

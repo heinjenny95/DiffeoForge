@@ -544,6 +544,19 @@
                   "properties": {
                     "version": {"const": "0.1"},
                     "status": {"const": "completed"},
+                    "full_cohort_initialization": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": ["method", "source_run_manifest_sha256", "template_sha256",
+                                   "control_points_sha256", "limitation"],
+                      "properties": {
+                        "method": {"const": "learned_pilot_template_and_controls_zero_full_cohort_momenta"},
+                        "source_run_manifest_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                        "template_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                        "control_points_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                        "limitation": {"type": "string", "minLength": 1}
+                      }
+                    },
                     "study_id": {"type": "string", "minLength": 1},
                     "plan_fingerprint": {
                       "type": "string",
@@ -835,6 +848,10 @@
         "deformation": {
           "type": "object",
           "additionalProperties": false,
+          "dependentRequired": {
+            "initial_momenta": ["initial_control_points", "initial_momenta_subjects"],
+            "initial_momenta_subjects": ["initial_momenta"]
+          },
           "required": [
             "kernel_width",
             "timepoints",
@@ -857,6 +874,16 @@
             "initial_control_points": {
               "type": "string",
               "minLength": 1
+            },
+            "initial_momenta": {
+              "type": "string",
+              "minLength": 1
+            },
+            "initial_momenta_subjects": {
+              "type": "array",
+              "minItems": 2,
+              "uniqueItems": true,
+              "items": {"type": "string", "minLength": 1}
             },
             "use_rk2": {
               "type": "boolean"
