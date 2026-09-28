@@ -15,7 +15,6 @@ from PySide6.QtWidgets import (
     QDialog,
     QFrame,
     QHBoxLayout,
-    QInputDialog,
     QLabel,
     QLineEdit,
     QMessageBox,
@@ -38,6 +37,7 @@ from diffeoforge.desktop.reference_calibration_presentation import (
     CalibrationTradeoffAssessment,
     afk_return_summary,
     automatic_check_summary,
+    candidate_option_label,
     candidate_parameter_summary,
     candidate_tradeoff_assessments,
     stage_guidance,
@@ -45,18 +45,19 @@ from diffeoforge.desktop.reference_calibration_presentation import (
 )
 from diffeoforge.reference_calibration import (
     CalibrationCandidate,
-    propose_calibration_search_extension,
+    propose_calibration_fit_refinement,
 )
 from diffeoforge.reference_calibration_study import (
     CalibrationStudyCandidateState,
     ReferenceCalibrationStudyRunner,
     ReferenceCalibrationStudySnapshot,
     assess_reference_calibration_snapshot,
+    calibration_candidate_run_directory,
     create_reference_calibration_search_extension_study,
-    default_outward_safety_limits,
     load_reference_calibration_report,
     load_reference_calibration_study,
     next_reference_calibration_search_extension_destination,
+    normalized_candidate_subject_fit,
     record_reference_calibration_candidate_review,
     record_reference_calibration_provisional_override,
     record_reference_calibration_stage_review,
@@ -127,8 +128,9 @@ def collect_calibration_qc_pairs(
     if len(template_paths) != 1:
         raise ValueError("Calibration study must contain exactly one bound template")
 
-    report = collect_run_report(candidate.run_directory)
-    output = (candidate.run_directory / "output").resolve()
+    run_directory = calibration_candidate_run_directory(candidate)
+    report = collect_run_report(run_directory)
+    output = (run_directory / "output").resolve()
     atlas_path: Path | None = None
     reconstructions: dict[str, Path] = {}
     for record in report.inventory:
@@ -250,11 +252,25 @@ class CalibrationCandidateViewerDialog(QDialog):
         study_directory: Path,
         candidate: CalibrationStudyCandidateState,
         parent: QWidget | None = None,
+        *,
+        subject_fit: Mapping[str, float] | None = None,
     ) -> None:
         super().__init__(parent)
         if candidate.run_directory is None:
             raise ValueError("Candidate has no completed run directory")
         self._pairs = collect_calibration_qc_pairs(study_directory, candidate)
+        self._fit = dict(subject_fit or {})
+        self._pairs = tuple(
+            sorted(
+                self._pairs,
+                key=lambda p: (
+                    not p.required,
+                    -self._fit.get(p.original_path.name, 0.0),
+                    p.original_path.name,
+                ),
+            )
+        )
+        self.subject_decisions: dict[str, str] = {}
         self._reviewed_pair_ids: set[str] = set()
         self._required_pair_ids = {pair.pair_id for pair in self._pairs if pair.required}
         self._required_pair_indexes = tuple(
@@ -300,7 +316,7 @@ class CalibrationCandidateViewerDialog(QDialog):
         )
         instructions.setWordWrap(True)
         instructions.setObjectName("card")
-        layout.addWidget(instructions)
+        layout.addWidget(InfoDisclosure("What to check", instructions))
         self.mesh_combo = QComboBox()
         for index, pair in enumerate(self._pairs):
             if pair.required:
@@ -352,6 +368,16 @@ class CalibrationCandidateViewerDialog(QDialog):
         canvas_help.setObjectName("hint")
         canvas_help.setWordWrap(True)
         layout.addWidget(canvas_help)
+        self.specimen_decision = QComboBox()
+        self.specimen_decision.setAccessibleName("Surface fit of this specimen")
+        for label, value in (
+            ("This specimen: not assessed", "unassessed"),
+            ("Fit and anatomy preserved", "pass"),
+            ("Does not fit / anatomy lost", "fail"),
+            ("Uncertain — needs review", "uncertain"),
+        ):
+            self.specimen_decision.addItem(label, value)
+        self.specimen_decision.currentIndexChanged.connect(self._store_specimen_decision)
 
         tip_help = QLabel(
             "Optional study-specific feature check — name the feature or region that "
@@ -366,8 +392,12 @@ class CalibrationCandidateViewerDialog(QDialog):
         self.feature_criterion.setAccessibleName("Study-specific anatomical criterion")
         self.feature_criterion.textChanged.connect(self._store_feature_check)
         self.feature_judgement = QComboBox()
-        for label, value in (("Not assessed", "unassessed"), ("Preserved", "preserved"),
-                             ("Not preserved", "not_preserved"), ("Uncertain", "uncertain")):
+        for label, value in (
+            ("Not assessed", "unassessed"),
+            ("Preserved", "preserved"),
+            ("Not preserved", "not_preserved"),
+            ("Uncertain", "uncertain"),
+        ):
             self.feature_judgement.addItem(label, value)
         self.feature_judgement.currentIndexChanged.connect(self._store_feature_check)
         feature_controls = QHBoxLayout()
@@ -377,8 +407,10 @@ class CalibrationCandidateViewerDialog(QDialog):
         tip_controls = QHBoxLayout()
         self.original_feature_count = QSpinBox()
         self.reconstruction_feature_count = QSpinBox()
-        for label, spin in (("Original count (optional)", self.original_feature_count),
-                            ("Reconstruction count (optional)", self.reconstruction_feature_count)):
+        for label, spin in (
+            ("Original count (optional)", self.original_feature_count),
+            ("Reconstruction count (optional)", self.reconstruction_feature_count),
+        ):
             spin.setRange(-1, 999)
             spin.setSpecialValueText("Not counted")
             spin.setValue(-1)
@@ -391,6 +423,7 @@ class CalibrationCandidateViewerDialog(QDialog):
         self.decision_panel = QFrame()
         self.decision_panel.setObjectName("card")
         decision_layout = QVBoxLayout(self.decision_panel)
+        decision_layout.addWidget(self.specimen_decision)
         self.review_progress = QLabel()
         self.review_progress.setWordWrap(True)
         decision_layout.addWidget(self.review_progress)
@@ -467,6 +500,14 @@ class CalibrationCandidateViewerDialog(QDialog):
         )
 
     def _show_feature_check(self, pair: CalibrationQcPair) -> None:
+        self.specimen_decision.blockSignals(True)
+        self.specimen_decision.setCurrentIndex(
+            self.specimen_decision.findData(
+                self.subject_decisions.get(pair.original_path.name, "unassessed")
+            )
+        )
+        self.specimen_decision.blockSignals(False)
+        self.specimen_decision.setEnabled(False)
         observation = self.feature_observations.get(pair.original_path.name, {})
         self.feature_criterion.blockSignals(True)
         self.feature_judgement.blockSignals(True)
@@ -478,8 +519,10 @@ class CalibrationCandidateViewerDialog(QDialog):
         self.feature_judgement.setEnabled(pair.required)
         self.feature_criterion.blockSignals(False)
         self.feature_judgement.blockSignals(False)
-        for key, spin in (("original", self.original_feature_count),
-                          ("reconstruction", self.reconstruction_feature_count)):
+        for key, spin in (
+            ("original", self.original_feature_count),
+            ("reconstruction", self.reconstruction_feature_count),
+        ):
             spin.blockSignals(True)
             value = observation.get(key)
             spin.setValue(-1 if value is None else value)
@@ -487,27 +530,58 @@ class CalibrationCandidateViewerDialog(QDialog):
             spin.blockSignals(False)
 
     @Slot()
+    def _store_specimen_decision(self) -> None:
+        index = self.mesh_combo.currentData()
+        if index is None:
+            return
+        pair = self._pairs[int(index)]
+        if (
+            not pair.required
+            or pair.pair_id not in self._reviewed_pair_ids
+            or not self.canvas.full_resolution_ready
+        ):
+            return
+        value = self.specimen_decision.currentData()
+        if value == "unassessed":
+            self.subject_decisions.pop(pair.original_path.name, None)
+        else:
+            self.subject_decisions[pair.original_path.name] = value
+        self._update_review_progress()
+
+    @Slot()
     def _store_feature_check(self) -> None:
         index = self.mesh_combo.currentData()
         if index is None or not self._pairs[int(index)].required:
             return
         name = self._pairs[int(index)].original_path.name
-        values = {key: None if spin.value() < 0 else spin.value()
-                  for key, spin in (("original", self.original_feature_count),
-                                    ("reconstruction", self.reconstruction_feature_count))}
+        values = {
+            key: None if spin.value() < 0 else spin.value()
+            for key, spin in (
+                ("original", self.original_feature_count),
+                ("reconstruction", self.reconstruction_feature_count),
+            )
+        }
         values["criterion"] = self.feature_criterion.text().strip()
         values["judgement"] = self.feature_judgement.currentData()
-        if (values["original"] is None and values["reconstruction"] is None
-                and not values["criterion"] and values["judgement"] == "unassessed"):
+        if (
+            values["original"] is None
+            and values["reconstruction"] is None
+            and not values["criterion"]
+            and values["judgement"] == "unassessed"
+        ):
             self.feature_observations.pop(name, None)
         else:
             self.feature_observations[name] = values
         self._update_review_progress()
 
     def _feature_conflicts(self) -> list[str]:
-        return [name for name, values in self.feature_observations.items()
-                if not values["criterion"] or values["judgement"] != "preserved"
-                or values["original"] != values["reconstruction"]]
+        return [
+            name
+            for name, values in self.feature_observations.items()
+            if not values["criterion"]
+            or values["judgement"] != "preserved"
+            or values["original"] != values["reconstruction"]
+        ]
 
     @Slot(object, str)
     def _pair_failed(self, _key: object, message: str) -> None:
@@ -551,6 +625,7 @@ class CalibrationCandidateViewerDialog(QDialog):
                 index
                 for index in self._required_pair_indexes
                 if self._pairs[index].pair_id not in self._reviewed_pair_ids
+                or self._pairs[index].original_path.name not in self.subject_decisions
             )
             if unreviewed_indexes:
                 later_indexes = tuple(
@@ -578,24 +653,25 @@ class CalibrationCandidateViewerDialog(QDialog):
         total = len(self._required_pair_ids)
         complete = reviewed == total and total > 0
         conflicts = self._feature_conflicts()
+        passed = sum(value == "pass" for value in self.subject_decisions.values())
+        all_pass = complete and passed == total
         pair_index = self.mesh_combo.currentData()
         try:
             current_position = self._required_pair_indexes.index(int(pair_index))
         except (TypeError, ValueError):
             current_position = -1
         self.previous_specimen_button.setEnabled(current_position > 0)
-        self.next_specimen_button.setEnabled(not complete)
+        self.next_specimen_button.setEnabled(total > 1)
+        pair = self._pairs[int(pair_index)] if pair_index is not None else None
+        current_seen = bool(pair and pair.required and pair.pair_id in self._reviewed_pair_ids)
+        self.specimen_decision.setEnabled(current_seen and self.canvas.full_resolution_ready)
         self.review_progress.setText(
-            f"Visual review progress: {reviewed} of {total} original-detail views inspected."
+            f"Fit accepted: {passed} / {total} specimens. Inspected: {reviewed} / {total}."
         )
         self.review_gate.setText(
-            "Next: record your decision. Click the green button if the important "
-            "anatomy is preserved, or record that this option does not pass."
-            if complete
-            else (
-                f"Next: click the green Next → button. {total - reviewed} required "
-                f"comparison{'s' if total - reviewed != 1 else ''} remain."
-            )
+            "Every specimen passed. Record approval to continue."
+            if all_pass
+            else "Assess each specimen. One failed or uncertain fit blocks approval."
         )
         self.review_gate.setObjectName("statusSuccess" if complete else "status")
         if conflicts:
@@ -606,29 +682,38 @@ class CalibrationCandidateViewerDialog(QDialog):
             )
             self.review_gate.setObjectName("statusError")
         self.review_gate.setStyleSheet("")
-        self.fail_button.setVisible(complete)
-        self.fail_button.setEnabled(complete)
-        self.complete_button.setEnabled(complete and not conflicts)
-        _set_action_emphasis(self.next_specimen_button, not complete)
-        _set_action_emphasis(self.complete_button, complete and not conflicts)
+        self.fail_button.setVisible(True)
+        self.fail_button.setEnabled(current_seen)
+        self.complete_button.setEnabled(all_pass and not conflicts)
+        _set_action_emphasis(self.next_specimen_button, not all_pass)
+        _set_action_emphasis(self.complete_button, all_pass and not conflicts)
 
     @Slot()
     def _record_visual_qc_pass(self) -> None:
-        if self._required_pair_ids <= self._reviewed_pair_ids and not self._feature_conflicts():
+        required_names = {p.original_path.name for p in self._pairs if p.required}
+        if (
+            required_names
+            and self._required_pair_ids <= self._reviewed_pair_ids
+            and not self._feature_conflicts()
+            and all(self.subject_decisions.get(name) == "pass" for name in required_names)
+        ):
             self._review_decision = True
             self.pass_check.setChecked(True)
             self.accept()
 
     @Slot()
     def _record_visual_qc_fail(self) -> None:
-        if self._required_pair_ids <= self._reviewed_pair_ids:
+        index = self.mesh_combo.currentData()
+        pair = self._pairs[int(index)] if index is not None else None
+        if pair and pair.required and pair.pair_id in self._reviewed_pair_ids:
+            self.subject_decisions[pair.original_path.name] = "fail"
             self._review_decision = False
             self.pass_check.setChecked(False)
             self.reject()
 
 
 class ReferenceCalibrationDialog(QDialog):
-    """Execute a complete automatic pilot or use optional stage-by-stage control."""
+    """Batch each stage and require every-specimen fit review before advancing."""
 
     def __init__(
         self,
@@ -637,7 +722,8 @@ class ReferenceCalibrationDialog(QDialog):
     ) -> None:
         super().__init__(parent)
         self.setWindowFlags(
-            Qt.WindowType.Window | Qt.WindowType.WindowMinMaxButtonsHint
+            Qt.WindowType.Window
+            | Qt.WindowType.WindowMinMaxButtonsHint
             | Qt.WindowType.WindowCloseButtonHint
         )
         self.setWindowModality(Qt.WindowModality.NonModal)
@@ -659,12 +745,7 @@ class ReferenceCalibrationDialog(QDialog):
         root.addWidget(title)
         root.addWidget(self._thread_pool.indicator)
         boundary = QLabel(
-            "Standard mode runs all four parameter comparisons in one operation. "
-            "Candidate sets are centered on the biological priorities you already "
-            "declared. DiffeoForge then records a transparent provisional recommendation "
-            "from the automatic evidence and creates a final report. This is not an "
-            "automatic claim of anatomical correctness; optional visual QC and a manual "
-            "stage-by-stage mode remain available."
+            "Run the options in this stage, then inspect every specimen before advancing."
         )
         boundary.setWordWrap(True)
         root.addWidget(
@@ -769,7 +850,7 @@ class ReferenceCalibrationDialog(QDialog):
         self.collect_evidence_button = QPushButton("Collect more evidence…")
         self.collect_evidence_button.clicked.connect(self._collect_more_evidence)
         self.collect_evidence_button.hide()
-        self.advance_button = QPushButton("Select option & prepare next stage")
+        self.advance_button = QPushButton("Prepare next stage")
         self.advance_button.clicked.connect(self._advance)
         close = QPushButton("Close")
         close.clicked.connect(self.reject)
@@ -793,6 +874,17 @@ class ReferenceCalibrationDialog(QDialog):
         footer.addWidget(self.advance_button)
         footer.addWidget(close)
         root.addLayout(footer)
+        self.advanced_mode.blockSignals(True)
+        self.advanced_mode.setChecked(True)
+        self.advanced_mode.blockSignals(False)
+        self.advanced_mode.hide()
+        self.afk_mode.hide()
+        self.outward_mode.hide()
+        boundary.setText(
+            "Run all options in this stage, then review the fit. Every pilot "
+            "specimen must pass before the next stage. If none passes, "
+            "refine the fit around an inspected option."
+        )
         self._render()
 
     @property
@@ -932,7 +1024,7 @@ class ReferenceCalibrationDialog(QDialog):
             return
         stage = self._snapshot.current_stage
         assert stage is not None
-        automatic_mode = not self.advanced_mode.isChecked()
+        automatic_mode = False
         self.advanced_mode.setEnabled(
             not running and not self._snapshot.plan.qc_recalibration_source
         )
@@ -1001,84 +1093,23 @@ class ReferenceCalibrationDialog(QDialog):
             assessment = assess_reference_calibration_snapshot(
                 self._snapshot, visual_approvals=self._visual_approvals()
             )
-            basis = QLabel(
-                "Anatomical fit first: ranking only the options you explicitly accepted. "
-                "Unreviewed alternatives remain available for inspection."
-                if any(self._visual_approvals().get(c.candidate_id) is True
-                       for c in self._snapshot.candidates)
-                else "Numerical shortlist only — anatomical fit has not been accepted. "
-                "Inspect important features before choosing; "
-                "low deformation cost is not a quality seal."
-            )
-            basis.setWordWrap(True)
-            basis.setObjectName("statusWarning")
-            self.content_layout.addWidget(basis)
-            weights = ", ".join(f"{name.replace('_', ' ')} {weight:.0%}"
-                                for name, weight in assessment.metric_weights)
-            policy = QLabel("Current numerical priorities: " + weights
-                            + ". Grey cost/area labels describe magnitude, not anatomical merit. "
-                            + ("Deformation cost is not included in this score."
-                               if "deformation_energy" not in assessment.weights else
-                               "Economy is compared within accepted options when available."))
-            policy.setWordWrap(True)
-            self.content_layout.addWidget(InfoDisclosure("What enters the numerical score", policy))
-            weight_support = (
-                "not available"
-                if assessment.weight_stability is None
-                else f"{assessment.weight_stability:.1%}"
-            )
-            subject_support = (
-                "not available"
-                if assessment.subject_bootstrap_stability is None
-                else f"{assessment.subject_bootstrap_stability:.1%}"
-            )
-            flags = (
-                "<br>".join(f"• {flag}" for flag in assessment.sensitivity_flags)
-                if assessment.sensitivity_flags
-                else "No material sensitivity warning was triggered."
-            )
-            confidence = QLabel(
-                "<b>Numerical recommendation: "
-                f"{assessment.recommendation_confidence.upper()}</b><br>"
-                "How often this recommendation stayed best when metric priorities "
-                f"changed: {weight_support}<br>"
-                "How often it stayed best when pilot specimens were resampled: "
-                f"{subject_support}<br>"
-                f"{flags}"
-            )
-            confidence.setTextFormat(Qt.TextFormat.RichText)
-            confidence.setWordWrap(True)
-            confidence.setObjectName(
-                "statusSuccess" if assessment.automatic_selection_allowed else "statusWarning"
-            )
-            self.content_layout.addWidget(confidence)
             recommended_option = self._recommended_option_text(assessment)
-            if recommended_option is not None:
-                if assessment.search_range_status == "not_bounded":
-                    recommendation_text = (
-                        f"Numerical shortlist leader: {recommended_option}, "
-                        "but one of its selected values is at the edge of the tested "
-                        "range. Recommended next action: collect more evidence outward. "
-                        "Use it provisionally only if you accept that limitation."
-                    )
-                elif assessment.automatic_selection_allowed:
-                    recommendation_text = (
-                        f"Numerical shortlist leader: {recommended_option}. It remained the "
-                        "preferred valid option across the robustness checks shown above."
-                    )
-                else:
-                    recommendation_text = (
-                        f"Numerical shortlist leader: {recommended_option}. "
-                        "It leads the current numerical score, but the evidence "
-                        "does not separate it decisively from every alternative. You may "
-                        "use it provisionally, inspect the options, or collect more evidence."
-                    )
-                recommendation = QLabel(recommendation_text)
-                recommendation.setObjectName(
-                    "statusSuccess" if assessment.automatic_selection_allowed else "statusWarning"
+            summary = QLabel(
+                f"Review first: {recommended_option}. "
+                + (
+                    "Smallest worst-specimen distance; anatomy still needs approval."
+                    if self._snapshot.current_stage.kind != "integration_accuracy"
+                    else "Numerical integration comparison; anatomy still needs approval."
                 )
-                recommendation.setWordWrap(True)
-                self.content_layout.addWidget(recommendation)
+                if recommended_option
+                else "No option currently passes the evidence checks."
+            )
+            summary.setWordWrap(True)
+            summary.setObjectName("statusWarning")
+            self.content_layout.addWidget(summary)
+            details = QLabel("\n".join(assessment.cautions))
+            details.setWordWrap(True)
+            self.content_layout.addWidget(InfoDisclosure("How options are ranked", details))
         completed = sum(candidate.status == "completed" for candidate in self._snapshot.candidates)
         if automatic_mode:
             completed_before = sum(
@@ -1160,78 +1191,29 @@ class ReferenceCalibrationDialog(QDialog):
             automatic_mode or not awaiting or retryable,
         )
         _set_action_emphasis(self.advance_button, False)
-        if automatic_mode:
-            if running:
-                self.status.setText(
-                    "DiffeoForge is running the complete four-stage pilot. It will "
-                    "continue automatically and present one recommendation report at "
-                    "the end. You can cancel safely."
-                )
-            elif awaiting:
-                assessment = assess_reference_calibration_snapshot(self._snapshot)
-                if assessment.automatic_selection_allowed:
-                    self.status.setText(
-                        "This stage has a robust recommendation. Next: click the green Continue "
-                        "complete four-stage pilot button; DiffeoForge will record the "
-                        "uncertainty-qualified choice and continue automatically."
-                    )
-                else:
-                    self.start_button.hide()
-                    self.use_provisional_button.setEnabled(
-                        assessment.balanced_candidate_id is not None
-                    )
-                    recommended_option = self._recommended_option_text(assessment)
-                    self.use_provisional_button.setText(
-                        "Use provisional recommendation"
-                        if recommended_option is None
-                        else f"Use provisional recommendation: {recommended_option}"
-                    )
-                    self.use_provisional_button.show()
-                    self.compare_options_button.show()
-                    self.collect_evidence_button.show()
-                    if assessment.search_range_status == "not_bounded":
-                        self.status.setText(
-                            "Paused checkpoint: the provisional recommendation is on a tested "
-                            "parameter boundary, so the search range is not bounded. "
-                            "Nothing was selected automatically. Collect outward pilot "
-                            "evidence before treating it as an enclosed optimum, or "
-                            "explicitly authorize the displayed value as provisional."
-                        )
-                    else:
-                        self.status.setText(
-                            "Paused checkpoint: the pilot evidence does not support one "
-                            "robust unique recommendation. Nothing was selected and Advanced "
-                            "mode "
-                            "was not enabled. You can explicitly use the displayed balanced "
-                            "recommendation provisionally, compare every option yourself, "
-                            "or collect more pilot evidence."
-                        )
-            else:
-                self.status.setText(
-                    "Next: click the green Run complete four-stage pilot button. You "
-                    "will receive one recommendation report after all four stages."
-                )
-        elif awaiting:
+        if awaiting:
             previous_selection = self.selection_combo.currentData()
             self.selection_combo.blockSignals(True)
             self.selection_combo.clear()
             self.selection_combo.addItem(
-                "Choose an option from the evidence and trade-offs…",
+                "Choose an option to review or refine…",
                 None,
             )
             for index, candidate in enumerate(
                 self._snapshot.candidates,
                 start=1,
             ):
-                if candidate.candidate_id in self._selectable_candidate_ids():
-                    option_letter = chr(ord("A") + index - 1)
+                if candidate.status == "completed" and candidate.metrics is not None:
+                    option_letter = candidate_option_label(index)
                     review_suffix = (
                         " · visual QC passed"
                         if candidate.candidate_id in self._visually_approved_candidates
-                        else " · visual QC optional / not performed"
+                        else " · fit rejected"
+                        if candidate.candidate_id in self._visually_reviewed_candidates
+                        else " · fit not reviewed"
                     )
                     recommendation_suffix = (
-                        " · DiffeoForge provisional recommendation"
+                        " · best available fit"
                         if candidate.candidate_id == assessment.balanced_candidate_id
                         else ""
                     )
@@ -1265,7 +1247,7 @@ class ReferenceCalibrationDialog(QDialog):
         card = QFrame()
         card.setObjectName("card")
         layout = QVBoxLayout(card)
-        option_letter = chr(ord("A") + option_index - 1)
+        option_letter = candidate_option_label(option_index)
         title = QLabel(f"Option {option_letter} — {candidate.label}")
         title.setObjectName("sectionTitle")
         layout.addWidget(title)
@@ -1296,6 +1278,22 @@ class ReferenceCalibrationDialog(QDialog):
         )
         if candidate.metrics is not None:
             metrics = candidate.metrics
+            fit = normalized_candidate_subject_fit(self._snapshot, candidate)
+            if fit:
+                worst = max(fit, key=fit.get)
+                fit_label = QLabel(f"Largest relative p95 distance: {fit[worst]:.2%} — {worst}")
+                fit_label.setWordWrap(True)
+                layout.addWidget(fit_label)
+                detail = QLabel(
+                    "Distance p95 / original bounding-box diagonal; lower is closer. "
+                    "This is a sampled nearest-vertex proxy, not an anatomical pass.\n\n"
+                    + "\n".join(
+                        f"{value:.2%} — {name}"
+                        for name, value in sorted(fit.items(), key=lambda item: -item[1])
+                    )
+                )
+                detail.setWordWrap(True)
+                layout.addWidget(InfoDisclosure("Fit of every specimen", detail))
             passed, check_text = automatic_check_summary(metrics)
             check = QLabel(("✓ " if passed else "⚠ ") + check_text)
             check.setWordWrap(True)
@@ -1321,7 +1319,9 @@ class ReferenceCalibrationDialog(QDialog):
                     )
                     comparison.setTextFormat(Qt.TextFormat.RichText)
                     comparison.setWordWrap(True)
-                    layout.addWidget(comparison)
+                    (option_help_layout if tradeoff.tone == "neutral" else layout).addWidget(
+                        comparison
+                    )
                     comparison_detail = QLabel(self._tradeoff_assessment_html(tradeoff))
                     comparison_detail.setTextFormat(Qt.TextFormat.RichText)
                     comparison_detail.setWordWrap(True)
@@ -1363,11 +1363,7 @@ class ReferenceCalibrationDialog(QDialog):
             layout.addWidget(technical)
             reviewed = candidate.candidate_id in self._visually_reviewed_candidates
             approved = candidate.candidate_id in self._visually_approved_candidates
-            viewer = QPushButton(
-                "Optional plausibility gate: review again…"
-                if reviewed
-                else "Optional plausibility gate: inspect originals & reconstructions…"
-            )
+            viewer = QPushButton("Review fit again…" if reviewed else "Inspect surface fit…")
             viewer.clicked.connect(
                 lambda _checked=False, value=candidate: self._open_candidate(value)
             )
@@ -1467,7 +1463,7 @@ class ReferenceCalibrationDialog(QDialog):
             return None
         for index, candidate in enumerate(self._snapshot.candidates, start=1):
             if candidate.candidate_id == candidate_id:
-                option_letter = chr(ord("A") + index - 1)
+                option_letter = candidate_option_label(index)
                 return f"Option {option_letter} — {candidate.label}"
         return None
 
@@ -1476,68 +1472,32 @@ class ReferenceCalibrationDialog(QDialog):
         if self._snapshot.status != "awaiting_review":
             return
         retryable = any(
-            candidate.status in {"failed", "interrupted", "orphaned"}
-            for candidate in self._snapshot.candidates
+            c.status in {"failed", "interrupted", "orphaned"} for c in self._snapshot.candidates
         )
-        selectable_ids = self._selectable_candidate_ids()
         selected = self.selection_combo.currentData()
-        selected_is_selectable = selected in selectable_ids
-        ready = selected_is_selectable and not retryable
-        self.advance_button.setEnabled(ready)
-        _set_action_emphasis(self.advance_button, ready)
-        self.review_next_button.hide()
-        _set_action_emphasis(self.review_next_button, False)
-        self.selection_combo.hide()
-        self.advance_button.hide()
-        if retryable:
-            _set_choice_emphasis(self.selection_combo, False)
-            self.status.setText("Next: click the green Retry failed candidates button.")
-            return
-        if not selectable_ids:
-            self.status.setText(
-                "No option is currently selectable. Automatic validity checks failed, "
-                "or every option was explicitly rejected by optional visual QC. Review "
-                "the evidence or repeat visual QC for a rejected option."
-            )
-            return
+        eligible = selected in self._selectable_candidate_ids()
+        approved = self._snapshot.visual_reviews.get(selected) is True
         self.selection_combo.show()
-        if self._snapshot.plan.qc_recalibration_source:
-            self.collect_evidence_button.hide()
-            approved = self._visual_approvals().get(selected) is True
-            self.advance_button.setVisible(selected_is_selectable)
-            self.advance_button.setEnabled(ready and approved)
-            self.review_next_button.show()
-            self.status.setText(
-                "Choose an option and review its reconstructions, including all QC concerns "
-                "and controls. A visually plausible selection is required to continue. "
-                "If none fits, stop and review inputs/template; the old QC remains unresolved."
-            )
-            return
-        if not selected_is_selectable:
-            _set_choice_emphasis(self.selection_combo, True)
-            assessment = assess_reference_calibration_snapshot(
-                self._snapshot,
-                visual_approvals=self._visual_approvals(),
-            )
-            recommended_option = self._recommended_option_text(assessment)
-            if recommended_option is None:
-                self.status.setText(
-                    "Next: compare the explained pros and cons, then choose one option "
-                    "from the green menu. Opening the reconstruction viewer is optional."
-                )
-            else:
-                self.status.setText(
-                    f"Numerical shortlist leader: {recommended_option}. "
-                    "This score does not establish anatomical fit. Compare important "
-                    "features before choosing; accepted options take priority over "
-                    "unreviewed alternatives. Choose an option from the green menu."
-                )
-            return
         self.advance_button.show()
-        _set_choice_emphasis(self.selection_combo, False)
+        self.advance_button.setEnabled(eligible and approved and not retryable)
+        _set_action_emphasis(self.advance_button, eligible and approved and not retryable)
+        self.review_next_button.setText("Review selected option")
+        self.review_next_button.show()
+        self.review_next_button.setEnabled(selected is not None and not retryable)
+        self.collect_evidence_button.setText("Refine fit…")
+        self.collect_evidence_button.setVisible(
+            not self._snapshot.plan.qc_recalibration_source
+            and self._snapshot.current_stage.kind != "integration_accuracy"
+        )
+        self.collect_evidence_button.setEnabled(selected is not None and not retryable)
         self.status.setText(
-            "Next: click the green Select option & prepare next stage button. "
-            "Optional visual QC status will be recorded in the provenance."
+            "Retry incomplete options first."
+            if retryable
+            else "Choose an option to inspect or refine."
+            if selected is None
+            else "Every specimen passed. You can prepare the next stage."
+            if approved and eligible
+            else "Review every specimen. If one fails, refine the fit before advancing."
         )
 
     @Slot()
@@ -1545,7 +1505,7 @@ class ReferenceCalibrationDialog(QDialog):
         completed = tuple(
             candidate for candidate in self._snapshot.candidates if candidate.status == "completed"
         )
-        if self._snapshot.plan.qc_recalibration_source:
+        if self.selection_combo.currentData() is not None:
             selected = self.selection_combo.currentData()
             chosen = next((item for item in completed if item.candidate_id == selected), None)
             if chosen is not None:
@@ -1591,61 +1551,10 @@ class ReferenceCalibrationDialog(QDialog):
             QMessageBox.critical(self, "Pilot could not start", message)
 
     def _start_pilot(self) -> None:
-        automatic_mode = not self.advanced_mode.isChecked()
-        afk = automatic_mode and self.afk_mode.isChecked()
-        outward_limits: dict[str, tuple[float, float]] | None = None
-        if afk and self.outward_mode.isChecked():
-            proposed = default_outward_safety_limits(self._snapshot.plan)
-            if not proposed:
-                QMessageBox.warning(
-                    self,
-                    "Outward search unavailable",
-                    "This plan does not vary any parameter over enough values to derive "
-                    "feasibility limits, so an outward search cannot be authorized.",
-                )
-                return
-            outward_limits = proposed
-        if afk:
-            outward_text = (
-                "Widen the search outward whenever the best tested value sits at a "
-                "boundary, repeating until the winner is no longer at the edge or these "
-                "declared feasibility limits are reached:\n"
-                + "\n".join(
-                    f"    {parameter}: {low:.6g} to {high:.6g}"
-                    for parameter, (low, high) in sorted(outward_limits.items())
-                )
-                + "\n\nBeyond those limits a parameter no longer describes your anatomy, so "
-                "the run stops widening, records the boundary candidate with an explicit "
-                "exhaustion notice, and finishes. A repeated boundary win is evidence about "
-                "the comparison score, not a validated optimum.\n\n"
-                if outward_limits is not None
-                else "Keep the existing candidate grid; do not add outward tests. A boundary "
-                "winner is accepted provisionally and the chance to widen the search is "
-                "spent.\n\n"
-            )
-            if (
-                QMessageBox.question(
-                    self,
-                    "Authorize bounded AFK pilot",
-                    "Run the remaining pilot stages without further selection prompts?\n\n"
-                    "Accept eligible balanced recommendations provisionally, even when "
-                    "evidence is ambiguous. Keep the existing iteration caps. Recorded "
-                    "visual rejections remain binding. Stop on failed runs or no eligible "
-                    "candidate.\n\n" + outward_text + "This does not approve anatomy or "
-                    "start the atlas. Review the report afterwards. Completion by morning "
-                    "is not guaranteed; the computer must remain awake.",
-                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                    QMessageBox.StandardButton.No,
-                )
-                != QMessageBox.StandardButton.Yes
-            ):
-                return
         runner = ReferenceCalibrationStudyRunner(self.study_directory)
         worker = _CalibrationStageWorker(
             runner,
-            complete_automatic_pilot=automatic_mode,
-            afk=afk,
-            outward_safety_limits=outward_limits,
+            complete_automatic_pilot=False,
             visual_approvals={
                 key: value
                 for key, value in self._visual_approvals().items()
@@ -1666,13 +1575,7 @@ class ReferenceCalibrationDialog(QDialog):
         self.cancel_button.style().unpolish(self.cancel_button)
         self.cancel_button.style().polish(self.cancel_button)
         self.status.setText(
-            (
-                "DiffeoForge is running all remaining pilot stages sequentially and "
-                "will create one final recommendation report. "
-                if automatic_mode
-                else "DiffeoForge is running this stage sequentially. "
-            )
-            + "Closing is disabled until the current candidate reaches a terminal state."
+            "Running the current stage. Visual review follows before the next stage."
         )
         self._thread_pool.start(worker)
 
@@ -1727,20 +1630,7 @@ class ReferenceCalibrationDialog(QDialog):
     def _failed(self, message: str) -> None:
         self._worker = None
         self._render()
-        if "Search range not bounded" in message:
-            self.status.setText(
-                "Paused checkpoint: the provisional recommendation is at a tested parameter "
-                "boundary, so the search range is not bounded. No option was selected "
-                "automatically; collect outward evidence or explicitly authorize the "
-                "displayed value as provisional."
-            )
-        elif "refused to invent a unique winner" in message:
-            self.status.setText(
-                "Paused checkpoint: no robust unique recommendation was found. No option was "
-                "selected automatically; choose one of the explicit actions below."
-            )
-        else:
-            self.status.setText(f"Calibration stage could not continue: {message}")
+        self.status.setText(f"Calibration stage could not continue: {message}")
 
     def _visual_approvals(self) -> dict[str, bool]:
         current_ids = {candidate.candidate_id for candidate in self._snapshot.candidates}
@@ -1783,162 +1673,58 @@ class ReferenceCalibrationDialog(QDialog):
 
     @Slot()
     def _collect_more_evidence(self) -> None:
-        if self._snapshot.plan.qc_recalibration_source:
-            QMessageBox.information(
-                self,
-                "Bounded QC follow-up",
-                "This follow-up does not widen automatically. If no candidate fits, retain "
-                "the unresolved QC and review alignment, inputs and template suitability.",
-            )
+        selected = self.selection_combo.currentData()
+        if selected is None:
             return
-        assessment = assess_reference_calibration_snapshot(
-            self._snapshot,
-            visual_approvals=self._visual_approvals(),
-        )
-        if assessment.search_range_status == "not_bounded":
-            proposal = propose_calibration_search_extension(
+        try:
+            assessment = assess_reference_calibration_snapshot(self._snapshot)
+            proposal = propose_calibration_fit_refinement(
                 self._snapshot.plan,
                 assessment,
+                source_candidate_id=str(selected),
+                selected_values=self._snapshot.selected_values,
             )
-            rendered = []
-            for candidate in proposal.candidates:
-                values = ", ".join(
-                    f"{_FEASIBILITY_PARAMETER_LABELS.get(name, name)}={value:.6g}"
-                    for name, value in candidate.parameter_values
-                )
-                rendered.append(f"• {candidate.label}: {values}")
-            boundaries = dict(
-                boundary.split(":", maxsplit=1)
-                for boundary in assessment.search_boundary_parameters
-            )
-            limits: dict[str, tuple[float, float]] = {}
-            assert self._snapshot.current_stage is not None
-            for parameter, direction in boundaries.items():
-                tested = [
-                    candidate.values[parameter]
-                    for candidate in self._snapshot.current_stage.candidates
-                    if parameter in candidate.values
-                ]
-                proposed = [
-                    candidate.values[parameter]
-                    for candidate in proposal.candidates
-                    if parameter in candidate.values
-                ]
-                observed_low = min((*tested, *proposed))
-                observed_high = max((*tested, *proposed))
-                friendly_parameter = _FEASIBILITY_PARAMETER_LABELS.get(
-                    parameter,
-                    parameter,
-                )
-                if direction == "minimum":
-                    outward_limit = observed_low
-                    if self.advanced_mode.isChecked():
-                        outward_limit, accepted = QInputDialog.getDouble(
-                            self,
-                            "Expert search safety limit",
-                            f"{friendly_parameter.capitalize()} needs testing below the "
-                            f"current range. DiffeoForge derived {observed_low:.9g}. This "
-                            "limit only bounds the search and is not selected as the final "
-                            "parameter.\n\nSmallest allowed value "
-                            f"(must be ≤ {observed_low:.9g}):",
-                            observed_low,
-                            1e-15,
-                            1e15,
-                            12,
-                        )
-                        if not accepted:
-                            return
-                    limits[parameter] = (outward_limit, observed_high)
-                elif direction == "maximum":
-                    outward_limit = observed_high
-                    if self.advanced_mode.isChecked():
-                        outward_limit, accepted = QInputDialog.getDouble(
-                            self,
-                            "Expert search safety limit",
-                            f"{friendly_parameter.capitalize()} needs testing above the "
-                            f"current range. DiffeoForge derived {observed_high:.9g}. This "
-                            "limit only bounds the search and is not selected as the final "
-                            "parameter.\n\nLargest allowed value "
-                            f"(must be ≥ {observed_high:.9g}):",
-                            observed_high,
-                            1e-15,
-                            1e15,
-                            12,
-                        )
-                        if not accepted:
-                            return
-                    limits[parameter] = (observed_low, outward_limit)
-                else:
-                    QMessageBox.warning(
-                        self,
-                        "Cannot extend this grid",
-                        f"{friendly_parameter.capitalize()} has only one tested value, "
-                        "so no logarithmic "
-                        "outward step can be derived.",
-                    )
-                    return
+            limits = {name: (value / 2, value * 2) for name, value in proposal.fit_center_values}
             destination = next_reference_calibration_search_extension_destination(
                 self.study_directory
             )
-            if destination.exists():
-                QMessageBox.warning(
-                    self,
-                    "Outward successor already exists",
-                    "The deterministic successor destination already exists and will "
-                    "not be reused or overwritten:\n" + str(destination),
+            preview = "\n".join(
+                c.label
+                + ": "
+                + ", ".join(
+                    f"{_FEASIBILITY_PARAMETER_LABELS[k]}={v:.6g}" for k, v in c.parameter_values
                 )
-                return
-            confirmation = QMessageBox.question(
-                self,
-                "Create and start outward pilot evidence",
-                "The current search range is not bounded. DiffeoForge derived these "
-                "hash-bound logarithmic neighbors without changing the immutable pilot:\n\n"
-                + "\n".join(rendered)
-                + "\n\nCreate the immutable successor and start it here?\n"
-                + str(destination)
-                + "\n\nOnly these new candidates will run. In Guided Mode, DiffeoForge "
-                "uses the shown next-neighbor values as conservative search safety limits; "
-                "they are not selected as final parameters. The limits and all source "
-                "evidence will be hash-bound. If the recommendation "
-                "remains on the same boundary, DiffeoForge will continue outward "
-                "automatically until it becomes interior or reaches the limit.",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No,
+                for c in proposal.candidates
             )
-            if confirmation != QMessageBox.StandardButton.Yes:
+            confirmation = QMessageBox(self)
+            confirmation.setWindowTitle("Prepare local fit refinement")
+            confirmation.setText(
+                f"Prepare {len(proposal.candidates)} new options around the selected fit?\n"
+                "Same pilot specimens. One setting changes at a time. "
+                "Existing results stay available.\n"
+                "This prepares the comparison; click Run afterwards to calculate it."
+            )
+            confirmation.setDetailedText(preview + "\n\n" + str(destination))
+            confirmation.setStandardButtons(
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+            )
+            confirmation.setDefaultButton(QMessageBox.StandardButton.No)
+            if confirmation.exec() != QMessageBox.StandardButton.Yes:
                 return
-            try:
-                successor = create_reference_calibration_search_extension_study(
-                    self.study_directory,
-                    destination,
-                    safety_limits=limits,
-                )
-            except (OSError, RuntimeError, TypeError, ValueError) as error:
-                QMessageBox.warning(
-                    self,
-                    "Could not create outward successor",
-                    str(error),
-                )
-                return
+            successor = create_reference_calibration_search_extension_study(
+                self.study_directory,
+                destination,
+                safety_limits=limits,
+                fit_center_candidate_id=str(selected),
+            )
             self.study_directory = successor.study_directory
             self._snapshot = successor
             self._visually_reviewed_candidates.clear()
             self._visually_approved_candidates.clear()
             self._render()
-            self.status.setText(
-                "Outward successor created. Preserved candidates remain complete; "
-                "starting only the new neighbors now."
-            )
-            self._start()
-            return
-        QMessageBox.information(
-            self,
-            "Collect more pilot evidence",
-            "This immutable pilot remains preserved. Close this dialog and create a "
-            "new parameter proposal with a larger, deliberately more diverse pilot "
-            "subset. Include known biological extremes or declared strata when they "
-            "exist; the current candidates will not be silently changed.",
-        )
+            self.status.setText("Refinement prepared. Click Run to calculate only the new options.")
+        except (OSError, RuntimeError, TypeError, ValueError) as error:
+            QMessageBox.warning(self, "Fit refinement unavailable", str(error))
 
     @Slot()
     def _cancel(self) -> None:
@@ -1979,7 +1765,7 @@ class ReferenceCalibrationDialog(QDialog):
         )
         self.status.setText(
             f"Selection recorded: {selected}. The next calibration stage is ready. "
-            f"Optional visual QC: {visual_status}."
+            f"Visual QC: {visual_status}."
         )
 
     def _open_candidate(self, candidate: CalibrationStudyCandidateState) -> None:
@@ -1988,14 +1774,23 @@ class ReferenceCalibrationDialog(QDialog):
                 self.study_directory,
                 candidate,
                 self,
+                subject_fit=normalized_candidate_subject_fit(self._snapshot, candidate),
             )
             dialog.anatomical_notes.setText(
                 self._snapshot.visual_review_notes.get(candidate.candidate_id, "")
             )
             dialog.feature_observations = {
-                name: dict(values) for name, values in
-                self._snapshot.feature_observations.get(candidate.candidate_id, {}).items()
+                name: dict(values)
+                for name, values in self._snapshot.feature_observations.get(
+                    candidate.candidate_id, {}
+                ).items()
             }
+            dialog.subject_decisions = dict(
+                self._snapshot.subject_decisions.get(candidate.candidate_id, {})
+            )
+            dialog._reviewed_pair_ids.update(
+                p.pair_id for p in dialog._pairs if p.original_path.name in dialog.subject_decisions
+            )
             index = dialog.mesh_combo.currentData()
             if index is not None:
                 dialog._show_feature_check(dialog._pairs[int(index)])
@@ -2003,13 +1798,17 @@ class ReferenceCalibrationDialog(QDialog):
             dialog.exec()
             if dialog.review_recorded:
                 record_reference_calibration_candidate_review(
-                    self.study_directory, candidate_id=candidate.candidate_id,
+                    self.study_directory,
+                    candidate_id=candidate.candidate_id,
                     approved=dialog.review_passed,
                     reviewed_subjects=tuple(
-                        p.original_path.name for p in dialog._pairs if p.required
+                        p.original_path.name
+                        for p in dialog._pairs
+                        if p.required and p.pair_id in dialog._reviewed_pair_ids
                     ),
                     anatomical_notes=dialog.anatomical_notes.text(),
                     feature_observations=dialog.feature_observations,
+                    subject_decisions=dialog.subject_decisions,
                 )
                 self._visually_reviewed_candidates.add(candidate.candidate_id)
                 if dialog.review_passed:

@@ -1,5 +1,10 @@
 # Next DiffeoForge development version
 
+> v94 supersedes unattended stage advancement: each stage batches its candidates,
+> then waits for recorded visual acceptance of every specimen. The former AFK
+> controls and policies below describe historical behavior. Existing ledgers remain
+> readable. See [current fit-first workflow](V94_SURFACE_FIT.md).
+
 Scope agreed on 2026-09-14: implement the current usability backlog and plan the
 larger roadmap. This is a development plan, not a public release or scientific
 qualification claim. The established development branch remains authoritative.

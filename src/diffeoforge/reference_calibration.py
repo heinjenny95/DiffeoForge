@@ -69,8 +69,7 @@ def _unique_positive(values: tuple[float, ...]) -> tuple[float, ...]:
     for value in values:
         normalized = _positive_finite("candidate value", value)
         if not any(
-            math.isclose(normalized, existing, rel_tol=1e-12, abs_tol=1e-15)
-            for existing in result
+            math.isclose(normalized, existing, rel_tol=1e-12, abs_tol=1e-15) for existing in result
         ):
             result.append(normalized)
     return tuple(result)
@@ -101,8 +100,7 @@ def _geometric_candidates(
         if requested < low or requested > high:
             continue
         if any(
-            math.isclose(requested, existing, rel_tol=1e-12, abs_tol=1e-15)
-            for existing in values
+            math.isclose(requested, existing, rel_tol=1e-12, abs_tol=1e-15) for existing in values
         ):
             continue
         closest = min(
@@ -178,9 +176,7 @@ def read_pilot_subject_declarations(
             stratum_value = str(row["stratum"] or "").strip()
             extreme_value = str(row["is_extreme"] or "").strip().casefold()
             if not filename:
-                raise ConfigurationError(
-                    f"Pilot declaration row {row_number} has no filename"
-                )
+                raise ConfigurationError(f"Pilot declaration row {row_number} has no filename")
             if filename.casefold() in seen:
                 raise ConfigurationError(
                     f"Pilot declarations contain duplicate filename {filename!r}"
@@ -196,8 +192,7 @@ def read_pilot_subject_declarations(
                 )
             if not stratum_value and not is_extreme:
                 raise ConfigurationError(
-                    f"Pilot declaration row {row_number} declares neither a stratum "
-                    "nor an extreme"
+                    f"Pilot declaration row {row_number} declares neither a stratum nor an extreme"
                 )
             seen.add(filename.casefold())
             declarations.append(
@@ -329,9 +324,7 @@ class ReferenceCalibrationPlan:
             "limitations": list(self.limitations),
         }
         if self.search_extension_lineage:
-            provenance["search_extension_lineage"] = dict(
-                self.search_extension_lineage
-            )
+            provenance["search_extension_lineage"] = dict(self.search_extension_lineage)
         if self.qc_recalibration_source:
             provenance["qc_recalibration_source"] = dict(self.qc_recalibration_source)
         if self.selection_method is not None:
@@ -340,8 +333,7 @@ class ReferenceCalibrationPlan:
             provenance["required_subject_filenames"] = list(self.required_subject_filenames)
         if self.pilot_subject_declarations:
             provenance["pilot_subject_declarations"] = [
-                declaration.as_manifest()
-                for declaration in self.pilot_subject_declarations
+                declaration.as_manifest() for declaration in self.pilot_subject_declarations
             ]
         return provenance
 
@@ -357,8 +349,7 @@ class ReferenceCalibrationPlan:
                 f"Pilot cohort: {self.pilot_subject_count} of {self.subject_count} "
                 "subjects (deterministic geometry-diversity selection)."
             ),
-            "Selected: "
-            + ", ".join(subject.filename for subject in self.selected_pilot_subjects),
+            "Selected: " + ", ".join(subject.filename for subject in self.selected_pilot_subjects),
             (
                 "Expected biological shape disparity: "
                 f"{self.expected_shape_disparity}. This controls the tested amplitude "
@@ -407,16 +398,10 @@ class ReferenceCalibrationPlan:
         for stage in self.stages:
             if stage.stage_id == "attachment" and not self.qc_recalibration_source:
                 attachment_values = sorted(
-                    {
-                        candidate.values["attachment_kernel_width"]
-                        for candidate in stage.candidates
-                    }
+                    {candidate.values["attachment_kernel_width"] for candidate in stage.candidates}
                 )
                 deformation_values = sorted(
-                    {
-                        candidate.values["deformation_kernel_width"]
-                        for candidate in stage.candidates
-                    }
+                    {candidate.values["deformation_kernel_width"] for candidate in stage.candidates}
                 )
                 lines.append(
                     f"{stage.order}. {stage.title}: {len(stage.candidates)} combined "
@@ -501,13 +486,10 @@ def _normalize_pilot_subject_declarations(
     if isinstance(declarations, (str, bytes)):
         raise TypeError("pilot_subject_declarations must be a sequence of declarations")
     known_by_casefold = {
-        observation.filename.casefold(): observation.filename
-        for observation in observations
+        observation.filename.casefold(): observation.filename for observation in observations
     }
     if len(known_by_casefold) != len(observations):
-        raise ConfigurationError(
-            "Calibration subject filenames must be unique ignoring case"
-        )
+        raise ConfigurationError("Calibration subject filenames must be unique ignoring case")
     normalized: list[PilotSubjectDeclaration] = []
     seen: set[str] = set()
     stratum_spellings: dict[str, str] = {}
@@ -523,9 +505,7 @@ def _normalize_pilot_subject_declarations(
                 f"Pilot declaration names an unknown subject: {declaration.filename!r}"
             )
         if key in seen:
-            raise ConfigurationError(
-                f"Pilot declarations contain duplicate subject {filename!r}"
-            )
+            raise ConfigurationError(f"Pilot declarations contain duplicate subject {filename!r}")
         if not isinstance(declaration.is_extreme, bool):
             raise TypeError("pilot declaration is_extreme must be boolean")
         stratum = None if declaration.stratum is None else declaration.stratum.strip()
@@ -623,8 +603,7 @@ def select_representative_pilot_subjects(
     selection_roles: list[str] = []
     if declarations or required:
         index_by_filename = {
-            observation.filename.casefold(): index
-            for index, observation in enumerate(observations)
+            observation.filename.casefold(): index for index, observation in enumerate(observations)
         }
         for filename in required:
             selected.append(index_by_filename[filename.casefold()])
@@ -707,13 +686,9 @@ def select_representative_pilot_subjects(
         )
 
     result: list[RepresentativePilotSubject] = []
-    for position, (subject_index, role) in enumerate(
-        zip(selected, selection_roles, strict=True)
-    ):
+    for position, (subject_index, role) in enumerate(zip(selected, selection_roles, strict=True)):
         distance = (
-            0.0
-            if position == 0
-            else float(np.min(distances[subject_index, selected[:position]]))
+            0.0 if position == 0 else float(np.min(distances[subject_index, selected[:position]]))
         )
         observation = observations[subject_index]
         result.append(
@@ -781,8 +756,7 @@ def _plan_payload(
     }
     if pilot_subject_declarations:
         payload["pilot_subject_declarations"] = [
-            declaration.as_manifest()
-            for declaration in pilot_subject_declarations
+            declaration.as_manifest() for declaration in pilot_subject_declarations
         ]
     if required_subject_filenames:
         payload["required_subject_filenames"] = list(required_subject_filenames)
@@ -821,11 +795,7 @@ def build_reference_calibration_plan(
         pilot_subject_declarations=declarations,
         required_subject_filenames=required,
     )
-    plan_version = (
-        STRATIFIED_CALIBRATION_PLAN_VERSION
-        if declarations
-        else CALIBRATION_PLAN_VERSION
-    )
+    plan_version = STRATIFIED_CALIBRATION_PLAN_VERSION if declarations else CALIBRATION_PLAN_VERSION
     diagonal = recommendation.template_diagonal
     sampling_diagnostic = recommendation.sampling_floor_ratio * diagonal
     median_edge = recommendation.median_edge_to_diagonal_ratio * diagonal
@@ -849,9 +819,7 @@ def build_reference_calibration_plan(
         count=6,
         include=(attachment_center,),
     )
-    deformation_center = recommendation.effective_values[
-        "deformation_kernel_width"
-    ]
+    deformation_center = recommendation.effective_values["deformation_kernel_width"]
     disparity_lower, disparity_upper = {
         "low": (0.75, 1.5),
         "moderate": (0.5, 2.0),
@@ -882,9 +850,7 @@ def build_reference_calibration_plan(
         "initial_control_point_spacing": deformation_center,
         "noise_std": noise_center,
     }
-    baseline_ratios = {
-        name: value / diagonal for name, value in baseline_effective.items()
-    }
+    baseline_ratios = {name: value / diagonal for name, value in baseline_effective.items()}
 
     attachment_candidates_list: list[CalibrationCandidate] = []
     candidate_index = 0
@@ -1012,8 +978,7 @@ def build_reference_calibration_plan(
         "the optimizer fails or produces non-finite values",
         "the atlas or any reconstruction contains invalid faces or changed connectivity",
         "registration residuals contain unexplained extreme failures",
-        "an optional visual registration review explicitly records implausible "
-        "correspondence",
+        "an optional visual registration review explicitly records implausible correspondence",
     )
     stages = (
         CalibrationStage(
@@ -1025,8 +990,7 @@ def build_reference_calibration_plan(
             locked_from_previous_stages=(),
             evidence_required=(
                 "raw per-subject registration residual median and 95th percentile",
-                "bound original and reconstructed surfaces retained for optional "
-                "visual inspection",
+                "bound original and reconstructed surfaces retained for optional visual inspection",
                 "sensitivity to deterministic mesh resampling",
                 "deformation regularity and reconstructed-surface distortion",
                 "runtime and peak-memory observation",
@@ -1226,12 +1190,8 @@ def bind_reference_calibration_plan_to_inputs(
         )
     names = tuple(path.name for path in subject_paths)
     if len(set(names)) != len(names):
-        raise ConfigurationError(
-            "Effective calibration subject filenames must be unique"
-        )
-    subject_keys = tuple(
-        canonical_vtk_filename(path).casefold() for path in subject_paths
-    )
+        raise ConfigurationError("Effective calibration subject filenames must be unique")
+    subject_keys = tuple(canonical_vtk_filename(path).casefold() for path in subject_paths)
     if len(set(subject_keys)) != len(subject_keys):
         raise ConfigurationError(
             "Effective calibration subjects must have unique canonical surface names"
@@ -1283,9 +1243,7 @@ def bind_reference_calibration_plan_to_inputs(
     declarations = tuple(
         replace(
             item,
-            filename=declaration_paths[
-                canonical_vtk_filename(item.filename).casefold()
-            ].name,
+            filename=declaration_paths[canonical_vtk_filename(item.filename).casefold()].name,
         )
         for item in plan.pilot_subject_declarations
     )
@@ -1327,18 +1285,14 @@ def verify_reference_calibration_plan_provenance(
         or len(fingerprint) != 64
         or any(character not in "0123456789abcdef" for character in fingerprint)
     ):
-        raise ConfigurationError(
-            "Calibration-plan provenance requires a SHA-256 fingerprint"
-        )
+        raise ConfigurationError("Calibration-plan provenance requires a SHA-256 fingerprint")
     if status != "planned_not_executed":
         raise ConfigurationError(
             "Calibration-plan provenance must be explicitly marked planned_not_executed"
         )
     selected = manifest.get("selected_pilot_subjects")
     if not isinstance(selected, list) or not selected:
-        raise ConfigurationError(
-            "Calibration-plan provenance requires selected pilot subjects"
-        )
+        raise ConfigurationError("Calibration-plan provenance requires selected pilot subjects")
     if pilot_subject_count != len(selected):
         raise ConfigurationError(
             "Calibration-plan pilot-subject count does not match its selection"
@@ -1353,9 +1307,7 @@ def verify_reference_calibration_plan_provenance(
     try:
         recomputed = _canonical_hash(manifest)
     except (TypeError, ValueError) as error:
-        raise ConfigurationError(
-            "Calibration-plan provenance is not canonical JSON"
-        ) from error
+        raise ConfigurationError("Calibration-plan provenance is not canonical JSON") from error
     if recomputed != fingerprint:
         raise ConfigurationError(
             "Calibration-plan provenance fingerprint does not match its contents"
@@ -1371,9 +1323,7 @@ def reference_calibration_plan_from_provenance(
     verify_reference_calibration_plan_provenance(provenance)
     lineage_value = provenance.get("search_extension_lineage", {})
     if not isinstance(lineage_value, Mapping):
-        raise ConfigurationError(
-            "Calibration search-extension lineage must be a mapping"
-        )
+        raise ConfigurationError("Calibration search-extension lineage must be a mapping")
     qc_source = provenance.get("qc_recalibration_source", {})
     if not isinstance(qc_source, Mapping) or (
         qc_source
@@ -1421,9 +1371,7 @@ def reference_calibration_plan_from_provenance(
             "0.6",
         }
         if bool(declarations) != declares_coverage:
-            raise ValueError(
-                "calibration plan version and pilot-subject declarations disagree"
-            )
+            raise ValueError("calibration plan version and pilot-subject declarations disagree")
         declaration_names = [item.filename.casefold() for item in declarations]
         if len(set(declaration_names)) != len(declaration_names):
             raise ValueError("pilot-subject declaration filenames must be unique")
@@ -1451,11 +1399,7 @@ def reference_calibration_plan_from_provenance(
             for item in declarations
         ):
             raise ValueError("a declared biological extreme is absent from the pilot")
-        strata = {
-            item.stratum.casefold()
-            for item in declarations
-            if item.stratum is not None
-        }
+        strata = {item.stratum.casefold() for item in declarations if item.stratum is not None}
         for stratum in strata:
             if not any(
                 item.stratum is not None
@@ -1476,9 +1420,7 @@ def reference_calibration_plan_from_provenance(
                         label=str(candidate["label"]),
                         parameter_values=tuple(
                             (str(name), float(value))
-                            for name, value in candidate[
-                                "parameter_values"
-                            ].items()
+                            for name, value in candidate["parameter_values"].items()
                         ),
                         rationale=str(candidate["rationale"]),
                     )
@@ -1487,9 +1429,7 @@ def reference_calibration_plan_from_provenance(
                 locked_from_previous_stages=tuple(
                     str(value) for value in stage["locked_from_previous_stages"]
                 ),
-                evidence_required=tuple(
-                    str(value) for value in stage["evidence_required"]
-                ),
+                evidence_required=tuple(str(value) for value in stage["evidence_required"]),
                 reject_when=tuple(str(value) for value in stage["reject_when"]),
                 decision_rule=str(stage["decision_rule"]),
             )
@@ -1528,8 +1468,7 @@ def reference_calibration_plan_from_provenance(
                 (str(name), str(value)) for name, value in lineage_value.items()
             ),
             qc_recalibration_source=tuple(
-                (str(name), str(value))
-                for name, value in qc_source.items()
+                (str(name), str(value)) for name, value in qc_source.items()
             ),
             selection_method=provenance.get("selection_method"),
         )
@@ -1563,6 +1502,7 @@ class CalibrationCandidateEvidence:
     review_approved: bool | None = None
     notes: tuple[str, ...] = ()
     subject_residual_p95: tuple[tuple[str, float], ...] = ()
+    subject_normalized_residual_p95: tuple[tuple[str, float], ...] = ()
 
     def as_manifest(self) -> dict[str, object]:
         return {
@@ -1581,6 +1521,7 @@ class CalibrationCandidateEvidence:
             "review_approved": self.review_approved,
             "notes": list(self.notes),
             "subject_residual_p95": dict(self.subject_residual_p95),
+            "subject_normalized_residual_p95": dict(self.subject_normalized_residual_p95),
         }
 
 
@@ -1603,9 +1544,7 @@ class CalibrationCandidateAssessment:
             "balanced_score": self.balanced_score,
             "weight_win_fraction": self.weight_win_fraction,
             "subject_bootstrap_win_fraction": self.subject_bootstrap_win_fraction,
-            "score_range": (
-                None if self.score_range is None else list(self.score_range)
-            ),
+            "score_range": (None if self.score_range is None else list(self.score_range)),
             "rejection_reasons": list(self.rejection_reasons),
         }
 
@@ -1666,7 +1605,7 @@ class CalibrationStageAssessment:
         }
 
 
-_ASSESSMENT_VERSION = "0.5"
+_ASSESSMENT_VERSION = "0.6"
 _SEARCH_PARAMETERS: dict[CalibrationStageKind, tuple[str, ...]] = {
     "attachment_width": (
         "attachment_kernel_width",
@@ -1708,6 +1647,8 @@ class CalibrationSearchExtensionProposal:
     boundary_parameters: tuple[str, ...]
     candidates: tuple[CalibrationCandidate, ...]
     limitations: tuple[str, ...]
+    fit_center_values: tuple[tuple[str, float], ...] = ()
+    fit_base_values: tuple[tuple[str, float], ...] = ()
 
     def as_manifest(self) -> dict[str, object]:
         return {
@@ -1721,6 +1662,14 @@ class CalibrationSearchExtensionProposal:
             "boundary_parameters": list(self.boundary_parameters),
             "candidates": [candidate.as_manifest() for candidate in self.candidates],
             "limitations": list(self.limitations),
+            **(
+                {
+                    "fit_center_values": dict(self.fit_center_values),
+                    "fit_base_values": dict(self.fit_base_values),
+                }
+                if self.fit_center_values
+                else {}
+            ),
         }
 
 
@@ -1780,12 +1729,8 @@ def _width_refinement_neighbors(
             )
         )
     )
-    lower = [
-        value for value in observed if value < selected * (1.0 - 1e-10)
-    ]
-    upper = [
-        value for value in observed if value > selected * (1.0 + 1e-10)
-    ]
+    lower = [value for value in observed if value < selected * (1.0 - 1e-10)]
+    upper = [value for value in observed if value > selected * (1.0 + 1e-10)]
     if lower:
         lower_value = lower[-1]
     elif upper:
@@ -1823,19 +1768,13 @@ def propose_axis_separated_width_refinement(
     logarithmic step extrapolated.  This proposal never starts an atlas.
     """
 
-    if (
-        len(source_assessment_fingerprint) != 64
-        or any(
-            character not in "0123456789abcdef"
-            for character in source_assessment_fingerprint
-        )
+    if len(source_assessment_fingerprint) != 64 or any(
+        character not in "0123456789abcdef" for character in source_assessment_fingerprint
     ):
         raise ValueError("source assessment fingerprint must be a lowercase SHA-256")
     missing = sorted(set(_WIDTH_REFINEMENT_PARAMETERS) - set(selected_values))
     if missing:
-        raise ValueError(
-            "width-refinement center is missing parameters: " + ", ".join(missing)
-        )
+        raise ValueError("width-refinement center is missing parameters: " + ", ".join(missing))
     center = {
         name: _positive_finite(name, float(selected_values[name]))
         for name in _WIDTH_REFINEMENT_PARAMETERS
@@ -1929,10 +1868,7 @@ def bind_axis_separated_width_refinement_plan(
             "do not interpret residual improvement alone as anatomical validity."
         ),
     )
-    stages = tuple(
-        refinement if stage.stage_id == "attachment" else stage
-        for stage in plan.stages
-    )
+    stages = tuple(refinement if stage.stage_id == "attachment" else stage for stage in plan.stages)
     effective = plan.effective_values
     effective.update(proposal.center)
     lineage = (
@@ -2034,17 +1970,14 @@ def propose_calibration_search_extension(
         if candidate.candidate_id == assessment.balanced_candidate_id
     )
     boundary_by_parameter = dict(
-        boundary.split(":", maxsplit=1)
-        for boundary in assessment.search_boundary_parameters
+        boundary.split(":", maxsplit=1) for boundary in assessment.search_boundary_parameters
     )
     existing_rounds = []
     round_prefix = f"{stage.stage_id}-outward-r"
     legacy_prefix = f"{stage.stage_id}-outward-"
     for candidate in stage.candidates:
         if candidate.candidate_id.startswith(round_prefix):
-            rendered_round = candidate.candidate_id[
-                len(round_prefix) :
-            ].split("-", maxsplit=1)[0]
+            rendered_round = candidate.candidate_id[len(round_prefix) :].split("-", maxsplit=1)[0]
             if rendered_round.isdigit():
                 existing_rounds.append(int(rendered_round))
         elif candidate.candidate_id.startswith(legacy_prefix):
@@ -2135,6 +2068,78 @@ def propose_calibration_search_extension(
     )
 
 
+def propose_calibration_fit_refinement(
+    plan: ReferenceCalibrationPlan,
+    assessment: CalibrationStageAssessment,
+    *,
+    source_candidate_id: str,
+    selected_values: Mapping[str, float],
+) -> CalibrationSearchExtensionProposal:
+    """Bound one finite, axis-separated batch around an inspected option.
+
+    A rejected reconstruction can be an exploration center, never an approval.
+    Keep the same cohort and center run, varying all four fit controls locally
+    so noise can be tested without accepting an inadequate early stage.
+    """
+    if assessment.plan_fingerprint != plan.fingerprint:
+        raise ValueError("Fit refinement assessment belongs to another plan")
+    stage = next(s for s in plan.stages if s.stage_id == assessment.stage_id)
+    if stage.kind == "integration_accuracy":
+        raise ValueError("Fit refinement is available in the three geometric stages")
+    chosen = next((c for c in stage.candidates if c.candidate_id == source_candidate_id), None)
+    if chosen is None:
+        raise ValueError("Unknown fit-refinement center")
+    parameters = tuple(name for name in _SEARCH_PARAMETER_LABELS)
+    center = {**plan.effective_values, **selected_values, **chosen.values}
+    center = {name: _positive_finite(name, float(center[name])) for name in parameters}
+    existing = [{**plan.effective_values, **selected_values, **c.values} for c in stage.candidates]
+    additions = []
+    suffix = _canonical_hash({"plan": plan.fingerprint, "center": center})[:8]
+    for name in parameters:
+        for direction, factor in (("lower", 0.5), ("upper", 2.0)):
+            values = {**center, name: _positive_finite(name, center[name] * factor)}
+            if any(
+                all(math.isclose(values[k], row[k], rel_tol=1e-12, abs_tol=0.0) for k in parameters)
+                for row in existing
+            ):
+                continue
+            additions.append(
+                CalibrationCandidate(
+                    candidate_id=f"fit-{suffix}-{name}-{direction}",
+                    label=f"{direction.title()} {_SEARCH_PARAMETER_LABELS[name]} only",
+                    parameter_values=tuple(sorted(values.items())),
+                    rationale="Changes one fit control by a factor of two; "
+                    "preserves every pilot subject. "
+                    "This is a local experiment, not a promise of improved anatomy.",
+                )
+            )
+    if not additions:
+        raise ValueError("All local neighbors are already present; inspect existing results")
+    limitations = (
+        "At most eight new runs; no recursive expansion or automatic stage selection.",
+        "The inspected center remains unapproved unless every specimen passes visual QC.",
+        "If no local setting fits, review prealignment and template suitability; "
+        "do not exclude outliers.",
+    )
+    proposal = CalibrationSearchExtensionProposal(
+        version="0.2-fit",
+        fingerprint="",
+        plan_fingerprint=plan.fingerprint,
+        assessment_fingerprint=assessment.fingerprint,
+        stage_id=stage.stage_id,
+        source_candidate_id=source_candidate_id,
+        outward_steps=1,
+        boundary_parameters=tuple(f"{name}:local" for name in parameters),
+        candidates=tuple(additions),
+        limitations=limitations,
+        fit_center_values=tuple(sorted(center.items())),
+        fit_base_values=tuple(sorted(selected_values.items())),
+    )
+    payload = proposal.as_manifest()
+    payload.pop("fingerprint")
+    return replace(proposal, fingerprint=_canonical_hash(payload))
+
+
 def bind_calibration_search_extension_plan(
     plan: ReferenceCalibrationPlan,
     assessment: CalibrationStageAssessment,
@@ -2150,10 +2155,19 @@ def bind_calibration_search_extension_plan(
         raise ValueError("extension proposal is bound to a different assessment")
     if proposal.stage_id != assessment.stage_id:
         raise ValueError("extension proposal stage differs from its assessment")
-    expected_proposal = propose_calibration_search_extension(
-        plan,
-        assessment,
-        outward_steps=proposal.outward_steps,
+    expected_proposal = (
+        propose_calibration_fit_refinement(
+            plan,
+            assessment,
+            source_candidate_id=proposal.source_candidate_id,
+            selected_values=dict(proposal.fit_base_values),
+        )
+        if proposal.fit_center_values
+        else propose_calibration_search_extension(
+            plan,
+            assessment,
+            outward_steps=proposal.outward_steps,
+        )
     )
     if proposal != expected_proposal:
         raise ValueError("extension proposal differs from its deterministic derivation")
@@ -2170,9 +2184,8 @@ def bind_calibration_search_extension_plan(
                 candidates=stage.candidates + proposal.candidates,
                 decision_rule=(
                     stage.decision_rule
-                    + " Outward successor candidates were added because the prior "
-                    "provisional winner lay on a tested search boundary; reassess all "
-                    "preserved and successor evidence together."
+                    + " Bounded successor candidates supplement preserved evidence. "
+                    "Every specimen must pass visual QC before advancing."
                 ),
             )
         )
@@ -2202,6 +2215,8 @@ def bind_calibration_search_extension_plan(
     payload.pop("status")
     payload.pop("pilot_subject_count")
     return replace(successor, fingerprint=_canonical_hash(payload))
+
+
 _STAGE_METRICS: dict[
     CalibrationStageKind,
     tuple[tuple[str, float], ...],
@@ -2279,9 +2294,7 @@ def _stage_metrics_for_disparity(
                 ("runtime_seconds", 0.20),
             ),
         }[kind]
-    raise ValueError(
-        f"Unsupported expected shape disparity: {expected_shape_disparity!r}"
-    )
+    raise ValueError(f"Unsupported expected shape disparity: {expected_shape_disparity!r}")
 
 
 def _evidence_metric(
@@ -2385,8 +2398,7 @@ def _subject_bootstrap_wins(
     }
     names = tuple(sorted(next(iter(subject_maps.values()), {})))
     mismatched_subjects = any(
-        tuple(sorted(values_by_subject)) != names
-        for values_by_subject in subject_maps.values()
+        tuple(sorted(values_by_subject)) != names for values_by_subject in subject_maps.values()
     )
     if len(names) < 3 or mismatched_subjects:
         return {}, 0
@@ -2422,9 +2434,7 @@ def _subject_bootstrap_wins(
             )
         )
         scores = _normalize_metric_rows(bootstrap_values) @ weights
-        index_by_id = {
-            candidate_id: index for index, candidate_id in enumerate(eligible_ids)
-        }
+        index_by_id = {candidate_id: index for index, candidate_id in enumerate(eligible_ids)}
         winner = min(
             pareto,
             key=lambda candidate_id: (
@@ -2434,11 +2444,130 @@ def _subject_bootstrap_wins(
         )
         wins[winner] += 1
     return (
-        {
-            candidate_id: count / iterations
-            for candidate_id, count in wins.items()
-        },
+        {candidate_id: count / iterations for candidate_id, count in wins.items()},
         iterations,
+    )
+
+
+def _assess_surface_fit_stage(
+    plan: ReferenceCalibrationPlan,
+    stage: CalibrationStage,
+    by_id: Mapping[str, CalibrationCandidateEvidence],
+) -> CalibrationStageAssessment:
+    """Order complete per-subject fit evidence; no economy trade-off or pass threshold.
+
+    The worst subject comes first, then the equal-subject mean, then the pooled
+    distance. Dividing by each original's bounding-box diagonal makes the first
+    two quantities invariant to units and prevents large subjects dominating.
+    A sampled distance remains a QC proxy; visual acceptance is a separate gate.
+    """
+    expected = {subject.filename for subject in plan.selected_pilot_subjects}
+    reasons: dict[str, tuple[str, ...]] = {}
+    keys: dict[str, tuple[float, float, float]] = {}
+    for candidate in stage.candidates:
+        item = by_id[candidate.candidate_id]
+        rejected = []
+        if not item.completed:
+            rejected.append("run did not complete")
+        if not item.converged:
+            rejected.append("optimizer convergence was not established")
+        if type(item.invalid_face_count) is not int or item.invalid_face_count != 0:
+            rejected.append("atlas or reconstructions have invalid or unverified faces")
+        if item.review_approved is False:
+            rejected.append("visual registration review explicitly failed")
+        rows = item.subject_normalized_residual_p95
+        values = dict(rows)
+        if (
+            not expected
+            or set(values) != expected
+            or len(rows) != len(expected)
+            or any(
+                type(value) not in (int, float) or not math.isfinite(value) or value < 0
+                for value in values.values()
+            )
+        ):
+            rejected.append("complete size-normalized per-specimen fit evidence is required")
+        pooled = _evidence_metric(item, "residual_p95")
+        if pooled is None:
+            rejected.append("residual_p95 is missing, negative, or non-finite")
+        reasons[candidate.candidate_id] = tuple(rejected)
+        if not rejected:
+            keys[candidate.candidate_id] = (
+                max(values.values()),
+                math.fsum(values.values()) / len(values),
+                pooled,
+            )
+    accepted = {key for key in keys if by_id[key].review_approved is True}
+    ranked_ids = accepted or set(keys)
+    leader = min(ranked_ids, key=lambda key: (*keys[key], key)) if ranked_ids else None
+    pareto = tuple(
+        sorted(
+            key
+            for key in ranked_ids
+            if not any(
+                all(a <= b for a, b in zip(keys[other][:2], keys[key][:2], strict=True))
+                and any(a < b for a, b in zip(keys[other][:2], keys[key][:2], strict=True))
+                for other in ranked_ids
+                if other != key
+            )
+        )
+    )
+    boundary_status, boundaries = _search_boundary_parameters(stage, leader)
+    cautions = (
+        "Fit order: worst specimen p95 / original bounding-box diagonal, then the "
+        "equal-specimen mean; pooled distance breaks exact ties. No min-max scaling.",
+        "Runtime, deformation cost, area change and interleaved-sample sensitivity "
+        "cannot compensate for worse surface fit; they remain diagnostic evidence.",
+        "Distances use sampled nearest vertices, not homologous correspondences or "
+        "an anatomical pass threshold. Inspect every original and reconstruction.",
+        "Every pilot specimen must pass recorded visual QC before the next stage. "
+        "A best available option can still be unacceptable. Full-cohort QC follows the atlas.",
+    )
+    assessments = tuple(
+        CalibrationCandidateAssessment(
+            candidate_id=c.candidate_id,
+            eligible=c.candidate_id in keys,
+            pareto_optimal=c.candidate_id in pareto,
+            balanced_score=keys[c.candidate_id][0] if c.candidate_id in keys else None,
+            weight_win_fraction=None,
+            subject_bootstrap_win_fraction=None,
+            score_range=None,
+            rejection_reasons=reasons[c.candidate_id],
+        )
+        for c in stage.candidates
+    )
+    payload = {
+        "version": _ASSESSMENT_VERSION,
+        "policy": "worst-specimen-fit-first-v1",
+        "plan_fingerprint": plan.fingerprint,
+        "stage_id": stage.stage_id,
+        "evidence": [by_id[c.candidate_id].as_manifest() for c in stage.candidates],
+        "fit_order": keys,
+        "leader": leader,
+        "cautions": cautions,
+    }
+    return CalibrationStageAssessment(
+        version=_ASSESSMENT_VERSION,
+        fingerprint=_canonical_hash(payload),
+        plan_fingerprint=plan.fingerprint,
+        stage_id=stage.stage_id,
+        status="selection_required" if keys else "no_eligible_candidate",
+        balanced_candidate_id=leader,
+        recommendation_confidence="visually_accepted" if accepted else "needs_visual_review",
+        automatic_selection_allowed=False,
+        weight_stability=None,
+        subject_bootstrap_stability=None,
+        score_margin=None,
+        independent_rank_candidate_id=None,
+        weight_scenario_count=0,
+        subject_bootstrap_iterations=0,
+        search_range_status=boundary_status,
+        search_boundary_parameters=boundaries,
+        sensitivity_flags=(),
+        pareto_candidate_ids=pareto,
+        metric_weights=(("worst_specimen_normalized_p95", 1.0),),
+        candidates=assessments,
+        cautions=cautions,
     )
 
 
@@ -2450,14 +2579,10 @@ def assess_calibration_stage(
 ) -> CalibrationStageAssessment:
     """Assess one executed stage without hiding missing data or hard failures.
 
-    The balanced score is an explicitly weighted min-max summary.  It may drive
-    a provisional automatic recommendation among the predeclared candidates,
-    but never constitutes automatic anatomical approval or final scientific
-    validation.  Visual QC is optional; an explicit visual failure makes a
-    candidate ineligible, while an unreviewed candidate remains eligible when
-    its automatic evidence is valid. When valid, explicitly approved options
-    exist, rank only those options. Unreviewed alternatives remain available for
-    deliberate manual selection but cannot outrank accepted anatomy on economy.
+    Geometric stages rank worst-specimen fit first. The integration stage retains
+    its separate numerical-discretization comparison. Neither supplies anatomical
+    approval: the study selection API requires a saved visual pass of every
+    specimen. Known visual failures are ineligible; approved options take priority.
     """
 
     matching_stages = [stage for stage in plan.stages if stage.stage_id == stage_id]
@@ -2477,6 +2602,9 @@ def assess_calibration_stage(
             "Calibration evidence must match the declared stage candidates exactly; "
             f"missing={missing}, unexpected={unexpected}"
         )
+
+    if stage.kind != "integration_accuracy":
+        return _assess_surface_fit_stage(plan, stage, by_id)
 
     metric_weights = _stage_metrics_for_disparity(
         stage.kind,
@@ -2500,11 +2628,10 @@ def assess_calibration_stage(
             reasons.append("invalid-face count is not a non-negative integer")
         elif item.invalid_face_count:
             reasons.append(
-                "atlas or reconstructions contain "
-                f"{item.invalid_face_count} invalid faces"
+                f"atlas or reconstructions contain {item.invalid_face_count} invalid faces"
             )
         if item.review_approved is False:
-            reasons.append("optional visual registration review explicitly failed")
+            reasons.append("visual registration review explicitly failed")
         row: list[float] = []
         for metric, _weight in metric_weights:
             value = _evidence_metric(item, metric)
@@ -2519,14 +2646,17 @@ def assess_calibration_stage(
 
     selectable_ids = set(eligible_ids)
     approved_ids = {
-        candidate_id for candidate_id in eligible_ids
-        if by_id[candidate_id].review_approved is True
+        candidate_id for candidate_id in eligible_ids if by_id[candidate_id].review_approved is True
     }
     if approved_ids:
-        metric_rows = [row for candidate_id, row in zip(eligible_ids, metric_rows, strict=True)
-                       if candidate_id in approved_ids]
-        eligible_ids = [candidate_id for candidate_id in eligible_ids
-                        if candidate_id in approved_ids]
+        metric_rows = [
+            row
+            for candidate_id, row in zip(eligible_ids, metric_rows, strict=True)
+            if candidate_id in approved_ids
+        ]
+        eligible_ids = [
+            candidate_id for candidate_id in eligible_ids if candidate_id in approved_ids
+        ]
 
     scores: dict[str, float] = {}
     score_ranges: dict[str, tuple[float, float]] = {}
@@ -2562,8 +2692,7 @@ def assess_calibration_stage(
         weights = np.asarray([weight for _metric, weight in metric_weights])
         weighted = normalized @ weights
         scores = {
-            candidate_id: float(weighted[index])
-            for index, candidate_id in enumerate(eligible_ids)
+            candidate_id: float(weighted[index]) for index, candidate_id in enumerate(eligible_ids)
         }
         balanced_id = min(
             pareto_ids,
@@ -2572,9 +2701,7 @@ def assess_calibration_stage(
 
         scenarios = _weight_scenarios(weights)
         weight_scenario_count = len(scenarios)
-        index_by_id = {
-            candidate_id: index for index, candidate_id in enumerate(eligible_ids)
-        }
+        index_by_id = {candidate_id: index for index, candidate_id in enumerate(eligible_ids)}
         scenario_scores = np.stack(
             [normalized @ scenario for scenario in scenarios],
             axis=1,
@@ -2590,8 +2717,7 @@ def assess_calibration_stage(
             )
             scenario_wins[winner] += 1
         weight_win_fractions = {
-            candidate_id: count / len(scenarios)
-            for candidate_id, count in scenario_wins.items()
+            candidate_id: count / len(scenarios) for candidate_id, count in scenario_wins.items()
         }
         score_ranges = {
             candidate_id: (
@@ -2605,11 +2731,7 @@ def assess_calibration_stage(
             pareto_ids,
             key=lambda candidate_id: (scores[candidate_id], candidate_id),
         )
-        score_margin = (
-            1.0
-            if len(ranked) == 1
-            else max(0.0, scores[ranked[1]] - scores[ranked[0]])
-        )
+        score_margin = 1.0 if len(ranked) == 1 else max(0.0, scores[ranked[1]] - scores[ranked[0]])
         rank_id = _weighted_rank_winner(
             values,
             np.ones_like(weights) / len(weights),
@@ -2720,8 +2842,7 @@ def assess_calibration_stage(
         "stable across reasonable weight changes, subject resampling when available, "
         "and an independent rank aggregation.",
         "All Pareto-optimal candidates and raw evidence must remain available to the researcher.",
-        "Visual reconstruction review is optional and its performed, passed, failed, or "
-        "not-performed status must remain explicit.",
+        "Every pilot specimen must pass recorded visual reconstruction review before selection.",
         "A provisional stage recommendation becomes scientifically usable only after "
         "later full-cohort confirmation and researcher review.",
         "A candidate on the minimum or maximum tested attachment, deformation, "

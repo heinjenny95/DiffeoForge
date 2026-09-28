@@ -3,7 +3,12 @@ import shutil
 from dataclasses import replace
 
 import pytest
-from test_reference_calibration_study import _CompletedController, _metrics, _project
+from test_reference_calibration_study import (
+    _approve_for_test,
+    _CompletedController,
+    _metrics,
+    _project,
+)
 
 from diffeoforge.config import load_config
 from diffeoforge.desktop.project_setup import load_existing_reference_project
@@ -21,6 +26,18 @@ from diffeoforge.reference_calibration_study import (
     load_reference_calibration_study,
     record_reference_calibration_stage_review,
 )
+
+
+@pytest.fixture(autouse=True)
+def no_unstubbed_engine_launch(monkeypatch):
+    # A missing early gate must fail the regression, never run the real engine.
+    def forbidden(*args, **kwargs):
+        raise AssertionError("This unit test must not launch a reference engine")
+
+    monkeypatch.setattr(
+        "diffeoforge.desktop.reference_execution_controller.ReferenceExecutionController.run",
+        forbidden,
+    )
 
 
 @pytest.mark.parametrize(
@@ -163,10 +180,11 @@ def test_review_required_and_new_configuration_keeps_whole_cohort(source, tmp_pa
     for _ in range(4):
         snapshot = runner.run_current_stage()
         selected = snapshot.candidates[0].candidate_id
-        with pytest.raises(ValueError, match="explicit visual approval"):
+        with pytest.raises(ValueError, match="Every pilot specimen"):
             record_reference_calibration_stage_review(
                 study, visual_approvals={}, selected_candidate_id=selected
             )
+        _approve_for_test(study, selected)
         snapshot, _ = record_reference_calibration_stage_review(
             study, visual_approvals={selected: True}, selected_candidate_id=selected
         )
@@ -303,9 +321,8 @@ def test_qc_dialog_requires_visual_selection_and_no_afk(source, tmp_path, monkey
     dialog.selection_combo.setCurrentIndex(dialog.selection_combo.findData(selected))
     dialog._update_stage_review_action()
     assert not dialog.advance_button.isEnabled()
-    dialog._visually_reviewed_candidates.add(selected)
-    dialog._visually_approved_candidates.add(selected)
-    dialog._update_stage_review_action()
+    _approve_for_test(study, selected)
+    dialog._render()
     assert dialog.advance_button.isEnabled()
     assert dialog.collect_evidence_button.isHidden()
     dialog.close()

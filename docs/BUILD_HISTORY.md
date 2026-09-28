@@ -1,5 +1,15 @@
 # Private-alpha build numbering
 
+## v94 — surface fit and every-specimen review
+
+v94 (`0.0.0.dev94`) prioritizes the worst size-normalized specimen mismatch in
+geometric pilot stages. Runtime and sampling sensitivity cannot compensate for
+underfit. Every specimen must pass recorded visual QC before advancing; current
+stage batches replace unattended unreviewed advancement. Bounded local refinement
+retains prior results and the complete pilot cohort, including rejected centers.
+See [workflow, scientific limits and verification](V94_SURFACE_FIT.md).
+Build, installation and distribution are pending verification for this source.
+
 ## v93 — blank startup and explicit deep validation
 
 v93 (`0.0.0.dev93`) starts with empty input paths, offers explicit restoration of

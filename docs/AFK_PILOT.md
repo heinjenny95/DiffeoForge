@@ -1,5 +1,10 @@
 # Bounded AFK / overnight pilot
 
+> v94 supersedes unattended stage advancement: each stage batches its candidates,
+> then waits for recorded visual acceptance of every specimen. The former AFK
+> controls and policies below describe historical behavior. Existing ledgers remain
+> readable. See [current fit-first workflow](V94_SURFACE_FIT.md).
+
 AFK is an opt-in alternative to the standard robustness-gated automatic pilot.
 Check the AFK option and explicitly confirm at Start. It is unchecked on reopen.
 Keep the workstation awake; neither completion by morning nor recovery from every

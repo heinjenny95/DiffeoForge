@@ -11,12 +11,22 @@ from diffeoforge.reference_calibration import CalibrationStage
 from diffeoforge.reference_calibration_study import CalibrationStudyCandidateState
 
 
+def candidate_option_label(index: int) -> str:
+    """Keep option labels stable when a refinement grows beyond 26 candidates."""
+    if type(index) is not int or index < 1:
+        raise ValueError("Option indices start at one")
+    label = ""
+    while index:
+        index, digit = divmod(index - 1, 26)
+        label = chr(ord("A") + digit) + label
+    return label
+
+
 def afk_return_summary(report: Mapping[str, object]) -> str | None:
     """Expose recorded overnight limitations without re-ranking or approving anything."""
     stages = report.get("stage_decisions", [])
     automatic = [
-        stage for stage in stages
-        if stage.get("selection_mode") == "automatic_provisional_afk_v1"
+        stage for stage in stages if stage.get("selection_mode") == "automatic_provisional_afk_v1"
     ]
     if not automatic:
         return None
@@ -34,8 +44,11 @@ def afk_return_summary(report: Mapping[str, object]) -> str | None:
         if stage.get("sensitivity_flags"):
             concerns.append("sensitivity warnings")
         if concerns:
-            lines.append(f"{stage.get('title', stage.get('stage_id', 'Stage'))}: "
-                         + "; ".join(concerns) + ".")
+            lines.append(
+                f"{stage.get('title', stage.get('stage_id', 'Stage'))}: "
+                + "; ".join(concerns)
+                + "."
+            )
     lines.append(
         "Next: review these choices and their evidence. No visual approval was created; "
         "the atlas has not been started."
@@ -72,10 +85,9 @@ _GUIDANCE: dict[str, CalibrationStageGuidance] = {
             "local deformation can represent real variation or implausible warping."
         ),
         action=(
-            "Let DiffeoForge complete the combined grid. An automatic choice is allowed "
-            "only when one Pareto candidate remains stable across metric priorities, "
-            "subject resampling, and an independent rank analysis. Otherwise review "
-            "the alternatives or collect more evidence."
+            "Compare every specimen's fit. The largest size-normalized mismatch leads "
+            "the shortlist; speed cannot compensate for poor fit. Inspect and approve "
+            "every specimen, or refine an option within this stage."
         ),
         caution=(
             "The closest numerical fit is not automatically the best biological fit. "
@@ -90,14 +102,12 @@ _GUIDANCE: dict[str, CalibrationStageGuidance] = {
             "values favor broader, smoother changes."
         ),
         action=(
-            "Use the explained trade-offs to prefer the smoothest deformation that "
-            "still represents the biological differences you need. Optional visual QC "
-            "can compare the same anatomical regions when the evidence is ambiguous."
+            "Inspect every specimen and preserve the anatomy needed for this study. "
+            "Deformation cost is context, not an anatomical quality score."
         ),
         caution=(
             "A more flexible model can reduce mismatch by creating implausible local "
-            "warping. A visual reconstruction check can add evidence but is not required "
-            "to continue."
+            "warping. Every specimen must pass visual reconstruction review to continue."
         ),
     ),
     "noise_weight": CalibrationStageGuidance(
@@ -108,9 +118,8 @@ _GUIDANCE: dict[str, CalibrationStageGuidance] = {
             "in exchange for smoother, less costly deformation."
         ),
         action=(
-            "Compare closer fit against deformation cost and distortion. Choose the "
-            "balance appropriate to your study; optionally inspect reconstructions if "
-            "the automatic signals do not make the trade-off clear."
+            "Prioritize surface fit, then inspect for missing anatomy and implausible "
+            "deformation. One failed or uncertain specimen blocks approval."
         ),
         caution=(
             "This is a fit-versus-regularity trade-off, not a measurement of specimen "
@@ -125,8 +134,8 @@ _GUIDANCE: dict[str, CalibrationStageGuidance] = {
         ),
         action=(
             "Choose the smallest time-point count whose atlas and reconstructions are "
-            "numerically stable relative to the next finer option. Optional visual QC "
-            "can be used when the numerical differences need anatomical context."
+            "numerically stable relative to the next finer option. The selected option "
+            "also requires visual acceptance of every specimen."
         ),
         caution=(
             "This stage checks numerical stability. It should not be used to improve "
@@ -163,8 +172,7 @@ def candidate_parameter_summary(
             )
         deformation = float(values["deformation_kernel_width"])
         return (
-            "Surface-detail / deformation width: "
-            f"{attachment:.6g} / {deformation:.6g} {unit}",
+            f"Surface-detail / deformation width: {attachment:.6g} / {deformation:.6g} {unit}",
             "The first value controls matching detail; the second controls how far "
             "correlated deformation spreads.",
         )
@@ -200,10 +208,7 @@ def candidate_tradeoff_assessments(
         candidate.candidate_id: [] for candidate in candidates
     }
     if not complete:
-        return {
-            candidate_id: tuple(items)
-            for candidate_id, items in assessments.items()
-        }
+        return {candidate_id: tuple(items) for candidate_id, items in assessments.items()}
 
     comparisons = (
         (
@@ -273,7 +278,7 @@ def candidate_tradeoff_assessments(
             "runtime_seconds",
             CalibrationTradeoffAssessment(
                 label="Fastest pilot run",
-                tone="favorable",
+                tone="neutral",
                 interpretation=(
                     "This option used the least computation time. That is favorable for "
                     "efficiency, but speed does not establish registration quality."
@@ -281,7 +286,7 @@ def candidate_tradeoff_assessments(
             ),
             CalibrationTradeoffAssessment(
                 label="Slowest pilot run",
-                tone="unfavorable",
+                tone="neutral",
                 interpretation=(
                     "This option used the most computation time. That is unfavorable "
                     "for efficiency only and does not make its anatomy worse."
@@ -293,8 +298,7 @@ def candidate_tradeoff_assessments(
         values = {
             candidate.candidate_id: float(candidate.metrics[key])
             for candidate in complete
-            if key in candidate.metrics
-            and math.isfinite(float(candidate.metrics[key]))
+            if key in candidate.metrics and math.isfinite(float(candidate.metrics[key]))
         }
         if len(values) < 2:
             continue
@@ -303,15 +307,11 @@ def candidate_tradeoff_assessments(
         for candidate_id, value in values.items():
             if math.isclose(value, minimum, rel_tol=1e-12, abs_tol=1e-15):
                 assessments[candidate_id].append(minimum_assessment)
-            if (
-                not math.isclose(maximum, minimum, rel_tol=1e-12, abs_tol=1e-15)
-                and math.isclose(value, maximum, rel_tol=1e-12, abs_tol=1e-15)
+            if not math.isclose(maximum, minimum, rel_tol=1e-12, abs_tol=1e-15) and math.isclose(
+                value, maximum, rel_tol=1e-12, abs_tol=1e-15
             ):
                 assessments[candidate_id].append(maximum_assessment)
-    return {
-        candidate_id: tuple(items)
-        for candidate_id, items in assessments.items()
-    }
+    return {candidate_id: tuple(items) for candidate_id, items in assessments.items()}
 
 
 def candidate_tradeoff_labels(
@@ -321,9 +321,7 @@ def candidate_tradeoff_labels(
 
     return {
         candidate_id: tuple(assessment.label for assessment in assessments)
-        for candidate_id, assessments in candidate_tradeoff_assessments(
-            candidates
-        ).items()
+        for candidate_id, assessments in candidate_tradeoff_assessments(candidates).items()
     }
 
 
@@ -364,7 +362,8 @@ def technical_metric_text(metrics: Mapping[str, object]) -> str:
         f"Final logged iteration: {metrics.get('final_iteration', 'not reported')} "
         f"of {metrics.get('maximum_iterations', 'not reported')}\n"
         f"Invalid faces: {int(metrics.get('invalid_face_count', 0))}\n\n"
-        + subject_metric_text(metrics) + "\n\n"
+        + subject_metric_text(metrics)
+        + "\n\n"
         "Interpretation limits\n"
         "• Surface distance is a geometric QC proxy, not Deformetrica's configured "
         "attachment objective.\n"
@@ -378,10 +377,14 @@ def subject_metric_text(metrics: Mapping[str, object]) -> str:
     values = metrics.get("subject_residual_p95", {})
     if not isinstance(values, Mapping) or not values:
         return "Per-specimen surface-distance evidence is unavailable in this result."
-    ordered = sorted(((str(name), float(value)) for name, value in values.items()),
-                     key=lambda item: (-item[1], item[0]))
-    return ("Per-specimen nearest-vertex p95 (largest first; coordinate units)\n"
-            + "\n".join(f"{name}: {value:.6g}" for name, value in ordered)
-            + "\nPooled p95 can hide a poor specimen or a small missing feature. "
-            "These distances do not test homology, tips or branches; inspect those "
-            "regions against original-detail geometry.")
+    ordered = sorted(
+        ((str(name), float(value)) for name, value in values.items()),
+        key=lambda item: (-item[1], item[0]),
+    )
+    return (
+        "Per-specimen nearest-vertex p95 (largest first; coordinate units)\n"
+        + "\n".join(f"{name}: {value:.6g}" for name, value in ordered)
+        + "\nPooled p95 can hide a poor specimen or a small missing feature. "
+        "These distances do not test homology, tips or branches; inspect those "
+        "regions against original-detail geometry."
+    )

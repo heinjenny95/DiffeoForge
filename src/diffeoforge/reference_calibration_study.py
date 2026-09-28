@@ -1,10 +1,8 @@
 """Resumable execution of transparent Deformetrica pilot calibration.
 
-The scientific design begins with a joint attachment/deformation screen and
-then refines the remaining parameter families sequentially.  The standard
-runner can execute all four stages in one operation and make explicitly
-uncertainty-qualified, reproducible recommendations from declared priorities
-and automatic evidence.  A manual stage-by-stage review route remains available.
+Each stage batches its predeclared candidates, then requires recorded visual
+acceptance of every pilot specimen before selection. Geometric stages rank
+worst-specimen fit first; existing evidence and historical decisions remain bound.
 """
 
 from __future__ import annotations
@@ -18,7 +16,8 @@ import os
 import re
 import shutil
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Protocol
 from uuid import uuid4
@@ -38,7 +37,7 @@ from diffeoforge.desktop.reference_execution_controller import (
 )
 from diffeoforge.desktop.reference_prelaunch import DesktopReferenceLaunchRequest
 from diffeoforge.desktop.reference_worker_protocol import DesktopReferenceWorkerEvent
-from diffeoforge.mesh import sha256_file
+from diffeoforge.mesh import read_vtk_polydata, sha256_file
 from diffeoforge.reference_calibration import (
     CalibrationCandidate,
     CalibrationCandidateEvidence,
@@ -47,6 +46,7 @@ from diffeoforge.reference_calibration import (
     ReferenceCalibrationPlan,
     assess_calibration_stage,
     bind_calibration_search_extension_plan,
+    propose_calibration_fit_refinement,
     propose_calibration_search_extension,
     reference_calibration_plan_from_provenance,
 )
@@ -110,14 +110,10 @@ def _relative_path(root: Path, path: Path) -> str:
 def _safe_study_path(root: Path, relative_value: object) -> Path:
     relative = Path(str(relative_value))
     if relative.is_absolute() or not relative.parts or ".." in relative.parts:
-        raise ReferenceCalibrationStudyError(
-            f"Unsafe calibration-study path: {relative}"
-        )
+        raise ReferenceCalibrationStudyError(f"Unsafe calibration-study path: {relative}")
     value = root.joinpath(*relative.parts).resolve()
     if not value.is_relative_to(root.resolve()):
-        raise ReferenceCalibrationStudyError(
-            f"Calibration-study path escapes its root: {relative}"
-        )
+        raise ReferenceCalibrationStudyError(f"Calibration-study path escapes its root: {relative}")
     return value
 
 
@@ -143,9 +139,7 @@ def _read_json(path: Path, label: str) -> dict[str, Any]:
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, json.JSONDecodeError) as error:
-        raise ReferenceCalibrationStudyError(
-            f"Could not read {label}: {path}: {error}"
-        ) from error
+        raise ReferenceCalibrationStudyError(f"Could not read {label}: {path}: {error}") from error
     if not isinstance(value, dict):
         raise ReferenceCalibrationStudyError(f"{label} must be a JSON object")
     return value
@@ -195,9 +189,8 @@ class ReferenceCalibrationStudySnapshot:
     search_extension_round: int = 0
     visual_reviews: Mapping[str, bool] = field(default_factory=dict)
     visual_review_notes: Mapping[str, str] = field(default_factory=dict)
-    feature_observations: Mapping[str, dict[str, dict[str, Any]]] = field(
-        default_factory=dict
-    )
+    subject_decisions: Mapping[str, dict[str, str]] = field(default_factory=dict)
+    feature_observations: Mapping[str, dict[str, dict[str, Any]]] = field(default_factory=dict)
 
 
 def _normalized_search_extension_safety_limits(
@@ -221,12 +214,7 @@ def _normalized_search_extension_safety_limits(
                 f"Safety limits for {parameter} must contain two finite positive values"
             )
         lower, upper = float(raw_bounds[0]), float(raw_bounds[1])
-        if (
-            not math.isfinite(lower)
-            or not math.isfinite(upper)
-            or lower <= 0
-            or upper <= lower
-        ):
+        if not math.isfinite(lower) or not math.isfinite(upper) or lower <= 0 or upper <= lower:
             raise ReferenceCalibrationStudyError(
                 f"Safety limits for {parameter} must be finite, positive, and ordered"
             )
@@ -250,11 +238,7 @@ def _search_extension_series(root: Path) -> tuple[Path, int]:
         extension_source = manifest.get("search_extension_source")
         if not isinstance(extension_source, Mapping):
             return current, depth
-        source = (
-            Path(str(extension_source.get("study_directory", "")))
-            .expanduser()
-            .resolve()
-        )
+        source = Path(str(extension_source.get("study_directory", ""))).expanduser().resolve()
         if not source.is_dir():
             raise ReferenceCalibrationStudyError(
                 "Calibration search-extension source directory is absent"
@@ -290,13 +274,9 @@ def latest_reference_calibration_search_extension_directory(
 
     root = Path(study_directory).expanduser().resolve()
     if not root.is_dir():
-        raise ReferenceCalibrationStudyError(
-            f"Calibration study directory does not exist: {root}"
-        )
+        raise ReferenceCalibrationStudyError(f"Calibration study directory does not exist: {root}")
     series_root, _depth = _search_extension_series(root)
-    pattern = re.compile(
-        rf"{re.escape(series_root.name)}-extension-(?P<round>[0-9]{{2,}})"
-    )
+    pattern = re.compile(rf"{re.escape(series_root.name)}-extension-(?P<round>[0-9]{{2,}})")
     successors: dict[int, Path] = {}
     try:
         siblings = tuple(series_root.parent.iterdir())
@@ -348,10 +328,7 @@ def _load_events(root: Path) -> tuple[dict[str, Any], ...]:
                 f"Calibration event line {index + 1} is not an object"
             )
         recorded_hash = event.pop("event_hash", None)
-        if (
-            event.get("sequence") != index
-            or event.get("previous_hash") != previous_hash
-        ):
+        if event.get("sequence") != index or event.get("previous_hash") != previous_hash:
             raise ReferenceCalibrationStudyError(
                 f"Calibration event chain is broken at line {index + 1}"
             )
@@ -370,9 +347,7 @@ def _load_events(root: Path) -> tuple[dict[str, Any], ...]:
     return tuple(events)
 
 
-def _append_event(
-    root: Path, event: str, payload: Mapping[str, object]
-) -> dict[str, Any]:
+def _append_event(root: Path, event: str, payload: Mapping[str, object]) -> dict[str, Any]:
     events = _load_events(root) if (root / STUDY_EVENTS).exists() else ()
     record: dict[str, Any] = {
         "event_version": EVENT_VERSION,
@@ -415,18 +390,12 @@ def _validated_outward_safety_limits(
         if not isinstance(parameter, str) or not parameter:
             raise ValueError("Each outward safety limit must name a parameter")
         if isinstance(bounds, (str, bytes)) or len(tuple(bounds)) != 2:
-            raise ValueError(
-                f"Outward safety limit for {parameter!r} must be a (low, high) pair"
-            )
+            raise ValueError(f"Outward safety limit for {parameter!r} must be a (low, high) pair")
         low, high = (float(value) for value in bounds)
         if not math.isfinite(low) or not math.isfinite(high):
-            raise ValueError(
-                f"Outward safety limit for {parameter!r} must be finite"
-            )
+            raise ValueError(f"Outward safety limit for {parameter!r} must be finite")
         if low <= 0.0 or high <= 0.0:
-            raise ValueError(
-                f"Outward safety limit for {parameter!r} must be positive"
-            )
+            raise ValueError(f"Outward safety limit for {parameter!r} must be positive")
         if low >= high:
             raise ValueError(
                 f"Outward safety limit for {parameter!r} must be an increasing interval"
@@ -495,18 +464,14 @@ def _outward_budget_exhausted_reason(
 
 def _find_plan(config: Mapping[str, Any]) -> ReferenceCalibrationPlan:
     try:
-        provenance = config["project"]["parameter_provenance"]["recommendation"][
-            "calibration_plan"
-        ]
+        provenance = config["project"]["parameter_provenance"]["recommendation"]["calibration_plan"]
     except (KeyError, TypeError) as error:
         raise ReferenceCalibrationStudyError(
             "The project has no transparent calibration plan. Analyze aligned "
             "meshes and create the plan first."
         ) from error
     if not isinstance(provenance, Mapping):
-        raise ReferenceCalibrationStudyError(
-            "The stored calibration plan is not a mapping"
-        )
+        raise ReferenceCalibrationStudyError("The stored calibration plan is not a mapping")
     return reference_calibration_plan_from_provenance(provenance)
 
 
@@ -557,16 +522,12 @@ def _candidate_configuration(
             group, key = parameter_targets[name]
             config["model"][group][key] = normalized
         else:
-            raise ReferenceCalibrationStudyError(
-                f"Unsupported calibration parameter: {name}"
-            )
+            raise ReferenceCalibrationStudyError(f"Unsupported calibration parameter: {name}")
         if name != "timepoints":
             config["project"]["parameter_provenance"]["ratios"][name] = (
                 normalized / template_diagonal
             )
-            config["project"]["parameter_provenance"]["sources"][name] = (
-                "absolute_override"
-            )
+            config["project"]["parameter_provenance"]["sources"][name] = "absolute_override"
     validate_schema(config)
     return config
 
@@ -578,9 +539,7 @@ def _prepare_stage(
     stage: CalibrationStage,
     selected_values: Mapping[str, float],
 ) -> dict[str, object]:
-    source_config = load_config(
-        _safe_study_path(root, manifest["source_config"]["copy"])
-    )
+    source_config = load_config(_safe_study_path(root, manifest["source_config"]["copy"]))
     stage_directory = root / "stages" / f"{stage.order:02d}-{stage.stage_id}"
     records: list[dict[str, object]] = []
     for candidate in stage.candidates:
@@ -651,9 +610,7 @@ def create_reference_calibration_study(
             )
         selected_paths.append(path)
     if sha256_file(inputs.template) != plan.template_sha256:
-        raise ReferenceCalibrationStudyError(
-            "Template bytes changed after calibration planning"
-        )
+        raise ReferenceCalibrationStudyError("Template bytes changed after calibration planning")
     root = Path(study_directory).expanduser().resolve()
     if root.exists():
         raise ReferenceCalibrationStudyError(
@@ -674,9 +631,7 @@ def create_reference_calibration_study(
         template_copy = root / "inputs" / "template" / inputs.template.name
         _copy_bound(inputs.template, template_copy, plan.template_sha256)
         subject_records: list[dict[str, object]] = []
-        for selected, path in zip(
-            plan.selected_pilot_subjects, selected_paths, strict=True
-        ):
+        for selected, path in zip(plan.selected_pilot_subjects, selected_paths, strict=True):
             destination = root / "inputs" / "subjects" / path.name
             _copy_bound(path, destination, selected.sha256)
             subject_records.append(
@@ -686,12 +641,8 @@ def create_reference_calibration_study(
                     "sha256": selected.sha256,
                 }
             )
-        template_diagonal = float(
-            config["model"]["attachment"]["kernel_width"]
-        ) / float(
-            config["project"]["parameter_provenance"]["ratios"][
-                "attachment_kernel_width"
-            ]
+        template_diagonal = float(config["model"]["attachment"]["kernel_width"]) / float(
+            config["project"]["parameter_provenance"]["ratios"]["attachment_kernel_width"]
         )
         if not math.isfinite(template_diagonal) or template_diagonal <= 0:
             raise ReferenceCalibrationStudyError(
@@ -758,6 +709,7 @@ def create_reference_calibration_search_extension_study(
     *,
     safety_limits: Mapping[str, tuple[float, float]],
     outward_steps: int = 2,
+    fit_center_candidate_id: str | None = None,
 ) -> ReferenceCalibrationStudySnapshot:
     """Create an immutable successor that runs only new outward candidates.
 
@@ -773,10 +725,7 @@ def create_reference_calibration_search_extension_study(
             "QC recalibration uses a bounded grid; review the failed fit or template "
             "before proposing another study"
         )
-    if (
-        source_snapshot.status != "awaiting_review"
-        or source_snapshot.current_stage is None
-    ):
+    if source_snapshot.status != "awaiting_review" or source_snapshot.current_stage is None:
         raise ReferenceCalibrationStudyError(
             "Search extension requires a completed stage awaiting review"
         )
@@ -785,14 +734,37 @@ def create_reference_calibration_search_extension_study(
             "Search extension requires every source candidate to be completed"
         )
     assessment = assess_reference_calibration_snapshot(source_snapshot)
-    if assessment.search_range_status != "not_bounded":
+    if fit_center_candidate_id is None and assessment.search_range_status != "not_bounded":
         raise ReferenceCalibrationStudyError(
             "Search extension requires a source assessment marked not_bounded"
         )
-    proposal = propose_calibration_search_extension(
-        source_snapshot.plan,
-        assessment,
-        outward_steps=outward_steps,
+    if fit_center_candidate_id is not None:
+        center = next(
+            (c for c in source_snapshot.candidates if c.candidate_id == fit_center_candidate_id),
+            None,
+        )
+        if (
+            center is None
+            or center.metrics is None
+            or not center.metrics.get("converged")
+            or center.metrics.get("invalid_face_count") != 0
+        ):
+            raise ReferenceCalibrationStudyError(
+                "Fit refinement requires a completed, converged, geometrically valid center"
+            )
+    proposal = (
+        propose_calibration_fit_refinement(
+            source_snapshot.plan,
+            assessment,
+            source_candidate_id=fit_center_candidate_id,
+            selected_values=source_snapshot.selected_values,
+        )
+        if fit_center_candidate_id is not None
+        else propose_calibration_search_extension(
+            source_snapshot.plan,
+            assessment,
+            outward_steps=outward_steps,
+        )
     )
     boundary_parameters = {
         boundary.split(":", maxsplit=1)[0] for boundary in proposal.boundary_parameters
@@ -802,9 +774,7 @@ def create_reference_calibration_search_extension_study(
             "Safety limits must match the boundary parameters exactly; expected="
             f"{sorted(boundary_parameters)}, observed={sorted(safety_limits)}"
         )
-    normalized_limits = _normalized_search_extension_safety_limits(
-        {"safety_limits": safety_limits}
-    )
+    normalized_limits = _normalized_search_extension_safety_limits({"safety_limits": safety_limits})
     inherited_series_limits = source_snapshot.search_extension_safety_limits
     if inherited_series_limits is None:
         series_limits = dict(normalized_limits)
@@ -840,9 +810,7 @@ def create_reference_calibration_search_extension_study(
     series_root, source_extension_depth = _search_extension_series(source_root)
     extension_round = source_extension_depth + 1
     source_events = _load_events(source_root)
-    source_by_id = {
-        candidate.candidate_id: candidate for candidate in source_snapshot.candidates
-    }
+    source_by_id = {candidate.candidate_id: candidate for candidate in source_snapshot.candidates}
     source_completed_events = {
         str(event["candidate_id"]): event
         for event in source_events
@@ -860,9 +828,9 @@ def create_reference_calibration_search_extension_study(
             _safe_study_path(source_root, source_manifest["source_config"]["copy"])
         )
         source_config = copy.deepcopy(dict(source_config))
-        source_config["project"]["parameter_provenance"]["recommendation"][
-            "calibration_plan"
-        ] = successor_plan.provenance
+        source_config["project"]["parameter_provenance"]["recommendation"]["calibration_plan"] = (
+            successor_plan.provenance
+        )
         validate_schema(source_config)
         source_copy = root / "source" / "atlas.yaml"
         source_copy.parent.mkdir(parents=True)
@@ -922,12 +890,10 @@ def create_reference_calibration_search_extension_study(
                 "series_root_directory": str(series_root),
                 "extension_round": extension_round,
                 "safety_limits": {
-                    parameter: list(bounds)
-                    for parameter, bounds in normalized_limits.items()
+                    parameter: list(bounds) for parameter, bounds in normalized_limits.items()
                 },
                 "series_safety_limits": {
-                    parameter: list(bounds)
-                    for parameter, bounds in series_limits.items()
+                    parameter: list(bounds) for parameter, bounds in series_limits.items()
                 },
             },
             "scientific_boundary": (
@@ -963,14 +929,10 @@ def create_reference_calibration_search_extension_study(
         for event in source_events:
             if event.get("event") != "stage_selected":
                 continue
-            payload = {
-                key: value for key, value in event.items() if key not in control_keys
-            }
+            payload = {key: value for key, value in event.items() if key not in control_keys}
             payload["imported_source_event_hash"] = event["event_hash"]
             _append_event(root, "stage_selected", payload)
-        current_stage = successor_plan.stages[
-            len(source_snapshot.selected_candidate_ids)
-        ]
+        current_stage = successor_plan.stages[len(source_snapshot.selected_candidate_ids)]
         _prepare_stage(
             root,
             manifest,
@@ -978,9 +940,7 @@ def create_reference_calibration_search_extension_study(
             current_stage,
             source_snapshot.selected_values,
         )
-        prepared = _prepared_candidates(
-            root, _load_events(root), current_stage.stage_id
-        )
+        prepared = _prepared_candidates(root, _load_events(root), current_stage.stage_id)
         for candidate in source_snapshot.current_stage.candidates:
             state = source_by_id[candidate.candidate_id]
             source_event = source_completed_events.get(candidate.candidate_id)
@@ -988,9 +948,7 @@ def create_reference_calibration_search_extension_study(
                 raise ReferenceCalibrationStudyError(
                     f"Completed source evidence is absent for {candidate.candidate_id}"
                 )
-            config_path = _safe_study_path(
-                root, prepared[candidate.candidate_id]["config"]
-            )
+            config_path = _safe_study_path(root, prepared[candidate.candidate_id]["config"])
             evidence_directory = config_path.parent / "source-evidence"
             evidence_directory.mkdir()
             evidence_record = {
@@ -1031,6 +989,26 @@ def create_reference_calibration_search_extension_study(
                     "imported_source_event_hash": source_event["event_hash"],
                 },
             )
+        # Carry explicit rejections/approvals with their original evidence binding;
+        # a successor must never silently forget a known anatomical failure.
+        for event in source_events:
+            if (
+                event.get("event") == "candidate_visual_review"
+                and event.get("stage_id") == current_stage.stage_id
+            ):
+                payload = {key: value for key, value in event.items() if key not in control_keys}
+                payload["imported_source_event_hash"] = event["event_hash"]
+                state = source_by_id[str(event["candidate_id"])]
+                config = _safe_study_path(root, prepared[state.candidate_id]["config"])
+                payload["imported_source_review_binding"] = payload["source"]
+                payload["source"] = _candidate_review_binding(
+                    replace(
+                        state,
+                        config_path=config,
+                        run_directory=config.parent / "source-evidence",
+                    )
+                )
+                _append_event(root, "candidate_visual_review", payload)
     except BaseException:
         shutil.rmtree(root, ignore_errors=True)
         raise
@@ -1047,18 +1025,14 @@ def _verify_manifest(root: Path) -> dict[str, Any]:
             f"Could not read calibration study digest: {error}"
         ) from error
     if sha256_file(manifest_path) != expected:
-        raise ReferenceCalibrationStudyError(
-            "Calibration study manifest SHA-256 does not match"
-        )
+        raise ReferenceCalibrationStudyError("Calibration study manifest SHA-256 does not match")
     if manifest.get("study_version") != STUDY_VERSION:
         raise ReferenceCalibrationStudyError(
             f"Unsupported calibration study version: {manifest.get('study_version')}"
         )
     plan_value = manifest.get("plan")
     if not isinstance(plan_value, Mapping):
-        raise ReferenceCalibrationStudyError(
-            "Calibration study does not contain a plan"
-        )
+        raise ReferenceCalibrationStudyError("Calibration study does not contain a plan")
     plan = reference_calibration_plan_from_provenance(plan_value)
     if plan.qc_recalibration_source:
         request = _read_json(root / "source" / "qc-request.json", "QC recalibration request")
@@ -1077,11 +1051,7 @@ def _verify_manifest(root: Path) -> dict[str, Any]:
             raise ReferenceCalibrationStudyError(
                 "Calibration search-extension source must be a mapping"
             )
-        source_root = (
-            Path(str(extension_source.get("study_directory", "")))
-            .expanduser()
-            .resolve()
-        )
+        source_root = Path(str(extension_source.get("study_directory", ""))).expanduser().resolve()
         if source_root == root.resolve():
             raise ReferenceCalibrationStudyError(
                 "Calibration search extension cannot cite itself as its source"
@@ -1116,12 +1086,9 @@ def _verify_manifest(root: Path) -> dict[str, Any]:
         )
         if (
             source_snapshot.study_id != extension_source.get("study_id")
-            or source_events[-1]["event_hash"]
-            != extension_source.get("terminal_event_hash")
-            or source_snapshot.plan.fingerprint
-            != extension_source.get("parent_plan_fingerprint")
-            or lineage.get("parent_plan_fingerprint")
-            != source_snapshot.plan.fingerprint
+            or source_events[-1]["event_hash"] != extension_source.get("terminal_event_hash")
+            or source_snapshot.plan.fingerprint != extension_source.get("parent_plan_fingerprint")
+            or lineage.get("parent_plan_fingerprint") != source_snapshot.plan.fingerprint
             or not isinstance(proposal, Mapping)
             or lineage.get("proposal_fingerprint") != proposal.get("fingerprint")
             or lineage.get("source_assessment_fingerprint")
@@ -1201,22 +1168,62 @@ def _selected_state(
         if event["event"] == "stage_selected":
             candidates[str(event["stage_id"])] = str(event["candidate_id"])
             values.update(
-                {
-                    str(name): float(value)
-                    for name, value in event["parameter_values"].items()
-                }
+                {str(name): float(value) for name, value in event["parameter_values"].items()}
             )
     return values, candidates
+
+
+def calibration_candidate_run_directory(candidate: CalibrationStudyCandidateState) -> Path:
+    """Resolve preserved run evidence through verified successor links for QC."""
+    current = candidate
+    seen: set[Path] = set()
+    for _ in range(64):
+        path = current.run_directory
+        if path is None or path in seen:
+            raise ReferenceCalibrationStudyError("Missing or cyclic preserved candidate evidence")
+        seen.add(path)
+        if (path / "manifest.json").is_file():
+            return path
+        record = _read_json(path / "evidence.json", "preserved candidate evidence")
+        source = load_reference_calibration_study(record["source_study_directory"])
+        previous = next(
+            (c for c in source.candidates if c.candidate_id == candidate.candidate_id), None
+        )
+        event = next(
+            (
+                e
+                for e in _load_events(source.study_directory)
+                if e["event_hash"] == record.get("source_event_hash")
+            ),
+            None,
+        )
+        if (
+            previous is None
+            or previous.run_directory is None
+            or str(previous.run_directory) != record.get("source_run_directory")
+            or previous.metrics != current.metrics
+            or record.get("metrics") != current.metrics
+            or event is None
+            or event.get("event") != "candidate_completed"
+            or event.get("candidate_id") != candidate.candidate_id
+            or event.get("metrics") != current.metrics
+        ):
+            raise ReferenceCalibrationStudyError(
+                "Preserved candidate evidence differs from its source"
+            )
+        current = previous
+    raise ReferenceCalibrationStudyError("Preserved candidate lineage exceeds the supported depth")
 
 
 def _candidate_review_binding(candidate: CalibrationStudyCandidateState) -> dict[str, str]:
     if candidate.status != "completed" or candidate.run_directory is None:
         raise ReferenceCalibrationStudyError("Visual review requires a completed candidate")
+    run_directory = calibration_candidate_run_directory(candidate)
     return {
         "config_sha256": sha256_file(candidate.config_path),
-        "run_manifest_sha256": sha256_file(candidate.run_directory / "manifest.json"),
-        "result_sha256": sha256_file(candidate.run_directory / "result.json"),
-        "inventory_sha256": sha256_file(candidate.run_directory / "output-inventory.json"),
+        "run_manifest_sha256": sha256_file(run_directory / "manifest.json"),
+        "result_sha256": sha256_file(run_directory / "result.json"),
+        "inventory_sha256": sha256_file(run_directory / "output-inventory.json"),
         "metrics_sha256": _canonical_hash(candidate.metrics),
     }
 
@@ -1242,21 +1249,45 @@ def _load_candidate_reviews(
 
 
 def record_reference_calibration_candidate_review(
-    study_directory: Path | str, *, candidate_id: str, approved: bool,
-    reviewed_subjects: tuple[str, ...], anatomical_notes: str = "",
+    study_directory: Path | str,
+    *,
+    candidate_id: str,
+    approved: bool,
+    reviewed_subjects: tuple[str, ...],
+    anatomical_notes: str = "",
     feature_observations: Mapping[str, Mapping[str, Any]] | None = None,
+    subject_decisions: Mapping[str, str] | None = None,
 ) -> ReferenceCalibrationStudySnapshot:
     """Persist an explicit complete visual decision before any stage selection."""
     root = Path(study_directory).expanduser().resolve()
     snapshot = load_reference_calibration_study(root)
     if snapshot.status != "awaiting_review" or snapshot.current_stage is None:
-        raise ReferenceCalibrationStudyError(
-            "Candidate review requires an idle completed stage"
-        )
+        raise ReferenceCalibrationStudyError("Candidate review requires an idle completed stage")
     expected = {subject.filename for subject in snapshot.plan.selected_pilot_subjects}
-    if (type(approved) is not bool or set(reviewed_subjects) != expected
-            or len(reviewed_subjects) != len(expected)):
-        raise ReferenceCalibrationStudyError("A decision requires review of every pilot subject")
+    reviewed = set(reviewed_subjects)
+    if (
+        type(approved) is not bool
+        or not reviewed
+        or not reviewed <= expected
+        or len(reviewed_subjects) != len(reviewed)
+        or (approved and reviewed != expected)
+    ):
+        raise ReferenceCalibrationStudyError(
+            "Approval requires review of every pilot subject; "
+            "rejection requires an inspected subject"
+        )
+    decisions = dict(subject_decisions or {})
+    if (
+        set(decisions) - reviewed
+        or any(value not in {"pass", "fail", "uncertain"} for value in decisions.values())
+        or (approved and (set(decisions) != expected or set(decisions.values()) != {"pass"}))
+        or (
+            not approved and not any(value in {"fail", "uncertain"} for value in decisions.values())
+        )
+    ):
+        raise ReferenceCalibrationStudyError(
+            "Record each specimen's fit; every specimen must pass before approval"
+        )
     if not isinstance(anatomical_notes, str) or len(anatomical_notes) > 4000:
         raise ReferenceCalibrationStudyError(
             "Anatomical notes must contain at most 4000 characters"
@@ -1266,7 +1297,10 @@ def record_reference_calibration_candidate_review(
         raise ReferenceCalibrationStudyError("Feature checks name an unknown pilot subject")
     for observation in counts.values():
         if not isinstance(observation, Mapping) or set(observation) != {
-            "original", "reconstruction", "criterion", "judgement"
+            "original",
+            "reconstruction",
+            "criterion",
+            "judgement",
         }:
             raise ReferenceCalibrationStudyError(
                 "Feature checks require named criteria and observations"
@@ -1275,14 +1309,21 @@ def record_reference_calibration_candidate_review(
         if not isinstance(criterion, str) or not 1 <= len(criterion.strip()) <= 500:
             raise ReferenceCalibrationStudyError("Feature checks require a named dataset criterion")
         if observation["judgement"] not in {
-            "unassessed", "preserved", "not_preserved", "uncertain"
+            "unassessed",
+            "preserved",
+            "not_preserved",
+            "uncertain",
         }:
             raise ReferenceCalibrationStudyError("Feature checks require a valid observation")
-        if any(value is not None and (type(value) is not int or not 0 <= value <= 999)
-               for value in (observation["original"], observation["reconstruction"])):
+        if any(
+            value is not None and (type(value) is not int or not 0 <= value <= 999)
+            for value in (observation["original"], observation["reconstruction"])
+        ):
             raise ReferenceCalibrationStudyError("Feature counts must be integers from 0 to 999")
-        if approved and (observation["judgement"] != "preserved"
-                         or observation["original"] != observation["reconstruction"]):
+        if approved and (
+            observation["judgement"] != "preserved"
+            or observation["original"] != observation["reconstruction"]
+        ):
             raise ReferenceCalibrationStudyError(
                 "Cannot approve anatomy with unresolved feature checks or differing counts"
             )
@@ -1290,13 +1331,21 @@ def record_reference_calibration_candidate_review(
     if candidate is None:
         raise ReferenceCalibrationStudyError("Unknown candidate for visual review")
     source = _candidate_review_binding(candidate)
-    _append_event(root, "candidate_visual_review", {
-        "stage_id": snapshot.current_stage.stage_id, "candidate_id": candidate_id,
-        "approved": approved, "reviewed_subjects": sorted(reviewed_subjects),
-        "anatomical_notes": anatomical_notes.strip(), "source": source,
-        "feature_observations": counts,
-        "policy": "researcher_original_detail_review_v1",
-    })
+    _append_event(
+        root,
+        "candidate_visual_review",
+        {
+            "stage_id": snapshot.current_stage.stage_id,
+            "candidate_id": candidate_id,
+            "approved": approved,
+            "reviewed_subjects": sorted(reviewed_subjects),
+            "anatomical_notes": anatomical_notes.strip(),
+            "source": source,
+            "feature_observations": counts,
+            "subject_decisions": decisions,
+            "policy": "researcher_every_specimen_fit_v2",
+        },
+    )
     return load_reference_calibration_study(root)
 
 
@@ -1307,15 +1356,13 @@ def load_reference_calibration_study(
 
     root = Path(study_directory).expanduser().resolve()
     if not root.is_dir():
-        raise ReferenceCalibrationStudyError(
-            f"Calibration study directory does not exist: {root}"
-        )
+        raise ReferenceCalibrationStudyError(f"Calibration study directory does not exist: {root}")
     manifest = _verify_manifest(root)
     plan = reference_calibration_plan_from_provenance(manifest["plan"])
     events = _load_events(root)
-    if events[0]["study_id"] != manifest["study_id"] or events[0][
-        "manifest_sha256"
-    ] != sha256_file(root / STUDY_MANIFEST):
+    if events[0]["study_id"] != manifest["study_id"] or events[0]["manifest_sha256"] != sha256_file(
+        root / STUDY_MANIFEST
+    ):
         raise ReferenceCalibrationStudyError(
             "Calibration event ledger is bound to a different manifest"
         )
@@ -1366,9 +1413,7 @@ def load_reference_calibration_study(
             if key not in final_event:
                 continue
             report_path = _safe_study_path(root, final_event[key])
-            if not report_path.is_file() or sha256_file(report_path) != final_event.get(
-                digest_key
-            ):
+            if not report_path.is_file() or sha256_file(report_path) != final_event.get(digest_key):
                 raise ReferenceCalibrationStudyError(f"{label} changed or is absent")
             if key == "report_json":
                 report_json = report_path
@@ -1400,28 +1445,18 @@ def load_reference_calibration_study(
             if event.get("stage_id") == stage.stage_id
             and event.get("candidate_id") == candidate.candidate_id
         ]
-        completed = [
-            event
-            for event in candidate_events
-            if event["event"] == "candidate_completed"
-        ]
+        completed = [event for event in candidate_events if event["event"] == "candidate_completed"]
         failures = [
             event
             for event in candidate_events
             if event["event"] in {"candidate_failed", "candidate_interrupted"}
         ]
-        starts = [
-            event for event in candidate_events if event["event"] == "candidate_started"
-        ]
+        starts = [event for event in candidate_events if event["event"] == "candidate_started"]
         latest = (completed or failures or starts or [None])[-1]
         if completed:
             status = "completed"
         elif failures:
-            status = (
-                "interrupted"
-                if failures[-1]["event"] == "candidate_interrupted"
-                else "failed"
-            )
+            status = "interrupted" if failures[-1]["event"] == "candidate_interrupted" else "failed"
         elif starts:
             status = "orphaned"
         else:
@@ -1431,9 +1466,7 @@ def load_reference_calibration_study(
                 candidate_id=candidate.candidate_id,
                 label=candidate.label,
                 status=status,
-                config_path=_safe_study_path(
-                    root, prepared[candidate.candidate_id]["config"]
-                ),
+                config_path=_safe_study_path(root, prepared[candidate.candidate_id]["config"]),
                 run_directory=(
                     None
                     if latest is None or latest.get("run_directory") is None
@@ -1459,18 +1492,13 @@ def load_reference_calibration_study(
         )
     visual_reviews = _load_candidate_reviews(events, stage.stage_id, candidate_states)
     awaiting = any(
-        event["event"] == "stage_awaiting_review"
-        and event["stage_id"] == stage.stage_id
+        event["event"] == "stage_awaiting_review" and event["stage_id"] == stage.stage_id
         for event in events
     )
     status = (
         "awaiting_review"
         if awaiting
-        else (
-            "running"
-            if any(item.status == "orphaned" for item in candidate_states)
-            else "ready"
-        )
+        else ("running" if any(item.status == "orphaned" for item in candidate_states) else "ready")
     )
     return ReferenceCalibrationStudySnapshot(
         study_directory=root,
@@ -1480,6 +1508,12 @@ def load_reference_calibration_study(
         current_stage=stage,
         candidates=tuple(candidate_states),
         visual_reviews=visual_reviews,
+        subject_decisions={
+            event["candidate_id"]: dict(event.get("subject_decisions", {}))
+            for event in events
+            if event["event"] == "candidate_visual_review"
+            and event.get("stage_id") == stage.stage_id
+        },
         visual_review_notes={
             event["candidate_id"]: str(event.get("anatomical_notes", ""))
             for event in events
@@ -1555,9 +1589,7 @@ class ReferenceCalibrationStudyRunner:
     ) -> ReferenceCalibrationStudySnapshot:
         snapshot = load_reference_calibration_study(self.study_directory)
         if snapshot.status == "completed":
-            raise ReferenceCalibrationStudyError(
-                "Calibration study is already complete"
-            )
+            raise ReferenceCalibrationStudyError("Calibration study is already complete")
         if snapshot.status == "awaiting_review" and all(
             candidate.status == "completed" for candidate in snapshot.candidates
         ):
@@ -1578,9 +1610,7 @@ class ReferenceCalibrationStudyRunner:
                     "candidate_id": candidate.candidate_id,
                     "attempt": candidate.attempts + 1,
                     "request_id": request.request_id,
-                    "run_directory": _relative_path(
-                        self.study_directory, request.destination
-                    ),
+                    "run_directory": _relative_path(self.study_directory, request.destination),
                 },
             )
             if event_callback is not None:
@@ -1605,9 +1635,7 @@ class ReferenceCalibrationStudyRunner:
             try:
                 result = controller.run(event_callback=forward)
                 if result.completed:
-                    metrics = collect_reference_calibration_run_metrics(
-                        request.destination
-                    )
+                    metrics = collect_reference_calibration_run_metrics(request.destination)
                     terminal = _append_event(
                         self.study_directory,
                         "candidate_completed",
@@ -1662,8 +1690,7 @@ class ReferenceCalibrationStudyRunner:
                 event_callback(terminal)
         updated = load_reference_calibration_study(self.study_directory)
         if not self._cancel_requested and all(
-            candidate.status in {"completed", "failed"}
-            for candidate in updated.candidates
+            candidate.status in {"completed", "failed"} for candidate in updated.candidates
         ):
             events = _load_events(self.study_directory)
             assert updated.current_stage is not None
@@ -1701,264 +1728,79 @@ class ReferenceCalibrationStudyRunner:
         visual_approvals: Mapping[str, bool] | None = None,
         afk_outward_safety_limits: Mapping[str, tuple[float, float]] | None = None,
     ) -> ReferenceCalibrationStudySnapshot:
-        """Run every remaining stage and record provisional automatic selections.
+        """Batch the current stage, then pause for every-specimen visual QC.
 
-        Candidate generation is already centered on the researcher's declared
-        surface-detail and deformation-scale priorities.  At each stage this route
-        selects the eligible Pareto candidate with the lowest published weighted
-        comparison score.  The event ledger records that this was an automatic,
-        provisional recommendation rather than a researcher anatomy approval.
+        Retain the API for existing launchers. Historical AFK consent cannot
+        authorize an anatomical pass or silently advance a stage under v94.
         """
-
-        initial = load_reference_calibration_study(self.study_directory)
-        if initial.plan.qc_recalibration_source and initial.status != "completed":
+        if type(afk) is not bool:
+            raise TypeError("AFK authorization must be an explicit boolean")
+        if afk_outward_safety_limits is not None:
+            _validated_outward_safety_limits(afk_outward_safety_limits)
+            raise ReferenceCalibrationStudyError(
+                "Automatic outward search is disabled; prepare an explicit fit refinement instead"
+            )
+        snapshot = load_reference_calibration_study(self.study_directory)
+        if snapshot.plan.qc_recalibration_source and snapshot.status != "completed":
             raise ReferenceCalibrationStudyError(
                 "QC recalibration requires visual stage review; run one stage at a time"
             )
-        initial_stage = (
-            initial.current_stage.stage_id if initial.current_stage else None
-        )
-        if not isinstance(afk, bool):
-            raise TypeError("AFK authorization must be an explicit boolean")
-        declared_outward_limits = _validated_outward_safety_limits(
-            afk_outward_safety_limits
-        )
-        if declared_outward_limits is not None and not afk:
-            raise ReferenceCalibrationStudyError(
-                "Outward safety limits only authorize the unattended AFK route"
-            )
-        approvals = {}
-        for event in _load_events(self.study_directory) if afk else ():
-            if (
-                event["event"] == "afk_policy_authorized"
-                and event.get("visual_review_stage_id") == initial_stage
-            ):
-                approvals.update(event.get("visual_approvals", {}))
-        approvals.update(visual_approvals or {})
-        if set(approvals) - {
-            candidate.candidate_id for candidate in initial.candidates
-        } or any(not isinstance(value, bool) for value in approvals.values()):
-            raise ReferenceCalibrationStudyError(
-                "Visual decisions must name current candidates and be boolean"
-            )
-        if afk and initial.status != "completed" and not self._cancel_requested:
-            _append_event(
-                self.study_directory,
-                "afk_policy_authorized",
+        if snapshot.status == "completed" or self._cancel_requested:
+            return snapshot
+        if snapshot.status != "awaiting_review":
+            snapshot = self.run_current_stage(event_callback=event_callback)
+        if snapshot.status == "awaiting_review" and event_callback is not None:
+            event_callback(
                 {
-                    "policy": (
-                        "bounded-pilot-outward-v1"
-                        if declared_outward_limits is not None
-                        else "bounded-pilot-provisional-v1"
-                    ),
-                    "remaining_stage_ids": [
-                        stage.stage_id
-                        for stage in initial.plan.stages
-                        if stage.stage_id not in initial.selected_candidate_ids
-                    ],
-                    "plan_fingerprint": initial.plan.fingerprint,
-                    "accept_eligible_ambiguous_or_boundary_recommendations": True,
-                    "outward_search": declared_outward_limits is not None,
-                    "outward_safety_limits": (
-                        {
-                            parameter: list(bounds)
-                            for parameter, bounds in sorted(
-                                declared_outward_limits.items()
-                            )
-                        }
-                        if declared_outward_limits is not None
-                        else None
-                    ),
-                    "visual_approval_implied": False,
-                    "atlas_launch_authorized": False,
-                    "visual_review_stage_id": initial_stage,
-                    "visual_approvals": approvals,
-                },
-            )
-        outward_budget_exhausted = False
-        exhausted_stage_id: str | None = None
-        exhausted_boundary_parameters: tuple[str, ...] = ()
-        while True:
-            snapshot = load_reference_calibration_study(self.study_directory)
-            if snapshot.status == "completed" or self._cancel_requested:
-                return snapshot
-            if snapshot.status != "awaiting_review":
-                snapshot = self.run_current_stage(event_callback=event_callback)
-                if self._cancel_requested:
-                    return snapshot
-            if snapshot.status != "awaiting_review":
-                continue
-            incomplete = [
-                candidate
-                for candidate in snapshot.candidates
-                if candidate.status != "completed"
-            ]
-            if incomplete:
-                errors = {candidate.error for candidate in incomplete}
-                common_error = (
-                    next(iter(errors))
-                    if len(errors) == 1 and None not in errors
-                    else None
-                )
-                reason = (
-                    f" All {len(incomplete)} incomplete candidates reported the same "
-                    f"error: {common_error}."
-                    if common_error is not None
-                    else ""
-                )
-                raise ReferenceCalibrationStudyError(
-                    "Automatic pilot calibration paused because not every candidate "
-                    "completed successfully."
-                    + reason
-                    + " Retry the pilot after reviewing: "
-                    + ", ".join(candidate.candidate_id for candidate in incomplete)
-                )
-            assessment = assess_reference_calibration_snapshot(snapshot)
-            # A study that already descends from an outward successor carries its own
-            # inherited limits.  The first study in an unattended series has none, so
-            # the limits the researcher declared before the run authorize it instead.
-            available_limits = (
-                snapshot.search_extension_safety_limits
-                if snapshot.search_extension_safety_limits is not None
-                else declared_outward_limits
-            )
-            if (
-                (not afk or declared_outward_limits is not None)
-                and not assessment.automatic_selection_allowed
-                and assessment.search_range_status == "not_bounded"
-                and available_limits is not None
-                and exhausted_stage_id != assessment.stage_id
-            ):
-                boundary_parameters = {
-                    value.split(":", maxsplit=1)[0]
-                    for value in assessment.search_boundary_parameters
+                    "event": "visual_fit_review_required",
+                    "message": "Review every specimen before advancing the stage.",
                 }
-                inherited_limits = dict(available_limits)
-                missing = sorted(boundary_parameters - set(inherited_limits))
-                if missing:
-                    raise ReferenceCalibrationStudyError(
-                        "Search range not bounded: the preferred candidate reached new "
-                        "parameter boundaries without predeclared feasibility limits: "
-                        + ", ".join(missing)
-                        + ". Declare those limits before another outward successor runs."
-                    )
-                active_limits = {
-                    parameter: inherited_limits[parameter]
-                    for parameter in boundary_parameters
-                }
-                destination = next_reference_calibration_search_extension_destination(
-                    self.study_directory
-                )
-                if destination.exists():
-                    raise ReferenceCalibrationStudyError(
-                        "Search range not bounded: the deterministic outward-successor "
-                        f"destination already exists and was not reused: {destination}"
-                    )
-                try:
-                    successor = create_reference_calibration_search_extension_study(
-                        self.study_directory,
-                        destination,
-                        safety_limits=active_limits,
-                    )
-                except ReferenceCalibrationStudyError as error:
-                    if "Safety limit reached" not in str(error):
-                        raise
-                    if declared_outward_limits is None:
-                        raise ReferenceCalibrationStudyError(
-                            "Search range not bounded: the preferred candidate remains "
-                            "on the tested boundary, but the next outward candidates "
-                            f"would cross the declared feasibility limit. {error}"
-                        ) from error
-                    # The unattended route exhausted the outward budget the researcher
-                    # declared.  Stopping here would leave the pilot half-finished
-                    # overnight without adding evidence, so the boundary candidate is
-                    # recorded with an explicit exhaustion notice instead.
-                    outward_budget_exhausted = True
-                    exhausted_boundary_parameters = tuple(
-                        sorted(assessment.search_boundary_parameters)
-                    )
-                    exhausted_stage_id = assessment.stage_id
-                    exhaustion = _append_event(
-                        self.study_directory,
-                        "automatic_search_budget_exhausted",
-                        {
-                            "stage_id": assessment.stage_id,
-                            "boundary_parameters": list(
-                                assessment.search_boundary_parameters
-                            ),
-                            "declared_safety_limits": {
-                                parameter: list(bounds)
-                                for parameter, bounds in sorted(active_limits.items())
-                            },
-                            "consequence": (
-                                "boundary_candidate_recorded_without_further_outward_search"
-                            ),
-                        },
-                    )
-                    if event_callback is not None:
-                        event_callback(exhaustion)
-                else:
-                    source = self.study_directory
-                    self.study_directory = successor.study_directory
-                    if event_callback is not None:
-                        event_callback(
-                            {
-                                "event": "automatic_search_extended",
-                                "source_study_directory": str(source),
-                                "study_directory": str(successor.study_directory),
-                                "extension_round": successor.search_extension_round,
-                                "stage_id": assessment.stage_id,
-                                "boundary_parameters": list(
-                                    assessment.search_boundary_parameters
-                                ),
-                                "pending_candidate_ids": [
-                                    candidate.candidate_id
-                                    for candidate in successor.candidates
-                                    if candidate.status != "completed"
-                                ],
-                            }
-                        )
-                    continue
-            stage_id = snapshot.current_stage.stage_id if snapshot.current_stage else ""
-            if self._cancel_requested:
-                return snapshot
-            if afk:
-                updated, assessment = select_reference_calibration_stage_automatically(
-                    self.study_directory,
-                    afk=True,
-                    visual_approvals=approvals if stage_id == initial_stage else {},
-                    selection_reason_prefix=(
-                        _outward_budget_exhausted_reason(
-                            exhausted_boundary_parameters,
-                            declared_outward_limits,
-                        )
-                        if outward_budget_exhausted
-                        and exhausted_stage_id == stage_id
-                        else ""
-                    ),
-                )
-            else:
-                updated, assessment = select_reference_calibration_stage_automatically(
-                    self.study_directory
-                )
-            selected_id = updated.selected_candidate_ids.get(stage_id, "")
-            if event_callback is not None:
-                event_callback(
-                    {
-                        "event": "automatic_stage_selected",
-                        "stage_id": stage_id,
-                        "candidate_id": selected_id,
-                        "balanced_candidate_id": assessment.balanced_candidate_id,
-                        "completed_stage_count": len(updated.selected_candidate_ids),
-                        "stage_count": len(updated.plan.stages),
-                    }
-                )
-            if updated.status == "completed":
-                return updated
+            )
+        return snapshot
 
 
 def _relative_difference(first: float, second: float) -> float:
     return abs(first - second) / max(abs(first), abs(second), 1e-15)
+
+
+@lru_cache(maxsize=512)
+def _bound_subject_diagonal(path: Path, digest: str) -> float:
+    if sha256_file(path) != digest:
+        raise ReferenceCalibrationStudyError("Pilot original changed before fit normalization")
+    mesh = read_vtk_polydata(path)
+    columns = tuple(zip(*mesh.vertices, strict=True))
+    diagonal = math.sqrt(math.fsum((max(axis) - min(axis)) ** 2 for axis in columns))
+    if not math.isfinite(diagonal) or diagonal <= 0:
+        raise ReferenceCalibrationStudyError("Pilot original has no finite positive spatial extent")
+    return diagonal
+
+
+def normalized_candidate_subject_fit(
+    snapshot: ReferenceCalibrationStudySnapshot,
+    candidate: CalibrationStudyCandidateState,
+) -> dict[str, float]:
+    """Read-only size normalization, also for legacy immutable run metrics.
+
+    Geometry is read once per bound input digest, never rewritten or re-fitted.
+    The verified study loader checks source hashes before supplying a snapshot.
+    """
+    raw = (candidate.metrics or {}).get("subject_residual_p95", {})
+    if not isinstance(raw, Mapping):
+        return {}
+    manifest = _read_json(snapshot.study_directory / STUDY_MANIFEST, "study manifest")
+    scales = {
+        record["filename"]: _bound_subject_diagonal(
+            _safe_study_path(snapshot.study_directory, record["copy"]),
+            record["sha256"],
+        )
+        for record in manifest["inputs"]["subjects"]
+    }
+    if set(raw) != set(scales):
+        return {}
+    try:
+        return {name: float(value) / scales[name] for name, value in raw.items()}
+    except (TypeError, ValueError, OverflowError):
+        return {}
 
 
 def _stage_evidence(
@@ -1975,9 +1817,7 @@ def _stage_evidence(
     numerical: dict[str, tuple[float, float, float]] = {}
     if snapshot.current_stage.kind == "integration_accuracy":
         ordered = [
-            candidate
-            for candidate in snapshot.candidates
-            if candidate.candidate_id in completed
+            candidate for candidate in snapshot.candidates if candidate.candidate_id in completed
         ]
         for index, candidate in enumerate(ordered):
             neighbor = (
@@ -2007,15 +1847,10 @@ def _stage_evidence(
     for candidate in snapshot.candidates:
         metrics = candidate.metrics
         comparison = numerical.get(candidate.candidate_id)
-        raw_subject_residuals = (
-            metrics.get("subject_residual_p95", {}) if metrics else {}
-        )
+        raw_subject_residuals = metrics.get("subject_residual_p95", {}) if metrics else {}
         subject_residuals = (
             tuple(
-                sorted(
-                    (str(name), float(value))
-                    for name, value in raw_subject_residuals.items()
-                )
+                sorted((str(name), float(value)) for name, value in raw_subject_residuals.items())
             )
             if isinstance(raw_subject_residuals, Mapping)
             else ()
@@ -2025,30 +1860,25 @@ def _stage_evidence(
                 candidate_id=candidate.candidate_id,
                 completed=metrics is not None,
                 converged=bool(metrics and metrics["converged"]),
-                invalid_face_count=(
-                    int(metrics["invalid_face_count"]) if metrics else 0
-                ),
+                invalid_face_count=(int(metrics["invalid_face_count"]) if metrics else 0),
                 residual_p95=(float(metrics["residual_p95"]) if metrics else None),
-                deformation_energy=(
-                    float(metrics["deformation_energy"]) if metrics else None
-                ),
+                deformation_energy=(float(metrics["deformation_energy"]) if metrics else None),
                 distortion_p95=(float(metrics["distortion_p95"]) if metrics else None),
-                runtime_seconds=(
-                    float(metrics["runtime_seconds"]) if metrics else None
-                ),
+                runtime_seconds=(float(metrics["runtime_seconds"]) if metrics else None),
                 resampling_sensitivity=(
                     float(metrics["resampling_sensitivity"]) if metrics else None
                 ),
                 numerical_atlas_rms=(comparison[0] if comparison is not None else None),
-                objective_relative_difference=(
-                    comparison[1] if comparison is not None else None
-                ),
-                residual_relative_difference=(
-                    comparison[2] if comparison is not None else None
-                ),
+                objective_relative_difference=(comparison[1] if comparison is not None else None),
+                residual_relative_difference=(comparison[2] if comparison is not None else None),
                 review_approved=visual_approvals.get(candidate.candidate_id),
                 notes=((candidate.error,) if candidate.error else ()),
                 subject_residual_p95=subject_residuals,
+                subject_normalized_residual_p95=tuple(
+                    sorted(normalized_candidate_subject_fit(snapshot, candidate).items())
+                )
+                if metrics
+                else (),
             )
         )
     return tuple(evidence)
@@ -2097,9 +1927,7 @@ def _final_configuration(
     config = copy.deepcopy(dict(source))
     config["input"]["directory"] = str(manifest["inputs"]["full_cohort"]["directory"])
     config["input"]["template"] = str(manifest["inputs"]["full_cohort"]["template"])
-    config["input"]["subject_pattern"] = str(
-        manifest["inputs"]["full_cohort"]["subject_pattern"]
-    )
+    config["input"]["subject_pattern"] = str(manifest["inputs"]["full_cohort"]["subject_pattern"])
     targets = {
         "attachment_kernel_width": ("attachment", "kernel_width"),
         "deformation_kernel_width": ("deformation", "kernel_width"),
@@ -2120,9 +1948,7 @@ def _final_configuration(
             config["project"]["parameter_provenance"]["ratios"][name] = value / float(
                 manifest["template_diagonal"]
             )
-            config["project"]["parameter_provenance"]["sources"][name] = (
-                "absolute_override"
-            )
+            config["project"]["parameter_provenance"]["sources"][name] = "absolute_override"
     runtime_observations: list[dict[str, object]] = []
     for event in _load_events(root):
         if event.get("event") != "candidate_completed":
@@ -2143,9 +1969,7 @@ def _final_configuration(
                 "maximum_iterations": int(metrics["maximum_iterations"]),
             }
         )
-    config["project"]["parameter_provenance"]["recommendation"][
-        "calibration_result"
-    ] = {
+    config["project"]["parameter_provenance"]["recommendation"]["calibration_result"] = {
         "version": "0.1",
         "status": "completed",
         "study_id": str(manifest["study_id"]),
@@ -2245,34 +2069,22 @@ def _calibration_report_payload(
 ) -> dict[str, object]:
     source = load_config(_safe_study_path(root, manifest["source_config"]["copy"]))
     recommendation = (
-        source.get("project", {})
-        .get("parameter_provenance", {})
-        .get("recommendation", {})
+        source.get("project", {}).get("parameter_provenance", {}).get("recommendation", {})
     )
     declared_priorities = {
-        "surface_detail_intent": recommendation.get(
-            "surface_detail_intent", "not recorded"
-        ),
-        "deformation_scale_intent": recommendation.get(
-            "deformation_scale_intent", "not recorded"
-        ),
-        "expected_shape_disparity": recommendation.get(
-            "expected_shape_disparity", "moderate"
-        ),
+        "surface_detail_intent": recommendation.get("surface_detail_intent", "not recorded"),
+        "deformation_scale_intent": recommendation.get("deformation_scale_intent", "not recorded"),
+        "expected_shape_disparity": recommendation.get("expected_shape_disparity", "moderate"),
         "smallest_relevant_feature": plan.smallest_relevant_feature,
     }
     selection_events = {
-        str(event["stage_id"]): event
-        for event in events
-        if event["event"] == "stage_selected"
+        str(event["stage_id"]): event for event in events if event["event"] == "stage_selected"
     }
     stages: list[dict[str, object]] = []
     for stage in plan.stages:
         selected_id = selected_candidate_ids[stage.stage_id]
         selected = next(
-            candidate
-            for candidate in stage.candidates
-            if candidate.candidate_id == selected_id
+            candidate for candidate in stage.candidates if candidate.candidate_id == selected_id
         )
         event = selection_events[stage.stage_id]
         assessment = event.get("assessment", {})
@@ -2291,16 +2103,12 @@ def _calibration_report_payload(
                     "eligible": candidate_assessment.get("eligible"),
                     "pareto_optimal": candidate_assessment.get("pareto_optimal"),
                     "balanced_score": candidate_assessment.get("balanced_score"),
-                    "weight_win_fraction": candidate_assessment.get(
-                        "weight_win_fraction"
-                    ),
+                    "weight_win_fraction": candidate_assessment.get("weight_win_fraction"),
                     "subject_bootstrap_win_fraction": candidate_assessment.get(
                         "subject_bootstrap_win_fraction"
                     ),
                     "score_range": candidate_assessment.get("score_range"),
-                    "rejection_reasons": candidate_assessment.get(
-                        "rejection_reasons", []
-                    ),
+                    "rejection_reasons": candidate_assessment.get("rejection_reasons", []),
                     "selected": candidate.candidate_id == selected_id,
                 }
             )
@@ -2320,23 +2128,13 @@ def _calibration_report_payload(
                 "recommendation_confidence": assessment.get(
                     "recommendation_confidence", "not_assessed"
                 ),
-                "automatic_selection_allowed": assessment.get(
-                    "automatic_selection_allowed", False
-                ),
+                "automatic_selection_allowed": assessment.get("automatic_selection_allowed", False),
                 "weight_stability": assessment.get("weight_stability"),
-                "subject_bootstrap_stability": assessment.get(
-                    "subject_bootstrap_stability"
-                ),
+                "subject_bootstrap_stability": assessment.get("subject_bootstrap_stability"),
                 "score_margin": assessment.get("score_margin"),
-                "independent_rank_candidate_id": assessment.get(
-                    "independent_rank_candidate_id"
-                ),
-                "search_range_status": assessment.get(
-                    "search_range_status", "not_evaluated"
-                ),
-                "search_boundary_parameters": assessment.get(
-                    "search_boundary_parameters", []
-                ),
+                "independent_rank_candidate_id": assessment.get("independent_rank_candidate_id"),
+                "search_range_status": assessment.get("search_range_status", "not_evaluated"),
+                "search_boundary_parameters": assessment.get("search_boundary_parameters", []),
                 "sensitivity_flags": assessment.get("sensitivity_flags", []),
                 "metric_weights": assessment.get("metric_weights", {}),
                 "alternatives": alternatives,
@@ -2371,11 +2169,10 @@ def _calibration_report_payload(
             "This is adaptive recalibration, not independent validation or approval of a "
             "final atlas. A new full-cohort atlas and QC remain required."
             if plan.qc_recalibration_source
-            else "All four staged pilot comparisons completed. Standard automatic choices "
-            "require the robustness gate; AFK choices use an explicitly pre-authorized "
-            "provisional policy and may remain ambiguous or search-boundary limited. "
-            "Consult each recorded selection mode and evidence grade. No visual approval "
-            "is implied. Full-cohort confirmation remains required."
+            else "All four staged pilot comparisons completed. Consult each recorded "
+            "selection mode and visual decision, including any historical automatic "
+            "selections. Current selection requires every-specimen visual approval. "
+            "Full-cohort confirmation and anatomical QC remain required."
         ),
         "coordinate_unit": plan.coordinate_unit,
         "pilot_subjects": [subject.filename for subject in plan.selected_pilot_subjects],
@@ -2426,15 +2223,11 @@ def _calibration_report_html(report: Mapping[str, object]) -> str:
             score_text = "not available" if score is None else f"{float(score):.6g}"
             weight_support = candidate["weight_win_fraction"]
             weight_text = (
-                "not available"
-                if weight_support is None
-                else f"{float(weight_support):.1%}"
+                "not available" if weight_support is None else f"{float(weight_support):.1%}"
             )
             subject_support = candidate["subject_bootstrap_win_fraction"]
             subject_text = (
-                "not available"
-                if subject_support is None
-                else f"{float(subject_support):.1%}"
+                "not available" if subject_support is None else f"{float(subject_support):.1%}"
             )
             alternative_rows.append(
                 "<tr>"
@@ -2452,27 +2245,13 @@ def _calibration_report_html(report: Mapping[str, object]) -> str:
         score_margin = item["score_margin"]
         stability_summary = (
             "Metric-weight support: "
-            + (
-                "not available"
-                if weight_stability is None
-                else f"{float(weight_stability):.1%}"
-            )
+            + ("not available" if weight_stability is None else f"{float(weight_stability):.1%}")
             + " · Subject-resampling support: "
-            + (
-                "not available"
-                if subject_stability is None
-                else f"{float(subject_stability):.1%}"
-            )
+            + ("not available" if subject_stability is None else f"{float(subject_stability):.1%}")
             + " · Score separation: "
-            + (
-                "not available"
-                if score_margin is None
-                else f"{float(score_margin):.4f}"
-            )
+            + ("not available" if score_margin is None else f"{float(score_margin):.4f}")
         )
-        flags = "".join(
-            f"<li>{html.escape(str(flag))}</li>" for flag in item["sensitivity_flags"]
-        )
+        flags = "".join(f"<li>{html.escape(str(flag))}</li>" for flag in item["sensitivity_flags"])
         flag_html = (
             "<p><strong>No material sensitivity warning was triggered.</strong></p>"
             if not flags
@@ -2499,12 +2278,8 @@ def _calibration_report_html(report: Mapping[str, object]) -> str:
             "</section>"
         )
     stage_rows = "".join(rendered_stages)
-    next_steps = "".join(
-        f"<li>{html.escape(str(item))}</li>" for item in report["next_steps"]
-    )
-    limitations = "".join(
-        f"<li>{html.escape(str(item))}</li>" for item in report["limitations"]
-    )
+    next_steps = "".join(f"<li>{html.escape(str(item))}</li>" for item in report["next_steps"])
+    limitations = "".join(f"<li>{html.escape(str(item))}</li>" for item in report["limitations"])
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <title>DiffeoForge pilot calibration report</title>
@@ -2602,10 +2377,13 @@ def _record_reference_calibration_stage_selection(
     root = Path(study_directory).expanduser().resolve()
     snapshot = load_reference_calibration_study(root)
     if snapshot.status != "awaiting_review" or snapshot.current_stage is None:
-        raise ReferenceCalibrationStudyError(
-            "The current calibration stage is not awaiting review"
-        )
+        raise ReferenceCalibrationStudyError("The current calibration stage is not awaiting review")
     visual_approvals = {**visual_approvals, **snapshot.visual_reviews}
+    if snapshot.visual_reviews.get(selected_candidate_id) is not True:
+        raise ReferenceCalibrationStudyError(
+            "Every pilot specimen must pass recorded visual QC before selecting this option. "
+            "A numerical leader or a provisional override is not anatomical approval."
+        )
     if snapshot.plan.qc_recalibration_source and (
         visual_approvals.get(selected_candidate_id) is not True
         or not selection_mode.startswith("researcher_")
@@ -2661,9 +2439,7 @@ def _record_reference_calibration_stage_selection(
             "candidate_id": selected_candidate_id,
             "parameter_values": selected.values,
             "visual_approvals": dict(visual_approvals),
-            "visual_review_policy": "required_qc_followup"
-            if snapshot.plan.qc_recalibration_source
-            else "optional",
+            "visual_review_policy": "required_every_specimen_fit",
             "visual_review_status": {
                 candidate.candidate_id: (
                     "passed"
@@ -2697,9 +2473,7 @@ def _record_reference_calibration_stage_selection(
         events = _load_events(root)
         decision_event_hash = str(events[-1]["event_hash"])
         selection_modes = {
-            str(event["stage_id"]): str(
-                event.get("selection_mode", "researcher_manual")
-            )
+            str(event["stage_id"]): str(event.get("selection_mode", "researcher_manual"))
             for event in events
             if event["event"] == "stage_selected"
         }
@@ -2744,7 +2518,7 @@ def record_reference_calibration_stage_review(
     visual_approvals: Mapping[str, bool],
     selected_candidate_id: str,
 ) -> tuple[ReferenceCalibrationStudySnapshot, CalibrationStageAssessment]:
-    """Record optional visual QC and advance one researcher-selected stage."""
+    """Advance a researcher-selected stage after recorded every-specimen visual QC."""
 
     return _record_reference_calibration_stage_selection(
         study_directory,
@@ -2753,7 +2527,7 @@ def record_reference_calibration_stage_review(
         selection_mode="researcher_manual",
         selection_reason=(
             "The researcher explicitly selected this candidate after reviewing the "
-            "available automatic evidence and optional visual QC."
+            "available fit evidence and recorded every-specimen visual QC."
         ),
     )
 
@@ -2818,8 +2592,7 @@ def select_reference_calibration_stage_automatically(
             or consent.get("policy")
             not in {"bounded-pilot-provisional-v1", "bounded-pilot-outward-v1"}
             or consent.get("plan_fingerprint") != snapshot.plan.fingerprint
-            or snapshot.current_stage.stage_id
-            not in consent.get("remaining_stage_ids", [])
+            or snapshot.current_stage.stage_id not in consent.get("remaining_stage_ids", [])
         ):
             raise ReferenceCalibrationStudyError(
                 "AFK selection requires recorded policy authorization"
@@ -2853,9 +2626,7 @@ def select_reference_calibration_stage_automatically(
         visual_approvals=approvals,
         selected_candidate_id=selected_candidate_id,
         selection_mode=(
-            "automatic_provisional_afk_v1"
-            if afk
-            else "automatic_provisional_balanced_score"
+            "automatic_provisional_afk_v1" if afk else "automatic_provisional_balanced_score"
         ),
         selection_reason=(
             str(selection_reason_prefix)

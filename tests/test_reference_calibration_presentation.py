@@ -14,13 +14,23 @@ from diffeoforge.reference_calibration_study import CalibrationStudyCandidateSta
 
 
 def test_afk_summary_exposes_recorded_uncertainty_without_approving_anatomy() -> None:
-    report = {"stage_decisions": [
-        {"title": "Attachment", "selection_mode": "automatic_provisional_afk_v1",
-         "recommendation_confidence": "ambiguous", "search_range_status": "not_bounded",
-         "sensitivity_flags": ["weight_sensitive"]},
-        {"title": "Time points", "selection_mode": "automatic_provisional_afk_v1",
-         "recommendation_confidence": "robust", "search_range_status": "bounded"},
-    ]}
+    report = {
+        "stage_decisions": [
+            {
+                "title": "Attachment",
+                "selection_mode": "automatic_provisional_afk_v1",
+                "recommendation_confidence": "ambiguous",
+                "search_range_status": "not_bounded",
+                "sensitivity_flags": ["weight_sensitive"],
+            },
+            {
+                "title": "Time points",
+                "selection_mode": "automatic_provisional_afk_v1",
+                "recommendation_confidence": "robust",
+                "search_range_status": "bounded",
+            },
+        ]
+    }
     summary = afk_return_summary(report)
     assert "2 stages" in summary
     assert "Attachment: confidence: ambiguous" in summary
@@ -34,12 +44,16 @@ def test_afk_summary_exposes_recorded_uncertainty_without_approving_anatomy() ->
 
 def test_afk_summary_keeps_unassessed_evidence_explicit_and_manual_mode_unchanged() -> None:
     assert afk_return_summary({"stage_decisions": []}) is None
-    assert afk_return_summary(
-        {"stage_decisions": [{"selection_mode": "researcher_manual"}]}
-    ) is None
-    summary = afk_return_summary({"stage_decisions": [
-        {"selection_mode": "automatic_provisional_afk_v1", "title": "Legacy stage"}
-    ]})
+    assert (
+        afk_return_summary({"stage_decisions": [{"selection_mode": "researcher_manual"}]}) is None
+    )
+    summary = afk_return_summary(
+        {
+            "stage_decisions": [
+                {"selection_mode": "automatic_provisional_afk_v1", "title": "Legacy stage"}
+            ]
+        }
+    )
     assert "not_assessed" in summary
     assert "boundary not assessed" in summary
 
@@ -105,8 +119,9 @@ def test_attachment_guidance_explains_the_decision_without_jargon() -> None:
     )
 
     assert "matching-detail and deformation-scale" in guidance.question
-    assert "stable across metric priorities" in guidance.action
-    assert "collect more evidence" in guidance.action
+    assert "speed cannot compensate for poor fit" in guidance.action
+    assert "approve every specimen" in guidance.action
+    assert "refine an option" in guidance.action
     assert "overfitting" in guidance.caution
     assert parameter == "Surface-detail width: 0.219907 mm"
     assert direction == "Smaller follows finer detail; larger emphasizes broader shape."
@@ -143,25 +158,21 @@ def test_tradeoff_labels_state_both_sides_without_declaring_a_winner() -> None:
         "Fastest pilot run",
     )
     assert all(
-        "recommended" not in label.casefold()
-        for values in labels.values()
-        for label in values
+        "recommended" not in label.casefold() for values in labels.values() for label in values
     )
 
-    assessments = candidate_tradeoff_assessments(
-        (close_but_costly, smooth_and_fast)
-    )
+    assessments = candidate_tradeoff_assessments((close_but_costly, smooth_and_fast))
     assert tuple(item.tone for item in assessments["attachment-01"]) == (
         "favorable",
         "neutral",
         "neutral",
-        "unfavorable",
+        "neutral",
     )
     assert tuple(item.tone for item in assessments["attachment-02"]) == (
         "unfavorable",
         "neutral",
         "neutral",
-        "favorable",
+        "neutral",
     )
     fastest = assessments["attachment-02"][-1]
     assert fastest.label == "Fastest pilot run"
@@ -186,3 +197,16 @@ def test_machine_checks_and_technical_details_keep_interpretation_limits() -> No
     assert "no invalid faces" in summary
     assert "not Deformetrica's configured attachment objective" in technical
     assert "do not prove anatomically correct registration" in technical
+
+
+def test_refinement_option_labels_continue_past_z():
+    from diffeoforge.desktop.reference_calibration_presentation import candidate_option_label
+
+    assert [candidate_option_label(i) for i in (1, 17, 26, 27, 52, 53)] == [
+        "A",
+        "Q",
+        "Z",
+        "AA",
+        "AZ",
+        "BA",
+    ]

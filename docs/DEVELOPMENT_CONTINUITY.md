@@ -1,6 +1,6 @@
-# Development continuity — v93 explicit input validation
+# Development continuity — v94 pilot fit review
 
-Snapshot: 2026-09-27. This is a public, software-only continuation guide. Detailed
+Snapshot: 2026-09-28. This is a public, software-only continuation guide. Detailed
 research results, local paths, account destinations and run identities belong in
 the owner's private project handoff, not this repository.
 
@@ -11,6 +11,14 @@ alignment, provisional parameter exploration, atlas execution, human visual QC,
 and comparison of shape-space representations. It does not establish universally
 correct parameters or interpret biology for the researcher. Deformetrica is the
 default supported reference route; the Modern engine remains evidence-gated.
+
+## Current source work
+
+v94 makes geometric pilot ranking fit-first and requires recorded acceptance of
+every specimen before stage advancement. Local bounded refinement preserves old
+runs and the complete cohort. See [v94 scope and limits](V94_SURFACE_FIT.md).
+The previously verified installed/distributed state below remains v93 until v94
+delivery is explicitly verified; source changes alone do not update the runtime.
 
 ## Verified software baseline
 

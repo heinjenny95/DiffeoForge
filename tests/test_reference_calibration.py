@@ -105,10 +105,7 @@ def test_calibration_plan_can_bind_published_effective_input_bytes(
         selected.sha256 == sha256_file(by_name[selected.filename])
         for selected in rebound.selected_pilot_subjects
     )
-    assert (
-        verify_reference_calibration_plan_provenance(rebound.provenance)
-        == rebound.fingerprint
-    )
+    assert verify_reference_calibration_plan_provenance(rebound.provenance) == rebound.fingerprint
 
 
 def test_calibration_plan_treats_ply_and_canonical_vtk_as_the_same_surfaces(
@@ -141,10 +138,7 @@ def test_calibration_plan_treats_ply_and_canonical_vtk_as_the_same_surfaces(
     assert rebound.pilot_subject_declarations[0].filename.endswith(".vtk")
     assert rebound.required_subject_filenames == (_cohort()[2].name,)
     assert reference_calibration_plan_from_provenance(rebound.provenance) == rebound
-    assert (
-        verify_reference_calibration_plan_provenance(rebound.provenance)
-        == rebound.fingerprint
-    )
+    assert verify_reference_calibration_plan_provenance(rebound.provenance) == rebound.fingerprint
 
 
 def test_calibration_plan_reports_both_names_for_a_real_template_mismatch(
@@ -228,17 +222,15 @@ def test_axis_separated_width_refinement_brackets_each_parameter_independently()
         deformation_values[1]
     )
     spacing_ratio = spacing_values[1] / spacing_values[0]
-    assert proposal.candidates[5].values[
-        "initial_control_point_spacing"
-    ] == pytest.approx(spacing_values[0] / spacing_ratio)
-    assert proposal.candidates[6].values[
-        "initial_control_point_spacing"
-    ] == pytest.approx(spacing_values[1])
+    assert proposal.candidates[5].values["initial_control_point_spacing"] == pytest.approx(
+        spacing_values[0] / spacing_ratio
+    )
+    assert proposal.candidates[6].values["initial_control_point_spacing"] == pytest.approx(
+        spacing_values[1]
+    )
     for candidate in proposal.candidates[1:]:
         changed = [
-            name
-            for name, value in candidate.values.items()
-            if value != pytest.approx(center[name])
+            name for name, value in candidate.values.items() if value != pytest.approx(center[name])
         ]
         assert len(changed) == 1
 
@@ -251,6 +243,8 @@ def test_axis_separated_width_refinement_brackets_each_parameter_independently()
     assert verify_reference_calibration_plan_provenance(successor.provenance) == (
         successor.fingerprint
     )
+
+
 def test_pilot_selection_is_deterministic_unique_and_excludes_template() -> None:
     recommendation = _recommendation()
 
@@ -260,9 +254,7 @@ def test_pilot_selection_is_deterministic_unique_and_excludes_template() -> None
     assert first == second
     assert len(first) == 4
     assert len({subject.filename for subject in first}) == 4
-    assert recommendation.template_filename not in {
-        subject.filename for subject in first
-    }
+    assert recommendation.template_filename not in {subject.filename for subject in first}
     assert first[0].selection_role == "surface-shape medoid"
     assert all(
         subject.selection_role == "farthest-first surface-shape coverage" for subject in first[1:]
@@ -308,9 +300,7 @@ def test_pilot_selection_guarantees_declared_extremes_and_strata() -> None:
 def test_pilot_selection_refuses_silent_declaration_omission() -> None:
     recommendation = _recommendation()
     names = [item.filename for item in recommendation.observations[1:4]]
-    declarations = tuple(
-        PilotSubjectDeclaration(name, None, True) for name in names
-    )
+    declarations = tuple(PilotSubjectDeclaration(name, None, True) for name in names)
 
     with pytest.raises(ConfigurationError, match="need 3, requested 2"):
         select_representative_pilot_subjects(
@@ -322,9 +312,7 @@ def test_pilot_selection_refuses_silent_declaration_omission() -> None:
         select_representative_pilot_subjects(
             recommendation,
             requested_count=4,
-            pilot_subject_declarations=(
-                PilotSubjectDeclaration("absent.vtk", "unknown", False),
-            ),
+            pilot_subject_declarations=(PilotSubjectDeclaration("absent.vtk", "unknown", False),),
         )
 
 
@@ -408,9 +396,7 @@ def test_calibration_plan_is_deterministic_staged_and_hash_bound() -> None:
         == set(candidate.values)
         for candidate in first.stages[0].candidates
     )
-    assert first.stages[1].candidates[2].values[
-        "initial_control_point_spacing"
-    ] == pytest.approx(
+    assert first.stages[1].candidates[2].values["initial_control_point_spacing"] == pytest.approx(
         first.stages[1].candidates[2].values["deformation_kernel_width"]
     )
     assert first.provenance["status"] == "planned_not_executed"
@@ -446,8 +432,7 @@ def test_feature_measurement_changes_attachment_candidates_not_deformation_cente
         2.0 * recommendation.effective_values["attachment_kernel_width"]
     )
     assert measured.parameter_ratios["attachment_kernel_width"] == pytest.approx(
-        measured.effective_values["attachment_kernel_width"]
-        / recommendation.template_diagonal
+        measured.effective_values["attachment_kernel_width"] / recommendation.template_diagonal
     )
 
 
@@ -470,12 +455,10 @@ def test_extreme_expected_disparity_widens_search_and_does_not_penalize_amplitud
         requested_pilot_subject_count=3,
     )
     moderate_widths = [
-        candidate.values["deformation_kernel_width"]
-        for candidate in moderate.stages[1].candidates
+        candidate.values["deformation_kernel_width"] for candidate in moderate.stages[1].candidates
     ]
     extreme_widths = [
-        candidate.values["deformation_kernel_width"]
-        for candidate in extreme.stages[1].candidates
+        candidate.values["deformation_kernel_width"] for candidate in extreme.stages[1].candidates
     ]
     assert min(extreme_widths) < min(moderate_widths)
     assert max(extreme_widths) > max(moderate_widths)
@@ -492,6 +475,9 @@ def test_extreme_expected_disparity_widens_search_and_does_not_penalize_amplitud
             distortion_p95=1000.0 if index == 0 else 0.01,
             runtime_seconds=10.0 + index,
             review_approved=None,
+            subject_normalized_residual_p95=tuple(
+                (subject.filename, 0.1 + index) for subject in extreme.selected_pilot_subjects
+            ),
         )
         for index, candidate in enumerate(noise_stage.candidates)
     )
@@ -502,8 +488,8 @@ def test_extreme_expected_disparity_widens_search_and_does_not_penalize_amplitud
     )
 
     assert assessment.balanced_candidate_id == noise_stage.candidates[0].candidate_id
-    assert set(assessment.weights) == {"residual_p95", "runtime_seconds"}
-    assert "extreme" in " ".join(assessment.cautions)
+    assert set(assessment.weights) == {"worst_specimen_normalized_p95"}
+    assert "Runtime, deformation cost" in " ".join(assessment.cautions)
 
 
 def test_calibration_plan_rejects_invalid_inputs() -> None:
@@ -535,9 +521,7 @@ def test_calibration_plan_provenance_verification_detects_any_changed_decision()
 
     assert verify_reference_calibration_plan_provenance(provenance) == plan.fingerprint
 
-    provenance["stages"][0]["candidates"][0]["parameter_values"][
-        "attachment_kernel_width"
-    ] *= 2
+    provenance["stages"][0]["candidates"][0]["parameter_values"]["attachment_kernel_width"] *= 2
     with pytest.raises(ConfigurationError, match="fingerprint"):
         verify_reference_calibration_plan_provenance(provenance)
 
@@ -560,10 +544,11 @@ def _stage_evidence(
             runtime_seconds=row[3],
             resampling_sensitivity=(0.2 + index * 0.1),
             review_approved=True,
+            subject_normalized_residual_p95=tuple(
+                (subject.filename, row[0]) for subject in plan.selected_pilot_subjects
+            ),
         )
-        for index, (candidate, row) in enumerate(
-            zip(stage.candidates, rows, strict=True)
-        )
+        for index, (candidate, row) in enumerate(zip(stage.candidates, rows, strict=True))
     )
 
 
@@ -601,32 +586,39 @@ def test_stage_assessment_retains_pareto_candidates_and_exposes_weights() -> Non
     assert first == second
     assert first.status == "selection_required"
     assert first.balanced_candidate_id in first.pareto_candidate_ids
-    assert set(first.weights) == {
-        "residual_p95",
-        "deformation_energy",
-        "distortion_p95",
-        "runtime_seconds",
-    }
+    assert first.weights == {"worst_specimen_normalized_p95": 1.0}
     assert sum(first.weights.values()) == pytest.approx(1.0)
     assert all(candidate.eligible for candidate in first.candidates)
     cautions = " ".join(first.cautions)
-    assert "robust recommendation" in cautions
-    assert first.weight_scenario_count > 1
-    assert first.recommendation_confidence == "ambiguous"
+    assert "Every pilot specimen" in cautions
+    assert first.weight_scenario_count == 0
+    assert first.recommendation_confidence == "visually_accepted"
     assert first.automatic_selection_allowed is False
-    assert first.sensitivity_flags
+    assert not first.sensitivity_flags
     assert len(first.fingerprint) == 64
 
 
 @pytest.mark.parametrize("disparity", ["low", "moderate", "high", "extreme"])
 def test_accepted_anatomy_takes_priority_over_numerical_economy(disparity) -> None:
-    plan = replace(build_reference_calibration_plan(
-        _recommendation(), coordinate_unit="unitless", requested_pilot_subject_count=3,
-    ), expected_shape_disparity=disparity)
-    evidence = _stage_evidence(plan, "noise", (
-        (0.02, 0.1, 0.01, 1.0), (0.1, 0.2, 0.1, 2.0),
-        (0.3, 10.0, 2.0, 30.0), (0.4, 0.4, 0.2, 4.0), (0.5, 0.5, 0.3, 5.0),
-    ))
+    plan = replace(
+        build_reference_calibration_plan(
+            _recommendation(),
+            coordinate_unit="unitless",
+            requested_pilot_subject_count=3,
+        ),
+        expected_shape_disparity=disparity,
+    )
+    evidence = _stage_evidence(
+        plan,
+        "noise",
+        (
+            (0.02, 0.1, 0.01, 1.0),
+            (0.1, 0.2, 0.1, 2.0),
+            (0.3, 10.0, 2.0, 30.0),
+            (0.4, 0.4, 0.2, 4.0),
+            (0.5, 0.5, 0.3, 5.0),
+        ),
+    )
     unreviewed = tuple(replace(item, review_approved=None) for item in evidence)
     numerical = assess_calibration_stage(plan, stage_id="noise", evidence=unreviewed)
     assert numerical.balanced_candidate_id == evidence[0].candidate_id
@@ -634,9 +626,9 @@ def test_accepted_anatomy_takes_priority_over_numerical_economy(disparity) -> No
     accepted[2] = replace(accepted[2], review_approved=True)
     result = assess_calibration_stage(plan, stage_id="noise", evidence=tuple(accepted))
     assert result.balanced_candidate_id == evidence[2].candidate_id
-    assert result.recommendation_confidence == "ambiguous"
+    assert result.recommendation_confidence == "visually_accepted"
     assert not result.automatic_selection_allowed
-    assert result.candidates[0].eligible and result.candidates[0].balanced_score is None
+    assert result.candidates[0].eligible and result.candidates[0].balanced_score is not None
     # Anatomy acceptance cannot bypass a hard geometry/convergence failure.
     accepted[2] = replace(accepted[2], invalid_face_count=1)
     result = assess_calibration_stage(plan, stage_id="noise", evidence=tuple(accepted))
@@ -646,12 +638,21 @@ def test_accepted_anatomy_takes_priority_over_numerical_economy(disparity) -> No
 
 def test_numerical_economy_compares_only_accepted_alternatives() -> None:
     plan = build_reference_calibration_plan(
-        _recommendation(), coordinate_unit="unitless", requested_pilot_subject_count=3,
+        _recommendation(),
+        coordinate_unit="unitless",
+        requested_pilot_subject_count=3,
     )
-    evidence = _stage_evidence(plan, "noise", (
-        (0.01, 0.01, 0.01, 1.0), (0.1, 0.2, 0.1, 2.0),
-        (0.2, 0.3, 0.2, 3.0), (0.3, 0.4, 0.3, 4.0), (0.4, 0.5, 0.4, 5.0),
-    ))
+    evidence = _stage_evidence(
+        plan,
+        "noise",
+        (
+            (0.01, 0.01, 0.01, 1.0),
+            (0.1, 0.2, 0.1, 2.0),
+            (0.2, 0.3, 0.2, 3.0),
+            (0.3, 0.4, 0.3, 4.0),
+            (0.4, 0.5, 0.4, 5.0),
+        ),
+    )
     evidence = (replace(evidence[0], review_approved=False), *evidence[1:])
     result = assess_calibration_stage(plan, stage_id="noise", evidence=evidence)
     assert result.balanced_candidate_id == evidence[1].candidate_id
@@ -681,6 +682,9 @@ def test_stage_assessment_requires_stable_evidence_before_automatic_selection() 
                 ("subject-b.vtk", 0.11 + abs(index - 2)),
                 ("subject-c.vtk", 0.09 + abs(index - 2)),
             ),
+            subject_normalized_residual_p95=tuple(
+                (subject.filename, 0.1 + abs(index - 2)) for subject in plan.selected_pilot_subjects
+            ),
         )
         for index, candidate in enumerate(stage.candidates)
     )
@@ -691,20 +695,20 @@ def test_stage_assessment_requires_stable_evidence_before_automatic_selection() 
         evidence=evidence,
     )
 
-    assert assessment.recommendation_confidence == "robust"
-    assert assessment.automatic_selection_allowed is True
+    assert assessment.recommendation_confidence == "needs_visual_review"
+    assert assessment.automatic_selection_allowed is False
     assert assessment.search_range_status == "bounded"
     assert assessment.search_boundary_parameters == ()
-    assert assessment.weight_stability == pytest.approx(1.0)
-    assert assessment.subject_bootstrap_stability == pytest.approx(1.0)
-    assert assessment.subject_bootstrap_iterations == 256
+    assert assessment.weight_stability is None
+    assert assessment.subject_bootstrap_stability is None
+    assert assessment.subject_bootstrap_iterations == 0
     selected = next(
         candidate
         for candidate in assessment.candidates
         if candidate.candidate_id == assessment.balanced_candidate_id
     )
-    assert selected.weight_win_fraction == pytest.approx(1.0)
-    assert selected.subject_bootstrap_win_fraction == pytest.approx(1.0)
+    assert selected.weight_win_fraction is None
+    assert selected.subject_bootstrap_win_fraction is None
 
 
 def test_robust_boundary_winner_is_reported_as_search_range_not_bounded() -> None:
@@ -729,6 +733,9 @@ def test_robust_boundary_winner_is_reported_as_search_range_not_bounded() -> Non
                 ("subject-b.vtk", 0.11 + index),
                 ("subject-c.vtk", 0.09 + index),
             ),
+            subject_normalized_residual_p95=tuple(
+                (subject.filename, 0.1 + index) for subject in plan.selected_pilot_subjects
+            ),
         )
         for index, candidate in enumerate(stage.candidates)
     )
@@ -736,16 +743,12 @@ def test_robust_boundary_winner_is_reported_as_search_range_not_bounded() -> Non
     assessment = assess_calibration_stage(plan, stage_id="noise", evidence=evidence)
 
     assert assessment.balanced_candidate_id == stage.candidates[0].candidate_id
-    assert assessment.recommendation_confidence == "robust"
+    assert assessment.recommendation_confidence == "needs_visual_review"
     assert assessment.automatic_selection_allowed is False
     assert assessment.search_range_status == "not_bounded"
     assert assessment.search_boundary_parameters == ("noise_std:minimum",)
-    assert "search range not bounded" in " ".join(
-        assessment.sensitivity_flags
-    ).lower()
-    assert assessment.as_manifest()["search_boundary_parameters"] == [
-        "noise_std:minimum"
-    ]
+    assert not assessment.automatic_selection_allowed
+    assert assessment.as_manifest()["search_boundary_parameters"] == ["noise_std:minimum"]
     extension = propose_calibration_search_extension(plan, assessment)
     assert extension.plan_fingerprint == plan.fingerprint
     assert extension.assessment_fingerprint == assessment.fingerprint
@@ -755,12 +758,8 @@ def test_robust_boundary_winner_is_reported_as_search_range_not_bounded() -> Non
     assert len(extension.candidates) == 2
     noise_values = [candidate.values["noise_std"] for candidate in stage.candidates]
     ratio = noise_values[1] / noise_values[0]
-    assert extension.candidates[0].values["noise_std"] == pytest.approx(
-        noise_values[0] / ratio
-    )
-    assert extension.candidates[1].values["noise_std"] == pytest.approx(
-        noise_values[0] / ratio**2
-    )
+    assert extension.candidates[0].values["noise_std"] == pytest.approx(noise_values[0] / ratio)
+    assert extension.candidates[1].values["noise_std"] == pytest.approx(noise_values[0] / ratio**2)
     assert all("outward" in candidate.candidate_id for candidate in extension.candidates)
 
     with pytest.raises(ValueError, match="one or two"):
@@ -771,9 +770,7 @@ def test_robust_boundary_winner_is_reported_as_search_range_not_bounded() -> Non
         assessment,
         extension,
     )
-    successor_noise = next(
-        stage for stage in successor.stages if stage.stage_id == "noise"
-    )
+    successor_noise = next(stage for stage in successor.stages if stage.stage_id == "noise")
     assert successor.version == "0.4"
     assert successor.fingerprint != plan.fingerprint
     assert successor_noise.candidates[-2:] == extension.candidates
@@ -784,9 +781,7 @@ def test_robust_boundary_winner_is_reported_as_search_range_not_bounded() -> Non
         "stage_id": "noise",
     }
     provenance = successor.provenance
-    assert verify_reference_calibration_plan_provenance(provenance) == (
-        successor.fingerprint
-    )
+    assert verify_reference_calibration_plan_provenance(provenance) == (successor.fingerprint)
     assert reference_calibration_plan_from_provenance(provenance) == successor
 
     successor_evidence = tuple(
@@ -804,6 +799,10 @@ def test_robust_boundary_winner_is_reported_as_search_range_not_bounded() -> Non
                 ("subject-b.vtk", float(len(successor_noise.candidates) - index)),
                 ("subject-c.vtk", float(len(successor_noise.candidates) - index)),
             ),
+            subject_normalized_residual_p95=tuple(
+                (subject.filename, float(len(successor_noise.candidates) - index))
+                for subject in plan.selected_pilot_subjects
+            ),
         )
         for index, candidate in enumerate(successor_noise.candidates)
     )
@@ -817,17 +816,15 @@ def test_robust_boundary_winner_is_reported_as_search_range_not_bounded() -> Non
         successor,
         successor_assessment,
     )
-    assert not {
-        candidate.candidate_id for candidate in extension.candidates
-    } & {candidate.candidate_id for candidate in second_extension.candidates}
+    assert not {candidate.candidate_id for candidate in extension.candidates} & {
+        candidate.candidate_id for candidate in second_extension.candidates
+    }
     second_successor = bind_calibration_search_extension_plan(
         successor,
         successor_assessment,
         second_extension,
     )
-    second_noise = next(
-        stage for stage in second_successor.stages if stage.stage_id == "noise"
-    )
+    second_noise = next(stage for stage in second_successor.stages if stage.stage_id == "noise")
     assert len(second_noise.candidates) == len(successor_noise.candidates) + 2
 
 
@@ -839,9 +836,7 @@ def test_trochanter_236_selected_attachment_and_noise_edges_are_unbounded() -> N
         coordinate_unit="unitless",
         requested_pilot_subject_count=3,
     )
-    attachment_stage = next(
-        stage for stage in plan.stages if stage.stage_id == "attachment"
-    )
+    attachment_stage = next(stage for stage in plan.stages if stage.stage_id == "attachment")
     attachment_widths = (
         0.03544482253673162,
         0.05274707660694372,
@@ -881,17 +876,13 @@ def test_trochanter_236_selected_attachment_and_noise_edges_are_unbounded() -> N
             converged=True,
             invalid_face_count=0,
             residual_p95=0.1 if candidate.candidate_id == "attachment-17" else 1.0,
-            resampling_sensitivity=(
-                0.1 if candidate.candidate_id == "attachment-17" else 1.0
-            ),
-            deformation_energy=(
-                0.1 if candidate.candidate_id == "attachment-17" else 1.0
-            ),
-            distortion_p95=(
-                0.1 if candidate.candidate_id == "attachment-17" else 1.0
-            ),
-            runtime_seconds=(
-                0.1 if candidate.candidate_id == "attachment-17" else 1.0
+            resampling_sensitivity=(0.1 if candidate.candidate_id == "attachment-17" else 1.0),
+            deformation_energy=(0.1 if candidate.candidate_id == "attachment-17" else 1.0),
+            distortion_p95=(0.1 if candidate.candidate_id == "attachment-17" else 1.0),
+            runtime_seconds=(0.1 if candidate.candidate_id == "attachment-17" else 1.0),
+            subject_normalized_residual_p95=tuple(
+                (subject.filename, 0.1 if candidate.candidate_id == "attachment-17" else 1.0)
+                for subject in plan.selected_pilot_subjects
             ),
         )
         for candidate in attachment_candidates
@@ -902,14 +893,10 @@ def test_trochanter_236_selected_attachment_and_noise_edges_are_unbounded() -> N
         evidence=attachment_evidence,
     )
 
-    assert attachment_candidates[16].values["attachment_kernel_width"] == pytest.approx(
-        0.25869066
-    )
+    assert attachment_candidates[16].values["attachment_kernel_width"] == pytest.approx(0.25869066)
     assert attachment_assessment.balanced_candidate_id == "attachment-17"
     assert attachment_assessment.search_range_status == "not_bounded"
-    assert attachment_assessment.search_boundary_parameters == (
-        "attachment_kernel_width:maximum",
-    )
+    assert attachment_assessment.search_boundary_parameters == ("attachment_kernel_width:maximum",)
 
     noise_stage = next(stage for stage in plan.stages if stage.stage_id == "noise")
     noise_values = (
@@ -940,6 +927,9 @@ def test_trochanter_236_selected_attachment_and_noise_edges_are_unbounded() -> N
             deformation_energy=0.1 + index,
             distortion_p95=0.1 + index,
             runtime_seconds=0.1 + index,
+            subject_normalized_residual_p95=tuple(
+                (subject.filename, 0.1 + index) for subject in plan.selected_pilot_subjects
+            ),
         )
         for index, candidate in enumerate(noise_stage.candidates)
     )
@@ -949,9 +939,7 @@ def test_trochanter_236_selected_attachment_and_noise_edges_are_unbounded() -> N
         evidence=noise_evidence,
     )
 
-    assert noise_stage.candidates[0].values["noise_std"] == pytest.approx(
-        0.008084083125
-    )
+    assert noise_stage.candidates[0].values["noise_std"] == pytest.approx(0.008084083125)
     assert noise_assessment.balanced_candidate_id == "noise-01"
     assert noise_assessment.search_range_status == "not_bounded"
     assert noise_assessment.search_boundary_parameters == ("noise_std:minimum",)
@@ -991,14 +979,11 @@ def test_stage_assessment_fails_closed_on_missing_metrics_without_requiring_revi
     assert assessment.pareto_candidate_ids == ()
     assert all(not candidate.eligible for candidate in assessment.candidates)
     assert all(
-        all(
-            "visual registration review" not in reason
-            for reason in candidate.rejection_reasons
-        )
+        all("visual registration review" not in reason for reason in candidate.rejection_reasons)
         for candidate in assessment.candidates
     )
     assert all(
-        any("resampling_sensitivity" in reason for reason in candidate.rejection_reasons)
+        any("per-specimen fit evidence" in reason for reason in candidate.rejection_reasons)
         for candidate in assessment.candidates
     )
 
@@ -1021,6 +1006,9 @@ def test_stage_assessment_rejects_an_explicit_visual_qc_failure() -> None:
             distortion_p95=0.3,
             runtime_seconds=10.0,
             review_approved=False,
+            subject_normalized_residual_p95=tuple(
+                (subject.filename, 0.1) for subject in plan.selected_pilot_subjects
+            ),
         )
         for candidate in stage.candidates
     )
@@ -1034,8 +1022,7 @@ def test_stage_assessment_rejects_an_explicit_visual_qc_failure() -> None:
     assert assessment.status == "no_eligible_candidate"
     assert all(not candidate.eligible for candidate in assessment.candidates)
     assert all(
-        candidate.rejection_reasons
-        == ("optional visual registration review explicitly failed",)
+        candidate.rejection_reasons == ("visual registration review explicitly failed",)
         for candidate in assessment.candidates
     )
 
