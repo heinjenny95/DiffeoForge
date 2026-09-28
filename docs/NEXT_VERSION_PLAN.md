@@ -58,20 +58,33 @@ The [reference analysis and PC Shooting route](REFERENCE_PCA.md) already exists.
   [Fletcher et al. (2004)](https://doi.org/10.1109/TMI.2004.831793) PGA context.
   State the tangent approximation; claim neither exact nonlinear PGA nor an
   intrinsic mean solely from shooting mean momenta. Keep the main UI concise.
-- [ ] Audit existing endpoint construction and compare an external reference
-  script when it becomes available. Check centering, mean +/- 2*sqrt(eigenvalue)
+- [x] Statically compare the supplied reference helper with existing endpoint
+  construction: both use mean plus a signed score times the already inverse-
+  mapped momenta component, with SD steps scaled by sqrt(explained variance).
+  The helper prepares momentum fields only; actual Shooting already exists here.
+  No external code was executed, imported or published.
+- [ ] Complete the endpoint audit and bounded numerical comparison. Check
+  centering, mean +/- 2*sqrt(eigenvalue)
   times the inverse component, metric normalization/inverse mapping, component
   signs and XYZ/control-point order. Retain the fitted template, control points,
   deformation kernel and integration settings. Implement verified gaps only.
+- [ ] Any reusable reconstruction helper must enforce the supported method and
+  feature-space contract, label Cartesian and metric PCA separately, handle
+  zero-variance modes and reject non-finite outputs. Retain source/control-point
+  binding and immutable output publication rather than a parallel overwrite path.
 - [ ] Verify momentum serialization against the exact source Deformetrica
   runtime, including header, dimensions and finite values. Add missing tests and
   a bounded synthetic reader/writer round-trip before any future batch; document
   supported formats and reject unsupported ones without guessing or reshaping.
+  Keep single-field Shooting input distinct from PCA cohort import; the latter
+  intentionally requires at least two subjects and cannot certify a one-field
+  serializer by itself. Exact-runtime round-trip verification remains pending.
 
 Acceptance: the axis-shape entry is visible from the morphospace without searching
 below unrelated tools; method labels match recorded analyses; existing verified
-endpoints are reused and completed runs remain unchanged. External script review
-is pending receipt. This backlog does not authorize running that script or a batch.
+endpoints are reused and completed runs remain unchanged. External helper static
+review is complete; runtime verification and implementation remain pending. This
+backlog does not authorize running that script or a scientific batch.
 
 ### Existing delivery sequence
 
