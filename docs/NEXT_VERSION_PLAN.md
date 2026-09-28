@@ -11,6 +11,34 @@ qualification claim. The established development branch remains authoritative.
 
 ## Delivery order and acceptance gates
 
+### Priority: slow pilot previews and invisible QC locks
+
+First-use feedback on 2026-09-28: preview loading is too slow and the specimen
+decision/rejection controls appear inert. Static inspection found that both
+depend on registered full-detail presentation, while preview loading still
+parses full meshes and builds full edges. Existing display-proxy caching occurs
+after full parsing. The actual runtime bottleneck has not yet been profiled.
+
+- [ ] Put the specific lock reason and a direct **Load detail for QC** action
+  beside decision controls; clearly style disabled controls, including rejection.
+  Distinguish loading, preview ready, detail ready and failure with concise copy.
+- [ ] Support early rejection/uncertainty based on a successfully displayed
+  preview with explicit preview-only evidence scope. Keep these concerns separate
+  from full-detail inspection and final acceptance; preserve every-specimen pass
+  requirements and reject stale/unloaded specimen decisions.
+- [ ] Measure cold/warm time to first useful image and specimen/option switches,
+  separating I/O/hash, parse/inspection, edges, proxy generation and rendering.
+  Choose a performance target from measurements rather than assuming a cause.
+- [ ] Reuse verified previews and unchanged originals across comparisons; avoid
+  full parsing/edge preparation on repeated preview loads. Evaluate bounded,
+  content/version/resolution-bound project-local display caching and on-demand
+  full detail without modifying scientific geometry or weakening source checks.
+- [ ] Keep navigation/closing responsive, discard stale callbacks and bound
+  cancellation/prefetch work. Show honest progress and actionable errors. Verify
+  large-mesh cold/warm loads, review transitions and loading/rendering failures.
+
+Backlog only; no performance result, runtime change or new QC approval is claimed.
+
 ### Planned: clear pilot review, refinement and continuation
 
 Backlog recorded 2026-09-28 after first-use feedback; implementation is pending.
