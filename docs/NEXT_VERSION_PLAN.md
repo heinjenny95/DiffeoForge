@@ -11,6 +11,45 @@ qualification claim. The established development branch remains authoritative.
 
 ## Delivery order and acceptance gates
 
+### Planned: discoverable axis shapes and precise method terminology
+
+Backlog recorded 2026-09-28; no implementation or new numerical run is claimed.
+The [reference analysis and PC Shooting route](REFERENCE_PCA.md) already exists.
+
+- [ ] Place **Show shape changes along PC axes** beside the Results morphospace,
+  with available PC1–PC3, mean-momenta and minus/plus 2-SD shapes. Reuse verified
+  outputs; keep the existing theme and put technical detail in collapsed help.
+  Distinguish observed specimen meshes at score positions from modeled axis
+  shapes. Require an explicit click for missing outputs, visible progress and
+  protection against duplicate work or console popups.
+- [ ] Audit UI, figure/PDF/export and methods labels against each saved result's
+  method. Describe the reference default as LDDMM-metric tangent-space PCA and
+  explain its relation to linearized PGA. Preserve the identities of Cartesian
+  PCA, Modern-engine analyses and generic RBF KernelPCA. Do not alter old scores
+  or evidence merely to change terminology.
+- [ ] Add concise methods text citing the applicable
+  [Vaillant et al. (2004)](https://doi.org/10.1016/j.neuroimage.2004.07.023)
+  tangent-momenta framework and
+  [Fletcher et al. (2004)](https://doi.org/10.1109/TMI.2004.831793) PGA context.
+  State the tangent approximation; claim neither exact nonlinear PGA nor an
+  intrinsic mean solely from shooting mean momenta. Keep the main UI concise.
+- [ ] Audit existing endpoint construction and compare an external reference
+  script when it becomes available. Check centering, mean +/- 2*sqrt(eigenvalue)
+  times the inverse component, metric normalization/inverse mapping, component
+  signs and XYZ/control-point order. Retain the fitted template, control points,
+  deformation kernel and integration settings. Implement verified gaps only.
+- [ ] Verify momentum serialization against the exact source Deformetrica
+  runtime, including header, dimensions and finite values. Add missing tests and
+  a bounded synthetic reader/writer round-trip before any future batch; document
+  supported formats and reject unsupported ones without guessing or reshaping.
+
+Acceptance: the axis-shape entry is visible from the morphospace without searching
+below unrelated tools; method labels match recorded analyses; existing verified
+endpoints are reused and completed runs remain unchanged. External script review
+is pending receipt. This backlog does not authorize running that script or a batch.
+
+### Existing delivery sequence
+
 1. **Validation Lab reliability:** responsive opening, frozen-study creation and
    preflight; safe cancellation and explicit launch confirmation. Count the
    entire frozen training-plus-holdout design, separately show backend completion
