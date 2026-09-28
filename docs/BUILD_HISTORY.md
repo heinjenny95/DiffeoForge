@@ -5,7 +5,9 @@
 v96 (`0.0.0.dev96`) adds bounded, results-driven pilot refinement, compatible
 learned-state continuation, persistent search decisions and a protected transfer
 to later pilot stages and full-cohort initialization. See [scope and tests](V96_ADAPTIVE_PILOT.md).
-Build, installed and distributed identities remain separately verified.
+Build and complete Drive distribution are verified. Local installation awaits
+safe closure of the still-open v95 application; no process was interrupted.
+See [separate runtime identities and delivery checks](V96_DELIVERY.md).
 
 ## v95 — project checkpoints
 

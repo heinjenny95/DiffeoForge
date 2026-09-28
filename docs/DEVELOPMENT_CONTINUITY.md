@@ -1,4 +1,4 @@
-# Development continuity — v96 adaptive pilot candidate
+# Development continuity — v96 adaptive pilot
 
 Snapshot: 2026-09-28. This is a public, software-only continuation guide. Detailed
 research results, local paths, account destinations and run identities belong in
@@ -16,10 +16,11 @@ default supported reference route; the Modern engine remains evidence-gated.
 
 v96 adds a bounded adaptive pilot search with compatible learned-state reuse,
 per-specimen regression protection, persistent budgets and explicit stop reasons.
-See [behavior and verification](V96_ADAPTIVE_PILOT.md). At this source checkpoint,
-build, installation and distribution of v96 are pending; the last verified
-installed/distributed runtime below remains v95. No new private scientific run
-was started by the implementation.
+See [behavior and verification](V96_ADAPTIVE_PILOT.md). The v96 build and complete
+Drive distribution are verified. Local installation awaits safe closure of the
+still-open main application; installed v95 remains intact. See the separate
+[v96 delivery identities and checks](V96_DELIVERY.md). No new private scientific
+run was started by the implementation.
 
 v95 persists content-bound mesh inspections and recorded GPA review state in the
 project folder. Explicit history loading verifies saved state without starting
@@ -55,8 +56,13 @@ window, contextual cost labels and persistent anatomy-first pilot decisions.
 See [implementation and acceptance limits](V91_PILOT_REVIEW.md) and
 [verified build and distribution](V91_DELIVERY.md).
 
-The latest packaged, installed and Drive-distributed application is **v95 /
-0.0.0.dev95**, built from `719e148e36f96d42194afa6cd4e0faf41b1b8283`.
+The latest packaged and Drive-distributed application is **v96 / 0.0.0.dev96**,
+built from `5a069968d5f8adee639ad60f347a9f6e4767b2fe`. Local installation is pending
+safe closure of the main application, not new installation permission. Do not
+interrupt a running job or unsaved work.
+
+The latest verified installed application is **v95 / 0.0.0.dev95**, built from
+`719e148e36f96d42194afa6cd4e0faf41b1b8283`.
 Installation followed fresh idle checks and a complete 2,688-file v94 backup.
 Registry version, all 2,679 installed bundle files and startup smoke passed;
 2,101 checked current-study files remained unchanged. All six Drive files passed
@@ -111,7 +117,8 @@ recoverable. See [v90 distribution evidence](V90_DRIVE_DELIVERY.md).
 
 ## Next work, in priority order
 
-1. v93 installation and distribution are verified; v92 remains recoverable.
+1. v96 build/distribution are verified; install after safe closure, a fresh idle
+   check and verified v95 backup. Then assess the adaptive search prospectively.
    Complete interactive minimize/focus acceptance across other applications;
    retain one pilot/controller and existing scientific evidence. Under the
    standing instruction in `AGENTS.md`, approval to develop a future version

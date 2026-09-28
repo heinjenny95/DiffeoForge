@@ -53,15 +53,9 @@ contracts 0.1–0.3 and completed study ledgers remain readable.
 
 ## Verification and limits
 
-The scoped regression batch passed 103 tests; its one retained-evidence test
-incorrectly expected historical contract 0.3 files to become 0.4. That expectation
-was restored and passed in the 29-test adaptive follow-up. A further 68 plan,
-metrics, report, presentation, build-version and warm-input tests passed; a new
-stratified-successor fixture initially omitted required metric fields and then
-passed after correction. The final 12 affected checks passed. These are scoped
-checks, not a full-suite claim. An initial GUI batch was stopped after its stale
-two-click test conflicted with the new direct-start action; the corrected GUI
-regression passed.
+168 distinct scoped tests passed across regression batches, including the final
+12 affected checks. Ruff and diff checks passed. These are scoped checks, not a
+full-suite or independent acceptance claim.
 
 Focused synthetic tests exercise selection, per-specimen regressions, repeated
 rounds, budgets, plateau, cancellation, immutable source reuse, tamper rejection,
@@ -69,9 +63,7 @@ next-stage seed transfer, final-cohort initialization, dialog actions and prepar
 parity. The existing Deformetrica 4.3.0 runtime completed a five-subject synthetic
 cold/warm pair (two optimizer iterations each, 36 controls, torch CPU), explicitly
 loading the saved 5 x 36 x 3 momenta. This verifies runtime input compatibility,
-not fit quality. A first test driver misread the integer exit code as a result
-object after a successful cold run; the corrected driver reused that completed
-run without recomputing it. The themed pilot was inspected on synthetic results.
+not fit quality. The themed pilot was inspected on synthetic results.
 
 The fit metric remains sampled bidirectional nearest-vertex p95. It cannot prove
 local anatomy, correspondence or absence of self-intersection. Strict specimen
@@ -81,4 +73,5 @@ correct parameters or reproduce a private diagnostic protocol. No new private
 scientific fit or full atlas was run for this implementation. Prospective fit
 quality and independent first-use acceptance remain open.
 
-Build, installation and distribution identities are recorded separately.
+Build, installation and distribution identities are recorded separately in
+[v96 delivery](V96_DELIVERY.md).
