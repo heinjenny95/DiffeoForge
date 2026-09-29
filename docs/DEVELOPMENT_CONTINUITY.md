@@ -1,6 +1,6 @@
 # Development continuity — v96 adaptive pilot
 
-Snapshot: 2026-09-28. This is a public, software-only continuation guide. Detailed
+Snapshot: 2026-09-29. This is a public, software-only continuation guide. Detailed
 research results, local paths, account destinations and run identities belong in
 the owner's private project handoff, not this repository.
 
@@ -16,9 +16,9 @@ default supported reference route; the Modern engine remains evidence-gated.
 
 v96 adds a bounded adaptive pilot search with compatible learned-state reuse,
 per-specimen regression protection, persistent budgets and explicit stop reasons.
-See [behavior and verification](V96_ADAPTIVE_PILOT.md). The v96 build and complete
-Drive distribution are verified. Local installation awaits safe closure of the
-still-open main application; installed v95 remains intact. See the separate
+See [behavior and verification](V96_ADAPTIVE_PILOT.md). The v96 build, local
+installation and complete Drive distribution are verified. A complete v95
+installation backup and its Drive package remain recoverable. See the separate
 [v96 delivery identities and checks](V96_DELIVERY.md). No new private scientific
 run was started by the implementation.
 
@@ -56,21 +56,16 @@ window, contextual cost labels and persistent anatomy-first pilot decisions.
 See [implementation and acceptance limits](V91_PILOT_REVIEW.md) and
 [verified build and distribution](V91_DELIVERY.md).
 
-The latest packaged and Drive-distributed application is **v96 / 0.0.0.dev96**,
-built from `5a069968d5f8adee639ad60f347a9f6e4767b2fe`. Local installation is pending
-safe closure of the main application, not new installation permission. Do not
-interrupt a running job or unsaved work.
-
-The latest verified installed application is **v95 / 0.0.0.dev95**, built from
-`719e148e36f96d42194afa6cd4e0faf41b1b8283`.
-Installation followed fresh idle checks and a complete 2,688-file v94 backup.
-Registry version, all 2,679 installed bundle files and startup smoke passed;
-2,101 checked current-study files remained unchanged. All six Drive files passed
-authenticated and anonymous verification; both downloaded scripts reconstructed
-the exact installer before the stable current README was updated. Its stable ID
-and sharing remain unchanged. v94 remains recoverable. No private scientific run
-was started. Later documentation commits do not change the runtime identity.
-See [v95 delivery evidence](V95_DELIVERY.md).
+The latest packaged, installed and Drive-distributed application is **v96 /
+0.0.0.dev96**, built from `5a069968d5f8adee639ad60f347a9f6e4767b2fe`. Installation
+on 2026-09-29 followed the owner's closure confirmation, fresh idle checks and
+a complete 2,688-file v95 backup. Registry version, all 2,679 installed bundle
+files and startup smoke passed; 2,101 checked completed-study files remained
+unchanged. All six Drive package files and both installer reconstructions were
+verified before the stable current README was updated. Stable IDs and sharing
+remain unchanged; v95 remains recoverable. No private scientific run was started.
+Later documentation commits do not change the runtime identity.
+See [v96 delivery evidence](V96_DELIVERY.md).
 
 For v91, 174 targeted regressions passed; after generalizing the dataset-specific
 feature checks, all 49 affected study/dialog/lifecycle tests passed again.
@@ -117,8 +112,8 @@ recoverable. See [v90 distribution evidence](V90_DRIVE_DELIVERY.md).
 
 ## Next work, in priority order
 
-1. v96 build/distribution are verified; install after safe closure, a fresh idle
-   check and verified v95 backup. Then assess the adaptive search prospectively.
+1. v96 build, installation and distribution are verified. Assess the adaptive
+   search prospectively; v95 remains recoverable.
    Complete interactive minimize/focus acceptance across other applications;
    retain one pilot/controller and existing scientific evidence. Under the
    standing instruction in `AGENTS.md`, approval to develop a future version
