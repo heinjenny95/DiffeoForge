@@ -1,6 +1,6 @@
 # Private-alpha build numbering
 
-## v100 — fit search without a wall-clock deadline
+## v100 â€” fit search without a wall-clock deadline
 
 v100 (`0.0.0.dev100`) removes the total elapsed-time cutoff and minute control
 from guided Find fit, including resumed legacy sequences. Saved fit evidence and

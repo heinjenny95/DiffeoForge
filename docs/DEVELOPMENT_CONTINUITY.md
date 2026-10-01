@@ -1,4 +1,4 @@
-# Development continuity — v99 mesh-filter containment
+# Development continuity — v100 fit search without a deadline
 
 Snapshot: 2026-10-01. This is a public, software-only continuation guide. Detailed
 research results, local paths, account destinations and run identities belong in
