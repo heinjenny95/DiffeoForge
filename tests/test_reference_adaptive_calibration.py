@@ -38,6 +38,7 @@ def seed_stub(snapshot, center_id, destination):
         "files": files,
         "subject_labels": names,
         "optimization": config["optimization"],
+        "model": config["model"],
         "deformation": config["model"]["deformation"],
         "source_manifest_sha256": "a" * 64,
     }

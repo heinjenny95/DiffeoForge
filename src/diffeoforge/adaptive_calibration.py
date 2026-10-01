@@ -48,6 +48,7 @@ class FitObservation:
     completed: bool = True
     invalid_faces: int = 0
     converged: bool = True
+    review_approved: bool | None = None
 
     @property
     def fit_key(self) -> tuple[float, float, str]:
@@ -80,6 +81,7 @@ class AdaptiveFitDecision:
 def _valid_observation(row: FitObservation, expected: set[str]) -> bool:
     return (
         row.completed
+        and row.review_approved is not False
         and type(row.invalid_faces) is int
         and row.invalid_faces == 0
         and set(row.subject_fit) == expected
@@ -152,8 +154,15 @@ def adaptive_fit_decision(
             None, (), "no_valid_fit_evidence", {}, "Complete per-specimen fit evidence is required."
         )
     previous = next((r for r in valid if r.candidate_id == previous_center_id), None)
-    if previous_center_id is not None and previous is None:
+    rejected_previous = any(
+        r.candidate_id == previous_center_id and r.review_approved is False for r in observations
+    )
+    if previous_center_id is not None and previous is None and not rejected_previous:
         raise ValueError("The previous search center no longer has valid bound evidence")
+    if any(r.review_approved is True for r in valid) and (
+        previous is None or previous.review_approved is not True
+    ):
+        previous = None  # Explicit anatomical acceptance outranks an unreviewed proxy center.
     regressions = {
         row.candidate_id: specimen_regressions(row, previous)
         for row in valid
@@ -163,6 +172,7 @@ def adaptive_fit_decision(
     center = min(
         candidates,
         key=lambda row: (
+            row.review_approved is not True,
             *row.fit_key[:2],
             row.candidate_id != previous_center_id,
             row.candidate_id,

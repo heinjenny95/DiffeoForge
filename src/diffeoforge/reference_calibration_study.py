@@ -15,6 +15,7 @@ import math
 import os
 import re
 import shutil
+import threading
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, replace
 from functools import lru_cache
@@ -37,7 +38,7 @@ from diffeoforge.desktop.reference_execution_controller import (
 )
 from diffeoforge.desktop.reference_prelaunch import DesktopReferenceLaunchRequest
 from diffeoforge.desktop.reference_worker_protocol import DesktopReferenceWorkerEvent
-from diffeoforge.mesh import read_vtk_polydata, sha256_file
+from diffeoforge.mesh import read_vtk_points, sha256_file
 from diffeoforge.reference_calibration import (
     CalibrationCandidate,
     CalibrationCandidateEvidence,
@@ -61,6 +62,8 @@ EVENT_VERSION = "0.1"
 STUDY_MANIFEST = "study.json"
 STUDY_DIGEST = "study.sha256"
 STUDY_EVENTS = "events.jsonl"
+_REVIEW_LOCK = threading.RLock()
+_LOAD_CONTEXT = threading.local()
 CALIBRATION_REPORT_JSON = "selected/pilot-calibration-report.json"
 CALIBRATION_REPORT_HTML = "selected/pilot-calibration-report.html"
 StudyEventCallback = Callable[[Mapping[str, object]], None]
@@ -191,6 +194,7 @@ class ReferenceCalibrationStudySnapshot:
     visual_review_notes: Mapping[str, str] = field(default_factory=dict)
     subject_decisions: Mapping[str, dict[str, str]] = field(default_factory=dict)
     feature_observations: Mapping[str, dict[str, dict[str, Any]]] = field(default_factory=dict)
+    visual_display_scopes: Mapping[str, dict[str, str]] = field(default_factory=dict)
     adaptive_search_status: Mapping[str, Any] = field(default_factory=dict)
 
 
@@ -308,6 +312,11 @@ def latest_reference_calibration_search_extension_directory(
 
 
 def _load_events(root: Path) -> tuple[dict[str, Any], ...]:
+    with _REVIEW_LOCK:
+        return _load_events_unlocked(root)
+
+
+def _load_events_unlocked(root: Path) -> tuple[dict[str, Any], ...]:
     path = root / STUDY_EVENTS
     try:
         lines = path.read_text(encoding="utf-8").splitlines()
@@ -349,6 +358,11 @@ def _load_events(root: Path) -> tuple[dict[str, Any], ...]:
 
 
 def _append_event(root: Path, event: str, payload: Mapping[str, object]) -> dict[str, Any]:
+    with _REVIEW_LOCK:
+        return _append_event_unlocked(root, event, payload)
+
+
+def _append_event_unlocked(root: Path, event: str, payload: Mapping[str, object]) -> dict[str, Any]:
     events = _load_events(root) if (root / STUDY_EVENTS).exists() else ()
     record: dict[str, Any] = {
         "event_version": EVENT_VERSION,
@@ -753,6 +767,7 @@ def create_reference_calibration_search_extension_study(
     outward_steps: int = 2,
     fit_center_candidate_id: str | None = None,
     adaptive_context: Mapping[str, Any] | None = None,
+    continuation_context: Mapping[str, Any] | None = None,
 ) -> ReferenceCalibrationStudySnapshot:
     """Create an immutable successor that runs only new outward candidates.
 
@@ -779,6 +794,7 @@ def create_reference_calibration_search_extension_study(
     assessment = assess_reference_calibration_snapshot(source_snapshot)
     if (
         adaptive_context is None
+        and continuation_context is None
         and fit_center_candidate_id is None
         and assessment.search_range_status != "not_bounded"
     ):
@@ -799,7 +815,40 @@ def create_reference_calibration_search_extension_study(
             raise ReferenceCalibrationStudyError(
                 "Fit refinement requires a completed, converged, geometrically valid center"
             )
-    if adaptive_context is not None:
+    if continuation_context is not None:
+        from diffeoforge.adaptive_calibration import FIT_PARAMETERS
+        from diffeoforge.reference_adaptive_calibration import propose_selected_continuation
+
+        center_id = continuation_context.get("candidate_id")
+        center = next((c for c in source_snapshot.candidates if c.candidate_id == center_id), None)
+        planned = next(
+            (c for c in source_snapshot.current_stage.candidates if c.candidate_id == center_id),
+            None,
+        )
+        if (
+            center is None
+            or planned is None
+            or not center.metrics
+            or center.metrics.get("invalid_face_count") != 0
+            or center.metrics.get("optimizer_stop_signal")
+            not in {"maximum_iterations", "tolerance_threshold"}
+        ):
+            raise ReferenceCalibrationStudyError(
+                "Continuation needs a valid completed optimizer state"
+            )
+        values = {
+            **source_snapshot.plan.effective_values,
+            **source_snapshot.selected_values,
+            **planned.values,
+        }
+        if continuation_context.get("values") != {k: values[k] for k in FIT_PARAMETERS}:
+            raise ReferenceCalibrationStudyError(
+                "Continuation settings differ from the selected fit"
+            )
+        proposal = propose_selected_continuation(
+            source_snapshot.plan, assessment, continuation_context
+        )
+    elif adaptive_context is not None:
         from diffeoforge.adaptive_calibration import AdaptiveSearchPolicy
         from diffeoforge.reference_adaptive_calibration import propose_adaptive_fit, study_context
 
@@ -960,13 +1009,17 @@ def create_reference_calibration_search_extension_study(
                 "It remains a provisional pilot, not biological validation."
             ),
         }
-        if adaptive_context is not None:
+        if adaptive_context is not None or continuation_context is not None:
             from diffeoforge.reference_adaptive_calibration import bind_learned_seed
 
             manifest["adaptive_seed"] = bind_learned_seed(
                 source_snapshot, proposal.source_candidate_id, root
             )
-        if adaptive_context is not None or source_manifest.get("adaptive_protocol"):
+        if (
+            adaptive_context is not None
+            or continuation_context is not None
+            or source_manifest.get("adaptive_protocol")
+        ):
             manifest["adaptive_protocol"] = "learned_pilot_seed_v1"
         _write_json(root / STUDY_MANIFEST, manifest, overwrite=False)
         write_text_safely(
@@ -1129,7 +1182,7 @@ def _verify_manifest(root: Path) -> dict[str, Any]:
             raise ReferenceCalibrationStudyError(
                 "Calibration search-extension source manifest changed or is absent"
             )
-        source_snapshot = load_reference_calibration_study(source_root)
+        source_snapshot = load_reference_calibration_study(source_root, _restore_reviews=False)
         source_events = _load_events(source_root)
         lineage = dict(plan.search_extension_lineage)
         proposal = extension_source.get("proposal")
@@ -1256,7 +1309,9 @@ def calibration_candidate_run_directory(candidate: CalibrationStudyCandidateStat
         if (path / "manifest.json").is_file():
             return path
         record = _read_json(path / "evidence.json", "preserved candidate evidence")
-        source = load_reference_calibration_study(record["source_study_directory"])
+        source = load_reference_calibration_study(
+            record["source_study_directory"], _restore_reviews=False
+        )
         previous = next(
             (c for c in source.candidates if c.candidate_id == candidate.candidate_id), None
         )
@@ -1313,7 +1368,10 @@ def _load_candidate_reviews(
         candidate = by_id.get(event.get("candidate_id"))
         if candidate is None or type(event.get("approved")) is not bool:
             raise ReferenceCalibrationStudyError("Invalid candidate visual review")
-        if event.get("source") != _candidate_review_binding(candidate):
+        binding = _candidate_review_binding(candidate)
+        if event.get("policy") == "researcher_preview_bulk_v3":
+            binding.pop("config_sha256")  # Run manifest binds the effective configuration.
+        if event.get("source") != binding:
             raise ReferenceCalibrationStudyError("Visual review source evidence changed")
         decisions[candidate.candidate_id] = event["approved"]
     return decisions
@@ -1328,11 +1386,14 @@ def record_reference_calibration_candidate_review(
     anatomical_notes: str = "",
     feature_observations: Mapping[str, Mapping[str, Any]] | None = None,
     subject_decisions: Mapping[str, str] | None = None,
+    display_scopes: Mapping[str, str] | None = None,
 ) -> ReferenceCalibrationStudySnapshot:
     """Persist an explicit complete visual decision before any stage selection."""
     root = Path(study_directory).expanduser().resolve()
     snapshot = load_reference_calibration_study(root)
-    if snapshot.status != "awaiting_review" or snapshot.current_stage is None:
+    if snapshot.current_stage is None or (
+        display_scopes is None and snapshot.status != "awaiting_review"
+    ):
         raise ReferenceCalibrationStudyError("Candidate review requires an idle completed stage")
     expected = {subject.filename for subject in snapshot.plan.selected_pilot_subjects}
     reviewed = set(reviewed_subjects)
@@ -1402,26 +1463,102 @@ def record_reference_calibration_candidate_review(
     if candidate is None:
         raise ReferenceCalibrationStudyError("Unknown candidate for visual review")
     source = _candidate_review_binding(candidate)
-    _append_event(
-        root,
-        "candidate_visual_review",
-        {
-            "stage_id": snapshot.current_stage.stage_id,
-            "candidate_id": candidate_id,
-            "approved": approved,
-            "reviewed_subjects": sorted(reviewed_subjects),
-            "anatomical_notes": anatomical_notes.strip(),
-            "source": source,
-            "feature_observations": counts,
-            "subject_decisions": decisions,
-            "policy": "researcher_every_specimen_fit_v2",
-        },
-    )
+    payload = {
+        "stage_id": snapshot.current_stage.stage_id,
+        "candidate_id": candidate_id,
+        "approved": approved,
+        "reviewed_subjects": sorted(reviewed_subjects),
+        "anatomical_notes": anatomical_notes.strip(),
+        "source": source,
+        "feature_observations": counts,
+        "subject_decisions": decisions,
+        "policy": "researcher_every_specimen_fit_v2",
+    }
+    if display_scopes is None:
+        _append_event(root, "candidate_visual_review", payload)
+    else:
+        scopes = dict(display_scopes)
+        if set(scopes) != reviewed or any(
+            v not in {"preview", "original"} for v in scopes.values()
+        ):
+            raise ReferenceCalibrationStudyError(
+                "Record the display scope of each inspected specimen"
+            )
+        payload["source"].pop("config_sha256")
+        payload.update(policy="researcher_preview_bulk_v3", display_scopes=scopes)
+        series_root, _ = _search_extension_series(root)
+        path = series_root / "visual-reviews.json"
+        # Separate atomic journal: reviewing finished outputs never modifies a frozen
+        # parent event chain or competes with the engine's candidate checkpoints.
+        with _REVIEW_LOCK:
+            records = _read_review_journal(series_root)
+            record = dict(
+                payload,
+                event="candidate_visual_review",
+                sequence=len(records),
+                previous_hash=records[-1]["event_hash"] if records else None,
+            )
+            record["event_hash"] = _canonical_hash(record)
+            write_text_safely(
+                path,
+                _canonical_json({"version": 1, "records": [*records, record]}) + "\n",
+                overwrite=True,
+            )
     return load_reference_calibration_study(root)
+
+
+def _read_review_journal(series_root: Path) -> tuple[dict[str, Any], ...]:
+    path = series_root / "visual-reviews.json"
+    if not path.exists():
+        return ()
+    records = _read_json(path, "pilot visual review journal").get("records")
+    if not isinstance(records, list):
+        raise ReferenceCalibrationStudyError("Invalid visual review journal")
+    previous = None
+    for index, record in enumerate(records):
+        if not isinstance(record, dict):
+            raise ReferenceCalibrationStudyError("Invalid visual review record")
+        payload = {k: v for k, v in record.items() if k != "event_hash"}
+        if (
+            record.get("sequence") != index
+            or record.get("previous_hash") != previous
+            or record.get("event_hash") != _canonical_hash(payload)
+        ):
+            raise ReferenceCalibrationStudyError("Visual review journal chain changed")
+        previous = record["event_hash"]
+    return tuple(records)
 
 
 def load_reference_calibration_study(
     study_directory: Path | str,
+    *,
+    _restore_reviews: bool = True,
+) -> ReferenceCalibrationStudySnapshot:
+    """Verify each immutable ancestor once within this read, never across reads."""
+    root = Path(study_directory).expanduser().resolve()
+    top = not hasattr(_LOAD_CONTEXT, "snapshots")
+    if top:
+        _LOAD_CONTEXT.snapshots = {}
+    cache = _LOAD_CONTEXT.snapshots
+    key = root, _restore_reviews
+    try:
+        if key in cache:
+            if cache[key] is None:
+                raise ReferenceCalibrationStudyError("Cyclic calibration study lineage")
+            return cache[key]
+        cache[key] = None
+        snapshot = _load_verified_calibration_study(root, _restore_reviews=_restore_reviews)
+        cache[key] = snapshot
+        return snapshot
+    finally:
+        if top:
+            del _LOAD_CONTEXT.snapshots
+
+
+def _load_verified_calibration_study(
+    study_directory: Path | str,
+    *,
+    _restore_reviews: bool = True,
 ) -> ReferenceCalibrationStudySnapshot:
     """Verify and reconstruct one study exclusively from bound bytes and events."""
 
@@ -1574,7 +1711,18 @@ def load_reference_calibration_study(
                 attempts=len(starts),
             )
         )
-    visual_reviews = _load_candidate_reviews(events, stage.stage_id, candidate_states)
+    series_root, _ = _search_extension_series(root)
+    candidate_ids = {c.candidate_id for c in candidate_states}
+    review_events = events + tuple(
+        r
+        for r in (_read_review_journal(series_root) if _restore_reviews else ())
+        if r.get("stage_id") == stage.stage_id and r.get("candidate_id") in candidate_ids
+    )
+    visual_reviews = (
+        _load_candidate_reviews(review_events, stage.stage_id, candidate_states)
+        if _restore_reviews
+        else {}
+    )
     awaiting = any(
         event["event"] == "stage_awaiting_review" and event["stage_id"] == stage.stage_id
         for event in events
@@ -1603,19 +1751,30 @@ def load_reference_calibration_study(
         ),
         subject_decisions={
             event["candidate_id"]: dict(event.get("subject_decisions", {}))
-            for event in events
+            for event in review_events
             if event["event"] == "candidate_visual_review"
             and event.get("stage_id") == stage.stage_id
         },
         visual_review_notes={
             event["candidate_id"]: str(event.get("anatomical_notes", ""))
-            for event in events
+            for event in review_events
             if event["event"] == "candidate_visual_review"
             and event.get("stage_id") == stage.stage_id
         },
         feature_observations={
             event["candidate_id"]: event.get("feature_observations", {})
-            for event in events
+            for event in review_events
+            if event["event"] == "candidate_visual_review"
+            and event.get("stage_id") == stage.stage_id
+        },
+        visual_display_scopes={
+            event["candidate_id"]: dict(
+                event.get(
+                    "display_scopes",
+                    {name: "original" for name in event.get("reviewed_subjects", [])},
+                )
+            )
+            for event in review_events
             if event["event"] == "candidate_visual_review"
             and event.get("stage_id") == stage.stage_id
         },
@@ -1860,9 +2019,24 @@ def _relative_difference(first: float, second: float) -> float:
 def _bound_subject_diagonal(path: Path, digest: str) -> float:
     if sha256_file(path) != digest:
         raise ReferenceCalibrationStudyError("Pilot original changed before fit normalization")
-    mesh = read_vtk_polydata(path)
-    columns = tuple(zip(*mesh.vertices, strict=True))
-    diagonal = math.sqrt(math.fsum((max(axis) - min(axis)) ** 2 for axis in columns))
+    # Normalization needs only point bounds. Vectorize the desktop's common
+    # ASCII input, preserving the dependency-free reader for other encodings.
+    raw = path.read_bytes()
+    points = re.search(rb"(?m)^POINTS\s+(\d+)\s+(?:float|double)\s*\r?\n", raw)
+    polygons = re.search(rb"(?m)^POLYGONS\s+", raw)
+    try:
+        import numpy as np
+    except ImportError:
+        np = None
+    if np is not None and points and polygons and b"\nASCII\n" in raw[:1024].replace(b"\r", b""):
+        values = np.fromstring(raw[points.end() : polygons.start()].decode("ascii"), sep=" ")
+        if len(values) != int(points[1]) * 3 or not len(values) or not np.isfinite(values).all():
+            raise ReferenceCalibrationStudyError("Invalid pilot original point coordinates")
+        vertices = values.reshape(-1, 3)
+        diagonal = float(np.linalg.norm(vertices.max(axis=0) - vertices.min(axis=0)))
+    else:
+        columns = tuple(zip(*read_vtk_points(path), strict=True))
+        diagonal = math.sqrt(math.fsum((max(axis) - min(axis)) ** 2 for axis in columns))
     if not math.isfinite(diagonal) or diagonal <= 0:
         raise ReferenceCalibrationStudyError("Pilot original has no finite positive spatial extent")
     return diagonal
@@ -2240,6 +2414,8 @@ def _calibration_report_payload(
                 "selected_candidate_id": selected_id,
                 "selected_label": selected.label,
                 "selected_parameter_values": selected.values,
+                "visual_review_policy": event.get("visual_review_policy", "historical"),
+                "visual_display_scopes": event.get("visual_display_scopes", {}),
                 "selection_mode": event.get("selection_mode", "researcher_manual"),
                 "selection_reason": event.get(
                     "selection_reason",
@@ -2560,7 +2736,8 @@ def _record_reference_calibration_stage_selection(
             "candidate_id": selected_candidate_id,
             "parameter_values": selected.values,
             "visual_approvals": dict(visual_approvals),
-            "visual_review_policy": "required_every_specimen_fit",
+            "visual_review_policy": "explicit_every_specimen_fit_with_display_scope_v3",
+            "visual_display_scopes": dict(snapshot.visual_display_scopes),
             "visual_review_status": {
                 candidate.candidate_id: (
                     "passed"

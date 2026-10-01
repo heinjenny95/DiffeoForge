@@ -1650,6 +1650,7 @@ class CalibrationSearchExtensionProposal:
     fit_center_values: tuple[tuple[str, float], ...] = ()
     fit_base_values: tuple[tuple[str, float], ...] = ()
     adaptive_context: str = ""
+    continuation_context: str = ""
 
     def as_manifest(self) -> dict[str, object]:
         return {
@@ -1663,6 +1664,11 @@ class CalibrationSearchExtensionProposal:
             "boundary_parameters": list(self.boundary_parameters),
             "candidates": [candidate.as_manifest() for candidate in self.candidates],
             "limitations": list(self.limitations),
+            **(
+                {"continuation_context": json.loads(self.continuation_context)}
+                if self.continuation_context
+                else {}
+            ),
             **(
                 {"adaptive_context": json.loads(self.adaptive_context)}
                 if self.adaptive_context
@@ -2161,7 +2167,13 @@ def bind_calibration_search_extension_plan(
         raise ValueError("extension proposal is bound to a different assessment")
     if proposal.stage_id != assessment.stage_id:
         raise ValueError("extension proposal stage differs from its assessment")
-    if proposal.adaptive_context:
+    if proposal.continuation_context:
+        from diffeoforge.reference_adaptive_calibration import propose_selected_continuation
+
+        expected_proposal = propose_selected_continuation(
+            plan, assessment, json.loads(proposal.continuation_context)
+        )
+    elif proposal.adaptive_context:
         from diffeoforge.reference_adaptive_calibration import propose_adaptive_fit
 
         expected_proposal = propose_adaptive_fit(

@@ -1,5 +1,15 @@
 # Private-alpha build numbering
 
+## v97 — responsive pilot review
+
+v97 (`0.0.0.dev97`) adds cached preview QC, a single explicit option approval,
+inspection during computation, persistent display evidence scope and selected
+learned-state continuation with an explicit iteration budget. Automatic extra
+search is optional; recorded anatomical feedback affects its centers. Numerical
+distance and convergence remain separate from fit acceptance. See
+[scope, verification and limits](V97_PILOT_REVIEW.md). Build, installation and
+distribution identities will be recorded after verification.
+
 ## v96 — adaptive fit search
 
 v96 (`0.0.0.dev96`) adds bounded, results-driven pilot refinement, compatible

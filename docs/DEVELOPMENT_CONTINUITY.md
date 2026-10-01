@@ -1,6 +1,6 @@
-# Development continuity — v96 adaptive pilot
+# Development continuity — v97 pilot review
 
-Snapshot: 2026-09-29. This is a public, software-only continuation guide. Detailed
+Snapshot: 2026-10-01. This is a public, software-only continuation guide. Detailed
 research results, local paths, account destinations and run identities belong in
 the owner's private project handoff, not this repository.
 
@@ -13,6 +13,14 @@ correct parameters or interpret biology for the researcher. Deformetrica is the
 default supported reference route; the Modern engine remains evidence-gated.
 
 ## Current source work
+
+v97 addresses slow and blocked pilot QC, overly strong numerical presentation,
+and the loss of promising iteration-limited fits. Preview-based bulk approval,
+completed-option inspection during calculation, source-bound display caches and
+one-option warm continuation are implemented. Recorded rejection/acceptance now
+affects automatic search centers; extra search is off by default. See
+[behavior, verification and scientific limits](V97_PILOT_REVIEW.md). Installed
+and Drive-distributed runtime remain v96 until the separate delivery checks finish.
 
 v96 adds a bounded adaptive pilot search with compatible learned-state reuse,
 per-specimen regression protection, persistent budgets and explicit stop reasons.

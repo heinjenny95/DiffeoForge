@@ -55,9 +55,17 @@ class PreviewMeshLoader(QObject):
         paths: tuple[Path, ...],
         *,
         expected: tuple[str | None, ...] | None = None,
+        pilot_cache: Path | None = None,
     ) -> None:
         def load() -> tuple:
-            models = tuple(load_mesh_preview(path) for path in paths)
+            if pilot_cache is None:
+                models = tuple(load_mesh_preview(path) for path in paths)
+            else:
+                from diffeoforge.desktop.pilot_preview import load_pilot_preview
+
+                models = tuple(
+                    load_pilot_preview(path, cache_directory=pilot_cache) for path in paths
+                )
             if expected is not None:
                 for model, digest in zip(models, expected, strict=True):
                     if digest is not None and model.sha256 != digest:

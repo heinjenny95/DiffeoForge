@@ -84,6 +84,71 @@ def propose_adaptive_fit(plan, assessment, context):
     return replace(proposal, fingerprint=_canonical_hash(payload))
 
 
+def propose_selected_continuation(plan, assessment, context):
+    """A single researcher-selected warm continuation, without a parameter grid."""
+    if assessment.plan_fingerprint != plan.fingerprint:
+        raise ValueError("Continuation assessment belongs to another plan")
+    if set(context) != {"candidate_id", "iterations", "values"}:
+        raise ValueError("Invalid continuation context")
+    iterations = context["iterations"]
+    if type(iterations) is not int or not 1 <= iterations <= 20_000:
+        raise ValueError("Additional iteration budget must be between 1 and 20000")
+    stage = next(s for s in plan.stages if s.stage_id == assessment.stage_id)
+    center = next(c for c in stage.candidates if c.candidate_id == context["candidate_id"])
+    if context["values"] != {k: context["values"][k] for k in FIT_PARAMETERS}:
+        raise ValueError("Continuation must retain all spatial and matching settings")
+    identity = _canonical_hash(dict(context, plan_fingerprint=plan.fingerprint))
+    proposal = CalibrationSearchExtensionProposal(
+        version="0.4-selected-continuation",
+        fingerprint="",
+        plan_fingerprint=plan.fingerprint,
+        assessment_fingerprint=assessment.fingerprint,
+        stage_id=stage.stage_id,
+        source_candidate_id=center.candidate_id,
+        outward_steps=1,
+        boundary_parameters=tuple(f"{name}:continue" for name in FIT_PARAMETERS),
+        candidates=(
+            CalibrationCandidate(
+                candidate_id="continue-" + identity[:16],
+                label="Continue selected fit",
+                parameter_values=tuple(sorted(context["values"].items())),
+                rationale="Same model and learned state; additional optimizer iterations only.",
+            ),
+        ),
+        limitations=(
+            "Warm state, restarted optimizer step history; convergence remains unproven.",
+        ),
+        continuation_context=json.dumps(context, sort_keys=True, allow_nan=False),
+    )
+    payload = proposal.as_manifest()
+    payload.pop("fingerprint")
+    return replace(proposal, fingerprint=_canonical_hash(payload))
+
+
+def create_selected_continuation(source, destination, *, candidate_id, iterations):
+    from diffeoforge import reference_calibration_study as study
+
+    snapshot = study.load_reference_calibration_study(source)
+    if snapshot.current_stage is None:
+        raise ValueError("The pilot is already complete")
+    planned = next(c for c in snapshot.current_stage.candidates if c.candidate_id == candidate_id)
+    values = {**snapshot.plan.effective_values, **snapshot.selected_values, **planned.values}
+    context = dict(
+        candidate_id=candidate_id,
+        iterations=iterations,
+        values={k: values[k] for k in FIT_PARAMETERS},
+    )
+    limits = snapshot.search_extension_safety_limits or {
+        k: (values[k] / 8, values[k] * 8) for k in FIT_PARAMETERS
+    }
+    return study.create_reference_calibration_search_extension_study(
+        source,
+        destination,
+        safety_limits={k: limits[k] for k in FIT_PARAMETERS},
+        continuation_context=context,
+    )
+
+
 def study_context(snapshot, policy=None):
     from diffeoforge import reference_calibration_study as study
 
@@ -131,6 +196,7 @@ def study_context(snapshot, policy=None):
                     completed=candidate.status == "completed",
                     invalid_faces=metrics.get("invalid_face_count", -1),
                     converged=metrics.get("converged") is True,
+                    review_approved=snapshot.visual_reviews.get(candidate.candidate_id),
                 )
             )
         )
@@ -186,6 +252,7 @@ def bind_learned_seed(snapshot, center_id, destination):
         "subject_labels": list(expected),
         "files": files,
         "optimization": copy.deepcopy(effective["optimization"]),
+        "model": copy.deepcopy(effective["model"]),
         "deformation": copy.deepcopy(effective["model"]["deformation"]),
     }
 
@@ -211,6 +278,25 @@ def apply_seed(
 
 
 def configure_adaptive_trial(config, *, root, candidate_directory, manifest, candidate_id):
+    continuation = (
+        manifest.get("search_extension_source", {}).get("proposal", {}).get("continuation_context")
+    )
+    if continuation:
+        additions = manifest["search_extension_source"]["proposal"]["candidates"]
+        if candidate_id in {row["candidate_id"] for row in additions}:
+            seed = manifest["adaptive_seed"]
+            config["model"] = copy.deepcopy(seed["model"])
+            apply_seed(
+                config,
+                root=root,
+                candidate_directory=candidate_directory,
+                seed=seed,
+                initialization="warm",
+            )
+            config["optimization"] = copy.deepcopy(seed["optimization"])
+            config["optimization"]["max_iterations"] = continuation["iterations"]
+            validate_schema(config)
+        return
     context = (
         manifest.get("search_extension_source", {}).get("proposal", {}).get("adaptive_context")
     )

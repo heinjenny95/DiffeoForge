@@ -25,6 +25,7 @@ class CalibrationComparisonCanvas3D(QWidget):
     """Render an original mesh and its reconstruction in one shared 3D view."""
 
     fullResolutionReadyChanged = Signal()
+    originalDetailRequested = Signal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -52,11 +53,11 @@ class CalibrationComparisonCanvas3D(QWidget):
         self._last_position: QPointF | None = None
         self._drag_button: Qt.MouseButton | None = None
         self._interacting = False
-        self.original_detail = QCheckBox("Original detail for QC (slower)", self)
+        self.original_detail = QCheckBox("Load original detail (optional, slower)", self)
         self.original_detail.move(12, 38)
         self.original_detail.setToolTip(
-            "Proxies hide details and cannot authorize full-resolution QC. "
-            "Enable original detail and inspect both layers before recording a decision."
+            "You can approve or reject the displayed preview. Load original detail "
+            "only when you need to inspect features that simplification may hide."
         )
         self.original_detail.toggled.connect(self._resolution_changed)
         self.setMinimumHeight(420)
@@ -87,9 +88,7 @@ class CalibrationComparisonCanvas3D(QWidget):
         self._frames.clear()
         self._presented_key = None
         self.original_detail.setChecked(False)
-        self.original_detail.setEnabled(
-            not original.geometry_is_proxy and not reconstruction.geometry_is_proxy
-        )
+        self.original_detail.setEnabled(True)
         self._original_vertices = np.asarray(original.vertices, dtype=np.float64)
         self._reconstruction_vertices = np.asarray(
             reconstruction.vertices,
@@ -112,6 +111,7 @@ class CalibrationComparisonCanvas3D(QWidget):
     def clear(self) -> None:
         """Release the previous pair immediately; it cannot stand in for a new case."""
         self._original = self._reconstruction = None
+        self.original_detail.setEnabled(False)
         self._original_vertices = np.empty((0, 3), dtype=np.float64)
         self._reconstruction_vertices = np.empty((0, 3), dtype=np.float64)
         self._reconstruction_triangles = np.empty((0, 3), dtype=np.int64)
@@ -137,6 +137,19 @@ class CalibrationComparisonCanvas3D(QWidget):
         )
 
     @property
+    def comparison_ready(self) -> bool:
+        key = self._frame_key()
+        return bool(
+            self._original is not None
+            and self._reconstruction is not None
+            and self._show_original
+            and self._show_reconstruction
+            and not key[-1]
+            and self._presented_key == key
+            and self._frames.ready(key)
+        )
+
+    @property
     def full_resolution_ready(self) -> bool:
         key = self._frame_key()
         return bool(
@@ -157,6 +170,12 @@ class CalibrationComparisonCanvas3D(QWidget):
         )
 
     def _resolution_changed(self, _checked: bool) -> None:
+        if (
+            _checked
+            and self._original is not None
+            and (self._original.geometry_is_proxy or self._reconstruction.geometry_is_proxy)
+        ):
+            self.originalDetailRequested.emit()
         self._frames.clear()
         self._presented_key = None
         self.fullResolutionReadyChanged.emit()
@@ -349,7 +368,7 @@ class CalibrationComparisonCanvas3D(QWidget):
                 or self._reconstruction.display_proxy_error
                 or (
                     f"Display proxies: reconstruction {len(reconstruction_triangles):,} faces. "
-                    "Inspect Original detail before QC approval."
+                    "Preview ready — QC decisions are available."
                 ),
             )
         painter.end()

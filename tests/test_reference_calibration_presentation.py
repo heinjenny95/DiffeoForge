@@ -146,7 +146,7 @@ def test_tradeoff_labels_state_both_sides_without_declaring_a_winner() -> None:
     labels = candidate_tradeoff_labels((close_but_costly, smooth_and_fast))
 
     assert labels["attachment-01"] == (
-        "Closest automatic surface match",
+        "Lowest measured distance",
         "Most atlas/reconstruction area change",
         "Highest deformation cost",
         "Slowest pilot run",

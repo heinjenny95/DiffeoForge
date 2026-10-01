@@ -58,10 +58,10 @@ def test_comparison_canvas_binds_both_meshes_and_renders(monkeypatch, tmp_path: 
 
 def _wait_pair(application, dialog) -> None:
     deadline = time.monotonic() + 10
-    while not dialog.canvas.full_resolution_ready and time.monotonic() < deadline:
+    while not dialog.canvas.comparison_ready and time.monotonic() < deadline:
         application.processEvents()
         time.sleep(0.005)
-    assert dialog.canvas.full_resolution_ready
+    assert dialog.canvas.comparison_ready
     application.processEvents()
 
 
@@ -109,7 +109,9 @@ def test_visual_qc_pass_is_locked_until_every_subject_pair_was_opened(
         "collect_calibration_qc_pairs",
         lambda _study, _candidate: pairs,
     )
-    monkeypatch.setattr("diffeoforge.desktop.preview_mesh_loader.load_mesh_preview", _model)
+    monkeypatch.setattr(
+        "diffeoforge.desktop.pilot_preview.load_pilot_preview", lambda p, **kw: _model(p)
+    )
     candidate = CalibrationStudyCandidateState(
         candidate_id="attachment-01",
         label="center",
@@ -139,7 +141,7 @@ def test_visual_qc_pass_is_locked_until_every_subject_pair_was_opened(
     assert dialog.pass_check.isHidden() is True
     assert "Inspected: 2 / 2" in dialog.review_progress.text()
     assert dialog.next_specimen_button.isEnabled() is True
-    assert not dialog.complete_button.isEnabled()
+    assert dialog.complete_button.isEnabled()
     dialog.specimen_decision.setCurrentIndex(dialog.specimen_decision.findData("pass"))
     assert dialog.complete_button.isEnabled() is True
     assert dialog.complete_button.objectName() == "primary"
@@ -203,7 +205,9 @@ def test_visual_qc_can_record_an_explicit_failure_after_every_pair_was_opened(
         "collect_calibration_qc_pairs",
         lambda _study, _candidate: pairs,
     )
-    monkeypatch.setattr("diffeoforge.desktop.preview_mesh_loader.load_mesh_preview", _model)
+    monkeypatch.setattr(
+        "diffeoforge.desktop.pilot_preview.load_pilot_preview", lambda p, **kw: _model(p)
+    )
     candidate = CalibrationStudyCandidateState(
         candidate_id="attachment-01",
         label="center",
@@ -220,8 +224,8 @@ def test_visual_qc_can_record_an_explicit_failure_after_every_pair_was_opened(
     _wait_pair(application, dialog)
 
     assert dialog.fail_button.isVisible() is True
-    assert dialog.complete_button.isEnabled() is False
-    assert "Assess each specimen" in dialog.review_gate.text()
+    assert dialog.complete_button.isEnabled() is True
+    assert "Approve once" in dialog.review_gate.text()
     dialog.feature_criterion.setText(criterion)
     dialog.feature_judgement.setCurrentIndex(dialog.feature_judgement.findData("not_preserved"))
     assert dialog.original_feature_count.value() == -1  # Qualitative checks need no count.

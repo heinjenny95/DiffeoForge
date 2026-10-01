@@ -36,6 +36,16 @@ def test_fit_not_speed_or_small_average_selects_search_center():
     assert all(t.values["noise_std"] > 0 for t in result.trials)
 
 
+def test_human_anatomy_acceptance_outranks_proxy_and_rejection_excludes_center():
+    approved = row("anatomy-preserved", [.3, .4], review_approved=True, converged=False)
+    rejected = row("bad-anatomy", [.01, .01], review_approved=False)
+    numerical = row("unreviewed", [.02, .02])
+    result = decide([approved, rejected, numerical], previous_center_id="bad-anatomy")
+    assert result.center_id == "anatomy-preserved"
+    assert result.trials
+    assert decide([rejected]).stop_reason == "no_valid_fit_evidence"
+
+
 def test_plateau_does_not_launch_another_blind_batch():
     result = decide(
         [row("base", [0.02, 0.5]), row("same", [0.02, 0.5])],

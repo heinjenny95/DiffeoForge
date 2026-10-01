@@ -214,7 +214,7 @@ def candidate_tradeoff_assessments(
         (
             "residual_p95",
             CalibrationTradeoffAssessment(
-                label="Closest automatic surface match",
+                label="Lowest measured distance",
                 tone="favorable",
                 interpretation=(
                     "This option has the lowest measured surface mismatch. That is "
@@ -333,8 +333,13 @@ def automatic_check_summary(metrics: Mapping[str, object]) -> tuple[bool, str]:
     if converged and invalid_faces == 0:
         return (
             True,
-            "Automatic checks passed: the optimizer stopped normally and no invalid "
-            "faces were detected.",
+            "Objective-change tolerance reached; no invalid faces detected. "
+            "Fit needs visual review.",
+        )
+    if metrics.get("optimizer_stop_signal") == "maximum_iterations" and not invalid_faces:
+        return False, (
+            f"Iteration limit reached ({metrics.get('maximum_iterations', '?')}). "
+            "Fit can be reviewed; continue this option to check convergence."
         )
     problems: list[str] = []
     if not converged:

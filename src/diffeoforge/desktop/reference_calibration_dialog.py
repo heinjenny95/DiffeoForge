@@ -76,6 +76,7 @@ def _set_action_emphasis(button: QPushButton, emphasized: bool) -> None:
     style = button.style()
     style.unpolish(button)
     style.polish(button)
+    button.updateGeometry()
     button.update()
 
 
@@ -98,6 +99,8 @@ class CalibrationQcPair:
     original_path: Path
     reconstruction_path: Path
     required: bool
+    original_sha256: str | None = None
+    reconstruction_sha256: str | None = None
 
 
 def collect_calibration_qc_pairs(
@@ -127,6 +130,11 @@ def collect_calibration_qc_pairs(
 
     run_directory = calibration_candidate_run_directory(candidate)
     report = collect_run_report(run_directory)
+    from diffeoforge.reference_calibration_study import _verify_manifest
+
+    manifest = _verify_manifest(root)
+    original_hashes = {r["filename"]: r["sha256"] for r in manifest["inputs"]["subjects"]}
+    output_hashes = {str(r["path"]): str(r["sha256"]) for r in report.inventory}
     output = (run_directory / "output").resolve()
     atlas_path: Path | None = None
     reconstructions: dict[str, Path] = {}
@@ -162,6 +170,8 @@ def collect_calibration_qc_pairs(
             original_path=template_paths[0],
             reconstruction_path=atlas_path,
             required=False,
+            original_sha256=manifest["inputs"]["template"]["sha256"],
+            reconstruction_sha256=output_hashes[atlas_path.relative_to(output).as_posix()],
         )
     ]
     pairs.extend(
@@ -171,6 +181,10 @@ def collect_calibration_qc_pairs(
             original_path=path,
             reconstruction_path=reconstructions[name],
             required=True,
+            original_sha256=original_hashes[name],
+            reconstruction_sha256=output_hashes[
+                reconstructions[name].relative_to(output).as_posix()
+            ],
         )
         for name, path in sorted(
             subject_paths.items(),
@@ -196,9 +210,11 @@ class _CalibrationStageWorker(QRunnable):
         afk: bool = False,
         visual_approvals: Mapping[str, bool] | None = None,
         outward_safety_limits: Mapping[str, tuple[float, float]] | None = None,
+        continuation: tuple[str, int] | None = None,
     ) -> None:
         super().__init__()
         self.runner = runner
+        self.continuation = continuation
         self.adaptive_fit_search = adaptive_fit_search
         self.complete_automatic_pilot = complete_automatic_pilot
         self.afk = afk
@@ -218,14 +234,42 @@ class _CalibrationStageWorker(QRunnable):
 
     @Slot()
     def run(self) -> None:
+        def emit(event):
+            if event["event"] in {"candidate_completed", "adaptive_search_extended"}:
+                snapshot = load_reference_calibration_study(self.runner.study_directory)
+                for candidate in snapshot.candidates:
+                    if candidate.metrics:
+                        normalized_candidate_subject_fit(snapshot, candidate)
+                event = dict(event, snapshot=snapshot)
+            self.signals.event.emit(event)
+
         try:
-            if self.adaptive_fit_search:
+            if self.continuation is not None:
+                from diffeoforge.reference_adaptive_calibration import create_selected_continuation
+                from diffeoforge.reference_calibration_study import (
+                    next_reference_calibration_search_extension_destination,
+                )
+
+                candidate_id, iterations = self.continuation
+                destination = next_reference_calibration_search_extension_destination(
+                    self.runner.study_directory
+                )
+                snapshot = create_selected_continuation(
+                    self.runner.study_directory,
+                    destination,
+                    candidate_id=candidate_id,
+                    iterations=iterations,
+                )
+                self.runner.study_directory = snapshot.study_directory
+                emit(dict(event="selected_continuation_started", snapshot=snapshot))
+                result = self.runner.run_current_stage(event_callback=emit)
+            elif self.adaptive_fit_search:
                 from diffeoforge.reference_adaptive_calibration import run_adaptive_stage
 
-                result = run_adaptive_stage(self.runner, event_callback=self.signals.event.emit)
+                result = run_adaptive_stage(self.runner, event_callback=emit)
             elif self.complete_automatic_pilot:
                 result = self.runner.run_complete_automatic_pilot(
-                    event_callback=self.signals.event.emit,
+                    event_callback=emit,
                     **(
                         {
                             "afk": True,
@@ -237,7 +281,7 @@ class _CalibrationStageWorker(QRunnable):
                     ),
                 )
             else:
-                result = self.runner.run_current_stage(event_callback=self.signals.event.emit)
+                result = self.runner.run_current_stage(event_callback=emit)
         except (OSError, RuntimeError, TypeError, ValueError) as error:
             self.signals.failed.emit(str(error))
         else:
@@ -257,11 +301,16 @@ class CalibrationCandidateViewerDialog(QDialog):
         parent: QWidget | None = None,
         *,
         subject_fit: Mapping[str, float] | None = None,
+        pairs: tuple[CalibrationQcPair, ...] | None = None,
     ) -> None:
         super().__init__(parent)
         if candidate.run_directory is None:
             raise ValueError("Candidate has no completed run directory")
-        self._pairs = collect_calibration_qc_pairs(study_directory, candidate)
+        self._pairs = (
+            pairs if pairs is not None else collect_calibration_qc_pairs(study_directory, candidate)
+        )
+        self._preview_cache = study_directory / "display-cache"
+        self.display_scopes: dict[str, str] = {}
         self._fit = dict(subject_fit or {})
         self._pairs = tuple(
             sorted(
@@ -361,6 +410,7 @@ class CalibrationCandidateViewerDialog(QDialog):
         layout.addWidget(self.status)
         self.canvas = CalibrationComparisonCanvas3D()
         self.canvas.fullResolutionReadyChanged.connect(self._pair_original_presented)
+        self.canvas.originalDetailRequested.connect(self._load_original_detail)
         self.show_original.toggled.connect(self.canvas.set_show_original)
         self.show_reconstruction.toggled.connect(self.canvas.set_show_reconstruction)
         layout.addWidget(self.canvas, 1)
@@ -382,13 +432,16 @@ class CalibrationCandidateViewerDialog(QDialog):
             self.specimen_decision.addItem(label, value)
         self.specimen_decision.currentIndexChanged.connect(self._store_specimen_decision)
 
+        feature_box = QWidget()
+        feature_layout = QVBoxLayout(feature_box)
+        feature_layout.setContentsMargins(0, 0, 0, 0)
         tip_help = QLabel(
             "Optional study-specific feature check — name the feature or region that "
             "matters for this dataset. Record whether it is preserved. Add paired counts "
             "only when counting is meaningful. These are your observations."
         )
         tip_help.setWordWrap(True)
-        layout.addWidget(tip_help)
+        feature_layout.addWidget(tip_help)
         self.feature_criterion = QLineEdit()
         self.feature_criterion.setMaxLength(500)
         self.feature_criterion.setPlaceholderText("Feature or region for this dataset")
@@ -406,7 +459,7 @@ class CalibrationCandidateViewerDialog(QDialog):
         feature_controls = QHBoxLayout()
         feature_controls.addWidget(self.feature_criterion, 1)
         feature_controls.addWidget(self.feature_judgement)
-        layout.addLayout(feature_controls)
+        feature_layout.addLayout(feature_controls)
         tip_controls = QHBoxLayout()
         self.original_feature_count = QSpinBox()
         self.reconstruction_feature_count = QSpinBox()
@@ -421,12 +474,13 @@ class CalibrationCandidateViewerDialog(QDialog):
             spin.valueChanged.connect(self._store_feature_check)
             tip_controls.addWidget(QLabel(label))
             tip_controls.addWidget(spin)
-        layout.addLayout(tip_controls)
+        feature_layout.addLayout(tip_controls)
+        layout.addWidget(InfoDisclosure("Optional anatomical checks", feature_box))
 
         self.decision_panel = QFrame()
         self.decision_panel.setObjectName("card")
         decision_layout = QVBoxLayout(self.decision_panel)
-        decision_layout.addWidget(self.specimen_decision)
+        layout.addWidget(InfoDisclosure("Optional individual assessment", self.specimen_decision))
         self.review_progress = QLabel()
         self.review_progress.setWordWrap(True)
         decision_layout.addWidget(self.review_progress)
@@ -452,10 +506,11 @@ class CalibrationCandidateViewerDialog(QDialog):
         self.close_button = QPushButton("Close without recording")
         self.close_button.clicked.connect(self.reject)
         _set_action_emphasis(self.close_button, False)
-        self.fail_button = QPushButton("Record: QC does not pass")
+        self.fail_button = QPushButton("Reject option")
         self.fail_button.setObjectName("danger")
         self.fail_button.clicked.connect(self._record_visual_qc_fail)
-        self.complete_button = QPushButton("Record: QC passes")
+        self.complete_button = QPushButton("Approve all specimens")
+        self.complete_button.setToolTip("I inspected every specimen and accept all their fits.")
         self.complete_button.setEnabled(False)
         self.complete_button.clicked.connect(self._record_visual_qc_pass)
         controls.addStretch()
@@ -499,8 +554,12 @@ class CalibrationCandidateViewerDialog(QDialog):
         self.canvas.clear()
         self.status.setText("Loading comparison and preparing reduced displays…")
         self._mesh_loader.request_paths(
-            int(pair_index), (pair.original_path, pair.reconstruction_path)
+            int(pair_index),
+            (pair.original_path, pair.reconstruction_path),
+            pilot_cache=self._preview_cache,
+            expected=(pair.original_sha256, pair.reconstruction_sha256),
         )
+        self._update_review_progress()
 
     def _show_feature_check(self, pair: CalibrationQcPair) -> None:
         self.specimen_decision.blockSignals(True)
@@ -541,7 +600,7 @@ class CalibrationCandidateViewerDialog(QDialog):
         if (
             not pair.required
             or pair.pair_id not in self._reviewed_pair_ids
-            or not self.canvas.full_resolution_ready
+            or not self.canvas.comparison_ready
         ):
             return
         value = self.specimen_decision.currentData()
@@ -590,15 +649,22 @@ class CalibrationCandidateViewerDialog(QDialog):
     def _pair_failed(self, _key: object, message: str) -> None:
         self.canvas.clear()
         self.status.setText(f"Comparison could not be displayed: {message}")
+        self._update_review_progress()
 
     @Slot(object, object)
     def _pair_loaded(self, index: object, models: object) -> None:
+        detail = isinstance(index, tuple)
+        if detail:
+            index = index[0]
         if index != self.mesh_combo.currentData():
             return
         pair = self._pairs[int(index)]
         original, reconstruction = models
         self.canvas.set_models(original, reconstruction)
-        self.canvas.reset_view()
+        if detail:
+            self.canvas.original_detail.setChecked(True)
+        else:
+            self.canvas.reset_view()
         self.status.setText(
             f"Original: {pair.original_path.name} ({original.triangle_count} faces)  |  "
             f"Reconstruction: {pair.reconstruction_path.name} "
@@ -608,11 +674,29 @@ class CalibrationCandidateViewerDialog(QDialog):
 
     @Slot()
     def _pair_original_presented(self) -> None:
-        if self.canvas.full_resolution_ready:
+        if self.canvas.comparison_ready:
             index = self.mesh_combo.currentData()
             if index is not None:
-                self._reviewed_pair_ids.add(self._pairs[int(index)].pair_id)
-            self._update_review_progress()
+                pair = self._pairs[int(index)]
+                self._reviewed_pair_ids.add(pair.pair_id)
+                self.display_scopes[pair.original_path.name] = (
+                    "original" if self.canvas.full_resolution_ready else "preview"
+                )
+        self._update_review_progress()
+
+    @Slot()
+    def _load_original_detail(self) -> None:
+        index = self.mesh_combo.currentData()
+        if index is not None:
+            pair = self._pairs[int(index)]
+            self.status.setText(
+                "Loading optional original detail… Preview decisions remain recorded."
+            )
+            self._mesh_loader.request_paths(
+                (index, "detail"),
+                (pair.original_path, pair.reconstruction_path),
+                expected=(pair.original_sha256, pair.reconstruction_sha256),
+            )
 
     @Slot()
     def _navigate_required_specimen(self, direction: int) -> None:
@@ -628,7 +712,6 @@ class CalibrationCandidateViewerDialog(QDialog):
                 index
                 for index in self._required_pair_indexes
                 if self._pairs[index].pair_id not in self._reviewed_pair_ids
-                or self._pairs[index].original_path.name not in self.subject_decisions
             )
             if unreviewed_indexes:
                 later_indexes = tuple(
@@ -656,8 +739,8 @@ class CalibrationCandidateViewerDialog(QDialog):
         total = len(self._required_pair_ids)
         complete = reviewed == total and total > 0
         conflicts = self._feature_conflicts()
-        passed = sum(value == "pass" for value in self.subject_decisions.values())
-        all_pass = complete and passed == total
+        concerns = any(value in {"fail", "uncertain"} for value in self.subject_decisions.values())
+        all_pass = complete and not concerns
         pair_index = self.mesh_combo.currentData()
         try:
             current_position = self._required_pair_indexes.index(int(pair_index))
@@ -666,15 +749,16 @@ class CalibrationCandidateViewerDialog(QDialog):
         self.previous_specimen_button.setEnabled(current_position > 0)
         self.next_specimen_button.setEnabled(total > 1)
         pair = self._pairs[int(pair_index)] if pair_index is not None else None
-        current_seen = bool(pair and pair.required and pair.pair_id in self._reviewed_pair_ids)
-        self.specimen_decision.setEnabled(current_seen and self.canvas.full_resolution_ready)
-        self.review_progress.setText(
-            f"Fit accepted: {passed} / {total} specimens. Inspected: {reviewed} / {total}."
-        )
+        current_seen = bool(pair and pair.required and self.canvas.comparison_ready)
+        self.specimen_decision.setEnabled(current_seen)
+        self.review_progress.setText(f"Inspected: {reviewed} / {total} specimens.")
         self.review_gate.setText(
-            "Every specimen passed. Record approval to continue."
+            "Approve once if all inspected specimens fit. Original detail is optional."
             if all_pass
-            else "Assess each specimen. One failed or uncertain fit blocks approval."
+            else "Resolve the individual concern before approval, or reject this option."
+            if concerns
+            else f"View the remaining {total - reviewed} specimens, then approve once. "
+            "You can reject now."
         )
         self.review_gate.setObjectName("statusSuccess" if complete else "status")
         if conflicts:
@@ -687,7 +771,7 @@ class CalibrationCandidateViewerDialog(QDialog):
         self.review_gate.setStyleSheet("")
         self.fail_button.setVisible(True)
         self.fail_button.setEnabled(current_seen)
-        self.complete_button.setEnabled(all_pass and not conflicts)
+        self.complete_button.setEnabled(all_pass and not conflicts and self.canvas.comparison_ready)
         _set_action_emphasis(self.next_specimen_button, not all_pass)
         _set_action_emphasis(self.complete_button, all_pass and not conflicts)
 
@@ -698,21 +782,33 @@ class CalibrationCandidateViewerDialog(QDialog):
             required_names
             and self._required_pair_ids <= self._reviewed_pair_ids
             and not self._feature_conflicts()
-            and all(self.subject_decisions.get(name) == "pass" for name in required_names)
+            and not any(
+                self.subject_decisions.get(name) in {"fail", "uncertain"} for name in required_names
+            )
+            and self.canvas.comparison_ready
         ):
+            self.subject_decisions.update({name: "pass" for name in required_names})
             self._review_decision = True
             self.pass_check.setChecked(True)
             self.accept()
+        else:
+            self._update_review_progress()
+            if not self.canvas.comparison_ready:
+                self.review_gate.setText("Wait for both mesh layers to finish loading.")
 
     @Slot()
     def _record_visual_qc_fail(self) -> None:
         index = self.mesh_combo.currentData()
         pair = self._pairs[int(index)] if index is not None else None
-        if pair and pair.required and pair.pair_id in self._reviewed_pair_ids:
+        if pair and pair.required and self.canvas.comparison_ready:
             self.subject_decisions[pair.original_path.name] = "fail"
             self._review_decision = False
             self.pass_check.setChecked(False)
             self.reject()
+        else:
+            self.review_gate.setText(
+                "Load a pilot specimen with both mesh layers to reject this option."
+            )
 
 
 class ReferenceCalibrationDialog(QDialog):
@@ -732,10 +828,15 @@ class ReferenceCalibrationDialog(QDialog):
         self.setWindowModality(Qt.WindowModality.NonModal)
         self.study_directory = study_directory.resolve()
         self._snapshot = load_reference_calibration_study(self.study_directory)
+        self._viewer_preparation = PreviewMeshLoader(self)
+        self._viewer_preparation.loaded.connect(self._candidate_prepared)
+        self._viewer_preparation.failed.connect(self._candidate_prepare_failed)
+        self._preview_prefetch = PreviewMeshLoader(self)
         self._worker: _CalibrationStageWorker | None = None
         self._thread_pool = ActivityPool(self)
         self._approval_checks: dict[str, QCheckBox] = {}
         self._review_buttons: dict[str, QPushButton] = {}
+        self._continuation_buttons: dict[str, QPushButton] = {}
         self._visually_reviewed_candidates: set[str] = set()
         self._visually_approved_candidates: set[str] = set()
         self.setWindowTitle("Automatic Deformetrica pilot calibration")
@@ -811,7 +912,7 @@ class ReferenceCalibrationDialog(QDialog):
         self.adaptive_fit_search = QCheckBox(
             "Automatically improve fit (up to 12 extra runs per stage)"
         )
-        self.adaptive_fit_search.setChecked(not bool(self._snapshot.plan.qc_recalibration_source))
+        self.adaptive_fit_search.setChecked(False)
         self.adaptive_fit_search.setVisible(not bool(self._snapshot.plan.qc_recalibration_source))
         self.adaptive_fit_search.setToolTip(
             "Up to 3 rounds, 300 iterations per added run. Compare every specimen, "
@@ -819,6 +920,17 @@ class ReferenceCalibrationDialog(QDialog):
             "Stop at a plateau, trade-off or budget. Visual approval is still required."
         )
         root.addWidget(self.adaptive_fit_search)
+        continuation_controls = QWidget()
+        continuation_layout = QHBoxLayout(continuation_controls)
+        continuation_layout.setContentsMargins(0, 0, 0, 0)
+        continuation_layout.addWidget(QLabel("Additional iterations for a selected option"))
+        self.continuation_iterations = QSpinBox()
+        self.continuation_iterations.setRange(1, 20_000)
+        self.continuation_iterations.setValue(300)
+        self.continuation_iterations.valueChanged.connect(self._update_continuation_labels)
+        continuation_layout.addWidget(self.continuation_iterations)
+        continuation_layout.addStretch()
+        root.addWidget(InfoDisclosure("Continuation budget", continuation_controls))
         self.progress = QProgressBar()
         self.progress.setRange(0, 1)
         self.progress.setValue(0)
@@ -913,9 +1025,14 @@ class ReferenceCalibrationDialog(QDialog):
                 widget.deleteLater()
         self._approval_checks = {}
         self._review_buttons = {}
+        self._continuation_buttons = {}
 
-    def _render(self) -> None:
-        self._snapshot = load_reference_calibration_study(self.study_directory)
+    def _update_continuation_labels(self) -> None:
+        for letter, button in self._continuation_buttons.items():
+            button.setText(f"Continue {letter}: +{self.continuation_iterations.value()} iterations")
+
+    def _render(self, snapshot: ReferenceCalibrationStudySnapshot | None = None) -> None:
+        self._snapshot = snapshot or load_reference_calibration_study(self.study_directory)
         for candidate_id, approved in self._snapshot.visual_reviews.items():
             self._visually_reviewed_candidates.add(candidate_id)
             if approved:
@@ -1228,7 +1345,7 @@ class ReferenceCalibrationDialog(QDialog):
                         else " · fit not reviewed"
                     )
                     recommendation_suffix = (
-                        " · best available fit"
+                        " · lowest measured distance"
                         if candidate.candidate_id == assessment.balanced_candidate_id
                         else ""
                     )
@@ -1245,8 +1362,7 @@ class ReferenceCalibrationDialog(QDialog):
             self._update_stage_review_action()
         elif running:
             self.status.setText(
-                "Running the declared candidates. You can cancel safely; no review "
-                "action is required until all calculations finish."
+                "Running. Inspect any completed option while the next option computes."
             )
         else:
             self.status.setText("Next: click the green Run all candidates in this stage button.")
@@ -1295,27 +1411,28 @@ class ReferenceCalibrationDialog(QDialog):
             metrics = candidate.metrics
             fit = normalized_candidate_subject_fit(self._snapshot, candidate)
             if fit:
-                worst = max(fit, key=fit.get)
-                fit_label = QLabel(f"Largest relative p95 distance: {fit[worst]:.2%} — {worst}")
+                fit_label = QLabel("Fit unconfirmed — inspect the overlays.")
                 fit_label.setWordWrap(True)
                 layout.addWidget(fit_label)
                 detail = QLabel(
                     "Distance p95 / original bounding-box diagonal; lower is closer. "
                     "This is a sampled nearest-vertex proxy, not an anatomical pass.\n\n"
                     + "\n".join(
-                        f"{value:.2%} — {name}"
+                        f"{value:.4g} bbox diagonals — {name}"
                         for name, value in sorted(fit.items(), key=lambda item: -item[1])
                     )
                 )
                 detail.setWordWrap(True)
-                layout.addWidget(InfoDisclosure("Fit of every specimen", detail))
+                layout.addWidget(
+                    InfoDisclosure("Technical distance proxy — not fit quality", detail)
+                )
             passed, check_text = automatic_check_summary(metrics)
             check = QLabel(("✓ " if passed else "⚠ ") + check_text)
             check.setWordWrap(True)
             layout.addWidget(check)
             comparison_title = QLabel("Relative measurements — anatomy needs review")
             comparison_title.setObjectName("sectionTitle")
-            layout.addWidget(comparison_title)
+            option_help_layout.addWidget(comparison_title)
             if tradeoffs:
                 comparison_details_title = QLabel(
                     "How to interpret the automatic comparison signals"
@@ -1334,9 +1451,7 @@ class ReferenceCalibrationDialog(QDialog):
                     )
                     comparison.setTextFormat(Qt.TextFormat.RichText)
                     comparison.setWordWrap(True)
-                    (option_help_layout if tradeoff.tone == "neutral" else layout).addWidget(
-                        comparison
-                    )
+                    option_help_layout.addWidget(comparison)
                     comparison_detail = QLabel(self._tradeoff_assessment_html(tradeoff))
                     comparison_detail.setTextFormat(Qt.TextFormat.RichText)
                     comparison_detail.setWordWrap(True)
@@ -1353,7 +1468,7 @@ class ReferenceCalibrationDialog(QDialog):
                 )
                 comparison.setObjectName("status")
                 comparison.setWordWrap(True)
-                layout.addWidget(comparison)
+                option_help_layout.addWidget(comparison)
             technical_button = QPushButton("ⓘ Technical measurements")
             technical_button.setCheckable(True)
             technical_button.setSizePolicy(
@@ -1384,7 +1499,7 @@ class ReferenceCalibrationDialog(QDialog):
             )
             _set_action_emphasis(viewer, False)
             self._review_buttons[candidate.candidate_id] = viewer
-            viewer.setEnabled(self._worker is None and self._snapshot.status == "awaiting_review")
+            viewer.setEnabled(candidate.status == "completed")
             approval = QCheckBox("Visual QC passed")
             approval.setVisible(approved)
             approval.setChecked(approved)
@@ -1409,6 +1524,25 @@ class ReferenceCalibrationDialog(QDialog):
             self._approval_checks[candidate.candidate_id] = approval
             review_controls = QHBoxLayout()
             review_controls.addWidget(viewer)
+            continuation = QPushButton(
+                f"Continue {option_letter}: +{self.continuation_iterations.value()} iterations"
+            )
+            self._continuation_buttons[option_letter] = continuation
+            _set_action_emphasis(continuation, False)
+            continuation.setToolTip(
+                "Same parameters and learned state; only additional iterations."
+            )
+            continuation.setEnabled(
+                self._worker is None
+                and self._snapshot.status == "awaiting_review"
+                and metrics.get("invalid_face_count") == 0
+                and metrics.get("optimizer_stop_signal")
+                in {"maximum_iterations", "tolerance_threshold"}
+            )
+            continuation.clicked.connect(
+                lambda _checked=False, value=candidate: self._start_selected_continuation(value)
+            )
+            review_controls.addWidget(continuation)
             review_controls.addWidget(approval)
             review_controls.addStretch()
             layout.addLayout(review_controls)
@@ -1589,10 +1723,21 @@ class ReferenceCalibrationDialog(QDialog):
             self.status.setText(message)
             QMessageBox.critical(self, "Pilot could not start", message)
 
-    def _start_pilot(self, *, adaptive: bool | None = None) -> None:
+    def _start_selected_continuation(self, candidate: CalibrationStudyCandidateState) -> None:
+        if self._worker is not None:
+            return
+        self._start_pilot(
+            adaptive=False,
+            continuation=(candidate.candidate_id, self.continuation_iterations.value()),
+        )
+
+    def _start_pilot(
+        self, *, adaptive: bool | None = None, continuation: tuple[str, int] | None = None
+    ) -> None:
         runner = ReferenceCalibrationStudyRunner(self.study_directory)
         worker = _CalibrationStageWorker(
             runner,
+            continuation=continuation,
             complete_automatic_pilot=False,
             adaptive_fit_search=(
                 self.adaptive_fit_search.isChecked() if adaptive is None else adaptive
@@ -1630,9 +1775,16 @@ class ReferenceCalibrationDialog(QDialog):
     def _event(self, event: Mapping[str, object]) -> None:
         kind = str(event["event"])
         candidate_id = str(event.get("candidate_id", ""))
-        if kind == "adaptive_search_extended":
+        if kind == "selected_continuation_started":
+            snapshot = event["snapshot"]
+            self.study_directory = snapshot.study_directory
+            self._render(snapshot)
+            self.status.setText(
+                "Continuing only the selected option. Previous results are preserved."
+            )
+        elif kind == "adaptive_search_extended":
             self.study_directory = Path(str(event["study_directory"])).resolve()
-            self._render()
+            self._render(event.get("snapshot"))
             self.status.setText(
                 f"Automatic fit search, round {event['round_index']}: "
                 f"{event['new_runs']} new comparisons. Existing fits are preserved."
@@ -1657,7 +1809,19 @@ class ReferenceCalibrationDialog(QDialog):
                     f"{float(payload['elapsed_seconds']):.0f} seconds."
                 )
         elif kind == "candidate_completed":
-            self._render()
+            self._render(event.get("snapshot"))
+            candidate = next(c for c in self._snapshot.candidates if c.candidate_id == candidate_id)
+            root = self.study_directory
+
+            def prefetch():
+                from diffeoforge.desktop.pilot_preview import load_pilot_preview
+
+                for pair in collect_calibration_qc_pairs(root, candidate):
+                    if pair.required:
+                        for path in (pair.original_path, pair.reconstruction_path):
+                            load_pilot_preview(path, cache_directory=root / "display-cache")
+
+            self._preview_prefetch.request_operation(candidate_id, prefetch)
             self.status.setText(f"{candidate_id} completed; automatic QC metrics were verified.")
         elif kind == "automatic_stage_selected":
             self._render()
@@ -1777,12 +1941,34 @@ class ReferenceCalibrationDialog(QDialog):
         )
 
     def _open_candidate(self, candidate: CalibrationStudyCandidateState) -> None:
+        if candidate.status != "completed":
+            self.status.setText("This option is still computing. Inspect a completed option.")
+            return
+        root, snapshot = self.study_directory, self._snapshot
+        self.status.setText("Preparing comparison in background… The pilot can continue.")
+        self._viewer_preparation.request_operation(
+            (root, candidate),
+            lambda: (
+                collect_calibration_qc_pairs(root, candidate),
+                normalized_candidate_subject_fit(snapshot, candidate),
+            ),
+        )
+
+    @Slot(object, str)
+    def _candidate_prepare_failed(self, _key: object, message: str) -> None:
+        self.status.setText("Comparison unavailable: " + message)
+
+    @Slot(object, object)
+    def _candidate_prepared(self, key: object, prepared: object) -> None:
+        root, candidate = key
+        pairs, fit = prepared
         try:
             dialog = CalibrationCandidateViewerDialog(
-                self.study_directory,
+                root,
                 candidate,
                 self,
-                subject_fit=normalized_candidate_subject_fit(self._snapshot, candidate),
+                subject_fit=fit,
+                pairs=pairs,
             )
             dialog.anatomical_notes.setText(
                 self._snapshot.visual_review_notes.get(candidate.candidate_id, "")
@@ -1799,6 +1985,9 @@ class ReferenceCalibrationDialog(QDialog):
             dialog._reviewed_pair_ids.update(
                 p.pair_id for p in dialog._pairs if p.original_path.name in dialog.subject_decisions
             )
+            dialog.display_scopes.update(
+                self._snapshot.visual_display_scopes.get(candidate.candidate_id, {})
+            )
             index = dialog.mesh_combo.currentData()
             if index is not None:
                 dialog._show_feature_check(dialog._pairs[int(index)])
@@ -1806,7 +1995,7 @@ class ReferenceCalibrationDialog(QDialog):
             dialog.exec()
             if dialog.review_recorded:
                 record_reference_calibration_candidate_review(
-                    self.study_directory,
+                    root,
                     candidate_id=candidate.candidate_id,
                     approved=dialog.review_passed,
                     reviewed_subjects=tuple(
@@ -1817,6 +2006,11 @@ class ReferenceCalibrationDialog(QDialog):
                     anatomical_notes=dialog.anatomical_notes.text(),
                     feature_observations=dialog.feature_observations,
                     subject_decisions=dialog.subject_decisions,
+                    display_scopes={
+                        p.original_path.name: dialog.display_scopes[p.original_path.name]
+                        for p in dialog._pairs
+                        if p.required and p.pair_id in dialog._reviewed_pair_ids
+                    },
                 )
                 self._visually_reviewed_candidates.add(candidate.candidate_id)
                 if dialog.review_passed:
