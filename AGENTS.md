@@ -14,16 +14,19 @@ After every completed feature, fix, configuration or documentation change:
 2. Proactively append a concise English entry to the existing DiffeoForge Google
    Docs **Project log** tab: change, verification, limitations/next step and commit
    link. Preserve the document's tabs, styles and existing content; verify readback.
-3. Keep the tested installer current in the owner's established Google Drive
-   distribution folder. The owner reaffirmed this standing permission on
-   2026-09-25. Resolve the exact private destination from the local project
+3. Upload the tested installer to the owner's established Google Drive
+   distribution folder only when explicitly requested. The owner's 2026-10-01
+   instruction supersedes automatic distribution after every version; GitHub
+   and Project log updates above remain mandatory. Resolve the exact private
+   destination from the local project
    handoff, not by guessing. Preserve sharing and stable links where practical,
    stage a complete usable package, verify uploaded content and version, and keep
    a recoverable prior version. Do not announce a partial split archive as ready.
 4. Verify all applicable destinations; disclose any pending/failed synchronization.
    Documentation-only changes do not require an identical installer rebuild or
-   version bump: the distributed binary must remain the latest tested build,
-   with any existing distribution lag explicitly tracked.
+   version bump. Drive may intentionally retain an older tested binary if no
+   upload was requested; that does not block completion. Track the last verified
+   distributed version separately and verify any requested update completely.
 
 Source HEAD, installed executable and distributed installer are distinct states.
 Updating one does not prove the others are current. Keep exact source/build/hash

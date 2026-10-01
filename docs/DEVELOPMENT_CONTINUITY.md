@@ -4,6 +4,13 @@ Snapshot: 2026-10-01. This is a public, software-only continuation guide. Detail
 research results, local paths, account destinations and run identities belong in
 the owner's private project handoff, not this repository.
 
+Owner workflow update, 2026-10-01: installer uploads to Drive are now on explicit
+request only. Automatic task-scoped GitHub and existing Project log updates
+continue. Source, local installation and the last verified Drive package remain
+separate states; retaining an older Drive package without a requested upload is
+intentional, not an unfinished delivery. No rebuild or version bump is needed
+for this documentation-only policy change. See the standing rules in `AGENTS.md`.
+
 ## Product scope
 
 DiffeoForge guides a reproducible Deformetrica workflow: input checks, documented
