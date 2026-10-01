@@ -611,6 +611,10 @@ def _prepare_stage(
             manifest=manifest,
             candidate_id=candidate.candidate_id,
         )
+        if manifest.get("fit_search"):
+            from diffeoforge.reference_fit_search import configure_trial
+
+            configure_trial(config, root, candidate_directory, manifest, candidate.candidate_id)
         config_path = candidate_directory / "atlas.yaml"
         _write_yaml(config_path, config, overwrite=False)
         records.append(
@@ -639,6 +643,8 @@ def create_reference_calibration_study(
     study_directory: Path | str,
     *,
     pilot_max_iterations: int = 150,
+    fit_search: Mapping[str, Any] | None = None,
+    plan_override: ReferenceCalibrationPlan | None = None,
 ) -> ReferenceCalibrationStudySnapshot:
     """Create an immutable-input staged study without launching Deformetrica."""
 
@@ -650,7 +656,7 @@ def create_reference_calibration_study(
         raise ValueError("pilot_max_iterations must be a positive integer")
     source = Path(config_path).expanduser().resolve()
     config = load_config(source)
-    plan = _find_plan(config)
+    plan = plan_override or _find_plan(config)
     inputs = validate_input_paths(config, source)
     by_name = {path.name: path for path in inputs.subjects}
     selected_paths: list[Path] = []
@@ -737,6 +743,10 @@ def create_reference_calibration_study(
                 "automatic anatomical approval or final scientific validation."
             ),
         }
+        if fit_search is not None:
+            from diffeoforge.reference_fit_search import prepare_working_targets
+
+            manifest["fit_search"] = prepare_working_targets(root, manifest, dict(fit_search))
         _write_json(root / STUDY_MANIFEST, manifest, overwrite=False)
         write_text_safely(
             root / STUDY_DIGEST,
@@ -768,6 +778,7 @@ def create_reference_calibration_search_extension_study(
     fit_center_candidate_id: str | None = None,
     adaptive_context: Mapping[str, Any] | None = None,
     continuation_context: Mapping[str, Any] | None = None,
+    confirm_full_targets: bool = False,
 ) -> ReferenceCalibrationStudySnapshot:
     """Create an immutable successor that runs only new outward candidates.
 
@@ -819,6 +830,9 @@ def create_reference_calibration_search_extension_study(
         from diffeoforge.adaptive_calibration import FIT_PARAMETERS
         from diffeoforge.reference_adaptive_calibration import propose_selected_continuation
 
+        if (continuation_context.get("confirm_full_targets") is True) != confirm_full_targets:
+            raise ReferenceCalibrationStudyError("Confirmation context differs from target scope")
+
         center_id = continuation_context.get("candidate_id")
         center = next((c for c in source_snapshot.candidates if c.candidate_id == center_id), None)
         planned = next(
@@ -841,7 +855,15 @@ def create_reference_calibration_search_extension_study(
             **source_snapshot.selected_values,
             **planned.values,
         }
-        if continuation_context.get("values") != {k: values[k] for k in FIT_PARAMETERS}:
+        expected_values = {k: values[k] for k in FIT_PARAMETERS}
+        if continuation_context.get("finer_surface") is True:
+            if not _verify_manifest(source_root).get("fit_search"):
+                raise ReferenceCalibrationStudyError(
+                    "Surface refinement needs a bounded fit search"
+                )
+            for key in ("attachment_kernel_width", "noise_std"):
+                expected_values[key] /= 2
+        if continuation_context.get("values") != expected_values:
             raise ReferenceCalibrationStudyError(
                 "Continuation settings differ from the selected fit"
             )
@@ -1009,6 +1031,14 @@ def create_reference_calibration_search_extension_study(
                 "It remains a provisional pilot, not biological validation."
             ),
         }
+        if source_manifest.get("fit_search"):
+            from diffeoforge.reference_fit_search import inherit_search
+
+            manifest["fit_search"] = inherit_search(
+                source_root, root, source_manifest, proposal, confirm_full_targets
+            )
+        elif confirm_full_targets:
+            raise ReferenceCalibrationStudyError("Full-target confirmation needs a fit search")
         if adaptive_context is not None or continuation_context is not None:
             from diffeoforge.reference_adaptive_calibration import bind_learned_seed
 
@@ -1252,6 +1282,10 @@ def _verify_manifest(root: Path) -> dict[str, Any]:
             raise ReferenceCalibrationStudyError(
                 f"Calibration study input changed or is absent: {path}"
             )
+    if manifest.get("fit_search"):
+        from diffeoforge.reference_fit_search import verify_search
+
+        verify_search(root, manifest)
     return manifest
 
 
@@ -1888,6 +1922,15 @@ class ReferenceCalibrationStudyRunner:
                 result = controller.run(event_callback=forward)
                 if result.completed:
                     metrics = collect_reference_calibration_run_metrics(request.destination)
+                    measured = metrics.as_manifest()
+                    if manifest.get("fit_search"):
+                        from diffeoforge.reference_fit_search import measure_original_fit
+
+                        measured.update(
+                            measure_original_fit(
+                                self.study_directory, manifest, candidate, request.destination
+                            )
+                        )
                     terminal = _append_event(
                         self.study_directory,
                         "candidate_completed",
@@ -1898,7 +1941,7 @@ class ReferenceCalibrationStudyRunner:
                             "run_directory": _relative_path(
                                 self.study_directory, request.destination
                             ),
-                            "metrics": metrics.as_manifest(),
+                            "metrics": measured,
                         },
                     )
                 else:
@@ -2126,7 +2169,9 @@ def _stage_evidence(
             CalibrationCandidateEvidence(
                 candidate_id=candidate.candidate_id,
                 completed=metrics is not None,
-                converged=bool(metrics and metrics["converged"]),
+                converged=bool(
+                    metrics and metrics["converged"] and metrics.get("fit_scope") != "screening"
+                ),
                 invalid_face_count=(int(metrics["invalid_face_count"]) if metrics else 0),
                 residual_p95=(float(metrics["residual_p95"]) if metrics else None),
                 deformation_energy=(float(metrics["deformation_energy"]) if metrics else None),

@@ -1,5 +1,15 @@
 # Private-alpha build numbering
 
+## v98 — bounded original-surface fit search
+
+v98 (`0.0.0.dev98`) adds **Find fit** with a persistent time budget, four short
+scientific working-target probes, compatible refinement and original-target
+confirmation. Original template topology and specimen coverage are preserved;
+screening cannot approve or advance the pilot. Worst-specimen bidirectional
+point-to-triangle tails drive ranking. See [scope and checks](V98_FIT_SEARCH.md).
+Build, local installation and distribution are pending; v97 remains the latest
+verified installed package. No private parameter-tuning run is performed.
+
 ## v97 — responsive pilot review
 
 v97 (`0.0.0.dev97`) adds cached preview QC, a single explicit option approval,

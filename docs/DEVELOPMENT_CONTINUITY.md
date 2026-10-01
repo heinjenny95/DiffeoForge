@@ -1,4 +1,4 @@
-# Development continuity — v97 pilot review
+# Development continuity — v98 bounded fit search
 
 Snapshot: 2026-10-01. This is a public, software-only continuation guide. Detailed
 research results, local paths, account destinations and run identities belong in
@@ -13,6 +13,16 @@ correct parameters or interpret biology for the researcher. Deformetrica is the
 default supported reference route; the Modern engine remains evidence-gated.
 
 ## Current source work
+
+v98 replaces the guided first-stage grid with an explicit time-bounded **Find fit**
+action: four short fixed-template field probes, at most one compatible refinement,
+then original-target confirmation with the project's template/control settings.
+Scientific working targets remain distinct from display proxies; ranking measures
+the worst specimen against original triangles. Human anatomy approval remains
+required. See [implementation and verification](V98_FIT_SEARCH.md). Packaging,
+installation and distribution are pending; the latest verified installed build
+below remains v97. A specimen-by-specimen human checkpoint is a separate proposed
+workflow, not part of this implementation.
 
 v97 addresses slow and blocked pilot QC, overly strong numerical presentation,
 and the loss of promising iteration-limited fits. Preview-based bulk approval,
@@ -131,8 +141,8 @@ recoverable. See [v90 distribution evidence](V90_DRIVE_DELIVERY.md).
 
 ## Next work, in priority order
 
-1. v96 build, installation and distribution are verified. Assess the adaptive
-   search prospectively; v95 remains recoverable.
+1. Complete v98 packaging/distribution and assess the bounded search prospectively.
+   Preserve v97 and all existing studies; no new private fit was run for development.
    Complete interactive minimize/focus acceptance across other applications;
    retain one pilot/controller and existing scientific evidence. Under the
    standing instruction in `AGENTS.md`, approval to develop a future version

@@ -88,7 +88,12 @@ def propose_selected_continuation(plan, assessment, context):
     """A single researcher-selected warm continuation, without a parameter grid."""
     if assessment.plan_fingerprint != plan.fingerprint:
         raise ValueError("Continuation assessment belongs to another plan")
-    if set(context) != {"candidate_id", "iterations", "values"}:
+    expected_keys = {"candidate_id", "iterations", "values"}
+    if context.get("finer_surface") is True:
+        expected_keys.add("finer_surface")
+    if context.get("confirm_full_targets") is True:
+        expected_keys.add("confirm_full_targets")
+    if set(context) != expected_keys:
         raise ValueError("Invalid continuation context")
     iterations = context["iterations"]
     if type(iterations) is not int or not 1 <= iterations <= 20_000:
@@ -110,9 +115,19 @@ def propose_selected_continuation(plan, assessment, context):
         candidates=(
             CalibrationCandidate(
                 candidate_id="continue-" + identity[:16],
-                label="Continue selected fit",
+                label=(
+                    "Full target confirmation"
+                    if context.get("confirm_full_targets")
+                    else "Refine surface fit"
+                    if context.get("finer_surface")
+                    else "Continue selected fit"
+                ),
                 parameter_values=tuple(sorted(context["values"].items())),
-                rationale="Same model and learned state; additional optimizer iterations only.",
+                rationale=(
+                    "Finer attachment and stronger fit; compatible learned deformation."
+                    if context.get("finer_surface")
+                    else "Same model and learned state; additional optimizer iterations only."
+                ),
             ),
         ),
         limitations=(
@@ -232,7 +247,17 @@ def bind_learned_seed(snapshot, center_id, destination):
         for r in inputs.run_report.manifest["inputs"]
         if r["role"] == "subject"
     }
-    if source_subjects != {r["filename"]: r["sha256"] for r in subjects}:
+    expected_hashes = {r["filename"]: r["sha256"] for r in subjects}
+    if manifest.get("fit_search"):
+        from diffeoforge.reference_fit_search import verify_search
+
+        verify_search(snapshot.study_directory, manifest)
+        working_hashes = {
+            r["filename"]: r["sha256"] for r in manifest["fit_search"]["working_targets"]
+        }
+    else:
+        working_hashes = expected_hashes
+    if source_subjects not in (expected_hashes, working_hashes):
         raise ValueError("Seed subject geometry differs from the bound pilot cohort")
     template, template_hash, controls, controls_hash, *_ = _trained_model_artifacts(run)
     files = {}
@@ -286,6 +311,11 @@ def configure_adaptive_trial(config, *, root, candidate_directory, manifest, can
         if candidate_id in {row["candidate_id"] for row in additions}:
             seed = manifest["adaptive_seed"]
             config["model"] = copy.deepcopy(seed["model"])
+            if continuation.get("finer_surface"):
+                config["model"]["attachment"]["kernel_width"] = continuation["values"][
+                    "attachment_kernel_width"
+                ]
+                config["model"]["noise_std"] = continuation["values"]["noise_std"]
             apply_seed(
                 config,
                 root=root,

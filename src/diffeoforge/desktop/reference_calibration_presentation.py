@@ -379,6 +379,19 @@ def technical_metric_text(metrics: Mapping[str, object]) -> str:
 
 def subject_metric_text(metrics: Mapping[str, object]) -> str:
     """Expose the subject tails hidden by the pooled proxy, without grading anatomy."""
+    if metrics.get("original_surface_fit"):
+        scope = (
+            "Full target detail" if metrics.get("fit_scope") == "full_targets" else "Screen only"
+        )
+        return (
+            scope
+            + " — area-sampled distance to original triangles (coordinate units)\n"
+            + "\n".join(
+                f"{name}: p95 {value['p95']:.6g}; p99 {value['p99']:.6g}"
+                for name, value in sorted(metrics["original_surface_fit"].items())
+            )
+            + "\nSampled geometry cannot approve anatomy."
+        )
     values = metrics.get("subject_residual_p95", {})
     if not isinstance(values, Mapping) or not values:
         return "Per-specimen surface-distance evidence is unavailable in this result."

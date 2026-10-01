@@ -211,10 +211,12 @@ class _CalibrationStageWorker(QRunnable):
         visual_approvals: Mapping[str, bool] | None = None,
         outward_safety_limits: Mapping[str, tuple[float, float]] | None = None,
         continuation: tuple[str, int] | None = None,
+        bounded_fit_minutes: int | None = None,
     ) -> None:
         super().__init__()
         self.runner = runner
         self.continuation = continuation
+        self.bounded_fit_minutes = bounded_fit_minutes
         self.adaptive_fit_search = adaptive_fit_search
         self.complete_automatic_pilot = complete_automatic_pilot
         self.afk = afk
@@ -244,7 +246,13 @@ class _CalibrationStageWorker(QRunnable):
             self.signals.event.emit(event)
 
         try:
-            if self.continuation is not None:
+            if self.bounded_fit_minutes is not None:
+                from diffeoforge.reference_fit_search import run_fit_search
+
+                result = run_fit_search(
+                    self.runner, minutes=self.bounded_fit_minutes, event_callback=emit
+                )
+            elif self.continuation is not None:
                 from diffeoforge.reference_adaptive_calibration import create_selected_continuation
                 from diffeoforge.reference_calibration_study import (
                     next_reference_calibration_search_extension_destination,
@@ -837,6 +845,7 @@ class ReferenceCalibrationDialog(QDialog):
         self._viewer_preparation.failed.connect(self._candidate_prepare_failed)
         self._preview_prefetch = PreviewMeshLoader(self)
         self._worker: _CalibrationStageWorker | None = None
+        self._fit_search_stop_text: str | None = None
         self._thread_pool = ActivityPool(self)
         self._approval_checks: dict[str, QCheckBox] = {}
         self._review_buttons: dict[str, QPushButton] = {}
@@ -924,6 +933,24 @@ class ReferenceCalibrationDialog(QDialog):
             "Stop at a plateau, trade-off or budget. Visual approval is still required."
         )
         root.addWidget(self.adaptive_fit_search)
+        fit_row = QHBoxLayout()
+        self.fit_minutes = QSpinBox()
+        self.fit_minutes.setRange(15, 240)
+        self.fit_minutes.setValue(60)
+        self.fit_minutes.setSuffix(" min total")
+        self.find_fit_button = QPushButton("Find fit")
+        self.find_fit_button.setObjectName("primary")
+        self.find_fit_button.setToolTip(
+            "Four short fits, finer surface matching, then full-target confirmation. "
+            "Scientific working targets; original template and all pilot specimens retained. "
+            "The budget stops the engine; final file verification may take longer. "
+            "Saved results still need your visual QC. Previous pilots are preserved."
+        )
+        self.find_fit_button.clicked.connect(self._find_fit)
+        fit_row.addWidget(self.find_fit_button)
+        fit_row.addWidget(self.fit_minutes)
+        fit_row.addStretch()
+        root.addLayout(fit_row)
         continuation_controls = QWidget()
         continuation_layout = QHBoxLayout(continuation_controls)
         continuation_layout.setContentsMargins(0, 0, 0, 0)
@@ -1310,7 +1337,19 @@ class ReferenceCalibrationDialog(QDialog):
             )
             self.start_button.setVisible(not awaiting or retryable)
         self.start_button.setEnabled(not running)
+        if (
+            not self._snapshot.selected_candidate_ids
+            and not self.advanced_mode.isChecked()
+            and not self._snapshot.plan.qc_recalibration_source
+        ):
+            self.start_button.setText("Find fit")
         self.adaptive_fit_search.setEnabled(not running)
+        self.find_fit_button.setEnabled(
+            not running
+            and not self._snapshot.selected_candidate_ids
+            and not self._snapshot.plan.qc_recalibration_source
+        )
+        self.fit_minutes.setEnabled(not running)
         self.cancel_button.setEnabled(running)
         self.cancel_button.setVisible(running)
         self.review_next_button.hide()
@@ -1709,6 +1748,14 @@ class ReferenceCalibrationDialog(QDialog):
     def _start(self) -> None:
         if self._worker is not None:
             return
+        if (
+            not self._snapshot.selected_candidate_ids
+            and not self.advanced_mode.isChecked()
+            and not self.adaptive_fit_search.isChecked()
+            and not self._snapshot.plan.qc_recalibration_source
+        ):
+            self._find_fit()
+            return
         try:
             self._start_pilot()
         except Exception as error:
@@ -1736,12 +1783,17 @@ class ReferenceCalibrationDialog(QDialog):
         )
 
     def _start_pilot(
-        self, *, adaptive: bool | None = None, continuation: tuple[str, int] | None = None
+        self,
+        *,
+        adaptive: bool | None = None,
+        continuation: tuple[str, int] | None = None,
+        bounded_fit_minutes: int | None = None,
     ) -> None:
         runner = ReferenceCalibrationStudyRunner(self.study_directory)
         worker = _CalibrationStageWorker(
             runner,
             continuation=continuation,
+            bounded_fit_minutes=bounded_fit_minutes,
             complete_automatic_pilot=False,
             adaptive_fit_search=(
                 self.adaptive_fit_search.isChecked() if adaptive is None else adaptive
@@ -1756,9 +1808,12 @@ class ReferenceCalibrationDialog(QDialog):
         worker.signals.succeeded.connect(self._succeeded)
         worker.signals.failed.connect(self._failed)
         self._worker = worker
+        self._fit_search_stop_text = None
         self.advanced_mode.setEnabled(False)
         self.afk_mode.setEnabled(False)
         self.adaptive_fit_search.setEnabled(False)
+        self.find_fit_button.setEnabled(False)
+        self.fit_minutes.setEnabled(False)
         self.collect_evidence_button.setEnabled(False)
         self.review_next_button.setEnabled(False)
         self.advance_button.setEnabled(False)
@@ -1779,7 +1834,27 @@ class ReferenceCalibrationDialog(QDialog):
     def _event(self, event: Mapping[str, object]) -> None:
         kind = str(event["event"])
         candidate_id = str(event.get("candidate_id", ""))
-        if kind == "selected_continuation_started":
+        if kind in {"fit_search_started", "fit_search_extended"}:
+            snapshot = event["snapshot"]
+            self.study_directory = snapshot.study_directory
+            self._render(snapshot)
+            self.status.setText(
+                "Fitting full target detail — review follows."
+                if event.get("confirmation")
+                else "Bounded fit search — completed options can already be reviewed."
+            )
+        elif kind == "fit_search_stopped":
+            self._fit_search_stop_text = (
+                "Time budget reached. Saved results remain available for review."
+                if event["reason"] == "time_budget"
+                else (
+                    "Fit search finished. Inspect the full-target option before continuing."
+                    if event.get("full_target_completed")
+                    else "No full-target confirmation completed. Review saved screening results."
+                )
+            )
+            self.status.setText(self._fit_search_stop_text)
+        elif kind == "selected_continuation_started":
             snapshot = event["snapshot"]
             self.study_directory = snapshot.study_directory
             self._render(snapshot)
@@ -1849,6 +1924,8 @@ class ReferenceCalibrationDialog(QDialog):
         self._worker = None
         self.study_directory = snapshot.study_directory
         self._render()
+        if self._fit_search_stop_text:
+            self.status.setText(self._fit_search_stop_text)
 
     @Slot(str)
     def _failed(self, message: str) -> None:
@@ -1899,8 +1976,16 @@ class ReferenceCalibrationDialog(QDialog):
     def _collect_more_evidence(self) -> None:
         if self._worker is not None:
             return
+        if not self._snapshot.selected_candidate_ids and not self.advanced_mode.isChecked():
+            self._find_fit()
+            return
         self.adaptive_fit_search.setChecked(True)
         self._start()
+
+    @Slot()
+    def _find_fit(self) -> None:
+        if self._worker is None:
+            self._start_pilot(adaptive=False, bounded_fit_minutes=self.fit_minutes.value())
 
     @Slot()
     def _cancel(self) -> None:
