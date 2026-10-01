@@ -21,6 +21,14 @@ default supported reference route; the Modern engine remains evidence-gated.
 
 ## Current source work
 
+v100 removes the guided fit-search wall-clock limit and its minute selector.
+Existing immutable studies and exhausted legacy budget files are accepted without
+rewriting their evidence or resetting approved fits. Individual approval/rejection,
+finite parameter alternatives, explicit cancellation, iteration limits and the
+joint-confirmation requirements are unchanged. See [scope and compatibility checks](V100_NO_FIT_DEADLINE.md).
+Build and installation evidence will be recorded separately after verification.
+
+
 v99 contains native mesh filters in supervised hidden helper processes after a
 reported Windows heap-corruption crash during individual-fit preparation.
 Sequence children reuse exact parent working meshes and controls instead of

@@ -1,5 +1,9 @@
 # v98 — bounded fit search with specimen checkpoints
 
+Historical v98 behavior: v100 removes the wall-clock budget described below,
+including for saved sequences. Specimen checkpoints remain in place; see
+[V100_NO_FIT_DEADLINE.md](V100_NO_FIT_DEADLINE.md).
+
 The guided first-stage **Find fit** action preserves the existing pilot and starts
 an independent sequence of its original selected specimens. It runs one short
 40-iteration attempt for the first specimen, then pauses for visual review.

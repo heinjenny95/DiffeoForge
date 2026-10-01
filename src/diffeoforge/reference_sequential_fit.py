@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import copy
-import time
 from dataclasses import replace
 from pathlib import Path
 
@@ -36,7 +35,7 @@ def verify_sequence(directory, manifest):
         raise ValueError("Specimen sequence source changed")
     parent = study._verify_manifest(root)
     if Path(manifest["fit_search"]["budget_directory"]).resolve() != root:
-        raise ValueError("Specimen sequence budget differs from its bound source")
+        raise ValueError("Specimen sequence differs from its bound source")
     members = parent["inputs"]["subjects"]
     if info["total"] != len(members):
         raise ValueError("Specimen sequence count differs from its original pilot")
@@ -114,7 +113,7 @@ def _basis(values):
 
 
 def _next_parameters(root, state):
-    """Finite recorded alternatives, one at a time; never reset the time budget."""
+    """Finite recorded alternatives, one at a time, preserving saved feedback."""
     parent = study.load_reference_calibration_study(root)
     index = len(state["approved"])
     attempted = []
@@ -235,11 +234,9 @@ def _make_child(root, state, *, retry_iterations=None, joint_seed=None, trial_va
         phase="joint" if joint else "individual",
         index=index,
         total=len(state["order"]),
-        minutes=manifest["fit_search"]["minutes"],
         filename=None if joint else state["order"][index],
     )
     search_settings = dict(
-        minutes=manifest["fit_search"]["minutes"],
         sequence=info,
         confirmation_freeze_settings=manifest["fit_search"]["confirmation_freeze_settings"],
         confirmation_ids=["fit-joint"] if joint else [],
@@ -311,10 +308,9 @@ def _joint_seed(root, state):
 
 
 def _run_specimen_sequence(
-    runner, *, minutes=60, action=None, event_callback=None, center_values=None
+    runner, *, action=None, event_callback=None, center_values=None
 ):
     """Run only the current specimen; advancement requires its recorded human QC."""
-    preparation_started = time.monotonic()
     origin = runner.study_directory
     manifest = study._verify_manifest(runner.study_directory)
     info = manifest.get("fit_search", {}).get("sequence")
@@ -329,7 +325,7 @@ def _run_specimen_sequence(
     else:
         if action:
             raise ValueError("No individual checkpoint exists to advance")
-        parent = search.create_search(runner.study_directory, minutes, center_values=center_values)
+        parent = search.create_search(runner.study_directory, center_values=center_values)
         root = parent.study_directory
         ordered = sorted(
             parent.plan.selected_pilot_subjects,
@@ -397,7 +393,6 @@ def _run_specimen_sequence(
         runner,
         event_callback=event_callback,
         single_stage=True,
-        preparation_started=preparation_started,
     )
     if event_callback:
         event_callback(
@@ -410,7 +405,7 @@ def _run_specimen_sequence(
     return result
 
 
-def run_specimen_sequence(runner, *, minutes=60, action=None, event_callback=None):
+def run_specimen_sequence(runner, *, action=None, event_callback=None):
     info = sequence_info(runner.study_directory)
     if action and action[0] == "restart":
         if not info:
@@ -428,11 +423,11 @@ def run_specimen_sequence(runner, *, minutes=60, action=None, event_callback=Non
         center = _values(snapshot, candidate_id) if candidate_id else None
         runner.study_directory = Path(info["root"])
         return _run_specimen_sequence(
-            runner, minutes=action[2], event_callback=event_callback, center_values=center
+            runner, event_callback=event_callback, center_values=center
         )
     if not info:
         return _run_specimen_sequence(
-            runner, minutes=minutes, action=action, event_callback=event_callback
+            runner, action=action, event_callback=event_callback
         )
     lock = Path(info["root"]) / "specimen-sequence-active.lock"
     try:
@@ -443,7 +438,7 @@ def run_specimen_sequence(runner, *, minutes=60, action=None, event_callback=Non
         ) from error
     try:
         return _run_specimen_sequence(
-            runner, minutes=minutes, action=action, event_callback=event_callback
+            runner, action=action, event_callback=event_callback
         )
     finally:
         lock.rmdir()

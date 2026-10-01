@@ -42,7 +42,7 @@ def test_search_preserves_originals_binds_working_targets_and_rejects_tampering(
 ):
     _, original = _review_ready_stage(tmp_path, monkeypatch)
     before = sha256_file(original.study_directory / "events.jsonl")
-    created = search.create_search(original.study_directory, 60)
+    created = search.create_search(original.study_directory)
     manifest = study._verify_manifest(created.study_directory)
     assert len(created.candidates) == 4
     assert sha256_file(original.study_directory / "events.jsonl") == before
@@ -102,38 +102,41 @@ def test_complete_search_refines_then_confirms_original_targets_without_qc(tmp_p
     assert original.study_directory != reopened.study_directory
 
 
-def test_reserved_exhausted_budget_does_not_launch_an_engine(tmp_path, monkeypatch):
+def test_exhausted_legacy_budget_no_longer_blocks_or_changes_saved_evidence(tmp_path, monkeypatch):
     runner, original = _review_ready_stage(tmp_path, monkeypatch)
-    created = search.create_search(original.study_directory, 15)
+    create = study.create_reference_calibration_study
+
+    def legacy_create(*args, **kwargs):
+        kwargs["fit_search"]["minutes"] = 15
+        return create(*args, **kwargs)
+
+    monkeypatch.setattr(study, "create_reference_calibration_study", legacy_create)
+    created = search.create_search(original.study_directory)
     runner.study_directory = created.study_directory
     study._write_json(
         created.study_directory / "fit-search-budget.json",
         dict(limit_seconds=900, spent_seconds=900),
         overwrite=False,
     )
-    monkeypatch.setattr(runner, "run_current_stage", lambda **k: pytest.fail("Engine launched"))
-    with pytest.raises(ValueError, match="budget is exhausted"):
-        search.run_fit_search(runner)
+    files = [created.study_directory / name for name in (
+        "fit-search-budget.json", study.STUDY_MANIFEST, "events.jsonl"
+    )]
+    before = {p: p.read_bytes() for p in files}
+    calls = []
+    monkeypatch.setattr(runner, "run_current_stage", lambda **k: calls.append(True) or created)
+    search.run_fit_search(runner, single_stage=True)
+    assert calls == [True] and not runner._cancel_requested
+    assert {p: p.read_bytes() for p in files} == before
 
 
-def test_time_limit_requests_cancellation_without_launching_more_work(tmp_path, monkeypatch):
+def test_manual_cancel_skips_work_and_releases_lock(tmp_path, monkeypatch):
     runner, original = _review_ready_stage(tmp_path, monkeypatch)
-    created = search.create_search(original.study_directory, 15)
+    created = search.create_search(original.study_directory)
     runner.study_directory = created.study_directory
 
-    class Timer:
-        def __init__(self, seconds, callback):
-            self.callback = callback
-
-        def start(self):
-            self.callback()
-
-        def cancel(self):
-            pass
-
-    monkeypatch.setattr(search.threading, "Timer", Timer)
+    runner.request_cancel()
     monkeypatch.setattr(
-        runner, "run_current_stage", lambda **k: pytest.fail("Started after timeout")
+        runner, "run_current_stage", lambda **k: pytest.fail("Started after manual cancellation")
     )
     result = search.run_fit_search(runner)
     assert runner._cancel_requested
@@ -158,22 +161,23 @@ def test_tail_ranking_cannot_hide_one_bad_specimen_in_a_pooled_mean():
     assert search.fit_key(candidate([0.1, 0.1])) < search.fit_key(candidate([0.01, 0.5]))
 
 
-def test_preparation_exhaustion_is_saved_without_launching(tmp_path, monkeypatch):
+def test_search_never_schedules_a_wall_clock_cancellation(tmp_path, monkeypatch):
+    import threading
+
     runner, original = _review_ready_stage(tmp_path, monkeypatch)
-    created = search.create_search(original.study_directory, 15)
+    created = search.create_search(original.study_directory)
     runner.study_directory = created.study_directory
-    moments = iter((0, 901))
-    monkeypatch.setattr(search.time, "monotonic", lambda: next(moments, 901))
-    monkeypatch.setattr(runner, "run_current_stage", lambda **k: pytest.fail("Engine launched"))
-    with pytest.raises(ValueError, match="budget is exhausted"):
-        search.run_fit_search(runner)
-    budget = study._read_json(created.study_directory / "fit-search-budget.json", "budget")
-    assert budget == dict(limit_seconds=900, spent_seconds=900)
+    monkeypatch.setattr(threading, "Timer", lambda *a, **k: pytest.fail("Deadline scheduled"))
+    calls = []
+    monkeypatch.setattr(runner, "run_current_stage", lambda **k: calls.append(True) or created)
+    search.run_fit_search(runner, single_stage=True)
+    assert calls == [True] and not runner._cancel_requested
+    assert not (created.study_directory / "fit-search-budget.json").exists()
 
 
 def test_callback_failure_releases_lock_and_reports_no_full_confirmation(tmp_path, monkeypatch):
     runner, original = _review_ready_stage(tmp_path, monkeypatch)
-    created = search.create_search(original.study_directory, 15)
+    created = search.create_search(original.study_directory)
     runner.study_directory = created.study_directory
     events = []
 

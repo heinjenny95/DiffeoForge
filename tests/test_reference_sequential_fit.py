@@ -47,7 +47,8 @@ def test_rejection_runs_one_new_setting_for_same_animal_preserving_common_basis(
     candidate_id = _reject(first)
     root = Path(sequence.sequence_info(first.study_directory)["root"])
     budget = root / "fit-search-budget.json"
-    spent = study._read_json(budget, "budget")["spent_seconds"]
+    study._write_json(budget, dict(limit_seconds=900, spent_seconds=900), overwrite=False)
+    before = budget.read_bytes()
     alternative = sequence.run_specimen_sequence(runner, action=("reject", candidate_id, 0))
     assert len(alternative.candidates) == 1 and alternative.candidates[0].attempts == 1
     assert sequence.sequence_info(alternative.study_directory)["index"] == 0
@@ -56,7 +57,7 @@ def test_rejection_runs_one_new_setting_for_same_animal_preserving_common_basis(
         study.load_reference_calibration_study(first.study_directory).visual_reviews[candidate_id]
         is False
     )
-    assert study._read_json(budget, "budget")["spent_seconds"] >= spent
+    assert budget.read_bytes() == before
     with pytest.raises(ValueError, match="no longer current"):
         sequence.run_specimen_sequence(
             study.ReferenceCalibrationStudyRunner(first.study_directory),
@@ -174,6 +175,53 @@ def test_early_pause_approval_guard_next_only_and_resume(tmp_path, monkeypatch):
     assert first.study_directory.exists()
 
 
+def test_legacy_sequence_resumes_approved_fits_with_exhausted_budget(tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QApplication
+
+    from diffeoforge.desktop.reference_calibration_dialog import ReferenceCalibrationDialog
+
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    app = QApplication.instance() or QApplication([])
+    runner, original = _review_ready_stage(tmp_path, monkeypatch)
+    monkeypatch.setattr(search, "measure_original_fit", _measured)
+    create = study.create_reference_calibration_study
+
+    def legacy_create(*args, **kwargs):
+        settings = kwargs["fit_search"]
+        settings["minutes"] = 15
+        if settings.get("sequence"):
+            settings["sequence"]["minutes"] = 15
+        return create(*args, **kwargs)
+
+    monkeypatch.setattr(study, "create_reference_calibration_study", legacy_create)
+    first = sequence.run_specimen_sequence(runner)
+    cid = first.candidates[0].candidate_id
+    _approve_for_test(first.study_directory, cid)
+    second = sequence.run_specimen_sequence(runner, action=("advance", cid, 0))
+    _approve_for_test(second.study_directory, cid)
+    root = Path(sequence.sequence_info(second.study_directory)["root"])
+    study._write_json(root / "fit-search-budget.json",
+                      dict(limit_seconds=900, spent_seconds=900), overwrite=False)
+    before = {p: sha256_file(p) for p in root.rglob("*") if p.is_file()}
+    monkeypatch.setattr(study, "create_reference_calibration_study", create)
+    assert sequence.resume_directory(original.study_directory) == second.study_directory
+    reopened = sequence.run_specimen_sequence(runner)
+    assert reopened.visual_reviews[cid] is True
+    assert reopened.candidates[0].attempts == second.candidates[0].attempts
+    assert len(sequence._read(root)["approved"]) == 1
+    assert {p: sha256_file(p) for p in root.rglob("*") if p.is_file()} == before
+    dialog = ReferenceCalibrationDialog(reopened.study_directory)
+    assert not hasattr(dialog, "fit_minutes")
+    dialog.selection_combo.setCurrentIndex(dialog.selection_combo.findData(cid))
+    assert dialog.advance_button.isEnabled()
+    starts = []
+    monkeypatch.setattr(dialog, "_start_pilot", lambda **k: starts.append(k))
+    dialog.advance_button.click()
+    assert starts[0]["specimen_action"] == ("advance", cid, 0)
+    dialog.close()
+    app.processEvents()
+
+
 def test_rejection_and_longer_fit_stay_on_same_specimen(tmp_path, monkeypatch):
     runner, _ = _review_ready_stage(tmp_path, monkeypatch)
     monkeypatch.setattr(search, "measure_original_fit", _measured)
@@ -231,7 +279,7 @@ def test_every_approval_precedes_joint_confirmation_and_fresh_qc(tmp_path, monke
     assert config["model"]["deformation"]["initial_momenta"]
     assert snapshot.candidates[0].metrics["fit_scope"] == "full_targets"
     root = Path(sequence.sequence_info(snapshot.study_directory)["root"])
-    assert (root / "fit-search-budget.json").exists()
+    assert not (root / "fit-search-budget.json").exists()
     assert not (snapshot.study_directory / "fit-search-budget.json").exists()
     # Joint continuation must retain newly learned fields, not restore individual starts.
     from test_reference_adaptive_calibration import seed_stub
@@ -273,11 +321,12 @@ def test_explicit_new_search_preserves_old_budget_and_restarts_complete_cohort(
     second = sequence.run_specimen_sequence(runner, action=("advance", candidate_id, 0))
     previous_root = Path(sequence.sequence_info(second.study_directory)["root"])
     budget = previous_root / "fit-search-budget.json"
+    study._write_json(budget, dict(limit_seconds=900, spent_seconds=900), overwrite=False)
     before = budget.read_bytes()
-    restart = sequence.run_specimen_sequence(runner, action=("restart", "", 15))
+    restart = sequence.run_specimen_sequence(runner, action=("restart", "", 0))
     info = sequence.sequence_info(restart.study_directory)
     assert info["index"] == 0 and info["total"] == original.plan.pilot_subject_count
-    assert info["minutes"] == 15
+    assert "minutes" not in info
     assert Path(info["root"]) != previous_root
     assert budget.read_bytes() == before
     assert second.study_directory.exists() and not restart.visual_reviews

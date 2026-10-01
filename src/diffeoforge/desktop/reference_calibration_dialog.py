@@ -211,13 +211,13 @@ class _CalibrationStageWorker(QRunnable):
         visual_approvals: Mapping[str, bool] | None = None,
         outward_safety_limits: Mapping[str, tuple[float, float]] | None = None,
         continuation: tuple[str, int] | None = None,
-        bounded_fit_minutes: int | None = None,
+        specimen_fit: bool = False,
         specimen_action: tuple[str, str, int] | None = None,
     ) -> None:
         super().__init__()
         self.runner = runner
         self.continuation = continuation
-        self.bounded_fit_minutes = bounded_fit_minutes
+        self.specimen_fit = specimen_fit
         self.specimen_action = specimen_action
         self.adaptive_fit_search = adaptive_fit_search
         self.complete_automatic_pilot = complete_automatic_pilot
@@ -248,12 +248,11 @@ class _CalibrationStageWorker(QRunnable):
             self.signals.event.emit(event)
 
         try:
-            if self.bounded_fit_minutes is not None or self.specimen_action is not None:
+            if self.specimen_fit or self.specimen_action is not None:
                 from diffeoforge.reference_sequential_fit import run_specimen_sequence
 
                 result = run_specimen_sequence(
                     self.runner,
-                    minutes=self.bounded_fit_minutes or 60,
                     action=self.specimen_action,
                     event_callback=emit,
                 )
@@ -939,10 +938,6 @@ class ReferenceCalibrationDialog(QDialog):
         )
         root.addWidget(self.adaptive_fit_search)
         fit_row = QHBoxLayout()
-        self.fit_minutes = QSpinBox()
-        self.fit_minutes.setRange(15, 240)
-        self.fit_minutes.setValue(60)
-        self.fit_minutes.setSuffix(" min total")
         self.find_fit_button = QPushButton("Find fit")
         self.find_fit_button.setObjectName("primary")
         self.find_fit_button.setToolTip(
@@ -950,12 +945,10 @@ class ReferenceCalibrationDialog(QDialog):
             "this specimen; approve starts the next specimen. A common deformation basis "
             "is retained after the first approval. All eight approved individual "
             "fits initialize a new joint original-target confirmation, which needs fresh QC. "
-            "The budget stops the engine; final file verification may take longer. "
             "Saved results still need your visual QC. Previous pilots are preserved."
         )
         self.find_fit_button.clicked.connect(self._find_fit)
         fit_row.addWidget(self.find_fit_button)
-        fit_row.addWidget(self.fit_minutes)
         fit_row.addStretch()
         root.addLayout(fit_row)
         continuation_controls = QWidget()
@@ -1075,8 +1068,6 @@ class ReferenceCalibrationDialog(QDialog):
         from diffeoforge.reference_sequential_fit import sequence_info
 
         self._sequence_info = sequence_info(self.study_directory)
-        if self._sequence_info:
-            self.fit_minutes.setValue(self._sequence_info["minutes"])
         for candidate_id, approved in self._snapshot.visual_reviews.items():
             self._visually_reviewed_candidates.add(candidate_id)
             if approved:
@@ -1370,13 +1361,11 @@ class ReferenceCalibrationDialog(QDialog):
             and not self._snapshot.selected_candidate_ids
             and not self._snapshot.plan.qc_recalibration_source
         )
-        self.fit_minutes.setEnabled(not running and not self._sequence_info)
         self.find_fit_button.setText("New fit search" if self._sequence_info else "Find fit")
         if self._sequence_info:
-            self.fit_minutes.setEnabled(not running)
             self.find_fit_button.setToolTip(
-                "Starts a separate sequence at specimen 1 around the selected settings, "
-                "with the displayed new time budget. All previous results are retained."
+                "Starts a separate sequence at specimen 1 around the selected settings. "
+                "All previous results are retained."
             )
         self.cancel_button.setEnabled(running)
         self.cancel_button.setVisible(running)
@@ -1619,7 +1608,7 @@ class ReferenceCalibrationDialog(QDialog):
                 continuation.setToolTip(
                     "Recomputes only this specimen with more iterations and identical settings. "
                     "Starts from zero; no single-specimen warm continuation is claimed. "
-                    "The same total time budget applies. Earlier approvals remain unchanged."
+                    "Earlier approvals remain unchanged."
                 )
             continuation.setEnabled(
                 self._worker is None
@@ -1842,7 +1831,7 @@ class ReferenceCalibrationDialog(QDialog):
             and not self._snapshot.plan.qc_recalibration_source
         ):
             if self._sequence_info:
-                self._start_pilot(adaptive=False, bounded_fit_minutes=self.fit_minutes.value())
+                self._start_pilot(adaptive=False, specimen_fit=True)
             else:
                 self._find_fit()
             return
@@ -1900,14 +1889,14 @@ class ReferenceCalibrationDialog(QDialog):
         *,
         adaptive: bool | None = None,
         continuation: tuple[str, int] | None = None,
-        bounded_fit_minutes: int | None = None,
+        specimen_fit: bool = False,
         specimen_action: tuple[str, str, int] | None = None,
     ) -> None:
         runner = ReferenceCalibrationStudyRunner(self.study_directory)
         worker = _CalibrationStageWorker(
             runner,
             continuation=continuation,
-            bounded_fit_minutes=bounded_fit_minutes,
+            specimen_fit=specimen_fit,
             specimen_action=specimen_action,
             complete_automatic_pilot=False,
             adaptive_fit_search=(
@@ -1928,7 +1917,6 @@ class ReferenceCalibrationDialog(QDialog):
         self.afk_mode.setEnabled(False)
         self.adaptive_fit_search.setEnabled(False)
         self.find_fit_button.setEnabled(False)
-        self.fit_minutes.setEnabled(False)
         self.collect_evidence_button.setEnabled(False)
         self.review_next_button.setEnabled(False)
         self.advance_button.setEnabled(False)
@@ -1975,12 +1963,12 @@ class ReferenceCalibrationDialog(QDialog):
             self.status.setText(
                 "Fitting full target detail — review follows."
                 if event.get("confirmation")
-                else "Bounded fit search — completed options can already be reviewed."
+                else "Fit search — completed options can already be reviewed."
             )
         elif kind == "fit_search_stopped":
             self._fit_search_stop_text = (
-                "Time budget reached. Saved results remain available for review."
-                if event["reason"] == "time_budget"
+                "Fit search stopped. Saved results remain available for review."
+                if event["reason"] == "cancelled"
                 else (
                     "Fit search finished. Inspect the full-target option before continuing."
                     if event.get("full_target_completed")
@@ -2144,11 +2132,11 @@ class ReferenceCalibrationDialog(QDialog):
                     specimen_action=(
                         "restart",
                         str(self.selection_combo.currentData() or ""),
-                        self.fit_minutes.value(),
+                        0,
                     ),
                 )
                 return
-            self._start_pilot(adaptive=False, bounded_fit_minutes=self.fit_minutes.value())
+            self._start_pilot(adaptive=False, specimen_fit=True)
 
     def _individual_checkpoint(self) -> bool:
         return bool(

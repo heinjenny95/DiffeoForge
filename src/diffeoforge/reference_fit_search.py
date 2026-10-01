@@ -1,4 +1,4 @@
-"""Time-bounded pilot screening against originals, followed by full-target fitting.
+"""Pilot screening against originals, followed by full-target fitting.
 
 Working meshes are scientific approximation inputs, never display proxies. The
 template retains its complete topology. No fit score can approve anatomy.
@@ -8,8 +8,6 @@ from __future__ import annotations
 
 import copy
 import os
-import threading
-import time
 from dataclasses import replace
 from pathlib import Path
 from uuid import uuid4
@@ -174,7 +172,7 @@ def verify_search(root, manifest):
 
         verify_sequence(root, manifest)
     elif Path(search["budget_directory"]).resolve() != study._search_extension_series(root)[0]:
-        raise ValueError("Fit-search budget is not bound to its original series")
+        raise ValueError("Fit search is not bound to its original series")
     originals = {r["filename"]: r["sha256"] for r in manifest["inputs"]["subjects"]}
     if {r["filename"]: r["source_sha256"] for r in search["working_targets"]} != originals:
         raise ValueError("Working targets do not cover the complete original pilot cohort")
@@ -318,7 +316,7 @@ def search_plan(plan, spacing):
         )
         for i, (label, dw, aw, nw) in enumerate(definitions, 1)
     )
-    first = replace(plan.stages[0], candidates=candidates, title="Bounded surface-fit search")
+    first = replace(plan.stages[0], candidates=candidates, title="Surface-fit search")
     revised = replace(
         plan, fingerprint="", stages=(first, *plan.stages[1:]), search_extension_lineage=()
     )
@@ -328,11 +326,9 @@ def search_plan(plan, spacing):
     return replace(revised, fingerprint=_canonical_hash(payload))
 
 
-def create_search(source, minutes, *, center_values=None):
+def create_search(source, *, center_values=None):
     from diffeoforge import reference_calibration_study as study
 
-    if type(minutes) is not int or not 15 <= minutes <= 240:
-        raise ValueError("Search time must be between 15 and 240 minutes")
     original = study.load_reference_calibration_study(source)
     if original.selected_candidate_ids or original.plan.qc_recalibration_source:
         raise ValueError(
@@ -371,7 +367,6 @@ def create_search(source, minutes, *, center_values=None):
         pilot_max_iterations=40,
         plan_override=revised,
         fit_search=dict(
-            minutes=minutes,
             confirmation_freeze_settings={
                 key: config["optimization"][key]
                 for key in ("freeze_template", "freeze_control_points")
@@ -380,70 +375,34 @@ def create_search(source, minutes, *, center_values=None):
     )
 
 
-def run_fit_search(
-    runner, *, minutes=60, event_callback=None, single_stage=False, preparation_started=None
-):
+def run_fit_search(runner, *, event_callback=None, single_stage=False):
     from diffeoforge import reference_calibration_study as study
 
-    preparation_started = time.monotonic() if preparation_started is None else preparation_started
     manifest = study._verify_manifest(runner.study_directory)
     snapshot = study.load_reference_calibration_study(runner.study_directory)
     if not manifest.get("fit_search"):
-        snapshot = create_search(runner.study_directory, minutes)
+        snapshot = create_search(runner.study_directory)
         runner.study_directory = snapshot.study_directory
         manifest = study._verify_manifest(runner.study_directory)
-    budget_root = Path(manifest["fit_search"]["budget_directory"])
-    budget_file = budget_root / "fit-search-budget.json"
-    budget = (
-        study._read_json(budget_file, "fit search budget")
-        if budget_file.exists()
-        else {
-            "spent_seconds": min(
-                time.monotonic() - preparation_started, manifest["fit_search"]["minutes"] * 60
-            ),
-            "limit_seconds": manifest["fit_search"]["minutes"] * 60,
-        }
-    )
-    if (
-        budget["limit_seconds"] != manifest["fit_search"]["minutes"] * 60
-        or not np.isfinite(budget["spent_seconds"])
-        or not 0 <= budget["spent_seconds"] <= budget["limit_seconds"]
-    ):
-        raise ValueError("Invalid persisted fit-search budget")
-    if budget_file.exists():
-        budget["spent_seconds"] = min(
-            budget["limit_seconds"],
-            budget["spent_seconds"] + time.monotonic() - preparation_started,
-        )
-    remaining = budget["limit_seconds"] - budget["spent_seconds"]
-    if remaining <= 0:
-        study._write_json(budget_file, budget, overwrite=True)
-        raise ValueError("This search's time budget is exhausted. Review its saved results.")
-    start = time.monotonic()
-    lock = budget_root / "fit-search-active.lock"
+    # Retain the legacy directory key as the immutable series/lock binding.
+    # Old minutes and fit-search-budget.json are historical evidence only:
+    # never rewrite a saved manifest, reset its approvals or enforce a deadline.
+    lock = Path(manifest["fit_search"]["budget_directory"]) / "fit-search-active.lock"
     try:
         lock.mkdir()
     except FileExistsError as error:
         raise ValueError("This fit search is already running or requires crash recovery") from error
-    timeout = threading.Timer(remaining, runner.request_cancel)
-    timeout.daemon = True
 
     def emit(event):
         if event_callback:
             event_callback(event)
 
     try:
-        # Reserve before execution. A crash cannot silently reset the budget.
-        study._write_json(
-            budget_file, dict(budget, spent_seconds=budget["limit_seconds"]), overwrite=True
-        )
-        timeout.start()
         emit(
             dict(
                 event="fit_search_started",
                 snapshot=snapshot,
                 study_directory=str(snapshot.study_directory),
-                minutes=manifest["fit_search"]["minutes"],
             )
         )
         if runner._cancel_requested:
@@ -537,19 +496,11 @@ def run_fit_search(
             snapshot = runner.run_current_stage(event_callback=emit)
         return snapshot
     finally:
-        timeout.cancel()
-        used = min(remaining, time.monotonic() - start)
         try:
-            study._write_json(
-                budget_file,
-                dict(budget, spent_seconds=budget["spent_seconds"] + used),
-                overwrite=True,
-            )
             emit(
                 dict(
                     event="fit_search_stopped",
-                    reason="time_budget" if used >= remaining else "review_required",
-                    spent_seconds=budget["spent_seconds"] + used,
+                    reason="cancelled" if runner._cancel_requested else "review_required",
                     full_target_completed=any(
                         c.status == "completed"
                         and c.metrics

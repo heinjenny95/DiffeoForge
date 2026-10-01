@@ -1,5 +1,15 @@
 # Private-alpha build numbering
 
+## v100 — fit search without a wall-clock deadline
+
+v100 (`0.0.0.dev100`) removes the total elapsed-time cutoff and minute control
+from guided Find fit, including resumed legacy sequences. Saved fit evidence and
+human approvals remain intact. Parameters, individual checkpoints, iteration
+limits, manual cancellation and joint confirmation are unchanged. See
+[scope and compatibility checks](V100_NO_FIT_DEADLINE.md). Installer uploads
+remain on explicit request; the last verified Drive package is v98.
+
+
 ## v99 â€” native mesh-filter containment
 
 v99 (`0.0.0.dev99`) isolates MeshLab filters in supervised hidden processes and
