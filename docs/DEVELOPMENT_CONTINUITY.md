@@ -27,6 +27,8 @@ saved-series selection avoids unintended resets. A separate denser common grid
 starts with the difficult specimen and requires fresh approvals for the complete
 pilot. No private fits are computed for this software update. See
 [behavior, compatibility checks and limits](V101_PROGRESSIVE_SPECIMEN_FIT.md).
+Build and safe local installation are verified; saved evidence remains unchanged.
+See [separate runtime and delivery identities](V101_DELIVERY.md). Drive remains v98.
 
 
 v100 removes the guided fit-search wall-clock limit and its minute selector.

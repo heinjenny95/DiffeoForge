@@ -7,7 +7,8 @@ matching, saved-series selection and a separate denser common control basis.
 Old approvals remain bound to their model; a new basis needs fresh whole-pilot
 QC. No private fitting run is started by this change. See
 [scope and verification](V101_PROGRESSIVE_SPECIMEN_FIT.md). Drive remains v98
-under the explicit-request policy.
+under the explicit-request policy. Build and safe local installation are verified;
+see [delivery evidence](V101_DELIVERY.md).
 
 ## v100 — fit search without a wall-clock deadline
 
