@@ -27,4 +27,5 @@ cancellation and exception lock cleanup. Existing rejection, longer-fit, common
 basis, original-target joint confirmation, preview QC and version contracts are
 also checked. Tests use public synthetic fixtures; no private fitting calculation
 is used for this software update. Build and local installation are recorded
-separately. The last verified Drive package remains v98 under the on-request policy.
+separately in [V100_DELIVERY.md](V100_DELIVERY.md). The last verified Drive
+package remains v98 under the on-request policy.

@@ -7,7 +7,8 @@ from guided Find fit, including resumed legacy sequences. Saved fit evidence and
 human approvals remain intact. Parameters, individual checkpoints, iteration
 limits, manual cancellation and joint confirmation are unchanged. See
 [scope and compatibility checks](V100_NO_FIT_DEADLINE.md). Installer uploads
-remain on explicit request; the last verified Drive package is v98.
+remain on explicit request; the last verified Drive package is v98. Build and
+safe local installation are verified; see [delivery evidence](V100_DELIVERY.md).
 
 
 ## v99 — native mesh-filter containment

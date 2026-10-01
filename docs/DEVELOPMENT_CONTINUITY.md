@@ -26,7 +26,9 @@ Existing immutable studies and exhausted legacy budget files are accepted withou
 rewriting their evidence or resetting approved fits. Individual approval/rejection,
 finite parameter alternatives, explicit cancellation, iteration limits and the
 joint-confirmation requirements are unchanged. See [scope and compatibility checks](V100_NO_FIT_DEADLINE.md).
-Build and installation evidence will be recorded separately after verification.
+Build and safe local installation are verified; saved evidence and approvals
+remain unchanged and reopen read-only. See [separate delivery identities](V100_DELIVERY.md).
+Drive intentionally retains v98 under the request-only policy.
 
 
 v99 contains native mesh filters in supervised hidden helper processes after a
