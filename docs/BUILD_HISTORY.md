@@ -1,5 +1,14 @@
 # Private-alpha build numbering
 
+## v101 — progressive specimen recovery
+
+v101 (`0.0.0.dev101`) adds verified singleton warm continuation, broad-to-fine
+matching, saved-series selection and a separate denser common control basis.
+Old approvals remain bound to their model; a new basis needs fresh whole-pilot
+QC. No private fitting run is started by this change. See
+[scope and verification](V101_PROGRESSIVE_SPECIMEN_FIT.md). Drive remains v98
+under the explicit-request policy.
+
 ## v100 — fit search without a wall-clock deadline
 
 v100 (`0.0.0.dev100`) removes the total elapsed-time cutoff and minute control

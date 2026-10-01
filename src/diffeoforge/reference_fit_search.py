@@ -75,7 +75,9 @@ def control_grid(bounds, target=200):
     span = hi - lo
     if not np.isfinite(span).all() or not span.max() > 0:
         raise ValueError("Control grid requires nonzero finite bounds")
-    spacing = float(span.max()) / 6
+    if type(target) is not int or not 27 <= target <= 2000:
+        raise ValueError("Control-grid target must be between 27 and 2000")
+    spacing = float(span.max()) / (6 * (target / 200) ** (1 / 3))
     for _ in range(80):
         shape = np.maximum(3, np.ceil(span / spacing).astype(int) + 1)
         if np.prod(shape) <= target:
@@ -115,10 +117,32 @@ def prepare_working_targets(root, manifest, search):
             spacing=inherited["spacing"], controls=copy.deepcopy(inherited["controls"]),
             budget_directory=str(parent), confirmation_ids=search.get("confirmation_ids", []),
         )
+        if search.get("warm_seed"):
+            from diffeoforge.reference_progressive_fit import bind_seed
+
+            search["warm_seed"] = bind_seed(root, manifest, search)
         return search
 
     records = []
+    inherited = None
+    if search.get("working_source"):
+        source = search["working_source"]
+        parent = Path(source["directory"])
+        if sha256_file(parent / study.STUDY_MANIFEST) != source["sha256"]:
+            raise ValueError("Previous working-target source changed")
+        bound = study._verify_manifest(parent)
+        if bound["inputs"]["template"]["sha256"] != manifest["inputs"]["template"]["sha256"]:
+            raise ValueError("Denser model must retain the same original template")
+        inherited = {r["filename"]: r for r in bound["fit_search"]["working_targets"]}
     for row in manifest["inputs"]["subjects"]:
+        if inherited is not None:
+            previous = inherited.get(row["filename"])
+            if not previous or previous["source_sha256"] != row["sha256"]:
+                raise ValueError("Denser model targets differ from the original cohort")
+            study._copy_bound(parent / previous["copy"], root / previous["copy"],
+                              previous["sha256"])
+            records.append(copy.deepcopy(previous))
+            continue
         source = root / row["copy"]
         loaded = load_surface_mesh(source)
         vertices = np.asarray(loaded.geometry.vertices, float)
@@ -147,7 +171,7 @@ def prepare_working_targets(root, manifest, search):
             )
         )
     template = load_surface_mesh(root / manifest["inputs"]["template"]["copy"])
-    controls, spacing = control_grid(template.metadata.bounds)
+    controls, spacing = control_grid(template.metadata.bounds, search.get("control_target", 200))
     dst = root / "search-controls.txt"
     np.savetxt(dst, controls, fmt="%.17g")
     search.update(
@@ -188,6 +212,10 @@ def verify_search(root, manifest):
             or sha256_file(path) != seed["sha256"]
         ):
             raise ValueError("Joint initialization changed")
+    if search.get("warm_seed"):
+        from diffeoforge.reference_progressive_fit import verify_seed
+
+        verify_seed(root, manifest)
 
 
 def inherit_search(source, root, manifest, proposal, confirm):
@@ -232,6 +260,10 @@ def configure_trial(config, root, directory, manifest, candidate_id):
         if search.get("joint_seed"):
             seed = search["joint_seed"]
             d["initial_momenta"] = os.path.relpath(seed["path"], directory)
+            d["initial_momenta_subjects"] = seed["subject_labels"]
+        elif search.get("warm_seed"):
+            seed = search["warm_seed"]
+            d["initial_momenta"] = os.path.relpath(root / seed["copy"], directory)
             d["initial_momenta_subjects"] = seed["subject_labels"]
     validate_schema(config)
 
@@ -326,7 +358,7 @@ def search_plan(plan, spacing):
     return replace(revised, fingerprint=_canonical_hash(payload))
 
 
-def create_search(source, *, center_values=None):
+def create_search(source, *, center_values=None, control_target=200, working_source=None):
     from diffeoforge import reference_calibration_study as study
 
     original = study.load_reference_calibration_study(source)
@@ -354,7 +386,7 @@ def create_search(source, *, center_values=None):
     config["input"]["template"] = cohort["template"]
     config["input"]["subject_pattern"] = cohort["subject_pattern"]
     template = load_surface_mesh(Path(cohort["template"]))
-    _, spacing = control_grid(template.metadata.bounds)
+    _, spacing = control_grid(template.metadata.bounds, control_target)
     revised = search_plan(original.plan, spacing)
     config["project"]["parameter_provenance"]["recommendation"]["calibration_plan"] = (
         revised.provenance
@@ -367,6 +399,8 @@ def create_search(source, *, center_values=None):
         pilot_max_iterations=40,
         plan_override=revised,
         fit_search=dict(
+            control_target=control_target,
+            working_source=working_source,
             confirmation_freeze_settings={
                 key: config["optimization"][key]
                 for key in ("freeze_template", "freeze_control_points")

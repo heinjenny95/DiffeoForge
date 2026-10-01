@@ -29,7 +29,7 @@
   },
   "output": {
     "exact_files": [
-      "DiffeoForge-v100-Windows-CPU-x86_64-Setup.exe",
+      "DiffeoForge-v101-Windows-CPU-x86_64-Setup.exe",
       "LICENSE.txt",
       "PRIVATE-ALPHA-README.txt",
       "private-alpha-manifest.json",

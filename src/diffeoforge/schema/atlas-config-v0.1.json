@@ -13,6 +13,27 @@
     "runtime",
     "output"
   ],
+  "allOf": [{
+    "if": {"properties": {"project": {
+      "required": ["parameter_provenance"], "properties": {"parameter_provenance": {
+        "required": ["recommendation"], "properties": {"recommendation": {
+          "required": ["calibration_plan"], "properties": {"calibration_plan": {
+            "required": ["execution_scope"], "properties": {
+              "execution_scope": {"const": "single_specimen_probe"}
+            }
+          }}
+        }}
+      }}
+    }}},
+    "then": {"properties": {
+      "model": {"properties": {"deformation": {"properties": {
+        "initial_momenta_subjects": {"maxItems": 1}
+      }}}}
+    }},
+    "else": {"properties": {"model": {"properties": {"deformation": {"properties": {
+      "initial_momenta_subjects": {"minItems": 2}
+    }}}}}}
+  }],
   "properties": {
     "schema_version": {
       "const": "0.1"
@@ -905,7 +926,7 @@
             },
             "initial_momenta_subjects": {
               "type": "array",
-              "minItems": 2,
+              "minItems": 1,
               "uniqueItems": true,
               "items": {"type": "string", "minLength": 1}
             },

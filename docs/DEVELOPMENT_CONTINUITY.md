@@ -1,4 +1,4 @@
-# Development continuity — v100 fit search without a deadline
+# Development continuity — v101 progressive specimen fitting
 
 Snapshot: 2026-10-01. This is a public, software-only continuation guide. Detailed
 research results, local paths, account destinations and run identities belong in
@@ -20,6 +20,14 @@ correct parameters or interpret biology for the researcher. Deformetrica is the
 default supported reference route; the Modern engine remains evidence-gated.
 
 ## Current source work
+
+v101 retains approved individual fits while exhausted or rejected attempts enter
+recorded broad-to-fine recovery using verified saved momentum fields. Explicit
+saved-series selection avoids unintended resets. A separate denser common grid
+starts with the difficult specimen and requires fresh approvals for the complete
+pilot. No private fits are computed for this software update. See
+[behavior, compatibility checks and limits](V101_PROGRESSIVE_SPECIMEN_FIT.md).
+
 
 v100 removes the guided fit-search wall-clock limit and its minute selector.
 Existing immutable studies and exhausted legacy budget files are accepted without

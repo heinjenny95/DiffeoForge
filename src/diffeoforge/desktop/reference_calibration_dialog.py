@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QDialog,
     QFrame,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
     QLineEdit,
     QMessageBox,
@@ -848,6 +849,10 @@ class ReferenceCalibrationDialog(QDialog):
         self._viewer_preparation.loaded.connect(self._candidate_prepared)
         self._viewer_preparation.failed.connect(self._candidate_prepare_failed)
         self._preview_prefetch = PreviewMeshLoader(self)
+        self._saved_search_loader = PreviewMeshLoader(self)
+        self._saved_search_loader.loaded.connect(self._saved_search_loaded)
+        self._saved_search_loader.failed.connect(self._saved_search_failed)
+        self._restoring_search = False
         self._worker: _CalibrationStageWorker | None = None
         self._fit_search_stop_text: str | None = None
         self._thread_pool = ActivityPool(self)
@@ -949,6 +954,16 @@ class ReferenceCalibrationDialog(QDialog):
         )
         self.find_fit_button.clicked.connect(self._find_fit)
         fit_row.addWidget(self.find_fit_button)
+        self.saved_searches_button = QPushButton("Saved fit searches…")
+        self.saved_searches_button.clicked.connect(self._choose_saved_search)
+        fit_row.addWidget(self.saved_searches_button)
+        self.denser_model_button = QPushButton("Test denser common model")
+        self.denser_model_button.setToolTip(
+            "More control points; starts with this specimen. All specimens need fresh QC "
+            "on this new basis. Earlier searches and approvals stay saved."
+        )
+        self.denser_model_button.clicked.connect(self._test_denser_model)
+        fit_row.addWidget(self.denser_model_button)
         fit_row.addStretch()
         root.addLayout(fit_row)
         continuation_controls = QWidget()
@@ -1060,7 +1075,7 @@ class ReferenceCalibrationDialog(QDialog):
 
     def _update_continuation_labels(self) -> None:
         for letter, button in self._continuation_buttons.items():
-            prefix = "Try longer" if self._individual_checkpoint() else f"Continue {letter}"
+            prefix = "Continue saved fit" if self._individual_checkpoint() else f"Continue {letter}"
             button.setText(f"{prefix}: +{self.continuation_iterations.value()} iterations")
 
     def _render(self, snapshot: ReferenceCalibrationStudySnapshot | None = None) -> None:
@@ -1075,7 +1090,7 @@ class ReferenceCalibrationDialog(QDialog):
             else:
                 self._visually_approved_candidates.discard(candidate_id)
         self._clear_content()
-        running = self._worker is not None
+        running = self._worker is not None or self._restoring_search
         self.afk_mode.setEnabled(not running and self._snapshot.status != "completed")
         if self._snapshot.status == "completed":
             self.status.setText(
@@ -1361,8 +1376,17 @@ class ReferenceCalibrationDialog(QDialog):
             and not self._snapshot.selected_candidate_ids
             and not self._snapshot.plan.qc_recalibration_source
         )
-        self.find_fit_button.setText("New fit search" if self._sequence_info else "Find fit")
-        if self._sequence_info:
+        self.find_fit_button.setText("Improve this specimen" if self._individual_checkpoint()
+                                    else "New fit search" if self._sequence_info else "Find fit")
+        self.saved_searches_button.setEnabled(not running)
+        self.denser_model_button.setVisible(self._individual_checkpoint())
+        self.denser_model_button.setEnabled(not running)
+        if self._individual_checkpoint():
+            self.find_fit_button.setToolTip(
+                "Try the next coarse-to-fine attempt for this specimen. Saved deformations "
+                "can initialize finer matching; previous approvals remain in this sequence."
+            )
+        elif self._sequence_info:
             self.find_fit_button.setToolTip(
                 "Starts a separate sequence at specimen 1 around the selected settings. "
                 "All previous results are retained."
@@ -1603,11 +1627,11 @@ class ReferenceCalibrationDialog(QDialog):
             )
             if self._individual_checkpoint():
                 continuation.setText(
-                    f"Try longer: +{self.continuation_iterations.value()} iterations"
+                    f"Continue saved fit: +{self.continuation_iterations.value()} iterations"
                 )
                 continuation.setToolTip(
-                    "Recomputes only this specimen with more iterations and identical settings. "
-                    "Starts from zero; no single-specimen warm continuation is claimed. "
+                    "Continues this specimen from its verified saved momentum field. "
+                    "Same template, control points and parameters; optimizer history restarts. "
                     "Earlier approvals remain unchanged."
                 )
             continuation.setEnabled(
@@ -1729,7 +1753,7 @@ class ReferenceCalibrationDialog(QDialog):
             self.afk_mode.setEnabled(False)
             self.outward_mode.setEnabled(False)
             self.adaptive_fit_search.setEnabled(False)
-            self.find_fit_button.setEnabled(self._worker is None)
+            self.find_fit_button.setEnabled(self._worker is None and not self._restoring_search)
             self.status.setText(
                 f"Specimen {info['index'] + 1} of {info['total']}: {info['filename']}. "
                 + (
@@ -1854,7 +1878,7 @@ class ReferenceCalibrationDialog(QDialog):
             QMessageBox.critical(self, "Pilot could not start", message)
 
     def _start_selected_continuation(self, candidate: CalibrationStudyCandidateState) -> None:
-        if self._worker is not None:
+        if self._worker is not None or self._restoring_search:
             return
         if self._individual_checkpoint():
             self._start_pilot(
@@ -1892,6 +1916,8 @@ class ReferenceCalibrationDialog(QDialog):
         specimen_fit: bool = False,
         specimen_action: tuple[str, str, int] | None = None,
     ) -> None:
+        if self._restoring_search:
+            raise ValueError("Wait until the saved search has finished loading")
         runner = ReferenceCalibrationStudyRunner(self.study_directory)
         worker = _CalibrationStageWorker(
             runner,
@@ -1945,11 +1971,15 @@ class ReferenceCalibrationDialog(QDialog):
         elif kind == "specimen_sequence_paused":
             info = event["sequence"]
             finished = all(c.status == "completed" for c in event["snapshot"].candidates)
+            phase_label = {"capture": "broad shape capture", "refine": "surface refinement",
+                           "continue": "saved fit continuation"}.get(
+                               info.get("fit_phase"), "initial probe")
             self._fit_search_stop_text = (
                 "Stopped before this step finished. Saved results remain available."
                 if not finished
                 else (
-                    f"Specimen {info['index'] + 1} of {info['total']} ready. "
+                    f"Specimen {info['index'] + 1} of {info['total']} ready "
+                    f"({phase_label}). "
                     "Review this attempt. Reject tries new parameters; approve continues."
                     if info["phase"] == "individual"
                     else "Joint confirmation finished. Review all specimens before the next stage."
@@ -2125,18 +2155,82 @@ class ReferenceCalibrationDialog(QDialog):
 
     @Slot()
     def _find_fit(self) -> None:
-        if self._worker is None:
+        if self._worker is None and not self._restoring_search:
             if self._sequence_info:
                 self._start_pilot(
                     adaptive=False,
                     specimen_action=(
-                        "restart",
+                        "improve" if self._individual_checkpoint() else "restart",
                         str(self.selection_combo.currentData() or ""),
                         0,
                     ),
                 )
                 return
             self._start_pilot(adaptive=False, specimen_fit=True)
+
+    @Slot()
+    def _test_denser_model(self) -> None:
+        if self._worker is not None or self._restoring_search or not self._individual_checkpoint():
+            return
+        response = QMessageBox.question(
+            self, "New common control basis",
+            "Test more control points, starting with this specimen? All specimens need "
+            "new approval on this model. Your earlier searches and approvals stay saved.",
+        )
+        if response == QMessageBox.StandardButton.Yes:
+            self._start_pilot(adaptive=False, specimen_action=("denser", "", 0))
+
+    @Slot()
+    def _choose_saved_search(self) -> None:
+        if self._worker is not None or self._restoring_search:
+            return
+        from diffeoforge.reference_sequential_fit import saved_sequences
+
+        origin = self.study_directory
+        self._restoring_search = True
+        self._render(self._snapshot)
+        self.status.setText("Loading saved searches…")
+        self._saved_search_loader.request_operation(
+            ("list", origin), lambda: saved_sequences(origin))
+
+    @Slot(object, str)
+    def _saved_search_failed(self, _key: object, message: str) -> None:
+        self._restoring_search = False
+        self._render(self._snapshot)
+        self.status.setText("Saved search unavailable: " + message)
+
+    @Slot(object, object)
+    def _saved_search_loaded(self, key: object, result: object) -> None:
+        kind, origin = key
+        if self._worker is not None or self.study_directory != origin:
+            self._restoring_search = False
+            return
+        if kind == "list":
+            rows = result
+            if not rows:
+                self._saved_search_failed(key, "No compatible saved specimen search found.")
+                return
+            labels = [f"{r['approved']} / {r['total']} approved — {Path(r['directory']).name}"
+                      for r in rows]
+            label, accepted = QInputDialog.getItem(self, "Saved fit searches", "Resume a search:",
+                                                  labels, 0, False)
+            if not accepted:
+                self._restoring_search = False
+                self._render(self._snapshot)
+                return
+            from diffeoforge.reference_sequential_fit import restore_saved_sequence
+
+            selected = Path(rows[labels.index(label)]["directory"])
+            self.status.setText("Verifying saved fits and approvals…")
+            self._saved_search_loader.request_operation(
+                ("restore", origin), lambda: restore_saved_sequence(origin, selected))
+            return
+        self._restoring_search = False
+        self.study_directory = result.study_directory
+        self._visually_reviewed_candidates.clear()
+        self._visually_approved_candidates.clear()
+        self._fit_search_stop_text = None
+        self._render(result)
 
     def _individual_checkpoint(self) -> bool:
         return bool(

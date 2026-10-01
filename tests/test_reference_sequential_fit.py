@@ -223,10 +223,13 @@ def test_legacy_sequence_resumes_approved_fits_with_exhausted_budget(tmp_path, m
 
 
 def test_rejection_and_longer_fit_stay_on_same_specimen(tmp_path, monkeypatch):
+    from test_reference_progressive_fit import mock_singleton
+
     runner, _ = _review_ready_stage(tmp_path, monkeypatch)
     monkeypatch.setattr(search, "measure_original_fit", _measured)
     first = sequence.run_specimen_sequence(runner)
     candidate = first.candidates[0]
+    mock_singleton(monkeypatch, first)
     study.record_reference_calibration_candidate_review(
         first.study_directory,
         candidate_id=candidate.candidate_id,
@@ -239,8 +242,8 @@ def test_rejection_and_longer_fit_stay_on_same_specimen(tmp_path, monkeypatch):
         sequence.run_specimen_sequence(runner, action=("advance", candidate.candidate_id, 0))
     retry = sequence.run_specimen_sequence(runner, action=("retry", candidate.candidate_id, 80))
     config = load_config(retry.candidates[0].config_path)
-    assert config["optimization"]["max_iterations"] == 120
-    assert not config["model"]["deformation"].get("initial_momenta")
+    assert config["optimization"]["max_iterations"] == 80
+    assert config["model"]["deformation"].get("initial_momenta")
     assert sequence.sequence_info(retry.study_directory)["index"] == 0
     assert not retry.visual_reviews
 

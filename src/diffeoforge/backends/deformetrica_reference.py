@@ -225,11 +225,18 @@ def render_engine_file_bytes(
     """Render the exact three Deformetrica XML inputs without writing files."""
 
     validate_reference_config(config)
-    return {
+    rendered = {
         "model.xml": _model_xml(config, staged_template, staged_control_points, staged_momenta),
         "data_set.xml": _dataset_xml(config, staged_subjects),
         "optimization_parameters.xml": _optimization_xml(config),
     }
+    from diffeoforge.reference_singleton_compat import SITECUSTOMIZE, needs_adapter
+
+    if needs_adapter(config):
+        if len(staged_subjects) != 1 or staged_momenta is None:
+            raise ConfigurationError("Singleton warm fitting needs exactly one bound field/subject")
+        rendered["sitecustomize.py"] = SITECUSTOMIZE.encode("utf-8")
+    return rendered
 
 
 def generate_engine_files(
@@ -239,8 +246,8 @@ def generate_engine_files(
     staged_subjects: Sequence[Path],
     staged_control_points: Path | None = None,
     staged_momenta: Path | None = None,
-) -> tuple[Path, Path, Path]:
-    """Generate the three explicit XML inputs used by Deformetrica 4.3."""
+) -> tuple[Path, ...]:
+    """Generate protected XML inputs and any run-local singleton adapter."""
 
     validate_reference_config(config)
     rendered = render_engine_file_bytes(
@@ -256,7 +263,12 @@ def generate_engine_files(
     model_path.write_bytes(rendered["model.xml"])
     dataset_path.write_bytes(rendered["data_set.xml"])
     optimization_path.write_bytes(rendered["optimization_parameters.xml"])
-    return model_path, dataset_path, optimization_path
+    paths = [model_path, dataset_path, optimization_path]
+    if "sitecustomize.py" in rendered:
+        adapter = engine_directory / "sitecustomize.py"
+        adapter.write_bytes(rendered["sitecustomize.py"])
+        paths.append(adapter)
+    return tuple(paths)
 
 
 def generate_resume_optimization_file(
@@ -394,6 +406,19 @@ def _build_launcher_command(
         follow_symlinks=follow_run_directory_symlinks,
     )
 
+    from diffeoforge.reference_singleton_compat import needs_adapter
+
+    singleton = arguments[0] == "estimate" and needs_adapter(config)
+    if singleton:
+        # Use the original executable/interpreter. The adapter is confined to this
+        # protected engine directory; no global runtime or package file changes.
+        environment["PYTHONPATH"] = (
+            _windows_to_wsl(run_directory / "engine",
+                            follow_symlinks=follow_run_directory_symlinks)
+            if launcher["type"] == "wsl" else
+            CONTAINER_WORKING_DIRECTORY + "/engine" if launcher["type"] == "container" else
+            str(command_run_directory / "engine")
+        )
     if launcher["type"] == "native":
         executable = launcher["executable"]
         return CommandSpec(
