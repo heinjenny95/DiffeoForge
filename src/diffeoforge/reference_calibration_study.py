@@ -302,13 +302,17 @@ def latest_reference_calibration_search_extension_directory(
             )
         successors[round_number] = sibling.resolve()
     if not successors:
-        return series_root
+        from diffeoforge.reference_sequential_fit import resume_directory
+
+        return resume_directory(series_root)
     rounds = sorted(successors)
     if rounds != list(range(1, rounds[-1] + 1)):
         raise ReferenceCalibrationStudyError(
             "Calibration search-extension series contains a missing round"
         )
-    return successors[rounds[-1]]
+    from diffeoforge.reference_sequential_fit import resume_directory
+
+    return resume_directory(successors[rounds[-1]])
 
 
 def _load_events(root: Path) -> tuple[dict[str, Any], ...]:

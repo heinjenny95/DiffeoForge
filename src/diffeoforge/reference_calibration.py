@@ -283,6 +283,7 @@ class ReferenceCalibrationPlan:
     qc_recalibration_source: tuple[tuple[str, str], ...] = ()
     selection_method: str | None = None
     required_subject_filenames: tuple[str, ...] = ()
+    execution_scope: str = "pilot"
 
     @property
     def pilot_subject_count(self) -> int:
@@ -325,6 +326,8 @@ class ReferenceCalibrationPlan:
         }
         if self.search_extension_lineage:
             provenance["search_extension_lineage"] = dict(self.search_extension_lineage)
+        if self.execution_scope != "pilot":
+            provenance["execution_scope"] = self.execution_scope
         if self.qc_recalibration_source:
             provenance["qc_recalibration_source"] = dict(self.qc_recalibration_source)
         if self.selection_method is not None:
@@ -1297,6 +1300,13 @@ def verify_reference_calibration_plan_provenance(
         raise ConfigurationError(
             "Calibration-plan pilot-subject count does not match its selection"
         )
+    scope = manifest.get("execution_scope", "pilot")
+    if (
+        scope not in {"pilot", "single_specimen_probe", "joint_fit_confirmation"}
+        or (scope == "single_specimen_probe" and len(selected) != 1)
+        or (scope != "single_specimen_probe" and len(selected) < 2)
+    ):
+        raise ConfigurationError("Calibration plan has an invalid specimen execution scope")
     stages = manifest.get("stages")
     if not isinstance(stages, list) or [
         stage.get("stage_id") if isinstance(stage, dict) else None for stage in stages
@@ -1471,6 +1481,7 @@ def reference_calibration_plan_from_provenance(
                 (str(name), str(value)) for name, value in qc_source.items()
             ),
             selection_method=provenance.get("selection_method"),
+            execution_scope=str(provenance.get("execution_scope", "pilot")),
         )
     except (KeyError, TypeError, ValueError) as error:
         raise ConfigurationError(

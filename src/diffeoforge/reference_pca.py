@@ -178,7 +178,7 @@ def _positive_header_integer(value: str, label: str) -> int:
     return normalized
 
 
-def read_deformetrica_momenta(path: Path | str) -> np.ndarray:
+def read_deformetrica_momenta(path: Path | str, *, allow_singleton: bool = False) -> np.ndarray:
     """Strictly read the Deformetrica header plus row-major subject momenta blocks."""
 
     source = Path(path).expanduser().resolve()
@@ -198,7 +198,7 @@ def read_deformetrica_momenta(path: Path | str) -> np.ndarray:
         subjects = _positive_header_integer(fields[0], "subject count")
         control_points = _positive_header_integer(fields[1], "control-point count")
         dimension = _positive_header_integer(fields[2], "dimension")
-        if subjects < 2:
+        if subjects < 2 and not allow_singleton:
             raise ReferencePCAError("Momenta PCA requires at least two subjects")
         if dimension != 3:
             raise ReferencePCAError(
@@ -325,7 +325,9 @@ def _subject_labels(report: RunReport) -> tuple[str, ...]:
     return labels
 
 
-def load_reference_momenta(run_directory: Path | str) -> ReferenceMomentaInput:
+def load_reference_momenta(
+    run_directory: Path | str, *, allow_singleton: bool = False
+) -> ReferenceMomentaInput:
     """Reverify a completed reference run and load its exact momenta feature tensor."""
 
     run_path = Path(run_directory).expanduser().resolve()
@@ -349,7 +351,7 @@ def load_reference_momenta(run_directory: Path | str) -> ReferenceMomentaInput:
     )
     momenta_path = _output_path(run_path, momenta_record, "Momenta parameter file")
     control_path = _output_path(run_path, control_record, "Control-point parameter file")
-    momenta = read_deformetrica_momenta(momenta_path)
+    momenta = read_deformetrica_momenta(momenta_path, allow_singleton=allow_singleton)
     labels = _subject_labels(report)
     if momenta.shape[0] != len(labels):
         raise ReferencePCAError(

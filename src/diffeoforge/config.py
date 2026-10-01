@@ -76,9 +76,7 @@ def _resolve_from_config(value: str, config_path: Path) -> Path:
     return candidate.resolve()
 
 
-def resolve_output_directory(
-    config: Mapping[str, Any], config_path: Path | str
-) -> Path:
+def resolve_output_directory(config: Mapping[str, Any], config_path: Path | str) -> Path:
     """Resolve the configured run root relative to the configuration file."""
 
     return _resolve_from_config(config["output"]["directory"], Path(config_path))
@@ -141,7 +139,20 @@ def validate_input_paths(config: Mapping[str, Any], config_path: Path | str) -> 
     )
     if not subjects:
         raise ConfigurationError(f"No subject VTK files match {pattern!r} in {input_directory}.")
-    if len(subjects) < 2:
+    probe = (
+        config.get("project", {})
+        .get("parameter_provenance", {})
+        .get("recommendation", {})
+        .get("calibration_plan", {})
+        .get("execution_scope")
+        == "single_specimen_probe"
+    )
+    fixed_probe = (
+        probe
+        and config["optimization"]["freeze_template"]
+        and config["optimization"]["freeze_control_points"]
+    )
+    if len(subjects) < 2 and not fixed_probe:
         raise ConfigurationError("Atlas estimation requires at least two subject meshes.")
     if len(set(subjects)) != len(subjects):
         raise ConfigurationError("Subject file selection contains duplicate paths.")

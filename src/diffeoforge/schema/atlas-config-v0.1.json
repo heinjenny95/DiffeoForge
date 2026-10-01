@@ -212,6 +212,29 @@
                 "calibration_plan": {
                   "type": "object",
                   "additionalProperties": false,
+                  "allOf": [{
+                    "if": {"required": ["execution_scope"], "properties": {
+                      "execution_scope": {"const": "single_specimen_probe"}
+                    }},
+                    "then": {"properties": {
+                      "pilot_subject_count": {"const": 1},
+                      "requested_pilot_subject_count": {"const": 1},
+                      "selected_pilot_subjects": {"maxItems": 1}
+                    }},
+                    "else": {"properties": {
+                      "pilot_subject_count": {"minimum": 2},
+                      "requested_pilot_subject_count": {"minimum": 2},
+                      "selected_pilot_subjects": {"minItems": 2}
+                    }}
+                  }, {
+                    "if": {"required": ["execution_scope"], "properties": {
+                      "execution_scope": {"enum": ["single_specimen_probe", "joint_fit_confirmation"]}
+                    }},
+                    "then": {},
+                    "else": {"properties": {"stages": {"items": {"properties": {
+                      "candidates": {"minItems": 2}
+                    }}}}}
+                  }],
                   "required": [
                     "version",
                     "fingerprint",
@@ -233,6 +256,7 @@
                     "limitations"
                   ],
                   "properties": {
+                    "execution_scope": {"enum": ["pilot", "single_specimen_probe", "joint_fit_confirmation"]},
                     "version": {"enum": ["0.1", "0.2", "0.3", "0.4", "0.5", "0.6"]},
                     "fingerprint": {
                       "type": "string",
@@ -260,13 +284,13 @@
                     "subject_count": {"type": "integer", "minimum": 2},
                     "requested_pilot_subject_count": {
                       "type": "integer",
-                      "minimum": 2,
+                      "minimum": 1,
                       "maximum": 20
                     },
-                    "pilot_subject_count": {"type": "integer", "minimum": 2},
+                    "pilot_subject_count": {"type": "integer", "minimum": 1},
                     "selected_pilot_subjects": {
                       "type": "array",
-                      "minItems": 2,
+                      "minItems": 1,
                       "items": {
                         "type": "object",
                         "additionalProperties": false,
@@ -463,7 +487,7 @@
                           "title": {"type": "string", "minLength": 1},
                           "candidates": {
                             "type": "array",
-                            "minItems": 2,
+                            "minItems": 1,
                             "items": {
                               "type": "object",
                               "additionalProperties": false,

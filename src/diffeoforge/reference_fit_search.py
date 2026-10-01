@@ -153,8 +153,8 @@ def prepare_working_targets(root, manifest, search):
         working_targets=records,
         spacing=spacing,
         controls=dict(copy=dst.name, sha256=sha256_file(dst), count=len(controls)),
-        confirmation_ids=[],
-        budget_directory=str(root),
+        confirmation_ids=search.get("confirmation_ids", []),
+        budget_directory=search.get("sequence", {}).get("root", str(root)),
     )
     return search
 
@@ -165,7 +165,11 @@ def verify_search(root, manifest):
         raise ValueError("Unknown scientific screening protocol")
     from diffeoforge import reference_calibration_study as study
 
-    if Path(search["budget_directory"]).resolve() != study._search_extension_series(root)[0]:
+    if search.get("sequence"):
+        from diffeoforge.reference_sequential_fit import verify_sequence
+
+        verify_sequence(root, manifest)
+    elif Path(search["budget_directory"]).resolve() != study._search_extension_series(root)[0]:
         raise ValueError("Fit-search budget is not bound to its original series")
     originals = {r["filename"]: r["sha256"] for r in manifest["inputs"]["subjects"]}
     if {r["filename"]: r["source_sha256"] for r in search["working_targets"]} != originals:
@@ -174,6 +178,14 @@ def verify_search(root, manifest):
         path = (root / row["copy"]).resolve()
         if not path.is_relative_to(root.resolve()) or sha256_file(path) != row["sha256"]:
             raise ValueError("Scientific working geometry changed")
+    if search.get("joint_seed"):
+        seed = search["joint_seed"]
+        path = Path(seed["path"]).resolve()
+        if (
+            not path.is_relative_to(Path(search["budget_directory"]))
+            or sha256_file(path) != seed["sha256"]
+        ):
+            raise ValueError("Joint initialization changed")
 
 
 def inherit_search(source, root, manifest, proposal, confirm):
@@ -194,7 +206,8 @@ def configure_trial(config, root, directory, manifest, candidate_id):
     current_ids = {r["candidate_id"] for r in manifest["plan"]["stages"][0]["candidates"]}
     if candidate_id not in current_ids:
         return
-    if candidate_id not in search["confirmation_ids"]:
+    joint = search.get("sequence", {}).get("phase") == "joint"
+    if candidate_id not in search["confirmation_ids"] and not joint:
         config["input"]["directory"] = os.path.relpath(root / "working-targets", directory)
         config["optimization"]["freeze_template"] = True
         config["optimization"]["freeze_control_points"] = True
@@ -207,6 +220,17 @@ def configure_trial(config, root, directory, manifest, candidate_id):
         d["initial_control_points"] = os.path.relpath(root / search["controls"]["copy"], directory)
         d["initial_control_point_spacing"] = search["spacing"]
         config["optimization"]["max_iterations"] = 40
+    if search.get("sequence") and (not joint or candidate_id == "fit-joint"):
+        d = config["model"]["deformation"]
+        d["initial_control_points"] = os.path.relpath(root / search["controls"]["copy"], directory)
+        d["initial_control_point_spacing"] = search["spacing"]
+        config["optimization"]["max_iterations"] = search["iterations"]
+        for key in ("initial_momenta", "initial_momenta_subjects"):
+            d.pop(key, None)
+        if search.get("joint_seed"):
+            seed = search["joint_seed"]
+            d["initial_momenta"] = os.path.relpath(seed["path"], directory)
+            d["initial_momenta_subjects"] = seed["subject_labels"]
     validate_schema(config)
 
 
@@ -236,8 +260,10 @@ def measure_original_fit(root, manifest, candidate, run):
             load_surface_mesh(path).geometry, load_surface_mesh(matches[0]).geometry
         )
     first_ids = {r["candidate_id"] for r in manifest["plan"]["stages"][0]["candidates"]}
-    confirmation = candidate.candidate_id not in first_ids or (
-        candidate.candidate_id in manifest["fit_search"]["confirmation_ids"]
+    confirmation = (
+        manifest["fit_search"].get("sequence", {}).get("phase") == "joint"
+        or candidate.candidate_id not in first_ids
+        or (candidate.candidate_id in manifest["fit_search"]["confirmation_ids"])
     )
     return dict(
         fit_scope="full_targets" if confirmation else "screening",
@@ -298,7 +324,7 @@ def search_plan(plan, spacing):
     return replace(revised, fingerprint=_canonical_hash(payload))
 
 
-def create_search(source, minutes):
+def create_search(source, minutes, *, center_values=None):
     from diffeoforge import reference_calibration_study as study
 
     if type(minutes) is not int or not 15 <= minutes <= 240:
@@ -309,6 +335,18 @@ def create_search(source, minutes):
             "Find fit starts at the first pilot stage; later stages retain their workflow"
         )
     manifest = study._verify_manifest(source)
+    if center_values is not None:
+        diagonal = manifest["template_diagonal"]
+        original = replace(
+            original,
+            plan=replace(
+                original.plan,
+                baseline_effective_values=tuple(sorted(center_values.items())),
+                baseline_parameter_ratios=tuple(
+                    (key, center_values[key] / diagonal) for key in original.plan.parameter_ratios
+                ),
+            ),
+        )
     destination = source.parent / ("reference-fit-search-" + uuid4().hex[:12])
     config = copy.deepcopy(load_config(source / manifest["source_config"]["copy"]))
     cohort = manifest["inputs"]["full_cohort"]
@@ -338,10 +376,12 @@ def create_search(source, minutes):
     )
 
 
-def run_fit_search(runner, *, minutes=60, event_callback=None):
+def run_fit_search(
+    runner, *, minutes=60, event_callback=None, single_stage=False, preparation_started=None
+):
     from diffeoforge import reference_calibration_study as study
 
-    preparation_started = time.monotonic()
+    preparation_started = time.monotonic() if preparation_started is None else preparation_started
     manifest = study._verify_manifest(runner.study_directory)
     snapshot = study.load_reference_calibration_study(runner.study_directory)
     if not manifest.get("fit_search"):
@@ -360,16 +400,20 @@ def run_fit_search(runner, *, minutes=60, event_callback=None):
             "limit_seconds": manifest["fit_search"]["minutes"] * 60,
         }
     )
-    remaining = budget["limit_seconds"] - budget["spent_seconds"]
     if (
         budget["limit_seconds"] != manifest["fit_search"]["minutes"] * 60
         or not np.isfinite(budget["spent_seconds"])
         or not 0 <= budget["spent_seconds"] <= budget["limit_seconds"]
     ):
         raise ValueError("Invalid persisted fit-search budget")
+    if budget_file.exists():
+        budget["spent_seconds"] = min(
+            budget["limit_seconds"],
+            budget["spent_seconds"] + time.monotonic() - preparation_started,
+        )
+    remaining = budget["limit_seconds"] - budget["spent_seconds"]
     if remaining <= 0:
-        if not budget_file.exists():
-            study._write_json(budget_file, budget, overwrite=False)
+        study._write_json(budget_file, budget, overwrite=True)
         raise ValueError("This search's time budget is exhausted. Review its saved results.")
     start = time.monotonic()
     lock = budget_root / "fit-search-active.lock"
@@ -401,6 +445,8 @@ def run_fit_search(runner, *, minutes=60, event_callback=None):
         if runner._cancel_requested:
             return snapshot
         snapshot = runner.run_current_stage(event_callback=emit)
+        if single_stage:
+            return snapshot
         already = sum(c.candidate_id.startswith("continue-") for c in snapshot.candidates)
         for refinement in range(already, 2):
             if runner._cancel_requested or any(

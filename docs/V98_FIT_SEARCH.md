@@ -1,56 +1,78 @@
-# v98 — time-bounded surface-fit search
+# v98 — bounded fit search with specimen checkpoints
 
-**Find fit** is a separate first-stage action for both existing and new pilots.
-It preserves the old study and creates an independent study of the same selected
-specimens. Default budget: 60 minutes; explicit alternatives: 15–240 minutes.
-Opening a project starts nothing. The legacy grid remains available.
+The guided first-stage **Find fit** action preserves the existing pilot and starts
+an independent sequence of its original selected specimens. It runs one short
+40-iteration attempt for the first specimen, then pauses for visual review.
+The selected specimen farthest from the recorded representative shape is first;
+this uses the existing pilot descriptors, not a new private analysis.
 
-Four 40-iteration probes test baseline, broader, more local, and finer/stronger
-matching. A generated template-covering control grid has at most 200 points,
-rather than inheriting an inadequately sparse grid from a failed numerical leader.
-Targets use separately hash-bound, topology-preserving scientific working copies
-of approximately 20,000 faces. These are not display proxies. The original full
-template topology remains unchanged; all original targets remain bound and available.
-The screening template and control positions are fixed while learning the cohort's
-fields. Confirmation restores the project's original freeze settings, normally
-joint atlas optimization. This separates field initialization from template motion.
+**Reject → next parameters** immediately starts the next attempt for that same
+specimen. **Approve → next specimen** starts only the next specimen (120
+iterations), then pauses again. Closing the viewer without a decision starts
+nothing. Decisions are persisted before dispatch; stale viewers cannot advance
+a newer checkpoint. No
+approval is inferred from distance, speed or convergence. A failed/rejected fit
+does not advance to another animal. **Try longer** recomputes only the current specimen with more
+iterations and unchanged settings, starting from zero; it is explicitly distinct
+from the existing multi-specimen warm continuation. Old attempts are retained.
+The first specimen explores four motion/detail alternatives one by one.
+Its approval locks the deformation kernel, integration settings and fixed
+template/control basis. Subsequent rejected attempts vary attachment width and
+noise on a finite stencil from one-eighth to four times the recorded matching
+width and one-eighth to the original noise. After the first four attempts the
+first specimen also uses this matching stencil around the lowest measured-distance
+valid attempt; that center is persisted rather than repeatedly recentered.
+Matching weights may differ for individual initialization; the joint fit uses
+the first approved specimen's common settings. Individual fits are not an atlas.
+Changing the common deformation basis requires an explicit **New fit search**
+from specimen 1, with a separate budget and all previous evidence retained.
+Exhausted alternatives or time budget stop visibly without automatic resets.
 
-Each result is measured against all original targets using 2,048 area-stratified
-samples per direction and MeshLab's unsigned point-to-triangle distance. Ranking
-uses the worst normalized specimen p99, worst p95, and equal-specimen mean.
-Sampled distances remain diagnostic geometry, not correspondence or anatomical
-acceptance. Reports distinguish these measurements from legacy nearest-vertex QC.
+Individual probes fix the original template and generated control positions.
+The template keeps its full topology. Control grids cover its bounds with at most
+200 points. Separately hash-bound scientific target copies have approximately
+20,000 faces, using topology/normal/boundary preserving decimation; preparations
+remaining above 30,000 faces fail explicitly. These are not display proxies.
 
-The measured leader receives one 80-iteration finer-attachment/stronger-weight
-probe with compatible learned template, controls and ordered momenta. The next
-center cannot worsen another measured specimen's p95 or p99. One 200-iteration
-confirmation then uses original target resolution and the selected learned state.
-Optimizer step history restarts. No anatomical approval is generated. Screening
-candidates cannot advance the stage, even if their optimizer converges.
-Original-target confirmation still requires convergence and explicit visual QC.
+Each result is measured against the original target with 2,048 deterministic
+area-stratified samples per direction and unsigned MeshLab point-to-triangle
+distance. Worst size-normalized p99, worst p95 and equal-specimen mean determine
+the geometric order; specimen-wise tails cannot be hidden in a pooled average.
+Sampling, spatial normalization and nearest-surface distance remain limitations,
+not anatomical correspondence or an automatic acceptance threshold.
 
-One persistent budget is shared by the complete search and its successors. It
-includes preparation in the first run and execution; a timer requests safe engine
-cancellation at the remaining limit. Final noninterruptible geometry measurement,
-file verification or preparation may finish after that limit. Reserving time before
-execution makes crash recovery conservative; reopening cannot reset the budget or
-automatically repeat confirmation. A lock prevents simultaneous execution of the
-same search. Completed evidence and interrupted attempts remain separate.
+After the final individual approval, joint confirmation starts one new
+200-iteration fit with all original pilot targets. Verified fields sharing the
+same template, controls, deformation basis and exact subject order initialize
+this joint run. The project's original template/control freeze settings are
+restored (normally both are optimized). Independent fields are initialization
+only; they are not scientific PCA/PGA results. Joint outputs are newly computed.
+Individual approvals are not carried into joint QC. The joint fit needs its own
+convergence evidence and visual approval of all specimens before later stages.
 
-This changes the search strategy; it does not guarantee a usable fit or a global
-optimum. The full template can still make computation expensive. Working-target
-approximation, sampled tails, nonlinear minima and shared-template compromises
-remain limitations. No private parameter-tuning analysis or scientific fit is run
-for this implementation. Prospective fit and first-use acceptance belong to the
-researcher; package checks and synthetic regressions are separate evidence.
+Default total execution budget is 60 minutes, explicitly selectable from 15–240.
+Preparation and computation consume the persistent shared budget; time waiting
+for human review does not. The engine is cooperatively cancelled at the remaining
+limit. Noninterruptible preparation, final measurements or verification may finish
+after it. Closing/reopening cannot reset the budget or repeat completed runs.
+Recorded pointers restore the current specimen without starting a calculation.
+Old studies, individual decisions and unsuccessful attempts remain recoverable.
 
-69 distinct scoped regressions passed across the affected batches, including real
-MeshLab distance checks, complete synthetic search/confirmation control flow,
-cohort/source binding, feedback, budget persistence/cancellation, legacy pilot
-behavior, reports, GUI and execution lifecycle. Four affected tests were repeated.
-These are not a private-data fit validation or a full-suite acceptance claim.
+The legacy grid, later pilot stages and multi-specimen continuation remain
+available. The bounded multi-specimen four-probe/refine/confirmation implementation
+is retained internally and covered by regressions; guided UI now uses checkpoints.
+Single-specimen field import is explicit and does not enable singleton PCA.
 
-Proposed next step: one specimen at a time, pausing for human review before adding
-the next. This is not implemented in v98. Approval of a fixed-template individual
-probe cannot automatically approve a later shared-template atlas; joint cohort
-confirmation and final review remain necessary.
+This changes feedback timing, geometry measurement and initialization. It does
+not guarantee a usable fit, convergence or a global optimum. Very complex original
+templates, scientific decimation, shared-template compromises and nonlinear minima
+remain possible difficulties. No private fit/parameter-tuning run is performed
+for development. Synthetic regression, packaging and prospective researcher
+acceptance are separate evidence.
+
+Verification: 29 focused sequence, search, dialog and build-version regressions
+pass after the feedback change; earlier affected run-manifest, initialization,
+PCA and startup regressions also pass. A tiny public synthetic singleton ran
+successfully through the existing verified Deformetrica 4.3 runtime. Its fixed
+control basis was checked at that runtime's six-decimal output precision. This
+checks execution and file compatibility, not the quality of any private fit.

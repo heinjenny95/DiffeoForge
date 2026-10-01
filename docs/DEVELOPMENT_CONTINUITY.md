@@ -15,14 +15,17 @@ default supported reference route; the Modern engine remains evidence-gated.
 ## Current source work
 
 v98 replaces the guided first-stage grid with an explicit time-bounded **Find fit**
-action: four short fixed-template field probes, at most one compatible refinement,
-then original-target confirmation with the project's template/control settings.
+action: one attempt, then a visual checkpoint. Rejection tries the next parameters
+for the same animal; approval starts the next specimen. A common deformation
+basis is retained, with separate matching-weight trials for initialization.
+All recorded individual
+approvals precede a new shared-template original-target confirmation.
 Scientific working targets remain distinct from display proxies; ranking measures
 the worst specimen against original triangles. Human anatomy approval remains
 required. See [implementation and verification](V98_FIT_SEARCH.md). Packaging,
 installation and distribution are pending; the latest verified installed build
-below remains v97. A specimen-by-specimen human checkpoint is a separate proposed
-workflow, not part of this implementation.
+below remains v97. Independent fields initialize the joint run; its results still
+need new convergence evidence and whole-pilot visual approval.
 
 v97 addresses slow and blocked pilot QC, overly strong numerical presentation,
 and the loss of promising iteration-limited fits. Preview-based bulk approval,

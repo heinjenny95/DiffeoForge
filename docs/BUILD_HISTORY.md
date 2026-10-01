@@ -3,8 +3,10 @@
 ## v98 — bounded original-surface fit search
 
 v98 (`0.0.0.dev98`) adds **Find fit** with a persistent time budget, four short
-scientific working-target probes, compatible refinement and original-target
-confirmation. Original template topology and specimen coverage are preserved;
+working-target alternatives tried one at a time, with rejection starting the next
+parameters for that animal and approval starting the next specimen. A common
+deformation basis is retained. All approvals precede joint original-target confirmation.
+Original template topology and specimen coverage are preserved;
 screening cannot approve or advance the pilot. Worst-specimen bidirectional
 point-to-triangle tails drive ranking. See [scope and checks](V98_FIT_SEARCH.md).
 Build, local installation and distribution are pending; v97 remains the latest
