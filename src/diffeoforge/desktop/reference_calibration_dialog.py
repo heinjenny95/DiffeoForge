@@ -510,6 +510,10 @@ class CalibrationCandidateViewerDialog(QDialog):
         self.fail_button.setObjectName("danger")
         self.fail_button.clicked.connect(self._record_visual_qc_fail)
         self.complete_button = QPushButton("Approve all specimens")
+        # Reserve the shared primary style's wider padding before its role changes.
+        self.complete_button.setMinimumWidth(
+            self.complete_button.fontMetrics().horizontalAdvance(self.complete_button.text()) + 64
+        )
         self.complete_button.setToolTip("I inspected every specimen and accept all their fits.")
         self.complete_button.setEnabled(False)
         self.complete_button.clicked.connect(self._record_visual_qc_pass)
