@@ -23,8 +23,9 @@ approvals precede a new shared-template original-target confirmation.
 Scientific working targets remain distinct from display proxies; ranking measures
 the worst specimen against original triangles. Human anatomy approval remains
 required. See [implementation and verification](V98_FIT_SEARCH.md). Packaging,
-installation and distribution are pending; the latest verified installed build
-below remains v97. Independent fields initialize the joint run; its results still
+installation and complete Drive distribution are verified separately; see
+[delivery evidence](V98_DELIVERY.md). v97 remains recoverable.
+Independent fields initialize the joint run; its results still
 need new convergence evidence and whole-pilot visual approval.
 
 v97 addresses slow and blocked pilot QC, overly strong numerical presentation,

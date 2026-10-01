@@ -9,8 +9,9 @@ deformation basis is retained. All approvals precede joint original-target confi
 Original template topology and specimen coverage are preserved;
 screening cannot approve or advance the pilot. Worst-specimen bidirectional
 point-to-triangle tails drive ranking. See [scope and checks](V98_FIT_SEARCH.md).
-Build, local installation and distribution are pending; v97 remains the latest
-verified installed package. No private parameter-tuning run is performed.
+Build, local installation and complete Drive distribution are verified; see
+[delivery evidence](V98_DELIVERY.md). v97 remains recoverable.
+No private parameter-tuning run is performed.
 
 ## v97 — responsive pilot review
 
