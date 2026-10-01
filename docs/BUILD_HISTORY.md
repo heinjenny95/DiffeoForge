@@ -8,7 +8,7 @@ learned-state continuation with an explicit iteration budget. Automatic extra
 search is optional; recorded anatomical feedback affects its centers. Numerical
 distance and convergence remain separate from fit acceptance. See
 [scope, verification and limits](V97_PILOT_REVIEW.md). Build, installation and
-distribution identities will be recorded after verification.
+complete Drive distribution are verified; see [delivery evidence](V97_DELIVERY.md).
 
 ## v96 — adaptive fit search
 

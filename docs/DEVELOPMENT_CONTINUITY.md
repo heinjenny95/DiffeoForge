@@ -19,8 +19,9 @@ and the loss of promising iteration-limited fits. Preview-based bulk approval,
 completed-option inspection during calculation, source-bound display caches and
 one-option warm continuation are implemented. Recorded rejection/acceptance now
 affects automatic search centers; extra search is off by default. See
-[behavior, verification and scientific limits](V97_PILOT_REVIEW.md). Installed
-and Drive-distributed runtime remain v96 until the separate delivery checks finish.
+[behavior, verification and scientific limits](V97_PILOT_REVIEW.md). Built,
+installed and Drive-distributed v97 are separately verified; see
+[delivery evidence](V97_DELIVERY.md). A complete v96 backup/package remain recoverable.
 
 v96 adds a bounded adaptive pilot search with compatible learned-state reuse,
 per-specimen regression protection, persistent budgets and explicit stop reasons.
@@ -64,7 +65,17 @@ window, contextual cost labels and persistent anatomy-first pilot decisions.
 See [implementation and acceptance limits](V91_PILOT_REVIEW.md) and
 [verified build and distribution](V91_DELIVERY.md).
 
-The latest packaged, installed and Drive-distributed application is **v96 /
+The latest packaged, installed and Drive-distributed application is **v97 /
+0.0.0.dev97**, built from `8350fc73489a143b124f4f0e605fc59b7c59dc83`.
+110 scoped regressions, Ruff, synthetic UI and frozen packaging checks passed.
+After confirmed closure, fresh idle checks and a verified 2,688-file v96 backup
+preceded installation. Registry, startup and 2,679 bundle files passed; 3,630
+checked study files remained unchanged. All six Drive files and both downloaded
+installer reconstructions passed before updating the stable current README;
+its authenticated/anonymous downloads and unchanged sharing were verified.
+No private scientific fit or atlas was started. See [v97 delivery](V97_DELIVERY.md).
+
+The historical v96 packaged, installed and distributed application was **v96 /
 0.0.0.dev96**, built from `5a069968d5f8adee639ad60f347a9f6e4767b2fe`. Installation
 on 2026-09-29 followed the owner's closure confirmation, fresh idle checks and
 a complete 2,688-file v95 backup. Registry version, all 2,679 installed bundle
