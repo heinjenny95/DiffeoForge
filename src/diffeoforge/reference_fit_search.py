@@ -43,24 +43,13 @@ def surface_samples(vertices, faces, count=SAMPLES):
 
 def distances_to_surface(points, vertices, faces):
     """Unsigned sampled point-to-triangle distance using MeshLab's spatial index."""
-    import pymeshlab as pm
+    from diffeoforge.mesh_filter_worker import run_mesh_filter
 
-    ms = pm.MeshSet()
-    ms.add_mesh(
-        pm.Mesh(vertex_matrix=np.asarray(vertices, float), face_matrix=np.asarray(faces, np.int32))
-    )
-    ms.add_mesh(pm.Mesh(vertex_matrix=np.asarray(points, float)))
-    combined = np.concatenate((np.asarray(points, float), np.asarray(vertices, float)))
-    distance_limit = float(np.linalg.norm(np.ptp(combined, axis=0))) * 2 + 1e-12
-    ms.apply_filter(
-        "compute_scalar_by_distance_from_another_mesh_per_vertex",
-        measuremesh=1,
-        refmesh=0,
-        signeddist=False,
-        maxdist=pm.PureValue(distance_limit),
-    )
-    values = np.asarray(ms.mesh(1).vertex_scalar_array(), float).copy()
-    if not np.isfinite(values).all() or (values < 0).any():
+    values = run_mesh_filter(
+        "distances", vertices=np.asarray(vertices, float),
+        faces=np.asarray(faces, np.int32), points=np.asarray(points, float),
+    )["distances"]
+    if values.shape != (len(points),) or not np.isfinite(values).all() or (values < 0).any():
         raise ValueError("Nonfinite surface distances")
     return values
 
@@ -103,36 +92,51 @@ def control_grid(bounds, target=200):
 
 
 def prepare_working_targets(root, manifest, search):
-    import pymeshlab as pm
+    from diffeoforge import reference_calibration_study as study
+    from diffeoforge.mesh_filter_worker import run_mesh_filter
+
+    if search.get("sequence"):
+        info = search["sequence"]
+        parent = Path(info["root"])
+        if not root.resolve().is_relative_to(parent.resolve()) or (
+            sha256_file(parent / study.STUDY_MANIFEST) != info["root_sha256"]
+        ):
+            raise ValueError("Working-target source changed")
+        bound = study._verify_manifest(parent)
+        if bound["inputs"]["template"]["sha256"] != manifest["inputs"]["template"]["sha256"]:
+            raise ValueError("Working-target template differs")
+        originals = {r["filename"]: r["sha256"] for r in manifest["inputs"]["subjects"]}
+        inherited = bound["fit_search"]
+        rows = [r for r in inherited["working_targets"] if r["filename"] in originals]
+        if {r["filename"]: r["source_sha256"] for r in rows} != originals:
+            raise ValueError("Working targets differ from the selected specimen")
+        for row in [*rows, inherited["controls"]]:
+            study._copy_bound(parent / row["copy"], root / row["copy"], row["sha256"])
+        search.update(
+            version=VERSION, working_targets=copy.deepcopy(rows),
+            spacing=inherited["spacing"], controls=copy.deepcopy(inherited["controls"]),
+            budget_directory=str(parent), confirmation_ids=search.get("confirmation_ids", []),
+        )
+        return search
 
     records = []
     for row in manifest["inputs"]["subjects"]:
         source = root / row["copy"]
         loaded = load_surface_mesh(source)
-        ms = pm.MeshSet()
-        ms.add_mesh(
-            pm.Mesh(
-                vertex_matrix=np.asarray(loaded.geometry.vertices, float),
-                face_matrix=np.asarray(loaded.geometry.triangles, np.int32),
-            )
-        )
-        if ms.current_mesh().face_number() > TARGET_FACES:
-            ms.apply_filter(
-                "meshing_decimation_quadric_edge_collapse",
-                targetfacenum=TARGET_FACES,
-                preservetopology=True,
-                preservenormal=True,
-                preserveboundary=True,
-            )
-        mesh = ms.current_mesh()
-        if mesh.face_number() > TARGET_FACES * 1.5:
+        vertices = np.asarray(loaded.geometry.vertices, float)
+        faces = np.asarray(loaded.geometry.triangles, np.int32)
+        if len(faces) > TARGET_FACES:
+            result = run_mesh_filter("decimate", vertices=vertices, faces=faces,
+                                     budget=np.array(TARGET_FACES))
+            vertices, faces = result["vertices"], result["faces"]
+        if len(faces) > TARGET_FACES * 1.5:
             raise ValueError("Topology-preserving working mesh exceeds the screening budget")
         dst = root / "working-targets" / row["filename"]
         dst.parent.mkdir(exist_ok=True)
         write_vtk_polydata(
             dst,
-            mesh.vertex_matrix(),
-            mesh.face_matrix(),
+            vertices,
+            faces,
             title="DiffeoForge scientific screening target",
         )
         records.append(
@@ -141,7 +145,7 @@ def prepare_working_targets(root, manifest, search):
                 copy=dst.relative_to(root).as_posix(),
                 sha256=sha256_file(dst),
                 source_sha256=row["sha256"],
-                faces=mesh.face_number(),
+                faces=len(faces),
             )
         )
     template = load_surface_mesh(root / manifest["inputs"]["template"]["copy"])

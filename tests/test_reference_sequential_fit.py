@@ -88,6 +88,28 @@ def test_rejection_runs_one_new_setting_for_same_animal_preserving_common_basis(
     assert len(sequence._read(root)["approved"]) == 2
 
 
+def test_rejection_inherits_exact_working_targets_without_native_repreparation(
+    tmp_path, monkeypatch
+):
+    from diffeoforge import mesh_filter_worker
+
+    runner, _ = _review_ready_stage(tmp_path, monkeypatch)
+    monkeypatch.setattr(search, "measure_original_fit", _measured)
+    first = sequence.run_specimen_sequence(runner)
+    root = Path(sequence.sequence_info(first.study_directory)["root"])
+    parent = study._verify_manifest(root)
+    cid = _reject(first)
+    monkeypatch.setattr(mesh_filter_worker, "run_mesh_filter",
+                        lambda *a, **k: pytest.fail("Repeated native reduction"))
+    second = sequence.run_specimen_sequence(runner, action=("reject", cid, 0))
+    manifest = study._verify_manifest(second.study_directory)
+    assert manifest["fit_search"]["controls"] == parent["fit_search"]["controls"]
+    expected = {r["filename"]: r for r in parent["fit_search"]["working_targets"]}
+    for row in manifest["fit_search"]["working_targets"]:
+        assert row == expected[row["filename"]]
+        assert sha256_file(second.study_directory / row["copy"]) == row["sha256"]
+
+
 def test_qc_dispatches_next_parameters_or_next_animal_and_ignores_stale_viewers(
     tmp_path, monkeypatch
 ):

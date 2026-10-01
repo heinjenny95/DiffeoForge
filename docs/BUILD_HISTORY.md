@@ -1,5 +1,14 @@
 # Private-alpha build numbering
 
+## v99 — native mesh-filter containment
+
+v99 (`0.0.0.dev99`) isolates MeshLab filters in supervised hidden processes and
+reuses exact sequence working meshes/controls after individual feedback. Native
+child exit/timeout is reported without terminating the desktop. No fitting
+parameters or QC requirements changed. See [scope and limits](V99_MESH_FILTER_ISOLATION.md).
+The precise source of the reported heap corruption remains unproved. Installer
+distribution is now on request only; the previous verified Drive build is v98.
+
 ## v98 — bounded original-surface fit search
 
 v98 (`0.0.0.dev98`) adds **Find fit** with a persistent time budget, four short

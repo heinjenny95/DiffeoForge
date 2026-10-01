@@ -1,4 +1,4 @@
-# Development continuity — v98 bounded fit search
+# Development continuity — v99 mesh-filter containment
 
 Snapshot: 2026-10-01. This is a public, software-only continuation guide. Detailed
 research results, local paths, account destinations and run identities belong in
@@ -20,6 +20,14 @@ correct parameters or interpret biology for the researcher. Deformetrica is the
 default supported reference route; the Modern engine remains evidence-gated.
 
 ## Current source work
+
+v99 contains native mesh filters in supervised hidden helper processes after a
+reported Windows heap-corruption crash during individual-fit preparation.
+Sequence children reuse exact parent working meshes and controls instead of
+repeating reduction. Saved fitting evidence and scientific settings remain
+unchanged. The precise native fault origin remains unproved; see
+[containment, regression checks and limits](V99_MESH_FILTER_ISOLATION.md).
+No private parameter-tuning or new scientific run is started by this fix.
 
 v98 replaces the guided first-stage grid with an explicit time-bounded **Find fit**
 action: one attempt, then a visual checkpoint. Rejection tries the next parameters
