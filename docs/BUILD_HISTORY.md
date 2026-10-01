@@ -8,6 +8,7 @@ child exit/timeout is reported without terminating the desktop. No fitting
 parameters or QC requirements changed. See [scope and limits](V99_MESH_FILTER_ISOLATION.md).
 The precise source of the reported heap corruption remains unproved. Installer
 distribution is now on request only; the previous verified Drive build is v98.
+Build and safe local installation are verified; see [delivery evidence](V99_DELIVERY.md).
 
 ## v98 — bounded original-surface fit search
 

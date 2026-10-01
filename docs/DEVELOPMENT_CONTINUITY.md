@@ -27,7 +27,11 @@ Sequence children reuse exact parent working meshes and controls instead of
 repeating reduction. Saved fitting evidence and scientific settings remain
 unchanged. The precise native fault origin remains unproved; see
 [containment, regression checks and limits](V99_MESH_FILTER_ISOLATION.md).
-No private parameter-tuning or new scientific run is started by this fix.
+Build and local installation are verified; the saved rejected checkpoint was
+reopened read-only after archiving its abandoned coordinator lock. See
+[separate delivery identities and checks](V99_DELIVERY.md). Drive intentionally
+retains v98 under the explicit-request policy. No private parameter-tuning or
+new scientific run is started by this fix.
 
 v98 replaces the guided first-stage grid with an explicit time-bounded **Find fit**
 action: one attempt, then a visual checkpoint. Rejection tries the next parameters
