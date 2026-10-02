@@ -10,6 +10,7 @@ from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 from typing import Any
 
+from diffeoforge.analysis.method_labels import shape_method_label
 from diffeoforge.atomic_io import write_text_safely
 from diffeoforge.desktop.result_review import (
     ModernResultArtifact,
@@ -83,22 +84,17 @@ def _validated_registration_qc_decisions(
     decisions: Mapping[str, str],
 ) -> dict[str, str]:
     if not review.registration_qc:
-        raise ModernResultReviewError(
-            "A full-cohort registration-QC ranking is required"
-        )
+        raise ModernResultReviewError("A full-cohort registration-QC ranking is required")
     allowed_subjects = {item.subject_name for item in review.registration_qc}
     normalized = dict(decisions)
     unexpected = set(normalized) - allowed_subjects
     if unexpected:
         raise ModernResultReviewError(
-            "Registration-QC decisions contain unknown subjects: "
-            + ", ".join(sorted(unexpected))
+            "Registration-QC decisions contain unknown subjects: " + ", ".join(sorted(unexpected))
         )
     allowed_decisions = {"pass", "uncertain", "fail"}
     if any(decision not in allowed_decisions for decision in normalized.values()):
-        raise ModernResultReviewError(
-            "Registration-QC decisions must be pass, uncertain, or fail"
-        )
+        raise ModernResultReviewError("Registration-QC decisions must be pass, uncertain, or fail")
     return normalized
 
 
@@ -307,9 +303,7 @@ def finalize_registration_qc_review(
             "unreviewed_count": counts["unreviewed"],
             "decision_counts": counts,
             "complete": complete,
-            "incomplete_finalization_explicitly_confirmed": bool(
-                not complete and allow_incomplete
-            ),
+            "incomplete_finalization_explicitly_confirmed": bool(not complete and allow_incomplete),
         },
         "subjects": [
             {
@@ -383,9 +377,7 @@ def load_finalized_registration_qc_review(
     if not binding_path.exists():
         return None
     if not binding_path.is_file() or binding_path.is_symlink():
-        raise ModernResultReviewError(
-            "Finalized registration-QC binding is not a regular file"
-        )
+        raise ModernResultReviewError("Finalized registration-QC binding is not a regular file")
     try:
         binding = json.loads(binding_path.read_text(encoding="utf-8", errors="strict"))
         source = binding["source"]
@@ -440,9 +432,7 @@ def load_finalized_registration_qc_review(
     decisions: dict[str, str] = {}
     for item in subjects:
         if not isinstance(item, dict):
-            raise ModernResultReviewError(
-                "Finalized registration-QC subject record is invalid"
-            )
+            raise ModernResultReviewError("Finalized registration-QC subject record is invalid")
         name = item.get("subject_name")
         decision = item.get("decision")
         if not isinstance(name, str) or decision not in {
@@ -479,7 +469,7 @@ def load_finalized_registration_qc_review(
 
 def _pca_items(bundle_manifest: dict, ratios: tuple[float, ...]) -> tuple[ResultReviewItem, ...]:
     pca = bundle_manifest["pca"]
-    method_label = str(pca["method"])
+    method_label = shape_method_label(str(pca["method_id"]), str(pca["method"]))
     if str(pca["method_id"]) == "lddmm_deformation_kernel_pca":
         method_label += " — default"
     items = [
@@ -620,9 +610,7 @@ def review_reference_result(
         digest = str(record["sha256"])
         if path.stat().st_size != size or sha256_file(path) != digest:
             raise ModernResultReviewError(f"Displayed artifact changed: {value}")
-        artifacts.append(
-            ModernResultArtifact(key, label, path, kind, size, digest, description)
-        )
+        artifacts.append(ModernResultArtifact(key, label, path, kind, size, digest, description))
 
     output_directory = run / "output"
     staged_input_directory = run / "input"
@@ -674,9 +662,7 @@ def review_reference_result(
             or "." in relative.parts
             or ".." in relative.parts
         ):
-            raise ModernResultReviewError(
-                f"Displayed staged input has an unsafe path: {relative}"
-            )
+            raise ModernResultReviewError(f"Displayed staged input has an unsafe path: {relative}")
         path = run.joinpath(*relative.parts).resolve()
         geometry = record.get("geometry")
         if not isinstance(geometry, Mapping):
@@ -770,10 +756,7 @@ def review_reference_result(
         key = f"subject-original-{index}"
         add_staged_input_artifact(
             key,
-            (
-                "Subject original: "
-                + subject_filename.removesuffix(".vtk").replace("_", " ")
-            ),
+            ("Subject original: " + subject_filename.removesuffix(".vtk").replace("_", " ")),
             record,
         )
         original_keys[subject_filename] = key
@@ -951,10 +934,7 @@ def review_reference_result(
                         "Reference PCA deformation Shooting summary is invalid"
                     )
                 rendered_distance = f"{float(result_shooting['standard_deviations']):g}"
-                label = (
-                    f"PC{component} {sign}{rendered_distance} SD "
-                    "(Deformetrica VTK)"
-                )
+                label = f"PC{component} {sign}{rendered_distance} SD (Deformetrica VTK)"
             artifacts.append(
                 ModernResultArtifact(
                     key,
@@ -1000,8 +980,7 @@ def review_reference_result(
             str(manifest["pca"]["method"])
             + (
                 " — default"
-                if str(manifest["pca"]["method_id"])
-                == "lddmm_deformation_kernel_pca"
+                if str(manifest["pca"]["method_id"]) == "lddmm_deformation_kernel_pca"
                 else ""
             ),
             (
@@ -1140,31 +1119,21 @@ def review_reference_result(
         engine_route="deformetrica_reference",
         pca_method_id=str(pca["method_id"]),
         pca_method_label=(
-            str(pca["method"])
-            + (
-                " — default"
-                if str(pca["method_id"]) == "lddmm_deformation_kernel_pca"
-                else ""
-            )
+            shape_method_label(str(pca["method_id"]), str(pca["method"]))
+            + (" — default" if str(pca["method_id"]) == "lddmm_deformation_kernel_pca" else "")
         ),
         execution_duration_seconds=duration_seconds,
         optimizer_stop_interpretation=str(optimization_evidence["stop_interpretation"]),
         additional_artifact_roots=(
             output_directory.resolve(),
             staged_input_directory.resolve(),
-            *(
-                (deformation_result_directory.resolve(),)
-                if deformation_result is not None
-                else ()
-            ),
+            *((deformation_result_directory.resolve(),) if deformation_result is not None else ()),
         ),
         additional_manifest_bindings=(
             (
                 (
                     deformation_result_directory / PCA_DEFORMATION_RESULT_NAME,
-                    sha256_file(
-                        deformation_result_directory / PCA_DEFORMATION_RESULT_NAME
-                    ),
+                    sha256_file(deformation_result_directory / PCA_DEFORMATION_RESULT_NAME),
                 ),
             )
             if deformation_result is not None

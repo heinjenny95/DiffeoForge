@@ -32,7 +32,7 @@ _LABELS = {
     "_RemoteAtlasWorker": "Monitoring remote atlas",
     "_RemoteAtlasDeletionWorker": "Removing approved remote copy",
     "_ReferenceAtlasWorker": "Running Deformetrica atlas",
-    "_CalibrationStageWorker": "Running pilot calibration",
+    "_CalibrationStageWorker": "Pilot task",
     "_PreparationWorker": "Preparing Validation Lab",
     "_ValidationWorker": "Running Validation Lab",
 }
@@ -149,6 +149,8 @@ class ActivityPool:
         ticket = _Ticket(self, key, worker)
         worker.signals.succeeded.connect(ticket.finish)
         worker.signals.failed.connect(ticket.finish)
+        if hasattr(worker.signals, "finished"):
+            worker.signals.finished.connect(ticket.finish)
         if hasattr(worker.signals, "progress"):
             worker.signals.progress.connect(ticket.progress)
         self._tickets[key] = ticket

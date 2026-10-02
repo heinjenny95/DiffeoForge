@@ -21,6 +21,14 @@ _PLOT_WIDTH = _WIDTH - _LEFT - _RIGHT
 _PLOT_HEIGHT = _HEIGHT - _TOP - _BOTTOM
 
 
+def _analysis_name(pca: PCAResult) -> str:
+    return (
+        "Linearized PGA"
+        if pca.feature_space == "subject_initial_momenta_lddmm_deformation_metric"
+        else "PCA"
+    )
+
+
 def _number(value: float) -> str:
     normalized = float(value)
     if not math.isfinite(normalized):
@@ -143,12 +151,11 @@ def write_pca_scree_svg(path: Path | str, pca: PCAResult) -> Path:
     maximum = max(float(np.max(ratios)) * 1.12, 0.01)
     bar_slot = _PLOT_WIDTH / pca.number_of_components
     bar_width = min(bar_slot * 0.68, 80.0)
-    label_indices = set(
-        _scree_label_indices(pca.number_of_components, bar_slot=bar_slot)
-    )
+    label_indices = set(_scree_label_indices(pca.number_of_components, bar_slot=bar_slot))
     show_percent_labels = pca.number_of_components <= 20
     body = [
-        '  <text x="450" y="38" text-anchor="middle" class="title">PCA scree plot</text>',
+        '  <text x="450" y="38" text-anchor="middle" class="title">'
+        f"{_analysis_name(pca)} scree plot</text>",
     ]
     for tick in range(6):
         value = maximum * tick / 5.0
@@ -202,7 +209,7 @@ def write_pca_scree_svg(path: Path | str, pca: PCAResult) -> Path:
             'transform="rotate(-90 22 290)">Explained total variance</text>',
         ]
     )
-    return _write_exclusive(path, _svg_document("PCA scree plot", body))
+    return _write_exclusive(path, _svg_document(f"{_analysis_name(pca)} scree plot", body))
 
 
 def _component_axis_label(pca: PCAResult, index: int) -> str:
@@ -239,9 +246,9 @@ def _write_pca_score_view(
         else _component_axis_label(pca, y_index)
     )
     title = (
-        "PCA subject scores: PC1 strip"
+        f"{_analysis_name(pca)} subject scores: PC1 strip"
         if y_index is None
-        else f"PCA subject scores: PC{x_index + 1} vs PC{y_index + 1}"
+        else f"{_analysis_name(pca)} subject scores: PC{x_index + 1} vs PC{y_index + 1}"
     )
     body = [
         f'  <text x="450" y="38" text-anchor="middle" class="title">{html.escape(title)}</text>',

@@ -377,21 +377,23 @@ scientific gates. Planning does not mark those gates complete.
 - [x] Versioned workflow-stage and committed optimizer-decision reporting
 - [x] Fresh-process objective/gradient wall-time and sampled-RSS protocol
 - [ ] Refine the staged calibration UX from the v44 weevil pilot observations
-  - [ ] **Maybe / Plan B for individual fits (owner request, 2026-10-02).**
+  - [x] **Maybe / Plan B for individual fits (v102, 2026-10-02).**
     Add **Keep as Plan B** to retain a usable fallback while testing further
     settings for the same specimen. This is neither pass nor fail, does not
     advance the specimen or increase the approved count. Persist the exact bound
     attempt/specimen/series/model across reopening; provide direct comparison
     and **Use Plan B** if later attempts are worse, retaining all results and
     earlier approvals. Require explicit final human approval; never silently
-    promote a fallback or transfer it across an incompatible basis. Backlog only.
-  - [ ] **Visible specimen approval progress (owner request, 2026-10-02).**
+    promote a fallback or transfer it across an incompatible basis. Implemented
+    with hash-bound persistence, read-only comparison and fresh-review enforcement.
+  - [x] **Visible specimen approval progress (v102, 2026-10-02).**
     Keep a compact count visible during individual fitting and review, e.g.
     **3 of 8 approved · 5 still to review**, plus **Specimen 4 of 8** and its name.
     Derive counts from persisted approvals for the current saved series/model,
     update after decisions and restore on reopen. Keep specimen progress separate
     from parameter-stage labels and later joint QC; completed computations and
-    viewed previews do not count as approvals. Backlog only, not implemented.
+    viewed previews do not count as approvals. Implemented; see
+    [v102 scope and remaining acceptance](docs/V102_PILOT_WORKFLOW.md).
   - [x] Update the completed-run counter and candidate cards from the verified event
     ledger after every candidate instead of leaving `0 of 31`/`Ready to run` stale
     until a stage finishes

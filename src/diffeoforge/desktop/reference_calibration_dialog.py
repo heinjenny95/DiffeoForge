@@ -199,6 +199,7 @@ class _CalibrationSignals(QObject):
     event = Signal(object)
     succeeded = Signal(object)
     failed = Signal(str)
+    finished = Signal(object)
 
 
 class _CalibrationStageWorker(QRunnable):
@@ -230,6 +231,12 @@ class _CalibrationStageWorker(QRunnable):
         self.signals = _CalibrationSignals()
         self._lock = threading.Lock()
         self._finished = False
+        self.error_message = None
+
+    @property
+    def is_finished(self) -> bool:
+        with self._lock:
+            return self._finished
 
     def request_cancel(self) -> bool:
         with self._lock:
@@ -295,13 +302,15 @@ class _CalibrationStageWorker(QRunnable):
                 )
             else:
                 result = self.runner.run_current_stage(event_callback=emit)
-        except (OSError, RuntimeError, TypeError, ValueError) as error:
-            self.signals.failed.emit(str(error))
+        except Exception as error:
+            self.error_message = f"{type(error).__name__}: {error or 'Background task failed'}"
+            self.signals.failed.emit(self.error_message)
         else:
             self.signals.succeeded.emit(result)
         finally:
             with self._lock:
                 self._finished = True
+            self.signals.finished.emit(self)
 
 
 class CalibrationCandidateViewerDialog(QDialog):
@@ -315,6 +324,8 @@ class CalibrationCandidateViewerDialog(QDialog):
         *,
         subject_fit: Mapping[str, float] | None = None,
         pairs: tuple[CalibrationQcPair, ...] | None = None,
+        allow_plan_b: bool = False,
+        read_only: bool = False,
     ) -> None:
         super().__init__(parent)
         if candidate.run_directory is None:
@@ -342,6 +353,9 @@ class CalibrationCandidateViewerDialog(QDialog):
             index for index, pair in enumerate(self._pairs) if pair.required
         )
         self._review_decision: bool | None = None
+        self._keep_as_plan_b = False
+        self._allow_plan_b = allow_plan_b
+        self._read_only = read_only
         self.feature_observations: dict[str, dict[str, object]] = {}
         self._mesh_loader = PreviewMeshLoader(self)
         self._mesh_loader.loaded.connect(self._pair_loaded)
@@ -363,6 +377,8 @@ class CalibrationCandidateViewerDialog(QDialog):
         self.body_scroll.setWidget(body)
         root.addWidget(self.body_scroll, 1)
         title = QLabel("Does the reconstruction preserve the original anatomy?")
+        if read_only:
+            title.setText("Current fit (blue) / Plan B (orange)")
         title.setObjectName("title")
         layout.addWidget(title)
         intro = QLabel(
@@ -371,6 +387,10 @@ class CalibrationCandidateViewerDialog(QDialog):
             "the blue lines should sit on the orange surface."
         )
         intro.setWordWrap(True)
+        if read_only:
+            intro.setText(
+                "Compare the saved shapes. Close this view to return to your current fit."
+            )
         layout.addWidget(intro)
         instructions = QLabel(
             "What to check\n"
@@ -523,6 +543,14 @@ class CalibrationCandidateViewerDialog(QDialog):
         self.fail_button.setObjectName("danger")
         self.fail_button.clicked.connect(self._record_visual_qc_fail)
         self.complete_button = QPushButton("Approve all specimens")
+        self.maybe_button = QPushButton("Maybe / Plan B → try next")
+        self.maybe_button.setVisible(allow_plan_b and not read_only)
+        self.maybe_button.setToolTip(
+            "Save this fallback and test new parameters for this specimen. "
+            "This does not approve or reject it."
+        )
+        self.maybe_button.clicked.connect(self._record_plan_b)
+        controls.addWidget(self.maybe_button)
         # Reserve the shared primary style's wider padding before its role changes.
         self.complete_button.setMinimumWidth(
             self.complete_button.fontMetrics().horizontalAdvance(self.complete_button.text()) + 64
@@ -536,6 +564,10 @@ class CalibrationCandidateViewerDialog(QDialog):
         controls.addWidget(self.complete_button)
         decision_layout.addLayout(controls)
         root.addWidget(self.decision_panel)
+        if read_only:
+            close_comparison = QPushButton("Close comparison")
+            close_comparison.clicked.connect(self.reject)
+            root.addWidget(close_comparison)
         if self._required_pair_indexes:
             first_required = self._required_pair_indexes[0]
             combo_index = self.mesh_combo.findData(first_required)
@@ -543,6 +575,8 @@ class CalibrationCandidateViewerDialog(QDialog):
                 self._load_selected(combo_index)
             else:
                 self.mesh_combo.setCurrentIndex(combo_index)
+        elif self.mesh_combo.count():
+            self._load_selected(self.mesh_combo.currentIndex())
         self._update_review_progress()
 
     @property
@@ -560,6 +594,21 @@ class CalibrationCandidateViewerDialog(QDialog):
     @property
     def review_passed(self) -> bool:
         return self._review_decision is True
+
+    @property
+    def keep_as_plan_b(self) -> bool:
+        return self._keep_as_plan_b
+
+    @Slot()
+    def _record_plan_b(self) -> None:
+        if (
+            self._allow_plan_b
+            and not self._read_only
+            and self.canvas.comparison_ready
+            and self._required_pair_ids
+        ):
+            self._keep_as_plan_b = True
+            self.accept()
 
     @Slot(int)
     def _load_selected(self, _index: int) -> None:
@@ -786,9 +835,14 @@ class CalibrationCandidateViewerDialog(QDialog):
             )
             self.review_gate.setObjectName("statusError")
         self.review_gate.setStyleSheet("")
-        self.fail_button.setVisible(True)
+        self.fail_button.setVisible(not self._read_only)
         self.fail_button.setEnabled(current_seen)
         self.complete_button.setEnabled(all_pass and not conflicts and self.canvas.comparison_ready)
+        self.maybe_button.setEnabled(current_seen)
+        if self._read_only:
+            self.complete_button.hide()
+            self.decision_panel.hide()
+            self.close_button.setText("Close comparison")
         _set_action_emphasis(self.next_specimen_button, not all_pass)
         _set_action_emphasis(self.complete_button, all_pass and not conflicts)
 
@@ -948,8 +1002,8 @@ class ReferenceCalibrationDialog(QDialog):
         self.find_fit_button.setToolTip(
             "One specimen and one attempt at a time. Reject starts the next parameters for "
             "this specimen; approve starts the next specimen. A common deformation basis "
-            "is retained after the first approval. All eight approved individual "
-            "fits initialize a new joint original-target confirmation, which needs fresh QC. "
+            "is retained after the first approval. All approved individual "
+            "fits initialize a new combined original-target confirmation, which needs fresh QC. "
             "Saved results still need your visual QC. Previous pilots are preserved."
         )
         self.find_fit_button.clicked.connect(self._find_fit)
@@ -957,6 +1011,13 @@ class ReferenceCalibrationDialog(QDialog):
         self.saved_searches_button = QPushButton("Saved fit searches…")
         self.saved_searches_button.clicked.connect(self._choose_saved_search)
         fit_row.addWidget(self.saved_searches_button)
+        self.plan_b_button = QPushButton("Review / use Plan B")
+        self.plan_b_button.clicked.connect(self._restore_plan_b)
+        self.plan_b_button.setToolTip("Return to your saved fallback. A fresh review is required.")
+        fit_row.addWidget(self.plan_b_button)
+        self.compare_plan_b_button = QPushButton("Compare Plan B")
+        self.compare_plan_b_button.clicked.connect(self._compare_plan_b)
+        fit_row.addWidget(self.compare_plan_b_button)
         self.denser_model_button = QPushButton("Test denser common model")
         self.denser_model_button.setToolTip(
             "More control points; starts with this specimen. All specimens need fresh QC "
@@ -1055,7 +1116,7 @@ class ReferenceCalibrationDialog(QDialog):
         boundary.setText(
             "Find fit: one specimen, one attempt, then your review. "
             "Reject tries new parameters; approve continues. "
-            "A joint fit is checked afterwards."
+            "A combined fit is checked afterwards."
         )
         self._render()
 
@@ -1080,9 +1141,10 @@ class ReferenceCalibrationDialog(QDialog):
 
     def _render(self, snapshot: ReferenceCalibrationStudySnapshot | None = None) -> None:
         self._snapshot = snapshot or load_reference_calibration_study(self.study_directory)
-        from diffeoforge.reference_sequential_fit import sequence_info
+        from diffeoforge.reference_sequential_fit import sequence_info, sequence_progress
 
         self._sequence_info = sequence_info(self.study_directory)
+        self._sequence_progress = sequence_progress(self.study_directory)
         for candidate_id, approved in self._snapshot.visual_reviews.items():
             self._visually_reviewed_candidates.add(candidate_id)
             if approved:
@@ -1091,6 +1153,50 @@ class ReferenceCalibrationDialog(QDialog):
                 self._visually_approved_candidates.discard(candidate_id)
         self._clear_content()
         running = self._worker is not None or self._restoring_search
+        from diffeoforge.reference_calibration_study import STUDY_MANIFEST, _read_json
+
+        context = _read_json(self.study_directory / STUDY_MANIFEST, "study")
+        directory = context["inputs"].get("full_cohort", {}).get("directory")
+        if directory:
+            dataset = QLabel("Pilot data: " + " / ".join(Path(directory).parts[-4:]))
+            dataset.setWordWrap(True)
+            dataset.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+            dataset.setToolTip(
+                str(directory)
+                + " — Opening completed results does not change the Data & Alignment inputs."
+            )
+            self.content_layout.addWidget(dataset)
+        fallback = bool(self._sequence_progress and self._sequence_progress["fallback"])
+        for button in (self.plan_b_button, self.compare_plan_b_button):
+            button.setVisible(fallback and self._individual_checkpoint())
+            button.setEnabled(not running)
+        self.adaptive_fit_search.setVisible(
+            not self._sequence_info and not bool(self._snapshot.plan.qc_recalibration_source)
+        )
+        if self._sequence_progress:
+            progress = self._sequence_progress
+            caption = (
+                f"{progress['approved']} of {progress['total']} approved · "
+                f"{progress['remaining']} still to review"
+            )
+            if self._individual_checkpoint():
+                caption += (
+                    f" · Specimen {self._sequence_info['index'] + 1} of "
+                    f"{progress['total']}: {self._sequence_info['filename']}"
+                )
+            else:
+                caption = (
+                    f"Individual fits: {progress['approved']} of {progress['total']} approved · "
+                    + (
+                        "Combined pilot complete"
+                        if self._snapshot.status == "completed"
+                        else f"Combined pilot: review all {progress['total']} specimens"
+                    )
+                )
+            notice = QLabel(caption)
+            notice.setObjectName("statusSuccess")
+            notice.setWordWrap(True)
+            self.content_layout.addWidget(notice)
         self.afk_mode.setEnabled(not running and self._snapshot.status != "completed")
         if self._snapshot.status == "completed":
             self.status.setText(
@@ -1210,7 +1316,10 @@ class ReferenceCalibrationDialog(QDialog):
             not running and not self._snapshot.plan.qc_recalibration_source
         )
         heading = QLabel(
-            f"Stage {stage.order} of {len(self._snapshot.plan.stages)} — {stage.title}"
+            "Individual fit — inspect, approve, reject or keep as Plan B"
+            if self._individual_checkpoint()
+            else ("Combined pilot — " if self._sequence_info else "")
+            + f"Stage {stage.order} of {len(self._snapshot.plan.stages)} — {stage.title}"
         )
         heading.setObjectName("sectionTitle")
         self.content_layout.addWidget(heading)
@@ -1230,6 +1339,8 @@ class ReferenceCalibrationDialog(QDialog):
                     "follow-up does not test every interaction between parameters.",
                 )
         question = QLabel(guidance.question)
+        if self._individual_checkpoint():
+            question.setText("Does this fit preserve the original shape?")
         question.setObjectName("title")
         question.setWordWrap(True)
         self.content_layout.addWidget(question)
@@ -1294,7 +1405,7 @@ class ReferenceCalibrationDialog(QDialog):
             details = QLabel("\n".join(assessment.cautions))
             if self._individual_checkpoint():
                 details.setText(
-                    "Individual probes need your visual decision. Joint convergence and "
+                    "Individual probes need your visual decision. Combined convergence and "
                     "all-specimen QC follow after the last specimen."
                 )
             details.setWordWrap(True)
@@ -1376,8 +1487,13 @@ class ReferenceCalibrationDialog(QDialog):
             and not self._snapshot.selected_candidate_ids
             and not self._snapshot.plan.qc_recalibration_source
         )
-        self.find_fit_button.setText("Improve this specimen" if self._individual_checkpoint()
-                                    else "New fit search" if self._sequence_info else "Find fit")
+        self.find_fit_button.setText(
+            "Improve this specimen"
+            if self._individual_checkpoint()
+            else "New fit search"
+            if self._sequence_info
+            else "Find fit"
+        )
         self.saved_searches_button.setEnabled(not running)
         self.denser_model_button.setVisible(self._individual_checkpoint())
         self.denser_model_button.setEnabled(not running)
@@ -1412,7 +1528,7 @@ class ReferenceCalibrationDialog(QDialog):
             self.selection_combo.blockSignals(True)
             self.selection_combo.clear()
             self.selection_combo.addItem(
-                "Choose an option for visual review…",
+                "Choose an option…",
                 None,
             )
             for index, candidate in enumerate(
@@ -1439,6 +1555,8 @@ class ReferenceCalibrationDialog(QDialog):
                         candidate.candidate_id,
                     )
             previous_index = self.selection_combo.findData(previous_selection)
+            if self._individual_checkpoint() and self.selection_combo.count() == 2:
+                previous_index = 1
             if previous_index >= 0:
                 self.selection_combo.setCurrentIndex(previous_index)
             self.selection_combo.blockSignals(False)
@@ -1474,10 +1592,10 @@ class ReferenceCalibrationDialog(QDialog):
         parameter_label = QLabel(parameter)
         parameter_label.setObjectName("sectionTitle")
         parameter_label.setWordWrap(True)
-        layout.addWidget(parameter_label)
         option_help = QWidget()
         option_help_layout = QVBoxLayout(option_help)
         option_help_layout.setContentsMargins(0, 0, 0, 0)
+        option_help_layout.addWidget(parameter_label)
         meaning_label = QLabel(meaning)
         meaning_label.setWordWrap(True)
         option_help_layout.addWidget(meaning_label)
@@ -1522,7 +1640,7 @@ class ReferenceCalibrationDialog(QDialog):
             passed, check_text = automatic_check_summary(metrics)
             check = QLabel(("✓ " if passed else "⚠ ") + check_text)
             check.setWordWrap(True)
-            layout.addWidget(check)
+            option_help_layout.addWidget(check)
             comparison_title = QLabel("Relative measurements — anatomy needs review")
             comparison_title.setObjectName("sectionTitle")
             option_help_layout.addWidget(comparison_title)
@@ -1586,6 +1704,8 @@ class ReferenceCalibrationDialog(QDialog):
             layout.addWidget(technical)
             reviewed = candidate.candidate_id in self._visually_reviewed_candidates
             approved = candidate.candidate_id in self._visually_approved_candidates
+            if self._sequence_progress and self._sequence_progress["fresh_review_required"]:
+                approved = False
             viewer = QPushButton("Review fit again…" if reviewed else "Inspect surface fit…")
             viewer.clicked.connect(
                 lambda _checked=False, value=candidate: self._open_candidate(value)
@@ -1599,16 +1719,9 @@ class ReferenceCalibrationDialog(QDialog):
             approval.setEnabled(False)
             approval.setToolTip("Review this option again to change the recorded decision.")
             visual_status = QLabel(
-                "Plausibility gate: passed; this option remains eligible."
+                "Your review: approved."
                 if approved
-                else (
-                    "Plausibility gate: failed. This option is currently excluded."
-                    if reviewed
-                    else (
-                        "Plausibility gate: not performed. Automatic numerical "
-                        "ranking remains available, but anatomical validity is unreviewed."
-                    )
-                )
+                else ("Your review: rejected." if reviewed else "Awaiting your review.")
             )
             visual_status.setObjectName(
                 "statusSuccess" if approved else ("statusError" if reviewed else "status")
@@ -1737,11 +1850,15 @@ class ReferenceCalibrationDialog(QDialog):
                 and candidate.metrics.get("invalid_face_count") == 0
             )
             approved = self._snapshot.visual_reviews.get(selected) is True
+            if self._sequence_progress and self._sequence_progress["fresh_review_required"]:
+                approved = False
             info = self._sequence_info
             last = info["index"] + 1 == info["total"]
             self.selection_combo.show()
             self.selection_combo.setEnabled(self._worker is None)
-            self.advance_button.setText("Run joint confirmation" if last else "Fit next specimen →")
+            self.advance_button.setText(
+                "Run combined confirmation" if last else "Fit next specimen →"
+            )
             self.advance_button.show()
             self.advance_button.setEnabled(eligible and approved and self._worker is None)
             _set_action_emphasis(self.advance_button, self.advance_button.isEnabled())
@@ -1757,7 +1874,7 @@ class ReferenceCalibrationDialog(QDialog):
             self.status.setText(
                 f"Specimen {info['index'] + 1} of {info['total']}: {info['filename']}. "
                 + (
-                    "Approved. Run joint confirmation."
+                    "Approved. Run combined confirmation."
                     if last and approved
                     else "Approved. Fit the next specimen."
                     if approved
@@ -1767,7 +1884,13 @@ class ReferenceCalibrationDialog(QDialog):
             )
             return
         eligible = selected in self._selectable_candidate_ids()
-        self.advance_button.setText("Prepare next stage")
+        stage = self._snapshot.current_stage
+        last = stage.order == len(self._snapshot.plan.stages)
+        self.advance_button.setText(
+            "Use approved option and finish pilot"
+            if last
+            else f"Use approved option → stage {stage.order + 1}"
+        )
         approved = self._snapshot.visual_reviews.get(selected) is True
         self.selection_combo.show()
         self.advance_button.show()
@@ -1793,9 +1916,9 @@ class ReferenceCalibrationDialog(QDialog):
             if retryable
             else "Review an option, or let the pilot improve the fit automatically."
             if selected is None
-            else "Every specimen passed. You can prepare the next stage."
+            else "Approved. Use this option to continue."
             if approved and eligible
-            else "Review every specimen. After approval, use Prepare next stage."
+            else "Review this option before continuing."
         )
         if stopped:
             messages = {
@@ -1937,6 +2060,7 @@ class ReferenceCalibrationDialog(QDialog):
         worker.signals.event.connect(self._event)
         worker.signals.succeeded.connect(self._succeeded)
         worker.signals.failed.connect(self._failed)
+        worker.signals.finished.connect(self._worker_finished)
         self._worker = worker
         self._fit_search_stop_text = None
         self.advanced_mode.setEnabled(False)
@@ -1954,13 +2078,14 @@ class ReferenceCalibrationDialog(QDialog):
         self.cancel_button.setObjectName("danger")
         self.cancel_button.style().unpolish(self.cancel_button)
         self.cancel_button.style().polish(self.cancel_button)
-        self.status.setText(
-            "Running the current stage. Visual review follows before the next stage."
-        )
+        self.status.setText("Preparing the next attempt…")
         self._thread_pool.start(worker)
 
     @Slot(object)
     def _event(self, event: Mapping[str, object]) -> None:
+        if event["event"] == "specimen_sequence_preparing":
+            self.status.setText(str(event["message"]))
+            return
         kind = str(event["event"])
         candidate_id = str(event.get("candidate_id", ""))
         if kind == "specimen_sequence_changed":
@@ -1971,9 +2096,11 @@ class ReferenceCalibrationDialog(QDialog):
         elif kind == "specimen_sequence_paused":
             info = event["sequence"]
             finished = all(c.status == "completed" for c in event["snapshot"].candidates)
-            phase_label = {"capture": "broad shape capture", "refine": "surface refinement",
-                           "continue": "saved fit continuation"}.get(
-                               info.get("fit_phase"), "initial probe")
+            phase_label = {
+                "capture": "broad shape capture",
+                "refine": "surface refinement",
+                "continue": "saved fit continuation",
+            }.get(info.get("fit_phase"), "initial probe")
             self._fit_search_stop_text = (
                 "Stopped before this step finished. Saved results remain available."
                 if not finished
@@ -1982,7 +2109,7 @@ class ReferenceCalibrationDialog(QDialog):
                     f"({phase_label}). "
                     "Review this attempt. Reject tries new parameters; approve continues."
                     if info["phase"] == "individual"
-                    else "Joint confirmation finished. Review all specimens before the next stage."
+                    else "Combined fit finished. Review all specimens before the next stage."
                 )
             )
             self.status.setText(self._fit_search_stop_text)
@@ -2104,6 +2231,22 @@ class ReferenceCalibrationDialog(QDialog):
         self._render()
         self.status.setText(f"Calibration stage could not continue: {message}")
 
+    @Slot(object)
+    def _worker_finished(self, worker: _CalibrationStageWorker) -> None:
+        # A prior completion may already have dispatched a new specimen worker.
+        if self._worker is worker:
+            self._worker = None
+            self._pending_specimen_review = None
+            self._render()
+            self.status.setText(
+                worker.error_message
+                or "The background task ended. Saved fits are retained; retry or close."
+            )
+
+    def _release_finished_worker(self) -> None:
+        if self._worker is not None and getattr(self._worker, "is_finished", False):
+            self._worker_finished(self._worker)
+
     def _visual_approvals(self) -> dict[str, bool]:
         current_ids = {candidate.candidate_id for candidate in self._snapshot.candidates}
         return {
@@ -2157,11 +2300,20 @@ class ReferenceCalibrationDialog(QDialog):
     def _find_fit(self) -> None:
         if self._worker is None and not self._restoring_search:
             if self._sequence_info:
+                selected = self.selection_combo.currentData()
+                if not selected and self._individual_checkpoint():
+                    completed = [c for c in self._snapshot.candidates if c.status == "completed"]
+                    if len(completed) != 1:
+                        self.status.setText(
+                            "Choose a completed fit before improving this specimen."
+                        )
+                        return
+                    selected = completed[0].candidate_id
                 self._start_pilot(
                     adaptive=False,
                     specimen_action=(
                         "improve" if self._individual_checkpoint() else "restart",
-                        str(self.selection_combo.currentData() or ""),
+                        str(selected or ""),
                         0,
                     ),
                 )
@@ -2173,7 +2325,8 @@ class ReferenceCalibrationDialog(QDialog):
         if self._worker is not None or self._restoring_search or not self._individual_checkpoint():
             return
         response = QMessageBox.question(
-            self, "New common control basis",
+            self,
+            "New common control basis",
             "Test more control points, starting with this specimen? All specimens need "
             "new approval on this model. Your earlier searches and approvals stay saved.",
         )
@@ -2191,7 +2344,8 @@ class ReferenceCalibrationDialog(QDialog):
         self._render(self._snapshot)
         self.status.setText("Loading saved searches…")
         self._saved_search_loader.request_operation(
-            ("list", origin), lambda: saved_sequences(origin))
+            ("list", origin), lambda: saved_sequences(origin)
+        )
 
     @Slot(object, str)
     def _saved_search_failed(self, _key: object, message: str) -> None:
@@ -2210,10 +2364,13 @@ class ReferenceCalibrationDialog(QDialog):
             if not rows:
                 self._saved_search_failed(key, "No compatible saved specimen search found.")
                 return
-            labels = [f"{r['approved']} / {r['total']} approved — {Path(r['directory']).name}"
-                      for r in rows]
-            label, accepted = QInputDialog.getItem(self, "Saved fit searches", "Resume a search:",
-                                                  labels, 0, False)
+            labels = [
+                f"{r['approved']} / {r['total']} approved — {Path(r['directory']).name}"
+                for r in rows
+            ]
+            label, accepted = QInputDialog.getItem(
+                self, "Saved fit searches", "Resume a search:", labels, 0, False
+            )
             if not accepted:
                 self._restoring_search = False
                 self._render(self._snapshot)
@@ -2223,7 +2380,8 @@ class ReferenceCalibrationDialog(QDialog):
             selected = Path(rows[labels.index(label)]["directory"])
             self.status.setText("Verifying saved fits and approvals…")
             self._saved_search_loader.request_operation(
-                ("restore", origin), lambda: restore_saved_sequence(origin, selected))
+                ("restore", origin), lambda: restore_saved_sequence(origin, selected)
+            )
             return
         self._restoring_search = False
         self.study_directory = result.study_directory
@@ -2239,6 +2397,7 @@ class ReferenceCalibrationDialog(QDialog):
 
     @Slot()
     def _cancel(self) -> None:
+        self._release_finished_worker()
         if self._worker is None:
             return
         if self._worker.request_cancel():
@@ -2302,6 +2461,14 @@ class ReferenceCalibrationDialog(QDialog):
 
     @Slot(object, object)
     def _candidate_prepared(self, key: object, prepared: object) -> None:
+        if key[0] == "compare-plan-b":
+            root, candidate, pairs = prepared
+            dialog = CalibrationCandidateViewerDialog(
+                root, candidate, self, pairs=pairs, read_only=True
+            )
+            dialog.setWindowTitle("Plan B comparison — current fit (blue) / Plan B (orange)")
+            dialog.exec()
+            return
         root, candidate = key
         pairs, fit = prepared
         try:
@@ -2312,6 +2479,8 @@ class ReferenceCalibrationDialog(QDialog):
                 self,
                 subject_fit=fit,
                 pairs=pairs,
+                allow_plan_b=self._individual_checkpoint()
+                and Path(root).resolve() == self.study_directory.resolve(),
             )
             dialog.anatomical_notes.setText(
                 reviewed_snapshot.visual_review_notes.get(candidate.candidate_id, "")
@@ -2322,9 +2491,9 @@ class ReferenceCalibrationDialog(QDialog):
                     candidate.candidate_id, {}
                 ).items()
             }
-            dialog.subject_decisions = dict(
-                reviewed_snapshot.subject_decisions.get(candidate.candidate_id, {})
-            )
+            # Re-review is a new human decision. Previous decisions remain in the
+            # journal but must not silently pre-pass specimens or lock bulk approval.
+            dialog.subject_decisions = {}
             dialog._reviewed_pair_ids.update(
                 p.pair_id for p in dialog._pairs if p.original_path.name in dialog.subject_decisions
             )
@@ -2340,7 +2509,7 @@ class ReferenceCalibrationDialog(QDialog):
                     "Keeps this result and starts a new attempt for the same specimen."
                 )
                 dialog.complete_button.setText(
-                    "Approve → joint confirmation"
+                    "Approve → combined confirmation"
                     if checkpoint["index"] + 1 == checkpoint["total"]
                     else "Approve → next specimen"
                 )
@@ -2349,6 +2518,12 @@ class ReferenceCalibrationDialog(QDialog):
                 dialog._show_feature_check(dialog._pairs[int(index)])
             dialog._update_review_progress()
             dialog.exec()
+            if dialog.keep_as_plan_b:
+                if Path(root).resolve() == self.study_directory.resolve() and self._worker is None:
+                    self._start_pilot(
+                        adaptive=False, specimen_action=("maybe", candidate.candidate_id, 0)
+                    )
+                return
             if dialog.review_recorded:
                 record_reference_calibration_candidate_review(
                     root,
@@ -2381,6 +2556,7 @@ class ReferenceCalibrationDialog(QDialog):
             QMessageBox.warning(self, "Candidate viewer unavailable", str(error))
 
     def closeEvent(self, event: QCloseEvent) -> None:
+        self._release_finished_worker()
         if self._worker is None:
             super().closeEvent(event)
             return
@@ -2394,5 +2570,54 @@ class ReferenceCalibrationDialog(QDialog):
 
     def reject(self) -> None:
         """Escape must not hide/destroy a running pilot or lose its controller."""
+        self._release_finished_worker()
         if self._worker is None:
             super().reject()
+
+    def _restore_plan_b(self) -> None:
+        if self._worker is None and not self._restoring_search:
+            self._start_pilot(adaptive=False, specimen_action=("restore", "", 0))
+
+    def _compare_plan_b(self) -> None:
+        if self._worker is not None or self._restoring_search:
+            return
+        root, current_snapshot = self.study_directory, self._snapshot
+
+        def prepare():
+            from diffeoforge.mesh import sha256_file
+            from diffeoforge.reference_sequential_fit import (
+                _fallback_snapshot,
+                _read,
+                sequence_info,
+            )
+
+            info = sequence_info(root)
+            series = Path(info["root"])
+            state = _read(series)
+            record = state.get("fallbacks", {}).get(str(len(state["approved"])))
+            if record is None:
+                raise ValueError("No Plan B is saved for this specimen")
+            fallback = _fallback_snapshot(series, state, record)
+            saved = next(c for c in fallback.candidates if c.candidate_id == record["candidate_id"])
+            current = next(c for c in current_snapshot.candidates if c.status == "completed")
+            current_pair = next(
+                p for p in collect_calibration_qc_pairs(root, current) if p.required
+            )
+            saved_pair = next(
+                p
+                for p in collect_calibration_qc_pairs(fallback.study_directory, saved)
+                if p.required
+            )
+            compare = CalibrationQcPair(
+                pair_id="compare-plan-b",
+                label="Current fit / Plan B",
+                original_path=current_pair.reconstruction_path,
+                reconstruction_path=saved_pair.reconstruction_path,
+                required=False,
+                original_sha256=sha256_file(current_pair.reconstruction_path),
+                reconstruction_sha256=sha256_file(saved_pair.reconstruction_path),
+            )
+            return fallback.study_directory, saved, (compare,)
+
+        self.status.setText("Preparing Plan B comparison…")
+        self._viewer_preparation.request_operation(("compare-plan-b", root), prepare)

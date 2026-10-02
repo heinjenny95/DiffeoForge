@@ -41,8 +41,7 @@ RESULT_VERSION = "0.1"
 RESULT_NAME = "reference-pca-deformation-result.json"
 RESULT_SIDECAR = "reference-pca-deformation-result.sha256"
 DEFORMATION_EQUATION = (
-    "mean_momenta +/- standard_deviations * sqrt(explained_variance) * "
-    "component_loading"
+    "mean_momenta +/- standard_deviations * sqrt(explained_variance) * component_loading"
 )
 SCIENTIFIC_BOUNDARY = (
     "This prospective design defines Deformetrica Shooting endpoints in the exact "
@@ -101,8 +100,10 @@ def _write_json_exclusive(path: Path, value: object) -> None:
 
 
 def _write_momenta(path: Path, values: np.ndarray) -> None:
-    if values.ndim != 3 or values.shape[2] != 3:
+    if values.ndim != 3 or values.shape[2] != 3 or not values.shape[0] or not values.shape[1]:
         raise ValueError("Shooting momenta must have shape (endpoints, control points, 3)")
+    if not np.isfinite(values).all():
+        raise ValueError("Shooting momenta contain non-finite values")
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("x", encoding="utf-8", newline="\n") as handle:
         handle.write(f"{values.shape[0]} {values.shape[1]} 3\n")
@@ -135,9 +136,7 @@ def _safe_output_path(run: Path, record: Mapping[str, object]) -> Path:
     path = run / "output" / Path(*relative.parts)
     if path.is_symlink() or not path.is_file():
         raise ReferencePCADeformationError("Estimated reference template is missing or symbolic")
-    if path.stat().st_size != int(record["bytes"]) or sha256_file(path) != str(
-        record["sha256"]
-    ):
+    if path.stat().st_size != int(record["bytes"]) or sha256_file(path) != str(record["sha256"]):
         raise ReferencePCADeformationError(
             "Estimated reference template differs from the verified output inventory"
         )
@@ -177,6 +176,25 @@ def _render_shooting_model(source: bytes) -> bytes:
 
 
 def _endpoint_definition(pca, components: int, standard_deviations: float):
+    methods = {
+        "subject_initial_momenta_cartesian": "centered linear PCA by deterministic float64 SVD",
+        "subject_initial_momenta_lddmm_deformation_metric": (
+            "LDDMM deformation-kernel metric tangent PCA"
+        ),
+    }
+    if pca.feature_space not in {
+        "subject_initial_momenta_cartesian",
+        "subject_initial_momenta_lddmm_deformation_metric",
+    }:
+        raise ReferencePCADeformationError(
+            "This analysis has no supported shootable momenta mapping"
+        )
+    if pca.method != methods[pca.feature_space]:
+        raise ReferencePCADeformationError("The declared method and momenta feature space disagree")
+    _positive_integer("components", components)
+    if not 1 <= components <= pca.number_of_components:
+        raise ReferencePCADeformationError("Requested PC endpoints exceed the retained components")
+    _positive_real("standard_deviations", standard_deviations)
     feature_shape = (len(pca.feature_labels) // 3, 3)
     values = [np.asarray(pca.mean, dtype=np.float64).reshape(feature_shape)]
     endpoints: list[dict[str, object]] = [
@@ -199,9 +217,7 @@ def _endpoint_definition(pca, components: int, standard_deviations: float):
         displacement = deviation * pca.components[index]
         for direction, sign in (("minus", -1.0), ("plus", 1.0)):
             values.append(
-                np.asarray(pca.mean + sign * displacement, dtype=np.float64).reshape(
-                    feature_shape
-                )
+                np.asarray(pca.mean + sign * displacement, dtype=np.float64).reshape(feature_shape)
             )
             endpoints.append(
                 {
@@ -211,12 +227,13 @@ def _endpoint_definition(pca, components: int, standard_deviations: float):
                     "direction": direction,
                     "label": f"PC{component} {direction}",
                     "explained_variance": float(pca.explained_variance[index]),
-                    "explained_variance_ratio": float(
-                        pca.explained_variance_ratio[index]
-                    ),
+                    "explained_variance_ratio": float(pca.explained_variance_ratio[index]),
                 }
             )
-    return np.stack(values), endpoints, skipped
+    fields = np.stack(values)
+    if not np.isfinite(fields).all():
+        raise ReferencePCADeformationError("PC endpoint momenta are non-finite")
+    return fields, endpoints, skipped
 
 
 def create_reference_pca_deformation_design(
@@ -305,13 +322,9 @@ def create_reference_pca_deformation_design(
                 "run_directory": str(run),
                 "run_manifest_sha256": sha256_file(run / "manifest.json"),
                 "run_result_sha256": sha256_file(run / "result.json"),
-                "run_output_inventory_sha256": sha256_file(
-                    run / "output-inventory.json"
-                ),
+                "run_output_inventory_sha256": sha256_file(run / "output-inventory.json"),
                 "pca_bundle": str(bundle_path),
-                "pca_manifest_sha256": sha256_file(
-                    bundle_path / REFERENCE_PCA_MANIFEST
-                ),
+                "pca_manifest_sha256": sha256_file(bundle_path / REFERENCE_PCA_MANIFEST),
                 "model_xml_sha256": sha256_file(source_model),
                 "optimization_xml_sha256": sha256_file(source_optimization),
                 "estimated_template_sha256": sha256_file(template_path),
@@ -328,9 +341,7 @@ def create_reference_pca_deformation_design(
                 "control_point_count": inputs.control_point_count,
                 "dimension": 3,
                 "model_path": model_path.relative_to(temporary).as_posix(),
-                "optimization_parameters_path": optimization_path.relative_to(
-                    temporary
-                ).as_posix(),
+                "optimization_parameters_path": optimization_path.relative_to(temporary).as_posix(),
                 "momenta_path": endpoint_path.relative_to(temporary).as_posix(),
                 "template_path": copied_template.relative_to(temporary).as_posix(),
             },
@@ -375,9 +386,7 @@ def verify_reference_pca_deformation_design(
 
     root = Path(design_directory).expanduser().resolve()
     if not root.is_dir() or root.is_symlink():
-        raise ReferencePCADeformationError(
-            f"PCA deformation design is missing or symbolic: {root}"
-        )
+        raise ReferencePCADeformationError(f"PCA deformation design is missing or symbolic: {root}")
     manifest_path = root / DESIGN_NAME
     sidecar_path = root / DESIGN_SIDECAR
     if not manifest_path.is_file() or not sidecar_path.is_file():
@@ -444,9 +453,7 @@ def verify_reference_pca_deformation_design(
         "run_output_inventory_sha256": sha256_file(run / "output-inventory.json"),
         "pca_manifest_sha256": sha256_file(bundle_path / REFERENCE_PCA_MANIFEST),
         "model_xml_sha256": sha256_file(run / "engine" / "model.xml"),
-        "optimization_xml_sha256": sha256_file(
-            run / "engine" / "optimization_parameters.xml"
-        ),
+        "optimization_xml_sha256": sha256_file(run / "engine" / "optimization_parameters.xml"),
         "control_points_sha256": sha256_file(inputs.control_points_path),
     }
     template_record = _estimated_template_record(inputs.run_report.inventory)
@@ -457,12 +464,8 @@ def verify_reference_pca_deformation_design(
     if manifest.get("runtime") != inputs.run_report.manifest["effective_config"]["runtime"]:
         raise ReferencePCADeformationError("Design runtime differs from the source run")
 
-    components = _positive_integer(
-        "requested_components", shooting.get("requested_components")
-    )
-    deviations = _positive_real(
-        "standard_deviations", shooting.get("standard_deviations")
-    )
+    components = _positive_integer("requested_components", shooting.get("requested_components"))
+    deviations = _positive_real("standard_deviations", shooting.get("standard_deviations"))
     expected_values, expected_endpoints, expected_skipped = _endpoint_definition(
         bundle.pca,
         components,
@@ -492,10 +495,13 @@ def verify_reference_pca_deformation_design(
     expected_model = _render_shooting_model((run / "engine" / "model.xml").read_bytes())
     if _safe_design_path(root, shooting.get("model_path")).read_bytes() != expected_model:
         raise ReferencePCADeformationError("Shooting model XML differs from source derivation")
-    if _safe_design_path(
-        root,
-        shooting.get("optimization_parameters_path"),
-    ).read_bytes() != (run / "engine" / "optimization_parameters.xml").read_bytes():
+    if (
+        _safe_design_path(
+            root,
+            shooting.get("optimization_parameters_path"),
+        ).read_bytes()
+        != (run / "engine" / "optimization_parameters.xml").read_bytes()
+    ):
         raise ReferencePCADeformationError(
             "Shooting optimization parameters differ from the source run"
         )
@@ -535,10 +541,7 @@ def _final_shooting_output(
     endpoint_index: int,
     final_timepoint: int,
 ) -> Path:
-    pattern = (
-        f"Shooting_{endpoint_index}__GeodesicFlow__surface__tp_"
-        f"{final_timepoint}__age_*.vtk"
-    )
+    pattern = f"Shooting_{endpoint_index}__GeodesicFlow__surface__tp_{final_timepoint}__age_*.vtk"
     matches = tuple(output.glob(pattern))
     if len(matches) != 1:
         raise ReferencePCADeformationExecutionError(
@@ -577,15 +580,11 @@ def execute_reference_pca_deformation_design(
         else run / DEFAULT_RESULT_DIRECTORY
     )
     if target.exists():
-        raise FileExistsError(
-            f"PCA deformation result destination already exists: {target}"
-        )
+        raise FileExistsError(f"PCA deformation result destination already exists: {target}")
     target.parent.mkdir(parents=True, exist_ok=True)
     temporary = target.with_name(f".{target.name}.tmp-{uuid.uuid4().hex}")
     if temporary.exists():
-        raise FileExistsError(
-            f"Temporary PCA deformation result already exists: {temporary}"
-        )
+        raise FileExistsError(f"Temporary PCA deformation result already exists: {temporary}")
     try:
         temporary.mkdir()
         shutil.copytree(design_root, temporary / "design")
@@ -630,8 +629,7 @@ def execute_reference_pca_deformation_design(
         if completed.returncode != 0:
             tail = (stderr or stdout)[-2_000:]
             raise ReferencePCADeformationExecutionError(
-                "Deformetrica Shooting returned "
-                f"{completed.returncode}: {tail.strip()}"
+                f"Deformetrica Shooting returned {completed.returncode}: {tail.strip()}"
             )
 
         shooting = design["shooting"]
@@ -679,8 +677,7 @@ def execute_reference_pca_deformation_design(
         artifact_paths = sorted(
             path
             for path in temporary.rglob("*")
-            if path.is_file()
-            and path.name not in {RESULT_NAME, RESULT_SIDECAR}
+            if path.is_file() and path.name not in {RESULT_NAME, RESULT_SIDECAR}
         )
         artifacts = [_artifact(temporary, path) for path in artifact_paths]
         result = {
@@ -707,9 +704,7 @@ def execute_reference_pca_deformation_design(
                 "equation": shooting["equation"],
                 "standard_deviations": shooting["standard_deviations"],
                 "requested_components": shooting["requested_components"],
-                "skipped_zero_variance_components": shooting[
-                    "skipped_zero_variance_components"
-                ],
+                "skipped_zero_variance_components": shooting["skipped_zero_variance_components"],
                 "endpoint_count": shooting["endpoint_count"],
             },
             "endpoints": endpoint_records,
@@ -747,9 +742,7 @@ def verify_reference_pca_deformation_result(
 
     root = Path(result_directory).expanduser().resolve()
     if not root.is_dir() or root.is_symlink():
-        raise ReferencePCADeformationError(
-            f"PCA deformation result is missing or symbolic: {root}"
-        )
+        raise ReferencePCADeformationError(f"PCA deformation result is missing or symbolic: {root}")
     manifest_path = root / RESULT_NAME
     sidecar_path = root / RESULT_SIDECAR
     if not manifest_path.is_file() or not sidecar_path.is_file():
@@ -802,9 +795,7 @@ def verify_reference_pca_deformation_result(
     source_design = result.get("source_design")
     if not isinstance(source_design, Mapping) or (
         source_design.get("manifest_sha256") != sha256_file(nested_design / DESIGN_NAME)
-        or source_design.get("sidecar_sha256") != sha256_file(
-            nested_design / DESIGN_SIDECAR
-        )
+        or source_design.get("sidecar_sha256") != sha256_file(nested_design / DESIGN_SIDECAR)
     ):
         raise ReferencePCADeformationError("Result source-design binding differs")
     endpoints = result.get("endpoints")
@@ -814,15 +805,11 @@ def verify_reference_pca_deformation_result(
         "equation": shooting["equation"],
         "standard_deviations": shooting["standard_deviations"],
         "requested_components": shooting["requested_components"],
-        "skipped_zero_variance_components": shooting[
-            "skipped_zero_variance_components"
-        ],
+        "skipped_zero_variance_components": shooting["skipped_zero_variance_components"],
         "endpoint_count": shooting["endpoint_count"],
     }
     if result.get("shooting") != expected_shooting:
-        raise ReferencePCADeformationError(
-            "Result Shooting summary differs from the design"
-        )
+        raise ReferencePCADeformationError("Result Shooting summary differs from the design")
     expected_endpoints = shooting["endpoints"]
     if not isinstance(endpoints, list) or len(endpoints) != len(expected_endpoints):
         raise ReferencePCADeformationError("Result endpoint count differs from the design")

@@ -73,11 +73,20 @@ def _qc_test_evidence(review):
         for key in (item.original_artifact_key, item.reconstruction_artifact_key):
             path = review.run_directory / f"{key}.vtk"
             path.write_bytes(mesh_bytes)
-            artifacts.append(ModernResultArtifact(
-                key, key, path, "vtk", len(mesh_bytes), sha256_file(path), "Test overlay",
-            ))
+            artifacts.append(
+                ModernResultArtifact(
+                    key,
+                    key,
+                    path,
+                    "vtk",
+                    len(mesh_bytes),
+                    sha256_file(path),
+                    "Test overlay",
+                )
+            )
     return replace(
-        review, artifacts=tuple(artifacts),
+        review,
+        artifacts=tuple(artifacts),
         workflow_manifest_sha256=sha256_file(review.workflow_manifest_path),
         bundle_manifest_sha256=sha256_file(review.bundle_manifest_path),
     )
@@ -192,8 +201,11 @@ def test_registration_qc_decision_advances_once_and_stops_after_last(
     window._load_selected_atlas_mesh = loaded.append  # type: ignore[method-assign]
     # This isolated navigation fixture stubs loading; real frame gating is tested
     # in test_desktop_registration_release.
-    monkeypatch.setattr(type(window.result_registration_qc_canvas),
-                        "full_resolution_ready", property(lambda self: True))
+    monkeypatch.setattr(
+        type(window.result_registration_qc_canvas),
+        "full_resolution_ready",
+        property(lambda self: True),
+    )
 
     window._loaded_qc_subject = "subject-1"
     window.result_qc_inspected_check.setChecked(True)
@@ -285,8 +297,11 @@ def test_registration_qc_autosave_failure_does_not_change_or_advance(
         "diffeoforge.desktop.widgets.save_registration_qc_draft",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("read-only storage")),
     )
-    monkeypatch.setattr(type(window.result_registration_qc_canvas),
-                        "full_resolution_ready", property(lambda self: True))
+    monkeypatch.setattr(
+        type(window.result_registration_qc_canvas),
+        "full_resolution_ready",
+        property(lambda self: True),
+    )
 
     window._loaded_qc_subject = "subject-1"
     window.result_qc_inspected_check.setChecked(True)
@@ -593,7 +608,7 @@ def test_desktop_window_constructs_in_offscreen_smoke() -> None:
         or (
             sys.platform == "darwin"
             and re.fullmatch(
-                r'qt\.qpa\.fonts: Populating font family aliases took \d+ ms\. '
+                r"qt\.qpa\.fonts: Populating font family aliases took \d+ ms\. "
                 r'Replace uses of missing font family "Sans Serif" '
                 r"with one that exists to avoid this cost\.\s*",
                 line,
@@ -1229,6 +1244,12 @@ def test_desktop_requires_exact_procrustes_preview_approval_and_rejects_drift(
     assert window.create_button.isEnabled() is False
     assert window.create_button.text() == "Preview & approve alignment first"
     assert window.preview_procrustes_button.isEnabled() is True
+    # v93 made deep validation explicit. Parameter editing must not launch it.
+    assert not queued
+    window._start_input_preflight()
+    assert len(queued) == 1
+    queued.pop().run()
+    application.processEvents()
     window.preview_procrustes_button.click()
     assert len(queued) == 1
     assert isinstance(queued[0], _ProcrustesPreviewWorker)
@@ -1246,12 +1267,17 @@ def test_desktop_requires_exact_procrustes_preview_approval_and_rejects_drift(
     assert preview_report.isReadOnly() is True
     assert preview_report.horizontalScrollBarPolicy() == Qt.ScrollBarPolicy.ScrollBarAlwaysOff
     assert preview_report.verticalScrollBarPolicy() == Qt.ScrollBarPolicy.ScrollBarAsNeeded
-    assert "Final mean change" in preview_report.text()
-    assert "fingerprint" in preview_report.text()
-    assert "does not establish biological landmark quality." in preview_report.text()
+    assert "Open visual GPA review" in preview_report.text()
+    assert "fingerprint" not in preview_report.text()
+    assert "Final mean change" in window.procrustes_preview_details.text()
+    assert "fingerprint" in window.procrustes_preview_details.text()
+    assert (
+        "does not establish biological landmark quality."
+        in window.procrustes_preview_details.text()
+    )
     preview_report.resize(360, preview_report.height())
     application.processEvents()
-    assert preview_report.verticalScrollBar().maximum() > 0
+    assert preview_report.verticalScrollBar().maximum() == 0
     window.review_procrustes_visual_button.click()
     assert len(queued) == 2
     assert isinstance(queued[1], _ProcrustesVisualWorker)
@@ -1260,7 +1286,7 @@ def test_desktop_requires_exact_procrustes_preview_approval_and_rejects_drift(
     assert window._procrustes_visual is not None
     assert window._procrustes_visual_reviewed_fingerprint == window._procrustes_preview.fingerprint
     assert window.approve_procrustes_check.isEnabled() is True
-    assert "Visual GPA review completed" in preview_report.text()
+    assert "Visual review complete" in preview_report.text()
     assert window.create_button.text() == "Approve reviewed alignment first"
     window.approve_procrustes_check.setChecked(True)
     application.processEvents()
@@ -3686,7 +3712,7 @@ def test_desktop_window_verifies_and_renders_step_five_before_artifact_handoff(
     assert "not proof" in window.result_completion_label.text()
     assert window.reference_pca_deformation_card.isHidden() is False
     assert window.generate_reference_pca_deformations_button.isEnabled() is True
-    assert "does not refit" in window.reference_pca_deformation_status_label.text()
+    assert "Click to generate" in window.reference_pca_deformation_status_label.text()
 
     monkeypatch.setattr(
         QMessageBox,
@@ -3724,8 +3750,8 @@ def test_desktop_window_verifies_and_renders_step_five_before_artifact_handoff(
             artifacts=reference_review.artifacts + (pca_mean_artifact,),
         )
     )
-    assert window.generate_reference_pca_deformations_button.isEnabled() is False
-    assert window.generate_reference_pca_deformations_button.text() == ("PC shape meshes generated")
+    assert window.generate_reference_pca_deformations_button.isEnabled() is True
+    assert window.generate_reference_pca_deformations_button.text() == "View saved PC shape meshes"
     assert "loaded in the atlas viewer" in (window.reference_pca_deformation_status_label.text())
     window._show_run_page_from_results()
     assert window.page_stack.currentIndex() == 3
@@ -3757,7 +3783,7 @@ def test_desktop_can_select_a_saved_completed_run(monkeypatch, tmp_path, referen
             encoding="utf-8",
         )
     else:
-        (run / "workflow-manifest.json").write_text('{}\n', encoding="utf-8")
+        (run / "workflow-manifest.json").write_text("{}\n", encoding="utf-8")
     queued = []
 
     class FakePool:
@@ -3943,9 +3969,7 @@ def test_completed_shape_space_comparison_opens_pdf_and_exposes_html(
     assert window.open_shape_space_html_button.isHidden() is False
     window.open_shape_space_html_button.click()
     assert opened == [pdf, report]
-    assert "PDF saved in the project folder" in (
-        window.shape_space_comparison_status_label.text()
-    )
+    assert "PDF saved in the project folder" in (window.shape_space_comparison_status_label.text())
     assert "does not validate registration" in window.shape_space_comparison_status_label.text()
     assert "Test evidence passed" in window.shape_space_comparison_details.text()
     artifact.manifest["default_decision"]["status"] = "not_supported"
@@ -4189,9 +4213,7 @@ def test_desktop_explains_a_selected_run_that_cannot_be_continued(
     )
     (run / "events.jsonl").write_text('{"event":"interrupted"}\n', encoding="utf-8")
     before = {path.name: path.read_bytes() for path in run.iterdir()}
-    monkeypatch.setattr(
-        QFileDialog, "getExistingDirectory", lambda *_args, **_kwargs: str(run)
-    )
+    monkeypatch.setattr(QFileDialog, "getExistingDirectory", lambda *_args, **_kwargs: str(run))
     monkeypatch.setattr(QMessageBox, "warning", _answer_yes_and_record(shown := []))
     # A run without any checkpoint is rejected by the real verifier before hashing.
     monkeypatch.setattr(
@@ -4224,8 +4246,11 @@ def test_desktop_explains_a_selected_run_that_cannot_be_continued(
     assert "found nothing it can use" in window.data_status_label.text()
     window.project_edit.setText(str(tmp_path / "other"))
     assert "found nothing it can use" not in window.data_status_label.text()
-    for name in ("open_completed_run_button", "resume_interrupted_run_button",
-                 "recover_abandoned_run_button"):
+    for name in (
+        "open_completed_run_button",
+        "resume_interrupted_run_button",
+        "recover_abandoned_run_button",
+    ):
         assert getattr(window, name).isEnabled() is True
     assert {path.name: path.read_bytes() for path in run.iterdir()} == before
     window.close()
@@ -4269,8 +4294,11 @@ def test_desktop_shows_progress_and_blocks_repeats_while_a_folder_is_inspected(
     for label in (window.status_label, window.data_status_label):
         assert str(tmp_path) in label.text()
         assert "read-only" in label.text()
-    for name in ("open_completed_run_button", "resume_interrupted_run_button",
-                 "recover_abandoned_run_button"):
+    for name in (
+        "open_completed_run_button",
+        "resume_interrupted_run_button",
+        "recover_abandoned_run_button",
+    ):
         assert getattr(window, name).isEnabled() is False
     window._select_interrupted_run()
     window._select_abandoned_run()

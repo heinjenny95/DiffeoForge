@@ -384,9 +384,7 @@ def _validation_evidence(
         artifact = verify_reference_sensitivity_assessment(sensitivity_assessment)
         detailed = artifact.manifest
         detailed_source = artifact.artifact_directory / SENSITIVITY_ASSESSMENT_JSON
-        detailed_study = Path(
-            str(detailed["source"]["validation_study_directory"])
-        ).resolve()
+        detailed_study = Path(str(detailed["source"]["validation_study_directory"])).resolve()
         if directory is None:
             directory = detailed_study
         elif Path(directory).expanduser().resolve() != detailed_study:
@@ -616,7 +614,14 @@ def _methods(review: ModernResultReview, config: Mapping[str, Any]) -> str:
         f"time points and {noise}. {gpa_text} Optimization used {optimizer_method}. "
         "Subject shape variation was summarized using "
         f"{pca_method} of subject-specific initial momenta. "
-        "Registration quality was assessed from verified surface reconstructions; residual "
+        + (
+            "This is a tangent approximation to PGA (Vaillant et al., 2004, "
+            "doi:10.1016/j.neuroimage.2004.07.023; Fletcher et al., 2004, "
+            "doi:10.1109/TMI.2004.831793), not exact nonlinear PGA or an intrinsic mean. "
+            if review.pca_method_id == "lddmm_deformation_kernel_pca"
+            else ""
+        )
+        + "Registration quality was assessed from verified surface reconstructions; residual "
         "ranking was used only to prioritize visual inspection."
     )
 
@@ -646,8 +651,11 @@ def _claim_matrix(
     implausible = sum(value == "fail" for value in decisions.values())
     uncertain = sum(value == "uncertain" for value in decisions.values())
     registration_status: ClaimStatus = (
-        "not_supported" if implausible else
-        "supported" if subjects and reviewed == len(subjects) and not uncertain else "partial"
+        "not_supported"
+        if implausible
+        else "supported"
+        if subjects and reviewed == len(subjects) and not uncertain
+        else "partial"
     )
     sensitivity_status: ClaimStatus = "not_assessed"
     sensitivity_evidence = "No verified neighboring-parameter study was supplied."
@@ -738,8 +746,7 @@ def _claim_matrix(
                 if template_robustness is None
                 else (
                     "supported"
-                    if template_robustness["status"]
-                    == "stable_across_tested_start_templates"
+                    if template_robustness["status"] == "stable_across_tested_start_templates"
                     else "partial"
                 )
             ),
@@ -800,9 +807,7 @@ def collect_scientific_atlas_report(
         sensitivity_assessment,
     )
     holdout, holdout_source = _holdout_evidence(holdout_study, sensitivity)
-    template_evidence, template_source = _template_robustness_evidence(
-        template_robustness
-    )
+    template_evidence, template_source = _template_robustness_evidence(template_robustness)
     stability, stability_source = _pca_stability_evidence(pca_stability)
     sources = [
         ("workflow_manifest", review.workflow_manifest_path, review.workflow_manifest_sha256),
@@ -945,9 +950,10 @@ def render_scientific_report_html(report: ScientificAtlasReport) -> str:
     optimizer_plot = _embedded_artifact_svg(report, "optimizer-convergence-plot")
     qc_warning = (
         '<div class="summary not_supported"><strong>Exploratory results — QC concerns:</strong> '
-        f'{html.escape(decision_summary)}. All specimens remain included. Review completion '
-        'is not scientific approval; interpret and share plots with this QC status.</div>'
-        if any(value in {"uncertain", "fail"} for value in decisions.values()) else ""
+        f"{html.escape(decision_summary)}. All specimens remain included. Review completion "
+        "is not scientific approval; interpret and share plots with this QC status.</div>"
+        if any(value in {"uncertain", "fail"} for value in decisions.values())
+        else ""
     )
     pca_plot = _embedded_artifact_svg(report, "pca-scree")
     figures = [
@@ -972,11 +978,7 @@ def render_scientific_report_html(report: ScientificAtlasReport) -> str:
     evidence_cards = []
     if report.sensitivity is not None:
         automatic = report.sensitivity["automatic_assessment"]
-        automatic_text = (
-            "not supplied"
-            if automatic is None
-            else str(automatic["status"])
-        )
+        automatic_text = "not supplied" if automatic is None else str(automatic["status"])
         evidence_cards.append(
             "<div class='card'><h3>Neighboring-parameter sensitivity</h3>"
             f"<p>Status: <strong>{html.escape(str(report.sensitivity['status']))}</strong>; "

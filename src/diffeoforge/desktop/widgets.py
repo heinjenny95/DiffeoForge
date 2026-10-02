@@ -646,7 +646,10 @@ class _SetupRestoreWorker(QRunnable):
     def run(self) -> None:
         try:
             result = restore_setup_checkpoint(
-                self.project, self.form, self.paths, self.landmarks,
+                self.project,
+                self.form,
+                self.paths,
+                self.landmarks,
             )
         except (OSError, RuntimeError, TypeError, ValueError) as error:
             self.signals.failed.emit(str(error))
@@ -871,7 +874,8 @@ class _ResultReviewWorker(QRunnable):
     def verification_message(self) -> str:
         scope = (
             "the complete Deformetrica run and its bound PCA snapshot"
-            if self.reference else "the complete Modern workflow and result bundle"
+            if self.reference
+            else "the complete Modern workflow and result bundle"
         )
         return (
             f"Reverifying {scope}… Large runs can take several minutes. "
@@ -3032,13 +3036,10 @@ class DiffeoForgeWindow(QMainWindow):
         reference_pca_deformation_layout = QVBoxLayout(self.reference_pca_deformation_card)
         reference_pca_deformation_layout.setContentsMargins(24, 22, 24, 24)
         reference_pca_deformation_layout.setSpacing(10)
-        reference_pca_deformation_title = QLabel("Deformetrica PC shape meshes")
+        reference_pca_deformation_title = QLabel("Shape changes along PC axes")
         reference_pca_deformation_title.setObjectName("sectionTitle")
         reference_pca_deformation_summary = QLabel(
-            "Generate the mean-momenta shape and the negative and positive 2-SD "
-            "endpoints for up to the first three retained PCs. DiffeoForge uses the "
-            "exact verified source Deformetrica runtime and adds only fully verified "
-            "final-timepoint VTKs to the viewer above."
+            "View the mean and −2 / +2 SD shapes for PC1–PC3."
         )
         reference_pca_deformation_summary.setWordWrap(True)
         self.reference_pca_deformation_status_label = QLabel(
@@ -3047,7 +3048,7 @@ class DiffeoForgeWindow(QMainWindow):
         self.reference_pca_deformation_status_label.setObjectName("status")
         self.reference_pca_deformation_status_label.setWordWrap(True)
         self.generate_reference_pca_deformations_button = QPushButton(
-            "Generate verified PC shape meshes…"
+            "Show shape changes along PC axes…"
         )
         self.generate_reference_pca_deformations_button.setObjectName("primary")
         self.generate_reference_pca_deformations_button.clicked.connect(
@@ -3071,7 +3072,7 @@ class DiffeoForgeWindow(QMainWindow):
         reference_pca_deformation_layout.addWidget(self.reference_pca_deformation_status_label)
         reference_pca_deformation_layout.addWidget(self.generate_reference_pca_deformations_button)
         self.reference_pca_deformation_card.hide()
-        layout.addWidget(self.reference_pca_deformation_card)
+        layout.insertWidget(layout.indexOf(pca_plots) + 1, self.reference_pca_deformation_card)
 
         validation_lab = QFrame()
         validation_lab.setObjectName("card")
@@ -3952,9 +3953,7 @@ class DiffeoForgeWindow(QMainWindow):
             "At least three non-collinear landmarks are required for generalized "
             "Procrustes. DiffeoForge imposes no study-specific ten-landmark cap."
         )
-        self.landmark_auto_advance_check = QCheckBox(
-            "Load next mesh automatically"
-        )
+        self.landmark_auto_advance_check = QCheckBox("Load next mesh automatically")
         self.landmark_auto_advance_check.setToolTip(
             "Load the next mesh after all planned landmarks on the current mesh are placed."
         )
@@ -4079,26 +4078,31 @@ class DiffeoForgeWindow(QMainWindow):
             )
         )
         procrustes_layout.addLayout(procrustes_advanced)
-        procrustes_layout.addWidget(procrustes_hint)
+        procrustes_layout.addWidget(InfoDisclosure("Alignment method", procrustes_hint))
         self.preview_procrustes_button = QPushButton("Preview alignment")
         self.preview_procrustes_button.setObjectName("secondary")
         self.preview_procrustes_button.clicked.connect(self._preview_procrustes)
         self.procrustes_preview_status_label = _ReadOnlyStatusText(
             "No alignment preview has been reviewed."
         )
+        self.procrustes_preview_status_label.setMinimumHeight(54)
+        self.procrustes_preview_status_label.setMaximumHeight(76)
         self.procrustes_preview_status_label.setObjectName("status")
         self.review_procrustes_visual_button = QPushButton("Open visual GPA review...")
         self.review_procrustes_visual_button.setObjectName("secondary")
         self.review_procrustes_visual_button.setEnabled(False)
         self.review_procrustes_visual_button.clicked.connect(self._open_procrustes_visual_review)
-        self.approve_procrustes_check = QCheckBox(
-            "I reviewed the numerical report and completed the visual GPA review"
-        )
+        self.approve_procrustes_check = QCheckBox("I approve the visually reviewed alignment")
         self.approve_procrustes_check.setEnabled(False)
         self.approve_procrustes_check.toggled.connect(self._reference_recommendation_inputs_changed)
         self.approve_procrustes_check.toggled.connect(self._save_setup_checkpoint)
         procrustes_layout.addWidget(self.preview_procrustes_button)
         procrustes_layout.addWidget(self.procrustes_preview_status_label)
+        self.procrustes_preview_details = QLabel()
+        self.procrustes_preview_details.setWordWrap(True)
+        procrustes_layout.addWidget(
+            InfoDisclosure("Alignment details", self.procrustes_preview_details)
+        )
         procrustes_layout.addWidget(self.review_procrustes_visual_button)
         procrustes_layout.addWidget(self.approve_procrustes_check)
         self._procrustes_setting_widgets = (
@@ -4443,7 +4447,8 @@ class DiffeoForgeWindow(QMainWindow):
             Qt.TextInteractionFlag.TextSelectableByMouse
         )
         self.result_details = InfoDisclosure(
-            "Project files and preparation details", self.result_details_label,
+            "Project files and preparation details",
+            self.result_details_label,
             accessible_name="Project paths, provenance and preparation notices",
         )
         layout.addWidget(self.result_details)
@@ -4560,7 +4565,8 @@ class DiffeoForgeWindow(QMainWindow):
             self._current_procrustes_scaling_mode(),
             signature,
             Path(self.project_edit.text().strip()).expanduser().resolve()
-            if self.project_edit.text().strip() else None,
+            if self.project_edit.text().strip()
+            else None,
         )
         worker.signals.succeeded.connect(self._input_preflight_succeeded)
         worker.signals.failed.connect(self._input_preflight_failed)
@@ -5062,6 +5068,7 @@ class DiffeoForgeWindow(QMainWindow):
         self.approve_procrustes_check.setEnabled(False)
         self.review_procrustes_visual_button.setText("Open visual GPA review...")
         self.review_procrustes_visual_button.setEnabled(False)
+        self.procrustes_preview_details.clear()
         self.procrustes_preview_status_label.setObjectName("status")
         self.procrustes_preview_status_label.setStyleSheet("")
         if preview_running:
@@ -5986,7 +5993,7 @@ class DiffeoForgeWindow(QMainWindow):
             "statusSuccess" if alignment.converged else "statusError"
         )
         self.procrustes_preview_status_label.setStyleSheet("")
-        self.procrustes_preview_status_label.setText(
+        self.procrustes_preview_details.setText(
             f"Read-only preview {status}: {specimen_count} meshes, "
             f"{len(preview.landmark_labels)} landmarks, "
             f"{len(alignment.history)} iterations ({alignment.termination_reason}).\n"
@@ -6011,6 +6018,11 @@ class DiffeoForgeWindow(QMainWindow):
             "does not establish biological landmark quality.\n"
             "Next: open the visual GPA review to inspect the transformed cohort before "
             "the approval checkbox becomes available."
+        )
+        self.procrustes_preview_status_label.setText(
+            f"Alignment preview ready: {specimen_count} meshes. Open visual GPA review."
+            if alignment.converged
+            else "Alignment did not converge. Check the alignment details."
         )
         self.approve_procrustes_check.setChecked(False)
         self.approve_procrustes_check.setEnabled(False)
@@ -6090,14 +6102,14 @@ class DiffeoForgeWindow(QMainWindow):
             and self._preview_matches_current_procrustes_inputs()
         ):
             self._procrustes_visual_reviewed_fingerprint = preview.fingerprint
-            report = self.procrustes_preview_status_label.text()
-            completion = (
-                "Visual GPA review completed for this exact fingerprint. "
-                f"The reviewer opened {dialog.viewed_mesh_count} individual mesh(es); "
-                "the cohort overlay included every mesh."
+            self.procrustes_preview_details.setText(
+                self.procrustes_preview_details.text()
+                + "\nVisual review completed; "
+                + f"{dialog.viewed_mesh_count} individual meshes opened, all meshes in overlay."
             )
-            if "Visual GPA review completed for this exact fingerprint." not in report:
-                self.procrustes_preview_status_label.setText(f"{report}\n{completion}")
+            self.procrustes_preview_status_label.setText(
+                "Visual review complete. Confirm the alignment below."
+            )
             self.approve_procrustes_check.setChecked(False)
         self._save_setup_checkpoint()
         self._update_procrustes_controls()
@@ -7106,9 +7118,7 @@ class DiffeoForgeWindow(QMainWindow):
             if announce:
                 self.data_status_label.setObjectName("status")
                 self.data_status_label.setStyleSheet("")
-                self.data_status_label.setText(
-                    "Project paths loaded. Verifying saved checks…"
-                )
+                self.data_status_label.setText("Project paths loaded. Verifying saved checks…")
         finally:
             self._restoring_setup = False
         self._restore_setup_checkpoint()
@@ -7119,10 +7129,13 @@ class DiffeoForgeWindow(QMainWindow):
             return str(Path(value).expanduser().resolve()) if value else ""
 
         return {
-            "meshes": path_text(self.mesh_edit), "project": path_text(self.project_edit),
-            "template": path_text(self.template_edit), "landmarks": path_text(self.landmarks_edit),
+            "meshes": path_text(self.mesh_edit),
+            "project": path_text(self.project_edit),
+            "template": path_text(self.template_edit),
+            "landmarks": path_text(self.landmarks_edit),
             "pattern": self.pattern_edit.text().strip(),
-            "engine": str(self.engine_combo.currentData()), "unit": self.units_combo.currentData(),
+            "engine": str(self.engine_combo.currentData()),
+            "unit": self.units_combo.currentData(),
             "apply_alignment": self.procrustes_apply_check.isChecked(),
             "remove_size": self._current_procrustes_removes_size(),
             "scaling_mode": self._current_procrustes_scaling_mode(),
@@ -7136,9 +7149,11 @@ class DiffeoForgeWindow(QMainWindow):
     def _save_setup_checkpoint(self) -> None:
         if self._restoring_setup or not self.project_edit.text().strip():
             return
-        report = self._input_preflight if (
-            self._input_preflight_signature == self._current_input_preflight_signature()
-        ) else None
+        report = (
+            self._input_preflight
+            if (self._input_preflight_signature == self._current_input_preflight_signature())
+            else None
+        )
         preview = (
             self._procrustes_preview if self._preview_matches_current_procrustes_inputs() else None
         )
@@ -7146,7 +7161,10 @@ class DiffeoForgeWindow(QMainWindow):
             return
         try:
             save_setup_checkpoint(
-                self.project_edit.text().strip(), self._setup_checkpoint_form(), report, preview,
+                self.project_edit.text().strip(),
+                self._setup_checkpoint_form(),
+                report,
+                preview,
                 self._procrustes_visual_reviewed_fingerprint,
                 self._approved_procrustes_fingerprint() is not None,
             )
@@ -7172,7 +7190,10 @@ class DiffeoForgeWindow(QMainWindow):
             return
         worker = _SetupRestoreWorker(
             Path(self.project_edit.text().strip()).expanduser().resolve(),
-            self._setup_checkpoint_form(), paths, landmarks, signature,
+            self._setup_checkpoint_form(),
+            paths,
+            landmarks,
+            signature,
         )
         worker.signals.succeeded.connect(self._setup_checkpoint_restored)
         worker.signals.failed.connect(self._setup_checkpoint_failed)
@@ -7187,8 +7208,10 @@ class DiffeoForgeWindow(QMainWindow):
         if not isinstance(worker, _SetupRestoreWorker):
             return
         self._worker = None
-        if (worker.form != self._setup_checkpoint_form()
-                or worker.signature != self._current_input_preflight_signature()):
+        if (
+            worker.form != self._setup_checkpoint_form()
+            or worker.signature != self._current_input_preflight_signature()
+        ):
             self._sync_ready_state()
             return
         self._restoring_setup = True
@@ -7198,7 +7221,8 @@ class DiffeoForgeWindow(QMainWindow):
             self._input_preflight_failed_signature = None
             self.input_preflight_status_label.setText(
                 format_mesh_input_preflight(restored.preflight)
-                if restored.preflight else restored.message
+                if restored.preflight
+                else restored.message
             )
             if restored.preview is not None:
                 self._procrustes_preview_succeeded(restored.preview)
@@ -7472,9 +7496,9 @@ class DiffeoForgeWindow(QMainWindow):
             and self._worker is None
         )
         self.validate_meshes_button.setText(
-            "Validating meshes…" if validation_running else (
-                "Meshes checked" if validation_current else "Run deep mesh validation"
-            )
+            "Validating meshes…"
+            if validation_running
+            else ("Meshes checked" if validation_current else "Run deep mesh validation")
         )
         self.load_last_project_button.setEnabled(
             bool(self._recent_projects) and self._worker is None and not validation_running
@@ -7493,7 +7517,8 @@ class DiffeoForgeWindow(QMainWindow):
         )
         self.continue_parameter_button.setEnabled(
             (data_ready or resumable_reference_project)
-            and self._worker is None and not validation_running
+            and self._worker is None
+            and not validation_running
         )
         self.new_project_instead_button.setVisible(resumable_reference_project)
         self.new_project_instead_button.setEnabled(
@@ -7583,11 +7608,10 @@ class DiffeoForgeWindow(QMainWindow):
         self.open_completed_run_button.setEnabled(self._worker is None)
         self.open_completed_run_button.setText(
             "Verifying completed run…"
-            if isinstance(self._worker, _ResultReviewWorker) else "Open completed run…"
+            if isinstance(self._worker, _ResultReviewWorker)
+            else "Open completed run…"
         )
-        looking_up = (
-            self._worker.purpose if isinstance(self._worker, _RunLookupWorker) else None
-        )
+        looking_up = self._worker.purpose if isinstance(self._worker, _RunLookupWorker) else None
         self.resume_interrupted_run_button.setEnabled(self._worker is None)
         self.resume_interrupted_run_button.setText(
             "Inspecting selected folder…"
@@ -8199,6 +8223,14 @@ class DiffeoForgeWindow(QMainWindow):
             pass
         else:
             self._sync_reference_pca_deformation_action(review)
+            self.result_atlas_mesh_group_combo.setCurrentIndex(
+                self.result_atlas_mesh_group_combo.findData("summary")
+            )
+            self.result_atlas_mesh_search_edit.clear()
+            index = self.result_atlas_mesh_combo.findData("pca-mean-shape")
+            if index >= 0:
+                self.result_atlas_mesh_combo.setCurrentIndex(index)
+            self.result_atlas_mesh_combo.setFocus()
             return
         choice = QMessageBox.warning(
             self,
@@ -8320,11 +8352,9 @@ class DiffeoForgeWindow(QMainWindow):
         else:
             generated = True
         self.generate_reference_pca_deformations_button.setText(
-            "PC shape meshes generated" if generated else "Generate verified PC shape meshes…"
+            "View saved PC shape meshes" if generated else "Show shape changes along PC axes…"
         )
-        self.generate_reference_pca_deformations_button.setEnabled(
-            not generated and self._worker is None
-        )
+        self.generate_reference_pca_deformations_button.setEnabled(self._worker is None)
         self.reference_pca_deformation_status_label.setObjectName(
             "statusSuccess" if generated else "status"
         )
@@ -8332,10 +8362,7 @@ class DiffeoForgeWindow(QMainWindow):
         self.reference_pca_deformation_status_label.setText(
             "Verified mean and ±PC endpoint meshes are loaded in the atlas viewer."
             if generated
-            else (
-                "No endpoint meshes exist yet. Starting creates a separate immutable "
-                "Shooting result; it does not refit the atlas."
-            )
+            else ("No axis shapes saved yet. Click to generate them.")
         )
 
     @Slot()
@@ -10845,8 +10872,11 @@ class DiffeoForgeWindow(QMainWindow):
         self.result_pca_method_disclosure.content_widget.setText(
             f"Active verified method: {method_label} (ID: {review.pca_method_id}). "
             + (
-                "Here the fitted LDDMM deformation kernel defines the tangent-space metric; "
-                "this is a linear metric-aware PCA and is not generic nonlinear KernelPCA."
+                "PCA uses the fitted LDDMM tangent metric (linearized PGA). Axis shapes use "
+                "geodesic shooting. This is a tangent approximation, not exact nonlinear PGA "
+                "or an intrinsic-mean claim. Vaillant et al. (2004), "
+                "doi:10.1016/j.neuroimage.2004.07.023; Fletcher et al. (2004), "
+                "doi:10.1109/TMI.2004.831793."
                 if review.pca_method_id == "lddmm_deformation_kernel_pca"
                 else (
                     "This is linear PCA of flattened Cartesian initial momenta. It does not "
@@ -11731,9 +11761,10 @@ class DiffeoForgeWindow(QMainWindow):
             eligible = False
             release_hint = str(error)
         self.result_qc_finalize_button.setText(
-            "Finish review && view with QC warnings" if has_concerns else (
-                "Finish review && view results" if required
-                else "View results (no flagged cases)"
+            "Finish review && view with QC warnings"
+            if has_concerns
+            else (
+                "Finish review && view results" if required else "View results (no flagged cases)"
             )
         )
         self.result_qc_finalize_button.setEnabled(
@@ -11760,8 +11791,10 @@ class DiffeoForgeWindow(QMainWindow):
             + screening
             + (
                 "Exploratory results available with QC concerns; every specimen remains included."
-                if released and has_concerns else
-                "Results available; every specimen remains included." if released else release_hint
+                if released and has_concerns
+                else "Results available; every specimen remains included."
+                if released
+                else release_hint
             )
         )
 
@@ -11788,8 +11821,11 @@ class DiffeoForgeWindow(QMainWindow):
         )
         self.result_atlas_status_label.setStyleSheet("")
         self.result_atlas_status_label.setText(
-            ("Review completed with QC concerns; results are exploratory. " if has_concerns else
-             "Required review completed. ")
+            (
+                "Review completed with QC concerns; results are exploratory. "
+                if has_concerns
+                else "Required review completed. "
+            )
             + "Atlas, PCA and all specimen decisions are unchanged. "
             "Scientific reports now bind to this exact finalized review."
         )
@@ -12508,7 +12544,8 @@ class DiffeoForgeWindow(QMainWindow):
     def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802 - Qt API name
         if self._reference_calibration_dialog is not None:
             QMessageBox.information(
-                self, "Pilot window is open",
+                self,
+                "Pilot window is open",
                 "Close the pilot window first. A running pilot must be cancelled safely "
                 "before closing; minimizing either window does not stop it.",
             )

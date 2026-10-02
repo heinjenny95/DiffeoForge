@@ -1752,6 +1752,8 @@ def _readme(manifest: dict[str, object]) -> str:
 
 
 def _method_labels(manifest: dict[str, object]) -> dict[str, str]:
+    # Frozen reports retain their original labels: verification recomputes them.
+    # The desktop adds the linearized-PGA explanation without rewriting evidence.
     return {str(method["method_id"]): str(method["label"]) for method in manifest["methods"]}
 
 

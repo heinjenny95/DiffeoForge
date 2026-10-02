@@ -26,6 +26,83 @@ def sequence_info(directory):
     return manifest.get("fit_search", {}).get("sequence")
 
 
+def sequence_progress(directory):
+    """Cheap persisted UI summary; action dispatch verifies all referenced runs."""
+    info = sequence_info(directory)
+    if not info:
+        return None
+    root = Path(info["root"])
+    envelope = study._read_json(root / STATE, "specimen sequence")
+    state = envelope["payload"]
+    if envelope["sha256"] != _canonical_hash(state) or state["version"] != VERSION:
+        raise ValueError("Specimen sequence checkpoint changed")
+    if sha256_file(root / study.STUDY_MANIFEST) != info["root_sha256"]:
+        raise ValueError("Specimen sequence source changed")
+    count = len(state["approved"])
+    return dict(
+        approved=count,
+        total=len(state["order"]),
+        remaining=len(state["order"]) - count,
+        fallback=state.get("fallbacks", {}).get(str(count)),
+        fresh_review_required=_needs_fresh_review(root, state),
+    )
+
+
+def _needs_fresh_review(root, state):
+    pending = state.get("restored_review")
+    if not pending or pending["study"] != state["current"]:
+        return False
+    return (
+        _review_fingerprint(root / state["current"], pending["candidate_id"])
+        == pending["review_sha256"]
+    )
+
+
+def _review_fingerprint(child, candidate_id):
+    series_root, _ = study._search_extension_series(child)
+    events = study._load_events(child) + study._read_review_journal(series_root)
+    return _canonical_hash(
+        [
+            event
+            for event in events
+            if event.get("event") == "candidate_visual_review"
+            and event.get("candidate_id") == candidate_id
+        ]
+    )
+
+
+def _fallback_snapshot(root, state, record):
+    child = (root / record["study"]).resolve()
+    if not child.is_relative_to(root.resolve()):
+        raise ValueError("Plan B leaves its saved sequence")
+    snapshot = study.load_reference_calibration_study(child)
+    info = sequence_info(child)
+    candidate = next(
+        (c for c in snapshot.candidates if c.candidate_id == record["candidate_id"]), None
+    )
+    if (
+        info["phase"] != "individual"
+        or Path(info["root"]).resolve() != root.resolve()
+        or info["index"] != record["index"]
+        or info["filename"] != state["order"][record["index"]]
+        or sha256_file(child / study.STUDY_MANIFEST) != record["study_sha256"]
+        or candidate is None
+        or candidate.status != "completed"
+        or not np.isfinite(search.fit_key(candidate)[0])
+        or sha256_file(study.calibration_candidate_run_directory(candidate) / "manifest.json")
+        != record["run_sha256"]
+        or _basis(_values(snapshot, candidate.candidate_id)) != record["basis"]
+    ):
+        raise ValueError("Saved Plan B identity or deformation basis changed")
+    if (
+        record["index"] == len(state["approved"])
+        and state["values"] is not None
+        and record["basis"] != _basis(state["values"])
+    ):
+        raise ValueError("Plan B belongs to a different common deformation model")
+    return snapshot
+
+
 def verify_sequence(directory, manifest):
     info = manifest["fit_search"]["sequence"]
     root = Path(info["root"]).resolve()
@@ -90,6 +167,10 @@ def _read(root):
             raise ValueError("Approved individual run changed")
         if _basis(_values(snapshot, candidate.candidate_id)) != _basis(state["values"]):
             raise ValueError("Individual approvals use different deformation bases")
+    for key, record in state.get("fallbacks", {}).items():
+        if str(record["index"]) != key or not 0 <= record["index"] < len(state["order"]):
+            raise ValueError("Invalid saved Plan B specimen")
+        _fallback_snapshot(root, state, record)
     return state
 
 
@@ -115,6 +196,7 @@ def _basis(values):
 def _next_attempt(root, state):
     """Retain the short common-basis probes, then recover progressively."""
     from diffeoforge import reference_progressive_fit as progressive
+    from diffeoforge.reference_pca import ReferencePCAError
 
     parent = study.load_reference_calibration_study(root)
     index = len(state["approved"])
@@ -131,10 +213,13 @@ def _next_attempt(root, state):
         for candidate in snapshot.candidates:
             values = _values(snapshot, candidate.candidate_id)
             fits = (candidate.metrics or {}).get("original_surface_fit", {})
-            observation = dict(values=values,
-                               progressive=manifest["fit_search"].get("progressive", {}),
-                               p95=max((f["p95"] for f in fits.values()), default=0), seed=None,
-                               key=search.fit_key(candidate))
+            observation = dict(
+                values=values,
+                progressive=manifest["fit_search"].get("progressive", {}),
+                p95=max((f["p95"] for f in fits.values()), default=0),
+                seed=None,
+                key=search.fit_key(candidate),
+            )
             observation["snapshot"] = snapshot
             observation["candidate_id"] = candidate.candidate_id
             observations.append(observation)
@@ -143,8 +228,9 @@ def _next_attempt(root, state):
         latest = recorded[-1]
         try:
             latest["seed"] = progressive.seed_request(
-                latest["snapshot"], latest["candidate_id"], root, latest["values"])
-        except (ValueError, OSError) as error:
+                latest["snapshot"], latest["candidate_id"], root, latest["values"]
+            )
+        except (ValueError, OSError, ReferencePCAError) as error:
             # Invalid fields start a separate cold branch, never propagate.
             latest["seed_failure"] = str(error)
     attempted = [o["values"] for o in observations]
@@ -154,9 +240,15 @@ def _next_attempt(root, state):
             if values not in attempted:
                 return dict(values=values)
     valid = [o for o in observations if np.isfinite(o["key"][0])]
-    center = state.setdefault("centers", {}).get(str(index)) or state["values"] or (
-        min(valid, key=lambda o: o["key"])["values"] if valid else
-        {**parent.plan.effective_values, **parent.current_stage.candidates[0].values})
+    center = (
+        state.setdefault("centers", {}).get(str(index))
+        or state["values"]
+        or (
+            min(valid, key=lambda o: o["key"])["values"]
+            if valid
+            else {**parent.plan.effective_values, **parent.current_stage.candidates[0].values}
+        )
+    )
     state["centers"][str(index)] = center
     if not attempted:
         return dict(values=center)
@@ -170,8 +262,16 @@ def _next_parameters(root, state):
     return _next_attempt(root, state)["values"]
 
 
-def _make_child(root, state, *, retry_iterations=None, joint_seed=None, trial_values=None,
-                warm_seed=None, progressive=None):
+def _make_child(
+    root,
+    state,
+    *,
+    retry_iterations=None,
+    joint_seed=None,
+    trial_values=None,
+    warm_seed=None,
+    progressive=None,
+):
     parent = study.load_reference_calibration_study(root)
     manifest = study._verify_manifest(root)
     index = len(state["approved"])
@@ -246,8 +346,9 @@ def _make_child(root, state, *, retry_iterations=None, joint_seed=None, trial_va
         joint_seed=joint_seed,
         warm_seed=warm_seed,
         progressive=progressive,
-        iterations=200 if joint else (retry_iterations or attempt.get("iterations")
-                                     or (40 if index == 0 else 120)),
+        iterations=200
+        if joint
+        else (retry_iterations or attempt.get("iterations") or (40 if index == 0 else 120)),
     )
     child = study.create_reference_calibration_study(
         config_path,
@@ -314,11 +415,24 @@ def _joint_seed(root, state):
 
 
 def _run_specimen_sequence(
-    runner, *, action=None, event_callback=None, center_values=None,
-    control_target=200, working_source=None, first_filename=None
+    runner,
+    *,
+    action=None,
+    event_callback=None,
+    center_values=None,
+    control_target=200,
+    working_source=None,
+    first_filename=None,
 ):
     """Run only the current specimen; advancement requires its recorded human QC."""
     origin = runner.study_directory
+    if event_callback:
+        event_callback(
+            dict(
+                event="specimen_sequence_preparing",
+                message="Checking saved fits and preparing the next attempt…",
+            )
+        )
     manifest = study._verify_manifest(runner.study_directory)
     info = manifest.get("fit_search", {}).get("sequence")
     if info:
@@ -332,8 +446,12 @@ def _run_specimen_sequence(
     else:
         if action:
             raise ValueError("No individual checkpoint exists to advance")
-        parent = search.create_search(runner.study_directory, center_values=center_values,
-                                      control_target=control_target, working_source=working_source)
+        parent = search.create_search(
+            runner.study_directory,
+            center_values=center_values,
+            control_target=control_target,
+            working_source=working_source,
+        )
         root = parent.study_directory
         ordered = sorted(
             parent.plan.selected_pilot_subjects,
@@ -352,13 +470,33 @@ def _run_specimen_sequence(
         info = sequence_info(snapshot.study_directory)
         if info["phase"] != "individual":
             raise ValueError("Joint confirmation follows the ordinary pilot review workflow")
-        candidate = next(c for c in snapshot.candidates if c.candidate_id == candidate_id)
+        if kind == "restore":
+            record = state.get("fallbacks", {}).get(str(len(state["approved"])))
+            if record is None:
+                raise ValueError("No Plan B is saved for this specimen")
+            snapshot = _fallback_snapshot(root, state, record)
+            state["current"] = record["study"]
+            state["restored_review"] = dict(
+                study=record["study"],
+                candidate_id=record["candidate_id"],
+                review_sha256=_review_fingerprint(snapshot.study_directory, record["candidate_id"]),
+            )
+            _save(root, state)
+            runner.study_directory = snapshot.study_directory
+            if event_callback:
+                event_callback(dict(event="specimen_sequence_changed", snapshot=snapshot))
+            return snapshot  # Explicit restoration never launches a fit or grants QC.
+        candidate = next((c for c in snapshot.candidates if c.candidate_id == candidate_id), None)
+        if candidate is None:
+            raise ValueError("Choose a completed fit before continuing this specimen")
         values = _values(snapshot, candidate_id)
         if candidate.status != "completed" or (
             kind not in {"reject", "improve"} and not np.isfinite(search.fit_key(candidate)[0])
         ):
             raise ValueError("Only a completed geometrically valid individual fit can be used")
         if kind == "advance":
+            if _needs_fresh_review(root, state):
+                raise ValueError("Review and explicitly approve the restored Plan B first")
             if state["values"] is not None and _basis(values) != _basis(state["values"]):
                 raise ValueError("Changing the common deformation basis requires a new sequence")
             if snapshot.visual_reviews.get(candidate_id) is not True:
@@ -378,6 +516,21 @@ def _run_specimen_sequence(
                 _joint_seed(root, state) if len(state["approved"]) == len(state["order"]) else None
             )
             snapshot = _make_child(root, state, joint_seed=seed)
+        elif kind == "maybe":
+            if not np.isfinite(search.fit_key(candidate)[0]):
+                raise ValueError("Only a geometrically valid completed fit can be kept as Plan B")
+            state.setdefault("fallbacks", {})[str(info["index"])] = dict(
+                study=snapshot.study_directory.relative_to(root).as_posix(),
+                candidate_id=candidate_id,
+                index=info["index"],
+                study_sha256=sha256_file(snapshot.study_directory / study.STUDY_MANIFEST),
+                run_sha256=sha256_file(
+                    study.calibration_candidate_run_directory(candidate) / "manifest.json"
+                ),
+                basis=_basis(values),
+            )
+            _save(root, state)  # Keep the fallback even if preparing the next fit fails.
+            snapshot = _make_child(root, state)
         elif kind == "reject":
             if snapshot.visual_reviews.get(candidate_id) is not False:
                 raise ValueError("Record the rejected fit before trying the next parameters")
@@ -392,8 +545,10 @@ def _run_specimen_sequence(
             seed = seed_request(snapshot, candidate_id, root, values)
             from diffeoforge.reference_progressive_fit import VERSION as PROGRESSIVE_VERSION
 
-            prior = (study._verify_manifest(snapshot.study_directory)["fit_search"]
-                     .get("progressive") or {})
+            prior = (
+                study._verify_manifest(snapshot.study_directory)["fit_search"].get("progressive")
+                or {}
+            )
             if state["values"] is None:
                 state.setdefault("centers", {})[str(info["index"])] = values
             snapshot = _make_child(
@@ -402,8 +557,12 @@ def _run_specimen_sequence(
                 retry_iterations=iterations,
                 trial_values=values,
                 warm_seed=seed,
-                progressive=dict(version=PROGRESSIVE_VERSION, phase="continue",
-                                 branch=prior.get("branch", 0), step=prior.get("step", 0)),
+                progressive=dict(
+                    version=PROGRESSIVE_VERSION,
+                    phase="continue",
+                    branch=prior.get("branch", 0),
+                    step=prior.get("step", 0),
+                ),
             )
         else:
             raise ValueError("Unknown individual checkpoint action")
@@ -442,15 +601,20 @@ def _dispatch_sequence(runner, *, action=None, event_callback=None):
         template = load_surface_mesh(root / manifest["inputs"]["template"]["copy"])
         grid, _ = search.control_grid(template.metadata.bounds, target)
         if len(grid) <= manifest["fit_search"]["controls"]["count"]:
-            raise ValueError("The supported denser-grid limit is reached. Saved searches "
-                             "and fit continuation remain available.")
+            raise ValueError(
+                "The supported denser-grid limit is reached. Saved searches "
+                "and fit continuation remain available."
+            )
         runner.study_directory = root
         # This is a new common basis: never carry approvals or fields across it.
         return _run_specimen_sequence(
-            runner, event_callback=event_callback, center_values=state["values"],
+            runner,
+            event_callback=event_callback,
+            center_values=state["values"],
             control_target=target,
-            working_source=dict(directory=str(root),
-                                sha256=sha256_file(root / study.STUDY_MANIFEST)),
+            working_source=dict(
+                directory=str(root), sha256=sha256_file(root / study.STUDY_MANIFEST)
+            ),
             first_filename=info["filename"],
         )
     if action and action[0] == "restart":
@@ -468,13 +632,9 @@ def _dispatch_sequence(runner, *, action=None, event_callback=None):
                 candidate_id = min(available, key=search.fit_key).candidate_id
         center = _values(snapshot, candidate_id) if candidate_id else None
         runner.study_directory = Path(info["root"])
-        return _run_specimen_sequence(
-            runner, event_callback=event_callback, center_values=center
-        )
+        return _run_specimen_sequence(runner, event_callback=event_callback, center_values=center)
     if not info:
-        return _run_specimen_sequence(
-            runner, action=action, event_callback=event_callback
-        )
+        return _run_specimen_sequence(runner, action=action, event_callback=event_callback)
     return _run_specimen_sequence(runner, action=action, event_callback=event_callback)
 
 
@@ -528,8 +688,10 @@ def resume_directory(directory, _seen=None):
 
 
 def _cohort_identity(manifest):
-    return (manifest["inputs"]["template"]["sha256"],
-            sorted((r["filename"], r["sha256"]) for r in manifest["inputs"]["subjects"]))
+    return (
+        manifest["inputs"]["template"]["sha256"],
+        sorted((r["filename"], r["sha256"]) for r in manifest["inputs"]["subjects"]),
+    )
 
 
 def saved_sequences(directory):
@@ -545,11 +707,18 @@ def saved_sequences(directory):
             manifest = study._read_json(root / study.STUDY_MANIFEST, "study")
             envelope = study._read_json(root / STATE, "sequence")
             state = envelope["payload"]
-            if (envelope["sha256"] != _canonical_hash(state)
-                    or _cohort_identity(manifest) != _cohort_identity(current)):
+            if envelope["sha256"] != _canonical_hash(state) or _cohort_identity(
+                manifest
+            ) != _cohort_identity(current):
                 continue
-            result.append(dict(directory=str(root), approved=len(state["approved"]),
-                               total=len(state["order"]), current=state["current"]))
+            result.append(
+                dict(
+                    directory=str(root),
+                    approved=len(state["approved"]),
+                    total=len(state["order"]),
+                    current=state["current"],
+                )
+            )
         except (OSError, ValueError, KeyError, TypeError):
             continue
     return sorted(result, key=lambda r: (-r["approved"], r["directory"]))
@@ -563,7 +732,8 @@ def restore_saved_sequence(directory, selected_root):
     if root.parent != current_root.resolve().parent:
         raise ValueError("Saved sequence is outside this project's calibration folder")
     if _cohort_identity(study._verify_manifest(root)) != _cohort_identity(
-            study._verify_manifest(current_root)):
+        study._verify_manifest(current_root)
+    ):
         raise ValueError("Saved sequence uses different original inputs")
     state = _read(root)
     selected = root / state["current"]

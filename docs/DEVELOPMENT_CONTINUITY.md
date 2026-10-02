@@ -1,6 +1,6 @@
-# Development continuity — v101 progressive specimen fitting
+# Development continuity — v102 recoverable pilot review
 
-Snapshot: 2026-10-01. This is a public, software-only continuation guide. Detailed
+Snapshot: 2026-10-02. This is a public, software-only continuation guide. Detailed
 research results, local paths, account destinations and run identities belong in
 the owner's private project handoff, not this repository.
 
@@ -20,6 +20,14 @@ correct parameters or interpret biology for the researcher. Deformetrica is the
 default supported reference route; the Modern engine remains evidence-gated.
 
 ## Current source work
+
+v102 releases the pilot controller on every terminal worker path, keeps errors
+visible, and adds hash-bound Maybe / Plan B persistence, exact restoration and
+fresh-review enforcement. Persisted specimen counts distinguish individual fits
+from combined confirmation. Short alignment status and nearby PC-axis meshes
+improve navigation; method labels explain the tangent approximation without
+rewriting scientific evidence. See [scope and verification](V102_PILOT_WORKFLOW.md).
+No private fit was started. Build/install evidence is recorded separately.
 
 v101 retains approved individual fits while exhausted or rejected attempts enter
 recorded broad-to-fine recovery using verified saved momentum fields. Explicit
