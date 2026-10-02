@@ -226,6 +226,10 @@ def test_approved_adaptive_fit_carries_learned_state_into_next_stage(tmp_path, m
     )
     assert next_snapshot.current_stage.stage_id == "deformation"
     for c in next_snapshot.candidates:
+        if c.candidate_id == "deformation-retained":
+            assert study.calibration_candidate_run_directory(c) == candidate.run_directory
+            assert next_snapshot.visual_reviews[c.candidate_id] is True
+            continue
         config = load_config(c.config_path)
         summary = validate_input_paths(config, c.config_path)
         assert "stage-seeds" in str(summary.template)

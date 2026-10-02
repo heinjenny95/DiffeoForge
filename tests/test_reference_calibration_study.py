@@ -35,6 +35,18 @@ ROOT = Path(__file__).parents[1]
 MESH_DIRECTORY = ROOT / "examples" / "synthetic" / "meshes"
 
 
+@pytest.fixture(autouse=True)
+def _synthetic_learned_seed(monkeypatch):
+    _stub_learned_seed(monkeypatch)
+
+
+def _stub_learned_seed(monkeypatch):
+    from test_reference_adaptive_calibration import seed_stub
+
+    # These controllers produce synthetic receipts, not optimizer tensors.
+    monkeypatch.setattr("diffeoforge.reference_adaptive_calibration.bind_learned_seed", seed_stub)
+
+
 def test_latest_search_extension_directory_follows_deterministic_rounds(
     tmp_path: Path,
     monkeypatch,
@@ -136,6 +148,7 @@ class _FailedController(_CompletedController):
 
 
 def _afk_runner(tmp_path, monkeypatch, *, invalid=False, controller=_CompletedController):
+    _stub_learned_seed(monkeypatch)
     snapshot = create_reference_calibration_study(
         _project(tmp_path),
         tmp_path / "afk-study",
@@ -226,7 +239,7 @@ def test_review_requires_all_subjects_and_selection_records_saved_decisions(tmp_
         selected_candidate_id=candidate.candidate_id,
     )
     assert selected.selected_candidate_ids["attachment"] == candidate.candidate_id
-    assert selected.visual_reviews == {}
+    assert selected.visual_reviews == {"deformation-retained": True}
     event = next(
         e
         for e in reversed(study_module._load_events(runner.study_directory))
@@ -689,6 +702,14 @@ def test_noise_extension_preserves_prior_stage_selections(
     ).run_current_stage()
     assert source.current_stage is not None
     assert source.current_stage.stage_id == "noise"
+    # Keep the legacy boundary scenario: the unchanged baseline was inspected
+    # and rejected here, so the new trials determine the outward proposal.
+    name = source.plan.selected_pilot_subjects[0].filename
+    source = study_module.record_reference_calibration_candidate_review(
+        source.study_directory,
+        candidate_id="noise-retained", approved=False, reviewed_subjects=(name,),
+        subject_decisions={name: "fail"}, display_scopes={name: "preview"},
+    )
     assessment = assess_reference_calibration_snapshot(source)
     assert assessment.search_boundary_parameters == ("noise_std:minimum",)
 

@@ -1,4 +1,4 @@
-# Development continuity — v102 recoverable pilot review
+# Development continuity — v103 retained pilot transitions
 
 Snapshot: 2026-10-02. This is a public, software-only continuation guide. Detailed
 research results, local paths, account destinations and run identities belong in
@@ -20,6 +20,13 @@ correct parameters or interpret biology for the researcher. Deformetrica is the
 default supported reference route; the Modern engine remains evidence-gated.
 
 ## Current source work
+
+v103 retains exact approved joint fits across stages 2/3 and uses compatible
+learned initialization for ordinary as well as adaptive transitions. Explicit
+keep restores an already completed older comparison without refitting, modifying
+old evidence or inventing QC. Stage 4 and full-cohort visual confirmation remain
+required. See [scope and verification](V103_PILOT_TRANSITIONS.md). No private fit
+or parameter tuning was started. Drive intentionally retains v98.
 
 v102 releases the pilot controller on every terminal worker path, keeps errors
 visible, and adds hash-bound Maybe / Plan B persistence, exact restoration and

@@ -630,7 +630,7 @@ def _prepare_stage(
                 "locked_values": dict(selected_values),
             }
         )
-    return _append_event(
+    prepared_event = _append_event(
         root,
         "stage_prepared",
         {
@@ -640,6 +640,11 @@ def _prepare_stage(
             **({"continuation_seed": seed} if seed is not None else {}),
         },
     )
+    if continuation_source is not None and stage.order in (2, 3):
+        from diffeoforge.reference_stage_retention import register_previous_fit
+
+        register_previous_fit(load_reference_calibration_study(root))
+    return prepared_event
 
 
 def create_reference_calibration_study(
@@ -1308,6 +1313,14 @@ def _prepared_candidates(
             f"Calibration stage {stage_id!r} is not prepared exactly once"
         )
     records = {record["candidate_id"]: record for record in prepared[0]["candidates"]}
+    for event in events:
+        if event["event"] == "stage_retained" and event.get("stage_id") == stage_id:
+            from diffeoforge.reference_stage_retention import verify_reference
+
+            verify_reference(root, event)
+            if sha256_file(_safe_study_path(root, event["evidence"])) != event["evidence_sha256"]:
+                raise ReferenceCalibrationStudyError("Retained fit reference changed")
+            records[event["candidate"]["candidate_id"]] = event
     for bound in prepared[0].get("continuation_seed", {}).get("files", {}).values():
         path = _safe_study_path(root, bound["copy"])
         if not path.is_file() or sha256_file(path) != bound["sha256"]:
@@ -1347,6 +1360,14 @@ def calibration_candidate_run_directory(candidate: CalibrationStudyCandidateStat
         if (path / "manifest.json").is_file():
             return path
         record = _read_json(path / "evidence.json", "preserved candidate evidence")
+        if record.get("retained_source"):
+            from diffeoforge.reference_stage_retention import verify_reference
+
+            previous = verify_reference(Path(record["study_directory"]), record)
+            if previous.metrics != current.metrics:
+                raise ReferenceCalibrationStudyError("Retained metrics changed")
+            current = previous
+            continue
         source = load_reference_calibration_study(
             record["source_study_directory"], _restore_reviews=False
         )
@@ -1606,6 +1627,9 @@ def _load_verified_calibration_study(
     manifest = _verify_manifest(root)
     plan = reference_calibration_plan_from_provenance(manifest["plan"])
     events = _load_events(root)
+    from diffeoforge.reference_stage_retention import overlay_plan
+
+    plan = overlay_plan(plan, events)
     if events[0]["study_id"] != manifest["study_id"] or events[0]["manifest_sha256"] != sha256_file(
         root / STUDY_MANIFEST
     ):
@@ -1761,6 +1785,11 @@ def _load_verified_calibration_study(
         if _restore_reviews
         else {}
     )
+    for event in events:
+        if event["event"] == "stage_retained" and event.get("stage_id") == stage.stage_id:
+            candidate_id = event["candidate"]["candidate_id"]
+            # This is the same bound output, not approval of a newly calculated fit.
+            visual_reviews.setdefault(candidate_id, True)
     awaiting = any(
         event["event"] == "stage_awaiting_review" and event["stage_id"] == stage.stage_id
         for event in events
@@ -2268,7 +2297,7 @@ def _final_configuration(
             config["project"]["parameter_provenance"]["sources"][name] = "absolute_override"
     runtime_observations: list[dict[str, object]] = []
     for event in _load_events(root):
-        if event.get("event") != "candidate_completed":
+        if event.get("event") != "candidate_completed" or event.get("retained"):
             continue
         metrics = event.get("metrics")
         if not isinstance(metrics, Mapping):
@@ -2290,7 +2319,10 @@ def _final_configuration(
         "version": "0.1",
         "status": "completed",
         "study_id": str(manifest["study_id"]),
-        "plan_fingerprint": str(manifest["plan_fingerprint"]),
+        "plan_fingerprint": (
+            continuation_source.plan.fingerprint if continuation_source is not None
+            else str(manifest["plan_fingerprint"])
+        ),
         "study_manifest_sha256": sha256_file(root / STUDY_MANIFEST),
         "decision_event_hash": decision_event_hash,
         "selected_candidate_ids": dict(selected_candidate_ids),
@@ -2722,7 +2754,10 @@ def _record_reference_calibration_stage_selection(
 
     root = Path(study_directory).expanduser().resolve()
     snapshot = load_reference_calibration_study(root)
-    if snapshot.status != "awaiting_review" or snapshot.current_stage is None:
+    retaining = selection_mode == "researcher_retained_approved_fit"
+    if snapshot.current_stage is None or (
+        snapshot.status != "awaiting_review" and not (retaining and snapshot.status == "ready")
+    ):
         raise ReferenceCalibrationStudyError("The current calibration stage is not awaiting review")
     visual_approvals = {**visual_approvals, **snapshot.visual_reviews}
     if snapshot.visual_reviews.get(selected_candidate_id) is not True:
@@ -2777,6 +2812,13 @@ def _record_reference_calibration_stage_selection(
         for candidate in snapshot.current_stage.candidates
         if candidate.candidate_id == selected_candidate_id
     )
+    retained_event = next(
+        (event for event in _load_events(root)
+         if event["event"] == "stage_retained"
+         and event["stage_id"] == snapshot.current_stage.stage_id
+         and event["candidate"]["candidate_id"] == selected_candidate_id),
+        None,
+    )
     _append_event(
         root,
         "stage_selected",
@@ -2785,7 +2827,11 @@ def _record_reference_calibration_stage_selection(
             "candidate_id": selected_candidate_id,
             "parameter_values": selected.values,
             "visual_approvals": dict(visual_approvals),
-            "visual_review_policy": "explicit_every_specimen_fit_with_display_scope_v3",
+            "visual_review_policy": (
+                "retained_preceding_review_v1" if retained_event
+                else "explicit_every_specimen_fit_with_display_scope_v3"
+            ),
+            **({"retained_source": retained_event["retained_source"]} if retained_event else {}),
             "visual_display_scopes": dict(snapshot.visual_display_scopes),
             "visual_review_status": {
                 candidate.candidate_id: (
@@ -2815,7 +2861,7 @@ def _record_reference_calibration_stage_selection(
             snapshot.plan,
             next_stage,
             selected_values,
-            continuation_source=snapshot if manifest.get("adaptive_protocol") else None,
+            continuation_source=snapshot,
             continuation_candidate_id=selected_candidate_id,
         )
     else:
@@ -2833,7 +2879,7 @@ def _record_reference_calibration_stage_selection(
             selected_candidates,
             selection_modes,
             decision_event_hash,
-            continuation_source=snapshot if manifest.get("adaptive_protocol") else None,
+            continuation_source=snapshot,
         )
         report_json, report_html = _write_calibration_report(
             root,

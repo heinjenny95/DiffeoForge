@@ -1,5 +1,14 @@
 # Private-alpha build numbering
 
+## v103 — retain approved fits through pilot transitions
+
+v103 (`0.0.0.dev103`) uses learned state between ordinary pilot stages and keeps
+the exact preceding approved reconstruction as a bound baseline. An explicit
+keep action for stages 2/3 also works on completed older comparisons without
+repeating fitting or QC. Numerical Stage 4 remains required. See
+[scope and verification](V103_PILOT_TRANSITIONS.md). No private fit was run.
+Build and local installation evidence are recorded separately; Drive remains v98.
+
 ## v102 — recoverable pilot review and clearer results
 
 v102 (`0.0.0.dev102`) guarantees background-worker completion, adds persistent

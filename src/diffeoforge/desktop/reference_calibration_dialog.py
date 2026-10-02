@@ -215,12 +215,14 @@ class _CalibrationStageWorker(QRunnable):
         continuation: tuple[str, int] | None = None,
         specimen_fit: bool = False,
         specimen_action: tuple[str, str, int] | None = None,
+        retain_previous: bool = False,
     ) -> None:
         super().__init__()
         self.runner = runner
         self.continuation = continuation
         self.specimen_fit = specimen_fit
         self.specimen_action = specimen_action
+        self.retain_previous = retain_previous
         self.adaptive_fit_search = adaptive_fit_search
         self.complete_automatic_pilot = complete_automatic_pilot
         self.afk = afk
@@ -256,7 +258,11 @@ class _CalibrationStageWorker(QRunnable):
             self.signals.event.emit(event)
 
         try:
-            if self.specimen_fit or self.specimen_action is not None:
+            if self.retain_previous:
+                from diffeoforge.reference_stage_retention import keep_previous_fit
+
+                result = keep_previous_fit(self.runner.study_directory)
+            elif self.specimen_fit or self.specimen_action is not None:
                 from diffeoforge.reference_sequential_fit import run_specimen_sequence
 
                 result = run_specimen_sequence(
@@ -1027,6 +1033,12 @@ class ReferenceCalibrationDialog(QDialog):
         fit_row.addWidget(self.denser_model_button)
         fit_row.addStretch()
         root.addLayout(fit_row)
+        self.keep_previous_button = QPushButton("Keep previously approved fit")
+        self.keep_previous_button.setToolTip(
+            "Use the unchanged, previously approved reconstruction. No new fit or repeated QC."
+        )
+        self.keep_previous_button.clicked.connect(self._keep_previous_fit)
+        root.addWidget(self.keep_previous_button)
         continuation_controls = QWidget()
         continuation_layout = QHBoxLayout(continuation_controls)
         continuation_layout.setContentsMargins(0, 0, 0, 0)
@@ -1145,6 +1157,21 @@ class ReferenceCalibrationDialog(QDialog):
 
         self._sequence_info = sequence_info(self.study_directory)
         self._sequence_progress = sequence_progress(self.study_directory)
+        stage = self._snapshot.current_stage
+        can_keep = bool(
+            stage and stage.order in (2, 3)
+            and len(self._snapshot.selected_candidate_ids) == stage.order - 1
+            and not self._snapshot.plan.qc_recalibration_source
+            and not self._individual_checkpoint()
+        )
+        self.keep_previous_button.setVisible(can_keep)
+        self.keep_previous_button.setEnabled(
+            can_keep and self._worker is None and not self._restoring_search
+        )
+        if can_keep:
+            self.keep_previous_button.setText(
+                f"Keep approved stage {stage.order - 1} fit → stage {stage.order + 1}"
+            )
         for candidate_id, approved in self._snapshot.visual_reviews.items():
             self._visually_reviewed_candidates.add(candidate_id)
             if approved:
@@ -2038,6 +2065,7 @@ class ReferenceCalibrationDialog(QDialog):
         continuation: tuple[str, int] | None = None,
         specimen_fit: bool = False,
         specimen_action: tuple[str, str, int] | None = None,
+        retain_previous: bool = False,
     ) -> None:
         if self._restoring_search:
             raise ValueError("Wait until the saved search has finished loading")
@@ -2047,6 +2075,7 @@ class ReferenceCalibrationDialog(QDialog):
             continuation=continuation,
             specimen_fit=specimen_fit,
             specimen_action=specimen_action,
+            retain_previous=retain_previous,
             complete_automatic_pilot=False,
             adaptive_fit_search=(
                 self.adaptive_fit_search.isChecked() if adaptive is None else adaptive
@@ -2070,6 +2099,7 @@ class ReferenceCalibrationDialog(QDialog):
         self.collect_evidence_button.setEnabled(False)
         self.review_next_button.setEnabled(False)
         self.advance_button.setEnabled(False)
+        self.keep_previous_button.setEnabled(False)
         self.selection_combo.setEnabled(False)
         self.start_button.setEnabled(False)
         _set_action_emphasis(self.start_button, False)
@@ -2080,6 +2110,12 @@ class ReferenceCalibrationDialog(QDialog):
         self.cancel_button.style().polish(self.cancel_button)
         self.status.setText("Preparing the next attempt…")
         self._thread_pool.start(worker)
+
+    @Slot()
+    def _keep_previous_fit(self) -> None:
+        if self._worker is not None or self._restoring_search:
+            return
+        self._start_pilot(adaptive=False, retain_previous=True)
 
     @Slot(object)
     def _event(self, event: Mapping[str, object]) -> None:
