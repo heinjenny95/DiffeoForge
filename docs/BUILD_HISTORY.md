@@ -7,7 +7,8 @@ the exact preceding approved reconstruction as a bound baseline. An explicit
 keep action for stages 2/3 also works on completed older comparisons without
 repeating fitting or QC. Numerical Stage 4 remains required. See
 [scope and verification](V103_PILOT_TRANSITIONS.md). No private fit was run.
-Build and local installation evidence are recorded separately; Drive remains v98.
+Build and safe local installation passed; see
+[separate delivery evidence](V103_DELIVERY.md). Drive remains v98.
 
 ## v102 — recoverable pilot review and clearer results
 
