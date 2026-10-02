@@ -377,6 +377,14 @@ scientific gates. Planning does not mark those gates complete.
 - [x] Versioned workflow-stage and committed optimizer-decision reporting
 - [x] Fresh-process objective/gradient wall-time and sampled-RSS protocol
 - [ ] Refine the staged calibration UX from the v44 weevil pilot observations
+  - [ ] **Maybe / Plan B for individual fits (owner request, 2026-10-02).**
+    Add **Keep as Plan B** to retain a usable fallback while testing further
+    settings for the same specimen. This is neither pass nor fail, does not
+    advance the specimen or increase the approved count. Persist the exact bound
+    attempt/specimen/series/model across reopening; provide direct comparison
+    and **Use Plan B** if later attempts are worse, retaining all results and
+    earlier approvals. Require explicit final human approval; never silently
+    promote a fallback or transfer it across an incompatible basis. Backlog only.
   - [ ] **Visible specimen approval progress (owner request, 2026-10-02).**
     Keep a compact count visible during individual fitting and review, e.g.
     **3 of 8 approved · 5 still to review**, plus **Specimen 4 of 8** and its name.
