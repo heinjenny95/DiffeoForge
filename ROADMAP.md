@@ -377,6 +377,13 @@ scientific gates. Planning does not mark those gates complete.
 - [x] Versioned workflow-stage and committed optimizer-decision reporting
 - [x] Fresh-process objective/gradient wall-time and sampled-RSS protocol
 - [ ] Refine the staged calibration UX from the v44 weevil pilot observations
+  - [ ] **Visible specimen approval progress (owner request, 2026-10-02).**
+    Keep a compact count visible during individual fitting and review, e.g.
+    **3 of 8 approved · 5 still to review**, plus **Specimen 4 of 8** and its name.
+    Derive counts from persisted approvals for the current saved series/model,
+    update after decisions and restore on reopen. Keep specimen progress separate
+    from parameter-stage labels and later joint QC; completed computations and
+    viewed previews do not count as approvals. Backlog only, not implemented.
   - [x] Update the completed-run counter and candidate cards from the verified event
     ledger after every candidate instead of leaving `0 of 31`/`Ready to run` stale
     until a stage finishes
