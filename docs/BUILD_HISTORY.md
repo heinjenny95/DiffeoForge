@@ -7,7 +7,8 @@ Maybe / Plan B with exact restoration and fresh approval, and shows the current
 specimen approval count. Alignment details are collapsed; axis shapes are beside
 the morphospace; tangent-PCA/PGA terminology and endpoint contracts are clarified.
 See [scope and verification](V102_PILOT_WORKFLOW.md). No private fit was run.
-Installation and delivery evidence are tracked separately; Drive remains v98.
+Build and safe installation are verified; see
+[separate delivery evidence](V102_DELIVERY.md). Drive remains v98.
 
 ## v101 — progressive specimen recovery
 

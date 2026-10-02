@@ -27,7 +27,9 @@ fresh-review enforcement. Persisted specimen counts distinguish individual fits
 from combined confirmation. Short alignment status and nearby PC-axis meshes
 improve navigation; method labels explain the tangent approximation without
 rewriting scientific evidence. See [scope and verification](V102_PILOT_WORKFLOW.md).
-No private fit was started. Build/install evidence is recorded separately.
+No private fit was started. Build and safe local installation passed; see
+[separate delivery evidence](V102_DELIVERY.md). Saved approvals and fits remain
+unchanged. Drive intentionally retains v98.
 
 v101 retains approved individual fits while exhausted or rejected attempts enter
 recorded broad-to-fine recovery using verified saved momentum fields. Explicit
