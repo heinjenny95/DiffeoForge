@@ -54,7 +54,11 @@ tampering, cancellation, technical failure, baseline preservation, separate join
 QC, desktop actions, complete stage-4 dispatch, worst-specimen numerical checks,
 missing evidence, prospective tolerance binding and legacy compatibility.
 Existing study, sequential-fit and review-dialog regression suites are included.
-Build, local delivery and hashes are recorded separately after verification.
+Scoped suites passed after correcting the installer-version contract; the final
+34-case set covered that correction, numerical checks and assessment regressions.
+The overlapping scoped suites cover 95 distinct selected cases. Ruff, compilation
+and diff checks passed. [Build, safe installation and hashes](V104_DELIVERY.md)
+are verified separately.
 
 A singleton fit with frozen reference is an early rejection filter; it cannot
 predict the optimum of the shared-template joint atlas. It can also reject an

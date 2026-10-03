@@ -29,7 +29,9 @@ complete pilot and records prospective engineering tolerances for the smallest
 adequate next-finer comparison. Saved-series labels and reopening distinguish
 individual approvals from current joint status. No private scientific run is
 started. See [scope, compatibility and checks](V104_EARLY_PILOT_REVIEW.md).
-Build/installation and prospective acceptance are separate evidence gates.
+Build, safe local installation and unchanged saved studies are verified; see
+[separate delivery evidence](V104_DELIVERY.md). Prospective first-use, anatomical
+acceptance and actual runtime savings remain open. Drive intentionally retains v98.
 
 v103 retains exact approved joint fits across stages 2/3 and uses compatible
 learned initialization for ordinary as well as adaptive transitions. Explicit
