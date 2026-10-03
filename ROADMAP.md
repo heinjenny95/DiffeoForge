@@ -14,6 +14,15 @@ scientific gates. Planning does not mark those gates complete.
 
 ## Pilot usability follow-up
 
+- [ ] Make live pilot work and progress clear in one short status line: distinguish
+  preparation, individual fitting, early option screening, combined confirmation,
+  output verification and waiting for review, with a brief next action and folded
+  technical details. Show optimizer iteration / cap, readable elapsed time and
+  completed / total options separately from specimen approvals; do not present
+  iteration / cap as a completion percentage or a reliable ETA. Keep option cards,
+  phase summaries and buttons consistent with the active job: a running option
+  must not also say `Ready to run`. Cover running, finalization, review, cancel,
+  failure and reopening without resetting saved evidence. Backlog only.
 - [x] Make saved-search choices readable: series label, saved time, current stage,
   individual approval count and separate joint-review status. Resume the chosen
   series at its verified current checkpoint; identify historical rejected trials
