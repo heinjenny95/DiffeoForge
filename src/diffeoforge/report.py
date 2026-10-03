@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from html import escape
 from pathlib import Path
+from statistics import median
 from typing import Any
 
 import yaml
@@ -18,7 +20,15 @@ from diffeoforge.config import (
     load_config,
     validate_input_paths,
 )
-from diffeoforge.mesh import MeshMetadata, inspect_inputs
+from diffeoforge.mesh import MeshMetadata, inspect_inputs, read_vtk_polydata
+from diffeoforge.mesh_quality import (
+    ATLAS_INPUT_MESH_QUALITY_SETTINGS,
+    QUALITY_BOUNDARY,
+    MeshQualityError,
+    MeshQualityResult,
+    assess_triangle_mesh,
+    enforce_mesh_quality,
+)
 
 _REPORT_MARKER = '<meta name="generator" content="DiffeoForge preflight">'
 
@@ -64,6 +74,7 @@ class PreflightResult:
     template: MeshMetadata
     subjects: tuple[MeshMetadata, ...]
     notices: tuple[str, ...]
+    mesh_quality: tuple[PreflightMeshQuality, ...] = field(default_factory=tuple)
 
     @property
     def total_input_bytes(self) -> int:
@@ -87,12 +98,54 @@ class PreflightResult:
         }
 
 
+@dataclass(frozen=True)
+class PreflightMeshQuality:
+    """Exact structural diagnostics for one preflight input mesh."""
+
+    role: str
+    path: str
+    result: MeshQualityResult
+
+
+def _bbox_center(mesh: MeshMetadata) -> tuple[float, float, float]:
+    bounds = mesh.bounds
+    return (
+        (bounds[0] + bounds[1]) / 2.0,
+        (bounds[2] + bounds[3]) / 2.0,
+        (bounds[4] + bounds[5]) / 2.0,
+    )
+
+
+def _structural_quality(
+    template: MeshMetadata,
+    subjects: tuple[MeshMetadata, ...],
+) -> tuple[PreflightMeshQuality, ...]:
+    records: list[PreflightMeshQuality] = []
+    for role, metadata in (("template", template), *[("subject", item) for item in subjects]):
+        mesh = read_vtk_polydata(metadata.path)
+        quality = assess_triangle_mesh(mesh.vertices, mesh.triangles)
+        try:
+            enforce_mesh_quality(
+                f"{role} {Path(metadata.path).name}",
+                quality,
+                ATLAS_INPUT_MESH_QUALITY_SETTINGS,
+            )
+        except MeshQualityError as error:
+            raise ConfigurationError(str(error)) from error
+        records.append(
+            PreflightMeshQuality(role=role, path=metadata.path, result=quality)
+        )
+    return tuple(records)
+
+
 def make_preflight_result(
     config_path: Path | str,
     config: Mapping[str, Any],
     inputs: InputSummary,
     template: MeshMetadata,
     subjects: tuple[MeshMetadata, ...],
+    *,
+    mesh_quality: tuple[PreflightMeshQuality, ...] = (),
 ) -> PreflightResult:
     """Assemble notices from already validated, already inspected inputs."""
 
@@ -111,12 +164,64 @@ def make_preflight_result(
             "heterogeneous mesh resolution should be reviewed."
         )
 
+    face_counts = [subject.cells for subject in subjects]
+    if max(face_counts) / min(face_counts) > 2.0:
+        notices.append(
+            "Subject triangle counts differ by more than a factor of two. Review unusual "
+            "mesh density and resampling provenance before starting the atlas."
+        )
+
     diagonals = [subject.bounding_box_diagonal for subject in subjects]
     if max(diagonals) / min(diagonals) > 1.5:
         notices.append(
             "Subject bounding-box diagonals differ by more than 50%. Check units, scale, and "
             "registration before starting the atlas."
         )
+
+    centers = [_bbox_center(subject) for subject in subjects]
+    median_center = tuple(median(center[axis] for center in centers) for axis in range(3))
+    median_diagonal = median(diagonals)
+    maximum_center_offset = max(math.dist(center, median_center) for center in centers)
+    if maximum_center_offset > 0.25 * median_diagonal:
+        notices.append(
+            "Subject bounding-box centers differ by more than 25% of the median subject "
+            "diagonal. Review rigid/GPA alignment before starting the atlas."
+        )
+
+    hashes: dict[str, list[str]] = {}
+    for subject in subjects:
+        hashes.setdefault(subject.sha256, []).append(Path(subject.path).name)
+    duplicate_groups = [names for names in hashes.values() if len(names) > 1]
+    if duplicate_groups:
+        examples = "; ".join(", ".join(names[:3]) for names in duplicate_groups[:3])
+        notices.append(
+            "Different subject filenames contain byte-identical meshes. Confirm that these "
+            f"are distinct intended specimens: {examples}."
+        )
+
+    if mesh_quality:
+        open_meshes = [
+            Path(record.path).name
+            for record in mesh_quality
+            if record.result.boundary_edges > 0
+        ]
+        if open_meshes:
+            notices.append(
+                f"{len(open_meshes)} of {len(mesh_quality)} input surfaces are open "
+                "(boundary edges present). Open anatomical surfaces can be intentional; "
+                "confirm this study-level decision."
+            )
+        multipart = [
+            Path(record.path).name
+            for record in mesh_quality
+            if record.result.face_connected_components > 1
+        ]
+        if multipart:
+            notices.append(
+                f"{len(multipart)} of {len(mesh_quality)} input surfaces contain multiple "
+                "face-connected components. Confirm that disconnected anatomical parts are "
+                "intentional."
+            )
 
     if len(subjects) > 250:
         notices.append(
@@ -131,17 +236,93 @@ def make_preflight_result(
         template=template,
         subjects=subjects,
         notices=tuple(notices),
+        mesh_quality=mesh_quality,
     )
 
 
-def collect_preflight(config_path: Path | str) -> PreflightResult:
-    """Run schema, path, and full geometry validation without executing an engine."""
+def collect_preflight(
+    config_path: Path | str, *, cache_project: Path | str | None = None,
+) -> PreflightResult:
+    """Validate inputs, optionally reusing project-local content-bound mesh checks.
+
+    Default core/engine callers retain their read-only full-validation behavior.
+    Desktop project review explicitly opts into storing reusable inspections.
+    """
 
     source = Path(config_path).expanduser().resolve()
     config = load_config(source)
     inputs = validate_input_paths(config, source)
-    template, subjects = inspect_inputs(inputs)
-    return make_preflight_result(source, config, inputs, template, subjects)
+    if cache_project is None:
+        template, subjects = inspect_inputs(inputs)
+        mesh_quality = _structural_quality(template, subjects)
+    else:
+        metadata, mesh_quality = _cached_structural_quality(inputs, cache_project)
+        template, subjects = metadata[0], metadata[1:]
+    return make_preflight_result(
+        source,
+        config,
+        inputs,
+        template,
+        subjects,
+        mesh_quality=mesh_quality,
+    )
+
+
+def _cached_structural_quality(
+    inputs: InputSummary, project: Path | str,
+) -> tuple[tuple[MeshMetadata, ...], tuple[PreflightMeshQuality, ...]]:
+    import hashlib
+
+    from diffeoforge.mesh import inspect_vtk, sha256_file
+    from diffeoforge.mesh_quality import QUALITY_DEFINITIONS_VERSION
+    from diffeoforge.project_checkpoint import (
+        CheckpointUnavailable,
+        load_checkpoint,
+        save_checkpoint,
+    )
+
+    metadata: list[MeshMetadata] = []
+    observations: list[PreflightMeshQuality] = []
+    for role, path in (("template", inputs.template), *(
+        ("subject", item) for item in inputs.subjects
+    )):
+        source_hash = sha256_file(path)
+        key = "vtk-1-" + hashlib.sha256(
+            f"{source_hash}:{QUALITY_DEFINITIONS_VERSION}".encode()
+        ).hexdigest()
+        cached = None
+        try:
+            candidate = load_checkpoint(project, key)
+            if (isinstance(candidate, tuple) and len(candidate) == 2
+                    and isinstance(candidate[0], MeshMetadata)
+                    and isinstance(candidate[1], MeshQualityResult)
+                    and candidate[0].sha256 == source_hash
+                    and candidate[0].bytes == path.stat().st_size
+                    and candidate[0].points == candidate[1].points
+                    and candidate[0].cells == candidate[1].triangles):
+                cached = candidate
+        except CheckpointUnavailable:
+            pass
+        if cached is None:
+            item = inspect_vtk(path)
+            if item.sha256 != source_hash:
+                raise ConfigurationError(f"Mesh changed while being checked: {path}")
+            quality = _structural_quality(item, ())[0].result
+            if sha256_file(path) != source_hash:
+                raise ConfigurationError(f"Mesh changed while being checked: {path}")
+            cached = item, quality
+            try:
+                save_checkpoint(project, key, cached)
+            except (OSError, ValueError):
+                pass
+        item, quality = cached
+        try:
+            enforce_mesh_quality(f"{role} {path.name}", quality, ATLAS_INPUT_MESH_QUALITY_SETTINGS)
+        except MeshQualityError as error:
+            raise ConfigurationError(str(error)) from error
+        metadata.append(replace(item, path=str(path)))
+        observations.append(PreflightMeshQuality(role, str(path), quality))
+    return tuple(metadata), tuple(observations)
 
 
 def default_preflight_report_path(config_path: Path | str) -> Path:
@@ -175,6 +356,127 @@ def _mesh_row(role: str, mesh: MeshMetadata) -> str:
     return "<tr>" + "".join(f"<td>{escape(value)}</td>" for value in values) + "</tr>"
 
 
+def _quality_row(record: PreflightMeshQuality) -> str:
+    result = record.result
+    values = (
+        record.role,
+        Path(record.path).name,
+        str(result.boundary_edges),
+        str(result.nonmanifold_edges),
+        str(result.inconsistently_oriented_manifold_edges),
+        str(result.duplicate_faces),
+        str(result.isolated_vertices),
+        str(result.zero_area_faces),
+        str(result.face_connected_components),
+    )
+    return "<tr>" + "".join(f"<td>{escape(value)}</td>" for value in values) + "</tr>"
+
+
+def _list_html(values: list[str]) -> str:
+    return "<ul>" + "".join(f"<li>{escape(str(value))}</li>" for value in values) + "</ul>"
+
+
+def _parameter_provenance_html(config: Mapping[str, Any]) -> str:
+    provenance = config["project"].get("parameter_provenance")
+    if provenance is None:
+        return """
+  <section>
+    <h2>Parameter provenance</h2>
+    <p>This legacy configuration does not contain structured parameter provenance.</p>
+  </section>"""
+
+    profile = escape(str(provenance["profile"]).replace("_", " "))
+    recommendation = provenance.get("recommendation")
+    if recommendation is None:
+        return f"""
+  <section>
+    <h2>Parameter provenance</h2>
+    <p><strong>Source:</strong> {profile}. The effective configuration below records the
+      exact ratios and any absolute overrides.</p>
+  </section>"""
+
+    measurements = recommendation["measurements"]
+    alignment_basis = (
+        "DiffeoForge GPA evidence"
+        if recommendation["alignment_basis"] == "diffeoforge_gpa"
+        else "researcher-declared external GPA"
+    )
+    automatic = _list_html(recommendation["automatic_inferences"])
+    decisions = _list_html(recommendation["user_decisions"])
+    pilot = _list_html(recommendation["pilot_validation_required"])
+    warnings = _list_html(recommendation["warnings"])
+    fingerprint = escape(str(recommendation["fingerprint"]))
+    calibration_plan = recommendation.get("calibration_plan")
+    if calibration_plan is None:
+        calibration_html = """
+    <h3>Dataset-specific calibration</h3>
+    <div class="notices"><ul><li>No staged calibration plan is bound to this
+      configuration. Representative neighboring-parameter pilots remain required.</li>
+    </ul></div>"""
+    else:
+        selected = _list_html(
+            [
+                f"{item['selection_order']}: {item['filename']} "
+                f"({str(item['selection_role']).replace('_', ' ')})"
+                for item in calibration_plan["selected_pilot_subjects"]
+            ]
+        )
+        stages = _list_html(
+            [
+                f"Stage {stage['order']}: {stage['title']} "
+                f"({len(stage['candidates'])} candidates)"
+                for stage in calibration_plan["stages"]
+            ]
+        )
+        feature = calibration_plan["smallest_relevant_feature"]
+        feature_text = (
+            "not measured"
+            if feature is None
+            else f"{float(feature):.8g} {calibration_plan['coordinate_unit']}"
+        )
+        calibration_html = f"""
+    <h3>Dataset-specific calibration plan</h3>
+    <p><strong>Status:</strong> planned — not executed<br>
+      <strong>Plan fingerprint:</strong>
+        <code>{escape(str(calibration_plan["fingerprint"]))}</code><br>
+      <strong>Pilot cohort:</strong> {calibration_plan["pilot_subject_count"]} of
+        {calibration_plan["subject_count"]} subjects<br>
+      <strong>Smallest relevant feature:</strong> {escape(feature_text)}</p>
+    <div class="cards">
+      <div class="card"><span>Representative specimens</span>{selected}</div>
+      <div class="card"><span>Sequential comparisons</span>{stages}</div>
+    </div>
+    <div class="notices"><ul><li>This plan is predeclared provenance, not evidence
+      that a pilot ran or that any parameter was approved.</li></ul></div>"""
+    return f"""
+  <section>
+    <h2>Parameter provenance</h2>
+    <p><strong>Source:</strong> {profile}<br>
+      <strong>Alignment basis:</strong> {escape(alignment_basis)}<br>
+      <strong>Analyzed cohort:</strong> {recommendation["subject_count"]} subjects plus
+      template <code>{escape(str(recommendation["template_filename"]))}</code><br>
+      <strong>Evidence fingerprint:</strong> <code>{fingerprint}</code></p>
+    <div class="cards">
+      <div class="card"><span>Median aligned diagonal</span>
+        <strong>{measurements["cohort_median_diagonal"]:.6g}</strong></div>
+      <div class="card"><span>Aligned size CV</span>
+        <strong>{measurements["cohort_diagonal_cv"]:.3%}</strong></div>
+      <div class="card"><span>Centroid dispersion / diagonal</span>
+        <strong>{measurements["normalized_centroid_dispersion"]:.3%}</strong></div>
+      <div class="card"><span>Conservative four-edge sampling diagnostic</span>
+        <strong>{measurements["sampling_floor_ratio"]:.3%}</strong></div>
+    </div>
+    <table>
+      <thead><tr><th>Inferred automatically</th><th>Chosen by researcher</th>
+        <th>Requires pilot validation</th></tr></thead>
+      <tbody><tr><td>{automatic}</td><td>{decisions}</td><td>{pilot}</td></tr></tbody>
+    </table>
+    <h3>Recommendation warnings</h3>
+    <div class="notices">{warnings}</div>
+    {calibration_html}
+  </section>"""
+
+
 def render_preflight_html(result: PreflightResult) -> str:
     """Render a portable report with no scripts, network calls, or external assets."""
 
@@ -202,9 +504,33 @@ def render_preflight_html(result: PreflightResult) -> str:
     mesh_rows = _mesh_row("template", result.template) + "".join(
         _mesh_row("subject", subject) for subject in result.subjects
     )
+    quality_rows = "".join(_quality_row(record) for record in result.mesh_quality)
+    quality_html = (
+        f"""
+  <section>
+    <h2>Structural mesh quality</h2>
+    <p>Every triangle and indexed edge was checked before execution. Non-manifold edges,
+      inconsistent face orientation, duplicate faces, isolated vertices, and zero-area
+      faces are blocking errors. Boundary edges and multiple connected components are
+      reported for study-level review because open or multipart anatomy can be intentional.</p>
+    <div class="scroll"><table>
+      <thead><tr><th>Role</th><th>File</th><th>Boundary edges</th>
+        <th>Non-manifold edges</th><th>Orientation conflicts</th>
+        <th>Duplicate faces</th><th>Isolated vertices</th><th>Zero-area faces</th>
+        <th>Components</th></tr></thead>
+      <tbody>{quality_rows}</tbody>
+    </table></div>
+    <p class="boundary"><strong>Operational boundary:</strong>
+      {escape(QUALITY_BOUNDARY)} DiffeoForge never edits an input mesh during preflight;
+      any future repair workflow must write a new copy and preserve a provenance log.</p>
+  </section>"""
+        if result.mesh_quality
+        else ""
+    )
     effective_yaml = escape(
         yaml.safe_dump(dict(config), sort_keys=False, allow_unicode=True), quote=False
     )
+    provenance_html = _parameter_provenance_html(config)
 
     return f"""<!doctype html>
 <html lang="en">
@@ -281,6 +607,8 @@ def render_preflight_html(result: PreflightResult) -> str:
       <tbody>{parameter_rows}</tbody></table>
   </section>
 
+  {provenance_html}
+
   <section>
     <h2>Mesh inventory</h2>
     <div class="scroll"><table>
@@ -289,6 +617,8 @@ def render_preflight_html(result: PreflightResult) -> str:
       <tbody>{mesh_rows}</tbody>
     </table></div>
   </section>
+
+  {quality_html}
 
   <section>
     <h2>Effective configuration</h2>

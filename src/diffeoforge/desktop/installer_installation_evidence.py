@@ -295,6 +295,28 @@ def _build_context(
         "bundle": bundle,
         "evidence_directory": evidence_dir,
         "license": license_file,
+        "expected_registration": _expected_registration(plan),
+    }
+
+
+def _expected_registration(plan: dict) -> dict[str, str]:
+    """Use the verified compiler inputs, including the legacy display fallback."""
+    arguments = plan["compiler"]["arguments"]
+    values: dict[str, str] = {}
+    for name in ("AppVersion", "AppDisplayVersion"):
+        prefix = f"/D{name}="
+        matches = [arg[len(prefix):] for arg in arguments if arg.startswith(prefix)]
+        if len(matches) > 1 or (matches and not matches[0]):
+            raise InstallerInstallationEvidenceError(f"Invalid installer define: {name}")
+        if matches:
+            values[name] = matches[0]
+    version = values.get("AppVersion")
+    if not version or version != plan["source"]["application_version"]:
+        raise InstallerInstallationEvidenceError("Installer registration version differs")
+    display = values.get("AppDisplayVersion", version)
+    return {
+        "display_name": f"DiffeoForge {display} (Windows CPU x86-64)",
+        "display_version": version,
     }
 
 
@@ -326,6 +348,7 @@ def verify_installer_installation_prerequisites(
         "bundle_directory": str(context["bundle"]),
         "evidence_directory": str(context["evidence_directory"]),
         "license": _file_record(context["license"]),
+        "expected_registration": context["expected_registration"],
     }
 
 

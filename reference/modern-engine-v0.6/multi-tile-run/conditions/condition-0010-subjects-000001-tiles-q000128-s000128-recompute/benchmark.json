@@ -1,0 +1,185 @@
+{
+  "benchmark_id": "declared_objective_gradient",
+  "benchmark_version": "0.4",
+  "configuration": {
+    "attachment_type": "current",
+    "control_points": 9,
+    "effective_pairwise_evaluation": {
+      "mode": "blockwise",
+      "query_tile_size": 128,
+      "source_tile_size": 128
+    },
+    "flow_integrator": "deformetrica_heun",
+    "gradient_block": "momenta",
+    "process_isolation": "fresh multiprocessing spawn process per repeat",
+    "random_seed": 20260715,
+    "repeats": 5,
+    "rss_sampling_interval_ms": 5.0,
+    "shooting_integrator": "rk2",
+    "source_pairwise_evaluation": {
+      "mode": "blockwise",
+      "query_tile_size": 64,
+      "source_tile_size": 64
+    },
+    "threads": 1,
+    "tile_autograd_strategy": "recompute",
+    "timepoints": 5,
+    "warmup_evaluations_per_repeat": 1
+  },
+  "created_at": "2026-07-22T16:59:25+00:00",
+  "environment": {
+    "diffeoforge": "0.0.0.dev0",
+    "logical_cpus": 32,
+    "numpy": "2.5.1",
+    "parent_executable": "python.exe",
+    "physical_memory_bytes": 136522924032,
+    "platform": "Windows-11-10.0.26200-SP0",
+    "psutil": "7.2.2",
+    "python": "3.12.13",
+    "pytorch": "2.13.0+cpu"
+  },
+  "input": {
+    "available_subject_count": 5,
+    "selected_subject_count": 1,
+    "selection": "first subjects in validated deterministic path order",
+    "subjects": [
+      {
+        "bytes": 10026,
+        "label": "subject-01.vtk",
+        "points": 162,
+        "role": "subject",
+        "sha256": "25c07a447699028e63b535c00ca094803664fcda15595c1645d9cb3a5b73233b",
+        "triangles": 320
+      }
+    ],
+    "template": {
+      "bytes": 10021,
+      "label": "template.vtk",
+      "points": 162,
+      "role": "template",
+      "sha256": "e3f5fa71028d419e28e07403af2eff932d6e950acce9a989e1f1a2cc441b8325",
+      "triangles": 320
+    }
+  },
+  "numerical_consistency": {
+    "absolute_tolerance": 1e-12,
+    "consistent": true,
+    "gradient_norm_maximum": 72.62526339691684,
+    "gradient_norm_minimum": 72.62526339691684,
+    "gradient_norm_span": 0.0,
+    "objective_maximum": -4.449775141460677,
+    "objective_minimum": -4.449775141460677,
+    "objective_span": 0.0,
+    "relative_tolerance": 1e-12
+  },
+  "operation_model": {
+    "gaussian_calls_per_evaluation": 40,
+    "gaussian_pair_elements_per_evaluation": 321213,
+    "largest_execution_tile": {
+      "float64_matrix_bytes": 131072,
+      "float64_xyz_difference_tensor_bytes": 393216,
+      "logical_columns": 320,
+      "logical_rows": 320,
+      "operation": "template_attachment_self",
+      "pair_elements": 16384,
+      "subject_label": null,
+      "tile_columns": 128,
+      "tile_rows": 128
+    },
+    "largest_logical_pair": {
+      "columns": 320,
+      "float64_matrix_bytes": 819200,
+      "float64_xyz_difference_tensor_bytes": 2457600,
+      "operation": "template_attachment_self",
+      "pair_elements": 102400,
+      "rows": 320,
+      "subject_label": null
+    }
+  },
+  "samples": [
+    {
+      "gradient_norm": 72.62526339691684,
+      "objective": -4.449775141460677,
+      "repeat": 1,
+      "rss_before_bytes": 295321600,
+      "rss_sample_count": 4,
+      "sampled_peak_rss_bytes": 295854080,
+      "sampled_rss_delta_bytes": 532480,
+      "wall_time_ns": 38009200
+    },
+    {
+      "gradient_norm": 72.62526339691684,
+      "objective": -4.449775141460677,
+      "repeat": 2,
+      "rss_before_bytes": 295407616,
+      "rss_sample_count": 4,
+      "sampled_peak_rss_bytes": 295960576,
+      "sampled_rss_delta_bytes": 552960,
+      "wall_time_ns": 36386700
+    },
+    {
+      "gradient_norm": 72.62526339691684,
+      "objective": -4.449775141460677,
+      "repeat": 3,
+      "rss_before_bytes": 295616512,
+      "rss_sample_count": 4,
+      "sampled_peak_rss_bytes": 296148992,
+      "sampled_rss_delta_bytes": 532480,
+      "wall_time_ns": 35251500
+    },
+    {
+      "gradient_norm": 72.62526339691684,
+      "objective": -4.449775141460677,
+      "repeat": 4,
+      "rss_before_bytes": 295755776,
+      "rss_sample_count": 4,
+      "sampled_peak_rss_bytes": 296341504,
+      "sampled_rss_delta_bytes": 585728,
+      "wall_time_ns": 34884900
+    },
+    {
+      "gradient_norm": 72.62526339691684,
+      "objective": -4.449775141460677,
+      "repeat": 5,
+      "rss_before_bytes": 294731776,
+      "rss_sample_count": 4,
+      "sampled_peak_rss_bytes": 295280640,
+      "sampled_rss_delta_bytes": 548864,
+      "wall_time_ns": 38598700
+    }
+  ],
+  "scientific_boundary": "Fresh CPU processes measure one explicitly declared exact objective plus gradient for the first configured optimizer block. Wall time excludes tensor/input preparation and warm-up. Process RSS is sampled every 5 ms after warm-up and can miss shorter peaks; it is not total system memory, GPU memory, full-optimizer peak RAM, end-to-end workflow runtime, an ETA model, an extrapolation to 300 subjects, or a hardware pass/fail verdict.",
+  "source_config": {
+    "filename": "minimal-modern-atlas-blockwise.yaml",
+    "project": "synthetic-modern-atlas-blockwise",
+    "sha256": "80484b95e4ed113752372df7e8597e9049c7e16133f3d8fd8b35ceb8e8b3472a"
+  },
+  "summary": {
+    "rss_before_bytes": {
+      "maximum": 295755776,
+      "median": 295407616,
+      "minimum": 294731776
+    },
+    "sampled_peak_rss_bytes": {
+      "maximum": 296341504,
+      "median": 295960576,
+      "minimum": 295280640
+    },
+    "sampled_rss_delta_bytes": {
+      "maximum": 585728,
+      "median": 548864,
+      "minimum": 532480
+    },
+    "wall_time_ns": {
+      "maximum": 38598700,
+      "median": 36386700,
+      "minimum": 34884900
+    }
+  },
+  "warnings": [
+    "Sampled process RSS can miss peaks shorter than the 5 ms sampling interval.",
+    "This measures one objective+gradient evaluation, not a full optimizer or workflow.",
+    "Do not extrapolate these repeats to 300 subjects without a prospective scaling design.",
+    "Recompute trades additional backward calculation for a different saved-tensor graph."
+  ]
+}

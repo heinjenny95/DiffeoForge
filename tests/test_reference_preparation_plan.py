@@ -12,6 +12,7 @@ from html.parser import HTMLParser
 from pathlib import Path
 
 import pytest
+import yaml
 
 import diffeoforge.reference_preparation_plan as preparation_plan_module
 from diffeoforge.backends import render_engine_file_bytes
@@ -131,6 +132,36 @@ def test_reference_preparation_plan_matches_real_preparation_byte_for_byte(
         assert hashlib.sha256(payload).hexdigest() == planned["sha256"]
         if planned["kind"] == "generated":
             assert payload == planned["content_utf8"].encode("utf-8")
+
+
+def test_reference_plan_matches_explicit_control_point_preparation(
+    tmp_path: Path,
+) -> None:
+    root = _project(tmp_path)
+    config_path = root / "atlas.yaml"
+    control_points = root / "trained-control-points.txt"
+    control_points.write_text("0 0 0\n1 1 1\n", encoding="ascii")
+    config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    config["model"]["deformation"]["initial_control_points"] = (
+        "./trained-control-points.txt"
+    )
+    config["optimization"]["freeze_template"] = True
+    config["optimization"]["freeze_control_points"] = True
+    config_path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+
+    plan = plan_reference_preparation(config_path, run_id="holdout-parity")
+    run = prepare_run(config_path, run_id="holdout-parity")
+    manifest = verify_prepared_run(run)
+
+    assert "input/control-points" in plan["directories"]
+    assert manifest["protected_artifacts"] == [
+        {
+            "path": item["path"],
+            "bytes": item["bytes"],
+            "sha256": item["sha256"],
+        }
+        for item in plan["protected_files"]
+    ]
 
 
 def test_pure_xml_renderer_preserves_established_native_bytes() -> None:

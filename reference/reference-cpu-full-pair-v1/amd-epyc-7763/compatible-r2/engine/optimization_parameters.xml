@@ -1,0 +1,20 @@
+<?xml version='1.0' encoding='utf-8'?>
+<optimization-parameters>
+    <optimization-method-type>GradientAscent</optimization-method-type>
+    <optimized-log-likelihood>complete</optimized-log-likelihood>
+    <number-of-processes>1</number-of-processes>
+    <gpu-mode>none</gpu-mode>
+    <initial-step-size>0.01</initial-step-size>
+    <max-iterations>100</max-iterations>
+    <convergence-tolerance>0.0001</convergence-tolerance>
+    <downsampling-factor>1</downsampling-factor>
+    <max-line-search-iterations>10</max-line-search-iterations>
+    <save-every-n-iters>100</save-every-n-iters>
+    <print-every-n-iters>1</print-every-n-iters>
+    <scale-initial-step-size>On</scale-initial-step-size>
+    <use-sobolev-gradient>On</use-sobolev-gradient>
+    <sobolev-kernel-width-ratio>1.0</sobolev-kernel-width-ratio>
+    <use-rk2>Off</use-rk2>
+    <freeze-template>Off</freeze-template>
+    <freeze-control-points>Off</freeze-control-points>
+</optimization-parameters>

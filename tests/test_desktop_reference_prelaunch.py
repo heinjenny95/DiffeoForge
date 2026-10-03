@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import shutil
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
+import yaml
 
 from diffeoforge.desktop.project_review import ProjectReviewResult
 from diffeoforge.desktop.project_setup import DesktopEngine
@@ -11,6 +13,7 @@ from diffeoforge.desktop.reference_prelaunch import (
     DesktopReferenceLaunchRequest,
     DesktopReferencePrelaunchError,
     build_reference_launch_request,
+    build_reference_resume_launch_request,
     validate_reference_launch_request,
 )
 from diffeoforge.desktop.reference_readiness import DesktopReferenceReadiness
@@ -272,13 +275,103 @@ def test_reference_prelaunch_rejects_nonreference_and_noncontainer_routes(
     native_root = tmp_path / "native"
     native_root.mkdir()
     native = _config(native_root, container=False)
-    with pytest.raises(DesktopReferencePrelaunchError, match="container launcher only"):
+    with pytest.raises(DesktopReferencePrelaunchError, match="different launcher settings"):
         build_reference_launch_request(
             _review(native),
             _readiness(native),
             request_id="reference-test",
             run_id="pilot-001",
         )
+
+
+def test_reference_prelaunch_binds_wsl_launcher_round_trip(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    loaded = yaml.safe_load(config.read_text(encoding="utf-8"))
+    launcher = {
+        "type": "wsl",
+        "distribution": "DiffeoForge-Reference-4.3",
+        "executable": "/opt/diffeoforge/reference/bin/deformetrica",
+    }
+    loaded["runtime"]["launcher"] = launcher
+    config.write_text(yaml.safe_dump(loaded, sort_keys=False), encoding="utf-8")
+    report = DoctorReport(
+        status="ready",
+        workspace=str(tmp_path.resolve()),
+        engine="wsl",
+        image=(
+            "DiffeoForge-Reference-4.3:"
+            "/opt/diffeoforge/reference/bin/deformetrica"
+        ),
+        checks=(DoctorCheck("reference_runtime", "Runtime", "pass", "4.3.0"),),
+        launcher=launcher,
+    )
+    readiness = DesktopReferenceReadiness(
+        config_path=config,
+        config_sha256=sha256_file(config),
+        workspace=tmp_path,
+        engine="wsl",
+        image=report.image,
+        report=report,
+        launcher_type="wsl",
+        launcher_distribution=launcher["distribution"],
+        launcher_executable=launcher["executable"],
+    )
+
+    request = build_reference_launch_request(
+        _review(config),
+        readiness,
+        request_id="reference-wsl",
+        run_id="pilot-wsl",
+    )
+    round_trip = DesktopReferenceLaunchRequest.from_dict(request.as_dict())
+
+    assert round_trip == request
+    assert request.launcher == launcher
+
+
+def test_reference_resume_prelaunch_binds_verified_source_and_successor(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    source_run = (tmp_path / "runs" / "interrupted-001").resolve()
+    source_config = source_run / "config" / "source-config.yaml"
+    source_config.parent.mkdir(parents=True)
+    shutil.copyfile(ROOT / "examples" / "minimal-atlas-container.yaml", source_config)
+    digest = sha256_file(source_config)
+    effective_config = yaml.safe_load(source_config.read_text(encoding="utf-8"))
+    evidence = SimpleNamespace(
+        source_run=source_run,
+        manifest={
+            "source_config": {"sha256": digest},
+            "effective_config": effective_config,
+            "protected_artifacts": [
+                {"path": "config/source-config.yaml", "sha256": digest}
+            ],
+            "input_count": {"subjects": 1, "templates": 1},
+            "inputs": [
+                {"role": "template", "geometry": {"cells": 8, "bytes": 512}},
+                {"role": "subject", "geometry": {"cells": 8, "bytes": 512}},
+            ],
+        },
+        result={"outputs": {"total_bytes": 1_024}},
+    )
+    monkeypatch.setattr(
+        "diffeoforge.desktop.reference_prelaunch.inspect_resume_source",
+        lambda _path: evidence,
+    )
+
+    request = build_reference_resume_launch_request(
+        source_run,
+        request_id="reference-resume-test",
+        run_id="interrupted-001-resume-01",
+    )
+    round_trip = DesktopReferenceLaunchRequest.from_dict(request.as_dict())
+
+    assert round_trip == request
+    assert request.resume_source == source_run
+    assert request.config_path == source_config
+    assert request.destination == source_run.parent / "interrupted-001-resume-01"
+    assert not request.destination.exists()
 
 
 @pytest.mark.parametrize("field", ["request_id", "run_id"])

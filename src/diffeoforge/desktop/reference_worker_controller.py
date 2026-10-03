@@ -19,6 +19,7 @@ from diffeoforge.desktop.reference_worker_protocol import (
     ReferenceWorkerEventLedger,
 )
 from diffeoforge.desktop.worker_protocol import parse_json_object
+from diffeoforge.subprocess_policy import hidden_windows_process_kwargs
 
 ReferenceHarnessControllerState = Literal["idle", "running", "verified", "failed"]
 ReferenceHarnessEventCallback = Callable[[DesktopReferenceWorkerEvent], None]
@@ -214,7 +215,6 @@ class ReferenceHarnessController:
 
         process: subprocess.Popen[bytes] | None = None
         worker_job = None
-        creationflags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
         try:
             worker_job = _create_windows_harness_job()
             process = subprocess.Popen(
@@ -224,7 +224,7 @@ class ReferenceHarnessController:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 bufsize=0,
-                creationflags=creationflags,
+                **hidden_windows_process_kwargs(),
             )
             if worker_job is not None:
                 worker_job.assign(process)

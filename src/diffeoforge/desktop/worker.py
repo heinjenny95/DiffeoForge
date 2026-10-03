@@ -117,6 +117,7 @@ def run_worker(
         from diffeoforge.modern_workflow import (
             MANIFEST_NAME,
             ModernWorkflowCancelled,
+            load_modern_workflow_config,
             run_modern_workflow,
             verify_modern_workflow,
         )
@@ -127,6 +128,18 @@ def run_worker(
                 f"diffeoforge[modern-engine]. ({error})"
             )
         )
+
+    try:
+        config = load_modern_workflow_config(request.config_path)
+        configured_device = config["runtime"]["device"]
+        if configured_device != request.runtime_device:
+            raise DesktopWorkerProtocolError(
+                "Desktop worker request device does not match the reviewed "
+                f"configuration: request={request.runtime_device}, "
+                f"configuration={configured_device}"
+            )
+    except (OSError, RuntimeError, TypeError, ValueError) as error:
+        return fail(error)
 
     cancel_event = threading.Event()
     parent_disconnected = threading.Event()

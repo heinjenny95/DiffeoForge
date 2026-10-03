@@ -161,6 +161,8 @@ record:
   deterministic selection rule;
 - Python, DiffeoForge, NumPy, PyTorch, psutil, operating-system, CPU-thread,
   random-seed, and physical-memory observations;
+- the Modern engine implementation revision for newly created reports and
+  prospective designs;
 - warm-up/repeat counts, process-isolation method, and sampling interval;
 - the benchmark-only standard/recompute strategy;
 - the exact logical Gaussian calls/pair elements, largest logical pair, and
@@ -176,6 +178,12 @@ selection, software, protocol, and raw observations are preserved so they can
 be independently interpreted. Schema validation and semantic arithmetic checks
 reject inconsistent repeat, summary, numerical, logical-pair, or execution-tile
 records before publication.
+
+Reports created before implementation provenance was added remain verifiable
+under the legacy six-call RK2 workload formula. Implementation-0.3 and
+implementation-0.4 reports bind the four-call RK2 formula. A prospective study
+binds one exact revision and cannot mix legacy, 0.3, and 0.4 condition reports
+or silently resume after an engine implementation change.
 
 ## Scientific boundary
 

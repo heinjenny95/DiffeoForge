@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 from collections.abc import Mapping
 from dataclasses import dataclass
 from importlib.resources import files
@@ -25,6 +26,8 @@ class InputSummary:
     template: Path
     subject_count: int
     subjects: tuple[Path, ...]
+    initial_control_points: Path | None = None
+    initial_momenta: Path | None = None
 
 
 def _schema() -> Mapping[str, Any]:
@@ -73,9 +76,7 @@ def _resolve_from_config(value: str, config_path: Path) -> Path:
     return candidate.resolve()
 
 
-def resolve_output_directory(
-    config: Mapping[str, Any], config_path: Path | str
-) -> Path:
+def resolve_output_directory(config: Mapping[str, Any], config_path: Path | str) -> Path:
     """Resolve the configured run root relative to the configuration file."""
 
     return _resolve_from_config(config["output"]["directory"], Path(config_path))
@@ -88,6 +89,16 @@ def validate_input_paths(config: Mapping[str, Any], config_path: Path | str) -> 
     input_config = config["input"]
     input_directory = _resolve_from_config(input_config["directory"], source_path)
     template = _resolve_from_config(input_config["template"], source_path)
+    control_points_value = config["model"]["deformation"].get("initial_control_points")
+    initial_control_points = (
+        None
+        if control_points_value is None
+        else _resolve_from_config(str(control_points_value), source_path)
+    )
+    momenta_value = config["model"]["deformation"].get("initial_momenta")
+    initial_momenta = (
+        None if momenta_value is None else _resolve_from_config(str(momenta_value), source_path)
+    )
 
     if not input_directory.is_dir():
         raise ConfigurationError(f"Input directory does not exist: {input_directory}")
@@ -95,6 +106,19 @@ def validate_input_paths(config: Mapping[str, Any], config_path: Path | str) -> 
         raise ConfigurationError(f"Template mesh does not exist: {template}")
     if template.suffix.lower() != ".vtk":
         raise ConfigurationError(f"Template must be a VTK file: {template}")
+    if initial_control_points is not None:
+        if not initial_control_points.is_file():
+            raise ConfigurationError(
+                f"Initial control-points file does not exist: {initial_control_points}"
+            )
+        if initial_control_points.suffix.lower() != ".txt":
+            raise ConfigurationError(
+                f"Initial control points must be a Deformetrica TXT file: {initial_control_points}"
+            )
+        if initial_control_points.stat().st_size < 1:
+            raise ConfigurationError(
+                f"Initial control-points file is empty: {initial_control_points}"
+            )
 
     pattern = input_config["subject_pattern"]
     try:
@@ -114,10 +138,21 @@ def validate_input_paths(config: Mapping[str, Any], config_path: Path | str) -> 
         path for path in candidates if path != template and path.suffix.lower() == ".vtk"
     )
     if not subjects:
-        raise ConfigurationError(
-            f"No subject VTK files match {pattern!r} in {input_directory}."
-        )
-    if len(subjects) < 2:
+        raise ConfigurationError(f"No subject VTK files match {pattern!r} in {input_directory}.")
+    probe = (
+        config.get("project", {})
+        .get("parameter_provenance", {})
+        .get("recommendation", {})
+        .get("calibration_plan", {})
+        .get("execution_scope")
+        == "single_specimen_probe"
+    )
+    fixed_probe = (
+        probe
+        and config["optimization"]["freeze_template"]
+        and config["optimization"]["freeze_control_points"]
+    )
+    if len(subjects) < 2 and not fixed_probe:
         raise ConfigurationError("Atlas estimation requires at least two subject meshes.")
     if len(set(subjects)) != len(subjects):
         raise ConfigurationError("Subject file selection contains duplicate paths.")
@@ -127,9 +162,38 @@ def validate_input_paths(config: Mapping[str, Any], config_path: Path | str) -> 
             "Subject mesh filenames must be unique when compared case-insensitively."
         )
 
+    if initial_momenta is not None:
+        deformation = config["model"]["deformation"]
+        if initial_control_points is None:
+            raise ConfigurationError("Initial momenta require explicit matching control points.")
+        if deformation.get("initial_momenta_subjects") != [p.name for p in subjects]:
+            raise ConfigurationError("Initial momenta subject order must match the input cohort.")
+        try:
+            controls = [
+                line.split()
+                for line in initial_control_points.read_text().splitlines()
+                if line.strip()
+            ]
+            lines = initial_momenta.read_text(encoding="utf-8").splitlines()
+            shape = tuple(int(value) for value in lines[0].split())
+            values = [float(value) for line in lines[1:] for value in line.split()]
+            if (
+                not controls
+                or any(len(row) != 3 for row in controls)
+                or any(not math.isfinite(float(value)) for row in controls for value in row)
+                or shape != (len(subjects), len(controls), 3)
+                or len(values) != math.prod(shape)
+                or not all(math.isfinite(value) for value in values)
+            ):
+                raise ValueError("dimensions or finite values do not match the cohort and controls")
+        except (OSError, UnicodeError, ValueError, IndexError) as error:
+            raise ConfigurationError(f"Invalid initial momenta: {error}") from error
+
     return InputSummary(
         input_directory=input_directory,
         template=template,
         subject_count=len(subjects),
         subjects=subjects,
+        initial_control_points=initial_control_points,
+        initial_momenta=initial_momenta,
     )
