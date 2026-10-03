@@ -694,6 +694,25 @@ def _cohort_identity(manifest):
     )
 
 
+def current_sequence_directory(directory):
+    """UI-only resume of the chosen series; historical study reads stay explicit."""
+    info = sequence_info(directory)
+    if not info:
+        return Path(directory)
+    root = Path(info["root"]).resolve()
+    envelope = study._read_json(root / STATE, "specimen sequence")
+    state = envelope["payload"]
+    if (envelope["sha256"] != _canonical_hash(state) or state["version"] != VERSION
+            or sha256_file(root / study.STUDY_MANIFEST) != info["root_sha256"]):
+        raise ValueError("Saved sequence binding changed")
+    selected = study._safe_study_path(root, state["current"])
+    child_info = sequence_info(selected)
+    if (not child_info or Path(child_info["root"]).resolve() != root
+            or child_info["root_sha256"] != info["root_sha256"]):
+        raise ValueError("Saved checkpoint belongs to another sequence")
+    return study.latest_reference_calibration_search_extension_directory(selected)
+
+
 def saved_sequences(directory):
     """Cheap descriptors for the chooser; full evidence is checked on selection."""
     info = sequence_info(directory)
@@ -711,17 +730,58 @@ def saved_sequences(directory):
                 manifest
             ) != _cohort_identity(current):
                 continue
+            selected = root / state["current"]
+            selected = study.latest_reference_calibration_search_extension_directory(selected)
+            child = study._read_json(selected / study.STUDY_MANIFEST, "saved checkpoint")
+            events = study._load_events(selected)
+            selections = study._selected_state(events)[1]
+            order = min(len(selections) + 1, 4)
+            phase = child.get("fit_search", {}).get("sequence", {}).get("phase", "joint")
+            stage_id = child["plan"]["stages"][order - 1]["stage_id"]
+            reviews = {
+                e["candidate_id"]: e.get("approved")
+                for e in (*events, *study._read_review_journal(
+                    study._search_extension_series(selected)[0]
+                )) if e["event"] == "candidate_visual_review" and e.get("stage_id") == stage_id
+            }
+            retained = any(e["event"] == "stage_retained" and e.get("stage_id") == stage_id
+                           for e in events)
+            joint_status = (
+                "complete" if any(e["event"] == "study_completed" for e in events)
+                else "approved option available" if True in reviews.values()
+                else "prior approved fit available" if retained
+                else "reviewed options rejected" if reviews
+                else "not yet reviewed"
+            )
+            modified = max((root / STATE).stat().st_mtime,
+                           (selected / study.STUDY_EVENTS).stat().st_mtime)
             result.append(
                 dict(
                     directory=str(root),
                     approved=len(state["approved"]),
                     total=len(state["order"]),
                     current=state["current"],
+                    current_directory=str(selected), stage=order, phase=phase,
+                    joint_status=joint_status, modified=modified,
+                    is_current=root.resolve() == current_root.resolve(),
                 )
             )
         except (OSError, ValueError, KeyError, TypeError):
             continue
-    return sorted(result, key=lambda r: (-r["approved"], r["directory"]))
+    return sorted(result, key=lambda r: (-r["modified"], r["directory"]))
+
+
+def saved_sequence_label(row):
+    """Compact labels separate individual approvals from the current joint attempt."""
+    from datetime import datetime
+
+    saved = datetime.fromtimestamp(row["modified"]).strftime("%Y-%m-%d %H:%M")
+    phase = (f"joint stage {row['stage']}: {row['joint_status']}"
+             if row["phase"] == "joint" else "individual fitting")
+    return (
+        f"{saved} · {row['approved']}/{row['total']} individual approved · {phase} · "
+        f"{Path(row['directory']).name[-6:]}" + (" · current" if row["is_current"] else "")
+    )
 
 
 def restore_saved_sequence(directory, selected_root):

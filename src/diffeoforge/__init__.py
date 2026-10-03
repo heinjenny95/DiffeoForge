@@ -2,7 +2,7 @@
 
 import re
 
-__version__ = "0.0.0.dev103"
+__version__ = "0.0.0.dev104"
 
 
 def display_version(version: str = __version__) -> str:

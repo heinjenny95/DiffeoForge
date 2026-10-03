@@ -2612,6 +2612,7 @@ def assess_calibration_stage(
     *,
     stage_id: str,
     evidence: tuple[CalibrationCandidateEvidence, ...],
+    integration_tolerances: Mapping[str, float] | None = None,
 ) -> CalibrationStageAssessment:
     """Assess one executed stage without hiding missing data or hard failures.
 
@@ -2668,6 +2669,15 @@ def assess_calibration_stage(
             )
         if item.review_approved is False:
             reasons.append("visual registration review explicitly failed")
+        if integration_tolerances:
+            for metric, tolerance in (
+                ("numerical_atlas_rms", "atlas_rms_absolute"),
+                ("objective_relative_difference", "objective_relative"),
+                ("residual_relative_difference", "residual_relative"),
+            ):
+                value = _evidence_metric(item, metric)
+                if value is not None and value > integration_tolerances[tolerance]:
+                    reasons.append(f"{metric} exceeds the declared numerical tolerance")
         row: list[float] = []
         for metric, _weight in metric_weights:
             value = _evidence_metric(item, metric)
@@ -2859,6 +2869,28 @@ def assess_calibration_stage(
             "enclosed optimum."
         )
 
+    if integration_tolerances:
+        counts = {c.candidate_id: float(c.values["timepoints"]) for c in stage.candidates}
+        balanced_id = (
+            min(eligible_ids, key=lambda cid: (counts[cid], cid)) if eligible_ids else None
+        )
+        rank_id = balanced_id
+        scores = {cid: counts[cid] for cid in eligible_ids}
+        score_ranges = {cid: (counts[cid], counts[cid]) for cid in eligible_ids}
+        pareto_ids = tuple(eligible_ids)
+        metric_weights = (("timepoints", 1.0),)
+        weight_stability = bootstrap_stability = score_margin = None
+        weight_win_fractions = bootstrap_win_fractions = {}
+        weight_scenario_count = bootstrap_iterations = 0
+        confidence = "robust" if balanced_id and all(e.completed for e in evidence) else "none"
+        automatic_selection_allowed = bool(balanced_id and confidence == "robust")
+        sensitivity_flags.append(
+            "Recommendation uses the smallest timepoint count meeting prospectively declared "
+            "atlas, objective and worst-specimen residual tolerances against the next finer "
+            "discretization. Speed and weighted rankings cannot override those tolerances. "
+            "The largest tested count has no finer reference and is not independently qualified."
+        )
+
     assessments = tuple(
         CalibrationCandidateAssessment(
             candidate_id=candidate_id,
@@ -2892,6 +2924,12 @@ def assess_calibration_stage(
             "anatomical plausibility."
         ),
     )
+    if integration_tolerances:
+        cautions = (
+            "Numerical selection uses prospectively declared tolerances against the next "
+            "finer complete-cohort discretization, not weighted metric rankings.",
+            *cautions[1:],
+        )
     payload = {
         "version": _ASSESSMENT_VERSION,
         "plan_fingerprint": plan.fingerprint,
@@ -2911,6 +2949,8 @@ def assess_calibration_stage(
         "sensitivity_flags": sensitivity_flags,
         "pareto_candidate_ids": list(pareto_ids),
         "metric_weights": dict(metric_weights),
+        **({"integration_tolerances": dict(integration_tolerances)}
+           if integration_tolerances else {}),
         "evidence": [by_id[candidate_id].as_manifest() for candidate_id in candidate_ids],
         "candidates": [candidate.as_manifest() for candidate in assessments],
         "cautions": list(cautions),

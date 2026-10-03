@@ -196,6 +196,8 @@ class ReferenceCalibrationStudySnapshot:
     feature_observations: Mapping[str, dict[str, dict[str, Any]]] = field(default_factory=dict)
     visual_display_scopes: Mapping[str, dict[str, str]] = field(default_factory=dict)
     adaptive_search_status: Mapping[str, Any] = field(default_factory=dict)
+    early_screening: Mapping[str, Any] = field(default_factory=dict)
+    integration_tolerances: Mapping[str, float] = field(default_factory=dict)
 
 
 def _normalized_search_extension_safety_limits(
@@ -1773,6 +1775,18 @@ def _load_verified_calibration_study(
                 attempts=len(starts),
             )
         )
+    from diffeoforge.reference_stage_screening import screening_state
+
+    early_screening = screening_state(root, stage.stage_id, events, candidate_states)
+    if early_screening:
+        candidate_states = [
+            replace(c, status="screened_out", metrics=None,
+                    error=("Early screen failed technically; joint fit not run."
+                           if c.candidate_id in early_screening["technical_failures"]
+                           else "Excluded after your early specimen review; joint fit not run."))
+            if c.candidate_id in early_screening["rejected"] else c
+            for c in candidate_states
+        ]
     series_root, _ = _search_extension_series(root)
     candidate_ids = {c.candidate_id for c in candidate_states}
     review_events = events + tuple(
@@ -1799,6 +1813,9 @@ def _load_verified_calibration_study(
         if awaiting
         else ("running" if any(item.status == "orphaned" for item in candidate_states) else "ready")
     )
+    from diffeoforge.reference_integration_check import verified_tolerances
+
+    tolerances = verified_tolerances(manifest, stage, candidate_states, events)
     return ReferenceCalibrationStudySnapshot(
         study_directory=root,
         study_id=str(manifest["study_id"]),
@@ -1806,6 +1823,8 @@ def _load_verified_calibration_study(
         status=status,
         current_stage=stage,
         candidates=tuple(candidate_states),
+        early_screening=early_screening,
+        integration_tolerances=tolerances,
         visual_reviews=visual_reviews,
         adaptive_search_status=next(
             (
@@ -1905,6 +1924,7 @@ class ReferenceCalibrationStudyRunner:
         self,
         *,
         event_callback: StudyEventCallback | None = None,
+        integration_tolerances: Mapping[str, float] | None = None,
     ) -> ReferenceCalibrationStudySnapshot:
         snapshot = load_reference_calibration_study(self.study_directory)
         if snapshot.status == "completed":
@@ -1913,10 +1933,19 @@ class ReferenceCalibrationStudyRunner:
             candidate.status == "completed" for candidate in snapshot.candidates
         ):
             return snapshot
+        if snapshot.current_stage.order == 4:
+            from diffeoforge.reference_integration_check import declare_tolerances
+
+            snapshot = declare_tolerances(snapshot, integration_tolerances)
         manifest = _verify_manifest(self.study_directory)
         assert snapshot.current_stage is not None
+        from diffeoforge.reference_stage_screening import joint_candidate_ids
+
+        allowed = joint_candidate_ids(snapshot)
         for candidate in snapshot.candidates:
-            if candidate.status == "completed":
+            if candidate.status == "completed" or (
+                allowed is not None and candidate.candidate_id not in allowed
+            ):
                 continue
             if self._cancel_requested:
                 break
@@ -2018,7 +2047,8 @@ class ReferenceCalibrationStudyRunner:
                 event_callback(terminal)
         updated = load_reference_calibration_study(self.study_directory)
         if not self._cancel_requested and all(
-            candidate.status in {"completed", "failed"} for candidate in updated.candidates
+            candidate.status in {"completed", "failed", "screened_out"}
+            for candidate in updated.candidates
         ):
             events = _load_events(self.study_directory)
             assert updated.current_stage is not None
@@ -2160,19 +2190,33 @@ def _stage_evidence(
     numerical: dict[str, tuple[float, float, float]] = {}
     if snapshot.current_stage.kind == "integration_accuracy":
         ordered = [
-            candidate for candidate in snapshot.candidates if candidate.candidate_id in completed
+            candidate for candidate in snapshot.candidates
+            if snapshot.integration_tolerances or candidate.candidate_id in completed
         ]
         for index, candidate in enumerate(ordered):
             neighbor = (
                 ordered[index + 1]
                 if index + 1 < len(ordered)
-                else (ordered[index - 1] if index else None)
+                else (ordered[index - 1] if index and not snapshot.integration_tolerances else None)
             )
-            if neighbor is None:
+            if (neighbor is None or candidate.candidate_id not in completed
+                    or neighbor.candidate_id not in completed):
                 continue
             first = candidate.metrics
             second = neighbor.metrics
             assert first is not None and second is not None
+            residual_difference = _relative_difference(
+                float(first["residual_p95"]), float(second["residual_p95"])
+            )
+            if snapshot.integration_tolerances:
+                names = {s.filename for s in snapshot.plan.selected_pilot_subjects}
+                left = first.get("subject_residual_p95", {})
+                right = second.get("subject_residual_p95", {})
+                if set(left) != names or set(right) != names:
+                    continue  # A cohort average cannot certify unmeasured specimens.
+                residual_difference = max(_relative_difference(
+                    float(left[name]), float(right[name])
+                ) for name in names)
             numerical[candidate.candidate_id] = (
                 atlas_rms_distance(first["atlas_path"], second["atlas_path"]),
                 _relative_difference(
@@ -2181,10 +2225,7 @@ def _stage_evidence(
                     float(second["attachment_objective_magnitude"])
                     + float(second["deformation_energy"]),
                 ),
-                _relative_difference(
-                    float(first["residual_p95"]),
-                    float(second["residual_p95"]),
-                ),
+                residual_difference,
             )
     evidence: list[CalibrationCandidateEvidence] = []
     for candidate in snapshot.candidates:
@@ -2244,6 +2285,7 @@ def assess_reference_calibration_snapshot(
         snapshot.plan,
         stage_id=snapshot.current_stage.stage_id,
         evidence=_stage_evidence(snapshot, visual_approvals or {}),
+        integration_tolerances=snapshot.integration_tolerances or None,
     )
 
 
@@ -2405,6 +2447,13 @@ def _selection_reason(
     assessment: CalibrationStageAssessment,
     selected_candidate_id: str,
 ) -> str:
+    if assessment.metric_weights == (("timepoints", 1.0),):
+        return (
+            "Selected a timepoint option meeting the prospectively recorded numerical "
+            "tolerances against its next finer complete-cohort comparison. The recommended "
+            "option is the smallest qualifying timepoint count; anatomical approval remains "
+            "a separate recorded all-specimen decision."
+        )
     selected = next(
         candidate
         for candidate in assessment.candidates
@@ -2557,6 +2606,9 @@ def _calibration_report_payload(
         "declared_priorities": declared_priorities,
         "recommended_parameters": parameters,
         "stage_decisions": stages,
+        **({"numerical_integration_criteria": next(e for e in reversed(events)
+            if e["event"] == "integration_tolerances_declared")}
+           if any(e["event"] == "integration_tolerances_declared" for e in events) else {}),
         "final_configuration": _relative_path(root, final_config),
         "full_cohort_confirmation_required": True,
         "next_steps": list(plan.final_confirmation_required),
@@ -2789,6 +2841,7 @@ def _record_reference_calibration_stage_selection(
         snapshot.plan,
         stage_id=snapshot.current_stage.stage_id,
         evidence=evidence,
+        integration_tolerances=snapshot.integration_tolerances or None,
     )
     selected_assessment = next(
         (
@@ -2997,6 +3050,7 @@ def select_reference_calibration_stage_automatically(
         snapshot.plan,
         stage_id=snapshot.current_stage.stage_id,
         evidence=_stage_evidence(snapshot, approvals),
+        integration_tolerances=snapshot.integration_tolerances or None,
     )
     selected_candidate_id = assessment.balanced_candidate_id
     if selected_candidate_id is None:

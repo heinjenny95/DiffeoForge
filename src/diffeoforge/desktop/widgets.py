@@ -9050,6 +9050,9 @@ class DiffeoForgeWindow(QMainWindow):
         if directory.exists():
             try:
                 directory = latest_reference_calibration_search_extension_directory(directory)
+                from diffeoforge.reference_sequential_fit import current_sequence_directory
+
+                directory = current_sequence_directory(directory)
             except (OSError, RuntimeError, TypeError, ValueError):
                 # Keep the known study path so the normal loader can present its
                 # precise verification error in the execution card.

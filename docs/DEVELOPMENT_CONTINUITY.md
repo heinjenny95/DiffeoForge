@@ -1,6 +1,6 @@
-# Development continuity — v103 retained pilot transitions
+# Development continuity — v104 early pilot review
 
-Snapshot: 2026-10-02. This is a public, software-only continuation guide. Detailed
+Snapshot: 2026-10-03. This is a public, software-only continuation guide. Detailed
 research results, local paths, account destinations and run identities belong in
 the owner's private project handoff, not this repository.
 
@@ -20,6 +20,16 @@ correct parameters or interpret biology for the researcher. Deformetrica is the
 default supported reference route; the Modern engine remains evidence-gated.
 
 ## Current source work
+
+v104 offers persistent optional fixed-reference screening in stages 2/3: one or
+two chosen specimens per option, a human decision before the next screen, then
+only retained options in the joint comparison. Joint QC remains separate; the
+approved baseline stays available. Stage 4 runs all timepoint options on the
+complete pilot and records prospective engineering tolerances for the smallest
+adequate next-finer comparison. Saved-series labels and reopening distinguish
+individual approvals from current joint status. No private scientific run is
+started. See [scope, compatibility and checks](V104_EARLY_PILOT_REVIEW.md).
+Build/installation and prospective acceptance are separate evidence gates.
 
 v103 retains exact approved joint fits across stages 2/3 and uses compatible
 learned initialization for ordinary as well as adaptive transitions. Explicit

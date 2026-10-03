@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QDialog,
+    QDoubleSpinBox,
     QFrame,
     QHBoxLayout,
     QInputDialog,
@@ -216,6 +217,9 @@ class _CalibrationStageWorker(QRunnable):
         specimen_fit: bool = False,
         specimen_action: tuple[str, str, int] | None = None,
         retain_previous: bool = False,
+        early_screen: bool = False,
+        screen_subjects: tuple[str, ...] | None = None,
+        integration_tolerances: Mapping[str, float] | None = None,
     ) -> None:
         super().__init__()
         self.runner = runner
@@ -223,6 +227,9 @@ class _CalibrationStageWorker(QRunnable):
         self.specimen_fit = specimen_fit
         self.specimen_action = specimen_action
         self.retain_previous = retain_previous
+        self.early_screen = early_screen
+        self.screen_subjects = screen_subjects
+        self.integration_tolerances = integration_tolerances
         self.adaptive_fit_search = adaptive_fit_search
         self.complete_automatic_pilot = complete_automatic_pilot
         self.afk = afk
@@ -258,7 +265,13 @@ class _CalibrationStageWorker(QRunnable):
             self.signals.event.emit(event)
 
         try:
-            if self.retain_previous:
+            if self.early_screen:
+                from diffeoforge.reference_stage_screening import run_next_screen
+
+                result = run_next_screen(
+                    self.runner, subjects=self.screen_subjects, event_callback=emit
+                )
+            elif self.retain_previous:
                 from diffeoforge.reference_stage_retention import keep_previous_fit
 
                 result = keep_previous_fit(self.runner.study_directory)
@@ -288,7 +301,9 @@ class _CalibrationStageWorker(QRunnable):
                 )
                 self.runner.study_directory = snapshot.study_directory
                 emit(dict(event="selected_continuation_started", snapshot=snapshot))
-                result = self.runner.run_current_stage(event_callback=emit)
+                result = self.runner.run_current_stage(
+                    event_callback=emit, integration_tolerances=self.integration_tolerances
+                )
             elif self.adaptive_fit_search:
                 from diffeoforge.reference_adaptive_calibration import run_adaptive_stage
 
@@ -307,7 +322,9 @@ class _CalibrationStageWorker(QRunnable):
                     ),
                 )
             else:
-                result = self.runner.run_current_stage(event_callback=emit)
+                result = self.runner.run_current_stage(
+                    event_callback=emit, integration_tolerances=self.integration_tolerances
+                )
         except Exception as error:
             self.error_message = f"{type(error).__name__}: {error or 'Background task failed'}"
             self.signals.failed.emit(self.error_message)
@@ -1039,6 +1056,53 @@ class ReferenceCalibrationDialog(QDialog):
         )
         self.keep_previous_button.clicked.connect(self._keep_previous_fit)
         root.addWidget(self.keep_previous_button)
+        self.screen_controls = QWidget()
+        screen_layout = QHBoxLayout(self.screen_controls)
+        screen_layout.setContentsMargins(0, 0, 0, 0)
+        self.screen_enabled = QCheckBox("Review one specimen before joint comparisons")
+        self.screen_enabled.setChecked(True)
+        self.screen_enabled.toggled.connect(lambda _checked: self._render())
+        screen_layout.addWidget(self.screen_enabled)
+        self.screen_subject = QComboBox()
+        self.screen_subject.setToolTip("First screening specimen; choose a difficult fit.")
+        screen_layout.addWidget(self.screen_subject)
+        self.screen_second_subject = QComboBox()
+        self.screen_second_subject.setToolTip("Optional second, contrasting specimen.")
+        screen_layout.addWidget(self.screen_second_subject)
+        self.screen_notice = QLabel()
+        self.screen_notice.setWordWrap(True)
+        self.screen_notice.setObjectName("status")
+        root.addWidget(self.screen_controls)
+        root.addWidget(self.screen_notice)
+        self._screen_selector_stage = None
+        from diffeoforge.reference_integration_check import DEFAULT_TOLERANCES
+
+        numerical_panel = QWidget()
+        numerical_layout = QVBoxLayout(numerical_panel)
+        self.integration_fields = {}
+        for key, label in (
+            ("atlas_rms_relative", "Atlas RMS / reference diagonal"),
+            ("objective_relative", "Relative objective difference"),
+            ("residual_relative", "Worst specimen residual difference"),
+        ):
+            row = QHBoxLayout()
+            row.addWidget(QLabel(label))
+            control = QDoubleSpinBox()
+            control.setRange(0.001, 100.0)
+            control.setDecimals(3)
+            control.setSuffix(" %")
+            control.setValue(DEFAULT_TOLERANCES[key] * 100)
+            row.addWidget(control)
+            numerical_layout.addLayout(row)
+            self.integration_fields[key] = control
+        self.integration_notice = QLabel(
+            "All timepoint options use every pilot specimen. Criteria are recorded before "
+            "the first run; they measure numerical stability, not anatomical accuracy."
+        )
+        self.integration_notice.setWordWrap(True)
+        numerical_layout.addWidget(self.integration_notice)
+        self.integration_controls = InfoDisclosure("Numerical comparison criteria", numerical_panel)
+        root.addWidget(self.integration_controls)
         continuation_controls = QWidget()
         continuation_layout = QHBoxLayout(continuation_controls)
         continuation_layout.setContentsMargins(0, 0, 0, 0)
@@ -1153,6 +1217,16 @@ class ReferenceCalibrationDialog(QDialog):
 
     def _render(self, snapshot: ReferenceCalibrationStudySnapshot | None = None) -> None:
         self._snapshot = snapshot or load_reference_calibration_study(self.study_directory)
+        self.screen_controls.hide()
+        self.screen_notice.hide()
+        stage = self._snapshot.current_stage
+        self.integration_controls.setVisible(bool(stage and stage.order == 4))
+        for key, field in self.integration_fields.items():
+            if self._snapshot.integration_tolerances:
+                field.setValue(self._snapshot.integration_tolerances[key] * 100)
+            field.setEnabled(not self._worker and not self._restoring_search
+                             and not self._snapshot.integration_tolerances
+                             and not any(c.attempts for c in self._snapshot.candidates))
         from diffeoforge.reference_sequential_fit import sequence_info, sequence_progress
 
         self._sequence_info = sequence_info(self.study_directory)
@@ -1217,7 +1291,9 @@ class ReferenceCalibrationDialog(QDialog):
                     + (
                         "Combined pilot complete"
                         if self._snapshot.status == "completed"
-                        else f"Combined pilot: review all {progress['total']} specimens"
+                        else f"Joint stage {stage.order}: "
+                        + ("ready to run" if self._snapshot.status == "ready"
+                           else "review joint results")
                     )
                 )
             notice = QLabel(caption)
@@ -1595,6 +1671,83 @@ class ReferenceCalibrationDialog(QDialog):
             )
         else:
             self.status.setText("Next: click the green Run all candidates in this stage button.")
+        self._render_screening()
+
+    def _render_screening(self) -> None:
+        stage = self._snapshot.current_stage
+        active = bool(stage and stage.order in (2, 3)
+                      and not self._snapshot.plan.qc_recalibration_source
+                      and not self._individual_checkpoint())
+        self.screen_controls.setVisible(active)
+        self.screen_notice.setVisible(active)
+        if not active:
+            return
+        state = self._snapshot.early_screening
+        running = self._worker is not None or self._restoring_search
+        pending = any(c.status != "completed" for c in self._snapshot.candidates)
+        if self._screen_selector_stage != (self.study_directory, stage.stage_id):
+            self._screen_selector_stage = (self.study_directory, stage.stage_id)
+            self.screen_subject.clear()
+            self.screen_second_subject.clear()
+            self.screen_second_subject.addItem("No second specimen", None)
+            names = [s.filename for s in self._snapshot.plan.selected_pilot_subjects]
+            for name in names:
+                self.screen_subject.addItem(name, name)
+                self.screen_second_subject.addItem(name, name)
+            # Use measured prior mismatch when available, without hardcoded species.
+            baseline = next((c for c in self._snapshot.candidates
+                             if c.candidate_id.endswith("-retained")), None)
+            fit = (baseline.metrics or {}).get("original_surface_fit", {}) if baseline else {}
+            if fit:
+                worst = max(fit, key=lambda n: float(fit[n]["p95"]) / float(fit[n]["diagonal"]))
+                self.screen_subject.setCurrentIndex(self.screen_subject.findData(worst))
+        configurable = not state and pending and not running
+        self.screen_enabled.setEnabled(configurable)
+        self.screen_subject.setEnabled(configurable and self.screen_enabled.isChecked())
+        self.screen_second_subject.setEnabled(configurable and self.screen_enabled.isChecked())
+        if not state:
+            self.screen_notice.setText(
+                "One option, one specimen, then your decision. Joint fits need separate review."
+                if pending else "Existing joint results are preserved; no screening rerun needed."
+            )
+            if pending and self.screen_enabled.isChecked():
+                self.start_button.setText("Start early specimen review")
+                self.start_button.setVisible(True)
+                self.start_button.setEnabled(not running)
+            return
+        self.screen_subject.setCurrentIndex(self.screen_subject.findData(state["subjects"][0]))
+        if len(state["subjects"]) == 2:
+            self.screen_second_subject.setCurrentIndex(
+                self.screen_second_subject.findData(state["subjects"][1])
+            )
+        self.screen_notice.setText(
+            f"Early review: {state['reviewed']} of {len(state['candidate_ids'])} options decided · "
+            f"{len(state['kept'])} kept · {len(state['rejected'])} discarded"
+            + (" · Joint fits still need all-specimen QC." if state["complete"]
+               else f" · {state['next_subject']}")
+        )
+        if not state["complete"]:
+            self.selection_combo.hide()
+            self.advance_button.hide()
+            self.review_next_button.hide()
+            self.collect_evidence_button.hide()
+            self.start_button.setVisible(True)
+            self.start_button.setText(
+                "Review this specimen" if state["current_status"] == "completed"
+                else "Test next option" if state["current_child"] is None
+                else "Retry this screen"
+            )
+            self.start_button.setEnabled(not running)
+            if not running:
+                self.status.setText("Review this screen; keeping an option permits its joint test.")
+        elif any(c.status not in {"completed", "screened_out"}
+                 for c in self._snapshot.candidates):
+            self.start_button.setText(
+                f"Run kept options with all {self._snapshot.plan.pilot_subject_count} specimens"
+            )
+            self.start_button.setVisible(True)
+            self.start_button.setEnabled(not running)
+        self.adaptive_fit_search.setEnabled(False)
 
     def _candidate_card(
         self,
@@ -1998,6 +2151,32 @@ class ReferenceCalibrationDialog(QDialog):
     def _start(self) -> None:
         if self._worker is not None:
             return
+        stage = self._snapshot.current_stage
+        state = self._snapshot.early_screening
+        if (stage and stage.order in (2, 3) and not self._individual_checkpoint()
+                and not self._snapshot.plan.qc_recalibration_source):
+            if state and not state["complete"]:
+                if state["current_status"] == "completed":
+                    self._review_early_screen()
+                else:
+                    self._start_pilot(adaptive=False, early_screen=True)
+                return
+            if (not state and self.screen_enabled.isChecked()
+                    and any(c.status != "completed" for c in self._snapshot.candidates)):
+                subjects = [self.screen_subject.currentData()]
+                second = self.screen_second_subject.currentData()
+                if second:
+                    subjects.append(second)
+                if len(set(subjects)) != len(subjects):
+                    self.status.setText("Choose a different second screening specimen.")
+                    return
+                self._start_pilot(
+                    adaptive=False, early_screen=True, screen_subjects=tuple(subjects)
+                )
+                return
+            if state and state["complete"]:
+                self._start_pilot(adaptive=False)
+                return
         if (
             not self._snapshot.selected_candidate_ids
             and not self.advanced_mode.isChecked()
@@ -2066,6 +2245,8 @@ class ReferenceCalibrationDialog(QDialog):
         specimen_fit: bool = False,
         specimen_action: tuple[str, str, int] | None = None,
         retain_previous: bool = False,
+        early_screen: bool = False,
+        screen_subjects: tuple[str, ...] | None = None,
     ) -> None:
         if self._restoring_search:
             raise ValueError("Wait until the saved search has finished loading")
@@ -2076,9 +2257,18 @@ class ReferenceCalibrationDialog(QDialog):
             specimen_fit=specimen_fit,
             specimen_action=specimen_action,
             retain_previous=retain_previous,
+            early_screen=early_screen,
+            screen_subjects=screen_subjects,
+            integration_tolerances=(
+                {k: f.value() / 100 for k, f in self.integration_fields.items()}
+                if self._snapshot.current_stage and self._snapshot.current_stage.order == 4
+                and not self._snapshot.integration_tolerances
+                and not any(c.attempts for c in self._snapshot.candidates) else None
+            ),
             complete_automatic_pilot=False,
             adaptive_fit_search=(
-                self.adaptive_fit_search.isChecked() if adaptive is None else adaptive
+                False if self._snapshot.current_stage and self._snapshot.current_stage.order == 4
+                else self.adaptive_fit_search.isChecked() if adaptive is None else adaptive
             ),
             visual_approvals={
                 key: value
@@ -2119,6 +2309,9 @@ class ReferenceCalibrationDialog(QDialog):
 
     @Slot(object)
     def _event(self, event: Mapping[str, object]) -> None:
+        if event["event"] == "screen_progress":
+            self.status.setText("Screening one specimen. The next option waits for your review.")
+            return
         if event["event"] == "specimen_sequence_preparing":
             self.status.setText(str(event["message"]))
             return
@@ -2400,12 +2593,13 @@ class ReferenceCalibrationDialog(QDialog):
             if not rows:
                 self._saved_search_failed(key, "No compatible saved specimen search found.")
                 return
-            labels = [
-                f"{r['approved']} / {r['total']} approved — {Path(r['directory']).name}"
-                for r in rows
-            ]
+            from diffeoforge.reference_sequential_fit import saved_sequence_label
+
+            labels = [saved_sequence_label(r) for r in rows]
+            current_index = next((i for i, r in enumerate(rows) if r["is_current"]), 0)
             label, accepted = QInputDialog.getItem(
-                self, "Saved fit searches", "Resume a search:", labels, 0, False
+                self, "Saved fit searches", "Resume the current checkpoint of a search:",
+                labels, current_index, False
             )
             if not accepted:
                 self._restoring_search = False
@@ -2491,6 +2685,26 @@ class ReferenceCalibrationDialog(QDialog):
             ),
         )
 
+    def _review_early_screen(self) -> None:
+        state = self._snapshot.early_screening
+        if not state or not state["current_child"] or self._worker is not None:
+            return
+        origin = self.study_directory
+        child = origin / state["current_child"]
+
+        def prepare():
+            snapshot = load_reference_calibration_study(child)
+            candidate = snapshot.candidates[0]
+            if candidate.status != "completed":
+                raise ValueError("The current screen has not completed")
+            return (
+                snapshot, collect_calibration_qc_pairs(child, candidate),
+                normalized_candidate_subject_fit(snapshot, candidate),
+            )
+
+        self.status.setText("Loading this specimen's screening fit…")
+        self._viewer_preparation.request_operation(("early-screen", origin, child), prepare)
+
     @Slot(object, str)
     def _candidate_prepare_failed(self, _key: object, message: str) -> None:
         self.status.setText("Comparison unavailable: " + message)
@@ -2505,8 +2719,16 @@ class ReferenceCalibrationDialog(QDialog):
             dialog.setWindowTitle("Plan B comparison — current fit (blue) / Plan B (orange)")
             dialog.exec()
             return
-        root, candidate = key
-        pairs, fit = prepared
+        screen_parent = None
+        if key[0] == "early-screen":
+            screen_parent = key[1]
+            if screen_parent != self.study_directory or self._worker is not None:
+                return
+            reviewed_snapshot, pairs, fit = prepared
+            root, candidate = reviewed_snapshot.study_directory, reviewed_snapshot.candidates[0]
+        else:
+            root, candidate = key
+            pairs, fit = prepared
         try:
             reviewed_snapshot = load_reference_calibration_study(root)
             dialog = CalibrationCandidateViewerDialog(
@@ -2539,7 +2761,14 @@ class ReferenceCalibrationDialog(QDialog):
             from diffeoforge.reference_sequential_fit import sequence_info
 
             checkpoint = sequence_info(root)
-            if checkpoint and checkpoint["phase"] == "individual":
+            if screen_parent:
+                dialog.setWindowTitle("Early specimen review — joint fit not yet calculated")
+                dialog.fail_button.setText("Discard option → next screen")
+                dialog.complete_button.setText("Keep option → next screen")
+                dialog.complete_button.setToolTip(
+                    "Keeps this option for joint testing. This is not joint-fit approval."
+                )
+            elif checkpoint and checkpoint["phase"] == "individual":
                 dialog.fail_button.setText("Reject → next parameters")
                 dialog.fail_button.setToolTip(
                     "Keeps this result and starts a new attempt for the same specimen."
@@ -2579,6 +2808,14 @@ class ReferenceCalibrationDialog(QDialog):
                         if p.required and p.pair_id in dialog._reviewed_pair_ids
                     },
                 )
+                if screen_parent:
+                    from diffeoforge.reference_stage_screening import record_screen_review
+
+                    record_screen_review(screen_parent, root)
+                    self._render()
+                    if not self._snapshot.early_screening["complete"]:
+                        self._start_pilot(adaptive=False, early_screen=True)
+                    return
                 if Path(root).resolve() != self.study_directory.resolve():
                     return
                 self._visually_reviewed_candidates.add(candidate.candidate_id)

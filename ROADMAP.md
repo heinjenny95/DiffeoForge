@@ -14,27 +14,29 @@ scientific gates. Planning does not mark those gates complete.
 
 ## Pilot usability follow-up
 
-- [ ] Make saved-search choices readable: series label, saved time, current stage,
+- [x] Make saved-search choices readable: series label, saved time, current stage,
   individual approval count and separate joint-review status. Resume the chosen
   series at its verified current checkpoint; identify historical rejected trials
   explicitly. Do not confuse completed individual QC with joint-fit approval.
-- [ ] Offer early Stage 2/3 screening: compare each option on a selected difficult
+- [x] Offer early Stage 2/3 screening: compare each option on a selected difficult
   specimen, pause for visual feedback, and run the joint cohort comparison only
   for options the user elects to retain. An optional contrasting specimen can
   expose failures hidden by one screen; retain the preceding approved baseline.
   Stage 3 changes the data-fit/regularity balance and can change anatomical fit.
-- [ ] Bind screens to a documented fixed reference, settings and compatible
+- [x] Bind screens to a documented fixed reference, settings and compatible
   initialization. Keep their QC scope separate from joint approval: screens are
   filters, not partial joint-atlas results. Recheck all subjects after joint
   optimization; persist the screening queue/decisions without an elapsed deadline.
-- [ ] Keep Stage 4 complete: run all timepoint options on the full pilot cohort.
+- [x] Keep Stage 4 complete: run all timepoint options on the full pilot cohort.
   Recommend the smallest count agreeing with the next finer discretization in
   atlas geometry, objective and residuals within declared numerical tolerances;
   retain the accepted fit and report when no candidate qualifies. Single-subject
   screening must not truncate this comparison; speed alone cannot choose a winner.
-- [ ] Verify checkpoint restoration, history status, pause/reject/resume behavior,
-  unchanged baseline and joint-QC gates; assess actual runtime savings prospectively.
-  These are planned changes, not implemented behavior or scientific acceptance.
+- [x] Regression checks cover checkpoint restoration, history status,
+  pause/reject/resume, cancellation, unchanged baseline and joint-QC gates.
+  See [v104 behavior and verification](docs/V104_EARLY_PILOT_REVIEW.md).
+- [ ] Assess actual runtime savings and first-use/anatomical acceptance prospectively.
+  A fixed-reference screen cannot predict the shared-template joint optimum.
 
 ## Immediate follow-up from v92
 

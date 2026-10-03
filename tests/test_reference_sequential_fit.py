@@ -46,10 +46,17 @@ def test_rejection_runs_one_new_setting_for_same_animal_preserving_common_basis(
     first = sequence.run_specimen_sequence(runner)
     candidate_id = _reject(first)
     root = Path(sequence.sequence_info(first.study_directory)["root"])
+    assert sequence.current_sequence_directory(first.study_directory) == first.study_directory
     budget = root / "fit-search-budget.json"
     study._write_json(budget, dict(limit_seconds=900, spent_seconds=900), overwrite=False)
     before = budget.read_bytes()
     alternative = sequence.run_specimen_sequence(runner, action=("reject", candidate_id, 0))
+    assert sequence.current_sequence_directory(first.study_directory) == alternative.study_directory
+    rows = sequence.saved_sequences(alternative.study_directory)
+    assert rows[0]["is_current"]
+    assert rows[0]["approved"] == 0
+    assert "individual fitting" in sequence.saved_sequence_label(rows[0])
+    assert rows[0]["current_directory"] == str(alternative.study_directory)
     assert len(alternative.candidates) == 1 and alternative.candidates[0].attempts == 1
     assert sequence.sequence_info(alternative.study_directory)["index"] == 0
     assert sequence._values(alternative, candidate_id) != sequence._values(first, candidate_id)
