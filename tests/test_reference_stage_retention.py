@@ -1,9 +1,57 @@
 import pytest
-from test_reference_calibration_study import _approve_for_test, _review_ready_stage
+from test_reference_calibration_study import _afk_runner, _approve_for_test, _review_ready_stage
 
 from diffeoforge import reference_calibration_study as study
 from diffeoforge.config import load_config, validate_input_paths
 from diffeoforge.reference_stage_retention import keep_previous_fit
+
+
+@pytest.mark.parametrize("other_approved", [False, True])
+@pytest.mark.parametrize("provisional", [False, True])
+def test_other_candidate_reviews_do_not_block_exact_retention(
+    tmp_path, monkeypatch, other_approved, provisional,
+):
+    from dataclasses import replace
+
+    runner = _afk_runner(tmp_path, monkeypatch)
+    if provisional:
+        collect = study.collect_reference_calibration_run_metrics
+        monkeypatch.setattr(study, "collect_reference_calibration_run_metrics", lambda run: replace(
+            collect(run), converged=False, optimizer_stop_signal="maximum_iterations",
+            final_iteration=50,
+        ))
+    first = runner.run_current_stage()
+    other, selected = first.candidates[:2]
+    subjects = tuple(s.filename for s in first.plan.selected_pilot_subjects)
+    study.record_reference_calibration_candidate_review(
+        first.study_directory, candidate_id=other.candidate_id, approved=other_approved,
+        reviewed_subjects=subjects,
+        subject_decisions={name: "pass" if other_approved else "fail" for name in subjects},
+    )
+    _approve_for_test(first.study_directory, selected.candidate_id)
+    original = {p: p.read_bytes() for p in (first.study_directory / "stages").rglob("*")
+                if p.is_file()}
+    choose = (study.record_reference_calibration_iteration_limit_selection if provisional
+              else study.record_reference_calibration_stage_review)
+    second, _ = choose(first.study_directory, selected_candidate_id=selected.candidate_id,
+                       **({} if provisional else {"visual_approvals": {}}))
+    baseline = second.candidates[-1]
+    assert baseline.candidate_id == "deformation-retained"
+    assert study.calibration_candidate_run_directory(baseline) == selected.run_directory
+    assert second.visual_reviews[baseline.candidate_id] is True
+    third = keep_previous_fit(second.study_directory)
+    assert third.current_stage.order == 3
+    assert all(p.read_bytes() == contents for p, contents in original.items())
+    assert third.candidates[-1].metrics == selected.metrics
+    retained_selection = next(e for e in reversed(study._load_events(third.study_directory))
+                              if e["event"] == "stage_selected")
+    assert bool(retained_selection.get("iteration_limit_provisional")) == provisional
+    study._append_event(first.study_directory, "candidate_visual_review", dict(
+        stage_id="attachment", candidate_id=selected.candidate_id, approved=False,
+        reviewed_subjects=list(subjects), source=study._candidate_review_binding(selected),
+    ))
+    with pytest.raises(study.ReferenceCalibrationStudyError, match="withdrawn"):
+        keep_previous_fit(third.study_directory)
 
 
 def _second_stage(tmp_path, monkeypatch):

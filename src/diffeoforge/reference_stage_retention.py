@@ -129,7 +129,15 @@ def verify_reference(root, record):
             "Retained fit differs from its approved evidence"
         )
     series_root, _ = study._search_extension_series(source_root)
-    reviews = events + study._read_review_journal(series_root)
+    # This reference checks one selected result, while the verified history can
+    # contain legitimate reviews of other alternatives and continuation attempts.
+    # Keep every decision for the selected result, including later withdrawals.
+    reviews = tuple(
+        e for e in events + study._read_review_journal(series_root)
+        if e.get("event") == "candidate_visual_review"
+        and e.get("stage_id") == source["stage_id"]
+        and e.get("candidate_id") == candidate.candidate_id
+    )
     decisions = study._load_candidate_reviews(reviews, source["stage_id"], (candidate,))
     if decisions.get(candidate.candidate_id) is False:
         raise study.ReferenceCalibrationStudyError("Previous fit approval has been withdrawn")

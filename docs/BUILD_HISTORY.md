@@ -1,5 +1,13 @@
 # Private-alpha build numbering
 
+## v107 — retain approved fits with multiple historical reviews
+
+v107 (`0.0.0.dev107`) checks only the selected result's bound review history when
+retaining the preceding joint fit. Other reviewed alternatives no longer block
+reuse; withdrawals, immutable evidence and provisional warnings remain enforced.
+See [scope and verification](V107_RETAINED_REVIEW_HISTORY.md). Packaging and local
+installation remain separate checks; no private fit or stage selection is made.
+
 ## v106 — singleton screening preparation and recovery
 
 v106 (`0.0.0.dev106`) corrects the cold singleton manifest requirement and adds

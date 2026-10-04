@@ -1,4 +1,4 @@
-# Development continuity — v106 screening recovery
+# Development continuity — v107 retained review history
 
 Snapshot: 2026-10-04. This is a public, software-only continuation guide. Detailed
 research results, local paths, account destinations and run identities belong in
@@ -20,6 +20,14 @@ correct parameters or interpret biology for the researcher. Deformetrica is the
 default supported reference route; the Modern engine remains evidence-gated.
 
 ## Current source work
+
+v107 repairs retained-fit verification after several alternatives or continuation
+attempts in one stage have been reviewed. The selected result's complete decision
+history is validated separately; other reviews do not block it and withdrawal
+still prevents reuse. Existing saved stages can use the unchanged keep action;
+provisional warnings and strict Stage 4 checks persist. See
+[scope and checks](V107_RETAINED_REVIEW_HISTORY.md). Packaging/local installation
+are pending separate verification. No private fit or stage selection was made.
 
 v106 corrects the mandatory artifact count for cold frozen-singleton screening
 and adds preparation-only retry for technical failures. Human decisions and

@@ -14,6 +14,11 @@ scientific gates. Planning does not mark those gates complete.
 
 ## Pilot usability follow-up
 
+- [x] Verify a retained fit against its own bound review history when the same
+  stage contains other reviewed alternatives or earlier attempts. Preserve later
+  withdrawal, exact outputs, provisional warnings and Stage 4 requirements. See
+  [v107 correction and regression scope](docs/V107_RETAINED_REVIEW_HISTORY.md).
+
 - [x] Correct cold singleton screening preparation and provide targeted recovery
   for technical failures. Keep human rejections, accepted baselines and immutable
   attempt history distinct; verify the real preparation path rather than only a
