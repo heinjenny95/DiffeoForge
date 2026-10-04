@@ -27,9 +27,10 @@ convergence evidence and automatic ranking remain unchanged. Exact retained
 baselines carry the warning through stages 2/3; stage 4 remains strict. Reports
 and exported provenance disclose earlier provisional decisions. See
 [scope and synthetic checks](V105_PROVISIONAL_FIT_SELECTION.md).
-Build and installer evidence are verified; safe local installation is pending
-closure of the open application. Installation is already authorized. See
-[separate delivery state](V105_DELIVERY.md); do not infer installation from a build.
+Build, full prior-application backup, idle checks, safe installation and installed
+startup/file verification are complete. Current saved pilot files remain unchanged.
+See [separate delivery evidence](V105_DELIVERY.md). Runtime/build source remains
+827b302; documentation commits do not require another build. Drive retains v98.
 
 v104 offers persistent optional fixed-reference screening in stages 2/3: one or
 two chosen specimens per option, a human decision before the next screen, then
