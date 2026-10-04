@@ -31,22 +31,31 @@ def screening_state(root, stage_id, events, candidates, *, verify=True):
             raise ValueError("Screening source configuration changed")
     probes = {}
     decisions = {}
+    retired = []
     for event in relevant:
         if event["sequence"] <= start["sequence"]:
             continue
         if event["event"] not in {
-            "stage_screening_probe", "stage_screening_review", "stage_screening_failed"
+            "stage_screening_probe", "stage_screening_review", "stage_screening_failed",
+            "stage_screening_retry",
         }:
             continue
         key = (event["candidate_id"], event["filename"])
         if key[0] not in start["candidate_ids"] or key[1] not in start["subjects"]:
             raise ValueError("Screening event is outside the declared queue")
-        if event["event"] == "stage_screening_probe":
+        if event["event"] == "stage_screening_retry":
+            failure = decisions.get(key)
+            if (not failure or failure["event"] != "stage_screening_failed"
+                    or failure["event_hash"] != event["failure_event_hash"]):
+                raise ValueError("Screening retry is not bound to a technical failure")
+            retired.append((probes.pop(key), decisions.pop(key)))
+        elif event["event"] == "stage_screening_probe":
             probes[key] = event
         else:
             decisions[key] = event
     if verify:
-        for key, event in probes.items():
+        bindings = retired + [(event, decisions.get(key)) for key, event in probes.items()]
+        for event, decision in bindings:
             child = study._safe_study_path(root, event["child"])
             if sha256_file(child / study.STUDY_MANIFEST) != event["manifest_sha256"]:
                 raise ValueError("Screening study binding changed")
@@ -54,7 +63,6 @@ def screening_state(root, stage_id, events, candidates, *, verify=True):
                 path = study._safe_study_path(root, record["copy"])
                 if sha256_file(path) != record["sha256"]:
                     raise ValueError("Screening reference or initialization changed")
-            decision = decisions.get(key)
             if decision:
                 snapshot = study.load_reference_calibration_study(child)
                 candidate = snapshot.candidates[0]
@@ -74,10 +82,13 @@ def screening_state(root, stage_id, events, candidates, *, verify=True):
                     raise ValueError("Screening review changed or was withdrawn")
     rejected = []
     kept = []
+    failed = []
     next_key = None
     for cid in start["candidate_ids"]:
         values = [decisions.get((cid, name)) for name in start["subjects"]]
-        if any(v is not None and v["approved"] is False for v in values):
+        if any(v is not None and v["event"] == "stage_screening_failed" for v in values):
+            failed.append(cid)
+        elif any(v is not None and v["approved"] is False for v in values):
             rejected.append(cid)
         elif all(v is not None and v["approved"] is True for v in values):
             kept.append(cid)
@@ -99,9 +110,33 @@ def screening_state(root, stage_id, events, candidates, *, verify=True):
         current_child=current["child"] if current else None,
         current_status=current_status,
         reviewed=len(rejected) + len(kept),
-        technical_failures=[cid for (cid, _), e in decisions.items()
-                            if e["event"] == "stage_screening_failed"],
+        technical_failures=failed,
+        failed_screens=[dict(candidate_id=cid, filename=name, failure_event_hash=e["event_hash"])
+                        for (cid, name), e in decisions.items()
+                        if e["event"] == "stage_screening_failed"],
+        failure_reasons={cid: next(e["reason"] for (option, _), e in decisions.items()
+                                  if option == cid and e["event"] == "stage_screening_failed")
+                        for cid in failed},
     )
+
+
+def retry_failed_screens(directory):
+    """Requeue only technical failures; preserve prior attempts and human decisions.
+
+    Preparation only: no optimizer is launched by this action.
+    """
+    snapshot = study.load_reference_calibration_study(directory)
+    state = snapshot.early_screening
+    if not state or not state["technical_failures"]:
+        raise ValueError("No technically failed screens to retry")
+    if state["current_status"] == "running":
+        raise ValueError("Wait until the current screen stops before retrying failures")
+    for failure in state["failed_screens"]:
+        study._append_event(snapshot.study_directory, "stage_screening_retry", dict(
+            stage_id=state["stage_id"], **failure,
+            meaning="Retry technical failure; original attempt and visual decisions preserved",
+        ))
+    return study.load_reference_calibration_study(snapshot.study_directory)
 
 
 def start_screening(snapshot, subjects):
@@ -278,4 +313,5 @@ def joint_candidate_ids(snapshot):
         return None
     if not state["complete"]:
         raise ValueError("Review the early screens before running joint comparisons")
-    return {c.candidate_id for c in snapshot.candidates} - set(state["rejected"])
+    return ({c.candidate_id for c in snapshot.candidates}
+            - set(state["rejected"]) - set(state["technical_failures"]))

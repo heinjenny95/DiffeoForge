@@ -1,4 +1,4 @@
-# Development continuity — v105 provisional fit selection
+# Development continuity — v106 screening recovery
 
 Snapshot: 2026-10-04. This is a public, software-only continuation guide. Detailed
 research results, local paths, account destinations and run identities belong in
@@ -20,6 +20,13 @@ correct parameters or interpret biology for the researcher. Deformetrica is the
 default supported reference route; the Modern engine remains evidence-gated.
 
 ## Current source work
+
+v106 corrects the mandatory artifact count for cold frozen-singleton screening
+and adds preparation-only retry for technical failures. Human decisions and
+retained baselines remain bound; old failure evidence is preserved and verified.
+See [behavior and verification scope](V106_SCREENING_RECOVERY.md). Build and
+installation evidence will be recorded separately; installed v105 remains current
+until fresh idle checks and verified installation. No private fit is started.
 
 v105 permits explicit provisional selection of a valid, whole-pilot visually
 approved joint fit stopped only at the iteration limit in stages 1–3. Original

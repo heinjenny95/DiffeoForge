@@ -24,7 +24,8 @@
       }}
     }},
     "else": {"properties": {
-      "input_count": {"properties": {"subjects": {"minimum": 2}}}, "inputs": {"minItems": 3}
+      "input_count": {"properties": {"subjects": {"minimum": 2}}}, "inputs": {"minItems": 3},
+      "protected_artifacts": {"minItems": 8}
     }}
   }],
   "required": [
@@ -155,7 +156,7 @@
     },
     "protected_artifacts": {
       "type": "array",
-      "minItems": 8,
+      "minItems": 7,
       "items": {
         "$ref": "#/$defs/artifact"
       }

@@ -115,6 +115,50 @@ def test_second_specimen_rejection_discards_whole_option(tmp_path, monkeypatch):
     assert result.early_screening["next_candidate"] != cid
 
 
+def test_retry_preserves_rejections_baseline_and_old_failure_evidence(tmp_path, monkeypatch):
+    from test_reference_calibration_study import _CompletedController, _FailedController
+
+    runner, _, accepted, second = _second_stage(tmp_path, monkeypatch)
+    name = second.plan.selected_pilot_subjects[0].filename
+    result = screening.run_next_screen(runner, subjects=(name,))
+    rejected = result.early_screening["next_candidate"]
+    result = _review_screen(result, False)
+    runner._controller_factory = _FailedController
+    while not result.early_screening["complete"]:
+        result = screening.run_next_screen(runner)
+    failed = result.early_screening["technical_failures"]
+    assert failed and rejected not in failed
+    preserved = {p: p.read_bytes() for p in second.study_directory.rglob("*")
+                 if p.is_file() and p != second.study_directory / "events.jsonl"}
+    old_events = (second.study_directory / "events.jsonl").read_bytes()
+    queued = screening.retry_failed_screens(second.study_directory)
+    assert not queued.early_screening["technical_failures"]
+    assert queued.early_screening["rejected"] == [rejected]
+    assert queued.early_screening["next_candidate"] == failed[0]
+    assert queued.early_screening["current_child"] is None
+    assert (second.study_directory / "events.jsonl").read_bytes().startswith(old_events)
+    assert all(p.read_bytes() == content for p, content in preserved.items())
+    baseline = queued.candidates[-1]
+    assert study.calibration_candidate_run_directory(baseline) == accepted.run_directory
+    assert queued.visual_reviews[baseline.candidate_id] is True
+    with pytest.raises(ValueError, match="No technically failed"):
+        screening.retry_failed_screens(second.study_directory)
+    runner._controller_factory = _CompletedController
+    old_probes = set((second.study_directory / "early-screening" / "deformation").glob("probe-*"))
+    retried = screening.run_next_screen(runner)
+    child = retried.study_directory / retried.early_screening["current_child"]
+    assert child.parent not in old_probes
+    assert retried.early_screening["current_status"] == "completed"
+    _review_screen(retried, True)
+    # Historical technical failure receipts still remain immutable and verified.
+    old_child = next((second.study_directory / "early-screening").rglob(
+        "probe-002/study/events.jsonl"
+    ))
+    old_child.write_text("changed", encoding="utf-8")
+    with pytest.raises((ValueError, study.ReferenceCalibrationStudyError)):
+        study.load_reference_calibration_study(second.study_directory)
+
+
 def test_modified_probe_receipt_or_reference_blocks_saved_decision(tmp_path, monkeypatch):
     runner, _, _, second = _second_stage(tmp_path, monkeypatch)
     result = screening.run_next_screen(
@@ -155,7 +199,8 @@ def test_technical_failure_excludes_option_without_inventing_visual_review(tmp_p
     )
     cid = second.candidates[0].candidate_id
     assert result.early_screening["technical_failures"] == [cid]
-    assert cid in result.early_screening["rejected"]
+    assert cid not in result.early_screening["rejected"]
+    assert next(c for c in result.candidates if c.candidate_id == cid).status == "screen_failed"
     assert cid not in result.visual_reviews
     assert result.early_screening["next_candidate"] != cid
 

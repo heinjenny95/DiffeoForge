@@ -222,6 +222,7 @@ class _CalibrationStageWorker(QRunnable):
         provisional_candidate_id: str | None = None,
         early_screen: bool = False,
         screen_subjects: tuple[str, ...] | None = None,
+        retry_screens: bool = False,
         integration_tolerances: Mapping[str, float] | None = None,
     ) -> None:
         super().__init__()
@@ -232,6 +233,7 @@ class _CalibrationStageWorker(QRunnable):
         self.retain_previous = retain_previous
         self.provisional_candidate_id = provisional_candidate_id
         self.early_screen = early_screen
+        self.retry_screens = retry_screens
         self.screen_subjects = screen_subjects
         self.integration_tolerances = integration_tolerances
         self.adaptive_fit_search = adaptive_fit_search
@@ -274,6 +276,10 @@ class _CalibrationStageWorker(QRunnable):
                     self.runner.study_directory,
                     selected_candidate_id=self.provisional_candidate_id,
                 )
+            elif self.retry_screens:
+                from diffeoforge.reference_stage_screening import retry_failed_screens
+
+                result = retry_failed_screens(self.runner.study_directory)
             elif self.early_screen:
                 from diffeoforge.reference_stage_screening import run_next_screen
 
@@ -1083,6 +1089,12 @@ class ReferenceCalibrationDialog(QDialog):
         self.screen_notice.setObjectName("status")
         root.addWidget(self.screen_controls)
         root.addWidget(self.screen_notice)
+        self.retry_screens_button = QPushButton("Retry technically failed screens")
+        self.retry_screens_button.clicked.connect(
+            lambda: self._start_pilot(adaptive=False, retry_screens=True)
+        )
+        root.addWidget(self.retry_screens_button)
+        self.retry_screens_button.hide()
         self._screen_selector_stage = None
         from diffeoforge.reference_integration_check import DEFAULT_TOLERANCES
 
@@ -1693,10 +1705,17 @@ class ReferenceCalibrationDialog(QDialog):
                       and not self._individual_checkpoint())
         self.screen_controls.setVisible(active)
         self.screen_notice.setVisible(active)
+        self.retry_screens_button.hide()
         if not active:
             return
         state = self._snapshot.early_screening
         running = self._worker is not None or self._restoring_search
+        if state and state["technical_failures"]:
+            self.retry_screens_button.show()
+            self.retry_screens_button.setEnabled(not running)
+            self.retry_screens_button.setText(
+                f"Retry technically failed screens ({len(state['technical_failures'])})"
+            )
         pending = any(c.status != "completed" for c in self._snapshot.candidates)
         if self._screen_selector_stage != (self.study_directory, stage.stage_id):
             self._screen_selector_stage = (self.study_directory, stage.stage_id)
@@ -1736,6 +1755,7 @@ class ReferenceCalibrationDialog(QDialog):
         self.screen_notice.setText(
             f"Early review: {state['reviewed']} of {len(state['candidate_ids'])} options decided · "
             f"{len(state['kept'])} kept · {len(state['rejected'])} discarded"
+            + f" · {len(state['technical_failures'])} technical failures"
             + (" · Joint fits still need all-specimen QC." if state["complete"]
                else f" · {state['next_subject']}")
         )
@@ -1753,13 +1773,19 @@ class ReferenceCalibrationDialog(QDialog):
             self.start_button.setEnabled(not running)
             if not running:
                 self.status.setText("Review this screen; keeping an option permits its joint test.")
-        elif any(c.status not in {"completed", "screened_out"}
+        elif any(c.status not in {"completed", "screened_out", "screen_failed"}
                  for c in self._snapshot.candidates):
             self.start_button.setText(
                 f"Run kept options with all {self._snapshot.plan.pilot_subject_count} specimens"
             )
             self.start_button.setVisible(True)
             self.start_button.setEnabled(not running)
+        elif state["technical_failures"]:
+            self.start_button.hide()
+            if not running:
+                self.status.setText(
+                    "Technical screens failed. Retry them; existing fits are preserved."
+                )
         self.adaptive_fit_search.setEnabled(False)
 
     def _candidate_card(
@@ -1965,6 +1991,15 @@ class ReferenceCalibrationDialog(QDialog):
             error = QLabel(candidate.error)
             error.setWordWrap(True)
             layout.addWidget(error)
+            reason = self._snapshot.early_screening.get("failure_reasons", {}).get(
+                candidate.candidate_id
+            )
+            if reason:
+                details = QLabel(reason)
+                details.setTextFormat(Qt.TextFormat.PlainText)
+                details.setWordWrap(True)
+                details.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+                layout.addWidget(InfoDisclosure("Technical failure details", details))
         else:
             detail = QLabel(
                 "Ready to run." if candidate.status == "pending" else "Ready for a new attempt."
@@ -2285,6 +2320,7 @@ class ReferenceCalibrationDialog(QDialog):
         provisional_candidate_id: str | None = None,
         early_screen: bool = False,
         screen_subjects: tuple[str, ...] | None = None,
+        retry_screens: bool = False,
     ) -> None:
         if self._restoring_search:
             raise ValueError("Wait until the saved search has finished loading")
@@ -2298,6 +2334,7 @@ class ReferenceCalibrationDialog(QDialog):
             provisional_candidate_id=provisional_candidate_id,
             early_screen=early_screen,
             screen_subjects=screen_subjects,
+            retry_screens=retry_screens,
             integration_tolerances=(
                 {k: f.value() / 100 for k, f in self.integration_fields.items()}
                 if self._snapshot.current_stage and self._snapshot.current_stage.order == 4

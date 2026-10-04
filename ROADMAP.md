@@ -14,6 +14,10 @@ scientific gates. Planning does not mark those gates complete.
 
 ## Pilot usability follow-up
 
+- [x] Correct cold singleton screening preparation and provide targeted recovery
+  for technical failures. Keep human rejections, accepted baselines and immutable
+  attempt history distinct; verify the real preparation path rather than only a
+  mocked controller. See [v106 behavior and checks](docs/V106_SCREENING_RECOVERY.md).
 - [x] Allow explicit provisional selection of a valid whole-pilot visually
   approved joint fit stopped only at the iteration limit in stages 1–3. Preserve
   non-convergence, exact retained baselines and bound approvals; keep automatic

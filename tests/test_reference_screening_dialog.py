@@ -1,3 +1,4 @@
+import pytest
 from test_reference_stage_retention import _second_stage
 from test_reference_stage_screening import _review_screen
 
@@ -75,5 +76,41 @@ def test_stage_three_filter_and_stage_four_full_cohort_controls(tmp_path, monkey
     assert dialog.integration_controls.isVisible()
     assert all(field.isEnabled() for field in dialog.integration_fields.values())
     assert dialog.integration_fields["atlas_rms_relative"].value() == 0.5
+    dialog.close()
+    app.processEvents()
+
+
+def test_technical_failures_show_retry_with_separate_counts_and_worker_dispatch(
+    tmp_path, monkeypatch
+):
+    from test_reference_calibration_study import _FailedController
+
+    app, runner, dialog = _dialog(tmp_path, monkeypatch)
+    runner._controller_factory = _FailedController
+    result = screening.run_next_screen(runner, subjects=(dialog.screen_subject.currentData(),))
+    while not result.early_screening["complete"]:
+        result = screening.run_next_screen(runner)
+    dialog._render()
+    assert dialog.retry_screens_button.isVisible()
+    assert "0 discarded" in dialog.screen_notice.text()
+    assert "technical failures" in dialog.screen_notice.text()
+    assert dialog.start_button.isHidden()
+    calls = []
+    monkeypatch.setattr(dialog, "_start_pilot", lambda **kwargs: calls.append(kwargs))
+    dialog.retry_screens_button.click()
+    assert calls == [dict(adaptive=False, retry_screens=True)]
+    from diffeoforge.desktop.reference_calibration_dialog import _CalibrationStageWorker
+
+    monkeypatch.setattr(runner, "run_current_stage", lambda **kwargs: pytest.fail("Optimizer"))
+    worker = _CalibrationStageWorker(runner, retry_screens=True)
+    outcomes = []
+    worker.signals.succeeded.connect(outcomes.append)
+    worker.run()
+    app.processEvents()
+    assert len(outcomes) == 1 and not worker.error_message
+    assert not outcomes[0].early_screening["technical_failures"]
+    dialog._render()
+    assert dialog.retry_screens_button.isHidden()
+    assert dialog.start_button.text() == "Test next option"
     dialog.close()
     app.processEvents()

@@ -1,5 +1,13 @@
 # Private-alpha build numbering
 
+## v106 — singleton screening preparation and recovery
+
+v106 (`0.0.0.dev106`) corrects the cold singleton manifest requirement and adds
+explicit technical-screen retry without resetting the pilot or changing human
+decisions. See [scope and verification](V106_SCREENING_RECOVERY.md). Source,
+verified local installer and installed version are tracked separately. No private
+fit is run; Drive distribution remains request-only.
+
 ## v103 — retain approved fits through pilot transitions
 
 v103 (`0.0.0.dev103`) uses learned state between ordinary pilot stages and keeps
