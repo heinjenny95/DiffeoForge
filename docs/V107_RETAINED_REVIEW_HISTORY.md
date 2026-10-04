@@ -21,5 +21,6 @@ sources, exact output preservation and a subsequent source-approval withdrawal.
 The defect was reproduced before the correction; Ruff, compilation and diff
 checks passed. A saved study's retention reference was validated read-only,
 without registering a baseline, selecting a stage or running a private fit.
-Packaging and local installation are recorded separately. Drive uploads remain
+Packaging and local installation passed and are [recorded separately](V107_DELIVERY.md).
+Drive uploads remain
 request-only. This correction does not establish scientific parameter adequacy.

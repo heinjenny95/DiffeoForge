@@ -26,8 +26,10 @@ attempts in one stage have been reviewed. The selected result's complete decisio
 history is validated separately; other reviews do not block it and withdrawal
 still prevents reuse. Existing saved stages can use the unchanged keep action;
 provisional warnings and strict Stage 4 checks persist. See
-[scope and checks](V107_RETAINED_REVIEW_HISTORY.md). Packaging/local installation
-are pending separate verification. No private fit or stage selection was made.
+[scope and checks](V107_RETAINED_REVIEW_HISTORY.md). Frozen packaging, full backup,
+fresh idle checks and installed startup/file verification are complete; all
+recorded saved pilot files are unchanged. See [delivery evidence](V107_DELIVERY.md).
+No private fit or stage selection was made. Drive intentionally retains v98.
 
 v106 corrects the mandatory artifact count for cold frozen-singleton screening
 and adds preparation-only retry for technical failures. Human decisions and

@@ -6,7 +6,8 @@ v107 (`0.0.0.dev107`) checks only the selected result's bound review history whe
 retaining the preceding joint fit. Other reviewed alternatives no longer block
 reuse; withdrawals, immutable evidence and provisional warnings remain enforced.
 See [scope and verification](V107_RETAINED_REVIEW_HISTORY.md). Packaging and local
-installation remain separate checks; no private fit or stage selection is made.
+installation passed their separate checks; see [delivery evidence](V107_DELIVERY.md).
+No private fit or stage selection was made. Drive intentionally retains v98.
 
 ## v106 — singleton screening preparation and recovery
 
