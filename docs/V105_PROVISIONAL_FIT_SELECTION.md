@@ -28,3 +28,7 @@ stage 4, report/export provenance and background desktop dispatch without an
 optimizer. Existing retention, screening, study, dialog and version contract
 suites are checked separately. No private fit, parameter tuning or scientific
 approval is part of this update. Drive distribution remains request-only.
+
+Final scoped sets passed: 64 pilot/desktop/version cases and seven installer
+contract cases. Ruff, compilation and diff checks passed. See
+[verified build and separate installation state](V105_DELIVERY.md).

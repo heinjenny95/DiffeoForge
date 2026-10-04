@@ -27,7 +27,9 @@ convergence evidence and automatic ranking remain unchanged. Exact retained
 baselines carry the warning through stages 2/3; stage 4 remains strict. Reports
 and exported provenance disclose earlier provisional decisions. See
 [scope and synthetic checks](V105_PROVISIONAL_FIT_SELECTION.md).
-Build and safe local installation are not yet verified.
+Build and installer evidence are verified; safe local installation is pending
+closure of the open application. Installation is already authorized. See
+[separate delivery state](V105_DELIVERY.md); do not infer installation from a build.
 
 v104 offers persistent optional fixed-reference screening in stages 2/3: one or
 two chosen specimens per option, a human decision before the next screen, then
