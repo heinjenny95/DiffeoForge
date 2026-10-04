@@ -37,6 +37,11 @@ scientific gates. Planning does not mark those gates complete.
   phase summaries and buttons consistent with the active job: a running option
   must not also say `Ready to run`. Cover running, finalization, review, cancel,
   failure and reopening without resetting saved evidence. Backlog only.
+  - Label early single-specimen screening decisions separately from joint
+    candidate completion. A retained baseline counts as an available joint
+    result, not a new screening test. Identify the active stage, option, specimen
+    and iteration / cap together, and show distinct screening and joint states
+    on each option card with the next review or execution action.
 - [x] Make saved-search choices readable: series label, saved time, current stage,
   individual approval count and separate joint-review status. Resume the chosen
   series at its verified current checkpoint; identify historical rejected trials
