@@ -14,6 +14,11 @@ scientific gates. Planning does not mark those gates complete.
 
 ## Pilot usability follow-up
 
+- [x] Allow explicit provisional selection of a valid whole-pilot visually
+  approved joint fit stopped only at the iteration limit in stages 1–3. Preserve
+  non-convergence, exact retained baselines and bound approvals; keep automatic
+  selection and stage 4 strict. Disclose the decision in report/export provenance.
+  See [v105 scope and checks](docs/V105_PROVISIONAL_FIT_SELECTION.md).
 - [ ] Make live pilot work and progress clear in one short status line: distinguish
   preparation, individual fitting, early option screening, combined confirmation,
   output verification and waiting for review, with a brief next action and folded

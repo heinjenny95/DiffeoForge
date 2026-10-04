@@ -1,6 +1,6 @@
-# Development continuity — v104 early pilot review
+# Development continuity — v105 provisional fit selection
 
-Snapshot: 2026-10-03. This is a public, software-only continuation guide. Detailed
+Snapshot: 2026-10-04. This is a public, software-only continuation guide. Detailed
 research results, local paths, account destinations and run identities belong in
 the owner's private project handoff, not this repository.
 
@@ -20,6 +20,14 @@ correct parameters or interpret biology for the researcher. Deformetrica is the
 default supported reference route; the Modern engine remains evidence-gated.
 
 ## Current source work
+
+v105 permits explicit provisional selection of a valid, whole-pilot visually
+approved joint fit stopped only at the iteration limit in stages 1–3. Original
+convergence evidence and automatic ranking remain unchanged. Exact retained
+baselines carry the warning through stages 2/3; stage 4 remains strict. Reports
+and exported provenance disclose earlier provisional decisions. See
+[scope and synthetic checks](V105_PROVISIONAL_FIT_SELECTION.md).
+Build and safe local installation are not yet verified.
 
 v104 offers persistent optional fixed-reference screening in stages 2/3: one or
 two chosen specimens per option, a human decision before the next screen, then

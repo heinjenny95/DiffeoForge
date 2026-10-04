@@ -54,10 +54,12 @@ from diffeoforge.reference_calibration_study import (
     ReferenceCalibrationStudySnapshot,
     assess_reference_calibration_snapshot,
     calibration_candidate_run_directory,
+    iteration_limit_selection_available,
     load_reference_calibration_report,
     load_reference_calibration_study,
     normalized_candidate_subject_fit,
     record_reference_calibration_candidate_review,
+    record_reference_calibration_iteration_limit_selection,
     record_reference_calibration_provisional_override,
     record_reference_calibration_stage_review,
 )
@@ -217,6 +219,7 @@ class _CalibrationStageWorker(QRunnable):
         specimen_fit: bool = False,
         specimen_action: tuple[str, str, int] | None = None,
         retain_previous: bool = False,
+        provisional_candidate_id: str | None = None,
         early_screen: bool = False,
         screen_subjects: tuple[str, ...] | None = None,
         integration_tolerances: Mapping[str, float] | None = None,
@@ -227,6 +230,7 @@ class _CalibrationStageWorker(QRunnable):
         self.specimen_fit = specimen_fit
         self.specimen_action = specimen_action
         self.retain_previous = retain_previous
+        self.provisional_candidate_id = provisional_candidate_id
         self.early_screen = early_screen
         self.screen_subjects = screen_subjects
         self.integration_tolerances = integration_tolerances
@@ -265,7 +269,12 @@ class _CalibrationStageWorker(QRunnable):
             self.signals.event.emit(event)
 
         try:
-            if self.early_screen:
+            if self.provisional_candidate_id is not None:
+                result, _assessment = record_reference_calibration_iteration_limit_selection(
+                    self.runner.study_directory,
+                    selected_candidate_id=self.provisional_candidate_id,
+                )
+            elif self.early_screen:
                 from diffeoforge.reference_stage_screening import run_next_screen
 
                 result = run_next_screen(
@@ -1243,8 +1252,12 @@ class ReferenceCalibrationDialog(QDialog):
             can_keep and self._worker is None and not self._restoring_search
         )
         if can_keep:
+            provisional_baseline = iteration_limit_selection_available(
+                self._snapshot, stage.stage_id + "-retained"
+            )
             self.keep_previous_button.setText(
-                f"Keep approved stage {stage.order - 1} fit → stage {stage.order + 1}"
+                f"Keep {'provisional' if provisional_baseline else 'approved'} "
+                f"stage {stage.order - 1} fit → stage {stage.order + 1}"
             )
         for candidate_id, approved in self._snapshot.visual_reviews.items():
             self._visually_reviewed_candidates.add(candidate_id)
@@ -2065,17 +2078,28 @@ class ReferenceCalibrationDialog(QDialog):
             return
         eligible = selected in self._selectable_candidate_ids()
         stage = self._snapshot.current_stage
+        provisional = iteration_limit_selection_available(self._snapshot, selected)
         last = stage.order == len(self._snapshot.plan.stages)
         self.advance_button.setText(
-            "Use approved option and finish pilot"
+            f"Use approved fit provisionally → stage {stage.order + 1}"
+            if provisional else "Use approved option and finish pilot"
             if last
             else f"Use approved option → stage {stage.order + 1}"
+        )
+        self.advance_button.setToolTip(
+            "Keeps this exact saved fit for parameter exploration. Convergence is not "
+            "established; stage 4 still requires numerical qualification. No fit starts now."
+            if provisional else "Records this selection and prepares the next stage."
         )
         approved = self._snapshot.visual_reviews.get(selected) is True
         self.selection_combo.show()
         self.advance_button.show()
-        self.advance_button.setEnabled(eligible and approved and not retryable)
-        _set_action_emphasis(self.advance_button, eligible and approved and not retryable)
+        can_advance = (
+            (eligible or provisional) and approved and not retryable
+            and self._worker is None and not self._restoring_search
+        )
+        self.advance_button.setEnabled(can_advance)
+        _set_action_emphasis(self.advance_button, can_advance)
         self.review_next_button.setText("Review selected option")
         self.review_next_button.show()
         self.review_next_button.setEnabled(selected is not None and not retryable)
@@ -2098,9 +2122,22 @@ class ReferenceCalibrationDialog(QDialog):
             if selected is None
             else "Approved. Use this option to continue."
             if approved and eligible
+            else "Visually approved; iteration limit reached. Keep this fit provisionally "
+            "to explore stage " + str(stage.order + 1) + ". Convergence is not established."
+            if approved and provisional
+            else "Iteration limit reached. Review all specimens before choosing this fit "
+            "provisionally; convergence is not established."
+            if provisional
             else "Review this option before continuing."
         )
-        if stopped:
+        if approved and not eligible and not provisional and not retryable:
+            self.status.setText(
+                "Visually approved; numerical checks still block selection. "
+                "Stage 4 requires convergence and a qualifying finer comparison."
+                if last else "Visually approved; technical checks still block selection. "
+                "Open Technical measurements to inspect the reason."
+            )
+        if stopped and not (approved and provisional):
             messages = {
                 "budget_reached": "Automatic search budget reached.",
                 "fit_plateau": "Automatic search stopped: fit no longer improved enough.",
@@ -2245,6 +2282,7 @@ class ReferenceCalibrationDialog(QDialog):
         specimen_fit: bool = False,
         specimen_action: tuple[str, str, int] | None = None,
         retain_previous: bool = False,
+        provisional_candidate_id: str | None = None,
         early_screen: bool = False,
         screen_subjects: tuple[str, ...] | None = None,
     ) -> None:
@@ -2257,6 +2295,7 @@ class ReferenceCalibrationDialog(QDialog):
             specimen_fit=specimen_fit,
             specimen_action=specimen_action,
             retain_previous=retain_previous,
+            provisional_candidate_id=provisional_candidate_id,
             early_screen=early_screen,
             screen_subjects=screen_subjects,
             integration_tolerances=(
@@ -2298,7 +2337,10 @@ class ReferenceCalibrationDialog(QDialog):
         self.cancel_button.setObjectName("danger")
         self.cancel_button.style().unpolish(self.cancel_button)
         self.cancel_button.style().polish(self.cancel_button)
-        self.status.setText("Preparing the next attempt…")
+        self.status.setText(
+            "Recording provisional selection and preserving the saved fit… No fit is running."
+            if provisional_candidate_id else "Preparing the next attempt…"
+        )
         self._thread_pool.start(worker)
 
     @Slot()
@@ -2650,6 +2692,9 @@ class ReferenceCalibrationDialog(QDialog):
         approvals = self._visual_approvals()
         if self._individual_checkpoint():
             self._start_pilot(adaptive=False, specimen_action=("advance", str(selected), 0))
+            return
+        if iteration_limit_selection_available(self._snapshot, selected):
+            self._start_pilot(adaptive=False, provisional_candidate_id=str(selected))
             return
         try:
             _snapshot, _assessment = record_reference_calibration_stage_review(

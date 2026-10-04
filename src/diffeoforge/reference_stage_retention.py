@@ -122,6 +122,8 @@ def verify_reference(root, record):
         or candidate.metrics != record["metrics"]
         or study._candidate_review_binding(candidate) != source["binding"]
         or record["candidate"]["parameter_values"] != _values(load_config(candidate.config_path))
+        or record.get("iteration_limit_provisional")
+        != selection.get("iteration_limit_provisional")
     ):
         raise study.ReferenceCalibrationStudyError(
             "Retained fit differs from its approved evidence"
@@ -220,6 +222,8 @@ def register_previous_fit(snapshot):
         stage_id=stage.stage_id,
         candidate=declaration.as_manifest(),
         metrics=dict(candidate.metrics),
+        **({"iteration_limit_provisional": selection["iteration_limit_provisional"]}
+           if selection.get("iteration_limit_provisional") else {}),
         retained_source=dict(
             version=VERSION,
             study_directory=str(source_root),

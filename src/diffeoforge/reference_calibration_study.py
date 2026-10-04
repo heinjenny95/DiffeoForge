@@ -2379,6 +2379,13 @@ def _final_configuration(
             "pilot_subject_count": len(manifest["inputs"]["subjects"]),
             "observations": runtime_observations,
         },
+        "iteration_limit_provisional_selections": [
+            {"stage_id": e["stage_id"], "candidate_id": e["candidate_id"],
+             "decision_event_hash": e["event_hash"], "converged": False,
+             "limitation": e["iteration_limit_provisional"]["limitation"]}
+            for e in _load_events(root)
+            if e["event"] == "stage_selected" and e.get("iteration_limit_provisional")
+        ],
     }
     if continuation_source is not None:
         from diffeoforge.reference_adaptive_calibration import apply_seed, bind_learned_seed
@@ -2547,6 +2554,7 @@ def _calibration_report_payload(
                 "visual_review_policy": event.get("visual_review_policy", "historical"),
                 "visual_display_scopes": event.get("visual_display_scopes", {}),
                 "selection_mode": event.get("selection_mode", "researcher_manual"),
+                "iteration_limit_provisional": event.get("iteration_limit_provisional"),
                 "selection_reason": event.get(
                     "selection_reason",
                     "The researcher explicitly selected this candidate.",
@@ -2612,7 +2620,11 @@ def _calibration_report_payload(
         "final_configuration": _relative_path(root, final_config),
         "full_cohort_confirmation_required": True,
         "next_steps": list(plan.final_confirmation_required),
-        "limitations": list(plan.limitations),
+        "limitations": list(plan.limitations) + ([
+            "One or more stages used a visually approved fit at the iteration limit "
+            "provisionally. Those runs remain non-converged; visual fit does not establish "
+            "stable momenta or morphospace. Stage 4 must independently qualify."
+        ] if any(e.get("iteration_limit_provisional") for e in selection_events.values()) else []),
         **(
             {"qc_recalibration_source": dict(plan.qc_recalibration_source)}
             if plan.qc_recalibration_source
@@ -2794,6 +2806,51 @@ def load_reference_calibration_report(
     return _read_json(snapshot.report_json_path, "pilot calibration report")
 
 
+def iteration_limit_selection_available(
+    snapshot: ReferenceCalibrationStudySnapshot, candidate_id: str,
+) -> bool:
+    """Cheap UI predicate; the writer also verifies assessment and bound QC.
+
+    Historical joint runs have no fit_scope field. Singleton probes and screening
+    results cannot become provisional joint selections.
+    """
+    stage = snapshot.current_stage
+    candidate = next((c for c in snapshot.candidates if c.candidate_id == candidate_id), None)
+    metrics = candidate.metrics if candidate else None
+    return bool(
+        stage and stage.order in (1, 2, 3)
+        and snapshot.plan.execution_scope != "single_specimen_probe"
+        and candidate and candidate.status == "completed" and metrics
+        and metrics.get("completed") is True and metrics.get("converged") is False
+        and metrics.get("fit_scope") in (None, "full_targets")
+        and metrics.get("optimizer_stop_signal") == "maximum_iterations"
+        and type(metrics.get("maximum_iterations")) is int
+        and metrics["maximum_iterations"] > 0
+        and type(metrics.get("final_iteration")) is int
+        and metrics["final_iteration"] >= metrics["maximum_iterations"]
+        and type(metrics.get("invalid_face_count")) is int
+        and metrics["invalid_face_count"] == 0
+        and type(metrics.get("subject_reconstruction_count")) is int
+        and metrics["subject_reconstruction_count"] == len(snapshot.plan.selected_pilot_subjects)
+    )
+
+
+def record_reference_calibration_iteration_limit_selection(
+    study_directory: Path | str, *, selected_candidate_id: str,
+) -> tuple[ReferenceCalibrationStudySnapshot, CalibrationStageAssessment]:
+    """Explicitly explore a reviewed capped joint fit without claiming convergence."""
+    return _record_reference_calibration_stage_selection(
+        study_directory, visual_approvals={}, selected_candidate_id=selected_candidate_id,
+        selection_mode="researcher_iteration_limit_provisional",
+        selection_reason=(
+            "Researcher explicitly kept the visually approved joint fit provisionally "
+            "after the iteration limit. Optimizer convergence is not established. "
+            "This permits parameter exploration only; stage 4 still requires convergence "
+            "and numerical qualification, and the full cohort requires a new atlas and QC."
+        ),
+    )
+
+
 def _record_reference_calibration_stage_selection(
     study_directory: Path | str,
     *,
@@ -2855,7 +2912,28 @@ def _record_reference_calibration_stage_selection(
         raise ReferenceCalibrationStudyError(
             f"Unknown candidate selection: {selected_candidate_id}"
         )
-    if not selected_assessment.eligible:
+    retained_event = next(
+        (event for event in _load_events(root)
+         if event["event"] == "stage_retained"
+         and event["stage_id"] == snapshot.current_stage.stage_id
+         and event["candidate"]["candidate_id"] == selected_candidate_id),
+        None,
+    )
+    provisional = selection_mode == "researcher_iteration_limit_provisional" or bool(
+        retaining and retained_event and retained_event.get("iteration_limit_provisional")
+    )
+    if provisional and (
+        not iteration_limit_selection_available(snapshot, selected_candidate_id)
+        or selected_assessment.rejection_reasons != (
+            "optimizer convergence was not established",
+        )
+    ):
+        raise ReferenceCalibrationStudyError(
+            "Provisional selection requires a complete, valid, visually approved joint fit "
+            "stopped only at the iteration limit in stages 1–3. Other evidence failures "
+            "and stage 4 cannot be bypassed."
+        )
+    if not selected_assessment.eligible and not provisional:
         raise ReferenceCalibrationStudyError(
             "Selected candidate is not eligible: "
             + "; ".join(selected_assessment.rejection_reasons)
@@ -2864,13 +2942,6 @@ def _record_reference_calibration_stage_selection(
         candidate
         for candidate in snapshot.current_stage.candidates
         if candidate.candidate_id == selected_candidate_id
-    )
-    retained_event = next(
-        (event for event in _load_events(root)
-         if event["event"] == "stage_retained"
-         and event["stage_id"] == snapshot.current_stage.stage_id
-         and event["candidate"]["candidate_id"] == selected_candidate_id),
-        None,
     )
     _append_event(
         root,
@@ -2902,6 +2973,17 @@ def _record_reference_calibration_stage_selection(
             "selection_mode": selection_mode,
             "selection_reason": selection_reason,
             "researcher_decision": selection_mode.startswith("researcher_"),
+            **({"iteration_limit_provisional": {
+                "version": "iteration-limit-exploration-v1",
+                "converged": False,
+                "binding": _candidate_review_binding(next(
+                    c for c in snapshot.candidates if c.candidate_id == selected_candidate_id
+                )),
+                "retained_source": retained_event.get("iteration_limit_provisional")
+                if retained_event else None,
+                "limitation": "Parameter exploration only; numerical qualification "
+                "and full-cohort confirmation remain required.",
+            }} if provisional else {}),
         },
     )
     manifest = _verify_manifest(root)
