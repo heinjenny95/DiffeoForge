@@ -24,9 +24,10 @@ default supported reference route; the Modern engine remains evidence-gated.
 v106 corrects the mandatory artifact count for cold frozen-singleton screening
 and adds preparation-only retry for technical failures. Human decisions and
 retained baselines remain bound; old failure evidence is preserved and verified.
-See [behavior and verification scope](V106_SCREENING_RECOVERY.md). Build and
-installation evidence will be recorded separately; installed v105 remains current
-until fresh idle checks and verified installation. No private fit is started.
+See [behavior and verification scope](V106_SCREENING_RECOVERY.md). Verified build,
+full backup, fresh idle checks and local installation/startup are complete. All
+recorded saved pilot files remain unchanged; no private fit or retry was started.
+See [separate delivery evidence](V106_DELIVERY.md). Drive intentionally retains v98.
 
 v105 permits explicit provisional selection of a valid, whole-pilot visually
 approved joint fit stopped only at the iteration limit in stages 1–3. Original

@@ -6,7 +6,8 @@ v106 (`0.0.0.dev106`) corrects the cold singleton manifest requirement and adds
 explicit technical-screen retry without resetting the pilot or changing human
 decisions. See [scope and verification](V106_SCREENING_RECOVERY.md). Source,
 verified local installer and installed version are tracked separately. No private
-fit is run; Drive distribution remains request-only.
+fit is run; Drive distribution remains request-only. Build and safe local
+installation passed; see [delivery evidence](V106_DELIVERY.md).
 
 ## v103 — retain approved fits through pilot transitions
 
