@@ -27,9 +27,10 @@ the added option and verifies its learned initialization and unchanged settings
 on reopening. A nonconverged finer run cannot certify coarser stability. Human
 anatomical QC stays separate. Earlier provisional choices remain disclosed;
 later convergence does not prove a global optimum. See
-[scope and checks](V108_FINER_TIMEPOINT_COMPARISON.md). Packaging and local delivery
-are pending until their independent verification completes. Drive uploads remain
-request-only; no private fit or stage selection is performed during development.
+[scope and checks](V108_FINER_TIMEPOINT_COMPARISON.md). Frozen packaging, full prior
+backup, fresh idle checks, local installation/startup and all recorded saved pilot
+files are verified; see [delivery evidence](V108_DELIVERY.md). Drive retains v98.
+No private fit, stage selection or QC decision was performed.
 
 v107 repairs retained-fit verification after several alternatives or continuation
 attempts in one stage have been reviewed. The selected result's complete decision

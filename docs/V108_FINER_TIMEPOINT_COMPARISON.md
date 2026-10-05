@@ -36,4 +36,4 @@ synthetic receipts; the saved private Stage 4 and its actual ordered learned see
 were verified read-only, including full-cohort initialization paths, with the
 study journal unchanged. No private optimizer
 run is started during development. Packaging and local installation are recorded
-separately after verification.
+separately in [verified local delivery](V108_DELIVERY.md).
