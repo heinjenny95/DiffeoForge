@@ -14,6 +14,12 @@ scientific gates. Planning does not mark those gates complete.
 
 ## Pilot usability follow-up
 
+- [ ] Notify when a completed pilot step is waiting for human review, including
+  while minimized or covered: a Windows notification or taskbar attention marker
+  with the stage/option and a direct action to open its review. Notify once per
+  new review request, clear attention when acknowledged, avoid forced focus and
+  intermediate-progress alerts, and preserve saved decisions. Backlog only.
+
 - [x] Extend a saved Stage 4 comparison by one next-finer full-cohort option when
   the initial options do not qualify. Preserve earlier results and prospective
   tolerances; require converged, valid full-cohort reference evidence and separate
