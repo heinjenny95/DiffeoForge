@@ -1316,6 +1316,11 @@ def _prepared_candidates(
         )
     records = {record["candidate_id"]: record for record in prepared[0]["candidates"]}
     for event in events:
+        if event["event"] == "integration_resolution_added" and event.get("stage_id") == stage_id:
+            from diffeoforge.reference_integration_check import verify_extension
+
+            verify_extension(root, event, events)
+            records[event["candidate"]["candidate_id"]] = event
         if event["event"] == "stage_retained" and event.get("stage_id") == stage_id:
             from diffeoforge.reference_stage_retention import verify_reference
 
@@ -1632,6 +1637,9 @@ def _load_verified_calibration_study(
     from diffeoforge.reference_stage_retention import overlay_plan
 
     plan = overlay_plan(plan, events)
+    from diffeoforge.reference_integration_check import overlay_plan as overlay_integration
+
+    plan = overlay_integration(plan, events)
     if events[0]["study_id"] != manifest["study_id"] or events[0]["manifest_sha256"] != sha256_file(
         root / STUDY_MANIFEST
     ):
@@ -2208,6 +2216,12 @@ def _stage_evidence(
             first = candidate.metrics
             second = neighbor.metrics
             assert first is not None and second is not None
+            if snapshot.integration_tolerances and (
+                not second.get("converged") or second.get("invalid_face_count") != 0
+                or second.get("fit_scope") not in (None, "full_targets")
+                or second.get("subject_reconstruction_count") != snapshot.plan.pilot_subject_count
+            ):
+                continue  # An unfinished or invalid finer run cannot certify stability.
             residual_difference = _relative_difference(
                 float(first["residual_p95"]), float(second["residual_p95"])
             )

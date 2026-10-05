@@ -1,6 +1,6 @@
-# Development continuity — v107 retained review history
+# Development continuity — v108 finer timepoint comparison
 
-Snapshot: 2026-10-04. This is a public, software-only continuation guide. Detailed
+Snapshot: 2026-10-05. This is a public, software-only continuation guide. Detailed
 research results, local paths, account destinations and run identities belong in
 the owner's private project handoff, not this repository.
 
@@ -20,6 +20,16 @@ correct parameters or interpret biology for the researcher. Deformetrica is the
 default supported reference route; the Modern engine remains evidence-gated.
 
 ## Current source work
+
+v108 adds one explicit next-finer full-cohort comparison to a saved Stage 4,
+preserving prior results and prospective numerical tolerances. It executes only
+the added option and verifies its learned initialization and unchanged settings
+on reopening. A nonconverged finer run cannot certify coarser stability. Human
+anatomical QC stays separate. Earlier provisional choices remain disclosed;
+later convergence does not prove a global optimum. See
+[scope and checks](V108_FINER_TIMEPOINT_COMPARISON.md). Packaging and local delivery
+are pending until their independent verification completes. Drive uploads remain
+request-only; no private fit or stage selection is performed during development.
 
 v107 repairs retained-fit verification after several alternatives or continuation
 attempts in one stage have been reviewed. The selected result's complete decision

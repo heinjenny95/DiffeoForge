@@ -223,6 +223,7 @@ class _CalibrationStageWorker(QRunnable):
         early_screen: bool = False,
         screen_subjects: tuple[str, ...] | None = None,
         retry_screens: bool = False,
+        finer_resolution: bool = False,
         integration_tolerances: Mapping[str, float] | None = None,
     ) -> None:
         super().__init__()
@@ -234,6 +235,7 @@ class _CalibrationStageWorker(QRunnable):
         self.provisional_candidate_id = provisional_candidate_id
         self.early_screen = early_screen
         self.retry_screens = retry_screens
+        self.finer_resolution = finer_resolution
         self.screen_subjects = screen_subjects
         self.integration_tolerances = integration_tolerances
         self.adaptive_fit_search = adaptive_fit_search
@@ -276,6 +278,12 @@ class _CalibrationStageWorker(QRunnable):
                     self.runner.study_directory,
                     selected_candidate_id=self.provisional_candidate_id,
                 )
+            elif self.finer_resolution:
+                from diffeoforge.reference_integration_check import add_finer_resolution
+
+                result = add_finer_resolution(self.runner.study_directory)
+                emit(dict(event="integration_resolution_prepared", snapshot=result))
+                result = self.runner.run_current_stage(event_callback=emit)
             elif self.retry_screens:
                 from diffeoforge.reference_stage_screening import retry_failed_screens
 
@@ -1124,6 +1132,16 @@ class ReferenceCalibrationDialog(QDialog):
         numerical_layout.addWidget(self.integration_notice)
         self.integration_controls = InfoDisclosure("Numerical comparison criteria", numerical_panel)
         root.addWidget(self.integration_controls)
+        self.finer_resolution_button = QPushButton("Test finer resolution")
+        self.finer_resolution_button.setToolTip(
+            "Adds one finer full-pilot comparison, starting from the finest saved fit. "
+            "Previous results and numerical tolerances remain unchanged. New fits need visual QC."
+        )
+        self.finer_resolution_button.clicked.connect(
+            lambda: self._start_pilot(adaptive=False, finer_resolution=True)
+        )
+        self.finer_resolution_button.hide()
+        root.addWidget(self.finer_resolution_button)
         continuation_controls = QWidget()
         continuation_layout = QHBoxLayout(continuation_controls)
         continuation_layout.setContentsMargins(0, 0, 0, 0)
@@ -1237,6 +1255,7 @@ class ReferenceCalibrationDialog(QDialog):
             button.setText(f"{prefix}: +{self.continuation_iterations.value()} iterations")
 
     def _render(self, snapshot: ReferenceCalibrationStudySnapshot | None = None) -> None:
+        self.finer_resolution_button.hide()
         self._snapshot = snapshot or load_reference_calibration_study(self.study_directory)
         self.screen_controls.hide()
         self.screen_notice.hide()
@@ -1690,6 +1709,20 @@ class ReferenceCalibrationDialog(QDialog):
             self.selection_combo.blockSignals(False)
             self.collect_evidence_button.show()
             self._update_stage_review_action()
+            if self._snapshot.current_stage.order == 4:
+                from diffeoforge.reference_integration_check import next_resolution
+
+                count = next_resolution(self._snapshot)
+                self.finer_resolution_button.setVisible(count is not None)
+                self.finer_resolution_button.setEnabled(
+                    count is not None and self._worker is None and not self._restoring_search
+                )
+                self.finer_resolution_button.setText(f"Test finer resolution ({count} time points)")
+                if count is not None and assessment.balanced_candidate_id is None:
+                    self.status.setText(
+                        f"No resolution qualifies yet. Test {count} time points to compare "
+                        "the finest saved result; all previous results stay available."
+                    )
         elif running:
             self.status.setText(
                 "Running. Inspect any completed option while the next option computes."
@@ -2321,6 +2354,7 @@ class ReferenceCalibrationDialog(QDialog):
         early_screen: bool = False,
         screen_subjects: tuple[str, ...] | None = None,
         retry_screens: bool = False,
+        finer_resolution: bool = False,
     ) -> None:
         if self._restoring_search:
             raise ValueError("Wait until the saved search has finished loading")
@@ -2335,6 +2369,7 @@ class ReferenceCalibrationDialog(QDialog):
             early_screen=early_screen,
             screen_subjects=screen_subjects,
             retry_screens=retry_screens,
+            finer_resolution=finer_resolution,
             integration_tolerances=(
                 {k: f.value() / 100 for k, f in self.integration_fields.items()}
                 if self._snapshot.current_stage and self._snapshot.current_stage.order == 4
@@ -2366,6 +2401,7 @@ class ReferenceCalibrationDialog(QDialog):
         self.review_next_button.setEnabled(False)
         self.advance_button.setEnabled(False)
         self.keep_previous_button.setEnabled(False)
+        self.finer_resolution_button.setEnabled(False)
         self.selection_combo.setEnabled(False)
         self.start_button.setEnabled(False)
         _set_action_emphasis(self.start_button, False)
@@ -2388,6 +2424,12 @@ class ReferenceCalibrationDialog(QDialog):
 
     @Slot(object)
     def _event(self, event: Mapping[str, object]) -> None:
+        if event["event"] == "integration_resolution_prepared":
+            self._render(event["snapshot"])
+            count = self._snapshot.current_stage.candidates[-1].values["timepoints"]
+            self.status.setText(f"Testing {int(count)} time points with all "
+                                f"{self._snapshot.plan.pilot_subject_count} pilot specimens.")
+            return
         if event["event"] == "screen_progress":
             self.status.setText("Screening one specimen. The next option waits for your review.")
             return

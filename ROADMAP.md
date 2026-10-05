@@ -14,6 +14,11 @@ scientific gates. Planning does not mark those gates complete.
 
 ## Pilot usability follow-up
 
+- [x] Extend a saved Stage 4 comparison by one next-finer full-cohort option when
+  the initial options do not qualify. Preserve earlier results and prospective
+  tolerances; require converged, valid full-cohort reference evidence and separate
+  anatomical QC. See [v108 behavior and checks](docs/V108_FINER_TIMEPOINT_COMPARISON.md).
+
 - [x] Verify a retained fit against its own bound review history when the same
   stage contains other reviewed alternatives or earlier attempts. Preserve later
   withdrawal, exact outputs, provisional warnings and Stage 4 requirements. See
