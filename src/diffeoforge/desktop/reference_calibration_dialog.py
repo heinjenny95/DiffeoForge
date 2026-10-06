@@ -3303,6 +3303,7 @@ class ReferenceCalibrationDialog(QDialog):
                 self._render()
                 self._continue_specimen_review(root, candidate.candidate_id, dialog.review_passed)
         except (OSError, RuntimeError, TypeError, ValueError) as error:
+            self.status.setText("Comparison unavailable: " + str(error))
             QMessageBox.warning(self, "Candidate viewer unavailable", str(error))
 
     def closeEvent(self, event: QCloseEvent) -> None:

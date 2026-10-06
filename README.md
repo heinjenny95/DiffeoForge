@@ -29,6 +29,8 @@ then qualifies a saved model with separate optimizer-stability and fixed-state
 integration checks. A recommendation requires every pilot specimen and a fresh
 anatomical review. Complete search/decision history is exportable. See
 [the method and verification scope](docs/PILOT_OVERHAUL_V109.md).
+v110 repairs reopening and resuming old declared Stage 4 comparisons after a
+qualification checkpoint is appended; see [compatibility checks](docs/V110_SAVED_PILOT_COMPATIBILITY.md).
 
 ## Intended user experience
 

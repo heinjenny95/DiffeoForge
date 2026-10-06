@@ -1,5 +1,14 @@
 # Private-alpha build numbering
 
+## v110 — legacy numerical queue and qualification compatibility
+
+v110 (`0.0.0.dev110`) accepts verified independent qualification checkpoints
+alongside an existing declared Stage 4 queue, preserving old tolerances/results
+and exact candidate-order checks. An unfinished declaration can resume, and
+viewer failures clear stale preparation status. No private fit or QC decision
+is made. See [behavior and verification](V110_SAVED_PILOT_COMPATIBILITY.md).
+Build/installation evidence is recorded separately after completion.
+
 ## v109 — coherent pilot search and independent numerical qualification
 
 v109 (`0.0.0.dev109`) keeps specimen feedback and approved baselines, adds a

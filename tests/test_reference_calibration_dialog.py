@@ -6,6 +6,32 @@ import pytest
 from diffeoforge.reference_calibration_study import CalibrationStudyCandidateState
 
 
+def test_viewer_load_failure_replaces_preparing_status(monkeypatch, tmp_path):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+    from test_reference_calibration_study import _review_ready_stage
+
+    import diffeoforge.desktop.reference_calibration_dialog as module
+
+    app = QApplication.instance() or QApplication([])
+    runner, snapshot = _review_ready_stage(tmp_path, monkeypatch)
+    dialog = module.ReferenceCalibrationDialog(runner.study_directory)
+    dialog.status.setText("Preparing comparison in background… The pilot can continue.")
+
+    def invalid(_root):
+        raise ValueError("Bound evidence changed")
+
+    monkeypatch.setattr(module, "load_reference_calibration_study", invalid)
+    warnings = []
+    monkeypatch.setattr(module.QMessageBox, "warning", lambda *args: warnings.append(args[2]))
+    dialog._candidate_prepared((runner.study_directory, snapshot.candidates[0]), ([], {}))
+    assert dialog.status.text() == "Comparison unavailable: Bound evidence changed"
+    assert warnings == ["Bound evidence changed"]
+    assert dialog._worker is None
+    dialog.close()
+    app.processEvents()
+
+
 def _model(path: Path):
     from diffeoforge.desktop.mesh_preview import MeshPreviewModel
 

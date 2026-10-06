@@ -37,9 +37,15 @@ def verified_tolerances(manifest, stage, candidates, events):
                    and e["sequence"] < record["sequence"] for e in events)):
         raise ValueError("Numerical tolerances differ from their declared comparison")
     additions = [e for e in events if e["event"] == "integration_resolution_added"]
-    if [c.candidate_id for c in candidates] != record["candidate_ids"] + [
+    # The reconstructed plan appends legacy resolutions first, then independent
+    # qualification checkpoints. Their declarations/configurations are verified
+    # separately by _prepared_candidates; they do not inherit these old gates.
+    from diffeoforge.reference_pilot_qualification import declarations
+
+    expected_ids = record["candidate_ids"] + [
         e["candidate"]["candidate_id"] for e in additions
-    ]:
+    ] + [e["candidate"]["candidate_id"] for e in declarations(events)]
+    if [c.candidate_id for c in candidates] != expected_ids:
         raise ValueError("Numerical candidate queue differs from its declarations")
     for addition in additions:
         if (addition["tolerances"] != values

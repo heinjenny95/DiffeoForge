@@ -14,6 +14,11 @@ scientific gates. Planning does not mark those gates complete.
 
 ## Pilot usability follow-up
 
+- [x] Reopen legacy declared Stage 4 comparisons after appending a new independent
+  qualification checkpoint. Preserve history/tolerances, exact queue coverage,
+  source/seed integrity and resume the existing declaration. Viewer errors clear
+  stale preparation status. See [v110 checks](docs/V110_SAVED_PILOT_COMPATIBILITY.md).
+
 - [x] Integrate fit feedback, retained baselines, explicit blockers, complete audit
   export and independent optimizer/fixed-state integration qualification. Keep
   anatomy decisions and scientific validation separate. See

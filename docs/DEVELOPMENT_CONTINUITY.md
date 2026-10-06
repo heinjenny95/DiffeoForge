@@ -1,4 +1,4 @@
-# Development continuity — v109 pilot overhaul
+# Development continuity — v110 saved-pilot compatibility
 
 Snapshot: 2026-10-06. This is a public, software-only continuation guide. Detailed
 research results, local paths, account destinations and run identities belong in
@@ -20,6 +20,13 @@ correct parameters or interpret biology for the researcher. Deformetrica is the
 default supported reference route; the Modern engine remains evidence-gated.
 
 ## Current source work
+
+v110 corrects the legacy declared Stage 4 queue verifier after an independent
+qualification checkpoint is appended. Reopening, anatomical inspection and
+resuming the existing declaration preserve all prior results and criteria.
+Missing/reordered/extra candidates still fail verification. Viewer failures
+replace stale preparation text. See [scope and checks](V110_SAVED_PILOT_COMPATIBILITY.md).
+Build/install and native owner acceptance remain separate from source validation.
 
 v109 integrates specimen feedback, retained joint baselines, early Stage 2/3
 screening, explicit blockers and reproducible audit export with a new final

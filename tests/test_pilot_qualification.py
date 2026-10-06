@@ -64,6 +64,50 @@ def _stub(monkeypatch):
     monkeypatch.setattr(qualification, "bind_learned_seed", bind)
 
 
+@pytest.mark.parametrize("extended", [False, True])
+def test_legacy_declared_queue_accepts_bound_qualification_and_keeps_original_evidence(
+    tmp_path, monkeypatch, extended
+):
+    from diffeoforge import reference_integration_check as integration
+
+    runner, _ = _fourth(tmp_path, monkeypatch)
+    legacy = runner.run_current_stage()
+    if extended:
+        integration.add_finer_resolution(legacy.study_directory)
+        legacy = runner.run_current_stage()
+    _stub(monkeypatch)
+    old = {p: p.read_bytes() for p in legacy.study_directory.rglob("*") if p.is_file()}
+    prepared, identifier = qualification.prepare(legacy)
+    assert prepared.integration_tolerances == legacy.integration_tolerances
+    assert prepared.candidates[:-1] == legacy.candidates
+    # Reopening and review both use the full verifier, including old declarations.
+    reopened = study.load_reference_calibration_study(prepared.study_directory)
+    assert reopened == prepared
+    assert study.assess_reference_calibration_snapshot(
+        reopened, qualification_preview=True
+    ).version == qualification.VERSION
+    for path, data in old.items():
+        assert path.read_bytes().startswith(data) if path.name == study.STUDY_EVENTS else (
+            path.read_bytes() == data
+        )
+    done = runner.run_current_stage(candidate_ids={identifier})
+    assert done.candidates[:-1] == legacy.candidates
+    assert done.candidates[-1].status == "completed"
+    assert identifier not in done.visual_reviews
+    assert study.load_reference_calibration_study(done.study_directory) == done
+    again, next_id = qualification.prepare(done, candidate_id=identifier)
+    assert next_id != identifier
+    assert again.candidates[:-1] == done.candidates
+    # A valid declaration does not excuse an omitted, reordered or unknown row.
+    events = study._load_events(again.study_directory)
+    manifest = study._verify_manifest(again.study_directory)
+    for rows in (
+        again.candidates[:-1], again.candidates[::-1], (*again.candidates, legacy.candidates[0])
+    ):
+        with pytest.raises(ValueError, match="queue differs"):
+            integration.verified_tolerances(manifest, again.current_stage, rows, events)
+
+
 def test_prospective_checkpoint_preserves_source_and_does_not_run_old_grid(tmp_path, monkeypatch):
     runner, fourth = _fourth(tmp_path, monkeypatch)
     _stub(monkeypatch)
@@ -126,12 +170,14 @@ def test_one_checkpoint_needs_human_review_and_cannot_select_legacy_refits(tmp_p
     )
 
 
-def _complete_check(tmp_path, monkeypatch):
+def _complete_check(tmp_path, monkeypatch, *, legacy=False):
     import shutil
 
     from test_reference_calibration_study import _approve_for_test
 
     runner, fourth = _fourth(tmp_path, monkeypatch)
+    if legacy:
+        fourth = runner.run_current_stage()
     _stub(monkeypatch)
     template = next((fourth.study_directory / "inputs/template").glob("*.vtk"))
     names = [s.filename for s in fourth.plan.selected_pilot_subjects]
@@ -156,12 +202,21 @@ def _complete_check(tmp_path, monkeypatch):
         return paths, {}
 
     monkeypatch.setattr(qualification, "shoot", shoot)
+    if legacy:
+        # Resume the declaration left behind by the old loader failure.
+        pending, _ = qualification.prepare(fourth)
+        declaration = qualification.declarations(study._load_events(pending.study_directory))[-1]
     done = qualification.run(runner)
+    if legacy:
+        records = qualification.declarations(study._load_events(done.study_directory))
+        assert records == (declaration,)
+        assert done.candidates[:-1] == fourth.candidates
     return runner, done, counts, _approve_for_test
 
 
-def test_complete_check_requires_fresh_qc_and_exports_exact_receipt(tmp_path, monkeypatch):
-    runner, done, counts, approve = _complete_check(tmp_path, monkeypatch)
+@pytest.mark.parametrize("legacy", [False, True])
+def test_complete_check_requires_fresh_qc_and_exports_exact_receipt(tmp_path, monkeypatch, legacy):
+    runner, done, counts, approve = _complete_check(tmp_path, monkeypatch, legacy=legacy)
     new = done.candidates[-1]
     n = int(done.current_stage.candidates[-1].values["timepoints"])
     assert counts == [n, 2 * n - 1, 4 * n - 3]
