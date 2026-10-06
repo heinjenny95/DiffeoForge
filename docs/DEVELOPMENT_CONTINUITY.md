@@ -26,7 +26,9 @@ qualification checkpoint is appended. Reopening, anatomical inspection and
 resuming the existing declaration preserve all prior results and criteria.
 Missing/reordered/extra candidates still fail verification. Viewer failures
 replace stale preparation text. See [scope and checks](V110_SAVED_PILOT_COMPATIBILITY.md).
-Build/install and native owner acceptance remain separate from source validation.
+Frozen build, full prior backup, fresh idle checks, installation/startup and all
+installed-file/companion checks passed; all recorded pilot files are unchanged.
+See [delivery evidence](V110_DELIVERY.md). Native owner acceptance remains open.
 
 v109 integrates specimen feedback, retained joint baselines, early Stage 2/3
 screening, explicit blockers and reproducible audit export with a new final

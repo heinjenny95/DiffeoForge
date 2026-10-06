@@ -27,3 +27,7 @@ resumption of the existing declaration, fresh QC, completed qualification export
 and artifact tampering. The saved owner study is inspected read-only; development
 starts no private fit. Packaging, safe installation and native user acceptance
 are separate from source tests. The v109 scientific-validation limitations remain.
+
+The integration/viewer suite passed 19 tests and the qualification compatibility
+scope passed five. Build and safe installation are verified separately in
+[delivery evidence](V110_DELIVERY.md); native owner acceptance remains open.

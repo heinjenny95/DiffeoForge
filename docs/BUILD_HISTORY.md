@@ -7,7 +7,8 @@ alongside an existing declared Stage 4 queue, preserving old tolerances/results
 and exact candidate-order checks. An unfinished declaration can resume, and
 viewer failures clear stale preparation status. No private fit or QC decision
 is made. See [behavior and verification](V110_SAVED_PILOT_COMPATIBILITY.md).
-Build/installation evidence is recorded separately after completion.
+Frozen packaging, full backup, fresh idle checks and local installation/startup
+passed; all recorded pilot files are unchanged. See [delivery evidence](V110_DELIVERY.md).
 
 ## v109 — coherent pilot search and independent numerical qualification
 
