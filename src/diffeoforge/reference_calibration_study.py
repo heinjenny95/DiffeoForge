@@ -1316,6 +1316,11 @@ def _prepared_candidates(
         )
     records = {record["candidate_id"]: record for record in prepared[0]["candidates"]}
     for event in events:
+        if event["event"] == "pilot_qualification_declared" and event.get("stage_id") == stage_id:
+            from diffeoforge.reference_pilot_qualification import verify_declaration
+
+            verify_declaration(root, event, events)
+            records[event["candidate"]["candidate_id"]] = event
         if event["event"] == "integration_resolution_added" and event.get("stage_id") == stage_id:
             from diffeoforge.reference_integration_check import verify_extension
 
@@ -1640,6 +1645,9 @@ def _load_verified_calibration_study(
     from diffeoforge.reference_integration_check import overlay_plan as overlay_integration
 
     plan = overlay_integration(plan, events)
+    from diffeoforge.reference_pilot_qualification import overlay_plan as overlay_qualification
+
+    plan = overlay_qualification(plan, events)
     if events[0]["study_id"] != manifest["study_id"] or events[0]["manifest_sha256"] != sha256_file(
         root / STUDY_MANIFEST
     ):
@@ -1675,6 +1683,9 @@ def _load_verified_calibration_study(
     selected_values, selected_candidates = _selected_state(events)
     final_events = [event for event in events if event["event"] == "study_completed"]
     if final_events:
+        from diffeoforge.reference_pilot_qualification import verify_completed
+
+        verify_completed(root, plan, events)
         final_event = final_events[-1]
         final_config = _safe_study_path(root, final_event["final_config"])
         if (
@@ -1788,14 +1799,23 @@ def _load_verified_calibration_study(
     early_screening = screening_state(root, stage.stage_id, events, candidate_states)
     if early_screening:
         candidate_states = [
-            replace(c, status=("screen_failed" if c.candidate_id in
-                               early_screening["technical_failures"] else "screened_out"),
-                    metrics=None,
-                    error=("Early screen failed technically; joint fit not run."
-                           if c.candidate_id in early_screening["technical_failures"]
-                           else "Excluded after your early specimen review; joint fit not run."))
-            if c.candidate_id in (early_screening["rejected"]
-                                  + early_screening["technical_failures"]) else c
+            replace(
+                c,
+                status=(
+                    "screen_failed"
+                    if c.candidate_id in early_screening["technical_failures"]
+                    else "screened_out"
+                ),
+                metrics=None,
+                error=(
+                    "Early screen failed technically; joint fit not run."
+                    if c.candidate_id in early_screening["technical_failures"]
+                    else "Excluded after your early specimen review; joint fit not run."
+                ),
+            )
+            if c.candidate_id
+            in (early_screening["rejected"] + early_screening["technical_failures"])
+            else c
             for c in candidate_states
         ]
     series_root, _ = _search_extension_series(root)
@@ -1936,6 +1956,7 @@ class ReferenceCalibrationStudyRunner:
         *,
         event_callback: StudyEventCallback | None = None,
         integration_tolerances: Mapping[str, float] | None = None,
+        candidate_ids: set[str] | None = None,
     ) -> ReferenceCalibrationStudySnapshot:
         snapshot = load_reference_calibration_study(self.study_directory)
         if snapshot.status == "completed":
@@ -1944,7 +1965,7 @@ class ReferenceCalibrationStudyRunner:
             candidate.status == "completed" for candidate in snapshot.candidates
         ):
             return snapshot
-        if snapshot.current_stage.order == 4:
+        if snapshot.current_stage.order == 4 and candidate_ids is None:
             from diffeoforge.reference_integration_check import declare_tolerances
 
             snapshot = declare_tolerances(snapshot, integration_tolerances)
@@ -1954,8 +1975,10 @@ class ReferenceCalibrationStudyRunner:
 
         allowed = joint_candidate_ids(snapshot)
         for candidate in snapshot.candidates:
-            if candidate.status == "completed" or (
-                allowed is not None and candidate.candidate_id not in allowed
+            if (
+                candidate.status == "completed"
+                or (allowed is not None and candidate.candidate_id not in allowed)
+                or (candidate_ids is not None and candidate.candidate_id not in candidate_ids)
             ):
                 continue
             if self._cancel_requested:
@@ -2190,6 +2213,8 @@ def normalized_candidate_subject_fit(
 def _stage_evidence(
     snapshot: ReferenceCalibrationStudySnapshot,
     visual_approvals: Mapping[str, bool],
+    *,
+    integration_comparisons: bool = True,
 ) -> tuple[CalibrationCandidateEvidence, ...]:
     visual_approvals = {**visual_approvals, **snapshot.visual_reviews}
     completed = {
@@ -2199,9 +2224,16 @@ def _stage_evidence(
     }
     assert snapshot.current_stage is not None
     numerical: dict[str, tuple[float, float, float]] = {}
-    if snapshot.current_stage.kind == "integration_accuracy":
+    from diffeoforge.reference_pilot_qualification import declarations
+
+    if (
+        integration_comparisons
+        and snapshot.current_stage.kind == "integration_accuracy"
+        and not declarations(_load_events(snapshot.study_directory))
+    ):
         ordered = [
-            candidate for candidate in snapshot.candidates
+            candidate
+            for candidate in snapshot.candidates
             if snapshot.integration_tolerances or candidate.candidate_id in completed
         ]
         for index, candidate in enumerate(ordered):
@@ -2210,14 +2242,18 @@ def _stage_evidence(
                 if index + 1 < len(ordered)
                 else (ordered[index - 1] if index and not snapshot.integration_tolerances else None)
             )
-            if (neighbor is None or candidate.candidate_id not in completed
-                    or neighbor.candidate_id not in completed):
+            if (
+                neighbor is None
+                or candidate.candidate_id not in completed
+                or neighbor.candidate_id not in completed
+            ):
                 continue
             first = candidate.metrics
             second = neighbor.metrics
             assert first is not None and second is not None
             if snapshot.integration_tolerances and (
-                not second.get("converged") or second.get("invalid_face_count") != 0
+                not second.get("converged")
+                or second.get("invalid_face_count") != 0
                 or second.get("fit_scope") not in (None, "full_targets")
                 or second.get("subject_reconstruction_count") != snapshot.plan.pilot_subject_count
             ):
@@ -2231,9 +2267,9 @@ def _stage_evidence(
                 right = second.get("subject_residual_p95", {})
                 if set(left) != names or set(right) != names:
                     continue  # A cohort average cannot certify unmeasured specimens.
-                residual_difference = max(_relative_difference(
-                    float(left[name]), float(right[name])
-                ) for name in names)
+                residual_difference = max(
+                    _relative_difference(float(left[name]), float(right[name])) for name in names
+                )
             numerical[candidate.candidate_id] = (
                 atlas_rms_distance(first["atlas_path"], second["atlas_path"]),
                 _relative_difference(
@@ -2291,6 +2327,7 @@ def assess_reference_calibration_snapshot(
     snapshot: ReferenceCalibrationStudySnapshot,
     *,
     visual_approvals: Mapping[str, bool] | None = None,
+    qualification_preview: bool = False,
 ) -> CalibrationStageAssessment:
     """Return a non-mutating assessment of one already verified study snapshot."""
 
@@ -2298,12 +2335,21 @@ def assess_reference_calibration_snapshot(
         raise ReferenceCalibrationStudyError(
             "The current calibration stage has not completed all candidates"
         )
-    return assess_calibration_stage(
+    assessment = assess_calibration_stage(
         snapshot.plan,
         stage_id=snapshot.current_stage.stage_id,
-        evidence=_stage_evidence(snapshot, visual_approvals or {}),
+        evidence=_stage_evidence(
+            snapshot, visual_approvals or {}, integration_comparisons=not qualification_preview
+        ),
         integration_tolerances=snapshot.integration_tolerances or None,
     )
+    from diffeoforge.reference_pilot_qualification import assess, declarations
+
+    if snapshot.current_stage.order == 4 and (
+        qualification_preview or declarations(_load_events(snapshot.study_directory))
+    ):
+        return assess(snapshot, assessment)
+    return assessment
 
 
 def assess_reference_calibration_current_stage(
@@ -2379,7 +2425,8 @@ def _final_configuration(
         "status": "completed",
         "study_id": str(manifest["study_id"]),
         "plan_fingerprint": (
-            continuation_source.plan.fingerprint if continuation_source is not None
+            continuation_source.plan.fingerprint
+            if continuation_source is not None
             else str(manifest["plan_fingerprint"])
         ),
         "study_manifest_sha256": sha256_file(root / STUDY_MANIFEST),
@@ -2397,9 +2444,13 @@ def _final_configuration(
             "observations": runtime_observations,
         },
         "iteration_limit_provisional_selections": [
-            {"stage_id": e["stage_id"], "candidate_id": e["candidate_id"],
-             "decision_event_hash": e["event_hash"], "converged": False,
-             "limitation": e["iteration_limit_provisional"]["limitation"]}
+            {
+                "stage_id": e["stage_id"],
+                "candidate_id": e["candidate_id"],
+                "decision_event_hash": e["event_hash"],
+                "converged": False,
+                "limitation": e["iteration_limit_provisional"]["limitation"],
+            }
             for e in _load_events(root)
             if e["event"] == "stage_selected" and e.get("iteration_limit_provisional")
         ],
@@ -2631,17 +2682,34 @@ def _calibration_report_payload(
         "declared_priorities": declared_priorities,
         "recommended_parameters": parameters,
         "stage_decisions": stages,
-        **({"numerical_integration_criteria": next(e for e in reversed(events)
-            if e["event"] == "integration_tolerances_declared")}
-           if any(e["event"] == "integration_tolerances_declared" for e in events) else {}),
+        "search_history": list(events),
+        "numerical_qualification": [
+            _read_json(_safe_study_path(root, event["receipt"]), "qualification receipt")
+            for event in events
+            if event["event"] == "pilot_qualification_finished"
+        ],
+        **(
+            {
+                "numerical_integration_criteria": next(
+                    e for e in reversed(events) if e["event"] == "integration_tolerances_declared"
+                )
+            }
+            if any(e["event"] == "integration_tolerances_declared" for e in events)
+            else {}
+        ),
         "final_configuration": _relative_path(root, final_config),
         "full_cohort_confirmation_required": True,
         "next_steps": list(plan.final_confirmation_required),
-        "limitations": list(plan.limitations) + ([
-            "One or more stages used a visually approved fit at the iteration limit "
-            "provisionally. Those runs remain non-converged; visual fit does not establish "
-            "stable momenta or morphospace. Stage 4 must independently qualify."
-        ] if any(e.get("iteration_limit_provisional") for e in selection_events.values()) else []),
+        "limitations": list(plan.limitations)
+        + (
+            [
+                "One or more stages used a visually approved fit at the iteration limit "
+                "provisionally. Those runs remain non-converged; visual fit does not establish "
+                "stable momenta or morphospace. Stage 4 must independently qualify."
+            ]
+            if any(e.get("iteration_limit_provisional") for e in selection_events.values())
+            else []
+        ),
         **(
             {"qc_recalibration_source": dict(plan.qc_recalibration_source)}
             if plan.qc_recalibration_source
@@ -2739,6 +2807,28 @@ def _calibration_report_html(report: Mapping[str, object]) -> str:
     stage_rows = "".join(rendered_stages)
     next_steps = "".join(f"<li>{html.escape(str(item))}</li>" for item in report["next_steps"])
     limitations = "".join(f"<li>{html.escape(str(item))}</li>" for item in report["limitations"])
+    qualifications = report.get("numerical_qualification", [])
+    qualification_html = ""
+    if qualifications:
+        selected_final = report["stage_decisions"][-1]["selected_candidate_id"]
+        receipt = next(
+            (r for r in qualifications if r["candidate_id"] == selected_final),
+            qualifications[-1],
+        )
+        criteria = "".join(
+            f"<li>{html.escape(key)}: {html.escape(str(value))}</li>"
+            for key, value in receipt["criteria"].items()
+        )
+        qualification_html = (
+            "<h2>Independent numerical qualification</h2>"
+            "<p>The warm optimizer checkpoint and the fixed-state integration tests "
+            "passed separately for every pilot specimen. The new checkpoint has its "
+            "own recorded human anatomical approval. Source and checkpoint identities, "
+            "measurements, runtime and artifact hashes are in the JSON report. "
+            "This is local engineering evidence, not proof of a global optimum.</p>"
+            f"<details><summary>Prospectively declared criteria</summary><ul>{criteria}"
+            "</ul></details>"
+        )
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <title>DiffeoForge pilot calibration report</title>
@@ -2774,6 +2864,7 @@ preferred under reasonable metric-weight changes, an independent rank analysis,
 and subject resampling whenever subject-level evidence was available. Ambiguous
 evidence required a recorded researcher decision.</p>
 {stage_rows}
+{qualification_html}
 <h2>Required next steps</h2><ol>{next_steps}</ol>
 <h2>Limitations</h2><ul>{limitations}</ul>
 <p class="footer">Study ID: {html.escape(str(report["study_id"]))}<br>
@@ -2824,7 +2915,8 @@ def load_reference_calibration_report(
 
 
 def iteration_limit_selection_available(
-    snapshot: ReferenceCalibrationStudySnapshot, candidate_id: str,
+    snapshot: ReferenceCalibrationStudySnapshot,
+    candidate_id: str,
 ) -> bool:
     """Cheap UI predicate; the writer also verifies assessment and bound QC.
 
@@ -2835,10 +2927,14 @@ def iteration_limit_selection_available(
     candidate = next((c for c in snapshot.candidates if c.candidate_id == candidate_id), None)
     metrics = candidate.metrics if candidate else None
     return bool(
-        stage and stage.order in (1, 2, 3)
+        stage
+        and stage.order in (1, 2, 3)
         and snapshot.plan.execution_scope != "single_specimen_probe"
-        and candidate and candidate.status == "completed" and metrics
-        and metrics.get("completed") is True and metrics.get("converged") is False
+        and candidate
+        and candidate.status == "completed"
+        and metrics
+        and metrics.get("completed") is True
+        and metrics.get("converged") is False
         and metrics.get("fit_scope") in (None, "full_targets")
         and metrics.get("optimizer_stop_signal") == "maximum_iterations"
         and type(metrics.get("maximum_iterations")) is int
@@ -2853,11 +2949,15 @@ def iteration_limit_selection_available(
 
 
 def record_reference_calibration_iteration_limit_selection(
-    study_directory: Path | str, *, selected_candidate_id: str,
+    study_directory: Path | str,
+    *,
+    selected_candidate_id: str,
 ) -> tuple[ReferenceCalibrationStudySnapshot, CalibrationStageAssessment]:
     """Explicitly explore a reviewed capped joint fit without claiming convergence."""
     return _record_reference_calibration_stage_selection(
-        study_directory, visual_approvals={}, selected_candidate_id=selected_candidate_id,
+        study_directory,
+        visual_approvals={},
+        selected_candidate_id=selected_candidate_id,
         selection_mode="researcher_iteration_limit_provisional",
         selection_reason=(
             "Researcher explicitly kept the visually approved joint fit provisionally "
@@ -2910,12 +3010,8 @@ def _record_reference_calibration_stage_selection(
         raise ReferenceCalibrationStudyError(
             "Optional visual-QC decisions must be true or false when recorded"
         )
-    evidence = _stage_evidence(snapshot, visual_approvals)
-    assessment = assess_calibration_stage(
-        snapshot.plan,
-        stage_id=snapshot.current_stage.stage_id,
-        evidence=evidence,
-        integration_tolerances=snapshot.integration_tolerances or None,
+    assessment = assess_reference_calibration_snapshot(
+        replace(snapshot, status="awaiting_review"), visual_approvals=visual_approvals
     )
     selected_assessment = next(
         (
@@ -2930,10 +3026,13 @@ def _record_reference_calibration_stage_selection(
             f"Unknown candidate selection: {selected_candidate_id}"
         )
     retained_event = next(
-        (event for event in _load_events(root)
-         if event["event"] == "stage_retained"
-         and event["stage_id"] == snapshot.current_stage.stage_id
-         and event["candidate"]["candidate_id"] == selected_candidate_id),
+        (
+            event
+            for event in _load_events(root)
+            if event["event"] == "stage_retained"
+            and event["stage_id"] == snapshot.current_stage.stage_id
+            and event["candidate"]["candidate_id"] == selected_candidate_id
+        ),
         None,
     )
     provisional = selection_mode == "researcher_iteration_limit_provisional" or bool(
@@ -2941,9 +3040,7 @@ def _record_reference_calibration_stage_selection(
     )
     if provisional and (
         not iteration_limit_selection_available(snapshot, selected_candidate_id)
-        or selected_assessment.rejection_reasons != (
-            "optimizer convergence was not established",
-        )
+        or selected_assessment.rejection_reasons != ("optimizer convergence was not established",)
     ):
         raise ReferenceCalibrationStudyError(
             "Provisional selection requires a complete, valid, visually approved joint fit "
@@ -2969,7 +3066,8 @@ def _record_reference_calibration_stage_selection(
             "parameter_values": selected.values,
             "visual_approvals": dict(visual_approvals),
             "visual_review_policy": (
-                "retained_preceding_review_v1" if retained_event
+                "retained_preceding_review_v1"
+                if retained_event
                 else "explicit_every_specimen_fit_with_display_scope_v3"
             ),
             **({"retained_source": retained_event["retained_source"]} if retained_event else {}),
@@ -2990,17 +3088,28 @@ def _record_reference_calibration_stage_selection(
             "selection_mode": selection_mode,
             "selection_reason": selection_reason,
             "researcher_decision": selection_mode.startswith("researcher_"),
-            **({"iteration_limit_provisional": {
-                "version": "iteration-limit-exploration-v1",
-                "converged": False,
-                "binding": _candidate_review_binding(next(
-                    c for c in snapshot.candidates if c.candidate_id == selected_candidate_id
-                )),
-                "retained_source": retained_event.get("iteration_limit_provisional")
-                if retained_event else None,
-                "limitation": "Parameter exploration only; numerical qualification "
-                "and full-cohort confirmation remain required.",
-            }} if provisional else {}),
+            **(
+                {
+                    "iteration_limit_provisional": {
+                        "version": "iteration-limit-exploration-v1",
+                        "converged": False,
+                        "binding": _candidate_review_binding(
+                            next(
+                                c
+                                for c in snapshot.candidates
+                                if c.candidate_id == selected_candidate_id
+                            )
+                        ),
+                        "retained_source": retained_event.get("iteration_limit_provisional")
+                        if retained_event
+                        else None,
+                        "limitation": "Parameter exploration only; numerical qualification "
+                        "and full-cohort confirmation remain required.",
+                    }
+                }
+                if provisional
+                else {}
+            ),
         },
     )
     manifest = _verify_manifest(root)
@@ -3145,12 +3254,7 @@ def select_reference_calibration_stage_automatically(
             raise ReferenceCalibrationStudyError(
                 "AFK selection requires recorded policy authorization"
             )
-    assessment = assess_calibration_stage(
-        snapshot.plan,
-        stage_id=snapshot.current_stage.stage_id,
-        evidence=_stage_evidence(snapshot, approvals),
-        integration_tolerances=snapshot.integration_tolerances or None,
-    )
+    assessment = assess_reference_calibration_snapshot(snapshot, visual_approvals=approvals)
     selected_candidate_id = assessment.balanced_candidate_id
     if selected_candidate_id is None:
         reasons = []

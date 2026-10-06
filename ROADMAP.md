@@ -14,11 +14,18 @@ scientific gates. Planning does not mark those gates complete.
 
 ## Pilot usability follow-up
 
-- [ ] Notify when a completed pilot step is waiting for human review, including
+- [x] Integrate fit feedback, retained baselines, explicit blockers, complete audit
+  export and independent optimizer/fixed-state integration qualification. Keep
+  anatomy decisions and scientific validation separate. See
+  [v109 scope and acceptance](docs/PILOT_OVERHAUL_V109.md).
+
+- [x] Notify when a completed pilot step is waiting for human review, including
   while minimized or covered: a Windows notification or taskbar attention marker
   with the stage/option and a direct action to open its review. Notify once per
   new review request, clear attention when acknowledged, avoid forced focus and
-  intermediate-progress alerts, and preserve saved decisions. Backlog only.
+  intermediate-progress alerts, and preserve saved decisions. Source and offscreen
+  regressions pass; native notification visibility under owner Windows settings
+  and independent first-use acceptance remain open.
 
 - [x] Extend a saved Stage 4 comparison by one next-finer full-cohort option when
   the initial options do not qualify. Preserve earlier results and prospective
@@ -39,7 +46,7 @@ scientific gates. Planning does not mark those gates complete.
   non-convergence, exact retained baselines and bound approvals; keep automatic
   selection and stage 4 strict. Disclose the decision in report/export provenance.
   See [v105 scope and checks](docs/V105_PROVISIONAL_FIT_SELECTION.md).
-- [ ] Make live pilot work and progress clear in one short status line: distinguish
+- [x] Make live pilot work and progress clear in one short status line: distinguish
   preparation, individual fitting, early option screening, combined confirmation,
   output verification and waiting for review, with a brief next action and folded
   technical details. Show optimizer iteration / cap, readable elapsed time and
@@ -47,7 +54,8 @@ scientific gates. Planning does not mark those gates complete.
   iteration / cap as a completion percentage or a reliable ETA. Keep option cards,
   phase summaries and buttons consistent with the active job: a running option
   must not also say `Ready to run`. Cover running, finalization, review, cancel,
-  failure and reopening without resetting saved evidence. Backlog only.
+  failure and reopening without resetting saved evidence. Implemented in v109;
+  independent first-use acceptance remains open.
   - Label early single-specimen screening decisions separately from joint
     candidate completion. A retained baseline counts as an available joint
     result, not a new screening test. Identify the active stage, option, specimen

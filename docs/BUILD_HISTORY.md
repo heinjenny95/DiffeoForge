@@ -1,5 +1,15 @@
 # Private-alpha build numbering
 
+## v109 — coherent pilot search and independent numerical qualification
+
+v109 (`0.0.0.dev109`) keeps specimen feedback and approved baselines, adds a
+verified complete-history export and replaces default Stage 4 refitting with
+separate optimizer and fixed-state Shooting checks. Every pilot specimen and
+fresh anatomical approval are required. Progress and review notifications are
+integrated. See [scope and checks](PILOT_OVERHAUL_V109.md). Private research data
+were not fitted. Build and installation are tracked separately; Drive remains
+request-only.
+
 ## v107 — retain approved fits with multiple historical reviews
 
 v107 (`0.0.0.dev107`) checks only the selected result's bound review history when

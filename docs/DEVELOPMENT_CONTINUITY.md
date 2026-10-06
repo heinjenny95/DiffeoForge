@@ -1,6 +1,6 @@
-# Development continuity — v108 finer timepoint comparison
+# Development continuity — v109 pilot overhaul
 
-Snapshot: 2026-10-05. This is a public, software-only continuation guide. Detailed
+Snapshot: 2026-10-06. This is a public, software-only continuation guide. Detailed
 research results, local paths, account destinations and run identities belong in
 the owner's private project handoff, not this repository.
 
@@ -20,6 +20,17 @@ correct parameters or interpret biology for the researcher. Deformetrica is the
 default supported reference route; the Modern engine remains evidence-gated.
 
 ## Current source work
+
+v109 integrates specimen feedback, retained joint baselines, early Stage 2/3
+screening, explicit blockers and reproducible audit export with a new final
+qualification protocol. It continues one saved joint model with a tighter
+optimizer criterion and separately shoots that immutable checkpoint on three
+nested grids. Every specimen must pass; human anatomy approval is separate and
+the new checkpoint needs its own review. Earlier trials and approvals are kept.
+Clear progress and deduplicated attention notifications accompany the workflow.
+See [method, acceptance and verification](PILOT_OVERHAUL_V109.md).
+These are prospective engineering checks, not validated scientific thresholds
+or a guarantee of optimal parameters. No private fit or QC decision was made.
 
 v108 adds one explicit next-finer full-cohort comparison to a saved Stage 4,
 preserving prior results and prospective numerical tolerances. It executes only

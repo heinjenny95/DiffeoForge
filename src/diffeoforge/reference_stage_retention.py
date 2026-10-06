@@ -52,11 +52,11 @@ def _candidate(root, stage_id, candidate_id):
     return candidate, completed
 
 
-def _previous(snapshot):
+def _previous(snapshot, *, for_qualification=False):
     from diffeoforge import reference_calibration_study as study
 
     stage = snapshot.current_stage
-    if stage is None or stage.order not in (2, 3):
+    if stage is None or stage.order not in ((2, 3, 4) if for_qualification else (2, 3)):
         raise study.ReferenceCalibrationStudyError("Retaining a fit applies to stages 2 and 3")
     previous_id = snapshot.plan.stages[stage.order - 2].stage_id
     root = snapshot.study_directory
@@ -122,8 +122,7 @@ def verify_reference(root, record):
         or candidate.metrics != record["metrics"]
         or study._candidate_review_binding(candidate) != source["binding"]
         or record["candidate"]["parameter_values"] != _values(load_config(candidate.config_path))
-        or record.get("iteration_limit_provisional")
-        != selection.get("iteration_limit_provisional")
+        or record.get("iteration_limit_provisional") != selection.get("iteration_limit_provisional")
     ):
         raise study.ReferenceCalibrationStudyError(
             "Retained fit differs from its approved evidence"
@@ -133,7 +132,8 @@ def verify_reference(root, record):
     # contain legitimate reviews of other alternatives and continuation attempts.
     # Keep every decision for the selected result, including later withdrawals.
     reviews = tuple(
-        e for e in events + study._read_review_journal(series_root)
+        e
+        for e in events + study._read_review_journal(series_root)
         if e.get("event") == "candidate_visual_review"
         and e.get("stage_id") == source["stage_id"]
         and e.get("candidate_id") == candidate.candidate_id
@@ -193,7 +193,7 @@ def overlay_plan(plan, events):
     return plan
 
 
-def register_previous_fit(snapshot):
+def register_previous_fit(snapshot, *, for_qualification=False):
     """Register read-only evidence, without a fit, new QC approval or old-file edits."""
     from diffeoforge import reference_calibration_study as study
     from diffeoforge.config import load_config
@@ -208,7 +208,9 @@ def register_previous_fit(snapshot):
         return snapshot
     if any(c.status == "orphaned" for c in snapshot.candidates):
         raise study.ReferenceCalibrationStudyError("Wait for the active candidate to finish")
-    source_root, selection, candidate, completed = _previous(snapshot)
+    source_root, selection, candidate, completed = _previous(
+        snapshot, for_qualification=for_qualification
+    )
     config = copy.deepcopy(load_config(candidate.config_path))
     for field in ("directory", "template"):
         config["input"][field] = str(
@@ -230,8 +232,11 @@ def register_previous_fit(snapshot):
         stage_id=stage.stage_id,
         candidate=declaration.as_manifest(),
         metrics=dict(candidate.metrics),
-        **({"iteration_limit_provisional": selection["iteration_limit_provisional"]}
-           if selection.get("iteration_limit_provisional") else {}),
+        **(
+            {"iteration_limit_provisional": selection["iteration_limit_provisional"]}
+            if selection.get("iteration_limit_provisional")
+            else {}
+        ),
         retained_source=dict(
             version=VERSION,
             study_directory=str(source_root),

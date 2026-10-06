@@ -21,7 +21,8 @@ def _fourth(tmp_path, monkeypatch):
         seed = seed_stub(snapshot, center_id, destination)
         candidate = next(c for c in snapshot.candidates if c.candidate_id == center_id)
         seed["source_manifest_sha256"] = sha256_file(
-            study.calibration_candidate_run_directory(candidate) / "manifest.json")
+            study.calibration_candidate_run_directory(candidate) / "manifest.json"
+        )
         return seed
 
     monkeypatch.setattr("diffeoforge.reference_adaptive_calibration.bind_learned_seed", bound_seed)
@@ -38,7 +39,8 @@ def test_predeclared_criteria_bind_full_cohort_and_choose_smallest_adequate_coun
     declaration = next(e for e in events if e["event"] == "integration_tolerances_declared")
     assert len(declaration["subjects"]) == done.plan.pilot_subject_count
     assert declaration["sequence"] < min(
-        e["sequence"] for e in events
+        e["sequence"]
+        for e in events
         if e["event"] == "candidate_started" and e["stage_id"] == "timepoints"
     )
     assessment = study.assess_reference_calibration_snapshot(done)
@@ -48,7 +50,8 @@ def test_predeclared_criteria_bind_full_cohort_and_choose_smallest_adequate_coun
     assert not done.visual_reviews  # Numerical stability never supplies anatomical QC.
     with pytest.raises(study.ReferenceCalibrationStudyError, match="Every pilot specimen"):
         study.record_reference_calibration_stage_review(
-            done.study_directory, selected_candidate_id=assessment.balanced_candidate_id,
+            done.study_directory,
+            selected_candidate_id=assessment.balanced_candidate_id,
             visual_approvals={},
         )
     with pytest.raises(ValueError, match="already bound"):
@@ -67,8 +70,10 @@ def test_worst_specimen_failure_cannot_be_hidden_by_cohort_average(tmp_path, mon
     changed = replace(done, candidates=(replace(first, metrics=metrics), *done.candidates[1:]))
     assessment = study.assess_reference_calibration_snapshot(changed)
     assert not assessment.candidates[0].eligible
-    assert any("residual_relative_difference exceeds" in r
-               for r in assessment.candidates[0].rejection_reasons)
+    assert any(
+        "residual_relative_difference exceeds" in r
+        for r in assessment.candidates[0].rejection_reasons
+    )
     missing = dict(metrics)
     missing["subject_residual_p95"] = {}
     changed = replace(done, candidates=(replace(first, metrics=missing), *done.candidates[1:]))
@@ -79,8 +84,14 @@ def test_nonconverged_finer_reference_cannot_certify_a_coarser_run(tmp_path, mon
     runner, _ = _fourth(tmp_path, monkeypatch)
     done = runner.run_current_stage()
     reference = done.candidates[1]
-    changed = replace(done, candidates=(done.candidates[0], replace(
-        reference, metrics=dict(reference.metrics, converged=False)), *done.candidates[2:]))
+    changed = replace(
+        done,
+        candidates=(
+            done.candidates[0],
+            replace(reference, metrics=dict(reference.metrics, converged=False)),
+            *done.candidates[2:],
+        ),
+    )
     assessment = study.assess_reference_calibration_snapshot(changed)
     assert not assessment.candidates[0].eligible
     assert not assessment.candidates[1].eligible
@@ -107,7 +118,8 @@ def test_legacy_started_comparison_keeps_its_original_meaning(tmp_path, monkeypa
 
 
 def test_finer_resolution_preserves_history_and_only_runs_the_added_full_cohort(
-    tmp_path, monkeypatch,
+    tmp_path,
+    monkeypatch,
 ):
     from diffeoforge.config import load_config, validate_input_paths
 
@@ -127,18 +139,26 @@ def test_finer_resolution_preserves_history_and_only_runs_the_added_full_cohort(
     assert inputs.initial_momenta is not None and inputs.initial_control_points is not None
     assert len(inputs.subjects) == prepared.plan.pilot_subject_count
     for path, content in old.items():
-        assert (path.read_bytes().startswith(content) if path.name == study.STUDY_EVENTS
-                else path.read_bytes() == content)
+        assert (
+            path.read_bytes().startswith(content)
+            if path.name == study.STUDY_EVENTS
+            else path.read_bytes() == content
+        )
     assert integration.next_resolution(prepared) is None
     with pytest.raises(ValueError, match="Finish the complete"):
         integration.add_finer_resolution(done.study_directory)
     before = study._load_events(done.study_directory)[-1]["sequence"]
     finished = runner.run_current_stage()
-    starts = [e for e in study._load_events(done.study_directory)
-              if e["sequence"] > before and e["event"] == "candidate_started"]
+    starts = [
+        e
+        for e in study._load_events(done.study_directory)
+        if e["sequence"] > before and e["event"] == "candidate_started"
+    ]
     assert [e["candidate_id"] for e in starts] == [added.candidate_id]
-    assert (finished.candidates[-1].metrics["subject_reconstruction_count"]
-            == done.plan.pilot_subject_count)
+    assert (
+        finished.candidates[-1].metrics["subject_reconstruction_count"]
+        == done.plan.pilot_subject_count
+    )
     assessment = study.assess_reference_calibration_snapshot(finished)
     assert assessment.candidates[-2].eligible  # Former highest count has a finer reference.
     assert not assessment.candidates[-1].eligible
@@ -168,8 +188,11 @@ def test_finer_resolution_requires_valid_finest_complete_cohort(problem, tmp_pat
         metrics["fit_scope"] = "screening"
     else:
         reviews[last.candidate_id] = False
-    modified = replace(done, candidates=(*done.candidates[:-1], replace(last, metrics=metrics)),
-                       visual_reviews=reviews)
+    modified = replace(
+        done,
+        candidates=(*done.candidates[:-1], replace(last, metrics=metrics)),
+        visual_reviews=reviews,
+    )
     assert integration.next_resolution(modified) is None
 
 
@@ -190,7 +213,7 @@ def test_modified_extension_seed_or_config_is_rejected_on_reopen(tmp_path, monke
         study.load_reference_calibration_study(done.study_directory)
 
 
-def test_finer_resolution_button_dispatches_one_background_comparison(tmp_path, monkeypatch):
+def test_stage4_exposes_independent_check_and_explicit_finer_refit(tmp_path, monkeypatch):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
 
@@ -202,15 +225,26 @@ def test_finer_resolution_button_dispatches_one_background_comparison(tmp_path, 
     dialog = ReferenceCalibrationDialog(runner.study_directory)
     dialog.show()
     app.processEvents()
-    assert dialog.finer_resolution_button.isVisible()
-    assert "40 time points" in dialog.finer_resolution_button.text()
+    assert dialog.finer_resolution_button.isHidden()
+    assert dialog.qualification_button.isVisible()
+    assert dialog.finer_model_button.isVisible()
     calls = []
     monkeypatch.setattr(dialog, "_start_pilot", lambda **kwargs: calls.append(kwargs))
-    dialog.finer_resolution_button.click()
-    assert calls == [{"adaptive": False, "finer_resolution": True}]
+    dialog.qualification_button.click()
+    dialog.finer_model_button.click()
+    assert calls == [
+        {"adaptive": False, "qualification": True},
+        {
+            "adaptive": False,
+            "qualification": True,
+            "finer_model": True,
+            "qualification_iterations": dialog.continuation_iterations.value(),
+        },
+    ]
     dialog._worker = object()
     dialog._render()
-    assert not dialog.finer_resolution_button.isEnabled()
+    assert not dialog.qualification_button.isEnabled()
+    assert not dialog.finer_model_button.isEnabled()
     dialog._worker = None
     dialog.close()
     app.processEvents()
@@ -230,7 +264,10 @@ def test_worker_prepares_and_executes_only_the_new_resolution(tmp_path, monkeypa
     worker.run()
     assert not failures and len(success) == 1
     assert events[0]["event"] == "integration_resolution_prepared"
-    starts = [e for e in study._load_events(done.study_directory)
-              if e["sequence"] > before and e["event"] == "candidate_started"]
+    starts = [
+        e
+        for e in study._load_events(done.study_directory)
+        if e["sequence"] > before and e["event"] == "candidate_started"
+    ]
     assert [e["candidate_id"] for e in starts] == ["timepoints-04"]
     assert success[0].status == "awaiting_review"
