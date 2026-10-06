@@ -589,6 +589,41 @@
                   "properties": {
                     "version": {"const": "0.1"},
                     "status": {"const": "completed"},
+                    "full_cohort_optimizer_tolerance": {
+                      "type": "object", "additionalProperties": false,
+                      "required": ["value", "source", "pilot_check_value"],
+                      "properties": {
+                        "value": {"type": "number", "exclusiveMinimum": 0},
+                        "source": {"const": "original_project_configuration"},
+                        "pilot_check_value": {"type": "number", "exclusiveMinimum": 0}
+                      }
+                    },
+                    "final_pilot_completion": {
+                      "type": "object", "additionalProperties": false,
+                      "required": ["version", "converged", "provisional", "binding", "receipt",
+                                   "receipt_sha256", "legacy_numerical_pass", "limitation"],
+                      "properties": {
+                        "version": {"const": "saved-model-completion-v1"},
+                        "converged": {"type": "boolean"},
+                        "provisional": {"type": "boolean"},
+                        "binding": {
+                          "type": "object", "additionalProperties": false,
+                          "required": ["config_sha256", "inventory_sha256", "metrics_sha256",
+                                       "result_sha256", "run_manifest_sha256"],
+                          "properties": {
+                            "config_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                            "inventory_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                            "metrics_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                            "result_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                            "run_manifest_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+                          }
+                        },
+                        "receipt": {"type": "string", "minLength": 1},
+                        "receipt_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                        "legacy_numerical_pass": {"type": ["boolean", "null"]},
+                        "limitation": {"type": "string", "minLength": 1}
+                      }
+                    },
                     "full_cohort_initialization": {
                       "type": "object",
                       "additionalProperties": false,
@@ -673,6 +708,8 @@
                         "timepoints": {
                           "enum": [
                             "researcher_manual",
+                            "researcher_saved_model_completion",
+                            "researcher_final_provisional",
                             "researcher_provisional_balanced_override",
                             "automatic_provisional_balanced_score",
                             "automatic_provisional_afk_v1"

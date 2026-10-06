@@ -14,6 +14,14 @@ scientific gates. Planning does not mark those gates complete.
 
 ## Pilot usability follow-up
 
+- [x] Separate native optimizer convergence, fixed-state integration and anatomy
+  at pilot completion. Avoid default strict continuation, reuse bound evidence,
+  and support an explicit provisional decision for an approved valid capped fit.
+  Preserve failed historical receipts, warnings and original full-cohort optimizer
+  tolerance. See [v111 contract](docs/V111_PILOT_COMPLETION.md). This supersedes
+  historical final-stage stopping policies below; prospective scientific and
+  native owner acceptance remain open.
+
 - [x] Reopen legacy declared Stage 4 comparisons after appending a new independent
   qualification checkpoint. Preserve history/tolerances, exact queue coverage,
   source/seed integrity and resume the existing declaration. Viewer errors clear

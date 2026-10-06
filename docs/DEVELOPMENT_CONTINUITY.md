@@ -1,4 +1,4 @@
-# Development continuity — v110 saved-pilot compatibility
+# Development continuity — v111 final pilot evidence
 
 Snapshot: 2026-10-06. This is a public, software-only continuation guide. Detailed
 research results, local paths, account destinations and run identities belong in
@@ -20,6 +20,14 @@ correct parameters or interpret biology for the researcher. Deformetrica is the
 default supported reference route; the Modern engine remains evidence-gated.
 
 ## Current source work
+
+v111 separates native optimizer convergence, fixed-state integration and joint
+anatomical QC. The default final check does not optimize; original failed receipts
+keep their meaning. Explicit provisional completion of an approved, integration-
+checked iteration-capped fit is disclosed throughout configuration/report/audit.
+The full-cohort configuration restores the original project optimizer tolerance.
+See [completion contract](V111_PILOT_COMPLETION.md). Build/local-install evidence
+is tracked separately; scientific and native owner acceptance remain open.
 
 v110 corrects the legacy declared Stage 4 queue verifier after an independent
 qualification checkpoint is appended. Reopening, anatomical inspection and

@@ -693,6 +693,18 @@ def export_audit(directory, destination):
         if snapshot.status == "completed"
         else {}
     )
+    from diffeoforge import reference_pilot_completion as completion
+
+    report = (
+        study.load_reference_calibration_report(snapshot.study_directory)
+        if snapshot.status == "completed"
+        else {}
+    )
+    saved_checks = (
+        completion.evidence(snapshot)
+        if snapshot.current_stage and snapshot.current_stage.order == 4
+        else report.get("saved_model_integration_checks", [])
+    )
     payload = dict(
         version=VERSION,
         status=snapshot.status,
@@ -701,6 +713,8 @@ def export_audit(directory, destination):
         selected_values=dict(snapshot.selected_values),
         selected_candidates=dict(snapshot.selected_candidate_ids),
         qualification=qualification,
+        saved_model_integration_checks=saved_checks,
+        final_pilot_completion=report.get("final_pilot_completion"),
         specimen_sequence=sequence,
         specimen_sequence_source=sequence_source,
         individual_trials=individual_trials,

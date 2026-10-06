@@ -230,6 +230,7 @@ class _CalibrationStageWorker(QRunnable):
         qualification: bool = False,
         qualification_source: str | None = None,
         qualification_iterations: int = 100,
+        strict_optimizer: bool = False,
         finer_model: bool = False,
         integration_tolerances: Mapping[str, float] | None = None,
     ) -> None:
@@ -246,6 +247,7 @@ class _CalibrationStageWorker(QRunnable):
         self.qualification = qualification
         self.qualification_source = qualification_source
         self.qualification_iterations = qualification_iterations
+        self.strict_optimizer = strict_optimizer
         self.finer_model = finer_model
         self.screen_subjects = screen_subjects
         self.integration_tolerances = integration_tolerances
@@ -290,15 +292,22 @@ class _CalibrationStageWorker(QRunnable):
                     selected_candidate_id=self.provisional_candidate_id,
                 )
             elif self.qualification:
-                from diffeoforge.reference_pilot_qualification import run
+                if self.finer_model or self.strict_optimizer:
+                    from diffeoforge.reference_pilot_qualification import run
 
-                result = run(
-                    self.runner,
-                    event_callback=emit,
-                    candidate_id=self.qualification_source,
-                    iterations=self.qualification_iterations,
-                    finer_model=self.finer_model,
-                )
+                    result = run(
+                        self.runner,
+                        event_callback=emit,
+                        candidate_id=self.qualification_source,
+                        iterations=self.qualification_iterations,
+                        finer_model=self.finer_model,
+                    )
+                else:
+                    from diffeoforge.reference_pilot_completion import run
+
+                    result = run(
+                        self.runner, event_callback=emit, candidate_id=self.qualification_source
+                    )
             elif self.finer_resolution:
                 from diffeoforge.reference_integration_check import add_finer_resolution
 
@@ -1178,11 +1187,11 @@ class ReferenceCalibrationDialog(QDialog):
         )
         self.finer_resolution_button.hide()
         root.addWidget(self.finer_resolution_button)
-        self.qualification_button = QPushButton("Check saved model")
+        self.qualification_button = QPushButton("Check time resolution (no optimization)")
         _set_action_emphasis(self.qualification_button, True)
         self.qualification_button.setToolTip(
-            "One tighter optimizer check (up to 100 iterations), then fixed-model Shooting "
-            "at N, 2N−1 and 4N−3 timepoints. No parameter grid. New checkpoint needs your review."
+            "Fixed-state Shooting at N, 2N−1 and 4N−3 timepoints, or reuse of an existing "
+            "verified check. No new optimization. This does not approve anatomy."
         )
         self.qualification_button.clicked.connect(
             lambda: self._start_pilot(adaptive=False, qualification=True)
@@ -1318,6 +1327,8 @@ class ReferenceCalibrationDialog(QDialog):
     def _update_continuation_labels(self) -> None:
         for letter, button in self._continuation_buttons.items():
             prefix = "Continue saved fit" if self._individual_checkpoint() else f"Continue {letter}"
+            if self._snapshot.current_stage and self._snapshot.current_stage.order == 4:
+                prefix = "Optional strict check"
             button.setText(f"{prefix}: +{self.continuation_iterations.value()} iterations")
 
     def _render(self, snapshot: ReferenceCalibrationStudySnapshot | None = None) -> None:
@@ -1444,7 +1455,22 @@ class ReferenceCalibrationDialog(QDialog):
             recommendation = QFrame()
             recommendation.setObjectName("card")
             recommendation_layout = QVBoxLayout(recommendation)
-            recommendation_title = QLabel("Recommended parameter set")
+            completion = report.get("final_pilot_completion") if report else None
+            if completion:
+                self.status.setText(
+                    "Pilot finished provisionally: the selected joint fit remains non-converged. "
+                    "Prepare the full-cohort atlas and review its reconstructions."
+                    if completion["provisional"]
+                    else "Pilot finished with native convergence, integration checks and "
+                    "anatomical approval. Full-cohort atlas and QC are still required."
+                )
+            recommendation_title = QLabel(
+                "Provisionally selected parameter set"
+                if completion and completion["provisional"]
+                else "Selected parameter set"
+                if completion
+                else "Recommended parameter set"
+            )
             recommendation_title.setObjectName("title")
             recommendation_layout.addWidget(recommendation_title)
             if report is not None:
@@ -1481,7 +1507,12 @@ class ReferenceCalibrationDialog(QDialog):
                     )
                 )
                 method = QLabel(
-                    "This bounded QC follow-up varied attachment width, deformation/control "
+                    "Native optimizer convergence, unchanged-state integration checks and "
+                    "recorded anatomical approval are separate. A capped result remains "
+                    "provisional; state-drift diagnostics and old qualification receipts "
+                    "retain their original meaning in the report."
+                    if completion
+                    else "This bounded QC follow-up varied attachment width, deformation/control "
                     "spacing, noise and time points around the previous settings. "
                     "Each selected stage required visual review. It is adaptive calibration, "
                     "not independent validation; a new full-cohort atlas and QC are still required."
@@ -1558,14 +1589,14 @@ class ReferenceCalibrationDialog(QDialog):
         self.content_layout.addWidget(heading)
         guidance = stage_guidance(stage)
         if stage.order == 4:
-            heading.setText("Stage 4 of 4 — Qualify the saved model")
+            heading.setText("Stage 4 of 4 — Check time resolution and finish")
             guidance = replace(
                 guidance,
-                question="Are the learned model and its integration stable?",
-                explanation="One warm optimizer check measures state movement. "
-                "The resulting state is shot on three nested time grids, without refitting.",
-                action="Check saved model, inspect the new checkpoint, "
-                "then finish if every gate passes.",
+                question="Is this saved fit ready for the full-cohort atlas?",
+                explanation="Check the unchanged saved state on three time grids. "
+                "No optimization runs. Existing verified integration checks are reused.",
+                action="Review the joint fit, check its time resolution, then finish. "
+                "An iteration-limited fit requires an explicit provisional finish.",
                 caution="Engineering checks do not establish "
                 "biological validity or a global optimum.",
             )
@@ -1630,7 +1661,7 @@ class ReferenceCalibrationDialog(QDialog):
             assessment = assess_reference_calibration_snapshot(
                 self._snapshot,
                 visual_approvals=self._visual_approvals(),
-                qualification_preview=stage.order == 4,
+                completion_preview=stage.order == 4,
             )
             self._assessment = assessment
             recommended_option = self._recommended_option_text(assessment)
@@ -1812,7 +1843,7 @@ class ReferenceCalibrationDialog(QDialog):
                         else " · fit not reviewed"
                     )
                     recommendation_suffix = (
-                        " · qualified and approved"
+                        " · converged, integration checked, approved"
                         if stage.order == 4
                         and candidate.candidate_id == assessment.balanced_candidate_id
                         else " · lowest measured distance"
@@ -1825,6 +1856,16 @@ class ReferenceCalibrationDialog(QDialog):
                         candidate.candidate_id,
                     )
             previous_index = self.selection_combo.findData(previous_selection)
+            if stage.order == 4 and previous_index <= 0:
+                previous_index = next(
+                    (
+                        self.selection_combo.findData(c.candidate_id)
+                        for c in reversed(self._snapshot.candidates)
+                        if c.status == "completed"
+                        and self._snapshot.visual_reviews.get(c.candidate_id) is not False
+                    ),
+                    0,
+                )
             if self._individual_checkpoint() and self.selection_combo.count() == 2:
                 previous_index = 1
             if previous_index >= 0:
@@ -1839,21 +1880,31 @@ class ReferenceCalibrationDialog(QDialog):
         else:
             self.status.setText("Next: click the green Run all candidates in this stage button.")
         if stage and stage.order == 4:
-            self.start_button.setText("Check saved model")
-            self.qualification_button.setText(
-                "Resume model check"
-                if any(
-                    c.candidate_id.startswith("qualification-") and c.status != "completed"
-                    for c in self._snapshot.candidates
-                )
-                else "Check saved model"
+            pending = any(
+                c.candidate_id.startswith("qualification-") and c.status != "completed"
+                for c in self._snapshot.candidates
             )
+            label = (
+                "Resume previously declared optimizer check"
+                if pending
+                else "Check time resolution (no optimization)"
+            )
+            for button in (self.start_button, self.qualification_button):
+                button.setText(label)
+                button.setToolTip(
+                    "This unfinished check retains its original declared optimizer settings."
+                    if pending
+                    else "Reuse verified checks or shoot the unchanged saved state on nested "
+                    "time grids. This action does not optimize the atlas."
+                )
             if self._worker is None and (
                 self._snapshot.status == "ready" or self.selection_combo.currentData() is None
             ):
                 self.status.setText(
-                    "Next: choose a saved fit below, then Check saved model. "
-                    "One optimizer check, then fixed-state integration. Saved fits stay available."
+                    "An older optimizer check is unfinished. Resume keeps its original settings."
+                    if pending
+                    else "Choose a saved joint fit and review it. Check time resolution reuses "
+                    "verified evidence or shoots the unchanged state; no optimization runs."
                 )
         self._render_screening()
 
@@ -2143,6 +2194,15 @@ class ReferenceCalibrationDialog(QDialog):
             continuation.setToolTip(
                 "Same parameters and learned state; only additional iterations."
             )
+            if self._snapshot.current_stage.order == 4:
+                continuation.setText(
+                    f"Optional strict check: +{self.continuation_iterations.value()} iterations"
+                )
+                continuation.setToolTip(
+                    "An optional legacy check at tolerance 1e-6 or tighter. It can take hours "
+                    "and is not required for explicit provisional completion. "
+                    "Existing fits stay saved."
+                )
             if self._individual_checkpoint():
                 continuation.setText(
                     f"Continue saved fit: +{self.continuation_iterations.value()} iterations"
@@ -2220,6 +2280,12 @@ class ReferenceCalibrationDialog(QDialog):
         return f"<b>{prefix}:</b> {assessment.label}"
 
     def _selectable_candidate_ids(self) -> set[str]:
+        if self._snapshot.current_stage and self._snapshot.current_stage.order == 4:
+            return (
+                {c.candidate_id for c in self._assessment.candidates if c.eligible}
+                if self._assessment
+                else set()
+            )
         explicitly_failed = self._visually_reviewed_candidates - self._visually_approved_candidates
         selectable: set[str] = set()
         for candidate in self._snapshot.candidates:
@@ -2301,9 +2367,16 @@ class ReferenceCalibrationDialog(QDialog):
         eligible = selected in self._selectable_candidate_ids()
         stage = self._snapshot.current_stage
         provisional = iteration_limit_selection_available(self._snapshot, selected)
+        final_provisional = False
+        if stage.order == 4:
+            from diffeoforge.reference_pilot_completion import provisional_available
+
+            final_provisional = provisional_available(self._snapshot, selected)
         last = stage.order == len(self._snapshot.plan.stages)
         self.advance_button.setText(
-            f"Use approved fit provisionally → stage {stage.order + 1}"
+            "Finish pilot provisionally → full atlas setup"
+            if final_provisional
+            else f"Use approved fit provisionally → stage {stage.order + 1}"
             if provisional
             else "Use approved option and finish pilot"
             if last
@@ -2319,7 +2392,7 @@ class ReferenceCalibrationDialog(QDialog):
         self.selection_combo.show()
         self.advance_button.show()
         can_advance = (
-            (eligible or provisional)
+            (eligible or provisional or final_provisional)
             and approved
             and self._worker is None
             and not self._restoring_search
@@ -2356,7 +2429,26 @@ class ReferenceCalibrationDialog(QDialog):
             if provisional
             else "Review this option before continuing."
         )
-        if approved and not eligible and not provisional and not retryable:
+        if final_provisional:
+            self.advance_button.setToolTip(
+                "Records the reviewed fit with its iteration-limit warning. No scientific "
+                "qualification is claimed; no full-cohort atlas starts automatically."
+            )
+            self.status.setText(
+                "Time resolution checked. Review this fit, then finish provisionally. "
+                "Optimizer convergence remains unconfirmed."
+                if not approved
+                else "Approved; time resolution checked. Finish provisionally "
+                "to prepare the full atlas. "
+                "Optimizer convergence remains unconfirmed."
+            )
+        if (
+            approved
+            and not eligible
+            and not provisional
+            and not final_provisional
+            and not retryable
+        ):
             row = (
                 next((r for r in self._assessment.candidates if r.candidate_id == selected), None)
                 if self._assessment
@@ -2489,6 +2581,7 @@ class ReferenceCalibrationDialog(QDialog):
                 qualification=True,
                 qualification_source=candidate.candidate_id,
                 qualification_iterations=self.continuation_iterations.value(),
+                strict_optimizer=True,
             )
             return
         if self._individual_checkpoint():
@@ -2535,6 +2628,7 @@ class ReferenceCalibrationDialog(QDialog):
         qualification: bool = False,
         qualification_source: str | None = None,
         qualification_iterations: int = 100,
+        strict_optimizer: bool = False,
         finer_model: bool = False,
     ) -> None:
         if self._restoring_search:
@@ -2561,6 +2655,7 @@ class ReferenceCalibrationDialog(QDialog):
             qualification_source=qualification_source
             or (self.selection_combo.currentData() if qualification else None),
             qualification_iterations=qualification_iterations,
+            strict_optimizer=strict_optimizer,
             finer_model=finer_model,
             integration_tolerances=(
                 {k: f.value() / 100 for k, f in self.integration_fields.items()}
@@ -2625,7 +2720,11 @@ class ReferenceCalibrationDialog(QDialog):
     @Slot(object)
     def _event(self, event: Mapping[str, object]) -> None:
         if event["event"] == "qualification_progress":
-            if event["phase"] == "optimizer_check":
+            if event["phase"] == "integration_cached":
+                self.status.setText(
+                    "Verified time-resolution check reused. No computation was started."
+                )
+            elif event["phase"] == "optimizer_check":
                 self.status.setText(
                     f"Checking optimizer stability: up to {event['iterations']} "
                     "tighter-tolerance iterations. Saved model retained."
@@ -3123,6 +3222,29 @@ class ReferenceCalibrationDialog(QDialog):
         approvals = self._visual_approvals()
         if self._individual_checkpoint():
             self._start_pilot(adaptive=False, specimen_action=("advance", str(selected), 0))
+            return
+        if self._snapshot.current_stage.order == 4:
+            from diffeoforge.reference_pilot_completion import finish, provisional_available
+
+            if provisional_available(self._snapshot, str(selected)):
+                answer = QMessageBox.question(
+                    self,
+                    "Finish pilot provisionally?",
+                    "This joint fit reached its iteration limit. Its time-resolution checks "
+                    "pass and you approved its anatomy, but optimizer stability and stable "
+                    "momenta are not established. Keep these warnings and prepare the "
+                    "full-cohort atlas configuration? No atlas starts now.",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.No,
+                )
+                if answer != QMessageBox.StandardButton.Yes:
+                    return
+            try:
+                finish(self.study_directory, str(selected))
+            except (OSError, RuntimeError, TypeError, ValueError) as error:
+                QMessageBox.warning(self, "Pilot completion rejected", str(error))
+                return
+            self._render()
             return
         if iteration_limit_selection_available(self._snapshot, selected):
             self._start_pilot(adaptive=False, provisional_candidate_id=str(selected))

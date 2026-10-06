@@ -1,5 +1,15 @@
 # Private-alpha build numbering
 
+## v111 — final pilot evidence and explicit provisional completion
+
+v111 (`0.0.0.dev111`) checks the fixed saved state without default optimizer
+continuation, preserves historical receipts, and separates convergence,
+integration and anatomical decisions. Only an explicit reviewed decision permits
+an integration-checked capped fit to finish provisionally. The full-cohort config
+restores the original project tolerance. See [contract](V111_PILOT_COMPLETION.md).
+Scientific validity and native owner acceptance remain separate; installer
+uploads to Drive remain request-only.
+
 ## v110 — legacy numerical queue and qualification compatibility
 
 v110 (`0.0.0.dev110`) accepts verified independent qualification checkpoints

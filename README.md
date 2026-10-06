@@ -24,13 +24,12 @@ installer must retain that separate license and cannot broaden its terms.
 The project is being developed in public from its first engineering decisions.
 The name may change before the first release.
 
-The v109 pilot preserves one-specimen feedback and approved joint baselines,
-then qualifies a saved model with separate optimizer-stability and fixed-state
-integration checks. A recommendation requires every pilot specimen and a fresh
-anatomical review. Complete search/decision history is exportable. See
-[the method and verification scope](docs/PILOT_OVERHAUL_V109.md).
-v110 repairs reopening and resuming old declared Stage 4 comparisons after a
-qualification checkpoint is appended; see [compatibility checks](docs/V110_SAVED_PILOT_COMPATIBILITY.md).
+The v111 pilot separates native optimizer convergence, fixed-state integration
+checks and anatomical review. Its default final check does not optimize again.
+A valid iteration-capped fit can finish only through an explicit, reviewed,
+provisional decision; warnings and original qualification receipts are preserved.
+Complete search/decision history is exportable. See
+[the completion contract and verification scope](docs/V111_PILOT_COMPLETION.md).
 
 ## Intended user experience
 

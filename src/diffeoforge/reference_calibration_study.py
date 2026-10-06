@@ -1648,6 +1648,12 @@ def _load_verified_calibration_study(
     from diffeoforge.reference_pilot_qualification import overlay_plan as overlay_qualification
 
     plan = overlay_qualification(plan, events)
+    from diffeoforge.reference_pilot_completion import verify_final_decision
+
+    verify_final_decision(root, plan, events)
+    from diffeoforge.reference_pilot_completion import verify_checks
+
+    verify_checks(root, plan, events)
     if events[0]["study_id"] != manifest["study_id"] or events[0]["manifest_sha256"] != sha256_file(
         root / STUDY_MANIFEST
     ):
@@ -2328,6 +2334,7 @@ def assess_reference_calibration_snapshot(
     *,
     visual_approvals: Mapping[str, bool] | None = None,
     qualification_preview: bool = False,
+    completion_preview: bool = False,
 ) -> CalibrationStageAssessment:
     """Return a non-mutating assessment of one already verified study snapshot."""
 
@@ -2339,12 +2346,18 @@ def assess_reference_calibration_snapshot(
         snapshot.plan,
         stage_id=snapshot.current_stage.stage_id,
         evidence=_stage_evidence(
-            snapshot, visual_approvals or {}, integration_comparisons=not qualification_preview
+            snapshot,
+            visual_approvals or {},
+            integration_comparisons=not (qualification_preview or completion_preview),
         ),
         integration_tolerances=snapshot.integration_tolerances or None,
     )
     from diffeoforge.reference_pilot_qualification import assess, declarations
 
+    if snapshot.current_stage.order == 4 and completion_preview:
+        from diffeoforge.reference_pilot_completion import assess as completion_assess
+
+        return completion_assess(snapshot, assessment)
     if snapshot.current_stage.order == 4 and (
         qualification_preview or declarations(_load_events(snapshot.study_directory))
     ):
@@ -2473,7 +2486,28 @@ def _final_configuration(
         config["optimization"]["max_iterations"] = max(
             original_cap, seed["optimization"]["max_iterations"]
         )
+        final_decision = next(
+            (
+                e["final_pilot_completion"]
+                for e in reversed(_load_events(root))
+                if e["event"] == "stage_selected" and e.get("final_pilot_completion")
+            ),
+            None,
+        )
+        if final_decision:
+            # A diagnostic's tighter tolerance must not silently become the
+            # full-cohort stopping rule. Restore the project's declared rule.
+            config["optimization"]["convergence_tolerance"] = source["optimization"][
+                "convergence_tolerance"
+            ]
         result = config["project"]["parameter_provenance"]["recommendation"]["calibration_result"]
+        if final_decision:
+            result["final_pilot_completion"] = final_decision
+            result["full_cohort_optimizer_tolerance"] = {
+                "value": config["optimization"]["convergence_tolerance"],
+                "source": "original_project_configuration",
+                "pilot_check_value": seed["optimization"]["convergence_tolerance"],
+            }
         result["full_cohort_initialization"] = {
             "method": "learned_pilot_template_and_controls_zero_full_cohort_momenta",
             "source_run_manifest_sha256": seed["source_manifest_sha256"],
@@ -2623,6 +2657,7 @@ def _calibration_report_payload(
                 "visual_display_scopes": event.get("visual_display_scopes", {}),
                 "selection_mode": event.get("selection_mode", "researcher_manual"),
                 "iteration_limit_provisional": event.get("iteration_limit_provisional"),
+                "final_pilot_completion": event.get("final_pilot_completion"),
                 "selection_reason": event.get(
                     "selection_reason",
                     "The researcher explicitly selected this candidate.",
@@ -2672,7 +2707,7 @@ def _calibration_report_payload(
             "This is adaptive recalibration, not independent validation or approval of a "
             "final atlas. A new full-cohort atlas and QC remain required."
             if plan.qc_recalibration_source
-            else "All four staged pilot comparisons completed. Consult each recorded "
+            else "Staged pilot selection completed. Consult each recorded "
             "selection mode and visual decision, including any historical automatic "
             "selections. Current selection requires every-specimen visual approval. "
             "Full-cohort confirmation and anatomical QC remain required."
@@ -2688,6 +2723,19 @@ def _calibration_report_payload(
             for event in events
             if event["event"] == "pilot_qualification_finished"
         ],
+        "saved_model_integration_checks": [
+            _read_json(_safe_study_path(root, event["receipt"]), "integration receipt")
+            for event in events
+            if event["event"] == "pilot_integration_check_finished"
+        ],
+        "final_pilot_completion": next(
+            (
+                e["final_pilot_completion"]
+                for e in reversed(events)
+                if e["event"] == "stage_selected" and e.get("final_pilot_completion")
+            ),
+            None,
+        ),
         **(
             {
                 "numerical_integration_criteria": next(
@@ -2705,7 +2753,7 @@ def _calibration_report_payload(
             [
                 "One or more stages used a visually approved fit at the iteration limit "
                 "provisionally. Those runs remain non-converged; visual fit does not establish "
-                "stable momenta or morphospace. Stage 4 must independently qualify."
+                "stable momenta or morphospace. Consult the separate final-stage evidence."
             ]
             if any(e.get("iteration_limit_provisional") for e in selection_events.values())
             else []
@@ -2821,13 +2869,30 @@ def _calibration_report_html(report: Mapping[str, object]) -> str:
         )
         qualification_html = (
             "<h2>Independent numerical qualification</h2>"
-            "<p>The warm optimizer checkpoint and the fixed-state integration tests "
-            "passed separately for every pilot specimen. The new checkpoint has its "
-            "own recorded human anatomical approval. Source and checkpoint identities, "
-            "measurements, runtime and artifact hashes are in the JSON report. "
-            "This is local engineering evidence, not proof of a global optimum.</p>"
-            f"<details><summary>Prospectively declared criteria</summary><ul>{criteria}"
+            + (
+                "<p>The declared optimizer and fixed-state integration gates passed. "
+                "This is local engineering evidence, not proof of a global optimum.</p>"
+                if receipt["numerical_pass"]
+                else "<p>The legacy numerical qualification did NOT pass. Its criteria, "
+                "measurements and failed gates remain unchanged in the JSON report.</p>"
+            )
+            + f"<details><summary>Prospectively declared criteria</summary><ul>{criteria}"
             "</ul></details>"
+        )
+    completion = report.get("final_pilot_completion")
+    if completion:
+        qualification_html = (
+            "<h2>Saved-model completion</h2><p>Fixed-state integration checked; the exact "
+            "joint fit has recorded anatomical approval. "
+            + (
+                "PROVISIONAL: the optimizer reached its iteration limit. Optimizer stability "
+                "and stable momenta are not established. "
+                if completion["provisional"]
+                else "The optimizer reported its configured native convergence criterion. "
+            )
+            + html.escape(completion["limitation"])
+            + "</p>"
+            + qualification_html
         )
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
@@ -3011,7 +3076,10 @@ def _record_reference_calibration_stage_selection(
             "Optional visual-QC decisions must be true or false when recorded"
         )
     assessment = assess_reference_calibration_snapshot(
-        replace(snapshot, status="awaiting_review"), visual_approvals=visual_approvals
+        replace(snapshot, status="awaiting_review"),
+        visual_approvals=visual_approvals,
+        completion_preview=selection_mode
+        in {"researcher_saved_model_completion", "researcher_final_provisional"},
     )
     selected_assessment = next(
         (
@@ -3038,6 +3106,20 @@ def _record_reference_calibration_stage_selection(
     provisional = selection_mode == "researcher_iteration_limit_provisional" or bool(
         retaining and retained_event and retained_event.get("iteration_limit_provisional")
     )
+    final_completion = None
+    if selection_mode in {"researcher_saved_model_completion", "researcher_final_provisional"}:
+        from diffeoforge.reference_pilot_completion import decision
+
+        if snapshot.current_stage.order != 4:
+            raise ReferenceCalibrationStudyError("Saved-model completion belongs to Stage 4")
+        final_completion = decision(snapshot, selected_candidate_id)
+        expected_mode = (
+            "researcher_final_provisional"
+            if final_completion["provisional"]
+            else "researcher_saved_model_completion"
+        )
+        if selection_mode != expected_mode:
+            raise ReferenceCalibrationStudyError("Saved-model completion mode is inconsistent")
     if provisional and (
         not iteration_limit_selection_available(snapshot, selected_candidate_id)
         or selected_assessment.rejection_reasons != ("optimizer convergence was not established",)
@@ -3047,7 +3129,7 @@ def _record_reference_calibration_stage_selection(
             "stopped only at the iteration limit in stages 1–3. Other evidence failures "
             "and stage 4 cannot be bypassed."
         )
-    if not selected_assessment.eligible and not provisional:
+    if not selected_assessment.eligible and not provisional and not final_completion:
         raise ReferenceCalibrationStudyError(
             "Selected candidate is not eligible: "
             + "; ".join(selected_assessment.rejection_reasons)
@@ -3088,6 +3170,7 @@ def _record_reference_calibration_stage_selection(
             "selection_mode": selection_mode,
             "selection_reason": selection_reason,
             "researcher_decision": selection_mode.startswith("researcher_"),
+            **({"final_pilot_completion": final_completion} if final_completion else {}),
             **(
                 {
                     "iteration_limit_provisional": {
