@@ -31,6 +31,9 @@ Clear progress and deduplicated attention notifications accompany the workflow.
 See [method, acceptance and verification](PILOT_OVERHAUL_V109.md).
 These are prospective engineering checks, not validated scientific thresholds
 or a guarantee of optimal parameters. No private fit or QC decision was made.
+Frozen packaging, full prior backup, fresh idle checks, installation/startup,
+installed file/companion hashes and saved-pilot preservation passed; see
+[delivery evidence](V109_DELIVERY.md). Drive intentionally retains v98.
 
 v108 adds one explicit next-finer full-cohort comparison to a saved Stage 4,
 preserving prior results and prospective numerical tolerances. It executes only

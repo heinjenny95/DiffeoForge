@@ -21,7 +21,7 @@ scientific gates. Planning does not mark those gates complete.
 
 - [x] Notify when a completed pilot step is waiting for human review, including
   while minimized or covered: a Windows notification or taskbar attention marker
-  with the stage/option and a direct action to open its review. Notify once per
+  with the current stage and an action to open the pilot. Notify once per
   new review request, clear attention when acknowledged, avoid forced focus and
   intermediate-progress alerts, and preserve saved decisions. Source and offscreen
   regressions pass; native notification visibility under owner Windows settings
