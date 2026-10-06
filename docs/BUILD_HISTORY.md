@@ -7,8 +7,10 @@ continuation, preserves historical receipts, and separates convergence,
 integration and anatomical decisions. Only an explicit reviewed decision permits
 an integration-checked capped fit to finish provisionally. The full-cohort config
 restores the original project tolerance. See [contract](V111_PILOT_COMPLETION.md).
-Scientific validity and native owner acceptance remain separate; installer
-uploads to Drive remain request-only.
+Frozen packaging, full prior backup, fresh idle checks, installation/startup
+and installed-file/companion hashes passed. Saved pilot files are unchanged.
+See [delivery evidence](V111_DELIVERY.md). Scientific and native owner acceptance
+remain open; Drive distribution stays request-only.
 
 ## v110 — legacy numerical queue and qualification compatibility
 

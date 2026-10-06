@@ -26,8 +26,10 @@ anatomical QC. The default final check does not optimize; original failed receip
 keep their meaning. Explicit provisional completion of an approved, integration-
 checked iteration-capped fit is disclosed throughout configuration/report/audit.
 The full-cohort configuration restores the original project optimizer tolerance.
-See [completion contract](V111_PILOT_COMPLETION.md). Build/local-install evidence
-is tracked separately; scientific and native owner acceptance remain open.
+See [completion contract](V111_PILOT_COMPLETION.md). Frozen packaging, full prior backup, fresh idle checks, installation/startup
+and installed-file/companion hashes passed. Saved pilot files are unchanged.
+See [delivery evidence](V111_DELIVERY.md). Scientific and native owner acceptance
+remain open; Drive distribution stays request-only.
 
 v110 corrects the legacy declared Stage 4 queue verifier after an independent
 qualification checkpoint is appended. Reopening, anatomical inspection and
