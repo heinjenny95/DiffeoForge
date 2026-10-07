@@ -37,4 +37,6 @@ no mesh export; one final export retained the same nine VTKs. A synthetic resume
 restored iteration 4 and completed iteration 5. These are engineering checks,
 not scientific validation or a completion-time guarantee for a private cohort.
 
-The pending v114 desktop responsiveness correction is included in v115.
+The v114 desktop responsiveness correction is included in installed v115.
+Ninety-two scoped regressions and frozen packaging/installation checks passed;
+see [verified local delivery](V115_DELIVERY.md).

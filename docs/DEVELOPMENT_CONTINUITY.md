@@ -28,8 +28,12 @@ cadence; the unchanged final mesh export runs once with subject progress. Legacy
 evidence and science settings are preserved. Actual reference-runtime synthetic
 parameter arrays and final VTK hashes match the native schedule exactly; resume
 restored the saved iteration. See [scope and limits](V115_COMPACT_REFERENCE_CHECKPOINTS.md).
-Packaging and installation verification are pending; the owner has closed the app
-and a fresh native/backend check is idle. Installed dev113 remains until delivery.
+Ninety-two scoped regressions, frozen packaging, full prior backup, fresh idle
+checks and installed startup/file verification passed. Installed dev115 includes
+the v114 desktop fix. Recorded owner run files remain unchanged; a verified
+checkpoint can resume through a new compact-output successor. No private atlas
+was started. See [local delivery](V115_DELIVERY.md). Native owner/scientific
+acceptance remains open; Drive intentionally retains v98.
 
 v114 removes repeated complete saved-pilot verification from GUI status updates
 and native template-preview callbacks. Background status checks use an invalidated
@@ -38,9 +42,9 @@ dialog. Project-switch/close callbacks cannot apply old results. Eighty-one scop
 regressions passed, with one dependency skip, plus read-only offscreen preview
 profiling and Ruff. See [scope and limitations](V114_DESKTOP_RESPONSIVENESS.md).
 Frozen packaging and installer verification passed; the v114 setup is ready.
-Installation is explicitly pending because the owner reports active work and a
-fresh app check remains busy. Installed dev113 and its worker were not stopped or
-replaced. See [delivery state](V114_DELIVERY.md). Native owner acceptance remains
+Its standalone installation was deferred while the owner was working; this fix
+is now installed as part of v115. See the historical [delivery state](V114_DELIVERY.md)
+and current [v115 delivery](V115_DELIVERY.md). Native owner acceptance remains
 open; no private fit or QC decision was performed. Drive retains v98.
 
 v113 distinguishes the learned pilot seed from the original aligned cohort

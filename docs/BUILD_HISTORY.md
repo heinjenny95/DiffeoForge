@@ -9,8 +9,11 @@ runs protect their adapter and declared output schedule; source runs and scienti
 settings are retained. Actual reference-runtime synthetic parameter arrays and
 all final VTK hashes match the native schedule exactly, including tested state
 restoration. See [scope and limits](V115_COMPACT_REFERENCE_CHECKPOINTS.md).
-The pending v114 UI responsiveness fix is included. Packaging/installation are
-being verified separately; Drive uploads remain request-only.
+The v114 UI responsiveness fix is included. Ninety-two scoped regressions,
+frozen packaging, full prior backup, fresh idle checks, installation/startup and
+all installed bundle/companion hashes passed. Recorded owner run files remain
+unchanged; no private atlas was started. See [delivery](V115_DELIVERY.md).
+Drive uploads remain request-only; native owner/scientific acceptance remains open.
 
 ## v114 — responsive template preview and saved-pilot status
 
@@ -22,9 +25,10 @@ read-only owner-template harness rendered in about 2.8 seconds while the GUI tim
 continued; control refreshes stayed under 24 milliseconds. See
 [scope and limitations](V114_DESKTOP_RESPONSIVENESS.md). Frozen worker/startup,
 bundle/dependency/SBOM and installer checks passed; the local v114 setup is ready.
-Installation remains pending because the owner's app/worker is active; installed
-dev113 was not replaced. See [delivery state](V114_DELIVERY.md). No scientific run
-or new anatomy decision was performed. Drive retains v98.
+Standalone installation was deferred while the owner's app/worker was active;
+the correction is now included in installed v115. See historical
+[delivery state](V114_DELIVERY.md) and current [v115 delivery](V115_DELIVERY.md).
+No scientific run or new anatomy decision was performed. Drive retains v98.
 
 ## v113 — learned pilot seed and aligned cohort handoff
 
