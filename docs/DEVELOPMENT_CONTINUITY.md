@@ -27,8 +27,11 @@ UI cache; explicit pilot opening verifies again and supplies its snapshot to the
 dialog. Project-switch/close callbacks cannot apply old results. Eighty-one scoped
 regressions passed, with one dependency skip, plus read-only offscreen preview
 profiling and Ruff. See [scope and limitations](V114_DESKTOP_RESPONSIVENESS.md).
-Packaging, installation and native owner acceptance are tracked separately;
-no private fit or QC decision was performed.
+Frozen packaging and installer verification passed; the v114 setup is ready.
+Installation is explicitly pending because the owner reports active work and a
+fresh app check remains busy. Installed dev113 and its worker were not stopped or
+replaced. See [delivery state](V114_DELIVERY.md). Native owner acceptance remains
+open; no private fit or QC decision was performed. Drive retains v98.
 
 v113 distinguishes the learned pilot seed from the original aligned cohort
 template, retaining the same subjects through configuration review and atlas
