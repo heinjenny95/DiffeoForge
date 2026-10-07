@@ -1,6 +1,6 @@
-# Development continuity — v111 final pilot evidence
+# Development continuity — v112 pilot completion handoff
 
-Snapshot: 2026-10-06. This is a public, software-only continuation guide. Detailed
+Snapshot: 2026-10-07. This is a public, software-only continuation guide. Detailed
 research results, local paths, account destinations and run identities belong in
 the owner's private project handoff, not this repository.
 
@@ -20,6 +20,15 @@ correct parameters or interpret biology for the researcher. Deformetrica is the
 default supported reference route; the Modern engine remains evidence-gated.
 
 ## Current source work
+
+v112 fixes final-decision verification to restore atomic desktop preview-QC
+records with their exact output binding. Existing completed studies reopen
+unchanged. Completion runs in the background and hands parameters back to atlas
+setup without a new fit or automatic atlas. Missing/changed review evidence stays
+blocked; provisional warnings remain. See [scope](V112_PILOT_COMPLETION_HANDOFF.md).
+Fifty scoped regressions, read-only completed-study verification, frozen packaging,
+full backup, fresh idle checks and installed startup/file verification passed.
+See [delivery](V112_DELIVERY.md). Native first-use/scientific acceptance remain open.
 
 v111 separates native optimizer convergence, fixed-state integration and joint
 anatomical QC. The default final check does not optimize; original failed receipts
@@ -275,8 +284,8 @@ claim. No scientific run or anatomical approval was performed by the update.
 ## Completion policy
 
 Follow the root `AGENTS.md`: each completed change includes a scoped GitHub push,
-a verified English Project log entry, and maintenance of the latest tested Drive
-installer. Track source, installed and distributed versions independently.
+a verified English Project log entry, and installer distribution only on explicit
+owner request. Track source, installed and distributed versions independently.
 Documentation-only work does not create a new application version. Private-alpha
 Drive distribution is not a GitHub Release, manuscript submission or authorization
 to expose research data. Do not change existing sharing permissions implicitly.
