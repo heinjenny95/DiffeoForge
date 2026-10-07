@@ -23,11 +23,14 @@ default supported reference route; the Modern engine remains evidence-gated.
 
 v116 adds a lightweight live objective plot to full-reference execution and an
 explicit +300-iteration successor for a completed capped gradient-ascent run.
-The action is available after reopening results; source checkpoints/results/QC
+The action is available in the Run card, QC footer and after reopening results;
+source checkpoints/results/QC
 are preserved. Launch request 0.3 retains 0.2 reading, and worker progress uses
 the actual protected effective successor limit. See [scope and checks](V116_LIVE_OPTIMIZER_AND_CONTINUATION.md).
 Native synthetic continuation restored iteration 4 and stopped at 131 under a
 304 limit, with unchanged source bytes. Owner/scientific acceptance remains open.
+The corrected frozen GUI/workers and installer are verified, but installation is
+deferred while the owner app/full atlas are active. Installed dev115 is unchanged.
 Build and installation evidence are tracked separately in [delivery](V116_DELIVERY.md).
 
 v115 separates native optimizer checkpoints from complete mesh-trajectory output.
