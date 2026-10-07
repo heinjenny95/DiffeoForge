@@ -85,6 +85,15 @@ def test_run_window_observes_progress_and_clears_engine_bound_history(app, monke
     window._refresh_iteration_extension(source)
     assert "300 → 600" in window.run_more_iterations_button.text()
     assert not window.result_more_iterations_button.isHidden()
+    assert not window.qc_more_iterations_button.isHidden()
+    # Reopened capped results first enter QC. Continuing must not require its release.
+    monkeypatch.setattr(window, "_registration_results_released", lambda: False)
+    window.page_stack.setCurrentIndex(4)
+    window.show()
+    app.processEvents()
+    assert window.qc_more_iterations_button.isVisible()
+    assert window.qc_more_iterations_button.isEnabled()
+    assert not window._step_is_unlocked(5)
     request = replace(_request(tmp_path), resume_source=source.resolve(), additional_iterations=300)
     result = widgets.ResumableReferenceRun(
         run_directory=source, project_name="synthetic", subject_count=2,
@@ -101,7 +110,7 @@ def test_run_window_observes_progress_and_clears_engine_bound_history(app, monke
             queued.append(worker)
 
     window._thread_pool = QueueOnlyPool()
-    window.run_more_iterations_button.click()
+    window.qc_more_iterations_button.click()
     assert len(queued) == 1
     assert isinstance(queued[0], widgets._IterationExtensionWorker)
     assert queued[0].source == source

@@ -3423,6 +3423,10 @@ class DiffeoForgeWindow(QMainWindow):
         self.registration_review_back_button.setObjectName("secondary")
         self.registration_review_back_button.clicked.connect(lambda: self._navigate_to_step(3))
         footer_layout.addWidget(self.registration_review_back_button)
+        self.qc_more_iterations_button = QPushButton("Continue +300 iterations")
+        self.qc_more_iterations_button.clicked.connect(self._prepare_iteration_extension)
+        self.qc_more_iterations_button.hide()
+        footer_layout.addWidget(self.qc_more_iterations_button)
         footer_layout.addStretch()
         footer_layout.addWidget(self.result_qc_finalize_button)
         self.registration_results_button = QPushButton("Open Results && PCA")
@@ -7560,7 +7564,10 @@ class DiffeoForgeWindow(QMainWindow):
 
     @Slot()
     def _sync_ready_state(self) -> None:
-        for button in (self.run_more_iterations_button, self.result_more_iterations_button):
+        for button in (
+            self.run_more_iterations_button, self.result_more_iterations_button,
+            self.qc_more_iterations_button,
+        ):
             button.setEnabled(self._worker is None)
         self.engine_combo.setEnabled(self._worker is None)
         approved_alignment = self._approved_procrustes_fingerprint()
@@ -8038,7 +8045,10 @@ class DiffeoForgeWindow(QMainWindow):
                 maximum = iteration_extension_limit(source)
             except (OSError, RuntimeError, TypeError, ValueError, KeyError):
                 pass
-        for button in (self.run_more_iterations_button, self.result_more_iterations_button):
+        for button in (
+            self.run_more_iterations_button, self.result_more_iterations_button,
+            self.qc_more_iterations_button,
+        ):
             button.setVisible(maximum is not None)
             if maximum is not None:
                 button.setText(f"Continue +300 iterations ({maximum} → {maximum + 300})")

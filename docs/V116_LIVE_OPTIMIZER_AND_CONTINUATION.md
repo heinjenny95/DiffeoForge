@@ -10,8 +10,9 @@ keeps the final observations after termination. Full retained logs and verified
 result plots remain the complete evidence; a live curve is not anatomical QC.
 
 After a successful native gradient-ascent run reaches its configured iteration
-limit, **Continue +300 iterations** appears in the Run result card and the saved
-result's optimizer card, including after reopening. It shows the old/new limit
+limit, **Continue +300 iterations** appears in the Run result card, QC footer and
+saved result's optimizer card, including after reopening before QC release.
+It shows the old/new limit
 (e.g. 300 → 600), verifies the source checkpoint in a background task, and opens
 the explicit **Start +300 iterations** summary. Choosing this does not immediately
 start a computation. Numerical tolerance stops and line-search failures do not
@@ -37,7 +38,9 @@ an eventual convergence guarantee is not implied. This change does not change
 scientific model settings, impose a wall-clock timeout, or start a private fit.
 
 Verification passed 171 scoped regressions (one dependency-presence skip),
-Ruff/diff checks and offscreen visual inspection. Tests cover bounded/finite Qt
+Ruff/diff checks and offscreen visual inspection. A final accessibility follow-up
+passed 129 overlapping UI/registration regressions (one skip), including a capped
+run whose QC is still unreleased. Tests cover bounded/finite Qt
 rendering, resumed indices, engine reset,
 real button dispatch, legacy/new request contracts, protected source preservation,
 300 → 600 → 900 chaining, tampered checkpoint/history rejection, other stop
