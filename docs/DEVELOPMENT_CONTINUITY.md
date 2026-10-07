@@ -1,4 +1,4 @@
-# Development continuity — v112 pilot completion handoff
+# Development continuity — v113 aligned-cohort handoff
 
 Snapshot: 2026-10-07. This is a public, software-only continuation guide. Detailed
 research results, local paths, account destinations and run identities belong in
@@ -20,6 +20,13 @@ correct parameters or interpret biology for the researcher. Deformetrica is the
 default supported reference route; the Modern engine remains evidence-gated.
 
 ## Current source work
+
+v113 distinguishes the learned pilot seed from the original aligned cohort
+template, retaining the same subjects through configuration review and atlas
+preparation. Bound template/control hashes, original GPA evidence and cohort
+counts are checked. Existing completed pilots need no rewrite or rerun; scientific
+parameters and provisional warnings are unchanged. See
+[scope](V113_PILOT_COHORT_HANDOFF.md). Packaging/installation evidence is separate.
 
 v112 fixes final-decision verification to restore atomic desktop preview-QC
 records with their exact output binding. Existing completed studies reopen

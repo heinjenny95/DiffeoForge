@@ -1,5 +1,13 @@
 # Private-alpha build numbering
 
+## v113 — learned pilot seed and aligned cohort handoff
+
+v113 (`0.0.0.dev113`) preserves the original subject cohort after applying a
+learned pilot template. Original template/seed/control hashes, subject count and
+GPA evidence remain checked; the template copy cannot become an extra specimen.
+See [scope and verification](V113_PILOT_COHORT_HANDOFF.md). Packaging and local
+installation are verified separately; no pilot/atlas automatically starts.
+
 ## v112 — preview QC completion and atlas-setup handoff
 
 v112 (`0.0.0.dev112`) restores the atomic desktop preview-review journal in

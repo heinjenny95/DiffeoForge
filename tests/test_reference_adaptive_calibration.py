@@ -166,6 +166,9 @@ def test_final_cohort_uses_selected_geometry_but_never_pilot_momenta(tmp_path, m
     selected = {"attachment": snapshot.candidates[0].candidate_id}
     # Test export without pretending the synthetic fixture was visually approved.
     manifest = copy.deepcopy(manifest)
+    # A broad glob must keep excluding the original template after a learned
+    # template outside the cohort replaces it as the atlas initialization.
+    manifest["inputs"]["full_cohort"]["subject_pattern"] = "*.vtk"
     path = study._final_configuration(
         snapshot.study_directory,
         manifest,
@@ -180,6 +183,10 @@ def test_final_cohort_uses_selected_geometry_but_never_pilot_momenta(tmp_path, m
     assert inputs.initial_momenta is None
     assert inputs.initial_control_points is not None
     assert "selected-seed" in str(inputs.template)
+    original_template = Path(manifest["inputs"]["full_cohort"]["template"])
+    assert inputs.cohort_template == original_template
+    assert inputs.subject_count == snapshot.plan.subject_count
+    assert original_template not in inputs.subjects
     assert (
         config["project"]["parameter_provenance"]["recommendation"]["calibration_result"][
             "full_cohort_confirmation_required"

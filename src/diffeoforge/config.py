@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 from collections.abc import Mapping
@@ -28,6 +29,7 @@ class InputSummary:
     subjects: tuple[Path, ...]
     initial_control_points: Path | None = None
     initial_momenta: Path | None = None
+    cohort_template: Path | None = None
 
 
 def _schema() -> Mapping[str, Any]:
@@ -82,6 +84,58 @@ def resolve_output_directory(config: Mapping[str, Any], config_path: Path | str)
     return _resolve_from_config(config["output"]["directory"], Path(config_path))
 
 
+def _pilot_cohort_template(
+    config: Mapping[str, Any], directory: Path, template: Path, controls: Path | None
+) -> Path | None:
+    """Identify the original cohort template separately from a learned pilot seed."""
+
+    recommendation = config.get("project", {}).get("parameter_provenance", {}).get(
+        "recommendation", {}
+    )
+    initialization = recommendation.get("calibration_result", {}).get(
+        "full_cohort_initialization"
+    )
+    if not initialization:
+        return None
+    plan = recommendation.get("calibration_plan", {})
+    name = plan.get("template_filename")
+    if (
+        not isinstance(name, str) or not name or name in {".", ".."}
+        or "/" in name or "\\" in name or Path(name).name != name
+    ):
+        raise ConfigurationError("Calibrated cohort template filename is unsafe or absent.")
+    original = directory / name
+    # A separately staged probe/holdout does not contain the original full cohort.
+    # Its explicit cohort remains authoritative; do not apply full-cohort exclusions.
+    if not original.exists():
+        return None
+    if original.is_symlink() or not original.is_file():
+        raise ConfigurationError("Calibrated cohort template is not a regular file.")
+
+    def digest(path: Path) -> str:
+        with path.open("rb") as stream:
+            return hashlib.file_digest(stream, "sha256").hexdigest()
+
+    try:
+        if digest(original) != plan.get("template_sha256"):
+            raise ConfigurationError("Original cohort template no longer matches pilot evidence.")
+        if (
+            initialization.get("method")
+            != "learned_pilot_template_and_controls_zero_full_cohort_momenta"
+            or template.is_symlink()
+            or digest(template) != initialization.get("template_sha256")
+            or controls is None
+            or controls.is_symlink()
+            or digest(controls) != initialization.get("control_points_sha256")
+        ):
+            raise ConfigurationError("Learned full-cohort seed no longer matches pilot evidence.")
+    except OSError as error:
+        raise ConfigurationError(
+            f"Could not verify pilot cohort initialization: {error}"
+        ) from error
+    return original.resolve()
+
+
 def validate_input_paths(config: Mapping[str, Any], config_path: Path | str) -> InputSummary:
     """Resolve the template and subject glob without parsing mesh geometry yet."""
 
@@ -134,9 +188,17 @@ def validate_input_paths(config: Mapping[str, Any], config_path: Path | str) -> 
             "Subject pattern must not select files outside the input directory."
         )
 
-    subjects = tuple(
-        path for path in candidates if path != template and path.suffix.lower() == ".vtk"
+    cohort_template = _pilot_cohort_template(
+        config, input_directory, template, initial_control_points
     )
+    subjects = tuple(
+        path for path in candidates
+        if path not in {template, cohort_template} and path.suffix.lower() == ".vtk"
+    )
+    if cohort_template is not None:
+        plan = config["project"]["parameter_provenance"]["recommendation"]["calibration_plan"]
+        if len(subjects) != plan.get("subject_count"):
+            raise ConfigurationError("Full-cohort subject count differs from the saved pilot plan.")
     if not subjects:
         raise ConfigurationError(f"No subject VTK files match {pattern!r} in {input_directory}.")
     probe = (
@@ -196,4 +258,5 @@ def validate_input_paths(config: Mapping[str, Any], config_path: Path | str) -> 
         subjects=subjects,
         initial_control_points=initial_control_points,
         initial_momenta=initial_momenta,
+        cohort_template=cohort_template,
     )

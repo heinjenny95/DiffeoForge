@@ -14,6 +14,11 @@ scientific gates. Planning does not mark those gates complete.
 
 ## Pilot usability follow-up
 
+- [x] Preserve the original aligned subject cohort when a learned pilot template
+  initializes the full atlas. Verify original template/seed/control bindings,
+  exclude only the documented template copy, and review the original GPA cohort
+  without editing saved results. See [v113 correction](docs/V113_PILOT_COHORT_HANDOFF.md).
+
 - [ ] Offer an explicit **Reopen and refine saved pilot** action for completed
   and provisionally completed studies, alongside **Use saved parameters** and
   **Start new pilot**. Allow inspection and targeted continuation without

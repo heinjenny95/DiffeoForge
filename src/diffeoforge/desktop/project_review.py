@@ -126,7 +126,7 @@ def _reference_alignment_items(preflight) -> tuple[ReviewItem, ...]:
         labels = evidence["landmark_labels"]
         fingerprint = evidence["fingerprint"]
         expected_names = (
-            preflight.inputs.template.name,
+            (preflight.inputs.cohort_template or preflight.inputs.template).name,
             *(path.name for path in preflight.inputs.subjects),
         )
         if version not in {"0.1", "0.2", "0.3"}:
@@ -255,6 +255,15 @@ def _reference_alignment_items(preflight) -> tuple[ReviewItem, ...]:
             ),
             "These are the effective alignment settings recorded in the verified "
             "preprocessing evidence.",
+        ),
+        *(
+            (ReviewItem(
+                "Atlas initialization",
+                "verified learned pilot template and control points",
+                "The original aligned template remains preprocessing evidence, not an "
+                "extra specimen. The unchanged subject cohort uses the learned pilot seed.",
+            ),)
+            if preflight.inputs.cohort_template is not None else ()
         ),
         *(
             (
