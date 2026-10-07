@@ -26,7 +26,10 @@ template, retaining the same subjects through configuration review and atlas
 preparation. Bound template/control hashes, original GPA evidence and cohort
 counts are checked. Existing completed pilots need no rewrite or rerun; scientific
 parameters and provisional warnings are unchanged. See
-[scope](V113_PILOT_COHORT_HANDOFF.md). Packaging/installation evidence is separate.
+[scope](V113_PILOT_COHORT_HANDOFF.md). Sixty-four scoped regressions, frozen
+packaging, full prior backup, fresh idle checks and installed startup/file
+verification passed. See [delivery](V113_DELIVERY.md). Native owner/scientific
+acceptance remains open; no atlas was started. Drive intentionally retains v98.
 
 v112 fixes final-decision verification to restore atomic desktop preview-QC
 records with their exact output binding. Existing completed studies reopen
