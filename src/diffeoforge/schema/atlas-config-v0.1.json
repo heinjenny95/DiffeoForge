@@ -1173,6 +1173,9 @@
         },
         "retain_flow_meshes": {
           "const": true
+        },
+        "checkpoint_mode": {
+          "enum": ["native_full_outputs", "compact_final_export"]
         }
       }
     }

@@ -1,4 +1,4 @@
-# Development continuity — v114 desktop responsiveness
+# Development continuity — v115 compact reference checkpoints
 
 Snapshot: 2026-10-07. This is a public, software-only continuation guide. Detailed
 research results, local paths, account destinations and run identities belong in
@@ -20,6 +20,16 @@ correct parameters or interpret biology for the researcher. Deformetrica is the
 default supported reference route; the Modern engine remains evidence-gated.
 
 ## Current source work
+
+v115 separates native optimizer checkpoints from complete mesh-trajectory output.
+New preparations and immutable resume successors declare compact output scheduling
+and protect the run-local adapter. Checkpoints replace atomically at the original
+cadence; the unchanged final mesh export runs once with subject progress. Legacy
+evidence and science settings are preserved. Actual reference-runtime synthetic
+parameter arrays and final VTK hashes match the native schedule exactly; resume
+restored the saved iteration. See [scope and limits](V115_COMPACT_REFERENCE_CHECKPOINTS.md).
+Packaging and installation verification are pending; the owner has closed the app
+and a fresh native/backend check is idle. Installed dev113 remains until delivery.
 
 v114 removes repeated complete saved-pilot verification from GUI status updates
 and native template-preview callbacks. Background status checks use an invalidated

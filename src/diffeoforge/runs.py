@@ -422,7 +422,9 @@ def _prepare_run(
     """Create a complete run directory atomically and never overwrite a run."""
 
     source_config = Path(config_path).expanduser().resolve()
-    config = load_config(source_config)
+    from diffeoforge.reference_checkpoint_schedule import new_run_config
+
+    config = new_run_config(load_config(source_config))
     validate_reference_config(config)
     summary = validate_input_paths(config, source_config)
     template_metadata, subject_metadata = inspect_inputs(summary)
@@ -1865,10 +1867,16 @@ def prepare_resume_run(
         for relative in ("input", "config", "engine", "output", "logs", "resume"):
             (temp_directory / relative).mkdir(parents=True, exist_ok=False)
 
+        from diffeoforge.reference_checkpoint_schedule import new_run_config
+
+        config = new_run_config(source_manifest["effective_config"])
         copied_artifacts: list[Path] = []
         for artifact in source_manifest["protected_artifacts"]:
             relative = PurePosixPath(artifact["path"])
-            if relative.as_posix() == "engine/optimization_parameters.xml":
+            if relative.as_posix() in {
+                "engine/optimization_parameters.xml", "engine/sitecustomize.py",
+                "config/effective-config.yaml",
+            }:
                 continue
             if relative.parts and relative.parts[0] == "resume":
                 continue
@@ -1877,9 +1885,23 @@ def prepare_resume_run(
             _copy_and_verify(source, destination, artifact["sha256"])
             copied_artifacts.append(destination)
 
+        effective_path = temp_directory / "config" / "effective-config.yaml"
+        with effective_path.open("x", encoding="utf-8", newline="\n") as handle:
+            yaml.safe_dump(config, handle, sort_keys=False, allow_unicode=True)
+        copied_artifacts.append(effective_path)
+        from diffeoforge.reference_checkpoint_schedule import needs_adapter as compact
+        from diffeoforge.reference_checkpoint_schedule import render_adapter
+        from diffeoforge.reference_singleton_compat import SITECUSTOMIZE, needs_adapter
+
+        singleton_source = SITECUSTOMIZE if needs_adapter(config) else ""
+        adapter_source = render_adapter(singleton_source) if compact(config) else singleton_source
+        if adapter_source:
+            adapter_path = temp_directory / "engine" / "sitecustomize.py"
+            adapter_path.write_text(adapter_source, encoding="utf-8", newline="\n")
+            copied_artifacts.append(adapter_path)
         optimization_path = temp_directory / "engine" / "optimization_parameters.xml"
         generate_resume_optimization_file(
-            source_manifest["effective_config"],
+            config,
             optimization_path,
         )
         staged_checkpoint = temp_directory / RESUME_CHECKPOINT_PATH
@@ -1934,7 +1956,6 @@ def prepare_resume_run(
             staged_checkpoint,
             provenance_path,
         ]
-        config = source_manifest["effective_config"]
         command_preview = build_command(config, final_directory)
         manifest = {
             "manifest_version": RUN_MANIFEST_VERSION,

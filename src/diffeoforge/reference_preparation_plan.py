@@ -365,7 +365,9 @@ def plan_reference_preparation(
         raise ValueError("run_id must be an explicit nonempty string")
     source_config_bytes = source_config.read_bytes()
     source_config_sha256 = _sha256_bytes(source_config_bytes)
-    config = load_config(source_config)
+    from diffeoforge.reference_checkpoint_schedule import new_run_config
+
+    config = new_run_config(load_config(source_config))
     validate_reference_config(config)
     summary = validate_input_paths(config, source_config)
     control_points_bytes = (

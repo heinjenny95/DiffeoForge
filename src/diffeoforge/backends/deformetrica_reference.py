@@ -18,7 +18,7 @@ from diffeoforge.reference_runtime import probe_wsl_launcher
 from diffeoforge.subprocess_policy import hidden_windows_process_kwargs
 
 BACKEND_ID = "deformetrica_reference"
-BACKEND_CONTRACT_VERSION = "0.4"
+BACKEND_CONTRACT_VERSION = "0.5"
 REFERENCE_CPU_MKL_MODE = "COMPATIBLE"
 CONTAINER_WORKING_DIRECTORY = "/work"
 ENGINE_CONSTANTS = {
@@ -236,6 +236,12 @@ def render_engine_file_bytes(
         if len(staged_subjects) != 1 or staged_momenta is None:
             raise ConfigurationError("Singleton warm fitting needs exactly one bound field/subject")
         rendered["sitecustomize.py"] = SITECUSTOMIZE.encode("utf-8")
+    from diffeoforge.reference_checkpoint_schedule import needs_adapter as compact
+    from diffeoforge.reference_checkpoint_schedule import render_adapter
+
+    if compact(config):
+        singleton_source = rendered.get("sitecustomize.py", b"").decode("utf-8")
+        rendered["sitecustomize.py"] = render_adapter(singleton_source).encode("utf-8")
     return rendered
 
 
@@ -409,7 +415,9 @@ def _build_launcher_command(
     from diffeoforge.reference_singleton_compat import needs_adapter
 
     singleton = arguments[0] == "estimate" and needs_adapter(config)
-    if singleton:
+    from diffeoforge.reference_checkpoint_schedule import needs_adapter as compact
+
+    if singleton or (arguments[0] == "estimate" and compact(config)):
         # Use the original executable/interpreter. The adapter is confined to this
         # protected engine directory; no global runtime or package file changes.
         environment["PYTHONPATH"] = (

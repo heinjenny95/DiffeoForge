@@ -14,6 +14,13 @@ scientific gates. Planning does not mark those gates complete.
 
 ## Pilot usability follow-up
 
+- [x] Separate compact native optimizer checkpoints from full mesh-trajectory
+  exports in new and resumed reference runs. Replace checkpoints atomically,
+  retain the unchanged final export with subject progress, and preserve legacy
+  source evidence and scientific settings. See
+  [v115 engineering verification and limits](docs/V115_COMPACT_REFERENCE_CHECKPOINTS.md).
+  Full private-cohort runtime and scientific acceptance remain open.
+
 - [x] Remove full saved-pilot verification from ordinary GUI refreshes and native
   template-preview callbacks. Resolve/check status in the background with a UI
   cache; explicitly opening a pilot still revalidates evidence. Discard old-project

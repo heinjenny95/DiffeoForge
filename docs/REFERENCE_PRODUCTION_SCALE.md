@@ -30,6 +30,13 @@ Newly generated projects default to a five-iteration checkpoint cadence. Existin
 projects retain their saved setting and must be reviewed explicitly; DiffeoForge
 does not silently rewrite scientific configurations.
 
+Since v115, new preparations and immutable resume successors use compact native
+optimizer checkpoints at that cadence. Complete mesh trajectories and final
+reconstructions are exported once after optimization, with subject progress;
+storage estimates still reserve the complete final output. Legacy interrupted
+runs can migrate through a separately bound successor without rewriting their
+source evidence. See [output scheduling and verification](V115_COMPACT_REFERENCE_CHECKPOINTS.md).
+
 ## Recovery contract
 
 The desktop's **Resume interrupted run…** action accepts only terminal

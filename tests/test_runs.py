@@ -187,7 +187,9 @@ def test_cpu_execution_applies_and_records_mode_without_changing_host(tmp_path, 
     monkeypatch.setattr(runs, "_probe_backend_environment", lambda config: {"probe_status": "test"})
     monkeypatch.setattr(runs, "build_command", lambda config, path: CommandSpec(
         argv=(sys.executable, "-c", "import os; print('mode=' + os.environ['MKL_CBWR'])"),
-        working_directory=str(path), environment=original.environment,
+        working_directory=str(path), environment={
+            k: v for k, v in original.environment.items() if k != "PYTHONPATH"
+        },
     ))
     assert execute_run(run) == 0
     assert "mode=COMPATIBLE" in (run / "logs/deformetrica.log").read_text()
@@ -206,7 +208,7 @@ def test_prepare_creates_verifiable_immutable_run(tmp_path: Path) -> None:
 
     assert run_directory == tmp_path / "runs" / "fixed-run"
     assert manifest["input_count"] == {"templates": 1, "subjects": 2}
-    assert manifest["backend"]["contract_version"] == "0.4"
+    assert manifest["backend"]["contract_version"] == "0.5"
     assert manifest["command_preview"]["environment"]["MKL_CBWR"] == "COMPATIBLE"
     assert (run_directory / "engine" / "model.xml").is_file()
     assert (run_directory / "engine" / "data_set.xml").is_file()

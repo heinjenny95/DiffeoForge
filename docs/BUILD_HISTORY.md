@@ -1,5 +1,17 @@
 # Private-alpha build numbering
 
+## v115 — compact reference checkpoints and deferred mesh export
+
+v115 (`0.0.0.dev115`) saves native optimizer states without periodically exporting
+the complete mesh trajectories. Atomic checkpoint replacement preserves recovery;
+the unchanged final output writer runs once with subject progress. New and resumed
+runs protect their adapter and declared output schedule; source runs and scientific
+settings are retained. Actual reference-runtime synthetic parameter arrays and
+all final VTK hashes match the native schedule exactly, including tested state
+restoration. See [scope and limits](V115_COMPACT_REFERENCE_CHECKPOINTS.md).
+The pending v114 UI responsiveness fix is included. Packaging/installation are
+being verified separately; Drive uploads remain request-only.
+
 ## v114 — responsive template preview and saved-pilot status
 
 v114 (`0.0.0.dev114`) moves full pilot status/open verification off the GUI
