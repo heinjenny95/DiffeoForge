@@ -14,6 +14,13 @@ scientific gates. Planning does not mark those gates complete.
 
 ## Pilot usability follow-up
 
+- [ ] Offer an explicit **Reopen and refine saved pilot** action for completed
+  and provisionally completed studies, alongside **Use saved parameters** and
+  **Start new pilot**. Allow inspection and targeted continuation without
+  restarting the entire search. Preserve the original results, review history,
+  final selection and provisional warnings; record refinement as a linked
+  successor with its own result-bound QC and applicable numerical checks.
+
 - [x] Verify desktop preview QC from the atomic review journal when completing
   or reopening a saved pilot, preserve exact-result binding, and return directly
   to full atlas setup after background completion. No atlas automatically starts.
