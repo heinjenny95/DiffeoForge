@@ -17,6 +17,7 @@ from diffeoforge.runs import (
     execute_run,
     inspect_abandoned_run,
     inspect_resume_source,
+    iteration_extension_limit,
     parse_convergence,
     prepare_resume_run,
     prepare_run,
@@ -971,3 +972,95 @@ def test_resume_execution_uses_copy_and_preserves_protected_checkpoint(
     assert (successor / "output" / "deformetrica-state.p").read_bytes() == checkpoint
     assert (successor / "resume" / "source-checkpoint.p").read_bytes() == checkpoint
     assert run_status(successor)["result"]["resume"]["source_run"]["run_id"] == "source"
+
+
+def _finish_at_cap(tmp_path, monkeypatch, *, stop="", limit=300):
+    config_path = write_run_config(tmp_path)
+    config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    config["optimization"]["max_iterations"] = limit
+    config_path.write_text(yaml.safe_dump(config), encoding="utf-8")
+    source = prepare_run(config_path, run_id="capped")
+    _execute_cap_fixture(source, monkeypatch, stop=stop)
+    return source
+
+
+def _execute_cap_fixture(run, monkeypatch, *, stop=""):
+    maximum = verify_prepared_run(run)["effective_config"]["optimization"]["max_iterations"]
+    program = (
+        "from pathlib import Path; "
+        "Path('output/deformetrica-state.p').write_bytes(b'opaque-native-state'); "
+        f"print('------ Iteration: {maximum} ------'); "
+        "print('Log-likelihood = -10 ; attachment = -8 ; regularity = -2'); "
+        f"print({stop!r})"
+    )
+    monkeypatch.setattr(runs, "ensure_launcher_available", lambda _config: None)
+    monkeypatch.setattr(runs, "_probe_backend_environment", lambda _config: {
+        "probe_status": "verified", "packages": {"deformetrica": "4.3.0"},
+    })
+    monkeypatch.setattr(runs, "build_command", lambda _config, directory: CommandSpec(
+        argv=(sys.executable, "-c", program), working_directory=str(directory),
+        environment={"MKL_CBWR": "COMPATIBLE"},
+    ))
+    assert execute_run(run) == 0
+
+
+def test_capped_extension_preserves_source_and_chains_effective_budget(tmp_path, monkeypatch):
+    source = _finish_at_cap(tmp_path, monkeypatch)
+    before = {p.relative_to(source): p.read_bytes() for p in source.rglob("*") if p.is_file()}
+    assert iteration_extension_limit(source) == 300
+    successor = prepare_resume_run(source, run_id="plus300", additional_iterations=300)
+    manifest = verify_prepared_run(successor)
+    assert manifest["effective_config"]["optimization"]["max_iterations"] == 600
+    assert "<max-iterations>600</max-iterations>" in (
+        successor / "engine/optimization_parameters.xml"
+    ).read_text(encoding="utf-8")
+    provenance = json.loads((successor / "resume/resume.json").read_text(encoding="utf-8"))
+    assert provenance["iteration_extension"] == {
+        "source_maximum_iterations": 300, "additional_iterations": 300,
+        "maximum_iterations": 600,
+        "source_log_sha256": sha256_file(source / "logs/deformetrica.log"),
+    }
+    assert provenance["source_run"]["terminal_status"] == "completed"
+    assert (successor / "resume/source-checkpoint.p").read_bytes() == b"opaque-native-state"
+    assert not list((successor / "output").iterdir())
+    assert {
+        p.relative_to(source): p.read_bytes() for p in source.rglob("*") if p.is_file()
+    } == before
+    _execute_cap_fixture(successor, monkeypatch)
+    assert iteration_extension_limit(successor) == 600
+    second = prepare_resume_run(successor, run_id="plus600", additional_iterations=300)
+    assert verify_prepared_run(second)["effective_config"]["optimization"]["max_iterations"] == 900
+    # Original source config remains at 300; the protected effective successor budget wins.
+    assert yaml.safe_load((second / "config/source-config.yaml").read_text())["optimization"][
+        "max_iterations"
+    ] == 300
+
+
+@pytest.mark.parametrize("stop", [
+    "Tolerance threshold met.", "Number of line search loops exceeded.",
+])
+def test_extension_rejects_other_terminal_signals_even_at_cap(tmp_path, monkeypatch, stop):
+    source = _finish_at_cap(tmp_path, monkeypatch, stop=stop)
+    with pytest.raises(ConfigurationError, match="only after the iteration limit"):
+        prepare_resume_run(source, run_id="extra", additional_iterations=300)
+    assert not (source.parent / "extra").exists()
+
+
+def test_extension_rechecks_checkpoint_and_log_and_requires_explicit_budget(tmp_path, monkeypatch):
+    source = _finish_at_cap(tmp_path, monkeypatch)
+    with pytest.raises(ConfigurationError, match="failed or interrupted"):
+        prepare_resume_run(source, run_id="implicit")
+    (source / "output/deformetrica-state.p").write_bytes(b"tampered")
+    with pytest.raises(ConfigurationError, match="differs from its inventory"):
+        prepare_resume_run(source, run_id="tampered", additional_iterations=300)
+    (source / "logs/convergence.csv").write_text(
+        "iteration,log_likelihood,attachment,regularity\n300,-99,-8,-2\n", encoding="utf-8",
+    )
+    with pytest.raises(ConfigurationError, match="differs from the retained"):
+        iteration_extension_limit(source)
+
+
+@pytest.mark.parametrize("budget", [True, 300.0, 1, 600])
+def test_extension_rejects_undeclared_budgets(tmp_path, budget):
+    with pytest.raises(ConfigurationError, match="0 or 300"):
+        inspect_resume_source(tmp_path, additional_iterations=budget)

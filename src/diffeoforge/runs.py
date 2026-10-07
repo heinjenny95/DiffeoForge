@@ -1250,6 +1250,11 @@ def _load_resume_provenance(run_directory: Path) -> Mapping[str, Any] | None:
         return None
     provenance = _read_json_object(provenance_path, "Resume provenance")
     _validate_resume_schema(provenance)
+    extension = provenance.get("iteration_extension")
+    if extension is not None and extension["maximum_iterations"] != (
+        extension["source_maximum_iterations"] + extension["additional_iterations"]
+    ):
+        raise ConfigurationError("Resume iteration extension has an inconsistent total limit.")
     checkpoint = provenance["checkpoint"]
     staged_path = _resolve_run_artifact(
         run_directory,
@@ -1330,6 +1335,11 @@ def execute_run(
     ensure_launcher_available(config)
     environment_probe = _probe_backend_environment(config)
     resume_provenance = _load_resume_provenance(run_path)
+    if resume_provenance is not None and "iteration_extension" in resume_provenance:
+        if config["optimization"]["max_iterations"] != (
+            resume_provenance["iteration_extension"]["maximum_iterations"]
+        ):
+            raise ConfigurationError("Prepared budget differs from protected extension provenance.")
     command = build_command(config, run_path)
     event_path = run_path / "events.jsonl"
     log_path = run_path / "logs" / "deformetrica.log"
@@ -1746,9 +1756,52 @@ def inspect_abandoned_run(run_directory: Path | str) -> AbandonedRunEvidence:
     )
 
 
-def inspect_resume_source(source_run_directory: Path | str) -> ResumeSourceEvidence:
+def iteration_extension_limit(source_run_directory: Path | str) -> int:
+    """Read the capped terminal stop; this hint alone never authorizes execution."""
+    source = Path(source_run_directory).expanduser().resolve()
+    manifest = _read_manifest(source)
+    if manifest["effective_config"]["optimization"]["method"] != "gradient_ascent":
+        raise ConfigurationError("Additional iterations require native gradient-ascent state.")
+    result = _read_json_object(source / "result.json", "Source result")
+    if (
+        result.get("status") != "completed"
+        or result.get("return_code") != 0
+        or result.get("execution_error") is not None
+    ):
+        raise ConfigurationError("Additional iterations require a completed capped run.")
+    log = source / "logs" / "deformetrica.log"
+    csv_path = source / "logs" / "convergence.csv"
+    if not log.is_file() or log.is_symlink() or not csv_path.is_file() or csv_path.is_symlink():
+        raise ConfigurationError("Terminal convergence log and CSV must be retained regular files.")
+    count = _verify_existing_convergence(log, csv_path)
+    if count != result.get("convergence_rows"):
+        raise ConfigurationError("Terminal convergence history differs from result evidence.")
+    with csv_path.open(encoding="utf-8", newline="") as handle:
+        rows = list(csv.DictReader(handle))
+    maximum = int(manifest["effective_config"]["optimization"]["max_iterations"])
+    from diffeoforge.analysis.reference_convergence_visualization import (
+        detect_reference_stop_evidence,
+    )
+    evidence = detect_reference_stop_evidence(
+        log.read_text(encoding="utf-8"),
+        final_iteration=None if not rows else int(rows[-1]["iteration"]),
+        maximum_iterations=maximum,
+    )
+    if evidence.signal != "maximum_iterations":
+        raise ConfigurationError(
+            "Additional iterations are available only after the iteration limit, "
+            "not after tolerance convergence or line-search failure."
+        )
+    return maximum
+
+
+def inspect_resume_source(
+    source_run_directory: Path | str, *, additional_iterations: int = 0
+) -> ResumeSourceEvidence:
     """Verify resume eligibility and checkpoint integrity without changing any files."""
 
+    if type(additional_iterations) is not int or additional_iterations not in {0, 300}:
+        raise ConfigurationError("Additional iteration budget must be 0 or 300.")
     source_run = Path(source_run_directory).expanduser().resolve()
     source_manifest = _read_manifest(source_run)
     if source_manifest.get("run_id") != source_run.name:
@@ -1759,7 +1812,11 @@ def inspect_resume_source(source_run_directory: Path | str) -> ResumeSourceEvide
     _verify_protected_artifacts(source_run, source_manifest)
     events = _read_events(source_run / "events.jsonl")
     terminal_status = events[-1]["event"]
-    if terminal_status not in RESUMABLE_STATES:
+    if additional_iterations:
+        if terminal_status != "completed":
+            raise ConfigurationError("Additional iterations require a completed capped run.")
+        iteration_extension_limit(source_run)
+    elif terminal_status not in RESUMABLE_STATES:
         raise ConfigurationError(
             "Resume requires a failed or interrupted source run; "
             f"latest event is {terminal_status!r}."
@@ -1841,10 +1898,13 @@ def prepare_resume_run(
     source_run_directory: Path | str,
     *,
     run_id: str | None = None,
+    additional_iterations: int = 0,
 ) -> Path:
-    """Prepare an immutable successor from an inventoried failed/interrupted checkpoint."""
+    """Prepare an immutable checkpoint successor, optionally extending a capped budget."""
 
-    evidence = inspect_resume_source(source_run_directory)
+    evidence = inspect_resume_source(
+        source_run_directory, additional_iterations=additional_iterations
+    )
     source_run = evidence.source_run
     source_manifest = evidence.manifest
     source_result_path = source_run / "result.json"
@@ -1870,6 +1930,10 @@ def prepare_resume_run(
         from diffeoforge.reference_checkpoint_schedule import new_run_config
 
         config = new_run_config(source_manifest["effective_config"])
+        old_maximum = int(config["optimization"]["max_iterations"])
+        if additional_iterations:
+            config["optimization"]["max_iterations"] = old_maximum + additional_iterations
+            validate_reference_config(config)
         copied_artifacts: list[Path] = []
         for artifact in source_manifest["protected_artifacts"]:
             relative = PurePosixPath(artifact["path"])
@@ -1946,6 +2010,13 @@ def prepare_resume_run(
                 "trajectory_continuity": "not_guaranteed",
             },
         }
+        if additional_iterations:
+            provenance["iteration_extension"] = {
+                "source_maximum_iterations": old_maximum,
+                "additional_iterations": additional_iterations,
+                "maximum_iterations": old_maximum + additional_iterations,
+                "source_log_sha256": sha256_file(source_run / "logs" / "deformetrica.log"),
+            }
         _validate_resume_schema(provenance)
         provenance_path = temp_directory / RESUME_PROVENANCE_PATH
         _write_json_exclusive(provenance_path, provenance)

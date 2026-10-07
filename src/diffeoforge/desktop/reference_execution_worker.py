@@ -23,7 +23,7 @@ from diffeoforge.desktop.reference_worker_protocol import (
 from diffeoforge.desktop.worker_protocol import parse_json_object, sha256_file
 from diffeoforge.report import collect_preflight
 from diffeoforge.result_report import collect_run_report
-from diffeoforge.runs import execute_run, prepare_resume_run, prepare_run
+from diffeoforge.runs import execute_run, prepare_resume_run, prepare_run, verify_prepared_run
 
 
 class _LineInput(Protocol):
@@ -248,7 +248,11 @@ def run_reference_execution_worker(
         run_directory = (
             prepare_run(request.config_path, run_id=request.run_id)
             if request.resume_source is None
-            else prepare_resume_run(request.resume_source, run_id=request.run_id)
+            else prepare_resume_run(
+                request.resume_source,
+                run_id=request.run_id,
+                additional_iterations=request.additional_iterations,
+            )
         )
         if run_directory.resolve() != request.destination:
             raise RuntimeError("Prepared reference destination differs from the reviewed request")
@@ -274,6 +278,10 @@ def run_reference_execution_worker(
                 ),
             },
         )
+        # A continuation may have a larger protected effective budget than its
+        # unchanged original source-config. Observe the actual successor settings.
+        config = verify_prepared_run(run_directory)["effective_config"]
+        maximum_iterations = int(config["optimization"]["max_iterations"])
         tracker = ReferenceProgressTracker(
             maximum_iterations,
             convergence_tolerance=float(config["optimization"]["convergence_tolerance"]),

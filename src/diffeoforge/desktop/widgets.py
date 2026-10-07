@@ -63,6 +63,7 @@ from diffeoforge.desktop.gpa_visualization import (
 from diffeoforge.desktop.info_disclosure import InfoDisclosure
 from diffeoforge.desktop.landmark_3d_widget import InteractiveMeshCanvas3D
 from diffeoforge.desktop.landmark_editor import LandmarkEditorDialog
+from diffeoforge.desktop.live_optimizer_plot import LiveOptimizerPlot
 from diffeoforge.desktop.mesh_preview import (
     DEFAULT_EDGE_BUDGET,
     MeshPreviewError,
@@ -271,6 +272,7 @@ from diffeoforge.reference_shape_space_pdf import (
     ReferenceShapeSpacePdfExport,
     write_reference_shape_space_pdf,
 )
+from diffeoforge.runs import inspect_resume_source, iteration_extension_limit
 from diffeoforge.scientific_report import (
     SCIENTIFIC_REPORT_HTML,
     ScientificReportArtifact,
@@ -1290,6 +1292,40 @@ class _RunLookupWorker(QRunnable):
         self.signals.succeeded.emit(discovery)
 
 
+class _IterationExtensionWorker(QRunnable):
+    """Bind a capped checkpoint continuation without blocking the UI or starting it."""
+
+    def __init__(self, source: Path) -> None:
+        super().__init__()
+        self.source = source
+        self.signals = _WorkerSignals()
+
+    @Slot()
+    def run(self) -> None:
+        try:
+            request = build_reference_resume_launch_request(
+                self.source,
+                request_id=f"reference-extension-{uuid.uuid4().hex}",
+                run_id=f"{self.source.name[:95]}-plus300-{uuid.uuid4().hex[:8]}",
+                additional_iterations=300,
+            )
+            evidence = inspect_resume_source(self.source, additional_iterations=300)
+            result = ResumableReferenceRun(
+                run_directory=evidence.source_run,
+                project_name=evidence.manifest["effective_config"]["project"]["name"],
+                subject_count=evidence.manifest["input_count"]["subjects"],
+                terminal_status=evidence.terminal_status,
+                checkpoint_bytes=evidence.checkpoint_bytes,
+                source_config_path=request.config_path,
+                source_config_sha256=request.expected_config_sha256,
+            )
+            maximum = evidence.manifest["effective_config"]["optimization"]["max_iterations"]
+        except (OSError, RuntimeError, TypeError, ValueError, KeyError) as error:
+            self.signals.failed.emit(str(error))
+            return
+        self.signals.succeeded.emit((request, result, maximum))
+
+
 class _ArtifactWorker(QRunnable):
     """Recheck one reviewed artifact immediately before handing it to the OS."""
 
@@ -1606,6 +1642,7 @@ class DiffeoForgeWindow(QMainWindow):
             DesktopReviewedRunReadiness | DesktopReviewedRemoteRunReadiness | None
         ) = None
         self._reference_run_request: DesktopReferenceLaunchRequest | None = None
+        self._iteration_extension_source: Path | None = None
         self._run_result: (
             DesktopWorkerControllerResult
             | DesktopRemoteAtlasResult
@@ -2565,6 +2602,9 @@ class DiffeoForgeWindow(QMainWindow):
         progress_layout.addWidget(self.run_state_label)
         progress_layout.addWidget(self.run_stage_label)
         progress_layout.addWidget(self.run_progress_bar)
+        self.run_live_optimizer_plot = LiveOptimizerPlot()
+        self.run_live_optimizer_plot.hide()
+        progress_layout.addWidget(self.run_live_optimizer_plot)
         progress_layout.addWidget(self.run_optimizer_label)
         progress_layout.addWidget(self.run_event_log)
         layout.addWidget(progress)
@@ -2587,6 +2627,10 @@ class DiffeoForgeWindow(QMainWindow):
         self.delete_remote_server_copy_button.hide()
         result_button_row = QHBoxLayout()
         result_button_row.addWidget(self.open_run_result_button)
+        self.run_more_iterations_button = QPushButton("Continue +300 iterations")
+        self.run_more_iterations_button.clicked.connect(self._prepare_iteration_extension)
+        self.run_more_iterations_button.hide()
+        result_button_row.addWidget(self.run_more_iterations_button)
         result_button_row.addWidget(self.delete_remote_server_copy_button)
         result_button_row.addStretch()
         result_layout.addWidget(result_title)
@@ -2932,6 +2976,10 @@ class DiffeoForgeWindow(QMainWindow):
         convergence_plot_layout.addWidget(convergence_plot_title)
         convergence_plot_layout.addWidget(self.result_optimizer_convergence_hint)
         convergence_plot_layout.addWidget(convergence_panel)
+        self.result_more_iterations_button = QPushButton("Continue +300 iterations")
+        self.result_more_iterations_button.clicked.connect(self._prepare_iteration_extension)
+        self.result_more_iterations_button.hide()
+        convergence_plot_layout.addWidget(self.result_more_iterations_button)
         layout.addWidget(convergence_plot_card)
         layout.addWidget(pca_card)
 
@@ -6925,6 +6973,9 @@ class DiffeoForgeWindow(QMainWindow):
         self._run_result = None
         self._result_review = None
         self.result_card.hide()
+        self._refresh_iteration_extension(None)
+        self.run_live_optimizer_plot.clear()
+        self.run_live_optimizer_plot.hide()
         self.template_preview_card.hide()
         self.reference_readiness_card.hide()
         self.reference_preparation_status_card.hide()
@@ -7478,7 +7529,11 @@ class DiffeoForgeWindow(QMainWindow):
                 and self._reference_run_request.resume_source is not None
             )
             self.start_atlas_button.setText(
-                "Resume interrupted Deformetrica run"
+                (
+                    "Start +300 iterations"
+                    if self._reference_run_request.additional_iterations
+                    else "Resume interrupted Deformetrica run"
+                )
                 if resume
                 else (
                     "Start reviewed Deformetrica atlas"
@@ -7505,6 +7560,8 @@ class DiffeoForgeWindow(QMainWindow):
 
     @Slot()
     def _sync_ready_state(self) -> None:
+        for button in (self.run_more_iterations_button, self.result_more_iterations_button):
+            button.setEnabled(self._worker is None)
         self.engine_combo.setEnabled(self._worker is None)
         approved_alignment = self._approved_procrustes_fingerprint()
         alignment_ready = bool(
@@ -7971,12 +8028,62 @@ class DiffeoForgeWindow(QMainWindow):
             self.status_label.setText(f"Interrupted run cannot be resumed safely: {error}")
             return
 
+        self._show_reference_resume(request, result)
+
+    def _refresh_iteration_extension(self, source: Path | None) -> None:
+        self._iteration_extension_source = None
+        maximum = None
+        if source is not None:
+            try:
+                maximum = iteration_extension_limit(source)
+            except (OSError, RuntimeError, TypeError, ValueError, KeyError):
+                pass
+        for button in (self.run_more_iterations_button, self.result_more_iterations_button):
+            button.setVisible(maximum is not None)
+            if maximum is not None:
+                button.setText(f"Continue +300 iterations ({maximum} → {maximum + 300})")
+                button.setToolTip(
+                    "Continue from the saved state in a new run. Previous results remain available."
+                )
+        if maximum is not None:
+            self._iteration_extension_source = source
+
+    @Slot()
+    def _prepare_iteration_extension(self) -> None:
+        if self._worker is not None or self._iteration_extension_source is None:
+            return
+        worker = _IterationExtensionWorker(self._iteration_extension_source)
+        worker.signals.succeeded.connect(self._iteration_extension_ready)
+        worker.signals.failed.connect(self._iteration_extension_failed)
+        self._worker = worker
+        self._sync_ready_state()
+        self._thread_pool.start(worker)
+
+    @Slot(object)
+    def _iteration_extension_ready(self, prepared: tuple) -> None:
+        self._worker = None
+        request, result, maximum = prepared
+        self._show_reference_resume(request, result, extension_maximum=maximum)
+
+    @Slot(str)
+    def _iteration_extension_failed(self, message: str) -> None:
+        self._worker = None
+        self._sync_ready_state()
+        QMessageBox.warning(self, "Continuation unavailable", message)
+
+    def _show_reference_resume(
+        self, request: DesktopReferenceLaunchRequest, result: ResumableReferenceRun,
+        *, extension_maximum: int | None = None,
+    ) -> None:
+        self._refresh_iteration_extension(None)
         self._result = None
         self._run_readiness = None
         self._run_result = None
         self._result_review = None
         self._reference_readiness = None
         self._reference_run_request = request
+        self.run_live_optimizer_plot.clear()
+        self.run_live_optimizer_plot.show()
         self._review = ProjectReviewResult(
             engine=DesktopEngine.DEFORMETRICA_REFERENCE,
             project_name=result.project_name,
@@ -8035,8 +8142,23 @@ class DiffeoForgeWindow(QMainWindow):
         self.run_state_label.setText("Ready; no successor or Deformetrica process has started.")
         self.run_result_card.hide()
         self.refresh_run_readiness_button.setEnabled(False)
+        if extension_maximum is not None:
+            self.run_title_label.setText("Continue Deformetrica atlas: +300 iterations")
+            self.run_boundary_label.setText(
+                "Previous results remain unchanged. Parameters and iteration are restored; "
+                "Deformetrica reinitializes its objective baseline, gradient and line-search state."
+            )
+            self.run_summary_label.setText(
+                f"Project: {result.project_name}\n"
+                f"Source run: {self._wrappable_path(result.run_directory)}\n"
+                f"Iteration limit: {extension_maximum} → {extension_maximum + 300}\n"
+                f"New run: {self._wrappable_path(request.destination)}"
+            )
+            self.run_progress_bar.setFormat("Continuation not started")
         self._navigate_to_step(3)
         self._sync_ready_state()
+        if extension_maximum is not None:
+            self.start_atlas_button.setText("Start +300 iterations")
 
     def _shape_space_project_directory(self, run_directory: Path) -> Path:
         resolved_run = run_directory.expanduser().resolve()
@@ -10363,6 +10485,8 @@ class DiffeoForgeWindow(QMainWindow):
         worker.signals.cancel_failed.connect(self._atlas_cancel_failed)
         self._worker = worker
         self._result_review = None
+        self.run_live_optimizer_plot.clear()
+        self.run_live_optimizer_plot.setVisible(reference)
         self.run_result_card.hide()
         self.run_event_log.clear()
         self.run_technical_toggle.setChecked(False)
@@ -10645,6 +10769,13 @@ class DiffeoForgeWindow(QMainWindow):
         elif event.kind == "progress":
             iteration = int(event.payload["iteration"])
             maximum = int(event.payload["maximum_iterations"])
+            self.run_live_optimizer_plot.show()
+            self.run_live_optimizer_plot.add_sample(
+                iteration,
+                float(event.payload["log_likelihood"]),
+                float(event.payload["attachment"]),
+                float(event.payload["regularity"]),
+            )
             elapsed = float(event.payload["elapsed_seconds"])
             eta_value = event.payload["eta_to_iteration_cap_seconds"]
             eta_text = (
@@ -10966,6 +11097,9 @@ class DiffeoForgeWindow(QMainWindow):
             )
         self.run_state_label.setStyleSheet("")
         self._reference_run_request = None
+        self._refresh_iteration_extension(
+            Path(terminal.payload["destination"]) if result.completed else None
+        )
         self._sync_ready_state()
         if self._close_after_worker:
             self._close_after_worker = False
@@ -11038,6 +11172,7 @@ class DiffeoForgeWindow(QMainWindow):
     def _result_review_succeeded(self, review: ModernResultReview) -> None:
         self._worker = None
         self._result_review = review
+        self._refresh_iteration_extension(review.run_directory)
         method_label = review.pca_method_label
         self.result_pca_title.setText(method_label)
         self.result_pca_plots_title.setText(f"{method_label} plots")

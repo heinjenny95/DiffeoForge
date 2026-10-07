@@ -14,6 +14,13 @@ scientific gates. Planning does not mark those gates complete.
 
 ## Pilot usability follow-up
 
+- [x] Show a lightweight live objective history during full-reference atlas
+  execution, with optional attachment/regularity curves, and offer an explicit
+  +300-iteration immutable checkpoint successor after a capped run. Preserve
+  source evidence/QC and distinguish iteration caps from tolerance/line-search
+  stops. See [v116 scope and checks](docs/V116_LIVE_OPTIMIZER_AND_CONTINUATION.md).
+  Native owner interaction and scientific acceptance remain open.
+
 - [x] Separate compact native optimizer checkpoints from full mesh-trajectory
   exports in new and resumed reference runs. Replace checkpoints atomically,
   retain the unchanged final export with subject progress, and preserve legacy

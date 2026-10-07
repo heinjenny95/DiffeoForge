@@ -22,6 +22,17 @@ from diffeoforge.desktop.worker_protocol import sha256_file
 ROOT = Path(__file__).resolve().parents[1]
 
 
+@pytest.fixture(autouse=True)
+def prepared_manifest_for_fake_workers(monkeypatch):
+    # These supervisor unit fixtures stub preparation, not its protected artifact I/O.
+    from diffeoforge.config import load_config
+
+    monkeypatch.setattr(
+        execution_worker, "verify_prepared_run",
+        lambda path: {"effective_config": load_config(path.parent.parent / "atlas.yaml")},
+    )
+
+
 class _CommandStream:
     def __init__(self, request_line: str, *commands: str) -> None:
         self._request_line = request_line
@@ -284,9 +295,11 @@ def test_reference_execution_worker_reports_launch_validation_failure(
     assert not request.destination.exists()
 
 
+@pytest.mark.parametrize("additional_iterations", [0, 300])
 def test_reference_execution_worker_prepares_resume_successor_without_source_preflight(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    additional_iterations: int,
 ) -> None:
     base = _request(tmp_path)
     source = (tmp_path / "runs" / "interrupted-001").resolve()
@@ -296,6 +309,7 @@ def test_reference_execution_worker_prepares_resume_successor_without_source_pre
             "destination": (tmp_path / "runs" / "resume-001").resolve(),
             "run_id": "resume-001",
             "resume_source": source,
+            "additional_iterations": additional_iterations,
         }
     )
     monkeypatch.setattr(
@@ -310,18 +324,28 @@ def test_reference_execution_worker_prepares_resume_successor_without_source_pre
     )
     prepared = []
 
-    def prepare(source_run, *, run_id):
-        prepared.append((source_run, run_id))
+    def prepare(source_run, *, run_id, additional_iterations=0):
+        prepared.append((source_run, run_id, additional_iterations))
         request.destination.mkdir(parents=True)
         return request.destination
 
     def execute(run_directory, **_kwargs):
         assert run_directory == request.destination
+        _kwargs["line_callback"]("------ Iteration: 301 ------")
+        _kwargs["line_callback"]("Log-likelihood = -10 ; attachment = -8 ; regularity = -2")
         (request.destination / "result.json").write_text(
             '{"status":"completed"}\n', encoding="utf-8"
         )
         return 0
 
+    if additional_iterations:
+        from diffeoforge.config import load_config
+
+        effective = load_config(request.config_path)
+        effective["optimization"]["max_iterations"] = 600
+        monkeypatch.setattr(execution_worker, "verify_prepared_run", lambda _path: {
+            "effective_config": effective,
+        })
     monkeypatch.setattr(execution_worker, "prepare_resume_run", prepare)
     monkeypatch.setattr(execution_worker, "execute_run", execute)
     monkeypatch.setattr(
@@ -333,5 +357,7 @@ def test_reference_execution_worker_prepares_resume_successor_without_source_pre
     code, events, _stderr = _run(request)
 
     assert code == 0
-    assert prepared == [(source, "resume-001")]
+    assert prepared == [(source, "resume-001", additional_iterations)]
+    if additional_iterations:
+        assert next(e for e in events if e.kind == "progress").payload["maximum_iterations"] == 600
     assert events[-1].payload["outcome"] == "completed"

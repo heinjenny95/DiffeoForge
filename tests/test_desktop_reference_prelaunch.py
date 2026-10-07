@@ -357,7 +357,7 @@ def test_reference_resume_prelaunch_binds_verified_source_and_successor(
     )
     monkeypatch.setattr(
         "diffeoforge.desktop.reference_prelaunch.inspect_resume_source",
-        lambda _path: evidence,
+        lambda _path, **_kwargs: evidence,
     )
 
     request = build_reference_resume_launch_request(
@@ -387,3 +387,22 @@ def test_reference_prelaunch_schema_rejects_malformed_ids(tmp_path: Path, field:
 
     with pytest.raises(DesktopReferencePrelaunchError, match=field):
         validate_reference_launch_request(request)
+
+
+def test_reference_launch_accepts_legacy_v02_and_rejects_unbound_extension(tmp_path):
+    config = _config(tmp_path)
+    payload = build_reference_launch_request(
+        _review(config), _readiness(config), request_id="version-test", run_id="run-v03",
+    ).as_dict()
+    assert payload["reference_launch_request_version"] == "0.3"
+    payload["reference_launch_request_version"] = "0.2"
+    payload.pop("additional_iterations")
+    assert DesktopReferenceLaunchRequest.from_dict(payload).additional_iterations == 0
+    payload["reference_launch_request_version"] = "0.3"
+    payload["additional_iterations"] = 300
+    with pytest.raises(DesktopReferencePrelaunchError):
+        DesktopReferenceLaunchRequest.from_dict(payload)
+    payload["resume_source"] = str(tmp_path / "capped")
+    request = DesktopReferenceLaunchRequest.from_dict(payload)
+    assert request.additional_iterations == 300
+    assert request.as_dict()["additional_iterations"] == 300

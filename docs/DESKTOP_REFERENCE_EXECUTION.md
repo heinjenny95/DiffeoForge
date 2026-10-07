@@ -18,6 +18,13 @@ run is never reopened or modified. Deformetrica 4.3 restores parameters and the
 iteration number but reinitializes the objective baseline, gradient, and
 line-search state, so recovery is not an exact optimizer-trajectory continuation.
 
+Since v116, a completed native gradient-ascent run that reaches its iteration
+cap has a separate **Continue +300 iterations** action. The retained terminal
+log/CSV and checkpoint are verified, and the explicit launch raises the effective
+limit in a new immutable successor (e.g. 300 → 600). Tolerance/line-search stops
+are not relabeled as capped runs. Existing recovery budgets and source evidence
+remain unchanged. See [live objectives and continuation](V116_LIVE_OPTIMIZER_AND_CONTINUATION.md).
+
 For a power loss or hard process termination that leaves the latest event at
 `started`, **Recover after crashâ€¦** performs a separate guarded flow. It fully
 verifies protected inputs and any checkpoint, requires explicit confirmation that

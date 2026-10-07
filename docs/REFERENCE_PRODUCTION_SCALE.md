@@ -48,6 +48,13 @@ read-only. Before enabling execution it verifies:
 - terminal result evidence and output inventory; and
 - the inventoried checkpoint bytes.
 
+Since v116, a completed native gradient-ascent run that reaches its iteration
+cap has a separate **Continue +300 iterations** action. The retained terminal
+log/CSV and checkpoint are verified, and the explicit launch raises the effective
+limit in a new immutable successor (e.g. 300 → 600). Tolerance/line-search stops
+are not relabeled as capped runs. Existing recovery budgets and source evidence
+remain unchanged. See [live objectives and continuation](V116_LIVE_OPTIMIZER_AND_CONTINUATION.md).
+
 Resume creates a new immutable successor. The source remains outside the write
 path. Deformetrica restores parameters and iteration from its checkpoint, but
 version 4.3 reinitializes objective, gradient, and line-search state; the continued

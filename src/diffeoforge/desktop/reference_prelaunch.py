@@ -27,16 +27,16 @@ from diffeoforge.desktop.worker_protocol import sha256_file
 from diffeoforge.reference_runtime import launcher_identity
 from diffeoforge.runs import inspect_resume_source
 
-REFERENCE_LAUNCH_REQUEST_VERSION = "0.2"
+REFERENCE_LAUNCH_REQUEST_VERSION = "0.3"
 
 
 class DesktopReferencePrelaunchError(RuntimeError):
     """Raised when a future reference launch cannot remain exactly bound."""
 
 
-def _schema() -> dict[str, Any]:
+def _schema(version: str = REFERENCE_LAUNCH_REQUEST_VERSION) -> dict[str, Any]:
     resource = files("diffeoforge.schema").joinpath(
-        "desktop-reference-launch-request-v0.2.json"
+        f"desktop-reference-launch-request-v{version}.json"
     )
     return json.loads(resource.read_text(encoding="utf-8"))
 
@@ -45,7 +45,10 @@ def validate_reference_launch_request(value: Mapping[str, Any]) -> None:
     """Validate one serialized reference-launch request."""
 
     try:
-        jsonschema.Draft202012Validator(_schema()).validate(dict(value))
+        version = value.get("reference_launch_request_version")
+        if version not in {"0.2", "0.3"}:
+            raise DesktopReferencePrelaunchError("Unsupported reference launch request version")
+        jsonschema.Draft202012Validator(_schema(str(version))).validate(dict(value))
     except jsonschema.ValidationError as error:
         location = ".".join(str(part) for part in error.absolute_path) or "document"
         raise DesktopReferencePrelaunchError(
@@ -116,6 +119,7 @@ class DesktopReferenceLaunchRequest:
     launcher_distribution: str | None = None
     launcher_executable: str | None = None
     resume_source: Path | None = None
+    additional_iterations: int = 0
 
     @property
     def engine(self) -> str:
@@ -134,6 +138,7 @@ class DesktopReferenceLaunchRequest:
             "resume_source": (
                 None if self.resume_source is None else str(self.resume_source)
             ),
+            "additional_iterations": self.additional_iterations,
             "launcher": launcher,
         }
 
@@ -166,6 +171,12 @@ class DesktopReferenceLaunchRequest:
         }
 
     def __post_init__(self) -> None:
+        if type(self.additional_iterations) is not int:
+            raise DesktopReferencePrelaunchError("Additional iteration budget must be an integer")
+        if self.additional_iterations and self.resume_source is None:
+            raise DesktopReferencePrelaunchError(
+                "Additional iterations require a source checkpoint"
+            )
         if (
             not self.config_path.is_absolute()
             or not self.destination.is_absolute()
@@ -217,6 +228,7 @@ class DesktopReferenceLaunchRequest:
                 if value["resume_source"] is None
                 else Path(value["resume_source"]).expanduser().resolve()
             ),
+            additional_iterations=value.get("additional_iterations", 0),
         )
 
     def verify_launch_inputs(self) -> None:
@@ -229,7 +241,9 @@ class DesktopReferenceLaunchRequest:
             )
         if self.resume_source is not None:
             try:
-                evidence = inspect_resume_source(self.resume_source)
+                evidence = inspect_resume_source(
+                    self.resume_source, additional_iterations=self.additional_iterations
+                )
             except (OSError, ConfigurationError, TypeError, ValueError) as error:
                 raise DesktopReferencePrelaunchError(
                     f"Reference resume source is not eligible: {error}"
@@ -343,11 +357,14 @@ def build_reference_resume_launch_request(
     *,
     request_id: str,
     run_id: str,
+    additional_iterations: int = 0,
 ) -> DesktopReferenceLaunchRequest:
     """Bind one verified interrupted run to a new immutable desktop successor."""
 
     try:
-        evidence = inspect_resume_source(source_run_directory)
+        evidence = inspect_resume_source(
+            source_run_directory, additional_iterations=additional_iterations
+        )
         source_config = evidence.source_run / "config" / "source-config.yaml"
         source_config_record = next(
             artifact
@@ -371,6 +388,7 @@ def build_reference_resume_launch_request(
         launcher_distribution=configured_launcher.get("distribution"),
         launcher_executable=configured_launcher.get("executable"),
         resume_source=evidence.source_run,
+        additional_iterations=additional_iterations,
     )
     request.verify_launch_inputs()
     return request

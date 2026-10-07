@@ -1,4 +1,4 @@
-# Development continuity — v115 compact reference checkpoints
+# Development continuity — v116 live optimizer and continuation
 
 Snapshot: 2026-10-07. This is a public, software-only continuation guide. Detailed
 research results, local paths, account destinations and run identities belong in
@@ -20,6 +20,15 @@ correct parameters or interpret biology for the researcher. Deformetrica is the
 default supported reference route; the Modern engine remains evidence-gated.
 
 ## Current source work
+
+v116 adds a lightweight live objective plot to full-reference execution and an
+explicit +300-iteration successor for a completed capped gradient-ascent run.
+The action is available after reopening results; source checkpoints/results/QC
+are preserved. Launch request 0.3 retains 0.2 reading, and worker progress uses
+the actual protected effective successor limit. See [scope and checks](V116_LIVE_OPTIMIZER_AND_CONTINUATION.md).
+Native synthetic continuation restored iteration 4 and stopped at 131 under a
+304 limit, with unchanged source bytes. Owner/scientific acceptance remains open.
+Build and installation evidence are tracked separately in [delivery](V116_DELIVERY.md).
 
 v115 separates native optimizer checkpoints from complete mesh-trajectory output.
 New preparations and immutable resume successors declare compact output scheduling
