@@ -9419,19 +9419,27 @@ class DiffeoForgeWindow(QMainWindow):
         dialog.deleteLater()
         self._reference_calibration_study_directory = directory
         try:
-            self._finish_reference_calibration(load_reference_calibration_study(directory))
+            snapshot = dialog.snapshot
+            self._finish_reference_calibration(
+                snapshot
+                if (
+                    snapshot.status == "completed"
+                    and snapshot.study_directory.resolve() == directory
+                )
+                else load_reference_calibration_study(directory)
+            )
         except (OSError, RuntimeError, TypeError, ValueError) as error:
             QMessageBox.warning(self, "Pilot calibration unavailable", str(error))
             self._refresh_reference_calibration_execution_card()
 
     def _finish_reference_calibration(self, snapshot) -> None:
-        self._refresh_reference_calibration_execution_card()
         if (
             snapshot.status != "completed"
             or snapshot.final_config_path is None
             or self._result is None
             or self._result.config_path.resolve() == snapshot.final_config_path.resolve()
         ):
+            self._refresh_reference_calibration_execution_card()
             return
         self._apply_reference_calibrated_configuration(snapshot.final_config_path)
         self._result = replace(

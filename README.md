@@ -24,6 +24,10 @@ installer must retain that separate license and cannot broaden its terms.
 The project is being developed in public from its first engineering decisions.
 The name may change before the first release.
 
+The v112 correction verifies desktop preview approvals during completion and
+reopening, then returns directly to full atlas setup without starting a run.
+See [the handoff correction](docs/V112_PILOT_COMPLETION_HANDOFF.md).
+
 The v111 pilot separates native optimizer convergence, fixed-state integration
 checks and anatomical review. Its default final check does not optimize again.
 A valid iteration-capped fit can finish only through an explicit, reviewed,

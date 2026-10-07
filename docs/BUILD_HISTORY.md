@@ -1,5 +1,13 @@
 # Private-alpha build numbering
 
+## v112 — preview QC completion and atlas-setup handoff
+
+v112 (`0.0.0.dev112`) restores the atomic desktop preview-review journal in
+final-decision verification. Verified completed studies reopen unchanged;
+background completion returns directly to atlas setup, with no automatic atlas.
+See [scope and verification](V112_PILOT_COMPLETION_HANDOFF.md). Packaging and
+installation evidence is recorded separately after verification.
+
 ## v111 — final pilot evidence and explicit provisional completion
 
 v111 (`0.0.0.dev111`) checks the fixed saved state without default optimizer

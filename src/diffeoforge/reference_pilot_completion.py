@@ -354,6 +354,10 @@ def decision(snapshot, identifier):
 
 def finish(directory, identifier):
     snapshot = study.load_reference_calibration_study(directory)
+    if snapshot.status == "completed":
+        if snapshot.selected_candidate_ids.get(snapshot.plan.stages[-1].stage_id) != identifier:
+            raise ValueError("This pilot is already finished with a different saved fit")
+        return snapshot, None
     selected = decision(snapshot, identifier)
     return study._record_reference_calibration_stage_selection(
         directory,
@@ -385,6 +389,17 @@ def verify_final_decision(root, plan, events):
     candidates = tuple(
         _candidate(root, plan.stages[-1].stage_id, c)[0] for c in sorted(identifiers)
     )
+    # Desktop preview QC uses the separate atomic review journal so it can run
+    # while an engine owns the main event ledger. Verify the same bound reviews
+    # on completion/reopening as the ordinary study loader, without inventing QC
+    # from the selection event's summary.
+    series_root, _ = study._search_extension_series(root)
+    reviews = tuple(
+        r
+        for r in study._read_review_journal(series_root)
+        if r.get("stage_id") == plan.stages[-1].stage_id
+        and r.get("candidate_id") in identifiers
+    )
     for event in selections:
         earlier = tuple(e for e in events if e["sequence"] < event["sequence"])
         snapshot = study.ReferenceCalibrationStudySnapshot(
@@ -401,7 +416,7 @@ def verify_final_decision(root, plan, events):
             None,
             None,
             visual_reviews=study._load_candidate_reviews(
-                earlier, plan.stages[-1].stage_id, candidates
+                earlier + reviews, plan.stages[-1].stage_id, candidates
             ),
         )
         expected = decision(snapshot, event["candidate_id"])

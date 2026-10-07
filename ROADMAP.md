@@ -14,6 +14,11 @@ scientific gates. Planning does not mark those gates complete.
 
 ## Pilot usability follow-up
 
+- [x] Verify desktop preview QC from the atomic review journal when completing
+  or reopening a saved pilot, preserve exact-result binding, and return directly
+  to full atlas setup after background completion. No atlas automatically starts.
+  See [v112 correction and checks](docs/V112_PILOT_COMPLETION_HANDOFF.md).
+
 - [x] Separate native optimizer convergence, fixed-state integration and anatomy
   at pilot completion. Avoid default strict continuation, reuse bound evidence,
   and support an explicit provisional decision for an approved valid capped fit.

@@ -223,6 +223,7 @@ class _CalibrationStageWorker(QRunnable):
         specimen_action: tuple[str, str, int] | None = None,
         retain_previous: bool = False,
         provisional_candidate_id: str | None = None,
+        finish_candidate_id: str | None = None,
         early_screen: bool = False,
         screen_subjects: tuple[str, ...] | None = None,
         retry_screens: bool = False,
@@ -241,6 +242,7 @@ class _CalibrationStageWorker(QRunnable):
         self.specimen_action = specimen_action
         self.retain_previous = retain_previous
         self.provisional_candidate_id = provisional_candidate_id
+        self.finish_candidate_id = finish_candidate_id
         self.early_screen = early_screen
         self.retry_screens = retry_screens
         self.finer_resolution = finer_resolution
@@ -272,6 +274,8 @@ class _CalibrationStageWorker(QRunnable):
         with self._lock:
             if self._finished:
                 return False
+        if self.finish_candidate_id is not None:
+            return False  # Atomic completion verifies/saves evidence; no engine is running.
         return self.runner.request_cancel()
 
     @Slot()
@@ -286,7 +290,11 @@ class _CalibrationStageWorker(QRunnable):
             self.signals.event.emit(event)
 
         try:
-            if self.provisional_candidate_id is not None:
+            if self.finish_candidate_id is not None:
+                from diffeoforge.reference_pilot_completion import finish
+
+                result, _assessment = finish(self.runner.study_directory, self.finish_candidate_id)
+            elif self.provisional_candidate_id is not None:
                 result, _assessment = record_reference_calibration_iteration_limit_selection(
                     self.runner.study_directory,
                     selected_candidate_id=self.provisional_candidate_id,
@@ -1566,7 +1574,11 @@ class ReferenceCalibrationDialog(QDialog):
             self.progress.setValue(1)
             self.progress.setFormat("Calibration complete")
             self.start_button.hide()
-            self.advance_button.hide()
+            self.advance_button.setText("Return to full atlas setup")
+            self.advance_button.setEnabled(not running)
+            self.advance_button.setToolTip("Apply the saved parameters. No atlas starts now.")
+            self.advance_button.show()
+            _set_action_emphasis(self.advance_button, not running)
             self.review_next_button.hide()
             self.selection_combo.hide()
             self.cancel_button.hide()
@@ -2383,7 +2395,9 @@ class ReferenceCalibrationDialog(QDialog):
             else f"Use approved option → stage {stage.order + 1}"
         )
         self.advance_button.setToolTip(
-            "Keeps this exact saved fit for parameter exploration. Convergence is not "
+            "Verifies the saved fit and returns to full atlas setup. No atlas starts now."
+            if last
+            else "Keeps this exact saved fit for parameter exploration. Convergence is not "
             "established; stage 4 still requires numerical qualification. No fit starts now."
             if provisional
             else "Records this selection and prepares the next stage."
@@ -2621,6 +2635,7 @@ class ReferenceCalibrationDialog(QDialog):
         specimen_action: tuple[str, str, int] | None = None,
         retain_previous: bool = False,
         provisional_candidate_id: str | None = None,
+        finish_candidate_id: str | None = None,
         early_screen: bool = False,
         screen_subjects: tuple[str, ...] | None = None,
         retry_screens: bool = False,
@@ -2647,6 +2662,7 @@ class ReferenceCalibrationDialog(QDialog):
             specimen_action=specimen_action,
             retain_previous=retain_previous,
             provisional_candidate_id=provisional_candidate_id,
+            finish_candidate_id=finish_candidate_id,
             early_screen=early_screen,
             screen_subjects=screen_subjects,
             retry_screens=retry_screens,
@@ -2699,17 +2715,21 @@ class ReferenceCalibrationDialog(QDialog):
         self.selection_combo.setEnabled(False)
         self.start_button.setEnabled(False)
         _set_action_emphasis(self.start_button, False)
-        self.cancel_button.setEnabled(True)
-        self.cancel_button.setVisible(True)
+        self.cancel_button.setEnabled(finish_candidate_id is None)
+        self.cancel_button.setVisible(finish_candidate_id is None)
         self.cancel_button.setObjectName("danger")
         self.cancel_button.style().unpolish(self.cancel_button)
         self.cancel_button.style().polish(self.cancel_button)
         self.status.setText(
-            "Recording provisional selection and preserving the saved fit… No fit is running."
+            "Verifying saved pilot and preparing full atlas setup… No atlas starts now."
+            if finish_candidate_id
+            else "Recording provisional selection and preserving the saved fit… No fit is running."
             if provisional_candidate_id
             else "Preparing the next attempt…"
         )
         self._thread_pool.start(worker)
+        if finish_candidate_id:
+            self._thread_pool.indicator.label.setText(self.status.text())
 
     @Slot()
     def _keep_previous_fit(self) -> None:
@@ -2916,8 +2936,14 @@ class ReferenceCalibrationDialog(QDialog):
 
     @Slot(object)
     def _succeeded(self, snapshot: ReferenceCalibrationStudySnapshot) -> None:
+        finishing = getattr(self._worker, "finish_candidate_id", None) is not None
         self._worker = None
         self.study_directory = snapshot.study_directory
+        if finishing and snapshot.status == "completed":
+            self._snapshot = snapshot
+            # Parent's existing finished handler applies parameters, never runs an atlas.
+            self.accept()
+            return
         self._render()
         if snapshot.current_stage and snapshot.current_stage.order == 4:
             latest = next(
@@ -3211,6 +3237,11 @@ class ReferenceCalibrationDialog(QDialog):
 
     @Slot()
     def _advance(self) -> None:
+        if self._worker is not None or self._restoring_search:
+            return
+        if self._snapshot.status == "completed":
+            self.accept()
+            return
         selected = self.selection_combo.currentData()
         if selected is None:
             QMessageBox.warning(
@@ -3224,9 +3255,10 @@ class ReferenceCalibrationDialog(QDialog):
             self._start_pilot(adaptive=False, specimen_action=("advance", str(selected), 0))
             return
         if self._snapshot.current_stage.order == 4:
-            from diffeoforge.reference_pilot_completion import finish, provisional_available
+            from diffeoforge.reference_pilot_completion import capped
 
-            if provisional_available(self._snapshot, str(selected)):
+            candidate = next(c for c in self._snapshot.candidates if c.candidate_id == selected)
+            if capped(candidate):
                 answer = QMessageBox.question(
                     self,
                     "Finish pilot provisionally?",
@@ -3239,12 +3271,7 @@ class ReferenceCalibrationDialog(QDialog):
                 )
                 if answer != QMessageBox.StandardButton.Yes:
                     return
-            try:
-                finish(self.study_directory, str(selected))
-            except (OSError, RuntimeError, TypeError, ValueError) as error:
-                QMessageBox.warning(self, "Pilot completion rejected", str(error))
-                return
-            self._render()
+            self._start_pilot(adaptive=False, finish_candidate_id=str(selected))
             return
         if iteration_limit_selection_available(self._snapshot, selected):
             self._start_pilot(adaptive=False, provisional_candidate_id=str(selected))
@@ -3435,8 +3462,12 @@ class ReferenceCalibrationDialog(QDialog):
             return
         QMessageBox.information(
             self,
-            "Calibration still running",
-            "Cancel safely first and wait until the current candidate reaches a "
+            "Pilot completion in progress"
+            if getattr(self._worker, "finish_candidate_id", None) is not None
+            else "Calibration still running",
+            "Wait until saved evidence is verified. The atlas setup will open automatically."
+            if getattr(self._worker, "finish_candidate_id", None) is not None
+            else "Cancel safely first and wait until the current candidate reaches a "
             "terminal state before closing this window.",
         )
         event.ignore()

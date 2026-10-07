@@ -1,5 +1,5 @@
 import shutil
-from dataclasses import replace
+from dataclasses import dataclass, replace
 
 import pytest
 from test_reference_calibration_study import _approve_for_test
@@ -57,6 +57,74 @@ def _checked(tmp_path, monkeypatch, *, capped=False, bad=False):
     )
     result = completion.run(runner, candidate_id=done.candidates[0].candidate_id)
     return runner, result, calls, done.candidates[0].candidate_id
+
+
+def _approve_preview(done, identifier):
+    names = tuple(s.filename for s in done.plan.selected_pilot_subjects)
+    return study.record_reference_calibration_candidate_review(
+        done.study_directory,
+        candidate_id=identifier,
+        approved=True,
+        reviewed_subjects=names,
+        subject_decisions={name: "pass" for name in names},
+        display_scopes={name: "preview" for name in names},
+    )
+
+
+@pytest.mark.parametrize("capped", [False, True])
+def test_preview_qc_finishes_reopens_and_repeated_finish_keeps_all_bytes(
+    tmp_path, monkeypatch, capped
+):
+    _, done, _, identifier = _checked(tmp_path, monkeypatch, capped=capped)
+    reviewed = _approve_preview(done, identifier)
+    assert reviewed.visual_reviews[identifier] is True
+    assert not any(
+        e["event"] == "candidate_visual_review" and e.get("candidate_id") == identifier
+        for e in study._load_events(done.study_directory)
+    )
+    final, _ = completion.finish(done.study_directory, identifier)
+    assert final.status == "completed"
+    saved = {p: p.read_bytes() for p in final.study_directory.rglob("*") if p.is_file()}
+    assert study.load_reference_calibration_study(final.study_directory).status == "completed"
+    again, _ = completion.finish(final.study_directory, identifier)
+    assert again == final
+    with pytest.raises(ValueError, match="different saved fit"):
+        completion.finish(final.study_directory, "different")
+    assert all(p.read_bytes() == value for p, value in saved.items())
+    # The selection's approval summary is not a replacement for the human QC journal.
+    series, _ = study._search_extension_series(final.study_directory)
+    review_path = series / "visual-reviews.json"
+    data = review_path.read_bytes()
+    review_path.unlink()
+    with pytest.raises(ValueError, match="Review"):
+        study.load_reference_calibration_study(final.study_directory)
+    review_path.write_bytes(data)
+    assert study.load_reference_calibration_study(final.study_directory).status == "completed"
+
+
+def test_legacy_receipt_finishes_with_desktop_preview_review_and_rejects_changed_binding(
+    tmp_path, monkeypatch
+):
+    import json
+
+    from test_pilot_qualification import _complete_check
+
+    _, done, _, _ = _complete_check(tmp_path, monkeypatch, legacy=True)
+    identifier = done.candidates[-1].candidate_id
+    _approve_preview(done, identifier)
+    final, _ = completion.finish(done.study_directory, identifier)
+    assert final.status == "completed"
+    series, _ = study._search_extension_series(final.study_directory)
+    path = series / "visual-reviews.json"
+    journal = json.loads(path.read_text())
+    record = journal["records"][-1]
+    record["source"]["result_sha256"] = "0" * 64
+    record["event_hash"] = study._canonical_hash(
+        {k: v for k, v in record.items() if k != "event_hash"}
+    )
+    path.write_text(json.dumps(journal), encoding="utf-8")
+    with pytest.raises(ValueError, match="source evidence changed"):
+        study.load_reference_calibration_study(final.study_directory)
 
 
 def test_fixed_check_never_optimizes_reuses_evidence_and_keeps_fresh_review(tmp_path, monkeypatch):
@@ -221,7 +289,7 @@ def test_capped_dialog_requires_recorded_qc_and_explicit_provisional_finish(tmp_
     dialog.selection_combo.setCurrentIndex(dialog.selection_combo.findData(identifier))
     assert not dialog.advance_button.isEnabled()
     assert "no optimization" in dialog.qualification_button.text()
-    _approve_for_test(done.study_directory, identifier)
+    _approve_preview(done, identifier)
     dialog._render()
     assert dialog.advance_button.isEnabled()
     assert "provisionally" in dialog.advance_button.text()
@@ -232,10 +300,28 @@ def test_capped_dialog_requires_recorded_qc_and_explicit_provisional_finish(tmp_
     dialog._advance()
     assert study.load_reference_calibration_study(done.study_directory).status == "awaiting_review"
     monkeypatch.setattr(QMessageBox, "question", lambda *a: QMessageBox.StandardButton.Yes)
+    workers = []
+    monkeypatch.setattr(dialog._thread_pool, "start", workers.append)
+    finished = []
+    dialog.finished.connect(finished.append)
+    monkeypatch.setattr(
+        study.ReferenceCalibrationStudyRunner,
+        "run_current_stage",
+        lambda *a, **k: pytest.fail("Finishing must not fit or shoot"),
+    )
+    dialog.show()
     dialog._advance()
+    assert len(workers) == 1 and dialog._worker is workers[0]
+    assert "Verifying saved pilot" in dialog.status.text()
+    assert not dialog.advance_button.isEnabled()
+    assert not dialog.cancel_button.isEnabled()
+    dialog._advance()
+    assert len(workers) == 1  # Double-click cannot dispatch another completion.
+    workers[0].run()
     assert dialog.snapshot.status == "completed"
-    assert "non-converged" in dialog.status.text()
     assert dialog._worker is None
+    assert finished == [dialog.DialogCode.Accepted]
+    assert not dialog.isVisible()
     import json
 
     audit = completion.legacy.export_audit(done.study_directory, tmp_path / "audit.json")
@@ -243,6 +329,58 @@ def test_capped_dialog_requires_recorded_qc_and_explicit_provisional_finish(tmp_
     assert exported["final_pilot_completion"]["provisional"]
     assert exported["saved_model_integration_checks"]
     dialog.close()
+    app.processEvents()
+
+
+def test_completed_dialog_has_explicit_return_to_atlas_setup(tmp_path, monkeypatch):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from diffeoforge.desktop.reference_calibration_dialog import ReferenceCalibrationDialog
+    from diffeoforge.desktop.widgets import DiffeoForgeWindow
+
+    app = QApplication.instance() or QApplication([])
+    _, done, _, identifier = _checked(tmp_path, monkeypatch, capped=True)
+    _approve_preview(done, identifier)
+    final, _ = completion.finish(done.study_directory, identifier)
+
+    @dataclass
+    class Result:
+        config_path: object
+        report_path: object = None
+
+    window = DiffeoForgeWindow()
+    window._result = Result(done.candidates[0].config_path)
+    def refresh_after_application():
+        assert window._reference_calibrated_config_path == final.final_config_path
+
+    monkeypatch.setattr(
+        window, "_refresh_reference_calibration_execution_card", refresh_after_application
+    )
+    reviewed = []
+    monkeypatch.setattr(
+        window, "_review_project", lambda: reviewed.append(window._result.config_path)
+    )
+    dialog = ReferenceCalibrationDialog(final.study_directory)
+    window._reference_calibration_dialog = dialog
+    window.centralWidget().setEnabled(False)
+    dialog.finished.connect(window._reference_calibration_closed)
+    dialog.show()
+    assert "non-converged" in dialog.status.text()
+    assert dialog.advance_button.text() == "Return to full atlas setup"
+    assert dialog.advance_button.isEnabled()
+    finished = []
+    dialog.finished.connect(finished.append)
+    dialog.advance_button.click()
+    assert finished == [dialog.DialogCode.Accepted]
+    assert window._reference_calibration_dialog is None
+    assert window.centralWidget().isEnabled()
+    assert window._result.config_path == final.final_config_path
+    assert reviewed == [final.final_config_path]
+    assert window.reference_parameter_profile_combo.currentText() == (
+        "Pilot-calibrated selection (read-only)"
+    )
+    window.close()
     app.processEvents()
 
 
