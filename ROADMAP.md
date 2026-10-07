@@ -14,6 +14,13 @@ scientific gates. Planning does not mark those gates complete.
 
 ## Pilot usability follow-up
 
+- [x] Remove full saved-pilot verification from ordinary GUI refreshes and native
+  template-preview callbacks. Resolve/check status in the background with a UI
+  cache; explicitly opening a pilot still revalidates evidence. Discard old-project
+  responses and preserve all scientific decisions. See
+  [v114 checks and measured scope](docs/V114_DESKTOP_RESPONSIVENESS.md).
+  Native interaction and broader large-mesh performance acceptance remain open.
+
 - [x] Preserve the original aligned subject cohort when a learned pilot template
   initializes the full atlas. Verify original template/seed/control bindings,
   exclude only the documented template copy, and review the original GPA cohort

@@ -14,6 +14,7 @@ _LABELS = {
     "_ReviewWorker": "Checking configuration and workload",
     "_InputPreflightWorker": "Checking mesh inputs",
     "_TemplatePreviewWorker": "Loading template",
+    "_ReferenceCalibrationOpenWorker": "Verifying saved pilot before opening",
     "_ProcrustesPreviewWorker": "Computing alignment preview",
     "_ProcrustesVisualWorker": "Loading alignment preview",
     "_ReferenceParameterWorker": "Measuring parameter starting values",

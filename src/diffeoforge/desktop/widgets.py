@@ -584,6 +584,34 @@ class _TemplatePreviewWorker(QRunnable):
         self.signals.succeeded.emit(model)
 
 
+class _ReferenceCalibrationOpenWorker(QRunnable):
+    """Resolve and verify saved pilot evidence before opening it, off the GUI thread."""
+
+    def __init__(self, config_path: Path, study_directory: Path) -> None:
+        super().__init__()
+        self.config_path = config_path
+        self.study_directory = study_directory
+        self.signals = _WorkerSignals()
+
+    @Slot()
+    def run(self) -> None:
+        try:
+            directory = self.study_directory
+            if not directory.exists():
+                create_reference_calibration_study(
+                    self.config_path, directory, pilot_max_iterations=150
+                )
+            directory = latest_reference_calibration_search_extension_directory(directory)
+            from diffeoforge.reference_sequential_fit import current_sequence_directory
+
+            directory = current_sequence_directory(directory)
+            snapshot = load_reference_calibration_study(directory)
+        except (OSError, RuntimeError, TypeError, ValueError) as error:
+            self.signals.failed.emit(str(error))
+            return
+        self.signals.succeeded.emit(snapshot)
+
+
 class _InputPreflightWorker(QRunnable):
     """Inspect selected meshes and optional landmarks without blocking the GUI."""
 
@@ -1512,6 +1540,7 @@ class DiffeoForgeWindow(QMainWindow):
             | _SetupRestoreWorker
             | _ReferenceParameterWorker
             | _ReferenceReadinessWorker
+            | _ReferenceCalibrationOpenWorker
             | _ReferencePreparationStatusWorker
             | _SavedReferencePreparationStatusVerificationWorker
             | _ResultReviewWorker
@@ -1554,6 +1583,17 @@ class DiffeoForgeWindow(QMainWindow):
         self._reference_calibration_study_directory: Path | None = None
         self._reference_calibration_dialog: ReferenceCalibrationDialog | None = None
         self._reference_calibrated_config_path: Path | None = None
+        self._pilot_status_loader = PreviewMeshLoader(self)
+        self._pilot_status_loader.loaded.connect(self._pilot_status_loaded)
+        self._pilot_status_loader.failed.connect(self._pilot_status_failed)
+        self._pilot_status_key = None
+        self._pilot_status_signature = None
+        self._pilot_status_watch_paths: tuple[Path, ...] = ()
+        self._pilot_status_snapshot = None
+        self._pilot_status_error: str | None = None
+        self._pilot_status_loading = False
+        self._pilot_context_cache = None
+        self._pilot_open_context_key = None
         self._guided_reference_calibration_requested = False
         self._template_preview_worker: _TemplatePreviewWorker | None = None
         self._template_preview_scroll_value: int | None = None
@@ -1594,6 +1634,7 @@ class DiffeoForgeWindow(QMainWindow):
         self._reference_parameter_field_pairs: list[tuple[QWidget, QWidget]] = []
         self._build_ui()
         self.statusBar().addWidget(self._thread_pool.indicator, 1)
+        self._thread_pool.indicator.bind_loader(self._pilot_status_loader, "Checking saved pilot")
         self._thread_pool.indicator.bind_loader(self._result_mesh_loader, "Loading result meshes")
         self._thread_pool.indicator.bind_loader(
             self._feature_mesh_loader, "Loading feature preview"
@@ -7344,6 +7385,7 @@ class DiffeoForgeWindow(QMainWindow):
                 self.create_button.setText(self._reference_calibration_action_text())
                 self.create_button.setEnabled(
                     self._worker is None
+                    and not self._pilot_status_loading
                     and self._reference_readiness is not None
                     and self._reference_readiness.ready
                 )
@@ -8931,11 +8973,10 @@ class DiffeoForgeWindow(QMainWindow):
         self.template_preview_status_label.setObjectName("status")
         self.template_preview_status_label.setStyleSheet("")
         self.template_preview_status_label.setText(
-            "Template geometry and unique edges are being loaded read-only outside the event loop…"
+            "Loading template preview…"
         )
         self.template_preview_detail_label.setText(
-            "The source file is hashed before and after loading. No points, faces, or files "
-            "are modified."
+            "The source mesh remains unchanged."
         )
         self._sync_ready_state()
         self._thread_pool.start(worker)
@@ -9034,58 +9075,148 @@ class DiffeoForgeWindow(QMainWindow):
         review = self._review
         if review is None or review.engine is not DesktopEngine.DEFORMETRICA_REFERENCE:
             return None
+        directory = self._reference_calibration_study_directory
+        cache_key = (
+            review.config_path, review.config_sha256, directory,
+            self._pilot_file_stamp(review.config_path),
+        )
+        if self._pilot_context_cache is not None and self._pilot_context_cache[0] == cache_key:
+            return self._pilot_context_cache[1]
         try:
             config = load_config(review.config_path)
             stored = config["project"]["parameter_provenance"]["recommendation"]["calibration_plan"]
             plan = reference_calibration_plan_from_provenance(stored)
         except (KeyError, OSError, RuntimeError, TypeError, ValueError):
             return None
-        directory = self._reference_calibration_study_directory
         if directory is None:
             directory = (
                 review.config_path.parent
                 / "calibration"
                 / f"reference-pilot-{plan.fingerprint[:12]}"
             ).resolve()
-        if directory.exists():
-            try:
-                directory = latest_reference_calibration_search_extension_directory(directory)
-                from diffeoforge.reference_sequential_fit import current_sequence_directory
+        # Resolving a saved sequence can verify all approved individual fits.
+        # It belongs in the background status/open operations, never a repaint.
+        context = plan, directory
+        self._pilot_context_cache = cache_key, context
+        return context
 
-                directory = current_sequence_directory(directory)
-            except (OSError, RuntimeError, TypeError, ValueError):
-                # Keep the known study path so the normal loader can present its
-                # precise verification error in the execution card.
-                pass
-        self._reference_calibration_study_directory = directory
-        return plan, directory
+    @staticmethod
+    def _pilot_file_stamp(path: Path):
+        try:
+            stat = path.stat()
+            return stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns
+        except OSError:
+            return None
+
+    def _pilot_status_context_key(self, context):
+        review = self._review
+        if context is None or review is None:
+            return None
+        return (
+            review.config_path, review.config_sha256, context[1],
+            self._pilot_file_stamp(review.config_path),
+        )
+
+    def _pilot_status_record_signature(self, directory: Path, extra=()):
+        paths = (
+            directory, directory.parent, directory / "study.json",
+            directory / "study.sha256", directory / "events.jsonl",
+            directory / "fit-search-latest.json", directory / "specimen-sequence.json",
+            *extra,
+        )
+        return tuple((path, self._pilot_file_stamp(path)) for path in paths)
+
+    def _saved_pilot_status(self, context):
+        """Cached UI status only; explicit opening and execution still verify evidence."""
+        key = self._pilot_status_context_key(context)
+        if key is None:
+            self._pilot_status_loader.cancel()
+            self._pilot_status_loading = False
+            return None
+        directory = context[1]
+        extra = self._pilot_status_watch_paths if key == self._pilot_status_key else ()
+        signature = self._pilot_status_record_signature(directory, extra)
+        if key == self._pilot_status_key and signature == self._pilot_status_signature:
+            return self._pilot_status_snapshot
+        self._pilot_status_key = key
+        self._pilot_status_signature = signature
+        self._pilot_status_watch_paths = extra
+        self._pilot_status_snapshot = None
+        self._pilot_status_error = None
+        self._pilot_status_loading = True
+
+        def inspect():
+            resolved = latest_reference_calibration_search_extension_directory(directory)
+            from diffeoforge.reference_calibration_study import _search_extension_series
+            from diffeoforge.reference_sequential_fit import current_sequence_directory
+
+            resolved = current_sequence_directory(resolved)
+            snapshot = load_reference_calibration_study(resolved)
+            series_root, _depth = _search_extension_series(resolved)
+            watches = (
+                resolved, resolved / "events.jsonl", resolved / "study.json",
+                series_root / "visual-reviews.json", series_root / "specimen-sequence.json",
+            )
+            return snapshot, watches
+
+        self._pilot_status_loader.request_operation(key, inspect)
+        return None
+
+    @Slot(object, object)
+    def _pilot_status_loaded(self, key, value) -> None:
+        context = self._reference_calibration_context()
+        if key != self._pilot_status_context_key(context):
+            return
+        snapshot, watches = value
+        self._pilot_status_key = key
+        self._pilot_status_watch_paths = watches
+        self._pilot_status_signature = self._pilot_status_record_signature(context[1], watches)
+        self._pilot_status_snapshot = snapshot
+        self._pilot_status_error = None
+        self._pilot_status_loading = False
+        self._sync_ready_state()
+
+    @Slot(object, str)
+    def _pilot_status_failed(self, key, error: str) -> None:
+        context = self._reference_calibration_context()
+        if key != self._pilot_status_context_key(context):
+            return
+        self._pilot_status_snapshot = None
+        self._pilot_status_error = error
+        self._pilot_status_loading = False
+        self._sync_ready_state()
 
     def _reference_calibration_pending(self) -> bool:
+        if self._reference_calibration_completed():
+            return False
         context = self._reference_calibration_context()
         if context is None:
             return False
         _plan, directory = context
         if not directory.exists():
             return True
-        try:
-            snapshot = load_reference_calibration_study(directory)
-        except (OSError, RuntimeError, TypeError, ValueError):
+        snapshot = self._saved_pilot_status(context)
+        if snapshot is None:
             return True
         return snapshot.status != "completed" or not self._reference_calibration_completed()
 
     def _reference_calibration_action_text(self) -> str:
         """Describe whether the next pilot action runs work or reviews finished work."""
 
+        if self._reference_calibration_completed():
+            return "Continue to review parameters"
         context = self._reference_calibration_context()
         if context is None:
             return "Prepare pilot calibration (recommended)"
         _plan, directory = context
         if not directory.exists():
             return "Run pilot calibration (recommended)"
-        try:
-            snapshot = load_reference_calibration_study(directory)
-        except (OSError, RuntimeError, TypeError, ValueError):
-            return "Inspect pilot calibration issue"
+        snapshot = self._saved_pilot_status(context)
+        if snapshot is None:
+            return (
+                "Inspect pilot calibration issue" if self._pilot_status_error
+                else "Checking saved pilot…"
+            )
         if snapshot.status == "completed":
             return "Apply completed pilot calibration"
         if snapshot.status == "awaiting_review":
@@ -9184,15 +9315,24 @@ class DiffeoForgeWindow(QMainWindow):
                 "is running or must pass before execution."
             )
             return
-        try:
-            snapshot = load_reference_calibration_study(directory)
-        except (OSError, RuntimeError, TypeError, ValueError) as error:
-            self.reference_calibration_execution_status.setObjectName("statusError")
+        snapshot = self._saved_pilot_status(context)
+        if snapshot is None:
+            self.reference_calibration_execution_status.setObjectName(
+                "statusError" if self._pilot_status_error else "status"
+            )
             self.reference_calibration_execution_status.setStyleSheet("")
             self.reference_calibration_execution_status.setText(
-                f"Existing calibration study did not verify: {error}"
+                f"Existing calibration study did not verify: {self._pilot_status_error}"
+                if self._pilot_status_error else "Checking saved pilot in the background…"
             )
-            self.open_reference_calibration_button.setEnabled(False)
+            self.open_reference_calibration_button.setText(
+                "Inspect pilot calibration issue" if self._pilot_status_error
+                else "Checking saved pilot…"
+            )
+            self.open_reference_calibration_button.setEnabled(
+                bool(self._pilot_status_error) and self._worker is None
+                and self._reference_readiness is not None and self._reference_readiness.ready
+            )
             return
         self.reference_calibration_execution_status.setObjectName(
             "statusSuccess" if snapshot.status == "completed" else "status"
@@ -9364,6 +9504,8 @@ class DiffeoForgeWindow(QMainWindow):
 
     @Slot()
     def _open_reference_calibration(self) -> None:
+        if self._worker is not None:
+            return
         if self._reference_calibration_dialog is not None:
             # Reuse the live controller. Only this explicit open action restores it;
             # progress/result signals never activate or raise a window.
@@ -9381,32 +9523,58 @@ class DiffeoForgeWindow(QMainWindow):
             )
             return
         _plan, directory = context
-        try:
-            if not directory.exists():
-                create_reference_calibration_study(
-                    self._review.config_path,
-                    directory,
-                    pilot_max_iterations=150,
+        worker = _ReferenceCalibrationOpenWorker(self._review.config_path, directory)
+        worker.signals.succeeded.connect(self._reference_calibration_opened)
+        worker.signals.failed.connect(self._reference_calibration_open_failed)
+        self._worker = worker
+        self._pilot_open_context_key = self._pilot_status_context_key(context)
+        self.status_label.setText("Verifying saved pilot before opening…")
+        self._sync_ready_state()
+        self._thread_pool.start(worker)
+
+    @Slot(object)
+    def _reference_calibration_opened(self, snapshot) -> None:
+        self._worker = None
+        if self._close_after_worker:
+            self._close_after_worker = False
+            self.close()
+            return
+        key = self._pilot_open_context_key
+        self._pilot_open_context_key = None
+        if key != self._pilot_status_context_key(self._reference_calibration_context()):
+            self.status_label.setText("Project changed; the saved pilot was not applied.")
+            self._sync_ready_state()
+            return
+        self._reference_calibration_study_directory = snapshot.study_directory
+        self._pilot_status_loader.cancel()
+        self._pilot_status_key = None
+        self._pilot_status_loading = False
+        if snapshot.status != "completed":
+            try:
+                dialog = ReferenceCalibrationDialog(
+                    snapshot.study_directory, verified_snapshot=snapshot
                 )
-            snapshot = load_reference_calibration_study(directory)
-            if snapshot.status != "completed":
-                dialog = ReferenceCalibrationDialog(directory)
-                # Independent windows do not inherit their former parent's theme.
-                dialog.setStyleSheet(self.styleSheet())
-                self._reference_calibration_dialog = dialog
-                dialog.finished.connect(self._reference_calibration_closed)
-                self.centralWidget().setEnabled(False)
-                dialog.show()
+            except (OSError, RuntimeError, TypeError, ValueError) as error:
+                self._reference_calibration_open_failed(str(error))
                 return
-        except (OSError, RuntimeError, TypeError, ValueError) as error:
-            QMessageBox.warning(
-                self,
-                "Pilot calibration unavailable",
-                str(error),
-            )
-            self._refresh_reference_calibration_execution_card()
+            dialog.setStyleSheet(self.styleSheet())
+            self._reference_calibration_dialog = dialog
+            dialog.finished.connect(self._reference_calibration_closed)
+            self.centralWidget().setEnabled(False)
+            dialog.show()
             return
         self._finish_reference_calibration(snapshot)
+
+    @Slot(str)
+    def _reference_calibration_open_failed(self, error: str) -> None:
+        self._worker = None
+        if self._close_after_worker:
+            self._close_after_worker = False
+            self.close()
+            return
+        self.status_label.setText(f"Saved pilot could not be opened: {error}")
+        self._sync_ready_state()
+        QMessageBox.warning(self, "Pilot calibration unavailable", error)
 
     @Slot(int)
     def _reference_calibration_closed(self, _result: int) -> None:
@@ -9420,14 +9588,10 @@ class DiffeoForgeWindow(QMainWindow):
         self._reference_calibration_study_directory = directory
         try:
             snapshot = dialog.snapshot
-            self._finish_reference_calibration(
-                snapshot
-                if (
-                    snapshot.status == "completed"
-                    and snapshot.study_directory.resolve() == directory
-                )
-                else load_reference_calibration_study(directory)
-            )
+            if snapshot.study_directory.resolve() != directory:
+                raise ValueError("Pilot snapshot belongs to a different study")
+            self._pilot_status_key = None
+            self._finish_reference_calibration(snapshot)
         except (OSError, RuntimeError, TypeError, ValueError) as error:
             QMessageBox.warning(self, "Pilot calibration unavailable", str(error))
             self._refresh_reference_calibration_execution_card()
@@ -12597,6 +12761,7 @@ class DiffeoForgeWindow(QMainWindow):
                 _PCAMetadataWorker,
                 _ReferencePCADeformationWorker,
                 _ArtifactWorker,
+                _ReferenceCalibrationOpenWorker,
             ),
         ):
             self._close_after_worker = True
@@ -12621,6 +12786,10 @@ class DiffeoForgeWindow(QMainWindow):
                 self.pca_metadata_status_label.setText(
                     "The window will remain open until metadata-analysis verification finishes."
                 )
+            elif isinstance(self._worker, _ReferenceCalibrationOpenWorker):
+                self.status_label.setText(
+                    "Closing after the saved-pilot verification finishes. No fit is running."
+                )
             else:
                 self.result_status_label.setText(
                     "The window will remain open until the artifact check finishes."
@@ -12637,6 +12806,7 @@ class DiffeoForgeWindow(QMainWindow):
             event.ignore()
             return
         self._result_mesh_loader.cancel()
+        self._pilot_status_loader.cancel()
         self.result_atlas_canvas.set_model(None)
         self.result_registration_qc_canvas.clear()
         super().closeEvent(event)

@@ -973,6 +973,8 @@ class ReferenceCalibrationDialog(QDialog):
         self,
         study_directory: Path,
         parent: QWidget | None = None,
+        *,
+        verified_snapshot: ReferenceCalibrationStudySnapshot | None = None,
     ) -> None:
         super().__init__(parent)
         self.setWindowFlags(
@@ -982,7 +984,12 @@ class ReferenceCalibrationDialog(QDialog):
         )
         self.setWindowModality(Qt.WindowModality.NonModal)
         self.study_directory = study_directory.resolve()
-        self._snapshot = load_reference_calibration_study(self.study_directory)
+        if (
+            verified_snapshot is not None
+            and verified_snapshot.study_directory.resolve() != self.study_directory
+        ):
+            raise ValueError("Verified pilot snapshot belongs to a different study")
+        self._snapshot = verified_snapshot or load_reference_calibration_study(self.study_directory)
         self._viewer_preparation = PreviewMeshLoader(self)
         self._viewer_preparation.loaded.connect(self._candidate_prepared)
         self._viewer_preparation.failed.connect(self._candidate_prepare_failed)
@@ -1316,7 +1323,7 @@ class ReferenceCalibrationDialog(QDialog):
             "Reject tries new parameters; approve continues. "
             "A combined fit is checked afterwards."
         )
-        self._render()
+        self._render(self._snapshot)
 
     @property
     def snapshot(self) -> ReferenceCalibrationStudySnapshot:

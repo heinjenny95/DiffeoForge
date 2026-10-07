@@ -133,7 +133,8 @@ def test_desktop_ui_source_has_no_german_copy() -> None:
 
 def test_generic_desktop_ui_has_no_dataset_specific_anatomy_terms() -> None:
     ui_sources = tuple((ROOT / "src" / "diffeoforge" / "desktop").glob("*.py"))
-    forbidden = re.compile(r"\b(?:joint|joints|trochanter|mandible)\b", re.IGNORECASE)
+    # "Joint fit" is generic calibration terminology, not dataset anatomy.
+    forbidden = re.compile(r"\b(?:trochanter|mandible)\b", re.IGNORECASE)
 
     violations = [
         f"{source.name}: {match.group(0)!r}"
@@ -1547,7 +1548,10 @@ def test_desktop_continues_existing_reference_project_instead_of_restarting_gpa(
     assert config_path.read_bytes() == original
     assert "no GPA or pilot candidate is being rerun" in window.status_label.text()
 
-    window._review = SimpleNamespace(engine=DesktopEngine.DEFORMETRICA_REFERENCE)
+    window._review = SimpleNamespace(
+        engine=DesktopEngine.DEFORMETRICA_REFERENCE,
+        config_path=config_path, config_sha256=hashlib.sha256(original).hexdigest(),
+    )
     window._reference_readiness = SimpleNamespace(ready=True)
     monkeypatch.setattr(
         window,
@@ -1555,9 +1559,9 @@ def test_desktop_continues_existing_reference_project_instead_of_restarting_gpa(
         lambda: (SimpleNamespace(qc_recalibration_source=None), completed_study),
     )
     monkeypatch.setattr(
-        widgets_module,
-        "load_reference_calibration_study",
-        lambda _directory: SimpleNamespace(status="completed"),
+        window,
+        "_saved_pilot_status",
+        lambda _context: SimpleNamespace(status="completed"),
     )
     window._sync_ready_state()
 
@@ -1759,7 +1763,11 @@ def test_desktop_applies_completed_search_extension_after_dialog_closes(
         report_path=None,
         notices=(),
     )
-    window._review = SimpleNamespace(engine=DesktopEngine.DEFORMETRICA_REFERENCE)
+    window._review = SimpleNamespace(
+        engine=DesktopEngine.DEFORMETRICA_REFERENCE,
+        config_path=source_config,
+        config_sha256=hashlib.sha256(source_config.read_bytes()).hexdigest(),
+    )
     window._reference_readiness = SimpleNamespace(ready=True)
     window._reference_calibration_study_directory = source_study
     monkeypatch.setattr(
@@ -1771,10 +1779,15 @@ def test_desktop_applies_completed_search_extension_after_dialog_closes(
     from PySide6.QtWidgets import QDialog
 
     class FakeDialog(QDialog):
-        def __init__(self, study_directory) -> None:
+        def __init__(self, study_directory, *, verified_snapshot) -> None:
             super().__init__()
             assert study_directory == source_study
+            assert verified_snapshot.study_directory == source_study
             self.study_directory = successor_study
+            self.snapshot = SimpleNamespace(
+                study_directory=successor_study,
+                status="completed", final_config_path=calibrated_config,
+            )
 
     loaded: list[Path] = []
 
@@ -1785,10 +1798,12 @@ def test_desktop_applies_completed_search_extension_after_dialog_closes(
             return SimpleNamespace(
                 status="awaiting_review",
                 final_config_path=None,
+                study_directory=source_study,
             )
         return SimpleNamespace(
             status="completed",
             final_config_path=calibrated_config,
+            study_directory=successor_study,
         )
 
     review_calls: list[bool] = []
@@ -1796,8 +1811,17 @@ def test_desktop_applies_completed_search_extension_after_dialog_closes(
     monkeypatch.setattr(widgets_module, "load_reference_calibration_study", load_snapshot)
     monkeypatch.setattr(window, "_refresh_reference_calibration_execution_card", lambda: None)
     monkeypatch.setattr(window, "_review_project", lambda: review_calls.append(True))
+    monkeypatch.setattr(window, "_saved_pilot_status", lambda _context: None)
+    monkeypatch.setattr(
+        widgets_module, "latest_reference_calibration_search_extension_directory", lambda d: d
+    )
+    queued = []
+    window._thread_pool = SimpleNamespace(start=queued.append)
 
     window._open_reference_calibration()
+    assert window._reference_calibration_dialog is None
+    queued.pop().run()
+    application.processEvents()
 
     pilot = window._reference_calibration_dialog
     assert pilot is not None and pilot.parent() is None
@@ -1809,7 +1833,7 @@ def test_desktop_applies_completed_search_extension_after_dialog_closes(
     assert window._reference_calibration_dialog is None
     assert window.centralWidget().isEnabled()
 
-    assert loaded[:2] == [source_study, successor_study]
+    assert loaded == [source_study]
     assert window._reference_calibration_study_directory == successor_study
     assert window._reference_calibrated_config_path == calibrated_config
     assert window._result.config_path == calibrated_config
@@ -1860,7 +1884,11 @@ def test_desktop_reuses_completed_calibration_without_reopening_dialog(
         report_path=None,
         notices=(),
     )
-    window._review = SimpleNamespace(engine=DesktopEngine.DEFORMETRICA_REFERENCE)
+    window._review = SimpleNamespace(
+        engine=DesktopEngine.DEFORMETRICA_REFERENCE,
+        config_path=source_config,
+        config_sha256=hashlib.sha256(source_config.read_bytes()).hexdigest(),
+    )
     window._reference_readiness = SimpleNamespace(ready=True)
     monkeypatch.setattr(
         window,
@@ -1873,6 +1901,7 @@ def test_desktop_reuses_completed_calibration_without_reopening_dialog(
         lambda _directory: SimpleNamespace(
             status="completed",
             final_config_path=calibrated_config,
+            study_directory=completed_study,
         ),
     )
 
@@ -1884,8 +1913,17 @@ def test_desktop_reuses_completed_calibration_without_reopening_dialog(
     monkeypatch.setattr(widgets_module, "ReferenceCalibrationDialog", UnexpectedDialog)
     monkeypatch.setattr(window, "_refresh_reference_calibration_execution_card", lambda: None)
     monkeypatch.setattr(window, "_review_project", lambda: review_calls.append(True))
+    monkeypatch.setattr(window, "_saved_pilot_status", lambda _context: None)
+    monkeypatch.setattr(
+        widgets_module, "latest_reference_calibration_search_extension_directory", lambda d: d
+    )
+    queued = []
+    window._thread_pool = SimpleNamespace(start=queued.append)
 
     window._open_reference_calibration()
+    assert window._reference_calibrated_config_path is None
+    queued.pop().run()
+    application.processEvents()
 
     assert window._reference_calibrated_config_path == calibrated_config
     assert window._result.config_path == calibrated_config

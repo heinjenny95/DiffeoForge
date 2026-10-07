@@ -1,5 +1,16 @@
 # Private-alpha build numbering
 
+## v114 — responsive template preview and saved-pilot status
+
+v114 (`0.0.0.dev114`) moves full pilot status/open verification off the GUI
+thread and reuses verified status for ordinary control updates. Explicit opening
+still rechecks evidence; dialog construction avoids duplicate verification.
+Eighty-one scoped regressions passed, with one Qt-availability skip. An offscreen
+read-only owner-template harness rendered in about 2.8 seconds while the GUI timer
+continued; control refreshes stayed under 24 milliseconds. See
+[scope and limitations](V114_DESKTOP_RESPONSIVENESS.md). Packaging/local installation
+remain separate checks; no scientific run or new anatomy decision was performed.
+
 ## v113 — learned pilot seed and aligned cohort handoff
 
 v113 (`0.0.0.dev113`) preserves the original subject cohort after applying a

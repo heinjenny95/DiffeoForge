@@ -1,4 +1,4 @@
-# Development continuity — v113 aligned-cohort handoff
+# Development continuity — v114 desktop responsiveness
 
 Snapshot: 2026-10-07. This is a public, software-only continuation guide. Detailed
 research results, local paths, account destinations and run identities belong in
@@ -20,6 +20,15 @@ correct parameters or interpret biology for the researcher. Deformetrica is the
 default supported reference route; the Modern engine remains evidence-gated.
 
 ## Current source work
+
+v114 removes repeated complete saved-pilot verification from GUI status updates
+and native template-preview callbacks. Background status checks use an invalidated
+UI cache; explicit pilot opening verifies again and supplies its snapshot to the
+dialog. Project-switch/close callbacks cannot apply old results. Eighty-one scoped
+regressions passed, with one dependency skip, plus read-only offscreen preview
+profiling and Ruff. See [scope and limitations](V114_DESKTOP_RESPONSIVENESS.md).
+Packaging, installation and native owner acceptance are tracked separately;
+no private fit or QC decision was performed.
 
 v113 distinguishes the learned pilot seed from the original aligned cohort
 template, retaining the same subjects through configuration review and atlas
