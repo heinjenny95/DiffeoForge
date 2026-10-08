@@ -22,6 +22,7 @@ from diffeoforge.analysis.reference_convergence_visualization import (
 from diffeoforge.config import ConfigurationError
 from diffeoforge.mesh import TriangleMesh, read_vtk_polydata, sha256_file
 from diffeoforge.mesh_quality import assess_triangle_mesh
+from diffeoforge.reference_export_history import verified_export_history
 from diffeoforge.result_report import RunReport, collect_run_report
 
 _ESTIMATED_TEMPLATE_MARKER = "__EstimatedParameters__Template_"
@@ -274,6 +275,11 @@ def _collect_reference_calibration_metrics_from_report(
         raise ConfigurationError(
             "Calibration run must contain exactly one estimated atlas template"
         )
+    recovery_history = None
+    objective_rows = report.convergence
+    if not objective_rows:
+        recovery_history, _paths = verified_export_history(run, report)
+        objective_rows = recovery_history.rows
     reconstructions = _inventory_vtk(report, _RECONSTRUCTION_MARKER)
     input_records = report.manifest.get("inputs")
     if not isinstance(input_records, list):
@@ -359,19 +365,21 @@ def _collect_reference_calibration_metrics_from_report(
             method="linear",
         )
     )
-    if not report.convergence:
-        raise ConfigurationError("Calibration run has no verified optimization history")
-    final = report.convergence[-1]
-    final_iteration = report.final_iteration
+    final = objective_rows[-1]
+    final_iteration = final.iteration
     log_path = run / "logs" / "deformetrica.log"
     try:
         log_text = log_path.read_text(encoding="utf-8", errors="replace")
     except OSError as error:
         raise ConfigurationError(f"Could not read calibration terminal log: {error}") from error
-    stop = detect_reference_stop_evidence(
-        log_text,
-        final_iteration=final_iteration,
-        maximum_iterations=report.max_iterations,
+    stop = (
+        recovery_history.stop
+        if recovery_history is not None
+        else detect_reference_stop_evidence(
+            log_text,
+            final_iteration=final_iteration,
+            maximum_iterations=report.max_iterations,
+        )
     )
     converged = stop.signal == "tolerance_threshold"
     notes = (
@@ -380,6 +388,11 @@ def _collect_reference_calibration_metrics_from_report(
         "Surface distances use at most 5,000 deterministic vertices per direction "
         "and are not Deformetrica's configured attachment metric.",
     )
+    if recovery_history is not None:
+        notes += (
+            "Objective terms and optimizer stop are retained original-run observations; "
+            "runtime_seconds measures only final export. No new optimization was performed.",
+        )
     return ReferenceCalibrationRunMetrics(
         metric_version="0.2",
         completed=True,

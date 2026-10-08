@@ -330,6 +330,7 @@ def test_export_only_recovery_opens_with_original_curve_and_unchanged_momenta(tm
     assert optimization["reported_stop_signal"] == "tolerance_threshold"
     assert "Retained original-run evidence" in optimization["stop_interpretation"]
     review = review_reference_result(run)
+    assert len(review.registration_qc) == bundle.manifest["inputs"]["subjects"]
     assert any(item.label == "Saved-state final export" for item in review.optimization)
     assert any(item.label == "Original fit history" for item in review.optimization)
     assert any(item.label == "Final export duration" for item in review.optimization)
