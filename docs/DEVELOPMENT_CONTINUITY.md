@@ -21,6 +21,13 @@ default supported reference route; the Modern engine remains evidence-gated.
 
 ## Current source work
 
+v117 fixes completed-result import for a verified export-only successor by using
+its hash-bound original optimizer history, retaining the unchanged-state receipt
+and distinguishing original-run duration from final export. Unknown duration
+stays unknown. Full output verification is shared only within one open operation;
+each reopening verifies again. See [contract and checks](V117_EXPORT_ONLY_RESULT_IMPORT.md).
+Installation and owner anatomical acceptance are tracked separately.
+
 The source-only saved-state final-export support tool recovers a verified stopped
 atlas whose final output failed, without re-entering gradient ascent. It retains
 the complete native trajectories in a separately protected successor. Fifty-one

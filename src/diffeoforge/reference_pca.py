@@ -39,6 +39,7 @@ from diffeoforge.analysis.shape_space import (
 )
 from diffeoforge.config import ConfigurationError
 from diffeoforge.mesh import sha256_file
+from diffeoforge.reference_export_history import read_export_history, verified_export_history
 from diffeoforge.result_report import ConvergenceRow, RunReport, collect_run_report
 from diffeoforge.runs import publish_directory_exclusive
 from diffeoforge.strict_json import load_strict_json_object
@@ -89,6 +90,7 @@ class ReferenceMomentaInput:
     subject_labels: tuple[str, ...]
     momenta: np.ndarray
     control_points: np.ndarray
+    source_hashes: Mapping[str, str]
 
     def __post_init__(self) -> None:
         for name in ("momenta", "control_points"):
@@ -114,9 +116,7 @@ def _schema(version: str) -> dict[str, Any]:
         schema["properties"]["bundle_version"] = {"const": "0.3"}
         pca_schema = schema["properties"]["pca"]
         pca_schema["required"].extend(["method_id", "method_parameters"])
-        pca_schema["properties"]["method_id"] = {
-            "enum": list(REFERENCE_PCA_METHOD_IDS)
-        }
+        pca_schema["properties"]["method_id"] = {"enum": list(REFERENCE_PCA_METHOD_IDS)}
         pca_schema["properties"]["method"] = {
             "enum": [LDDMM_METRIC_PCA_METHOD, CARTESIAN_PCA_METHOD]
         }
@@ -138,10 +138,39 @@ def _schema(version: str) -> dict[str, Any]:
                 "control_points_sha256": {"$ref": "#/$defs/sha256"},
             },
         }
+        schema["properties"]["optimization"]["properties"]["recovery"] = {
+            "type": "object",
+            "additionalProperties": False,
+            "required": [
+                "declaration",
+                "state_verification",
+                "source_result",
+                "source_run_id",
+                "checkpoint_iteration",
+                "optimizer_iterations_added",
+            ],
+            "properties": {
+                "declaration": {"$ref": "#/$defs/sourceArtifact"},
+                "state_verification": {"$ref": "#/$defs/sourceArtifact"},
+                "source_result": {"$ref": "#/$defs/sourceArtifact"},
+                "source_run_id": {"type": "string", "minLength": 1},
+                "checkpoint_iteration": {"type": "integer", "minimum": 0},
+                "optimizer_iterations_added": {"const": 0},
+            },
+        }
+        optimization_schema = schema["properties"]["optimization"]
+        optimization_schema["properties"]["duration_seconds"] = {
+            "type": ["number", "null"],
+            "minimum": 0,
+        }
+        optimization_schema["allOf"] = [
+            {
+                "if": {"properties": {"duration_seconds": {"type": "null"}}},
+                "then": {"required": ["recovery"]},
+            }
+        ]
         return schema
-    resource = files("diffeoforge.schema").joinpath(
-        f"reference-pca-bundle-v{version}.json"
-    )
+    resource = files("diffeoforge.schema").joinpath(f"reference-pca-bundle-v{version}.json")
     return json.loads(resource.read_text(encoding="utf-8"))
 
 
@@ -332,7 +361,10 @@ def load_reference_momenta(
 
     run_path = Path(run_directory).expanduser().resolve()
     try:
+        hashes = _source_hashes(run_path)
         report = collect_run_report(run_path)
+        if _source_hashes(run_path) != hashes:
+            raise ReferencePCAError("Source run metadata changed during verification")
     except (ConfigurationError, OSError, TypeError, ValueError) as error:
         raise ReferencePCAError(f"Could not verify source Deformetrica run: {error}") from error
     if report.result.get("status") != "completed":
@@ -372,7 +404,19 @@ def load_reference_momenta(
         subject_labels=labels,
         momenta=momenta,
         control_points=control_points,
+        source_hashes=hashes,
     )
+
+
+def _source_hashes(run: Path) -> dict[str, str]:
+    return {
+        name: sha256_file(run / name)
+        for name in (
+            "manifest.json",
+            "result.json",
+            "output-inventory.json",
+        )
+    }
 
 
 def _write_json_exclusive(path: Path, value: object) -> None:
@@ -434,11 +478,9 @@ def _source_run_document(inputs: ReferenceMomentaInput) -> dict[str, object]:
         "run_id": str(report.manifest["run_id"]),
         "backend_id": str(backend["id"]),
         "backend_contract_version": str(backend["contract_version"]),
-        "manifest_sha256": sha256_file(inputs.run_directory / "manifest.json"),
-        "result_sha256": sha256_file(inputs.run_directory / "result.json"),
-        "output_inventory_sha256": sha256_file(
-            inputs.run_directory / "output-inventory.json"
-        ),
+        "manifest_sha256": inputs.source_hashes["manifest.json"],
+        "result_sha256": inputs.source_hashes["result.json"],
+        "output_inventory_sha256": inputs.source_hashes["output-inventory.json"],
     }
 
 
@@ -448,8 +490,10 @@ class _ReferenceOptimizationInput:
     log_path: Path
     maximum_iterations: int
     convergence_tolerance: float
-    duration_seconds: float
+    duration_seconds: float | None
     stop_evidence: ReferenceStopEvidence
+    convergence: tuple[ConvergenceRow, ...]
+    recovery_paths: Mapping[str, Path] | None = None
 
 
 def _reference_optimization_input(
@@ -457,8 +501,23 @@ def _reference_optimization_input(
 ) -> _ReferenceOptimizationInput:
     report = inputs.run_report
     if not report.convergence:
-        raise ReferencePCAError(
-            "Reference result analysis requires at least one logged objective observation"
+        try:
+            history, paths = verified_export_history(inputs.run_directory, report)
+        except (ConfigurationError, OSError, KeyError, TypeError, ValueError) as error:
+            raise ReferencePCAError(
+                "Reference result analysis requires a logged objective history or a "
+                f"verified export-only recovery with retained original history: {error}"
+            ) from error
+        optimization = report.manifest["effective_config"]["optimization"]
+        return _ReferenceOptimizationInput(
+            paths["convergence"],
+            paths["terminal_log"],
+            int(optimization["max_iterations"]),
+            float(optimization["convergence_tolerance"]),
+            history.duration_seconds,
+            history.stop,
+            history.rows,
+            paths,
         )
     convergence_path = inputs.run_directory / "logs" / "convergence.csv"
     log_path = inputs.run_directory / "logs" / "deformetrica.log"
@@ -476,9 +535,7 @@ def _reference_optimization_input(
         )
         duration = float(report.result["duration_seconds"])
     except (KeyError, TypeError, ValueError, OSError) as error:
-        raise ReferencePCAError(
-            "Reference optimization evidence is missing or invalid"
-        ) from error
+        raise ReferencePCAError("Reference optimization evidence is missing or invalid") from error
     if not math.isfinite(tolerance) or tolerance <= 0:
         raise ReferencePCAError("Configured convergence tolerance must be positive and finite")
     if not math.isfinite(duration) or duration < 0:
@@ -495,6 +552,7 @@ def _reference_optimization_input(
         convergence_tolerance=tolerance,
         duration_seconds=duration,
         stop_evidence=stop,
+        convergence=report.convergence,
     )
 
 
@@ -516,18 +574,14 @@ def _source_file_artifact(
 def _deformation_kernel_width(inputs: ReferenceMomentaInput) -> float:
     try:
         value = float(
-            inputs.run_report.manifest["effective_config"]["model"]["deformation"][
-                "kernel_width"
-            ]
+            inputs.run_report.manifest["effective_config"]["model"]["deformation"]["kernel_width"]
         )
     except (KeyError, TypeError, ValueError) as error:
         raise ReferencePCAError(
             "The completed run does not declare its deformation kernel width"
         ) from error
     if not math.isfinite(value) or value <= 0:
-        raise ReferencePCAError(
-            "The completed run declares an invalid deformation kernel width"
-        )
+        raise ReferencePCAError("The completed run declares an invalid deformation kernel width")
     return value
 
 
@@ -560,8 +614,7 @@ def _reference_pca(
         )
         return pca, {}
     raise ReferencePCAError(
-        "Unsupported reference PCA method. Choose one of: "
-        + ", ".join(REFERENCE_PCA_METHOD_IDS)
+        "Unsupported reference PCA method. Choose one of: " + ", ".join(REFERENCE_PCA_METHOD_IDS)
     )
 
 
@@ -576,6 +629,24 @@ def write_reference_pca_bundle(
     """Atomically publish a self-contained, source-bound Deformetrica PCA bundle."""
 
     inputs = load_reference_momenta(run_directory)
+    return _write_reference_pca_bundle_from_inputs(
+        inputs,
+        destination,
+        pca_components=pca_components,
+        method_id=method_id,
+        created_at=created_at,
+    )
+
+
+def _write_reference_pca_bundle_from_inputs(
+    inputs: ReferenceMomentaInput,
+    destination: Path | str | None = None,
+    *,
+    pca_components: int | None = None,
+    method_id: str = DEFAULT_REFERENCE_PCA_METHOD_ID,
+    created_at: str | None = None,
+) -> Path:
+    """Reuse a fully verified, operation-local snapshot; never a persistent UI cache."""
     optimization = _reference_optimization_input(inputs)
     try:
         pca, method_parameters = _reference_pca(
@@ -605,6 +676,39 @@ def write_reference_pca_bundle(
         shutil.copyfile(inputs.control_points_path, raw_controls)
         shutil.copyfile(optimization.convergence_path, raw_convergence)
         shutil.copyfile(optimization.log_path, raw_log)
+        recovery_document: dict[str, object] = {}
+        if optimization.recovery_paths is not None:
+            paths = optimization.recovery_paths
+            history = read_export_history(
+                paths["declaration"],
+                paths["state_verification"],
+                paths["source_result"],
+                paths["convergence"],
+                paths["terminal_log"],
+                maximum_iterations=optimization.maximum_iterations,
+            )
+            recovery_document = {
+                "source_run_id": history.declaration["source_run_id"],
+                "checkpoint_iteration": history.declaration["checkpoint_iteration"],
+                "optimizer_iterations_added": 0,
+            }
+            for key, name, relative in (
+                ("declaration", "recovery-declaration.json", "resume/final-export-recovery.json"),
+                (
+                    "state_verification",
+                    "export-state-verification.json",
+                    "output/final-export-state-verification.json",
+                ),
+                ("source_result", "original-run-result.json", "original-source/result.json"),
+            ):
+                copied = raw_momenta.parent / name
+                shutil.copyfile(paths[key], copied)
+                recovery_document[key] = _source_file_artifact(
+                    paths[key],
+                    source_relative=relative,
+                    copied_path=copied,
+                    root=temporary,
+                )
         if sha256_file(raw_momenta) != str(inputs.momenta_record["sha256"]):
             raise ReferencePCAError("Copied momenta changed while the PCA bundle was created")
         if sha256_file(raw_controls) != str(inputs.control_points_record["sha256"]):
@@ -623,7 +727,7 @@ def write_reference_pca_bundle(
         pca_paths = write_pca_artifacts(temporary, pca)
         convergence_plot = write_reference_convergence_svg(
             temporary / "analysis" / "deformetrica-convergence.svg",
-            inputs.run_report.convergence,
+            optimization.convergence,
             maximum_iterations=optimization.maximum_iterations,
             duration_seconds=optimization.duration_seconds,
             stop_evidence=optimization.stop_evidence,
@@ -664,19 +768,27 @@ def write_reference_pca_bundle(
             "optimization": {
                 "convergence": _source_file_artifact(
                     optimization.convergence_path,
-                    source_relative="logs/convergence.csv",
+                    source_relative=(
+                        "original-source/logs/convergence.csv"
+                        if recovery_document
+                        else "logs/convergence.csv"
+                    ),
                     copied_path=raw_convergence,
                     root=temporary,
                 ),
                 "terminal_log": _source_file_artifact(
                     optimization.log_path,
-                    source_relative="logs/deformetrica.log",
+                    source_relative=(
+                        "original-source/" + str(history.declaration["native_stop_log"])
+                        if recovery_document
+                        else "logs/deformetrica.log"
+                    ),
                     copied_path=raw_log,
                     root=temporary,
                 ),
-                "observations": len(inputs.run_report.convergence),
-                "first_iteration": inputs.run_report.convergence[0].iteration,
-                "last_observed_iteration": inputs.run_report.convergence[-1].iteration,
+                "observations": len(optimization.convergence),
+                "first_iteration": optimization.convergence[0].iteration,
+                "last_observed_iteration": optimization.convergence[-1].iteration,
                 "configured_maximum_iterations": optimization.maximum_iterations,
                 "configured_convergence_tolerance": optimization.convergence_tolerance,
                 "duration_seconds": optimization.duration_seconds,
@@ -684,6 +796,7 @@ def write_reference_pca_bundle(
                 "stop_interpretation": optimization.stop_evidence.summary,
                 "final_state_visibility": optimization.stop_evidence.final_state_visibility,
                 "plot_path": convergence_plot.relative_to(temporary).as_posix(),
+                **({"recovery": recovery_document} if recovery_document else {}),
             },
             "artifacts": artifacts,
             "scientific_boundary": SCIENTIFIC_BOUNDARY,
@@ -707,9 +820,9 @@ def write_reference_pca_bundle(
             encoding="ascii",
             newline="\n",
         )
-        verify_reference_pca_bundle(temporary, source_run=inputs.run_directory)
+        _verify_reference_pca_bundle(temporary, source_inputs=inputs)
         publish_directory_exclusive(temporary, target)
-        return verify_reference_pca_bundle(target, source_run=inputs.run_directory).bundle_directory
+        return _verify_reference_pca_bundle(target, source_inputs=inputs).bundle_directory
     except Exception:
         if temporary.exists() and temporary.parent == target.parent:
             shutil.rmtree(temporary)
@@ -736,9 +849,7 @@ def _safe_bundle_path(root: Path, value: object, label: str) -> Path:
     try:
         candidate.resolve().relative_to(root.resolve())
     except ValueError as error:
-        raise ReferencePCAError(
-            f"{label} does not resolve inside the PCA bundle"
-        ) from error
+        raise ReferencePCAError(f"{label} does not resolve inside the PCA bundle") from error
     return candidate
 
 
@@ -817,8 +928,16 @@ def _verify_summary(path: Path, pca: PCAResult) -> None:
             raise ReferencePCAError(f"PCA summary {key} differs from recomputation")
 
 
-def _verify_source_binding(manifest: Mapping[str, Any], source_run: Path) -> None:
-    inputs = load_reference_momenta(source_run)
+def _verify_source_binding(manifest: Mapping[str, Any], inputs: ReferenceMomentaInput) -> None:
+    source_run = inputs.run_directory
+    if _source_hashes(source_run) != inputs.source_hashes:
+        raise ReferencePCAError("Source run metadata changed after verification")
+    for path, record in (
+        (inputs.momenta_path, inputs.momenta_record),
+        (inputs.control_points_path, inputs.control_points_record),
+    ):
+        if path.is_symlink() or sha256_file(path) != record["sha256"]:
+            raise ReferencePCAError("Source parameters changed after verification")
     if manifest["source_run"] != _source_run_document(inputs):
         raise ReferencePCAError("PCA bundle source-run hashes differ from the current run")
     if tuple(manifest["inputs"]["subject_labels"]) != inputs.subject_labels:
@@ -833,16 +952,29 @@ def _verify_source_binding(manifest: Mapping[str, Any], source_run: Path) -> Non
             abs_tol=0.0,
         )
     ):
-        raise ReferencePCAError(
-            "PCA deformation kernel width differs from the exact source run"
-        )
+        raise ReferencePCAError("PCA deformation kernel width differs from the exact source run")
     if manifest["bundle_version"] in {"0.2", "0.3"}:
         optimization = manifest["optimization"]
-        for key, path in (
-            ("convergence", source_run / "logs" / "convergence.csv"),
-            ("terminal_log", source_run / "logs" / "deformetrica.log"),
-        ):
-            record = optimization[key]
+        if "recovery" in optimization:
+            if inputs.run_report.convergence:
+                raise ReferencePCAError(
+                    "Export-only recovery unexpectedly logged new objective states"
+                )
+            try:
+                _history, paths = verified_export_history(source_run, inputs.run_report)
+            except (ConfigurationError, OSError, KeyError, TypeError, ValueError) as error:
+                raise ReferencePCAError(f"Recovery source binding failed: {error}") from error
+        else:
+            paths = {
+                "convergence": source_run / "logs/convergence.csv",
+                "terminal_log": source_run / "logs/deformetrica.log",
+            }
+        for key, path in paths.items():
+            record = (
+                optimization[key]
+                if key in {"convergence", "terminal_log"}
+                else optimization["recovery"][key]
+            )
             if (
                 path.is_symlink()
                 or not path.is_file()
@@ -884,8 +1016,7 @@ def _read_convergence_rows(path: Path) -> tuple[ConvergenceRow, ...]:
             )
         parsed.append(item)
     if not parsed or any(
-        right.iteration <= left.iteration
-        for left, right in zip(parsed, parsed[1:], strict=False)
+        right.iteration <= left.iteration for left, right in zip(parsed, parsed[1:], strict=False)
     ):
         raise ReferencePCAError(
             "Copied Deformetrica convergence iterations are empty or not strictly increasing"
@@ -915,11 +1046,40 @@ def _verify_optimization(root: Path, manifest: Mapping[str, Any]) -> None:
             raise ReferencePCAError(f"Copied Deformetrica {label} differs from source hash")
     convergence = _read_convergence_rows(convergence_path)
     maximum = int(document["configured_maximum_iterations"])
-    stop = detect_reference_stop_evidence(
-        log_path.read_text(encoding="utf-8", errors="replace"),
-        final_iteration=convergence[-1].iteration,
-        maximum_iterations=maximum,
-    )
+    if "recovery" in document:
+        recovery = document["recovery"]
+        copied_paths = {}
+        for key in ("declaration", "state_verification", "source_result"):
+            record = recovery[key]
+            path = _safe_bundle_path(root, record["copied_path"], "Copied recovery evidence")
+            if path.stat().st_size != record["bytes"] or sha256_file(path) != record["sha256"]:
+                raise ReferencePCAError("Copied recovery evidence differs from its source hash")
+            copied_paths[key] = path
+        try:
+            history = read_export_history(
+                copied_paths["declaration"],
+                copied_paths["state_verification"],
+                copied_paths["source_result"],
+                convergence_path,
+                log_path,
+                maximum_iterations=maximum,
+            )
+        except (ConfigurationError, OSError, KeyError, TypeError, ValueError) as error:
+            raise ReferencePCAError(f"Copied recovery history failed: {error}") from error
+        if (
+            recovery["source_run_id"] != history.declaration["source_run_id"]
+            or recovery["checkpoint_iteration"] != history.declaration["checkpoint_iteration"]
+            or recovery["optimizer_iterations_added"] != 0
+            or document["duration_seconds"] != history.duration_seconds
+        ):
+            raise ReferencePCAError("Recovery summary differs from the retained source evidence")
+        stop = history.stop
+    else:
+        stop = detect_reference_stop_evidence(
+            log_path.read_text(encoding="utf-8", errors="replace"),
+            final_iteration=convergence[-1].iteration,
+            maximum_iterations=maximum,
+        )
     expected_identity = {
         "observations": len(convergence),
         "first_iteration": convergence[0].iteration,
@@ -936,7 +1096,9 @@ def _verify_optimization(root: Path, manifest: Mapping[str, Any]) -> None:
     expected_svg = reference_convergence_svg(
         convergence,
         maximum_iterations=maximum,
-        duration_seconds=float(document["duration_seconds"]),
+        duration_seconds=(
+            None if document["duration_seconds"] is None else float(document["duration_seconds"])
+        ),
         stop_evidence=stop,
     )
     try:
@@ -953,6 +1115,16 @@ def verify_reference_pca_bundle(
     bundle_directory: Path | str,
     *,
     source_run: Path | str | None = None,
+) -> ReferencePCABundle:
+    """Fully verify an analysis bundle and, when requested, all source output files."""
+    inputs = None if source_run is None else load_reference_momenta(source_run)
+    return _verify_reference_pca_bundle(bundle_directory, source_inputs=inputs)
+
+
+def _verify_reference_pca_bundle(
+    bundle_directory: Path | str,
+    *,
+    source_inputs: ReferenceMomentaInput | None = None,
 ) -> ReferencePCABundle:
     """Verify bundle inventory and recompute PCA from its copied raw parameters."""
 
@@ -992,8 +1164,7 @@ def verify_reference_pca_bundle(
     actual = {
         path.relative_to(root).as_posix()
         for path in root.rglob("*")
-        if path.is_file()
-        and path.name not in {REFERENCE_PCA_MANIFEST, REFERENCE_PCA_SIDECAR}
+        if path.is_file() and path.name not in {REFERENCE_PCA_MANIFEST, REFERENCE_PCA_SIDECAR}
     }
     if actual != declared:
         raise ReferencePCAError("PCA artifact inventory is incomplete or lists absent files")
@@ -1018,15 +1189,17 @@ def verify_reference_pca_bundle(
         ):
             raise ReferencePCAError(f"Copied raw Deformetrica {label} differs from source hash")
     momenta = read_deformetrica_momenta(raw_momenta)
-    control_points = read_deformetrica_control_points(
-        raw_controls, expected_count=momenta.shape[1]
-    )
+    control_points = read_deformetrica_control_points(raw_controls, expected_count=momenta.shape[1])
     labels = tuple(input_document["subject_labels"])
-    if momenta.shape != (
-        int(input_document["subjects"]),
-        int(input_document["control_point_count"]),
-        3,
-    ) or len(labels) != momenta.shape[0]:
+    if (
+        momenta.shape
+        != (
+            int(input_document["subjects"]),
+            int(input_document["control_point_count"]),
+            3,
+        )
+        or len(labels) != momenta.shape[0]
+    ):
         raise ReferencePCAError("Copied raw parameters differ from declared dimensions")
     try:
         if manifest["bundle_version"] == "0.3":
@@ -1047,9 +1220,7 @@ def verify_reference_pca_bundle(
                 pca = lddmm_metric_momenta_pca(
                     np.array(momenta, dtype=np.float64, copy=True),
                     np.array(control_points, dtype=np.float64, copy=True),
-                    deformation_kernel_width=float(
-                        method_parameters["deformation_kernel_width"]
-                    ),
+                    deformation_kernel_width=float(method_parameters["deformation_kernel_width"]),
                     n_components=int(manifest["pca"]["components"]),
                     subject_labels=labels,
                 )
@@ -1112,6 +1283,6 @@ def verify_reference_pca_bundle(
     )
     if manifest["bundle_version"] in {"0.2", "0.3"}:
         _verify_optimization(root, manifest)
-    if source_run is not None:
-        _verify_source_binding(manifest, Path(source_run).expanduser().resolve())
+    if source_inputs is not None:
+        _verify_source_binding(manifest, source_inputs)
     return ReferencePCABundle(root, manifest, pca)

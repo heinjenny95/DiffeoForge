@@ -62,6 +62,11 @@ evidence describes optimization; an empty successor convergence curve must not b
 interpreted as a fresh convergence test. The original checkpoint remains the
 authoritative saved fit.
 
+Desktop v117 can open such a completed successor for QC and analysis. It verifies
+the protected recovery evidence and displays the retained original history without
+adding observations to the successor's immutable logs. See
+[import contract and limitations](V117_EXPORT_ONLY_RESULT_IMPORT.md).
+
 ## Verification and limits
 
 Seven targeted cases and the run lifecycle/recovery suite passed together:

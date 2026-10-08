@@ -23,14 +23,15 @@ from diffeoforge.desktop.result_review import (
 from diffeoforge.mesh import sha256_file
 from diffeoforge.reference_calibration_metrics import (
     ReferenceCalibrationRunMetrics,
-    collect_reference_calibration_run_metrics,
+    _collect_reference_calibration_metrics_from_report,
 )
 from diffeoforge.reference_pca import (
     DEFAULT_REFERENCE_PCA_DIRECTORY,
     REFERENCE_PCA_MANIFEST,
     ReferencePCAError,
-    verify_reference_pca_bundle,
-    write_reference_pca_bundle,
+    _verify_reference_pca_bundle,
+    _write_reference_pca_bundle_from_inputs,
+    load_reference_momenta,
 )
 from diffeoforge.reference_pca_deformations import (
     DEFAULT_RESULT_DIRECTORY as DEFAULT_PCA_DEFORMATION_RESULT_DIRECTORY,
@@ -42,7 +43,6 @@ from diffeoforge.reference_pca_deformations import (
     ReferencePCADeformationError,
     verify_reference_pca_deformation_result,
 )
-from diffeoforge.result_report import collect_run_report
 
 _PCA_DISPLAY_LIMIT = 10
 _ESTIMATED_TEMPLATE_MARKER = "__EstimatedParameters__Template_"
@@ -539,10 +539,11 @@ def review_reference_result(
     if progress_callback is not None:
         progress_callback(0, 0, "Verifying run files and PCA provenance")
     try:
+        source_inputs = load_reference_momenta(run)
         if create_pca_if_missing and not bundle_directory.exists():
-            write_reference_pca_bundle(run)
-        verified = verify_reference_pca_bundle(bundle_directory, source_run=run)
-        report = collect_run_report(run)
+            _write_reference_pca_bundle_from_inputs(source_inputs)
+        verified = _verify_reference_pca_bundle(bundle_directory, source_inputs=source_inputs)
+        report = source_inputs.run_report
     except (OSError, RuntimeError, TypeError, ValueError, ReferencePCAError) as error:
         raise ModernResultReviewError(
             f"Deformetrica result and momenta PCA did not verify: {error}"
@@ -572,8 +573,8 @@ def review_reference_result(
     qc_metrics: ReferenceCalibrationRunMetrics | None = None
     qc_unavailable_reason: str | None = None
     try:
-        qc_metrics = collect_reference_calibration_run_metrics(
-            run, progress_callback=progress_callback
+        qc_metrics = _collect_reference_calibration_metrics_from_report(
+            report, progress_callback=progress_callback
         )
     except (OSError, RuntimeError, TypeError, ValueError) as error:
         qc_unavailable_reason = str(error)
@@ -953,7 +954,8 @@ def review_reference_result(
     configured_max = int(optimization_evidence["configured_maximum_iterations"])
     final_iteration = int(optimization_evidence["last_observed_iteration"])
     observations = int(optimization_evidence["observations"])
-    duration_seconds = float(optimization_evidence["duration_seconds"])
+    raw_duration = optimization_evidence["duration_seconds"]
+    duration_seconds = None if raw_duration is None else float(raw_duration)
     total_output_bytes = sum(int(record["bytes"]) for record in report.inventory)
     passed_checks = sum(check.status == "pass" for check in report.checks)
     project_name = str(report.manifest["project"]["name"])
@@ -996,14 +998,16 @@ def review_reference_result(
             "Terminal engine execution state independently verified by the parent.",
         ),
         ResultReviewItem(
-            "Observed iterations",
+            "Original fit history"
+            if "recovery" in optimization_evidence
+            else "Observed iterations",
             f"{observations} logged states · last iteration {final_iteration} "
             f"of maximum {configured_max}",
             "The maximum is an upper limit, not a convergence target.",
         ),
         ResultReviewItem(
-            "Duration",
-            _format_duration(duration_seconds),
+            "Original run duration" if "recovery" in optimization_evidence else "Duration",
+            "not recorded" if duration_seconds is None else _format_duration(duration_seconds),
             "Measured wall-clock duration stored in terminal run evidence.",
         ),
         ResultReviewItem(
@@ -1017,6 +1021,21 @@ def review_reference_result(
             str(optimization_evidence["final_state_visibility"]),
         ),
     )
+    if "recovery" in optimization_evidence:
+        recovery = optimization_evidence["recovery"]
+        optimization += (
+            ResultReviewItem(
+                "Saved-state final export",
+                f"iteration {recovery['checkpoint_iteration']} · 0 new optimizer iterations",
+                "The protected unchanged-state receipt was checked; the curve is retained "
+                "from the original optimizer run, not a new convergence test.",
+            ),
+            ResultReviewItem(
+                "Final export duration",
+                _format_duration(float(result["duration_seconds"])),
+                "Time spent writing the recovered outputs, separate from the original run.",
+            ),
+        )
     quality_items = [
         ResultReviewItem(
             "Run evidence",

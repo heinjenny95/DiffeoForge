@@ -14,6 +14,12 @@ scientific gates. Planning does not mark those gates complete.
 
 ## Pilot usability follow-up
 
+- [x] Open a verified export-only successor for anatomical QC and momenta analysis
+  with its protected original optimizer history and unchanged-state receipt.
+  Display original history, saved iteration and export duration separately;
+  reuse full verification only within one result-open operation. See
+  [v117 import contract](docs/V117_EXPORT_ONLY_RESULT_IMPORT.md).
+
 - [x] Provide a source support tool for final-export failures after a verified
   native stop: restore the unchanged saved state in a separate protected
   successor, reserve complete output space and skip further optimization.

@@ -138,9 +138,8 @@ def _safe_staged_input_path(run: Path, record: object) -> Path:
     geometry = record.get("geometry")
     if not isinstance(geometry, dict):
         raise ConfigurationError(f"Staged run input lacks geometry evidence: {relative}")
-    if (
-        path.stat().st_size != int(geometry.get("bytes", -1))
-        or sha256_file(path) != str(geometry.get("sha256", ""))
+    if path.stat().st_size != int(geometry.get("bytes", -1)) or sha256_file(path) != str(
+        geometry.get("sha256", "")
     ):
         raise ConfigurationError(f"Staged run input changed after preparation: {relative}")
     return path
@@ -230,9 +229,7 @@ def _surface_log_area_distortion(
 
 def _subject_from_reconstruction_name(name: str) -> str:
     if _SUBJECT_MARKER not in name:
-        raise ConfigurationError(
-            f"Could not identify subject in reconstruction filename: {name}"
-        )
+        raise ConfigurationError(f"Could not identify subject in reconstruction filename: {name}")
     value = name.split(_SUBJECT_MARKER, 1)[1]
     if not value.casefold().endswith(".vtk"):
         raise ConfigurationError(f"Unexpected reconstruction extension: {name}")
@@ -243,9 +240,7 @@ def _run_duration(report: RunReport) -> float:
     try:
         value = float(report.result["duration_seconds"])
     except (KeyError, TypeError, ValueError) as error:
-        raise ConfigurationError(
-            "Calibration result does not contain a valid duration"
-        ) from error
+        raise ConfigurationError("Calibration result does not contain a valid duration") from error
     if not math.isfinite(value) or value < 0:
         raise ConfigurationError("Calibration result duration is invalid")
     return value
@@ -260,10 +255,20 @@ def collect_reference_calibration_run_metrics(
 
     run = Path(run_directory).expanduser().resolve()
     report = collect_run_report(run)
+    return _collect_reference_calibration_metrics_from_report(
+        report, progress_callback=progress_callback
+    )
+
+
+def _collect_reference_calibration_metrics_from_report(
+    report: RunReport,
+    *,
+    progress_callback: Callable[[int, int, str], None] | None = None,
+) -> ReferenceCalibrationRunMetrics:
+    """Derive QC from the full report already verified in this open operation."""
+    run = report.run_directory
     if report.result["status"] != "completed":
-        raise ConfigurationError(
-            "Automatic calibration metrics require a completed pilot run"
-        )
+        raise ConfigurationError("Automatic calibration metrics require a completed pilot run")
     templates = _inventory_vtk(report, _ESTIMATED_TEMPLATE_MARKER)
     if len(templates) != 1:
         raise ConfigurationError(
@@ -315,9 +320,7 @@ def collect_reference_calibration_run_metrics(
         nonlocal invalid_faces
         quality = assess_triangle_mesh(surface.vertices, surface.triangles)
         invalid_faces += (
-            quality.zero_area_faces
-            + quality.zero_length_edge_faces
-            + quality.undefined_angle_faces
+            quality.zero_area_faces + quality.zero_length_edge_faces + quality.undefined_angle_faces
         )
         distortion_parts.append(_surface_log_area_distortion(initial_template, surface))
 
@@ -357,18 +360,14 @@ def collect_reference_calibration_run_metrics(
         )
     )
     if not report.convergence:
-        raise ConfigurationError(
-            "Calibration run has no verified optimization history"
-        )
+        raise ConfigurationError("Calibration run has no verified optimization history")
     final = report.convergence[-1]
     final_iteration = report.final_iteration
     log_path = run / "logs" / "deformetrica.log"
     try:
         log_text = log_path.read_text(encoding="utf-8", errors="replace")
     except OSError as error:
-        raise ConfigurationError(
-            f"Could not read calibration terminal log: {error}"
-        ) from error
+        raise ConfigurationError(f"Could not read calibration terminal log: {error}") from error
     stop = detect_reference_stop_evidence(
         log_text,
         final_iteration=final_iteration,
@@ -409,11 +408,7 @@ def atlas_rms_distance(first_path: Path | str, second_path: Path | str) -> float
 
     first = read_vtk_polydata(first_path)
     second = read_vtk_polydata(second_path)
-    if first.triangles != second.triangles or len(first.vertices) != len(
-        second.vertices
-    ):
-        raise ConfigurationError(
-            "Numerical atlas comparison requires identical ordered topology"
-        )
+    if first.triangles != second.triangles or len(first.vertices) != len(second.vertices):
+        raise ConfigurationError("Numerical atlas comparison requires identical ordered topology")
     difference = np.asarray(first.vertices) - np.asarray(second.vertices)
     return float(np.sqrt(np.mean(np.sum(difference**2, axis=1))))

@@ -141,7 +141,7 @@ def reference_convergence_svg(
     rows: Sequence[ConvergenceRow],
     *,
     maximum_iterations: int,
-    duration_seconds: float,
+    duration_seconds: float | None,
     stop_evidence: ReferenceStopEvidence,
 ) -> str:
     """Return a fixed-layout, script-free objective-history SVG."""
@@ -151,12 +151,12 @@ def reference_convergence_svg(
         raise ValueError("at least one convergence observation is required")
     if maximum_iterations < 1:
         raise ValueError("maximum_iterations must be positive")
-    if not math.isfinite(duration_seconds) or duration_seconds < 0:
+    if duration_seconds is not None and (
+        not math.isfinite(duration_seconds) or duration_seconds < 0
+    ):
         raise ValueError("duration_seconds must be finite and nonnegative")
     iterations = tuple(row.iteration for row in observations)
-    if any(
-        right <= left for left, right in zip(iterations, iterations[1:], strict=False)
-    ):
+    if any(right <= left for left, right in zip(iterations, iterations[1:], strict=False)):
         raise ValueError("convergence iterations must be strictly increasing")
     series = tuple(
         tuple(float(getattr(row, name)) for row in observations)
@@ -166,6 +166,9 @@ def reference_convergence_svg(
         raise ValueError("convergence values must be finite")
 
     x_low, x_high = iterations[0], iterations[-1]
+    runtime_text = (
+        "runtime not recorded" if duration_seconds is None else f"runtime {duration_seconds:.1f} s"
+    )
     upper_top, upper_height = 105.0, 245.0
     lower_top, lower_height = 430.0, 155.0
     upper_low, upper_high = _extent((*series[0], *series[1]))
@@ -175,8 +178,8 @@ def reference_convergence_svg(
         '  <text x="92" y="42" class="title">Deformetrica objective history</text>',
         (
             f'  <text x="92" y="68" class="subtitle">{len(observations)} logged states; '
-            f'last logged iteration {x_high} of maximum {maximum_iterations}; runtime '
-            f'{duration_seconds:.1f} s</text>'
+            f"last logged iteration {x_high} of maximum {maximum_iterations}; "
+            f"{runtime_text}</text>"
         ),
     ]
     for top, height, low, high in (
@@ -256,11 +259,11 @@ def reference_convergence_svg(
             'transform="rotate(-90 28 507)">Regularity</text>',
             (
                 f'  <text x="92" y="674" class="note">Stop signal: '
-                f'{html.escape(stop_evidence.signal.replace("_", " "))}. '
-                f'{html.escape(stop_evidence.final_state_visibility)}</text>'
+                f"{html.escape(stop_evidence.signal.replace('_', ' '))}. "
+                f"{html.escape(stop_evidence.final_state_visibility)}</text>"
             ),
             '  <text x="92" y="699" class="note">A completed or improving curve does not '
-            'by itself establish adequate registration or scientific convergence.</text>',
+            "by itself establish adequate registration or scientific convergence.</text>",
         ]
     )
     return "\n".join(
@@ -296,7 +299,7 @@ def write_reference_convergence_svg(
     rows: Sequence[ConvergenceRow],
     *,
     maximum_iterations: int,
-    duration_seconds: float,
+    duration_seconds: float | None,
     stop_evidence: ReferenceStopEvidence,
 ) -> Path:
     destination = Path(path)

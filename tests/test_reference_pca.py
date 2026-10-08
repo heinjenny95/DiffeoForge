@@ -12,6 +12,8 @@ import numpy as np
 import pytest
 import yaml
 
+import diffeoforge.reference_calibration_metrics as calibration_metrics_module
+import diffeoforge.reference_pca as reference_pca_module
 import diffeoforge.reference_pca_deformations as deformation_module
 import diffeoforge.reference_shape_space_comparison as comparison_module
 from diffeoforge.cli import main
@@ -216,6 +218,287 @@ def _completed_reference_run(tmp_path: Path, *, linear_momenta: bool = False) ->
             + "\n"
         )
     return run
+
+
+def _reseal_export_fixture(run: Path) -> None:
+    manifest_path = run / "manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    for record in manifest["protected_artifacts"]:
+        path = run / record["path"]
+        record.update(bytes=path.stat().st_size, sha256=sha256_file(path))
+    manifest_path.write_text(json.dumps(manifest))
+    (run / "manifest.sha256").write_text(sha256_file(manifest_path) + "\n")
+    inventory_path = run / "output-inventory.json"
+    inventory = json.loads(inventory_path.read_text())
+    inventory["files"] = [
+        {
+            "path": path.relative_to(run / "output").as_posix(),
+            "bytes": path.stat().st_size,
+            "sha256": sha256_file(path),
+        }
+        for path in sorted((run / "output").rglob("*"))
+        if path.is_file()
+    ]
+    inventory_path.write_text(json.dumps(inventory))
+    result_path = run / "result.json"
+    result = json.loads(result_path.read_text())
+    result["convergence_rows"] = 0
+    result["outputs"].update(
+        file_count=len(inventory["files"]),
+        total_bytes=sum(record["bytes"] for record in inventory["files"]),
+        inventory_sha256=sha256_file(inventory_path),
+    )
+    result_path.write_text(json.dumps(result))
+
+
+def _completed_export_recovery(tmp_path: Path) -> tuple[Path, Path]:
+    source = _completed_reference_run(tmp_path / "original")
+    source_result_path = source / "result.json"
+    source_result = json.loads(source_result_path.read_text())
+    source_result.update(status="interrupted", return_code=None)
+    source_result_path.write_text(json.dumps(source_result))
+    native_log = source / "output/native_info.log"
+    native_log.write_text(
+        "-------- Iteration: 0 --------\n"
+        "Log-likelihood = -10 [ attachment = -9.5 ; regularity = -0.5 ]\n"
+        "-------- Iteration: 1 --------\n"
+        "Log-likelihood = -8 [ attachment = -7.4 ; regularity = -0.6 ]\n"
+        "Tolerance threshold met. Stopping the optimization process.\n"
+    )
+    checkpoint = source / "output/deformetrica-state.p"
+    checkpoint.write_bytes(b"opaque native checkpoint fixture")
+    run = _completed_reference_run(tmp_path / "export")
+    (run / "logs/convergence.csv").write_text("iteration,log_likelihood,attachment,regularity\n")
+    (run / "logs/deformetrica.log").write_text("Saved-state export; optimization skipped\n")
+    (run / "resume").mkdir()
+    shutil.copyfile(checkpoint, run / "resume/source-checkpoint.p")
+    declaration = {
+        "schema_version": "0.1",
+        "operation": "saved_state_final_export",
+        "source_run_id": source.name,
+        "source_run_path": str(source),
+        "source_manifest_sha256": sha256_file(source / "manifest.json"),
+        "source_result_sha256": sha256_file(source_result_path),
+        "checkpoint_iteration": 2,
+        "checkpoint_sha256": sha256_file(checkpoint),
+        "native_stop": "native_tolerance",
+        "native_stop_log": "output/native_info.log",
+        "native_stop_log_sha256": sha256_file(native_log),
+    }
+    declaration_path = run / "resume/final-export-recovery.json"
+    declaration_path.write_text(json.dumps(declaration))
+    (run / "output/final-export-state-verification.json").write_text(
+        json.dumps(
+            {
+                "operation": "saved_state_final_export",
+                "optimization_executed": False,
+                "parameters_unchanged": True,
+                "original_native_writer_used": True,
+                "all_flow_timepoints_retained": True,
+                "checkpoint_iteration": 2,
+            }
+        )
+    )
+    manifest_path = run / "manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    manifest["protected_artifacts"].extend(
+        [
+            {"path": path, "bytes": (run / path).stat().st_size, "sha256": sha256_file(run / path)}
+            for path in ("resume/source-checkpoint.p", "resume/final-export-recovery.json")
+        ]
+    )
+    manifest_path.write_text(json.dumps(manifest))
+    _reseal_export_fixture(run)
+    return run, source
+
+
+def test_export_only_recovery_opens_with_original_curve_and_unchanged_momenta(tmp_path):
+    run, source = _completed_export_recovery(tmp_path)
+    before = {
+        path: sha256_file(path)
+        for root in (run, source)
+        for path in root.rglob("*")
+        if path.is_file()
+    }
+    bundle_path = write_reference_pca_bundle(run)
+    bundle = verify_reference_pca_bundle(bundle_path, source_run=run)
+    optimization = bundle.manifest["optimization"]
+    assert optimization["observations"] == 2
+    assert optimization["last_observed_iteration"] == 1
+    assert optimization["recovery"]["checkpoint_iteration"] == 2
+    assert optimization["recovery"]["optimizer_iterations_added"] == 0
+    assert optimization["reported_stop_signal"] == "tolerance_threshold"
+    assert "Retained original-run evidence" in optimization["stop_interpretation"]
+    review = review_reference_result(run)
+    assert any(item.label == "Saved-state final export" for item in review.optimization)
+    assert any(item.label == "Original fit history" for item in review.optimization)
+    assert any(item.label == "Final export duration" for item in review.optimization)
+    source_momenta = next((source / "output").glob("*__EstimatedParameters__Momenta.txt"))
+    np.testing.assert_array_equal(
+        read_deformetrica_momenta(source_momenta), load_reference_momenta(run).momenta
+    )
+    for path, digest in before.items():
+        assert sha256_file(path) == digest
+
+
+@pytest.mark.parametrize(
+    "fault",
+    [
+        "unprotected",
+        "changed_log",
+        "changed_csv",
+        "changed_state",
+        "checkpoint",
+        "missing_source",
+        "wrong_stop",
+    ],
+)
+def test_export_history_rejects_unbound_or_inconsistent_recovery(tmp_path, fault):
+    run, source = _completed_export_recovery(tmp_path)
+    declaration_path = run / "resume/final-export-recovery.json"
+    declaration = json.loads(declaration_path.read_text())
+    if fault == "unprotected":
+        manifest_path = run / "manifest.json"
+        manifest = json.loads(manifest_path.read_text())
+        manifest["protected_artifacts"] = [
+            record
+            for record in manifest["protected_artifacts"]
+            if record["path"] != "resume/final-export-recovery.json"
+        ]
+        manifest_path.write_text(json.dumps(manifest))
+    elif fault == "changed_log":
+        with (source / "output/native_info.log").open("a") as handle:
+            handle.write("Changed original log\n")
+    elif fault == "changed_csv":
+        (source / "logs/convergence.csv").write_text(
+            "iteration,log_likelihood,attachment,regularity\n0,-99,-90,-9\n"
+        )
+    elif fault == "changed_state":
+        receipt_path = run / "output/final-export-state-verification.json"
+        receipt = json.loads(receipt_path.read_text())
+        receipt["optimization_executed"] = True
+        receipt_path.write_text(json.dumps(receipt))
+    elif fault == "checkpoint":
+        declaration["checkpoint_sha256"] = "0" * 64
+    elif fault == "missing_source":
+        declaration["source_run_path"] = str(tmp_path / "missing" / source.name)
+    else:
+        declaration["native_stop"] = "iteration_limit"
+    declaration_path.write_text(json.dumps(declaration))
+    _reseal_export_fixture(run)
+    with pytest.raises(ReferencePCAError, match="verified export-only recovery"):
+        write_reference_pca_bundle(run)
+
+
+def test_ordinary_run_without_objective_history_remains_blocked(tmp_path):
+    run = _completed_reference_run(tmp_path)
+    (run / "logs/convergence.csv").write_text("iteration,log_likelihood,attachment,regularity\n")
+    _reseal_export_fixture(run)
+    with pytest.raises(ReferencePCAError, match="logged objective history"):
+        write_reference_pca_bundle(run)
+
+
+def test_result_open_verifies_full_source_once_and_each_reopen_verifies_again(
+    tmp_path, monkeypatch
+):
+    run, _source = _completed_export_recovery(tmp_path)
+    original = reference_pca_module.collect_run_report
+    calls = []
+
+    def counted(path):
+        calls.append(path)
+        return original(path)
+
+    monkeypatch.setattr(reference_pca_module, "collect_run_report", counted)
+    monkeypatch.setattr(calibration_metrics_module, "collect_run_report", counted)
+    review_reference_result(run)
+    assert len(calls) == 1
+    review_reference_result(run)
+    assert len(calls) == 2
+
+
+def test_operation_local_snapshot_detects_source_parameter_change(tmp_path):
+    run = _completed_reference_run(tmp_path)
+    inputs = load_reference_momenta(run)
+    with inputs.momenta_path.open("a") as handle:
+        handle.write("0 0 0\n")
+    with pytest.raises(ReferencePCAError, match="Copied momenta changed"):
+        reference_pca_module._write_reference_pca_bundle_from_inputs(inputs)
+
+
+def test_recovered_iteration_cap_is_not_relabelled_converged(tmp_path):
+    run, source = _completed_export_recovery(tmp_path)
+    (source / "logs/convergence.csv").write_text(
+        "iteration,log_likelihood,attachment,regularity\n98,-10,-9.5,-0.5\n99,-8,-7.4,-0.6\n"
+    )
+    native_log = source / "output/native_info.log"
+    native_log.write_text(
+        "-------- Iteration: 98 --------\n"
+        "Log-likelihood = -10 [ attachment = -9.5 ; regularity = -0.5 ]\n"
+        "-------- Iteration: 99 --------\n"
+        "Log-likelihood = -8 [ attachment = -7.4 ; regularity = -0.6 ]\n"
+        "Maximum number of iterations reached\n"
+    )
+    declaration_path = run / "resume/final-export-recovery.json"
+    declaration = json.loads(declaration_path.read_text())
+    declaration.update(
+        checkpoint_iteration=100,
+        native_stop="iteration_limit",
+        native_stop_log_sha256=sha256_file(native_log),
+    )
+    declaration_path.write_text(json.dumps(declaration))
+    receipt_path = run / "output/final-export-state-verification.json"
+    receipt = json.loads(receipt_path.read_text())
+    receipt["checkpoint_iteration"] = 100
+    receipt_path.write_text(json.dumps(receipt))
+    _reseal_export_fixture(run)
+    bundle = verify_reference_pca_bundle(write_reference_pca_bundle(run), source_run=run)
+    assert bundle.manifest["optimization"]["reported_stop_signal"] == "maximum_iterations"
+    assert "not convergence" in bundle.manifest["optimization"]["stop_interpretation"]
+
+
+def test_recovery_with_unknown_original_duration_keeps_it_unknown(tmp_path):
+    run, source = _completed_export_recovery(tmp_path)
+    result_path = source / "result.json"
+    result = json.loads(result_path.read_text())
+    result["duration_seconds"] = None
+    result_path.write_text(json.dumps(result))
+    declaration_path = run / "resume/final-export-recovery.json"
+    declaration = json.loads(declaration_path.read_text())
+    declaration["source_result_sha256"] = sha256_file(result_path)
+    declaration_path.write_text(json.dumps(declaration))
+    _reseal_export_fixture(run)
+    bundle_path = write_reference_pca_bundle(run)
+    bundle = verify_reference_pca_bundle(bundle_path, source_run=run)
+    assert bundle.manifest["optimization"]["duration_seconds"] is None
+    assert (
+        "runtime not recorded"
+        in (bundle_path / "analysis/deformetrica-convergence.svg").read_text()
+    )
+    review = review_reference_result(run)
+    assert (
+        next(item for item in review.optimization if item.label == "Original run duration").value
+        == "not recorded"
+    )
+
+
+def test_recovery_bundle_rechecks_receipt_even_when_copies_are_resigned(tmp_path):
+    run, _source = _completed_export_recovery(tmp_path)
+    bundle = write_reference_pca_bundle(run)
+    manifest_path = bundle / REFERENCE_PCA_MANIFEST
+    manifest = json.loads(manifest_path.read_text())
+    record = manifest["optimization"]["recovery"]["state_verification"]
+    receipt_path = bundle / record["copied_path"]
+    receipt = json.loads(receipt_path.read_text())
+    receipt["parameters_unchanged"] = False
+    receipt_path.write_text(json.dumps(receipt))
+    record.update(bytes=receipt_path.stat().st_size, sha256=sha256_file(receipt_path))
+    artifact = next(item for item in manifest["artifacts"] if item["path"] == record["copied_path"])
+    artifact.update(bytes=record["bytes"], sha256=record["sha256"])
+    manifest_path.write_text(json.dumps(manifest))
+    (bundle / REFERENCE_PCA_SIDECAR).write_text(sha256_file(manifest_path) + "\n")
+    with pytest.raises(ReferencePCAError, match="unchanged-state postconditions"):
+        verify_reference_pca_bundle(bundle)
 
 
 def test_reference_pca_csv_reverification_accepts_float64_backend_roundoff() -> None:
