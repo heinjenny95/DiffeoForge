@@ -25,9 +25,11 @@ v120 makes the desktop atlas worker reuse review's content-bound mesh checks and
 its validated metadata during preparation. Fresh hashes, current quality gates,
 exact config/cohort matching and staged-copy verification remain mandatory.
 Actual per-mesh check progress and boundary cancellation replace the static
-preflight message. 201 scoped regressions passed with one dependency skip; the
-frozen cache-reuse/rejection probe is required. See [scope](V120_ATLAS_PREFLIGHT.md).
-Installation must wait for the active owner atlas; installed v119 is unchanged.
+preflight message. 202 scoped regressions passed with one dependency skip; frozen
+GUI/workers and the cache-reuse/rejection probe passed. See [scope](V120_ATLAS_PREFLIGHT.md).
+The installer is verified; installation must wait for the active owner atlas.
+Installed v119 is unchanged. Runtime3e4b5cc and test/observerb8d0cec are separately
+recorded; see [delivery and fixture correction](V120_DELIVERY.md).
 
 v119 fixes an uncancelled reference-worker stall before atlas preparation.
 Windows command input now peeks the pipe and reads available bytes only, so an

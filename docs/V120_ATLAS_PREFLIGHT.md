@@ -26,7 +26,7 @@ Deformetrica has not started. Cancellation is observed at inspection boundaries;
 an individual uncached deep check must finish before the next boundary. A
 cancelled preflight cannot prepare or execute a run.
 
-Verification: 201 scoped Windows regressions passed, with one intentional
+Verification: 202 scoped Windows regressions passed, with one intentional
 Qt-availability skip. Coverage includes fresh content invalidation, corrupt and
 old-definition caches, current-policy rejection, cached worker handoff, stale
 preparation refusal, unchanged staged scientific input bytes/parameters, safe
@@ -34,6 +34,7 @@ cancellation, strict event ordering and offscreen status rendering. Focused Ruff
 and diff checks pass. The mandatory uncancelled frozen probe additionally reuses
 valid saved checks, then rejects an invalid added mesh before preparation.
 
-Build/installation evidence is separate. The owner has an active atlas, so no
-installation may interrupt it. This change does not alter parameters, geometry,
+The frozen checks and final installer verification passed; see
+[delivery evidence and test-fixture correction](V120_DELIVERY.md). The owner has
+an active atlas, so installation is deferred. This change does not alter parameters, geometry,
 alignment, QC approvals or scientific evidence, and does not start a new atlas.

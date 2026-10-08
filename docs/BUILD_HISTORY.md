@@ -6,8 +6,9 @@ v120 (`0.0.0.dev120`) reuses content-verified project checks in desktop atlas
 startup and carries the exact inspected inventory into immutable preparation.
 Fresh hashes, current quality gates and staged-copy verification remain intact.
 The Run card shows actual mesh-check counts and whether a check is reused or
-computed; cancellation is observed at mesh boundaries. 201 scoped regressions
+computed; cancellation is observed at mesh boundaries. 202 scoped regressions
 passed with one dependency skip. See [scope and limits](V120_ATLAS_PREFLIGHT.md).
+Frozen checks and installer verification passed; see [delivery](V120_DELIVERY.md).
 An active owner atlas prevents installation; installed v119 remains current.
 
 ## v115 — compact reference checkpoints and deferred mesh export
