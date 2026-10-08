@@ -1,4 +1,4 @@
-# Development continuity — v119 Windows atlas-worker startup
+# Development continuity — v120 cached atlas preflight
 
 Snapshot: 2026-10-08. This is a public, software-only continuation guide. Detailed
 research results, local paths, account destinations and run identities belong in
@@ -20,6 +20,14 @@ correct parameters or interpret biology for the researcher. Deformetrica is the
 default supported reference route; the Modern engine remains evidence-gated.
 
 ## Current source work
+
+v120 makes the desktop atlas worker reuse review's content-bound mesh checks and
+its validated metadata during preparation. Fresh hashes, current quality gates,
+exact config/cohort matching and staged-copy verification remain mandatory.
+Actual per-mesh check progress and boundary cancellation replace the static
+preflight message. 201 scoped regressions passed with one dependency skip; the
+frozen cache-reuse/rejection probe is required. See [scope](V120_ATLAS_PREFLIGHT.md).
+Installation must wait for the active owner atlas; installed v119 is unchanged.
 
 v119 fixes an uncancelled reference-worker stall before atlas preparation.
 Windows command input now peeks the pipe and reads available bytes only, so an

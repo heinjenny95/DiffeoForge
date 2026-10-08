@@ -131,6 +131,49 @@ def test_reference_worker_command_and_event_round_trip() -> None:
         parsed.payload["engine"] = "changed"
 
 
+def _inspection(sequence, completed, state, *, total=2, path="template.vtk"):
+    return DesktopReferenceWorkerEvent(
+        request_id=REQUEST_ID, sequence=sequence, kind="inspection",
+        payload={"completed": completed, "total": total, "state": state,
+                 "path": path, "role": "template" if path == "template.vtk" else "subject"},
+    )
+
+
+def test_reference_worker_inspection_allows_cache_hits_and_real_checks():
+    ledger = _ledger_with_phases("verify_request", "preflight")
+    for completed, state, path in (
+        (0, "hashing", "template.vtk"), (1, "reused", "template.vtk"),
+        (1, "hashing", "subject.vtk"), (1, "checking", "subject.vtk"),
+        (2, "checked", "subject.vtk"),
+    ):
+        ledger.accept(_inspection(len(ledger.events), completed, state, path=path))
+    ledger.accept(_phase(len(ledger.events), "prepare"))
+
+
+@pytest.mark.parametrize("payload", [
+    {"completed": 0, "state": "reused"},
+    {"completed": 1, "state": "checked"},
+    {"completed": 0, "state": "checking", "path": "different.vtk"},
+    {"completed": 0, "state": "checking", "total": 3},
+    {"completed": 3, "state": "reused"},
+])
+def test_reference_worker_inspection_rejects_false_boundaries(payload):
+    ledger = _ledger_with_phases("verify_request", "preflight")
+    ledger.accept(_inspection(3, 0, "hashing"))
+    with pytest.raises(DesktopReferenceWorkerProtocolError):
+        ledger.accept(_inspection(4, **payload))
+
+
+def test_reference_worker_inspection_rejects_wrong_phase_and_unfinished_preparation():
+    ledger = _ledger_with_phases("verify_request")
+    with pytest.raises(DesktopReferenceWorkerProtocolError, match="only during preflight"):
+        ledger.accept(_inspection(2, 0, "hashing"))
+    ledger.accept(_phase(2, "preflight"))
+    ledger.accept(_inspection(3, 0, "hashing"))
+    with pytest.raises(DesktopReferenceWorkerProtocolError, match="incomplete"):
+        ledger.accept(_phase(4, "prepare"))
+
+
 def test_reference_worker_completed_lifecycle() -> None:
     phases = (
         "verify_request",

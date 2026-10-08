@@ -23,7 +23,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from importlib.resources import files
 from pathlib import Path, PurePosixPath
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 import yaml
@@ -54,6 +54,9 @@ from diffeoforge.mesh import MeshMetadata, inspect_inputs, sha256_file
 from diffeoforge.reference_runtime import probe_reference_gpu
 from diffeoforge.resource_monitor import ProcessResourceMonitor
 from diffeoforge.subprocess_policy import hidden_windows_process_kwargs
+
+if TYPE_CHECKING:
+    from diffeoforge.report import PreflightResult
 
 RUN_MANIFEST_VERSION = "0.1"
 RESUME_PROVENANCE_VERSION = "0.1"
@@ -418,16 +421,35 @@ def _prepare_run(
     output_directory: Path | str | None = None,
     expected_plan: Mapping[str, Any] | None = None,
     before_publish: Callable[[Path, Mapping[str, Any]], None] | None = None,
+    preflight: PreflightResult | None = None,
 ) -> Path:
     """Create a complete run directory atomically and never overwrite a run."""
 
     source_config = Path(config_path).expanduser().resolve()
     from diffeoforge.reference_checkpoint_schedule import new_run_config
 
-    config = new_run_config(load_config(source_config))
+    reviewed_config = load_config(source_config)
+    config = new_run_config(reviewed_config)
     validate_reference_config(config)
     summary = validate_input_paths(config, source_config)
-    template_metadata, subject_metadata = inspect_inputs(summary)
+    if preflight is None:
+        template_metadata, subject_metadata = inspect_inputs(summary)
+    else:
+        if (preflight.config_path != source_config or preflight.config != reviewed_config
+                or preflight.inputs != summary
+                or len(preflight.subjects) != len(summary.subjects)):
+            raise ConfigurationError(
+                "Preparation preflight differs from the current inputs/config."
+            )
+        template_metadata, subject_metadata = preflight.template, preflight.subjects
+        for path, metadata in zip(
+            (summary.template, *summary.subjects),
+            (template_metadata, *subject_metadata), strict=True,
+        ):
+            if (Path(metadata.path).resolve() != path.resolve()
+                    or metadata.bytes != path.stat().st_size
+                    or metadata.sha256 != sha256_file(path)):
+                raise ConfigurationError(f"Mesh changed since preparation preflight: {path}")
 
     from diffeoforge.reference_atlas_handoff import initialization
 
@@ -638,6 +660,7 @@ def prepare_run(
     *,
     run_id: str | None = None,
     output_directory: Path | str | None = None,
+    preflight: PreflightResult | None = None,
 ) -> Path:
     """Create a complete run directory atomically and never overwrite a run."""
 
@@ -645,6 +668,7 @@ def prepare_run(
         config_path,
         run_id=run_id,
         output_directory=output_directory,
+        preflight=preflight,
     )
 
 

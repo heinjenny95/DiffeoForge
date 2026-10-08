@@ -11024,6 +11024,29 @@ class DiffeoForgeWindow(QMainWindow):
                     "Live resources: waiting for the first backend-process sample."
                 )
             self.run_state_label.setText(message)
+        elif event.kind == "inspection":
+            completed = int(event.payload["completed"])
+            total = int(event.payload["total"])
+            state = str(event.payload["state"])
+            name = Path(str(event.payload["path"])).name
+            role = "Template" if event.payload["role"] == "template" else "Specimen"
+            action = {
+                "hashing": "Verifying file content",
+                "checking": "Running deep mesh validation (no reusable check)",
+                "reused": "Saved mesh check verified and reused",
+                "checked": "Deep mesh validation completed",
+            }[state]
+            message = f"{completed} of {total} meshes checked · {role}: {name} · {action}"
+            self.run_progress_bar.setRange(0, total)
+            self.run_progress_bar.setValue(completed)
+            self.run_progress_bar.setFormat("Mesh checks: %v of %m")
+            self.run_stage_label.setText(f"Prepare atlas — input checks · {action}")
+            self.run_state_label.setText(message)
+            self.run_optimizer_label.setText(
+                "Deformetrica has not started yet. Unchanged mesh checks are reused after "
+                "a fresh content check. A new deep check can take several minutes.\n"
+                "Cancel safely stops at the next mesh-check boundary."
+            )
         elif event.kind == "activity":
             elapsed = float(event.payload["elapsed_seconds"])
             state = str(event.payload["state"])

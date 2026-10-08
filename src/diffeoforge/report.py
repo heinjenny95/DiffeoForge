@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from html import escape
@@ -105,6 +105,17 @@ class PreflightMeshQuality:
     role: str
     path: str
     result: MeshQualityResult
+
+
+@dataclass(frozen=True)
+class PreflightInspectionProgress:
+    """Actual mesh-check boundaries, separate from optimizer iterations."""
+
+    completed: int
+    total: int
+    role: str
+    path: str
+    state: str
 
 
 def _bbox_center(mesh: MeshMetadata) -> tuple[float, float, float]:
@@ -242,6 +253,7 @@ def make_preflight_result(
 
 def collect_preflight(
     config_path: Path | str, *, cache_project: Path | str | None = None,
+    progress_callback: Callable[[PreflightInspectionProgress], None] | None = None,
 ) -> PreflightResult:
     """Validate inputs, optionally reusing project-local content-bound mesh checks.
 
@@ -252,11 +264,13 @@ def collect_preflight(
     source = Path(config_path).expanduser().resolve()
     config = load_config(source)
     inputs = validate_input_paths(config, source)
-    if cache_project is None:
+    if cache_project is None and progress_callback is None:
         template, subjects = inspect_inputs(inputs)
         mesh_quality = _structural_quality(template, subjects)
     else:
-        metadata, mesh_quality = _cached_structural_quality(inputs, cache_project)
+        metadata, mesh_quality = _cached_structural_quality(
+            inputs, cache_project, progress_callback=progress_callback,
+        )
         template, subjects = metadata[0], metadata[1:]
     return make_preflight_result(
         source,
@@ -269,7 +283,8 @@ def collect_preflight(
 
 
 def _cached_structural_quality(
-    inputs: InputSummary, project: Path | str,
+    inputs: InputSummary, project: Path | str | None,
+    *, progress_callback: Callable[[PreflightInspectionProgress], None] | None = None,
 ) -> tuple[tuple[MeshMetadata, ...], tuple[PreflightMeshQuality, ...]]:
     import hashlib
 
@@ -283,16 +298,26 @@ def _cached_structural_quality(
 
     metadata: list[MeshMetadata] = []
     observations: list[PreflightMeshQuality] = []
-    for role, path in (("template", inputs.template), *(
+    paths = (("template", inputs.template), *(
         ("subject", item) for item in inputs.subjects
-    )):
+    ))
+    for index, (role, path) in enumerate(paths):
+        def observe(
+            state: str, completed: int = index, *, role: str = role, path: Path = path,
+        ) -> None:
+            if progress_callback is not None:
+                progress_callback(PreflightInspectionProgress(
+                    completed, len(paths), role, str(path), state,
+                ))
+
+        observe("hashing")
         source_hash = sha256_file(path)
         key = "vtk-1-" + hashlib.sha256(
             f"{source_hash}:{QUALITY_DEFINITIONS_VERSION}".encode()
         ).hexdigest()
         cached = None
         try:
-            candidate = load_checkpoint(project, key)
+            candidate = load_checkpoint(project, key) if project is not None else None
             if (isinstance(candidate, tuple) and len(candidate) == 2
                     and isinstance(candidate[0], MeshMetadata)
                     and isinstance(candidate[1], MeshQualityResult)
@@ -303,7 +328,9 @@ def _cached_structural_quality(
                 cached = candidate
         except CheckpointUnavailable:
             pass
+        reused = cached is not None
         if cached is None:
+            observe("checking")
             item = inspect_vtk(path)
             if item.sha256 != source_hash:
                 raise ConfigurationError(f"Mesh changed while being checked: {path}")
@@ -312,7 +339,8 @@ def _cached_structural_quality(
                 raise ConfigurationError(f"Mesh changed while being checked: {path}")
             cached = item, quality
             try:
-                save_checkpoint(project, key, cached)
+                if project is not None:
+                    save_checkpoint(project, key, cached)
             except (OSError, ValueError):
                 pass
         item, quality = cached
@@ -322,6 +350,7 @@ def _cached_structural_quality(
             raise ConfigurationError(str(error)) from error
         metadata.append(replace(item, path=str(path)))
         observations.append(PreflightMeshQuality(role, str(path), quality))
+        observe("reused" if reused else "checked", index + 1)
     return tuple(metadata), tuple(observations)
 
 

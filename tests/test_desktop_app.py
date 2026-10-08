@@ -4353,3 +4353,31 @@ def test_desktop_shows_progress_and_blocks_repeats_while_a_folder_is_inspected(
     assert "test failure" in window.data_status_label.text()
     window.close()
     application.processEvents()
+
+
+def test_desktop_window_renders_mesh_preflight_progress(monkeypatch, tmp_path):
+    pytest.importorskip("PySide6")
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setenv("DIFFEOFORGE_STATE_HOME", str(tmp_path / "state"))
+    from PySide6.QtWidgets import QApplication
+
+    from diffeoforge.desktop.reference_worker_protocol import DesktopReferenceWorkerEvent
+    from diffeoforge.desktop.widgets import DiffeoForgeWindow
+
+    application = QApplication.instance() or QApplication(["preflight-progress-test"])
+    window = DiffeoForgeWindow()
+    for sequence, (state, completed) in enumerate((("checking", 3), ("reused", 4))):
+        event = DesktopReferenceWorkerEvent(
+            request_id="reference-test", sequence=sequence, kind="inspection",
+            payload={"completed": completed, "total": 95, "role": "subject",
+                     "path": str(tmp_path / "subject.vtk"), "state": state},
+        )
+        window._atlas_event(event)
+        assert window.run_progress_bar.value() == completed
+        assert window.run_progress_bar.maximum() == 95
+        assert "subject.vtk" in window.run_state_label.text()
+        assert "Deformetrica has not started" in window.run_optimizer_label.text()
+        assert "next mesh-check boundary" in window.run_optimizer_label.text()
+    assert "Saved mesh check verified and reused" in window.run_state_label.text()
+    window.close()
+    application.processEvents()

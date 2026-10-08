@@ -26,6 +26,7 @@ REFERENCE_WORKER_PHASES = (
 ReferenceWorkerEventKind = Literal[
     "accepted",
     "phase",
+    "inspection",
     "activity",
     "progress",
     "terminal",
@@ -180,6 +181,7 @@ class ReferenceWorkerEventLedger:
         self._last_phase_index: int | None = None
         self._last_activity_elapsed: float | None = None
         self._last_progress_iteration: int | None = None
+        self._inspection: Mapping[str, Any] | None = None
         self._terminal: DesktopReferenceWorkerEvent | None = None
 
     @property
@@ -230,7 +232,43 @@ class ReferenceWorkerEventLedger:
                 raise DesktopReferenceWorkerProtocolError(
                     "Reference worker phases must advance without repetition or regression"
                 )
+            if (event.payload["phase"] == "prepare" and self._inspection is not None
+                    and self._inspection["completed"] != self._inspection["total"]):
+                raise DesktopReferenceWorkerProtocolError("Mesh inspection is incomplete")
             self._last_phase_index = phase_index
+        elif event.kind == "inspection":
+            if self._last_phase_index != REFERENCE_WORKER_PHASES.index("preflight"):
+                raise DesktopReferenceWorkerProtocolError(
+                    "Mesh inspection is allowed only during preflight"
+                )
+            previous = self._inspection
+            payload = event.payload
+            state = payload["state"]
+            completed = payload["completed"]
+            if completed > payload["total"]:
+                raise DesktopReferenceWorkerProtocolError("Mesh inspection exceeds its total")
+            if previous is None:
+                valid = state == "hashing" and completed == 0
+            elif payload["total"] != previous["total"]:
+                valid = False
+            elif state == "hashing":
+                valid = (
+                    previous["state"] in {"reused", "checked"}
+                    and completed == previous["completed"] and completed < payload["total"]
+                )
+            else:
+                valid = (
+                    payload["path"] == previous["path"] and payload["role"] == previous["role"]
+                    and ((state == "checking" and previous["state"] == "hashing"
+                          and completed == previous["completed"])
+                         or (state in {"reused", "checked"}
+                             and previous["state"] == (
+                                 "hashing" if state == "reused" else "checking"
+                             ) and completed == previous["completed"] + 1))
+                )
+            if not valid:
+                raise DesktopReferenceWorkerProtocolError("Mesh inspection boundaries are invalid")
+            self._inspection = payload
         elif event.kind == "activity":
             execute_index = REFERENCE_WORKER_PHASES.index("execute")
             if self._last_phase_index != execute_index:

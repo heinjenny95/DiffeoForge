@@ -18,10 +18,14 @@ from diffeoforge.desktop.reference_worker_protocol import (
     ReferenceWorkerEventLedger,
 )
 from diffeoforge.desktop.worker_protocol import sha256_file
+from diffeoforge.report import collect_preflight
 from diffeoforge.subprocess_policy import hidden_windows_process_kwargs
 
 
-def probe(worker: Path, config_path: Path, *, mismatch: bool, timeout: float) -> dict:
+def probe(
+    worker: Path, config_path: Path, *, mismatch: bool, timeout: float,
+    expected_reused: int = 0,
+) -> dict:
     root = config_path.parent
     request = DesktopReferenceLaunchRequest(
         request_id=f"uncancelled-startup-{mismatch}", config_path=config_path.resolve(),
@@ -55,18 +59,23 @@ def probe(worker: Path, config_path: Path, *, mismatch: bool, timeout: float) ->
         for line in output:
             ledger.accept(DesktopReferenceWorkerEvent.from_dict(json.loads(line)))
         phases = [e.payload["phase"] for e in ledger.events if e.kind == "phase"]
+        reused = sum(
+            e.kind == "inspection" and e.payload["state"] == "reused" for e in ledger.events
+        )
         expected = ["verify_request"] if mismatch else ["verify_request", "preflight"]
         if (
             ledger.terminal is None or ledger.terminal.payload["outcome"] != "failed"
             or ledger.terminal.payload["destination_exists"] or phases != expected
             or request.destination.exists() or (root / "runs").exists()
             or sha256_file(config_path) != request.expected_config_sha256
+            or reused != expected_reused
         ):
             raise RuntimeError("Uncancelled startup did not reach its expected safe terminal")
         return {
             "phases": phases, "exit_code": code, "destination_exists": False,
             "engine_execution_started": False, "events": len(ledger.events),
             "elapsed_seconds": round(time.monotonic() - started, 3),
+            "saved_checks_reused": reused,
         }
     finally:
         if process.poll() is None:
@@ -100,6 +109,30 @@ def main() -> int:
         results = [
             probe(worker, config_path, mismatch=m, timeout=args.timeout) for m in (True, False)
         ]
+        # Warm valid JSON checks, then add an invalid last mesh. The real frozen
+        # worker must reuse the earlier checks and fail on the changed cohort
+        # before it can prepare a run or launch any external engine.
+        meshes = root / "meshes"
+        meshes.mkdir()
+        tetrahedron = (
+            "# vtk DataFile Version 3.0\nprobe\nASCII\nDATASET POLYDATA\n"
+            "POINTS 4 float\n0 0 0\n1 0 0\n0 1 0\n0 0 1\n"
+            "POLYGONS 4 16\n3 0 2 1\n3 0 1 3\n3 1 2 3\n3 2 0 3\n"
+        )
+        for name in ("template.vtk", "subject-a.vtk"):
+            (meshes / name).write_text(tetrahedron, encoding="ascii")
+        config["input"].update(
+            directory=str(meshes), template=str(meshes / "template.vtk"),
+            subject_pattern="subject-*.vtk",
+        )
+        config_path.write_text(yaml.safe_dump(config), encoding="utf-8")
+        collect_preflight(config_path, cache_project=root)
+        (meshes / "subject-z.vtk").write_text(
+            tetrahedron.replace("3 0 2 1", "3 0 0 1"), encoding="ascii",
+        )
+        results.append(probe(
+            worker, config_path, mismatch=False, timeout=args.timeout, expected_reused=2,
+        ))
     print(json.dumps({"uncancelled_startup": results, "worker": str(worker)}, sort_keys=True))
     return 0
 

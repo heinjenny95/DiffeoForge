@@ -24,9 +24,13 @@ from diffeoforge.desktop.reference_worker_protocol import (
     DesktopReferenceWorkerEvent,
 )
 from diffeoforge.desktop.worker_protocol import parse_json_object, sha256_file
-from diffeoforge.report import collect_preflight
+from diffeoforge.report import PreflightInspectionProgress, collect_preflight
 from diffeoforge.result_report import collect_run_report
 from diffeoforge.runs import execute_run, prepare_resume_run, prepare_run, verify_prepared_run
+
+
+class _PreflightCancelled(Exception):
+    """Cooperative cancellation at a mesh inspection boundary."""
 
 
 class _LineInput(Protocol):
@@ -175,8 +179,25 @@ def run_reference_execution_worker(
                 ),
             },
         )
+        preflight = None
         if request.resume_source is None:
-            preflight = collect_preflight(request.config_path)
+            def observe_inspection(progress: PreflightInspectionProgress) -> None:
+                if cancel_event.is_set():
+                    raise _PreflightCancelled
+                emit("inspection", vars(progress))
+
+            try:
+                preflight = collect_preflight(
+                    request.config_path, cache_project=request.config_path.parent,
+                    progress_callback=observe_inspection,
+                )
+            except _PreflightCancelled:
+                if parent_disconnected.is_set():
+                    return 130
+                return terminal(
+                    "stopped_before_prepare",
+                    "Cancelled during mesh preflight; no run was prepared.",
+                )
             production_readiness = assess_reference_production_readiness(preflight)
             if production_readiness.production_scale and not production_readiness.ready:
                 raise RuntimeError(
@@ -202,7 +223,7 @@ def run_reference_execution_worker(
             },
         )
         run_directory = (
-            prepare_run(request.config_path, run_id=request.run_id)
+            prepare_run(request.config_path, run_id=request.run_id, preflight=preflight)
             if request.resume_source is None
             else prepare_resume_run(
                 request.resume_source,

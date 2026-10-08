@@ -232,6 +232,43 @@ def test_reference_review_reuses_geometry_but_rechecks_current_quality_gates(coh
         collect_preflight(result.config_path, cache_project=project)
 
 
+@pytest.mark.parametrize("invalidate", ["bytes", "corrupt", "definitions"])
+def test_reference_preflight_rechecks_only_invalidated_mesh_checks(cohort, monkeypatch, invalidate):
+    import diffeoforge.report as report_module
+    from diffeoforge.initialization import initialize_project
+    from diffeoforge.report import collect_preflight
+
+    project, paths, _landmarks = cohort
+    config = initialize_project(
+        paths[0].parent, config_path=project / "atlas.yaml", units="millimeter",
+        template=paths[0], subject_pattern="subject-*.vtk",
+    ).config_path
+    events = []
+    collect_preflight(config, cache_project=project, progress_callback=events.append)
+    assert [e.state for e in events] == ["hashing", "checking", "checked"] * 3
+    if invalidate == "bytes":
+        paths[0].write_bytes(paths[0].read_bytes() + b"\n")
+    elif invalidate == "corrupt":
+        next(checkpoint_directory(project).glob("vtk-1-*.json")).write_text("broken")
+    else:
+        monkeypatch.setattr("diffeoforge.mesh_quality.QUALITY_DEFINITIONS_VERSION", "next")
+    original = report_module._structural_quality
+    calls = []
+
+    def checked(metadata, subjects):
+        calls.append(metadata.path)
+        return original(metadata, subjects)
+
+    monkeypatch.setattr(report_module, "_structural_quality", checked)
+    events.clear()
+    result = collect_preflight(config, cache_project=project, progress_callback=events.append)
+    assert len(calls) == (3 if invalidate == "definitions" else 1)
+    finished = [e for e in events if e.state in {"checked", "reused"}]
+    assert [e.completed for e in finished] == [1, 2, 3]
+    assert all(e.total == 3 for e in events)
+    assert len(result.mesh_quality) == 3
+
+
 class QueuedPool:
     def __init__(self):
         self.workers = []

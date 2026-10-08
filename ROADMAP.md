@@ -14,6 +14,11 @@ scientific gates. Planning does not mark those gates complete.
 
 ## Pilot usability follow-up
 
+- [x] Reuse content-bound project mesh checks in desktop atlas startup, retain
+  fresh hashes/current quality gates, and show actual per-mesh check counts.
+  Avoid parsing the same preflight inventory again during preparation. See
+  [v120 cached preflight](docs/V120_ATLAS_PREFLIGHT.md).
+
 - [x] Remove the Windows atlas startup stall caused by an idle command pipe
   during native numerical-library loading. Require uncancelled frozen startup
   checks with stdin open, in addition to queued-cancellation checks. See

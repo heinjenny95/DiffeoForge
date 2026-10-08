@@ -17,7 +17,7 @@
       "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
     },
     "sequence": {"type": "integer", "minimum": 0},
-    "kind": {"enum": ["accepted", "phase", "activity", "progress", "terminal"]},
+    "kind": {"enum": ["accepted", "phase", "inspection", "activity", "progress", "terminal"]},
     "payload": {"type": "object"}
   },
   "allOf": [
@@ -28,6 +28,10 @@
     {
       "if": {"properties": {"kind": {"const": "phase"}}},
       "then": {"properties": {"payload": {"$ref": "#/$defs/phase"}}}
+    },
+    {
+      "if": {"properties": {"kind": {"const": "inspection"}}},
+      "then": {"properties": {"payload": {"$ref": "#/$defs/inspection"}}}
     },
     {
       "if": {"properties": {"kind": {"const": "activity"}}},
@@ -43,6 +47,18 @@
     }
   ],
   "$defs": {
+    "inspection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["completed", "total", "role", "path", "state"],
+      "properties": {
+        "completed": {"type": "integer", "minimum": 0},
+        "total": {"type": "integer", "minimum": 1},
+        "role": {"enum": ["template", "subject"]},
+        "path": {"type": "string", "minLength": 1},
+        "state": {"enum": ["hashing", "checking", "reused", "checked"]}
+      }
+    },
     "accepted": {
       "type": "object",
       "additionalProperties": false,

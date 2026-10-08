@@ -9,6 +9,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+import yaml
 
 import diffeoforge.desktop.reference_execution_worker as execution_worker
 from diffeoforge.desktop.reference_prelaunch import DesktopReferenceLaunchRequest
@@ -107,7 +108,7 @@ def test_reference_execution_worker_runs_full_lifecycle_and_emits_eta_progress(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     request = _request(tmp_path)
-    monkeypatch.setattr(execution_worker, "collect_preflight", lambda _path: object())
+    monkeypatch.setattr(execution_worker, "collect_preflight", lambda _path, **_kwargs: object())
     monkeypatch.setattr(
         execution_worker,
         "assess_reference_production_readiness",
@@ -118,8 +119,9 @@ def test_reference_execution_worker_runs_full_lifecycle_and_emits_eta_progress(
         ),
     )
 
-    def prepare(_config, *, run_id):
+    def prepare(_config, *, run_id, preflight):
         assert run_id == request.run_id
+        assert preflight is not None
         request.destination.mkdir(parents=True)
         return request.destination
 
@@ -361,3 +363,68 @@ def test_reference_execution_worker_prepares_resume_successor_without_source_pre
     if additional_iterations:
         assert next(e for e in events if e.kind == "progress").payload["maximum_iterations"] == 600
     assert events[-1].payload["outcome"] == "completed"
+
+
+def test_reference_worker_reuses_desktop_cached_preflight(tmp_path, monkeypatch):
+    from diffeoforge.report import collect_preflight
+
+    request = _request(tmp_path)
+    config = yaml.safe_load(request.config_path.read_text())
+    config["input"]["directory"] = str(ROOT / "examples/synthetic/meshes")
+    config["input"]["template"] = str(ROOT / "examples/synthetic/meshes/template.vtk")
+    config["input"]["subject_pattern"] = "subject-*.vtk"
+    request.config_path.write_text(yaml.safe_dump(config))
+    request = DesktopReferenceLaunchRequest(**{
+        **request.__dict__, "expected_config_sha256": sha256_file(request.config_path),
+    })
+    preflight = collect_preflight(request.config_path, cache_project=request.config_path.parent)
+
+    def forbid(*_args):
+        raise AssertionError("Unchanged geometry must use the verified cached inspection")
+
+    def prepare(_config, *, run_id, preflight):
+        assert len(preflight.subjects) == 5
+        raise RuntimeError("safe preparation probe ended before creating a run")
+
+    monkeypatch.setattr("diffeoforge.mesh.inspect_vtk", forbid)
+    monkeypatch.setattr("diffeoforge.report._structural_quality", forbid)
+    monkeypatch.setattr(execution_worker, "prepare_run", prepare)
+    code, events, _stderr = _run(request)
+    observed = [e.payload for e in events if e.kind == "inspection"]
+    assert [e["state"] for e in observed] == ["hashing", "reused"] * 6
+    assert observed[-1]["completed"] == len(preflight.subjects) + 1
+    assert code == 1 and "safe preparation probe" in events[-1].payload["message"]
+    assert not request.destination.exists()
+
+
+def test_reference_worker_cancels_at_mesh_boundary_before_preparation(tmp_path, monkeypatch):
+    from diffeoforge.report import PreflightInspectionProgress
+
+    request = _request(tmp_path)
+    stream = _CommandStream(json.dumps(request.as_dict()) + "\n")
+    command_seen = threading.Event()
+    original = DesktopReferenceWorkerCommand.from_dict.__func__
+
+    def command(cls, value):
+        parsed = original(cls, value)
+        command_seen.set()
+        return parsed
+
+    def preflight(path, *, cache_project, progress_callback):
+        assert cache_project == request.config_path.parent
+        progress_callback(PreflightInspectionProgress(0, 2, "template", "template.vtk", "hashing"))
+        stream._commands.put(json.dumps(DesktopReferenceWorkerCommand(request.request_id).as_dict()))
+        assert command_seen.wait(timeout=5)
+        progress_callback(PreflightInspectionProgress(1, 2, "template", "template.vtk", "reused"))
+        raise AssertionError("Cancellation must prevent any next mesh check")
+
+    def forbid(*_args, **_kwargs):
+        raise AssertionError("Cancellation must prevent run preparation")
+
+    monkeypatch.setattr(DesktopReferenceWorkerCommand, "from_dict", classmethod(command))
+    monkeypatch.setattr(execution_worker, "collect_preflight", preflight)
+    monkeypatch.setattr(execution_worker, "prepare_run", forbid)
+    code, events, _stderr = _run(request, stream=stream)
+    assert code == 130
+    assert events[-1].payload["outcome"] == "stopped_before_prepare"
+    assert not request.destination.exists()

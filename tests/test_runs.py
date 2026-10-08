@@ -110,6 +110,47 @@ def write_run_config(tmp_path: Path) -> Path:
     return config_path
 
 
+def test_preparation_reuses_exact_preflight_inventory_with_fresh_hashes(tmp_path, monkeypatch):
+    from diffeoforge.report import collect_preflight
+
+    config = write_run_config(tmp_path)
+    preflight = collect_preflight(config, cache_project=tmp_path)
+    baseline = prepare_run(config, run_id="baseline")
+
+    def forbid(*_args):
+        raise AssertionError("Preparation must not parse the checked geometry again")
+
+    monkeypatch.setattr(runs, "inspect_inputs", forbid)
+    reused = prepare_run(config, run_id="reused", preflight=preflight)
+    first, second = verify_prepared_run(baseline), verify_prepared_run(reused)
+    assert first["inputs"] == second["inputs"]
+    assert [a for a in first["protected_artifacts"] if a["path"].startswith("input/")] == [
+        a for a in second["protected_artifacts"] if a["path"].startswith("input/")
+    ]
+    for key in ("model", "optimization", "runtime"):
+        assert first["effective_config"][key] == second["effective_config"][key]
+
+
+@pytest.mark.parametrize("change", ["mesh", "config", "cohort"])
+def test_preparation_rejects_stale_preflight_before_creating_a_run(tmp_path, change):
+    from diffeoforge.report import collect_preflight
+
+    config = write_run_config(tmp_path)
+    preflight = collect_preflight(config)
+    if change == "mesh":
+        path = tmp_path / "meshes/subject-a.vtk"
+        path.write_text(path.read_text().replace("1 0 0", "2 0 0"))
+    elif change == "config":
+        value = yaml.safe_load(config.read_text())
+        value["model"]["noise_std"] *= 2
+        config.write_text(yaml.safe_dump(value))
+    else:
+        write_tetrahedron(tmp_path / "meshes/subject-c.vtk")
+    with pytest.raises(ConfigurationError, match="preflight"):
+        prepare_run(config, run_id="stale", preflight=preflight)
+    assert not (tmp_path / "runs").exists()
+
+
 def abandon_prepared_run(run_directory: Path, *, checkpoint: bytes | None = None) -> None:
     with (run_directory / "events.jsonl").open("a", encoding="utf-8", newline="\n") as handle:
         handle.write(
