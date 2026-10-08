@@ -14,6 +14,11 @@ scientific gates. Planning does not mark those gates complete.
 
 ## Pilot usability follow-up
 
+- [ ] Reduce repetitive **Deformetrica still active** status messages from every
+  30 seconds to every 3 minutes (180 seconds). Apply this interval only to the
+  activity reminder; keep new iterations, phase changes, completion, errors and
+  review requests visible immediately.
+
 - [x] Reuse content-bound project mesh checks in desktop atlas startup, retain
   fresh hashes/current quality gates, and show actual per-mesh check counts.
   Avoid parsing the same preflight inventory again during preparation. See
