@@ -1,4 +1,4 @@
-# Development continuity — v118 pilot-to-atlas handoff and visual QC
+# Development continuity — v119 Windows atlas-worker startup
 
 Snapshot: 2026-10-08. This is a public, software-only continuation guide. Detailed
 research results, local paths, account destinations and run identities belong in
@@ -20,6 +20,15 @@ correct parameters or interpret biology for the researcher. Deformetrica is the
 default supported reference route; the Modern engine remains evidence-gated.
 
 ## Current source work
+
+v119 fixes an uncancelled reference-worker stall before atlas preparation.
+Windows command input now peeks the pipe and reads available bytes only, so an
+idle cancellation listener does not block native numerical extension loading.
+Fresh-interpreter and frozen checks keep stdin open through verification and
+preflight, then prove safe failure without starting an engine. The Modern worker
+shares the transport. Scientific settings and saved runs are unchanged. See
+[scope and checks](V119_WORKER_STARTUP.md). Packaging and installation evidence
+are recorded separately when verified.
 
 v118 applies atlas execution's existing host-directory policy to PC Shooting.
 WSL/container launchers already select their working directory explicitly and

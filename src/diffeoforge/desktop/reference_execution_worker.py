@@ -11,6 +11,9 @@ from collections.abc import Iterator, Mapping, Sequence
 from typing import Protocol, TextIO
 
 from diffeoforge.config import load_config
+from diffeoforge.desktop.pipe_input import (
+    UnbufferedUtf8LineInput as _UnbufferedUtf8LineInput,
+)
 from diffeoforge.desktop.reference_prelaunch import DesktopReferenceLaunchRequest
 from diffeoforge.desktop.reference_production_readiness import (
     assess_reference_production_readiness,
@@ -30,53 +33,6 @@ class _LineInput(Protocol):
     def readline(self) -> str: ...
 
     def __iter__(self) -> Iterator[str]: ...
-
-
-class _UnbufferedUtf8LineInput:
-    """Read commands without holding the GIL while the numerical worker runs."""
-
-    def __init__(self, file_descriptor: int) -> None:
-        self._file_descriptor = file_descriptor
-        self._buffer = bytearray()
-        self._eof = False
-
-    def readline(self) -> str:
-        while True:
-            newline = self._buffer.find(b"\n")
-            if newline >= 0:
-                line = bytes(self._buffer[: newline + 1])
-                del self._buffer[: newline + 1]
-                return line.decode("utf-8")
-            if self._eof:
-                if not self._buffer:
-                    return ""
-                line = bytes(self._buffer)
-                self._buffer.clear()
-                return line.decode("utf-8")
-            chunk = os.read(self._file_descriptor, 4096)
-            if chunk:
-                self._buffer.extend(chunk)
-            else:
-                self._eof = True
-
-    def pop_buffered_line(self) -> str | None:
-        """Return one already-received line without waiting for more pipe input."""
-
-        newline = self._buffer.find(b"\n")
-        if newline < 0:
-            return None
-        line = bytes(self._buffer[: newline + 1])
-        del self._buffer[: newline + 1]
-        return line.decode("utf-8")
-
-    def __iter__(self) -> Iterator[str]:
-        return self
-
-    def __next__(self) -> str:
-        line = self.readline()
-        if not line:
-            raise StopIteration
-        return line
 
 
 def _request_from_stream(stream: _LineInput) -> DesktopReferenceLaunchRequest:

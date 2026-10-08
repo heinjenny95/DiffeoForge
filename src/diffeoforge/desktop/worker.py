@@ -8,6 +8,9 @@ import threading
 from collections.abc import Iterator, Sequence
 from typing import Protocol, TextIO
 
+from diffeoforge.desktop.pipe_input import (
+    UnbufferedUtf8LineInput as _UnbufferedUtf8LineInput,
+)
 from diffeoforge.desktop.worker_protocol import (
     DesktopWorkerCommand,
     DesktopWorkerEvent,
@@ -22,43 +25,6 @@ class _LineInput(Protocol):
     def readline(self) -> str: ...
 
     def __iter__(self) -> Iterator[str]: ...
-
-
-class _UnbufferedUtf8LineInput:
-    """Read process stdin with ``os.read`` so a blocking command wait releases the GIL."""
-
-    def __init__(self, file_descriptor: int) -> None:
-        self._file_descriptor = file_descriptor
-        self._buffer = bytearray()
-        self._eof = False
-
-    def readline(self) -> str:
-        while True:
-            newline = self._buffer.find(b"\n")
-            if newline >= 0:
-                line = bytes(self._buffer[: newline + 1])
-                del self._buffer[: newline + 1]
-                return line.decode("utf-8")
-            if self._eof:
-                if not self._buffer:
-                    return ""
-                line = bytes(self._buffer)
-                self._buffer.clear()
-                return line.decode("utf-8")
-            chunk = os.read(self._file_descriptor, 4096)
-            if chunk:
-                self._buffer.extend(chunk)
-            else:
-                self._eof = True
-
-    def __iter__(self) -> Iterator[str]:
-        return self
-
-    def __next__(self) -> str:
-        line = self.readline()
-        if not line:
-            raise StopIteration
-        return line
 
 
 def _request_from_stream(stream: _LineInput) -> DesktopWorkerRequest:

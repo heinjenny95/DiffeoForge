@@ -14,6 +14,11 @@ scientific gates. Planning does not mark those gates complete.
 
 ## Pilot usability follow-up
 
+- [x] Remove the Windows atlas startup stall caused by an idle command pipe
+  during native numerical-library loading. Require uncancelled frozen startup
+  checks with stdin open, in addition to queued-cancellation checks. See
+  [v119 startup correction](docs/V119_WORKER_STARTUP.md).
+
 - [x] Retain compatible pilot momentum rows when initializing the full cohort;
   initialize remaining specimens on the fixed common basis and pause the joint
   atlas for source-bound early anatomical review. Offer a separate upgrade for

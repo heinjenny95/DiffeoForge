@@ -115,6 +115,12 @@ try {
     if ($LASTEXITCODE -ne 0) {
         throw "Frozen reference execution worker cancel-before-prepare smoke failed."
     }
+    & $pythonExecutable tools\smoke_frozen_reference_execution_startup.py `
+        (Join-Path $bundle "DiffeoForgeReferenceExecutionWorker.exe") `
+        examples\minimal-atlas-container.yaml
+    if ($LASTEXITCODE -ne 0) {
+        throw "Frozen uncancelled reference execution startup smoke failed."
+    }
     & $pythonExecutable tools\audit_frozen_reference_preparation_parent_death.py `
         (Join-Path $bundle "DiffeoForgeReferencePreparationWorker.exe") `
         $resolvedPreparationApproval $resolvedPreparationConfig `
