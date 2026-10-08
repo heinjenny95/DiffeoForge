@@ -27,8 +27,10 @@ idle cancellation listener does not block native numerical extension loading.
 Fresh-interpreter and frozen checks keep stdin open through verification and
 preflight, then prove safe failure without starting an engine. The Modern worker
 shares the transport. Scientific settings and saved runs are unchanged. See
-[scope and checks](V119_WORKER_STARTUP.md). Packaging and installation evidence
-are recorded separately when verified.
+[scope and checks](V119_WORKER_STARTUP.md). Build01 is installed locally after a
+complete dev118 backup and fresh idle checks. Frozen and installed uncancelled
+startup, bundle/companion hashes, registry and GUI startup passed; tracked
+research files are unchanged. See [delivery evidence](V119_DELIVERY.md).
 
 v118 applies atlas execution's existing host-directory policy to PC Shooting.
 WSL/container launchers already select their working directory explicitly and
