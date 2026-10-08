@@ -406,16 +406,18 @@ recoverable. See [v90 distribution evidence](V90_DRIVE_DELIVERY.md).
 
 ## Next work, in priority order
 
-1. Complete v98 packaging/distribution and assess the bounded search prospectively.
-   Preserve v97 and all existing studies; no new private fit was run for development.
-   Complete interactive minimize/focus acceptance across other applications;
-   retain one pilot/controller and existing scientific evidence. Under the
-   standing instruction in `AGENTS.md`, approval to develop a future version
-   also authorizes its tested installation without another confirmation, after
-   a backup and fresh idle check.
-2. Complete native acceptance of the v90 selection workflow and the v89 QC return
-   path, including reopening, cancellation, counts and clear next actions. Preserve
-   human anatomical decisions and existing run evidence.
+1. Finish the already verified v120 local delivery only when the owner's app and
+   scientific backends are idle: verify the installer, make a complete dev119
+   backup, install and verify files/startup without stopping an owner job. No
+   identical rebuild or renewed installation permission is needed. Source,
+   installed runtime and Drive distribution remain separate; v98 distribution
+   is already complete and later installer uploads require an explicit request.
+2. Implement the new roadmap request for a three-minute engine-activity reminder,
+   keeping real progress and important events immediate. Keep this display
+   cadence separate from worker supervision, cancellation and resource sampling.
+   Also retain the open completed-pilot reopen/refine action; no implementation is
+   claimed for either item. Do not replay old version-specific backlog entries
+   without checking their later implementation/delivery records.
 3. Continue the remaining usability/performance acceptance: concise main screens,
    immediate busy/error feedback, full completed-run loading time/peak memory and
    representative large-mesh viewer interaction. Do not weaken integrity checks.
@@ -459,3 +461,9 @@ then check only the live status needed for the next requested action. Historical
 PIDs, elapsed-time estimates, old monitor messages and past installation approvals
 are not current execution state. Do not restart jobs, reapprove QC or replay
 finished build work just because it appears in an earlier transcript.
+
+The October continuation handoff consolidates the v90-v120 development sequence,
+current delivery boundaries, owner preferences, private evidence locations and
+methodological caveats in the owner's private artifact workspace. It supersedes
+historical runtime/process snapshots. Handoff preparation is documentation only:
+it neither installs v120 nor launches, cancels or approves a scientific run.
