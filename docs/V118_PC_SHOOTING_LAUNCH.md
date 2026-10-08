@@ -20,4 +20,5 @@ boundary reproduced with a non-scientific child process. Native WSL directory
 selection succeeds for the same long directory. Owner endpoint anatomy and
 atlas quality remain separate from this launch correction.
 
-Build and installation evidence will be recorded separately after verification.
+The verified build is installed locally as dev118; see
+[build and installation evidence](V118_DELIVERY.md). No owner Shooting run started.

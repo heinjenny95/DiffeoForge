@@ -33,8 +33,12 @@ separate configuration upgrade. Existing atlas/PCA results are untouched. Full
 QC adds non-mutating next-specimen navigation; original lines are orange and
 reconstruction is blue in both pilot and atlas viewers. See
 [handoff behavior, verification and limits](V118_PILOT_ATLAS_HANDOFF.md).
-The build/install state is pending; installed dev117 remains unchanged until a
-verified package and an idle-application/backend check are available.
+Build 01 is verified and installed locally as dev118 after a complete dev117
+backup and fresh application/backend idle checks. Frozen GUI/workers, installed
+files/companions, registry version and startup passed; tracked critical research
+files remained unchanged. No owner run or Drive upload was started. See
+[delivery evidence](V118_DELIVERY.md). Owner first-use and scientific acceptance
+remain separate.
 
 v117 fixes completed-result import for a verified export-only successor by using
 its hash-bound original optimizer history, retaining the unchanged-state receipt
