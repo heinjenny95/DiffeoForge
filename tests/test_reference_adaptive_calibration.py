@@ -41,6 +41,7 @@ def seed_stub(snapshot, center_id, destination):
         "model": config["model"],
         "deformation": config["model"]["deformation"],
         "source_manifest_sha256": "a" * 64,
+        "source_run_directory": str(study.calibration_candidate_run_directory(candidate)),
     }
 
 

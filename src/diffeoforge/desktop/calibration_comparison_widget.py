@@ -321,10 +321,14 @@ class CalibrationComparisonCanvas3D(QWidget):
                 reconstruction_triangles = np.empty((0, 3), dtype=np.int64)
         if self._show_reconstruction:
             layers.append(
-                SurfaceLayer(reconstruction_vertices, reconstruction_triangles, orange=True)
+                SurfaceLayer(
+                    reconstruction_vertices, reconstruction_triangles, color=(17, 94, 163, 255)
+                )
             )
         if self._show_original:
-            layers.append(SurfaceLayer(original_vertices, original_edges, wireframe=True))
+            layers.append(SurfaceLayer(
+                original_vertices, original_edges, wireframe=True, color=(193, 87, 42, 150)
+            ))
         scene = SurfaceScene(
             self.width(),
             self.height(),

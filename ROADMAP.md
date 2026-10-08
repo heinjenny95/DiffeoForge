@@ -14,6 +14,15 @@ scientific gates. Planning does not mark those gates complete.
 
 ## Pilot usability follow-up
 
+- [x] Retain compatible pilot momentum rows when initializing the full cohort;
+  initialize remaining specimens on the fixed common basis and pause the joint
+  atlas for source-bound early anatomical review. Offer a separate upgrade for
+  completed legacy pilots. See [v118 scope and limits](docs/V118_PILOT_ATLAS_HANDOFF.md).
+- [x] Add non-mutating **Show next specimen** navigation to full-atlas visual QC
+  and emphasize reconstruction with a blue surface against orange original lines.
+- [x] Reuse the atlas launcher-directory policy for PC-axis Shooting in deep
+  project paths. See [v118 launch correction](docs/V118_PC_SHOOTING_LAUNCH.md).
+
 - [x] Open a verified export-only successor for anatomical QC and momenta analysis
   with its protected original optimizer history and unchanged-state receipt.
   Display original history, saved iteration and export duration separately;

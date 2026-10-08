@@ -429,6 +429,19 @@ def _prepare_run(
     summary = validate_input_paths(config, source_config)
     template_metadata, subject_metadata = inspect_inputs(summary)
 
+    from diffeoforge.reference_atlas_handoff import initialization
+
+    handoff = initialization(config)
+    if handoff and (handoff["early_review_approved"] or handoff[
+        "completed_initialization_indices"
+    ]):
+        raise ConfigurationError("A new atlas cannot reuse resume-only phase or review state.")
+    if handoff and {
+        path.name: metadata.sha256
+        for path, metadata in zip(summary.subjects, subject_metadata, strict=True)
+    } != handoff["subject_sha256"]:
+        raise ConfigurationError("Preserved-pilot full-cohort geometry changed.")
+
     output_root = (
         Path(output_directory).expanduser().resolve()
         if output_directory is not None
@@ -1516,6 +1529,19 @@ def execute_run(
 
     ended_at = utc_now()
     duration_seconds = round(time.monotonic() - start_time, 6)
+    from diffeoforge.reference_atlas_handoff import (
+        EARLY_CHECK,
+        initialization,
+        verify_early_check_files,
+    )
+
+    if (
+        return_code == 2 and execution_error is None and initialization(config)
+        and (run_path / "output" / EARLY_CHECK).is_file()
+    ):
+        verify_early_check_files(run_path, config)
+        interrupted = True
+        execution_error = "Planned early atlas review; exact checkpoint and pilot shapes preserved"
     if (
         return_code != 0
         and execution_error is None
@@ -1930,11 +1956,24 @@ def prepare_resume_run(
         from diffeoforge.reference_checkpoint_schedule import new_run_config
 
         config = new_run_config(source_manifest["effective_config"])
+        from diffeoforge.reference_atlas_handoff import adapter_source, configure_resume
+
+        configure_resume(config, source_run)
         old_maximum = int(config["optimization"]["max_iterations"])
         if additional_iterations:
             config["optimization"]["max_iterations"] = old_maximum + additional_iterations
             validate_reference_config(config)
         copied_artifacts: list[Path] = []
+        from diffeoforge.reference_atlas_handoff import EARLY_CHECK, PROGRESS, REVIEW
+
+        for relative in (f"output/{EARLY_CHECK}", f"output/{PROGRESS}", f"analysis/{REVIEW}"):
+            source = source_run / relative
+            if not source.is_file():
+                source = source_run / "resume" / Path(relative).name
+            if source.is_file():
+                destination = temp_directory / "resume" / source.name
+                _copy_and_verify(source, destination, sha256_file(source))
+                copied_artifacts.append(destination)
         for artifact in source_manifest["protected_artifacts"]:
             relative = PurePosixPath(artifact["path"])
             if relative.as_posix() in {
@@ -1958,10 +1997,13 @@ def prepare_resume_run(
         from diffeoforge.reference_singleton_compat import SITECUSTOMIZE, needs_adapter
 
         singleton_source = SITECUSTOMIZE if needs_adapter(config) else ""
-        adapter_source = render_adapter(singleton_source) if compact(config) else singleton_source
-        if adapter_source:
+        rendered_adapter = (
+            render_adapter(singleton_source, adapter_source(config))
+            if compact(config) else singleton_source
+        )
+        if rendered_adapter:
             adapter_path = temp_directory / "engine" / "sitecustomize.py"
-            adapter_path.write_text(adapter_source, encoding="utf-8", newline="\n")
+            adapter_path.write_text(rendered_adapter, encoding="utf-8", newline="\n")
             copied_artifacts.append(adapter_path)
         optimization_path = temp_directory / "engine" / "optimization_parameters.xml"
         generate_resume_optimization_file(

@@ -269,6 +269,22 @@ def test_failed_overlay_cannot_be_marked_using_a_stale_previous_mesh(review_wind
     assert not window._registration_qc_decisions
 
 
+def test_next_specimen_navigates_without_approval_and_stops_at_end(review_window):
+    window = review_window
+    assert window.result_next_specimen_button.isEnabled()
+    window.result_qc_inspected_check.setChecked(True)
+    window.result_next_specimen_button.click()
+    _wait_for_view(window)
+    assert window._loaded_qc_subject == "subject-2"
+    assert not window.result_qc_inspected_check.isChecked()
+    assert not window._registration_qc_decisions
+    assert not window.result_next_specimen_button.isEnabled()
+    window._show_next_registration_specimen()
+    assert window.result_atlas_mesh_combo.currentIndex() == 1
+    window.result_atlas_mesh_search_edit.setText("no-matching-specimen")
+    assert not window.result_next_specimen_button.isEnabled()
+
+
 def test_search_does_not_hide_unresolved_subject_from_release_policy(review_window):
     window = review_window
     _decide(window, "fail")
@@ -602,3 +618,28 @@ def test_disabled_ratings_explain_inspection_requirement(review_window):
     window.result_qc_inspected_check.setChecked(True)
     assert window.result_qc_fail_button.isEnabled()
     assert "implausible" in window.result_qc_decision_hint.text()
+
+
+def test_approved_early_atlas_verifies_resume_outside_gui_callback(review_window, monkeypatch):
+    from types import SimpleNamespace
+
+    import diffeoforge.desktop.widgets as widgets
+
+    window = review_window
+    result = SimpleNamespace(run_directory=window._result_review.run_directory)
+    queued, verified, shown = [], [], []
+    request = object()
+    monkeypatch.setattr(window, "_thread_pool", SimpleNamespace(start=queued.append))
+    monkeypatch.setattr(window, "_show_reference_resume", lambda *values: shown.append(values))
+    monkeypatch.setattr(
+        widgets, "build_reference_resume_launch_request",
+        lambda source, **kwargs: verified.append(source) or request,
+    )
+    window._approved_early_review_run = result.run_directory
+    window._prepare_reference_resume(result)
+    assert not verified and not shown
+    assert len(queued) == 1
+    queued[0].run()
+    assert verified == [result.run_directory]
+    assert shown == [(request, result)]
+    assert window._worker is None

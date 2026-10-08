@@ -79,6 +79,13 @@ topology. Runtime completion remains engineering evidence, not biological
 validation. The default result location is detected by the desktop, which then
 adds the verified mean and ±PC surfaces to the existing native 3D viewer.
 
+Shooting uses the same host working-directory policy as atlas execution. Native
+launchers retain their run directory; WSL and container launchers select it with
+`--cd` and `--workdir` respectively, without redundantly passing a long project
+path to Windows process creation. This avoids Windows error 267 at launch for
+deeply nested saved runs. Existing verified designs can be retried explicitly
+without recalculating the atlas or PCA; failed executions publish no result.
+
 For a completed Deformetrica result, the source desktop also exposes this as
 `Generate verified PC shape meshes…`. The action first reuses and verifies an
 existing default design or creates a new immutable design for at most PC1–PC3 at

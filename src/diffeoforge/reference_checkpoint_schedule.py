@@ -96,9 +96,9 @@ _df_exp.write_flow = _df_flow
 '''
 
 
-def render_adapter(singleton_source=""):
+def render_adapter(singleton_source="", atlas_source=""):
     """Fail closed if Python's normally nonfatal sitecustomize hook fails."""
-    body = singleton_source + SITECUSTOMIZE
+    body = singleton_source + SITECUSTOMIZE + atlas_source
     return (
         '"""DiffeoForge reference output scheduling adapter v1."""\n'
         "try:\n"

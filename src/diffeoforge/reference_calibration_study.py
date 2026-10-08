@@ -2508,14 +2508,11 @@ def _final_configuration(
                 "source": "original_project_configuration",
                 "pilot_check_value": seed["optimization"]["convergence_tolerance"],
             }
-        result["full_cohort_initialization"] = {
-            "method": "learned_pilot_template_and_controls_zero_full_cohort_momenta",
-            "source_run_manifest_sha256": seed["source_manifest_sha256"],
-            "template_sha256": seed["files"]["template"]["sha256"],
-            "control_points_sha256": seed["files"]["control_points"]["sha256"],
-            "limitation": "The full cohort starts new momenta; pilot fits do not establish "
-            "full-cohort convergence or anatomical acceptance.",
-        }
+        from diffeoforge.reference_atlas_handoff import configure_preserved_pilot
+
+        configure_preserved_pilot(
+            config, root=seed_root, seed=seed, config_directory=root / "selected"
+        )
     validate_schema(config)
     final_path = root / "selected" / "atlas-calibrated.yaml"
     final_path.parent.mkdir(parents=True, exist_ok=False)

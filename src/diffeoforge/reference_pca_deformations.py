@@ -28,7 +28,7 @@ from diffeoforge.reference_pca import (
     load_reference_momenta,
     verify_reference_pca_bundle,
 )
-from diffeoforge.runs import publish_directory_exclusive
+from diffeoforge.runs import _backend_process_working_directory, publish_directory_exclusive
 from diffeoforge.strict_json import load_strict_json_object
 from diffeoforge.subprocess_policy import hidden_windows_process_kwargs
 
@@ -601,7 +601,7 @@ def execute_reference_pca_deformation_design(
         try:
             completed = process_runner(
                 command.argv,
-                cwd=command.working_directory,
+                cwd=_backend_process_working_directory(config, command.working_directory),
                 env=environment,
                 capture_output=True,
                 text=True,

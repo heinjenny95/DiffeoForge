@@ -366,8 +366,13 @@ def run_reference_execution_worker(
         if parent_disconnected.is_set():
             return return_code
         if return_code == 130 or report.result["status"] == "interrupted":
+            from diffeoforge.reference_atlas_handoff import EARLY_CHECK
+
+            early = (run_directory / "output" / EARLY_CHECK).is_file()
             return terminal(
                 "interrupted",
+                "Early joint atlas checkpoint ready; review pilot anatomy before continuing."
+                if early else
                 "Deformetrica stopped after cancellation; terminal evidence was preserved.",
             )
         if return_code != 0 or report.result["status"] != "completed":

@@ -58,6 +58,7 @@ class ProjectReviewResult:
     runtime_estimate: ReferenceRuntimeEstimate | None = None
     production_readiness: ReferenceProductionReadiness | None = None
     modern_cuda_runtime: ModernCudaRuntime | None = None
+    preserved_pilot_atlas: bool = False
 
 
 def _number(value: int | float) -> str:
@@ -113,6 +114,9 @@ def _reference_alignment_items(preflight) -> tuple[ReviewItem, ...]:
     """Verify and summarize an optional DiffeoForge Procrustes input cohort."""
 
     directory = preflight.inputs.input_directory
+    from diffeoforge.reference_atlas_handoff import initialization
+
+    preserved = initialization(preflight.config)
     evidence_path = directory / "procrustes.json"
     if not evidence_path.exists() and directory.name == "aligned-vtk":
         evidence_path = directory.parent / "procrustes.json"
@@ -259,9 +263,14 @@ def _reference_alignment_items(preflight) -> tuple[ReviewItem, ...]:
         *(
             (ReviewItem(
                 "Atlas initialization",
-                "verified learned pilot template and control points",
+                "preserved pilot fields; fixed-basis initialization; early joint review"
+                if preserved else "verified learned pilot template and control points",
                 "The original aligned template remains preprocessing evidence, not an "
-                "extra specimen. The unchanged subject cohort uses the learned pilot seed.",
+                "extra specimen. The unchanged subject cohort uses the learned pilot seed. "
+                + ("Pilot momentum rows are retained. Other specimens are initialized against "
+                   "that common basis. The joint atlas pauses after up to 10 iterations "
+                   "for a pilot anatomy check before continuing. This requires a new atlas; "
+                   "existing PCA results are unchanged." if preserved else ""),
             ),)
             if preflight.inputs.cohort_template is not None else ()
         ),
@@ -662,6 +671,11 @@ def _reference_review(config_path: Path, config_sha256: str) -> ProjectReviewRes
         ),
         runtime_estimate=runtime_estimate,
         production_readiness=production_readiness,
+        preserved_pilot_atlas=bool(
+            config["project"].get("parameter_provenance", {}).get("recommendation", {})
+            .get("calibration_result", {}).get("full_cohort_initialization", {}).get("method")
+            == "preserved_pilot_momenta_fixed_basis_initialization"
+        ),
     )
 
 

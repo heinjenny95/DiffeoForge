@@ -12,6 +12,7 @@ import numpy as np
 import pytest
 import yaml
 
+import diffeoforge.backends.deformetrica_reference as reference_backend
 import diffeoforge.reference_calibration_metrics as calibration_metrics_module
 import diffeoforge.reference_pca as reference_pca_module
 import diffeoforge.reference_pca_deformations as deformation_module
@@ -103,8 +104,21 @@ from diffeoforge.reference_shape_space_pdf import (
 from diffeoforge.runs import prepare_run
 
 
-def _completed_reference_run(tmp_path: Path, *, linear_momenta: bool = False) -> Path:
+def _completed_reference_run(
+    tmp_path: Path,
+    *,
+    linear_momenta: bool = False,
+    launcher: dict[str, str] | None = None,
+) -> Path:
     example = Path(__file__).parents[1] / "examples" / "minimal-atlas.yaml"
+    if launcher is not None:
+        config = yaml.safe_load(example.read_text(encoding="utf-8"))
+        for key in ("directory", "template"):
+            config["input"][key] = str((example.parent / config["input"][key]).resolve())
+        config["runtime"]["launcher"] = launcher
+        tmp_path.mkdir(parents=True, exist_ok=True)
+        example = tmp_path / "synthetic-launcher.yaml"
+        example.write_text(yaml.safe_dump(config), encoding="utf-8")
     run = prepare_run(example, run_id="reference-pca-test", output_directory=tmp_path)
     manifest = json.loads((run / "manifest.json").read_text(encoding="utf-8"))
     subjects = [record for record in manifest["inputs"] if record["role"] == "subject"]
@@ -1474,11 +1488,27 @@ def test_reference_pca_deformation_design_rejects_only_zero_variance_endpoints(
     assert not (run / "analysis" / "reference-pca-deformations-v0.1").exists()
 
 
+@pytest.mark.parametrize("launcher_type", ["native", "wsl", "container"])
 def test_reference_pca_deformation_execution_publishes_verified_endpoints(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    launcher_type: str,
 ) -> None:
-    run = _completed_reference_run(tmp_path)
+    launchers = {
+        "native": {"type": "native", "executable": "deformetrica"},
+        "wsl": {"type": "wsl", "executable": "/runtime/bin/deformetrica",
+                "distribution": "Synthetic"},
+        "container": {"type": "container", "engine": "docker", "image": "synthetic"},
+    }
+    if launcher_type != "native":
+        tmp_path = tmp_path / ("nested-project-" * 8) / ("saved-run-" * 6)
+        assert len(str(tmp_path)) > 260
+    if launcher_type == "wsl":
+        monkeypatch.setattr(reference_backend, "os", SimpleNamespace(name="nt"))
+        monkeypatch.setattr(reference_backend.shutil, "which", lambda command: command)
+        monkeypatch.setattr(reference_backend, "_windows_to_wsl",
+                            lambda path, **_kwargs: path.as_posix())
+    run = _completed_reference_run(tmp_path, launcher=launchers[launcher_type])
     bundle = write_reference_pca_bundle(run)
     design = create_reference_pca_deformation_design(
         run,
@@ -1497,7 +1527,19 @@ def test_reference_pca_deformation_execution_publishes_verified_endpoints(
         if "startupinfo" in expected:
             assert _kwargs["startupinfo"].dwFlags == expected["startupinfo"].dwFlags
             assert _kwargs["startupinfo"].wShowWindow == expected["startupinfo"].wShowWindow
-        root = Path(cwd)
+        if launcher_type == "native":
+            root = Path(cwd)
+        elif launcher_type == "wsl":
+            assert cwd is None
+            root = Path(_argv[_argv.index("--cd") + 1])
+        else:
+            assert cwd is None
+            assert _argv[_argv.index("--workdir") + 1] == "/work"
+            mount = _argv[_argv.index("--mount") + 1]
+            root = Path(mount.removeprefix("type=bind,source=").removesuffix(",target=/work"))
+        assert root.parent == design.parent
+        assert root.name.startswith(".reference-pca-deformations-v0.1-result.tmp-")
+        assert _kwargs["env"]["OMP_NUM_THREADS"] == "4"
         output = root / "output"
         header = (
             (root / "source" / "endpoint-momenta.txt").read_text(encoding="utf-8").splitlines()[0]
@@ -1534,7 +1576,10 @@ def test_reference_pca_deformation_execution_publishes_verified_endpoints(
 
     assert result["status"] == "completed"
     assert result["execution"]["return_code"] == 0
-    assert result["execution"]["argv"][1:3] == ["compute", "engine/model.xml"]
+    argv = result["execution"]["argv"]
+    assert argv[argv.index("compute") : argv.index("compute") + 2] == [
+        "compute", "engine/model.xml",
+    ]
     assert len(result["endpoints"]) == 5
     assert [endpoint["path"] for endpoint in result["endpoints"]] == [
         "deformations/mean-momenta.vtk",

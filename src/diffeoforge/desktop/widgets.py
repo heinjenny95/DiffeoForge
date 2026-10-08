@@ -8,6 +8,7 @@ import uuid
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
+from types import SimpleNamespace
 
 from PySide6.QtCore import QEvent, QObject, QRunnable, Qt, QTimer, QUrl, Signal, Slot
 from PySide6.QtGui import QCloseEvent, QDesktopServices
@@ -584,6 +585,111 @@ class _TemplatePreviewWorker(QRunnable):
             self.signals.failed.emit(str(error))
             return
         self.signals.succeeded.emit(model)
+
+
+class _PilotAtlasHandoffWorker(QRunnable):
+    def __init__(self, config_path: Path) -> None:
+        super().__init__()
+        self.config_path = config_path
+        self.signals = _WorkerSignals()
+
+    @Slot()
+    def run(self) -> None:
+        try:
+            from diffeoforge.reference_atlas_handoff import upgrade_saved_pilot_config
+
+            path = upgrade_saved_pilot_config(self.config_path)
+            result = load_existing_reference_project(path)
+        except (KeyError, OSError, RuntimeError, TypeError, ValueError) as error:
+            self.signals.failed.emit(str(error))
+            return
+        self.signals.succeeded.emit(result)
+
+
+class _EarlyAtlasCheckWorker(QRunnable):
+    def __init__(self, run: Path) -> None:
+        super().__init__()
+        self.run_directory = run
+        self.signals = _WorkerSignals()
+
+    @Slot()
+    def run(self) -> None:
+        try:
+            from diffeoforge.desktop.reference_calibration_dialog import CalibrationQcPair
+            from diffeoforge.reference_atlas_handoff import read_early_check
+            from diffeoforge.result_report import collect_run_report
+
+            report = collect_run_report(self.run_directory)
+            check = read_early_check(self.run_directory, verified_report=report)
+            subjects = {
+                Path(item["staged_path"]).name: item
+                for item in report.manifest["inputs"] if item["role"] == "subject"
+            }
+            pairs = []
+            for item in check["meshes"]:
+                name = check["subject_labels"][item["index"]]
+                source = subjects[name]
+                after = self.run_directory / "output" / item["after"]["path"]
+                pairs.append(CalibrationQcPair(
+                    name, f"Early atlas / original — {name}",
+                    self.run_directory / source["staged_path"], after, True,
+                    source["geometry"]["sha256"], item["after"]["sha256"],
+                ))
+                pairs.append(CalibrationQcPair(
+                    f"baseline:{name}", f"Preserved pilot / early atlas — {name}",
+                    self.run_directory / "output" / item["before"]["path"], after, False,
+                    item["before"]["sha256"], item["after"]["sha256"],
+                ))
+        except (KeyError, OSError, RuntimeError, TypeError, ValueError) as error:
+            self.signals.failed.emit(str(error))
+            return
+        self.signals.succeeded.emit((self.run_directory, tuple(pairs)))
+
+
+class _EarlyAtlasResumeWorker(QRunnable):
+    """Keep full-cohort resume verification out of the review callback."""
+
+    def __init__(self, result: ResumableReferenceRun) -> None:
+        super().__init__()
+        self.result = result
+        self.signals = _WorkerSignals()
+
+    @Slot()
+    def run(self) -> None:
+        try:
+            request = build_reference_resume_launch_request(
+                self.result.run_directory,
+                request_id=f"reference-resume-{uuid.uuid4().hex}",
+                run_id=f"{self.result.run_directory.name[:100]}-resume-{uuid.uuid4().hex[:8]}",
+            )
+        except (OSError, RuntimeError, TypeError, ValueError) as error:
+            self.signals.failed.emit(str(error))
+            return
+        self.signals.succeeded.emit((request, self.result))
+
+
+class _EarlyAtlasDecisionWorker(QRunnable):
+    def __init__(self, run: Path, approved: bool, inspected: set[str], notes: str) -> None:
+        super().__init__()
+        self.run_directory = run
+        self.approved = approved
+        self.inspected = inspected
+        self.notes = notes
+        self.signals = _WorkerSignals()
+
+    @Slot()
+    def run(self) -> None:
+        try:
+            from diffeoforge.reference_atlas_handoff import record_early_review
+
+            record_early_review(
+                self.run_directory, approved=self.approved,
+                inspected_subjects=self.inspected, notes=self.notes,
+            )
+        except (KeyError, OSError, RuntimeError, TypeError, ValueError) as error:
+            self.signals.failed.emit(str(error))
+            return
+        self.signals.succeeded.emit((self.run_directory, self.approved))
 
 
 class _ReferenceCalibrationOpenWorker(QRunnable):
@@ -2036,6 +2142,15 @@ class DiffeoForgeWindow(QMainWindow):
             0,
             Qt.AlignmentFlag.AlignLeft,
         )
+        self.prepare_preserved_atlas_button = QPushButton("Prepare atlas with saved pilot fits…")
+        self.prepare_preserved_atlas_button.setObjectName("secondary")
+        self.prepare_preserved_atlas_button.setToolTip(
+            "Create a separate configuration that preserves compatible pilot fields, fits "
+            "the remaining specimens on the common basis, then pauses for an early atlas check."
+        )
+        self.prepare_preserved_atlas_button.clicked.connect(self._prepare_preserved_atlas)
+        self.prepare_preserved_atlas_button.hide()
+        calibration_layout.addWidget(self.prepare_preserved_atlas_button)
         self.reference_calibration_execution_card = calibration
         self.reference_calibration_execution_card.hide()
         return calibration
@@ -2631,6 +2746,11 @@ class DiffeoForgeWindow(QMainWindow):
         self.run_more_iterations_button.clicked.connect(self._prepare_iteration_extension)
         self.run_more_iterations_button.hide()
         result_button_row.addWidget(self.run_more_iterations_button)
+        self.review_early_atlas_button = QPushButton("Review early atlas check…")
+        self.review_early_atlas_button.setObjectName("primary")
+        self.review_early_atlas_button.clicked.connect(self._open_early_atlas_check)
+        self.review_early_atlas_button.hide()
+        result_button_row.addWidget(self.review_early_atlas_button)
         result_button_row.addWidget(self.delete_remote_server_copy_button)
         result_button_row.addStretch()
         result_layout.addWidget(result_title)
@@ -2771,6 +2891,14 @@ class DiffeoForgeWindow(QMainWindow):
         self.result_atlas_mesh_counter_label = QLabel("0 meshes")
         self.result_atlas_mesh_counter_label.setObjectName("hint")
         atlas_mesh_controls.addWidget(self.result_atlas_mesh_counter_label)
+        self.result_next_specimen_button = QPushButton("Show next specimen →")
+        self.result_next_specimen_button.setObjectName("secondary")
+        self.result_next_specimen_button.setToolTip(
+            "Show the next mesh in the displayed list without recording a QC decision. "
+            "Choose All specimen meshes and clear the search to inspect the full cohort."
+        )
+        self.result_next_specimen_button.clicked.connect(self._show_next_registration_specimen)
+        self.result_next_specimen_button.hide()
         atlas_mesh_search_controls = QHBoxLayout()
         atlas_mesh_search_controls.setSpacing(10)
         self.result_atlas_mesh_search_label = QLabel("Find specimen")
@@ -2812,9 +2940,9 @@ class DiffeoForgeWindow(QMainWindow):
         self.result_atlas_status_label.setObjectName("status")
         self.result_atlas_status_label.setWordWrap(True)
         overlay_controls = QVBoxLayout()
-        self.result_show_original_check = QCheckBox("Show original (blue wireframe)")
+        self.result_show_original_check = QCheckBox("Show original (orange wireframe)")
         self.result_show_original_check.setChecked(True)
-        self.result_show_reconstruction_check = QCheckBox("Show reconstruction (orange surface)")
+        self.result_show_reconstruction_check = QCheckBox("Show reconstruction (blue surface)")
         self.result_show_reconstruction_check.setChecked(True)
         self.result_show_original_check.toggled.connect(self._set_registration_qc_original_visible)
         self.result_show_reconstruction_check.toggled.connect(
@@ -2909,6 +3037,7 @@ class DiffeoForgeWindow(QMainWindow):
         controls_layout.setContentsMargins(0, 0, 8, 0)
         controls_layout.addLayout(atlas_mesh_group_controls)
         controls_layout.addLayout(atlas_mesh_controls)
+        controls_layout.addWidget(self.result_next_specimen_button)
         controls_layout.addLayout(atlas_mesh_search_controls)
         controls_layout.addLayout(atlas_view_controls)
         controls_layout.addLayout(overlay_controls)
@@ -7564,6 +7693,8 @@ class DiffeoForgeWindow(QMainWindow):
 
     @Slot()
     def _sync_ready_state(self) -> None:
+        self.review_early_atlas_button.setEnabled(self._worker is None)
+        self.prepare_preserved_atlas_button.setEnabled(self._worker is None)
         for button in (
             self.run_more_iterations_button, self.result_more_iterations_button,
             self.qc_more_iterations_button,
@@ -8015,7 +8146,28 @@ class DiffeoForgeWindow(QMainWindow):
             "Crash recovery stopped without declaring the run terminal: " + message,
         )
 
-    def _prepare_reference_resume(self, result: ResumableReferenceRun) -> None:
+    def _prepare_reference_resume(
+        self, result: ResumableReferenceRun, *, early_review_done: bool = False
+    ) -> None:
+        from diffeoforge.reference_atlas_handoff import EARLY_CHECK
+
+        approved = getattr(self, "_approved_early_review_run", None) == result.run_directory
+        self._approved_early_review_run = None
+        if (
+            not early_review_done and not approved
+            and (result.run_directory / "output" / EARLY_CHECK).is_file()
+        ):
+            self._open_early_atlas_check(result.run_directory)
+            return
+        if approved or early_review_done:
+            worker = _EarlyAtlasResumeWorker(result)
+            worker.signals.succeeded.connect(self._early_atlas_resume_ready)
+            worker.signals.failed.connect(self._preserved_atlas_failed)
+            self._worker = worker
+            self.run_state_label.setText("Verifying the approved atlas continuation in background…")
+            self._sync_ready_state()
+            self._thread_pool.start(worker)
+            return
         run_id = f"{result.run_directory.name[:100]}-resume-{uuid.uuid4().hex[:8]}"
         try:
             request = build_reference_resume_launch_request(
@@ -8035,6 +8187,16 @@ class DiffeoForgeWindow(QMainWindow):
             self.status_label.setText(f"Interrupted run cannot be resumed safely: {error}")
             return
 
+        self._show_reference_resume(request, result)
+
+    @Slot(object)
+    def _early_atlas_resume_ready(self, prepared: tuple) -> None:
+        self._worker = None
+        if self._close_after_worker:
+            self._close_after_worker = False
+            self.close()
+            return
+        request, result = prepared
         self._show_reference_resume(request, result)
 
     def _refresh_iteration_extension(self, source: Path | None) -> None:
@@ -8086,6 +8248,7 @@ class DiffeoForgeWindow(QMainWindow):
         *, extension_maximum: int | None = None,
     ) -> None:
         self._refresh_iteration_extension(None)
+        self.review_early_atlas_button.hide()
         self._result = None
         self._run_readiness = None
         self._run_result = None
@@ -9356,6 +9519,11 @@ class DiffeoForgeWindow(QMainWindow):
         return "Continue pilot calibration"
 
     def _refresh_reference_calibration_execution_card(self) -> None:
+        self.prepare_preserved_atlas_button.setVisible(
+            self._reference_calibration_completed()
+            and self.engine_combo.currentData() == DesktopEngine.DEFORMETRICA_REFERENCE
+        )
+        self.prepare_preserved_atlas_button.setEnabled(self._worker is None)
         reference = self.engine_combo.currentData() == DesktopEngine.DEFORMETRICA_REFERENCE
         if not reference:
             self.reference_calibration_execution_card.hide()
@@ -9696,6 +9864,121 @@ class DiffeoForgeWindow(QMainWindow):
             dialog.show()
             return
         self._finish_reference_calibration(snapshot)
+
+    @Slot()
+    def _prepare_preserved_atlas(self) -> None:
+        if self._worker is not None or self._reference_calibrated_config_path is None:
+            return
+        worker = _PilotAtlasHandoffWorker(self._reference_calibrated_config_path)
+        worker.signals.succeeded.connect(self._preserved_atlas_ready)
+        worker.signals.failed.connect(self._preserved_atlas_failed)
+        self._worker = worker
+        self.status_label.setText("Binding saved pilot fields to the full cohort…")
+        self._sync_ready_state()
+        self._thread_pool.start(worker)
+
+    @Slot(object)
+    def _preserved_atlas_ready(self, result: ProjectSetupResult) -> None:
+        worker = self._worker
+        self._worker = None
+        if self._close_after_worker:
+            self._close_after_worker = False
+            self.close()
+            return
+        if (
+            isinstance(worker, _PilotAtlasHandoffWorker)
+            and worker.config_path != self._reference_calibrated_config_path
+        ):
+            self.status_label.setText("Project changed; the prepared atlas setup was not applied.")
+            self._sync_ready_state()
+            return
+        self._apply_reference_calibrated_configuration(result.config_path)
+        self._result = result
+        self._remember_current_project(result)
+        self._review = None
+        self._reference_readiness = None
+        self._reference_run_request = None
+        self.status_label.setText(
+            "Saved pilot fits bound. Review the new atlas setup; starting remains your decision."
+        )
+        self._review_project()
+
+    @Slot(str)
+    def _preserved_atlas_failed(self, message: str) -> None:
+        self._worker = None
+        if self._close_after_worker:
+            self._close_after_worker = False
+            self.close()
+            return
+        self._sync_ready_state()
+        self.status_label.setText(f"Atlas initialization could not be prepared: {message}")
+        QMessageBox.warning(self, "Atlas initialization unavailable", message)
+
+    def _open_early_atlas_check(self, run: Path | bool | None = None) -> None:
+        if self._worker is not None:
+            return
+        if not isinstance(run, Path):
+            if not isinstance(self._run_result, ReferenceExecutionControllerResult):
+                return
+            run = Path(self._run_result.terminal_event.payload["destination"])
+        worker = _EarlyAtlasCheckWorker(run)
+        worker.signals.succeeded.connect(self._early_atlas_check_ready)
+        worker.signals.failed.connect(self._preserved_atlas_failed)
+        self._worker = worker
+        self.run_state_label.setText("Verifying the early checkpoint and pilot comparisons…")
+        self._sync_ready_state()
+        self._thread_pool.start(worker)
+
+    @Slot(object)
+    def _early_atlas_check_ready(self, prepared: tuple) -> None:
+        from diffeoforge.desktop.reference_calibration_dialog import (
+            CalibrationCandidateViewerDialog,
+        )
+
+        self._worker = None
+        if self._close_after_worker:
+            self._close_after_worker = False
+            self.close()
+            return
+        run, pairs = prepared
+        dialog = CalibrationCandidateViewerDialog(
+            run / "analysis/early-review", SimpleNamespace(
+                run_directory=run, candidate_id="early-atlas-check"
+            ), self, pairs=pairs,
+        )
+        dialog.setWindowTitle("Early atlas check — preserve the approved pilot anatomy")
+        dialog.setStyleSheet(self.styleSheet())
+        dialog.exec()
+        if dialog.review_recorded:
+            worker = _EarlyAtlasDecisionWorker(
+                run, dialog.review_complete,
+                dialog._reviewed_pair_ids & dialog._required_pair_ids,
+                dialog.anatomical_notes.text().strip(),
+            )
+            worker.signals.succeeded.connect(self._early_atlas_review_saved)
+            worker.signals.failed.connect(self._preserved_atlas_failed)
+            self._worker = worker
+            self.run_state_label.setText("Verifying and saving your early atlas decision…")
+            self._thread_pool.start(worker)
+        self._sync_ready_state()
+
+    @Slot(object)
+    def _early_atlas_review_saved(self, saved: tuple) -> None:
+        self._worker = None
+        if self._close_after_worker:
+            self._close_after_worker = False
+            self.close()
+            return
+        run, approved = saved
+        if approved:
+            self._approved_early_review_run = run
+            self._start_run_lookup(RunLookupPurpose.RESUME_INTERRUPTED, run)
+            return
+        self.run_state_label.setText(
+            "Early atlas fit rejected. The checkpoint and review are saved; "
+            "this joint atlas will not continue without a new approval."
+        )
+        self._sync_ready_state()
 
     @Slot(str)
     def _reference_calibration_open_failed(self, error: str) -> None:
@@ -10244,6 +10527,12 @@ class DiffeoForgeWindow(QMainWindow):
             "This check was read-only. The destination and all reviewed inputs are checked "
             "again inside the worker immediately before preparation."
         )
+        if review.preserved_pilot_atlas:
+            self.run_title_label.setText("Initialize atlas and check pilot anatomy early")
+            self.run_subtitle_label.setText(
+                "Preserve the pilot fields, initialize other specimens on the same fixed basis, "
+                "then run up to 10 joint iterations and pause for your anatomical review."
+            )
         self.run_progress_bar.setRange(0, 1)
         self.run_progress_bar.setValue(0)
         self.run_progress_bar.setFormat("Not started")
@@ -10743,7 +11032,18 @@ class DiffeoForgeWindow(QMainWindow):
             self._latest_reference_resource_text = self._reference_resource_text(
                 event.payload.get("resources")
             )
-            if state == "computing_first_iteration":
+            if "DiffeoForge initialization:" in latest_message:
+                message = latest_message.split("DiffeoForge initialization:", 1)[1].strip()
+                self.run_stage_label.setText(f"Initialize full cohort — {message}")
+                self.run_progress_bar.setRange(0, 0)
+                self.run_progress_bar.setFormat("Initialize specimens on the fixed pilot basis")
+                self.run_optimizer_label.setText(
+                    f"Initialization precedes the joint atlas. {message}\n"
+                    f"{self._format_duration(elapsed)} elapsed; "
+                    "the early joint checkpoint will need your review.\n"
+                    f"{self._latest_reference_resource_text}"
+                )
+            elif state == "computing_first_iteration":
                 message = (
                     "Deformetrica is active and computing its first complete objective and "
                     "gradient evaluation."
@@ -11062,6 +11362,7 @@ class DiffeoForgeWindow(QMainWindow):
         result: ReferenceExecutionControllerResult,
     ) -> None:
         terminal = result.terminal_event
+        self.review_early_atlas_button.hide()
         outcome = result.outcome
         destination_exists = bool(terminal.payload["destination_exists"])
         if destination_exists:
@@ -11089,8 +11390,15 @@ class DiffeoForgeWindow(QMainWindow):
             )
             self.run_progress_bar.setValue(self.run_progress_bar.maximum())
         elif result.interrupted:
+            from diffeoforge.reference_atlas_handoff import EARLY_CHECK
+
+            early = (Path(terminal.payload["destination"]) / "output" / EARLY_CHECK).is_file()
+            self.review_early_atlas_button.setVisible(early)
             self.run_state_label.setObjectName("status")
             self.run_state_label.setText(
+                "Early atlas checkpoint ready. Review the pilot specimens, then explicitly "
+                "start the saved-state continuation. The full mesh export has not started."
+                if early else
                 "Deformetrica was interrupted safely. Terminal evidence and any checkpoint "
                 "reported by the run were preserved and independently verified."
             )
@@ -11586,6 +11894,19 @@ class DiffeoForgeWindow(QMainWindow):
         else:
             text = f"{current} of {self._result_atlas_mesh_total}"
         self.result_atlas_mesh_counter_label.setText(text)
+        specimens = self.result_atlas_mesh_group_combo.currentData() in {"specimens", "flagged"}
+        self.result_next_specimen_button.setVisible(specimens)
+        self.result_next_specimen_button.setEnabled(
+            specimens and 0 < current < self.result_atlas_mesh_combo.count()
+        )
+
+    @Slot()
+    def _show_next_registration_specimen(self) -> None:
+        if self.result_atlas_mesh_group_combo.currentData() not in {"specimens", "flagged"}:
+            return
+        index = self.result_atlas_mesh_combo.currentIndex()
+        if 0 <= index < self.result_atlas_mesh_combo.count() - 1:
+            self.result_atlas_mesh_combo.setCurrentIndex(index + 1)
 
     @Slot(int)
     def _load_selected_atlas_mesh(self, _index: int) -> None:
@@ -11678,7 +11999,7 @@ class DiffeoForgeWindow(QMainWindow):
             )
             self.result_atlas_status_label.setText(
                 f"{item.subject_name}\nDecision: {decision}.\nReview reason: {reason}\n"
-                "Blue = original in atlas coordinates; orange = reconstruction."
+                "Orange = original in atlas coordinates; blue = reconstruction."
             )
             return
         if not self._registration_results_released():

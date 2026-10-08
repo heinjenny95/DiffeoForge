@@ -89,7 +89,9 @@ def render_surface_scene(scene: SurfaceScene, cancelled: threading.Event) -> QIm
             light = np.abs(normals[:, 2]) / np.maximum(np.linalg.norm(normals, axis=1), 1e-12)
             order = np.argsort(np.mean(camera_triangles[:, :, 2], axis=1))
             painter.setPen(
-                QPen(QColor(193, 87, 42, 105), 0.30)
+                QPen(QColor(*layer.color), 0.30)
+                if layer.color is not None
+                else QPen(QColor(193, 87, 42, 105), 0.30)
                 if layer.orange
                 else QPen(QColor("#6e9992"), 0.35)
             )
@@ -100,7 +102,12 @@ def render_surface_scene(scene: SurfaceScene, cancelled: threading.Event) -> QIm
                     (218 + 27 * light[index]) if layer.orange else (198 + 38 * light[index])
                 )
                 painter.setBrush(
-                    QColor(242, max(150, shade - 42), 116, 190)
+                    QColor(
+                        *(int(c * (0.82 + 0.18 * light[index])) for c in layer.color[:3]),
+                        layer.color[3],
+                    )
+                    if layer.color is not None
+                    else QColor(242, max(150, shade - 42), 116, 190)
                     if layer.orange
                     else QColor(shade - 38, shade, shade - 16, 255)
                 )

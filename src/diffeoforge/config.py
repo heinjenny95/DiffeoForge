@@ -120,8 +120,10 @@ def _pilot_cohort_template(
         if digest(original) != plan.get("template_sha256"):
             raise ConfigurationError("Original cohort template no longer matches pilot evidence.")
         if (
-            initialization.get("method")
-            != "learned_pilot_template_and_controls_zero_full_cohort_momenta"
+            initialization.get("method") not in {
+                "learned_pilot_template_and_controls_zero_full_cohort_momenta",
+                "preserved_pilot_momenta_fixed_basis_initialization",
+            }
             or template.is_symlink()
             or digest(template) != initialization.get("template_sha256")
             or controls is None
@@ -250,6 +252,20 @@ def validate_input_paths(config: Mapping[str, Any], config_path: Path | str) -> 
                 raise ValueError("dimensions or finite values do not match the cohort and controls")
         except (OSError, UnicodeError, ValueError, IndexError) as error:
             raise ConfigurationError(f"Invalid initial momenta: {error}") from error
+
+    from diffeoforge.reference_atlas_handoff import initialization
+
+    handoff = initialization(config)
+    if handoff:
+        if (
+            initial_momenta is None
+            or hashlib.sha256(initial_momenta.read_bytes()).hexdigest()
+            != handoff["initial_momenta_sha256"]
+            or handoff["subject_labels"] != [p.name for p in subjects]
+        ):
+            raise ConfigurationError(
+                "Preserved pilot initial momenta or subject identities changed."
+            )
 
     return InputSummary(
         input_directory=input_directory,

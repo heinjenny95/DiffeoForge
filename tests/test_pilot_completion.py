@@ -195,7 +195,10 @@ def test_capped_fit_finishes_only_explicitly_with_warnings_and_original_toleranc
         config["optimization"]["convergence_tolerance"]
         == original["optimization"]["convergence_tolerance"]
     )
-    assert config["model"]["deformation"].get("initial_momenta") is None
+    assert config["model"]["deformation"].get("initial_momenta")
+    assert config["project"]["parameter_provenance"]["recommendation"]["calibration_result"][
+        "full_cohort_initialization"
+    ]["method"] == "preserved_pilot_momenta_fixed_basis_initialization"
     assert study.load_reference_calibration_study(final.study_directory).status == "completed"
 
 

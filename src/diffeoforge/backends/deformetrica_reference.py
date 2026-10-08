@@ -60,6 +60,11 @@ def validate_reference_config(config: Mapping[str, Any]) -> None:
         raise ConfigurationError(
             "Reference runs must retain flow meshes in contract 0.1 so evidence is not deleted."
         )
+    from diffeoforge.reference_atlas_handoff import adapter_source, initialization
+    from diffeoforge.reference_checkpoint_schedule import new_run_config
+
+    if initialization(config):
+        adapter_source(new_run_config(config))
 
 
 def _indent_xml(element: ET.Element, level: int = 0) -> None:
@@ -240,8 +245,12 @@ def render_engine_file_bytes(
     from diffeoforge.reference_checkpoint_schedule import render_adapter
 
     if compact(config):
+        from diffeoforge.reference_atlas_handoff import adapter_source
+
         singleton_source = rendered.get("sitecustomize.py", b"").decode("utf-8")
-        rendered["sitecustomize.py"] = render_adapter(singleton_source).encode("utf-8")
+        rendered["sitecustomize.py"] = render_adapter(
+            singleton_source, adapter_source(config)
+        ).encode("utf-8")
     return rendered
 
 

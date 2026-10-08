@@ -462,13 +462,13 @@ class CalibrationCandidateViewerDialog(QDialog):
         root.addWidget(self.body_scroll, 1)
         title = QLabel("Does the reconstruction preserve the original anatomy?")
         if read_only:
-            title.setText("Current fit (blue) / Plan B (orange)")
+            title.setText("Current fit (orange) / Plan B (blue)")
         title.setObjectName("title")
         layout.addWidget(title)
         intro = QLabel(
-            "Blue lines are the original pilot mesh. The orange surface is what "
+            "Orange lines are the original pilot mesh. The blue surface is what "
             "Deformetrica reconstructed from the atlas. Where they overlap closely, "
-            "the blue lines should sit on the orange surface."
+            "the orange lines should sit on the blue surface."
         )
         intro.setWordWrap(True)
         if read_only:
@@ -501,7 +501,7 @@ class CalibrationCandidateViewerDialog(QDialog):
         specimen_navigation = QHBoxLayout()
         self.previous_specimen_button = QPushButton("← Previous")
         self.previous_specimen_button.clicked.connect(lambda: self._navigate_required_specimen(-1))
-        self.next_specimen_button = QPushButton("Next →")
+        self.next_specimen_button = QPushButton("Show next specimen →")
         self.next_specimen_button.clicked.connect(lambda: self._navigate_required_specimen(1))
         _set_action_emphasis(self.previous_specimen_button, False)
         specimen_navigation.addWidget(self.previous_specimen_button)
@@ -509,9 +509,9 @@ class CalibrationCandidateViewerDialog(QDialog):
         specimen_navigation.addWidget(self.next_specimen_button)
         layout.addLayout(specimen_navigation)
         toggles = QHBoxLayout()
-        self.show_original = QCheckBox("Show original (blue lines)")
+        self.show_original = QCheckBox("Show original (orange lines)")
         self.show_original.setChecked(True)
-        self.show_reconstruction = QCheckBox("Show reconstruction (orange surface)")
+        self.show_reconstruction = QCheckBox("Show reconstruction (blue surface)")
         self.show_reconstruction.setChecked(True)
         toggles.addWidget(self.show_original)
         toggles.addWidget(self.show_reconstruction)
@@ -3349,7 +3349,7 @@ class ReferenceCalibrationDialog(QDialog):
             dialog = CalibrationCandidateViewerDialog(
                 root, candidate, self, pairs=pairs, read_only=True
             )
-            dialog.setWindowTitle("Plan B comparison — current fit (blue) / Plan B (orange)")
+            dialog.setWindowTitle("Plan B comparison — current fit (orange) / Plan B (blue)")
             dialog.exec()
             return
         screen_parent = None

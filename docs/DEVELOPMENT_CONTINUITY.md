@@ -1,4 +1,4 @@
-# Development continuity — v117 recovered-result import
+# Development continuity — v118 pilot-to-atlas handoff and visual QC
 
 Snapshot: 2026-10-08. This is a public, software-only continuation guide. Detailed
 research results, local paths, account destinations and run identities belong in
@@ -20,6 +20,21 @@ correct parameters or interpret biology for the researcher. Deformetrica is the
 default supported reference route; the Modern engine remains evidence-gated.
 
 ## Current source work
+
+v118 applies atlas execution's existing host-directory policy to PC Shooting.
+WSL/container launchers already select their working directory explicitly and
+now omit the redundant Windows `cwd`, which caused error 267 in deep saved-run
+hierarchies. Native launchers retain their `cwd`; scientific inputs and immutable
+publication are unchanged. See [scope and checks](V118_PC_SHOOTING_LAUNCH.md).
+It also preserves compatible pilot fields as common-basis atlas initialization,
+fits remaining specimens against that fixed basis and pauses after up to 10 joint
+iterations for checkpoint-bound human review. Older pilots have an explicit
+separate configuration upgrade. Existing atlas/PCA results are untouched. Full
+QC adds non-mutating next-specimen navigation; original lines are orange and
+reconstruction is blue in both pilot and atlas viewers. See
+[handoff behavior, verification and limits](V118_PILOT_ATLAS_HANDOFF.md).
+The build/install state is pending; installed dev117 remains unchanged until a
+verified package and an idle-application/backend check are available.
 
 v117 fixes completed-result import for a verified export-only successor by using
 its hash-bound original optimizer history, retaining the unchanged-state receipt
