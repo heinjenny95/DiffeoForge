@@ -21,6 +21,14 @@ default supported reference route; the Modern engine remains evidence-gated.
 
 ## Current source work
 
+The source-only saved-state final-export support tool recovers a verified stopped
+atlas whose final output failed, without re-entering gradient ascent. It retains
+the complete native trajectories in a separately protected successor. Fifty-one
+scoped tests passed, and a native two-subject CPU test reproduced all nine final
+VTKs byte-identically with unchanged state and source bytes. See
+[contract and limits](REFERENCE_FINAL_EXPORT_RECOVERY.md). No desktop version bump,
+installer rebuild or scientific acceptance is implied.
+
 v116 adds a lightweight live objective plot to full-reference execution and an
 explicit +300-iteration successor for a completed capped gradient-ascent run.
 The action is available in the Run card, QC footer and after reopening results;

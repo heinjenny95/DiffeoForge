@@ -14,6 +14,13 @@ scientific gates. Planning does not mark those gates complete.
 
 ## Pilot usability follow-up
 
+- [x] Provide a source support tool for final-export failures after a verified
+  native stop: restore the unchanged saved state in a separate protected
+  successor, reserve complete output space and skip further optimization.
+  See [verification and limits](docs/REFERENCE_FINAL_EXPORT_RECOVERY.md).
+- [ ] Expose saved-state export recovery in the desktop and apply complete-flow
+  storage planning to large-template cohorts below the production-scale threshold.
+
 - [x] Show a lightweight live objective history during full-reference atlas
   execution, with optional attachment/regularity curves, and offer an explicit
   +300-iteration immutable checkpoint successor after a capped run. Preserve

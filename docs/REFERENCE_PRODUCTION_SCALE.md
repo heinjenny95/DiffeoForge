@@ -55,6 +55,13 @@ limit in a new immutable successor (e.g. 300 → 600). Tolerance/line-search sto
 are not relabeled as capped runs. Existing recovery budgets and source evidence
 remain unchanged. See [live objectives and continuation](V116_LIVE_OPTIMIZER_AND_CONTINUATION.md).
 
+If optimization stopped but final mesh export failed, ordinary resume can change
+the saved fit. The source-only [final-export recovery tool](REFERENCE_FINAL_EXPORT_RECOVERY.md)
+instead verifies the native stop and unchanged state, reserves a complete new
+export and invokes the original writer without another optimizer iteration.
+Its storage check also applies to cohorts below the production-scale threshold;
+the general desktop launch threshold above remains unchanged.
+
 Resume creates a new immutable successor. The source remains outside the write
 path. Deformetrica restores parameters and iteration from its checkpoint, but
 version 4.3 reinitializes objective, gradient, and line-search state; the continued
