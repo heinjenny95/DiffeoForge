@@ -1,6 +1,6 @@
-# Development continuity — v116 live optimizer and continuation
+# Development continuity — v117 recovered-result import
 
-Snapshot: 2026-10-07. This is a public, software-only continuation guide. Detailed
+Snapshot: 2026-10-08. This is a public, software-only continuation guide. Detailed
 research results, local paths, account destinations and run identities belong in
 the owner's private project handoff, not this repository.
 
@@ -26,7 +26,12 @@ its hash-bound original optimizer history, retaining the unchanged-state receipt
 and distinguishing original-run duration from final export. Unknown duration
 stays unknown. Full output verification is shared only within one open operation;
 each reopening verifies again. See [contract and checks](V117_EXPORT_ONLY_RESULT_IMPORT.md).
-Installation and owner anatomical acceptance are tracked separately.
+The final build is installed locally as dev117, including the v116 features.
+The normal full-cohort result-import check passed without additional optimization;
+the recorded original tolerance stop and critical source files were retained.
+Complete import still took about 14.5 minutes in the retained-cohort test.
+See [build and installation evidence](V117_DELIVERY.md). Owner anatomical
+acceptance and public-release gates remain separate.
 
 The source-only saved-state final-export support tool recovers a verified stopped
 atlas whose final output failed, without re-entering gradient ascent. It retains
@@ -44,9 +49,10 @@ are preserved. Launch request 0.3 retains 0.2 reading, and worker progress uses
 the actual protected effective successor limit. See [scope and checks](V116_LIVE_OPTIMIZER_AND_CONTINUATION.md).
 Native synthetic continuation restored iteration 4 and stopped at 131 under a
 304 limit, with unchanged source bytes. Owner/scientific acceptance remains open.
-The corrected frozen GUI/workers and installer are verified, but installation is
-deferred while the owner app/full atlas are active. Installed dev115 is unchanged.
-Build and installation evidence are tracked separately in [delivery](V116_DELIVERY.md).
+The corrected frozen GUI/workers and installer were verified; the separate v116
+installation was deferred while the owner app/full atlas were active. These
+features are now installed through v117. Historical build evidence remains in
+[v116 delivery](V116_DELIVERY.md); current installation is in [v117 delivery](V117_DELIVERY.md).
 
 v115 separates native optimizer checkpoints from complete mesh-trajectory output.
 New preparations and immutable resume successors declare compact output scheduling

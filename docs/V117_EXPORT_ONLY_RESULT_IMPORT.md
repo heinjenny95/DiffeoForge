@@ -30,6 +30,11 @@ recomputed PCA/SVG evidence, and single-operation verification/reopening behavio
 The actual retained cohort is also checked through the normal result-review route;
 private inputs and receipts remain outside the public repository.
 
+The full-cohort import passed with all specimen QC pairs available, the original
+native tolerance stop retained and no additional optimizer iterations. Complete
+opening took approximately 14.5 minutes; geometric QC and inventory checks remain
+expensive. See [build and local installation status](V117_DELIVERY.md).
+
 Creating or revalidating a source-bound recovery analysis requires the retained
 original run to remain available at its declared path. The copied analysis bundle
 can be verified on its own; it does not claim portability of the entire linked run.
