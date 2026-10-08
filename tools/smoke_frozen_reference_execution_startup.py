@@ -119,7 +119,7 @@ def main() -> int:
             "POINTS 4 float\n0 0 0\n1 0 0\n0 1 0\n0 0 1\n"
             "POLYGONS 4 16\n3 0 2 1\n3 0 1 3\n3 1 2 3\n3 2 0 3\n"
         )
-        for name in ("template.vtk", "subject-a.vtk"):
+        for name in ("template.vtk", "subject-a.vtk", "subject-b.vtk"):
             (meshes / name).write_text(tetrahedron, encoding="ascii")
         config["input"].update(
             directory=str(meshes), template=str(meshes / "template.vtk"),
@@ -131,7 +131,7 @@ def main() -> int:
             tetrahedron.replace("3 0 2 1", "3 0 0 1"), encoding="ascii",
         )
         results.append(probe(
-            worker, config_path, mismatch=False, timeout=args.timeout, expected_reused=2,
+            worker, config_path, mismatch=False, timeout=args.timeout, expected_reused=3,
         ))
     print(json.dumps({"uncancelled_startup": results, "worker": str(worker)}, sort_keys=True))
     return 0
