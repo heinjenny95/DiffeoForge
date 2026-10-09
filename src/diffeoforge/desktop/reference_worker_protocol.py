@@ -23,7 +23,14 @@ REFERENCE_WORKER_PHASES = (
     "finalize",
     "verify_result",
 )
-ReferenceWorkerEventKind = Literal["accepted", "phase", "terminal"]
+ReferenceWorkerEventKind = Literal[
+    "accepted",
+    "phase",
+    "inspection",
+    "activity",
+    "progress",
+    "terminal",
+]
 ReferenceWorkerOutcome = Literal[
     "completed",
     "stopped_before_prepare",
@@ -128,6 +135,7 @@ class DesktopReferenceWorkerEvent:
     def to_json_line(self) -> str:
         return json.dumps(
             self.as_dict(),
+            allow_nan=False,
             ensure_ascii=False,
             sort_keys=True,
             separators=(",", ":"),
@@ -147,6 +155,12 @@ class DesktopReferenceWorkerEvent:
 def validate_reference_worker_event(value: Mapping[str, Any]) -> None:
     """Validate one event envelope and its kind-specific payload."""
 
+    try:
+        json.dumps(dict(value), allow_nan=False)
+    except (TypeError, ValueError) as error:
+        raise DesktopReferenceWorkerProtocolError(
+            f"Reference worker event is not strict JSON: {error}"
+        ) from error
     _validate(
         value,
         "desktop-reference-worker-event-v0.1.json",
@@ -165,6 +179,9 @@ class ReferenceWorkerEventLedger:
         self._events: list[DesktopReferenceWorkerEvent] = []
         self._accepted = False
         self._last_phase_index: int | None = None
+        self._last_activity_elapsed: float | None = None
+        self._last_progress_iteration: int | None = None
+        self._inspection: Mapping[str, Any] | None = None
         self._terminal: DesktopReferenceWorkerEvent | None = None
 
     @property
@@ -215,7 +232,73 @@ class ReferenceWorkerEventLedger:
                 raise DesktopReferenceWorkerProtocolError(
                     "Reference worker phases must advance without repetition or regression"
                 )
+            if (event.payload["phase"] == "prepare" and self._inspection is not None
+                    and self._inspection["completed"] != self._inspection["total"]):
+                raise DesktopReferenceWorkerProtocolError("Mesh inspection is incomplete")
             self._last_phase_index = phase_index
+        elif event.kind == "inspection":
+            if self._last_phase_index != REFERENCE_WORKER_PHASES.index("preflight"):
+                raise DesktopReferenceWorkerProtocolError(
+                    "Mesh inspection is allowed only during preflight"
+                )
+            previous = self._inspection
+            payload = event.payload
+            state = payload["state"]
+            completed = payload["completed"]
+            if completed > payload["total"]:
+                raise DesktopReferenceWorkerProtocolError("Mesh inspection exceeds its total")
+            if previous is None:
+                valid = state == "hashing" and completed == 0
+            elif payload["total"] != previous["total"]:
+                valid = False
+            elif state == "hashing":
+                valid = (
+                    previous["state"] in {"reused", "checked"}
+                    and completed == previous["completed"] and completed < payload["total"]
+                )
+            else:
+                valid = (
+                    payload["path"] == previous["path"] and payload["role"] == previous["role"]
+                    and ((state == "checking" and previous["state"] == "hashing"
+                          and completed == previous["completed"])
+                         or (state in {"reused", "checked"}
+                             and previous["state"] == (
+                                 "hashing" if state == "reused" else "checking"
+                             ) and completed == previous["completed"] + 1))
+                )
+            if not valid:
+                raise DesktopReferenceWorkerProtocolError("Mesh inspection boundaries are invalid")
+            self._inspection = payload
+        elif event.kind == "activity":
+            execute_index = REFERENCE_WORKER_PHASES.index("execute")
+            if self._last_phase_index != execute_index:
+                raise DesktopReferenceWorkerProtocolError(
+                    "Reference worker activity is allowed only during the execute phase"
+                )
+            elapsed = float(event.payload["elapsed_seconds"])
+            if (
+                self._last_activity_elapsed is not None
+                and elapsed <= self._last_activity_elapsed
+            ):
+                raise DesktopReferenceWorkerProtocolError(
+                    "Reference worker activity elapsed time must increase strictly"
+                )
+            self._last_activity_elapsed = elapsed
+        elif event.kind == "progress":
+            execute_index = REFERENCE_WORKER_PHASES.index("execute")
+            if self._last_phase_index != execute_index:
+                raise DesktopReferenceWorkerProtocolError(
+                    "Reference worker progress is allowed only during the execute phase"
+                )
+            iteration = int(event.payload["iteration"])
+            if (
+                self._last_progress_iteration is not None
+                and iteration <= self._last_progress_iteration
+            ):
+                raise DesktopReferenceWorkerProtocolError(
+                    "Reference worker progress iterations must increase strictly"
+                )
+            self._last_progress_iteration = iteration
         else:
             outcome = str(event.payload["outcome"])
             if event.payload["destination"] != str(self._request.destination):

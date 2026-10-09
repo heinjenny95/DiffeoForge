@@ -1,0 +1,146 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://diffeoforge.org/schema/remote-atlas-job-v0.1.json",
+  "title": "DiffeoForge portable remote atlas job",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "job_version",
+    "created_at",
+    "job_type",
+    "source",
+    "execution",
+    "input",
+    "optional_inputs",
+    "artifacts",
+    "transfer",
+    "scientific_boundary",
+    "transfer_boundary"
+  ],
+  "properties": {
+    "job_version": { "const": "0.1" },
+    "created_at": { "type": "string", "minLength": 1 },
+    "job_type": { "const": "modern_atlas" },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["config_filename", "config_sha256"],
+      "properties": {
+        "config_filename": { "type": "string", "pattern": "^[^/\\\\]+$" },
+        "config_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "execution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "config_path",
+        "config_sha256",
+        "expected_engine_implementation",
+        "expected_workflow_version",
+        "device",
+        "precision"
+      ],
+      "properties": {
+        "config_path": { "const": "config/modern-atlas.yaml" },
+        "config_sha256": { "$ref": "#/$defs/sha256" },
+        "expected_engine_implementation": { "type": "string", "minLength": 1 },
+        "expected_workflow_version": { "type": "string", "minLength": 1 },
+        "device": { "enum": ["cpu", "cuda"] },
+        "precision": { "const": "float64" }
+      }
+    },
+    "input": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["units", "template", "subjects"],
+      "properties": {
+        "units": { "type": "string", "minLength": 1 },
+        "template": { "$ref": "#/$defs/mesh" },
+        "subjects": {
+          "type": "array",
+          "minItems": 2,
+          "items": { "$ref": "#/$defs/mesh" }
+        }
+      }
+    },
+    "optional_inputs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["landmarks", "control_points", "momenta"],
+      "properties": {
+        "landmarks": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/namedFile" }] },
+        "control_points": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/namedFile" }] },
+        "momenta": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/namedFile" }] }
+      }
+    },
+    "artifacts": {
+      "type": "array",
+      "minItems": 4,
+      "items": { "$ref": "#/$defs/file" }
+    },
+    "transfer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contains_raw_meshes",
+        "contains_specimen_filenames",
+        "automatic_upload_authorized"
+      ],
+      "properties": {
+        "contains_raw_meshes": { "const": true },
+        "contains_specimen_filenames": { "const": true },
+        "automatic_upload_authorized": { "const": false }
+      }
+    },
+    "scientific_boundary": { "type": "string", "minLength": 1 },
+    "transfer_boundary": { "type": "string", "minLength": 1 }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "file": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "bytes", "sha256"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "bytes": { "type": "integer", "minimum": 0 },
+        "sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "namedFile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source_filename", "packaged_path", "bytes", "sha256"],
+      "properties": {
+        "source_filename": { "type": "string", "pattern": "^[^/\\\\]+$" },
+        "packaged_path": { "type": "string", "minLength": 1 },
+        "bytes": { "type": "integer", "minimum": 0 },
+        "sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "mesh": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_filename",
+        "packaged_path",
+        "bytes",
+        "sha256",
+        "points",
+        "triangles"
+      ],
+      "properties": {
+        "source_filename": { "type": "string", "pattern": "^[^/\\\\]+$" },
+        "packaged_path": { "type": "string", "minLength": 1 },
+        "bytes": { "type": "integer", "minimum": 1 },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "points": { "type": "integer", "minimum": 3 },
+        "triangles": { "type": "integer", "minimum": 1 }
+      }
+    }
+  }
+}

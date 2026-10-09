@@ -197,6 +197,9 @@ def _development_version(version: str) -> bool:
 
 
 def _output_version(version: str) -> str:
+    numbered_alpha = re.fullmatch(r"0\.0\.0\.dev([1-9][0-9]*)", version)
+    if numbered_alpha:
+        return f"v{numbered_alpha[1]}"
     rendered = re.sub(r"[^A-Za-z0-9._-]+", "_", version).strip("._-")
     if not rendered or _SAFE_OUTPUT_PART_PATTERN.fullmatch(rendered) is None:
         raise DesktopInstallerPlanError("Application version cannot form a safe setup filename")
@@ -289,6 +292,10 @@ def _compiler_arguments(
         "OutputBaseFilename": output_basename,
     }
     arguments = ["/Qp"]
+    if re.fullmatch(r"0\.0\.0\.dev([1-9][0-9]*)", version):
+        from diffeoforge import display_version
+
+        values["AppDisplayVersion"] = display_version(version)
     arguments.extend(
         f"/D{name}={_safe_define(value, label=name)}" for name, value in values.items()
     )

@@ -5,6 +5,7 @@ from diffeoforge.desktop.project_setup import (
     ProjectSetupRequest,
     ProjectSetupResult,
     create_project,
+    load_existing_reference_project,
 )
 
 __all__ = [
@@ -12,4 +13,5 @@ __all__ = [
     "ProjectSetupRequest",
     "ProjectSetupResult",
     "create_project",
+    "load_existing_reference_project",
 ]

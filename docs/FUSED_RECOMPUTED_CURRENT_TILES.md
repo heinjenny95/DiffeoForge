@@ -1,0 +1,117 @@
+# Fused recomputed Current tiles
+
+Status: **implemented in Modern engine implementation 0.5 and formally compared
+with Engine 0.4 on prospectively frozen five- and sixteen-subject,
+full-resolution Weevil protocols**
+
+## Purpose
+
+The blockwise Current attachment evaluates
+
+```text
+sum_i n_i · sum_j K(c_i, d_j) m_j
+```
+
+for every bounded face-pair tile. Engine 0.4 combined a query-level PyTorch
+checkpoint with a separately recomputed Gaussian-matrix backward. That kept
+pair-sized tensors out of the retained forward graph, but a differentiated
+tile could construct the same Gaussian matrix three times: the original
+forward, checkpoint replay, and analytical Gaussian backward.
+
+Engine 0.5 represents one complete Current tile as a single custom autograd
+operation. Its forward returns only the scalar inner product. It retains the
+two center and normal arrays, not the Gaussian matrix or a rank-3 difference
+tensor. Its analytical backward reconstructs the Gaussian once and returns
+gradients for both center and normal inputs. A differentiated tile therefore
+uses two Gaussian evaluations rather than the previous three.
+
+The symmetric self term still evaluates only one triangle of the tile matrix
+and doubles off-diagonal contributions. Cross terms retain their explicit
+query/source traversal order. Tile bounds, the Gaussian convention, kernel
+width, float64 CPU arithmetic, and Current orientation sensitivity are
+unchanged.
+
+## Automated evidence
+
+The implementation is covered by:
+
+- dense versus blockwise Current values and gradients;
+- standard versus recompute values and gradients;
+- numerical first- and second-derivative checks of the fused operation;
+- saved-tensor hooks proving that no pair-sized rank-2 or rank-3 tensor is
+  retained by a fused tile;
+- symmetric-tile accounting and explicit tile-bound tests;
+- complete objective and optimizer regression tests; and
+- versioned benchmark and comparison schemas that retain Engine 0.3 and 0.4
+  compatibility while accepting Engine 0.5 evidence.
+
+The fused gradient is mathematically the same as the unfused path. Floating
+operation scheduling can change last-bit results; automated comparisons use
+the predeclared float64 tolerances rather than requiring parameter hashes to be
+identical across engine implementations.
+
+## Real-input evidence
+
+A prospective Engine 0.5 design and the already frozen Engine 0.4 baseline use
+the same five approximately 10k-face Weevil subjects, input hashes, optimizer
+configuration, one-cycle cap, two fresh-process repeats, zero warmups, four CPU
+threads, float64, Current attachment, 1024 × 1024 tiles, and deterministic order
+seed 20260823. The only declared comparison dimension is the engine
+implementation.
+
+Both studies and their comparison pass strict recomputation-based verification.
+Engine 0.4 measured 68.971 seconds median optimizer time and 0.642 GiB median
+sampled peak RSS. Engine 0.5 measured 53.704 seconds and 0.555 GiB: a candidate
+to baseline time ratio of 0.778647 and peak-RSS ratio of 0.864452. The two Engine
+0.5 repeats were internally identical in all decisions, result hashes, and
+reported scalar values.
+
+Across Engine 0.4 and 0.5, all discrete optimizer work and outcomes match. Final
+attachment and objective differ by `5.684341886080802e-14` in each paired
+repeat, final regularity is equal, and all scalar components pass the frozen
+`1e-12` absolute and relative tolerances. Template and control-point hashes
+match exactly. Momenta and history hashes do not, as expected from the changed
+last-bit gradient scheduling.
+
+A second pair of prospectively frozen studies used the same subjects and
+1024 × 1024 protocol with a three-cycle cap. Engine 0.4 measured 139.090
+seconds median optimizer time and 0.681 GiB median sampled peak RSS; Engine 0.5
+measured 113.369 seconds and 0.564 GiB. The candidate-to-baseline ratios were
+0.815078 for optimizer time and 0.828159 for sampled peak RSS. All discrete
+work and outcomes again matched, and every final scalar difference was the
+same `5.684341886080802e-14` or zero observed in the one-cycle comparison.
+
+A third, separately frozen comparison expanded the real-input cohort to 16
+approximately 10k-face subjects and retained the three-cycle, two-repeat,
+float64 CPU, four-thread, 1024 × 1024 protocol. Subject selection was bound to
+the completed Deformetrica reference run before either optimizer study: it
+reused the pre-results geometry-diverse calibration order, excluded seven
+candidates that failed the declared topology gates, and filled the remainder
+deterministically by filename.
+
+Engine 0.4 measured 815.307 seconds median optimizer time and 1.170 GiB median
+sampled peak RSS. Engine 0.5 measured 649.931 seconds and 1.094 GiB. The
+candidate-to-baseline ratios were 0.797161 for optimizer time, 0.935562 for
+sampled peak RSS, and 0.918227 for RSS growth above the fresh-process baseline.
+All discrete work and outcomes matched. Final attachment and objective differed
+by `1.1368683772161603e-13`, and final regularity differed by
+`1.1102230246251565e-16`; every scalar passed the frozen `1e-12` tolerances.
+Both source studies and the generated comparison passed strict verification.
+
+This evidence describes one machine and cohorts of at most 16 subjects. It does
+not select a universally safe tile preset, prove convergence, extrapolate to
+300 subjects, establish endpoint non-inferiority to Deformetrica, or validate
+biological results. Sampled RSS can miss short peaks.
+
+Repository qualification after the implementation and schema revision passed
+all lint checks and the complete automated suite: 1065 tests passed and seven
+environment-specific Windows/PySide or symbolic-link tests were skipped.
+
+## Remaining gates
+
+1. Resolve the optimizer-convergence limitation exposed by the executed
+   16-subject fixed-reference workflow and its ten-cycle continuation. The
+   engine hotpath passed, but the declared endpoint gates remain inconclusive.
+   See [Modern optimizer convergence evidence](MODERN_OPTIMIZER_CONVERGENCE.md).
+2. Preserve Engine 0.4 artifacts and reject continuation/recovery across the
+   implementation-version boundary unless an explicit migration is developed.

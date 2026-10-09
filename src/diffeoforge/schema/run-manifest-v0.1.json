@@ -4,6 +4,30 @@
   "description": "Write-once evidence recorded before a DiffeoForge backend starts.",
   "type": "object",
   "additionalProperties": false,
+  "allOf": [{
+    "if": {"properties": {"input_count": {"properties": {"subjects": {"const": 1}}}}},
+    "then": {"properties": {
+      "inputs": {"minItems": 2, "maxItems": 2},
+      "effective_config": {"properties": {
+        "optimization": {"required": ["freeze_template", "freeze_control_points"], "properties": {
+          "freeze_template": {"const": true}, "freeze_control_points": {"const": true}
+        }},
+        "project": {"required": ["parameter_provenance"], "properties": {
+          "parameter_provenance": {"required": ["recommendation"], "properties": {
+            "recommendation": {"required": ["calibration_plan"], "properties": {
+              "calibration_plan": {"required": ["execution_scope"], "properties": {
+                "execution_scope": {"const": "single_specimen_probe"}
+              }}
+            }}
+          }}
+        }}
+      }}
+    }},
+    "else": {"properties": {
+      "input_count": {"properties": {"subjects": {"minimum": 2}}}, "inputs": {"minItems": 3},
+      "protected_artifacts": {"minItems": 8}
+    }}
+  }],
   "required": [
     "manifest_version",
     "run_id",
@@ -65,7 +89,7 @@
           "const": "deformetrica_reference"
         },
         "contract_version": {
-          "const": "0.1"
+          "enum": ["0.1", "0.2", "0.3", "0.4", "0.5"]
         },
         "engine_constants": {
           "type": "object",
@@ -101,13 +125,13 @@
         },
         "subjects": {
           "type": "integer",
-          "minimum": 2
+          "minimum": 1
         }
       }
     },
     "inputs": {
       "type": "array",
-      "minItems": 3,
+      "minItems": 2,
       "items": {
         "type": "object",
         "additionalProperties": false,
@@ -132,7 +156,7 @@
     },
     "protected_artifacts": {
       "type": "array",
-      "minItems": 8,
+      "minItems": 7,
       "items": {
         "$ref": "#/$defs/artifact"
       }

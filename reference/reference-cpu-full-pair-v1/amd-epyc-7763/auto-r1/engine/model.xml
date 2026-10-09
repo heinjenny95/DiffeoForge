@@ -1,0 +1,25 @@
+<?xml version='1.0' encoding='utf-8'?>
+<model>
+    <model-type>DeterministicAtlas</model-type>
+    <dimension>3</dimension>
+    <dtype>float32</dtype>
+    <random-seed>20260715</random-seed>
+    <initial-cp-spacing>0.6</initial-cp-spacing>
+    <template>
+        <object id="surface">
+            <deformable-object-type>SurfaceMesh</deformable-object-type>
+            <attachment-type>current</attachment-type>
+            <noise-std>0.1</noise-std>
+            <kernel-type>keops</kernel-type>
+            <kernel-device>cpu</kernel-device>
+            <kernel-width>0.45</kernel-width>
+            <filename>../input/template/template.vtk</filename>
+        </object>
+    </template>
+    <deformation-parameters>
+        <kernel-width>0.6</kernel-width>
+        <kernel-type>keops</kernel-type>
+        <kernel-device>cpu</kernel-device>
+        <number-of-timepoints>10</number-of-timepoints>
+    </deformation-parameters>
+</model>

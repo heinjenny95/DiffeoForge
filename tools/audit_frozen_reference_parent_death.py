@@ -15,6 +15,13 @@ from ctypes import wintypes
 from pathlib import Path
 
 from diffeoforge.config import resolve_output_directory
+from diffeoforge.desktop import (
+    reference_execution_controller,
+    reference_worker_controller,
+)
+from diffeoforge.desktop.reference_execution_controller import (
+    ReferenceExecutionController,
+)
 from diffeoforge.desktop.reference_prelaunch import DesktopReferenceLaunchRequest
 from diffeoforge.desktop.reference_readiness import parse_reference_config_bytes
 from diffeoforge.desktop.reference_worker_controller import ReferenceHarnessController
@@ -39,6 +46,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--timeout", type=float, default=DEFAULT_TIMEOUT_SECONDS)
     parser.add_argument("--controller-child", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--pid-path", type=Path, help=argparse.SUPPRESS)
+    parser.add_argument(
+        "--execution",
+        action="store_true",
+        help="Audit the real execution controller/worker boundary without delivering a request.",
+    )
     return parser
 
 
@@ -79,9 +91,13 @@ class _HardExitAfterAssignmentJob:
         self._job.close()
 
 
-def _run_controller_child(worker: Path, config: Path, pid_path: Path) -> int:
-    import diffeoforge.desktop.reference_worker_controller as controller_module
-
+def _run_controller_child(
+    worker: Path,
+    config: Path,
+    pid_path: Path,
+    *,
+    execution: bool,
+) -> int:
     request = _request(config)
     if request.destination.exists():
         raise FileExistsError(
@@ -94,14 +110,18 @@ def _run_controller_child(worker: Path, config: Path, pid_path: Path) -> int:
         kwargs["creationflags"] = creationflags | CREATE_SUSPENDED
         return real_popen(*args, **kwargs)
 
-    controller_module.subprocess.Popen = suspended_popen
-    controller_module._create_windows_harness_job = lambda: _HardExitAfterAssignmentJob(
-        pid_path
-    )
-    controller = ReferenceHarnessController(
-        request,
-        worker_command=(str(worker),),
-    )
+    if execution:
+        reference_execution_controller.subprocess.Popen = suspended_popen
+        reference_execution_controller._create_windows_worker_job = (
+            lambda: _HardExitAfterAssignmentJob(pid_path)
+        )
+        controller = ReferenceExecutionController(request, worker_command=(str(worker),))
+    else:
+        reference_worker_controller.subprocess.Popen = suspended_popen
+        reference_worker_controller._create_windows_harness_job = (
+            lambda: _HardExitAfterAssignmentJob(pid_path)
+        )
+        controller = ReferenceHarnessController(request, worker_command=(str(worker),))
     controller.run()
     return UNEXPECTED_CONTROLLER_RETURN_CODE
 
@@ -152,7 +172,7 @@ def _wait_until_stopped(process_id: int, timeout: float) -> bool:
     return not _process_is_active(process_id)
 
 
-def _run_outer(worker: Path, config: Path, timeout: float) -> int:
+def _run_outer(worker: Path, config: Path, timeout: float, *, execution: bool) -> int:
     if os.name != "nt":
         raise RuntimeError("Frozen reference parent-death audit requires Windows")
     if not worker.is_file() or worker.is_symlink():
@@ -177,6 +197,7 @@ def _run_outer(worker: Path, config: Path, timeout: float) -> int:
             "--controller-child",
             "--pid-path",
             str(pid_path),
+            *(("--execution",) if execution else ()),
         )
         try:
             completed = subprocess.run(
@@ -218,6 +239,7 @@ def _run_outer(worker: Path, config: Path, timeout: float) -> int:
                 "worker": str(worker),
                 "worker_started_suspended": True,
                 "worker_stopped": True,
+                "worker_role": "execution" if execution else "nonnumerical_harness",
             },
             ensure_ascii=True,
             sort_keys=True,
@@ -238,8 +260,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                 worker,
                 config,
                 args.pid_path.expanduser().resolve(),
+                execution=args.execution,
             )
-        return _run_outer(worker, config, args.timeout)
+        return _run_outer(worker, config, args.timeout, execution=args.execution)
     except (OSError, RuntimeError, TypeError, ValueError) as error:
         print(f"ERROR: {error}", file=sys.stderr)
         return 2

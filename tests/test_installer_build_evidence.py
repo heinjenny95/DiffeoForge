@@ -40,8 +40,10 @@ def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-@pytest.fixture
-def sources(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, object]:
+@pytest.fixture(params=["0.0.0.dev0", "0.0.0.dev78"])
+def sources(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, request) -> dict[str, object]:
+    version = request.param
+    output_version = "v78" if version == "0.0.0.dev78" else version
     project = tmp_path / "observer source KÃ¤fer"
     windows = project / "distribution" / "windows"
     tools = project / "tools"
@@ -56,7 +58,7 @@ def sources(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, object
         tools / evidence_module.WRAPPER_NAME,
     )
     (project / "pyproject.toml").write_text(
-        '[project]\nname = "diffeoforge"\nversion = "0.0.0.dev0"\n',
+        f'[project]\nname = "diffeoforge"\nversion = "{version}"\n',
         encoding="utf-8",
     )
     bundle = tmp_path / "frozen bundle"
@@ -85,23 +87,25 @@ def sources(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, object
     portable_path = portable_directory / evidence_module.PORTABLE_EVIDENCE_NAME
     portable_path.write_bytes(b'{"synthetic":"portable"}\n')
     portable_digest = _sha256(portable_path)
-    setup_name = "DiffeoForge-0.0.0.dev0-Windows-CPU-x86_64-Setup.exe"
+    setup_name = f"DiffeoForge-{output_version}-Windows-CPU-x86_64-Setup.exe"
     setup = plan_output / setup_name
     arguments = [
         "/Qp",
-        "/DAppVersion=0.0.0.dev0",
+        f"/DAppVersion={version}",
         f"/DSourceCommit={BUNDLE_COMMIT}",
         f"/DBundleDir={bundle.resolve()}",
         f"/DEvidenceDir={source_evidence.resolve()}",
         f"/DLicenseFile={(project / 'LICENSE').resolve()}",
         f"/DOutputDir={plan_output.resolve()}",
-        "/DOutputBaseFilename=DiffeoForge-0.0.0.dev0-Windows-CPU-x86_64-Setup",
+        f"/DOutputBaseFilename=DiffeoForge-{output_version}-Windows-CPU-x86_64-Setup",
         str((project / "distribution" / "windows" / "DiffeoForge.iss").resolve()),
     ]
+    if version == "0.0.0.dev78":
+        arguments.insert(-1, "/DAppDisplayVersion=v78 (Private Alpha)")
     plan = {
         "source": {
             "commit_sha": BUNDLE_COMMIT,
-            "application_version": "0.0.0.dev0",
+            "application_version": version,
             "development_version": True,
             "release_candidate": False,
         },
@@ -308,6 +312,8 @@ def test_wrapper_preflights_before_iscc_and_never_executes_setup() -> None:
     assert "& $setup" not in wrapper
     assert "Setup executed: false" in wrapper
     assert "Distribution or release authorized: false" in wrapper
+    assert "$expectedCompilerArgumentCount" in wrapper
+    assert "{ 10 } else { 9 }" in wrapper
 
 
 def test_cli_verify_reports_all_non_authorizations(

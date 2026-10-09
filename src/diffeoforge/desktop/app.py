@@ -47,6 +47,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if application is None:
         application = QApplication(["diffeoforge-desktop"])
     application.setApplicationName("DiffeoForge Desktop")
+    application.setApplicationVersion(__version__)
     application.setOrganizationName("DiffeoForge")
 
     window = DiffeoForgeWindow()

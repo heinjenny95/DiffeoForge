@@ -2,10 +2,13 @@
 
 *.cff text eol=lf
 *.csv text eol=lf
+*.html text eol=lf
 *.json text eol=lf
+*.jsonl text eol=lf
 *.md text eol=lf
 *.py text eol=lf
 *.ps1 text eol=lf
+*.sha256 text eol=lf
 *.iss text eol=lf
 *.toml text eol=lf
 *.txt text eol=lf
@@ -17,3 +20,8 @@
 # spaces in numeric text arrays; the Windows-side convergence writer uses CRLF.
 reference/synthetic-v1/artifacts/*.txt -whitespace
 reference/synthetic-v1/artifacts/convergence.csv -text -eol -whitespace
+
+# Immutable diagnostic evidence also preserves native line endings/trailing spaces.
+reference/reference-cpu-audit-v1/** -text -eol -whitespace
+reference/reference-cpu-full-pair-v1/** -text -eol -whitespace
+reference/reference-cpu-policy-v1/** -text -eol -whitespace

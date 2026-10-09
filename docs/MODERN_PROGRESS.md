@@ -25,6 +25,9 @@ The denominator is a count of configured parameter-block decisions, not a
 time estimate. Objective evaluations have very different costs from file
 copying, PCA, verification, or report generation. DiffeoForge therefore does
 not label these counts as percent complete and does not calculate an ETA.
+The decision bound is the cycle cap multiplied by the number of blocks actually
+declared in `block_order`; fixed-reference qualification may therefore expose one
+momenta decision per cycle instead of the full three-block atlas sequence.
 
 ## Application-service contract
 
@@ -98,3 +101,13 @@ autograd strategies can have materially different costs. A callback that does
 not raise is observational only; tests require byte-identical published study
 evidence with and without it. See the
 [prospective benchmark-study protocol](MODERN_BENCHMARK_STUDY.md).
+
+The separate optimizer-study observer is now v0.2. It preserves those exact
+lifecycle counts and additionally transports committed optimizer decisions from
+the isolated fresh process: repeat, cycle, block, status, objective components,
+line-search count, elapsed optimizer time, and exact completed/maximum decision
+counts. Rejected line-search candidates are not reported as completed work.
+The CLI derives a low-confidence observed-rate ETA only to the configured
+decision cap; it does not claim elapsed percent, convergence, or subject-scaling
+performance. The v0.1 optimizer-study event schema remains available for legacy
+event validation.

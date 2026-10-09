@@ -1,0 +1,69 @@
+schema_version: "0.2"
+project:
+  name: synthetic-modern-atlas-blockwise
+input:
+  directory: ./synthetic/meshes
+  subject_pattern: subject-*.vtk
+  template: ./synthetic/meshes/template.vtk
+  units: unitless
+preprocessing:
+  procrustes:
+    enabled: false
+    landmarks_file: null
+    scale_to_unit_centroid_size: true
+    allow_reflection: false
+    tolerance: 1.0e-10
+    max_iterations: 100
+quality_control:
+  require_no_duplicate_faces: true
+  require_no_isolated_vertices: true
+  require_edge_manifold: true
+  require_consistent_orientation: true
+  require_single_component: false
+  require_closed_surface: false
+  reject_zero_area_faces: true
+  minimum_triangle_angle_degrees: null
+  maximum_triangle_edge_ratio: null
+  minimum_face_area_ratio: null
+  maximum_face_area_ratio: null
+initialization:
+  control_points:
+    method: farthest_template_vertices
+    count: 9
+  momenta: zeros
+model:
+  attachment:
+    type: current
+    kernel_width: 0.45
+  deformation:
+    kernel_width: 0.6
+    timepoints: 5
+    shooting_integrator: rk2
+    flow_integrator: deformetrica_heun
+  noise_variance: 0.01
+optimization:
+  max_cycles: 3
+  block_order: [momenta, template, control_points]
+  momenta_step_size: 0.01
+  template_step_size: 0.001
+  control_points_step_size: 0.001
+  backtracking_factor: 0.5
+  armijo_constant: 0.0001
+  gradient_tolerance: 1.0e-8
+  minimum_step_size: 1.0e-12
+  max_line_search_iterations: 20
+analysis:
+  pca_components: null
+  deformation_standard_deviations: 2.0
+  deformation_components: 3
+runtime:
+  device: cpu
+  precision: float64
+  threads: 1
+  random_seed: 20260715
+  pairwise_evaluation:
+    mode: blockwise
+    query_tile_size: 64
+    source_tile_size: 64
+output:
+  directory: ./modern-atlas-blockwise-run

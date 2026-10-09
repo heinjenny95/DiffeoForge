@@ -24,6 +24,7 @@ from diffeoforge.desktop.reference_preparation_worker_protocol import (
 )
 from diffeoforge.runs import verify_prepared_run
 from diffeoforge.strict_json import load_strict_json_object
+from diffeoforge.subprocess_policy import hidden_windows_process_kwargs
 
 ReferencePreparationControllerState = Literal["idle", "running", "verified", "failed"]
 ReferencePreparationEventCallback = Callable[
@@ -237,7 +238,6 @@ class ReferencePreparationWorkerController:
 
         process: subprocess.Popen[bytes] | None = None
         worker_job = None
-        creationflags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
         try:
             worker_job = _create_windows_preparation_job()
             process = subprocess.Popen(
@@ -247,7 +247,7 @@ class ReferencePreparationWorkerController:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 bufsize=0,
-                creationflags=creationflags,
+                **hidden_windows_process_kwargs(),
             )
             if worker_job is not None:
                 worker_job.assign(process)

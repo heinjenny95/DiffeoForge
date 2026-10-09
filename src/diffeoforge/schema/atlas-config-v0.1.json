@@ -13,6 +13,27 @@
     "runtime",
     "output"
   ],
+  "allOf": [{
+    "if": {"properties": {"project": {
+      "required": ["parameter_provenance"], "properties": {"parameter_provenance": {
+        "required": ["recommendation"], "properties": {"recommendation": {
+          "required": ["calibration_plan"], "properties": {"calibration_plan": {
+            "required": ["execution_scope"], "properties": {
+              "execution_scope": {"const": "single_specimen_probe"}
+            }
+          }}
+        }}
+      }}
+    }}},
+    "then": {"properties": {
+      "model": {"properties": {"deformation": {"properties": {
+        "initial_momenta_subjects": {"maxItems": 1}
+      }}}}
+    }},
+    "else": {"properties": {"model": {"properties": {"deformation": {"properties": {
+      "initial_momenta_subjects": {"minItems": 2}
+    }}}}}}
+  }],
   "properties": {
     "schema_version": {
       "const": "0.1"
@@ -25,6 +46,813 @@
         "name": {
           "type": "string",
           "minLength": 1
+        },
+        "parameter_provenance": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["profile", "scale_reference", "ratios", "sources"],
+          "properties": {
+            "profile": {
+              "enum": [
+                "recommended",
+                "pilot",
+                "high_detail",
+                "advanced",
+                "data_assisted"
+              ]
+            },
+            "scale_reference": {"const": "template_bounding_box_diagonal"},
+            "ratios": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "attachment_kernel_width",
+                "deformation_kernel_width",
+                "initial_control_point_spacing",
+                "noise_std"
+              ],
+              "properties": {
+                "attachment_kernel_width": {"type": "number", "exclusiveMinimum": 0},
+                "deformation_kernel_width": {"type": "number", "exclusiveMinimum": 0},
+                "initial_control_point_spacing": {"type": "number", "exclusiveMinimum": 0},
+                "noise_std": {"type": "number", "exclusiveMinimum": 0}
+              }
+            },
+            "sources": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "attachment_kernel_width",
+                "deformation_kernel_width",
+                "initial_control_point_spacing",
+                "noise_std"
+              ],
+              "properties": {
+                "attachment_kernel_width": {"enum": ["template_diagonal_ratio", "absolute_override"]},
+                "deformation_kernel_width": {"enum": ["template_diagonal_ratio", "absolute_override"]},
+                "initial_control_point_spacing": {"enum": ["template_diagonal_ratio", "absolute_override"]},
+                "noise_std": {"enum": ["template_diagonal_ratio", "absolute_override"]}
+              }
+            },
+            "recommendation": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "version",
+                "fingerprint",
+                "alignment_basis",
+                "alignment_fingerprint",
+                "surface_detail_intent",
+                "deformation_scale_intent",
+                "template_filename",
+                "template_sha256",
+                "mesh_count",
+                "subject_count",
+                "measurements",
+                "parameter_ratios",
+                "automatic_inferences",
+                "user_decisions",
+                "pilot_validation_required",
+                "warnings"
+              ],
+              "properties": {
+                "version": {"enum": ["0.1", "0.2", "0.3", "0.4"]},
+                "fingerprint": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                },
+                "alignment_basis": {
+                  "enum": ["declared_gpa", "diffeoforge_gpa"]
+                },
+                "alignment_fingerprint": {
+                  "type": ["string", "null"],
+                  "pattern": "^[0-9a-f]{64}$"
+                },
+                "surface_detail_intent": {
+                  "enum": ["fine", "balanced", "coarse"]
+                },
+                "deformation_scale_intent": {
+                  "enum": ["local", "balanced", "global"]
+                },
+                "expected_shape_disparity": {
+                  "enum": ["low", "moderate", "high", "extreme"]
+                },
+                "template_filename": {"type": "string", "minLength": 1},
+                "template_sha256": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                },
+                "mesh_count": {"type": "integer", "minimum": 3},
+                "subject_count": {"type": "integer", "minimum": 2},
+                "measurements": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "template_diagonal",
+                    "cohort_median_diagonal",
+                    "cohort_diagonal_cv",
+                    "normalized_centroid_dispersion",
+                    "median_edge_to_diagonal_ratio",
+                    "sampling_floor_ratio"
+                  ],
+                  "properties": {
+                    "template_diagonal": {
+                      "type": "number",
+                      "exclusiveMinimum": 0
+                    },
+                    "cohort_median_diagonal": {
+                      "type": "number",
+                      "exclusiveMinimum": 0
+                    },
+                    "cohort_diagonal_cv": {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    "normalized_centroid_dispersion": {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    "median_edge_to_diagonal_ratio": {
+                      "type": "number",
+                      "exclusiveMinimum": 0
+                    },
+                    "sampling_floor_ratio": {
+                      "type": "number",
+                      "exclusiveMinimum": 0
+                    }
+                  }
+                },
+                "parameter_ratios": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "attachment_kernel_width",
+                    "deformation_kernel_width",
+                    "initial_control_point_spacing",
+                    "noise_std"
+                  ],
+                  "properties": {
+                    "attachment_kernel_width": {
+                      "type": "number",
+                      "exclusiveMinimum": 0
+                    },
+                    "deformation_kernel_width": {
+                      "type": "number",
+                      "exclusiveMinimum": 0
+                    },
+                    "initial_control_point_spacing": {
+                      "type": "number",
+                      "exclusiveMinimum": 0
+                    },
+                    "noise_std": {
+                      "type": "number",
+                      "exclusiveMinimum": 0
+                    }
+                  }
+                },
+                "automatic_inferences": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {"type": "string", "minLength": 1}
+                },
+                "user_decisions": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {"type": "string", "minLength": 1}
+                },
+                "pilot_validation_required": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {"type": "string", "minLength": 1}
+                },
+                "warnings": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {"type": "string", "minLength": 1}
+                },
+                "calibration_plan": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "allOf": [{
+                    "if": {"required": ["execution_scope"], "properties": {
+                      "execution_scope": {"const": "single_specimen_probe"}
+                    }},
+                    "then": {"properties": {
+                      "pilot_subject_count": {"const": 1},
+                      "requested_pilot_subject_count": {"const": 1},
+                      "selected_pilot_subjects": {"maxItems": 1}
+                    }},
+                    "else": {"properties": {
+                      "pilot_subject_count": {"minimum": 2},
+                      "requested_pilot_subject_count": {"minimum": 2},
+                      "selected_pilot_subjects": {"minItems": 2}
+                    }}
+                  }, {
+                    "if": {"required": ["execution_scope"], "properties": {
+                      "execution_scope": {"enum": ["single_specimen_probe", "joint_fit_confirmation"]}
+                    }},
+                    "then": {},
+                    "else": {"properties": {"stages": {"items": {"properties": {
+                      "candidates": {"minItems": 2}
+                    }}}}}
+                  }],
+                  "required": [
+                    "version",
+                    "fingerprint",
+                    "status",
+                    "recommendation_fingerprint",
+                    "template_filename",
+                    "template_sha256",
+                    "coordinate_unit",
+                    "subject_count",
+                    "requested_pilot_subject_count",
+                    "pilot_subject_count",
+                    "selected_pilot_subjects",
+                    "smallest_relevant_feature",
+                    "attachment_center_source",
+                    "baseline_parameter_ratios",
+                    "baseline_effective_values",
+                    "stages",
+                    "final_confirmation_required",
+                    "limitations"
+                  ],
+                  "properties": {
+                    "execution_scope": {"enum": ["pilot", "single_specimen_probe", "joint_fit_confirmation"]},
+                    "version": {"enum": ["0.1", "0.2", "0.3", "0.4", "0.5", "0.6"]},
+                    "fingerprint": {
+                      "type": "string",
+                      "pattern": "^[0-9a-f]{64}$"
+                    },
+                    "status": {"const": "planned_not_executed"},
+                    "recommendation_fingerprint": {
+                      "type": "string",
+                      "pattern": "^[0-9a-f]{64}$"
+                    },
+                    "template_filename": {"type": "string", "minLength": 1},
+                    "template_sha256": {
+                      "type": "string",
+                      "pattern": "^[0-9a-f]{64}$"
+                    },
+                    "coordinate_unit": {
+                      "enum": [
+                        "unitless",
+                        "micrometer",
+                        "millimeter",
+                        "centimeter",
+                        "meter"
+                      ]
+                    },
+                    "subject_count": {"type": "integer", "minimum": 2},
+                    "requested_pilot_subject_count": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 20
+                    },
+                    "pilot_subject_count": {"type": "integer", "minimum": 1},
+                    "selected_pilot_subjects": {
+                      "type": "array",
+                      "minItems": 1,
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "filename",
+                          "sha256",
+                          "source_subject_index",
+                          "selection_order",
+                          "selection_role",
+                          "descriptor_distance"
+                        ],
+                        "properties": {
+                          "filename": {"type": "string", "minLength": 1},
+                          "sha256": {
+                            "type": "string",
+                            "pattern": "^[0-9a-f]{64}$"
+                          },
+                          "source_subject_index": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "selection_order": {
+                            "type": "integer",
+                            "minimum": 1
+                          },
+                          "selection_role": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "descriptor_distance": {
+                            "type": "number",
+                            "minimum": 0
+                          }
+                        }
+                      }
+                    },
+                    "smallest_relevant_feature": {
+                      "type": ["number", "null"],
+                      "exclusiveMinimum": 0
+                    },
+                    "attachment_center_source": {
+                      "enum": [
+                        "declared_surface_detail_intent",
+                        "researcher_measured_feature_with_mesh_sampling_floor",
+                        "researcher_measured_feature"
+                      ]
+                    },
+                    "expected_shape_disparity": {
+                      "enum": ["low", "moderate", "high", "extreme"]
+                    },
+                    "search_extension_lineage": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "parent_plan_fingerprint",
+                        "source_assessment_fingerprint",
+                        "proposal_fingerprint",
+                        "stage_id"
+                      ],
+                      "properties": {
+                        "parent_plan_fingerprint": {
+                          "type": "string",
+                          "pattern": "^[0-9a-f]{64}$"
+                        },
+                        "source_assessment_fingerprint": {
+                          "type": "string",
+                          "pattern": "^[0-9a-f]{64}$"
+                        },
+                        "proposal_fingerprint": {
+                          "type": "string",
+                          "pattern": "^[0-9a-f]{64}$"
+                        },
+                        "stage_id": {
+                          "enum": ["attachment", "deformation", "noise"]
+                        }
+                      }
+                    },
+                    "qc_recalibration_source": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": ["run_manifest_sha256", "analysis_manifest_sha256", "request_sha256"],
+                      "properties": {
+                        "run_manifest_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                        "analysis_manifest_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                        "request_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+                      }
+                    },
+                    "selection_method": {"const": "aligned-area-shape-v1"},
+                    "required_subject_filenames": {
+                      "type": "array",
+                      "minItems": 1,
+                      "uniqueItems": true,
+                      "items": {"type": "string", "minLength": 1}
+                    },
+                    "pilot_subject_declarations": {
+                      "type": "array",
+                      "minItems": 1,
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": ["filename", "stratum", "is_extreme"],
+                        "properties": {
+                          "filename": {"type": "string", "minLength": 1},
+                          "stratum": {"type": ["string", "null"], "minLength": 1},
+                          "is_extreme": {"type": "boolean"}
+                        }
+                      }
+                    },
+                    "baseline_parameter_ratios": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "attachment_kernel_width",
+                        "deformation_kernel_width",
+                        "initial_control_point_spacing",
+                        "noise_std"
+                      ],
+                      "properties": {
+                        "attachment_kernel_width": {
+                          "type": "number",
+                          "exclusiveMinimum": 0
+                        },
+                        "deformation_kernel_width": {
+                          "type": "number",
+                          "exclusiveMinimum": 0
+                        },
+                        "initial_control_point_spacing": {
+                          "type": "number",
+                          "exclusiveMinimum": 0
+                        },
+                        "noise_std": {
+                          "type": "number",
+                          "exclusiveMinimum": 0
+                        }
+                      }
+                    },
+                    "baseline_effective_values": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "attachment_kernel_width",
+                        "deformation_kernel_width",
+                        "initial_control_point_spacing",
+                        "noise_std"
+                      ],
+                      "properties": {
+                        "attachment_kernel_width": {
+                          "type": "number",
+                          "exclusiveMinimum": 0
+                        },
+                        "deformation_kernel_width": {
+                          "type": "number",
+                          "exclusiveMinimum": 0
+                        },
+                        "initial_control_point_spacing": {
+                          "type": "number",
+                          "exclusiveMinimum": 0
+                        },
+                        "noise_std": {
+                          "type": "number",
+                          "exclusiveMinimum": 0
+                        }
+                      }
+                    },
+                    "stages": {
+                      "type": "array",
+                      "minItems": 4,
+                      "maxItems": 4,
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "stage_id",
+                          "order",
+                          "kind",
+                          "title",
+                          "candidates",
+                          "locked_from_previous_stages",
+                          "evidence_required",
+                          "reject_when",
+                          "decision_rule"
+                        ],
+                        "properties": {
+                          "stage_id": {"type": "string", "minLength": 1},
+                          "order": {"type": "integer", "minimum": 1},
+                          "kind": {
+                            "enum": [
+                              "attachment_width",
+                              "deformation_width",
+                              "noise_weight",
+                              "integration_accuracy"
+                            ]
+                          },
+                          "title": {"type": "string", "minLength": 1},
+                          "candidates": {
+                            "type": "array",
+                            "minItems": 1,
+                            "items": {
+                              "type": "object",
+                              "additionalProperties": false,
+                              "required": [
+                                "candidate_id",
+                                "label",
+                                "parameter_values",
+                                "rationale"
+                              ],
+                              "properties": {
+                                "candidate_id": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "label": {"type": "string", "minLength": 1},
+                                "parameter_values": {
+                                  "type": "object",
+                                  "minProperties": 1,
+                                  "additionalProperties": {
+                                    "type": "number",
+                                    "exclusiveMinimum": 0
+                                  }
+                                },
+                                "rationale": {
+                                  "type": "string",
+                                  "minLength": 1
+                                }
+                              }
+                            }
+                          },
+                          "locked_from_previous_stages": {
+                            "type": "array",
+                            "items": {"type": "string", "minLength": 1}
+                          },
+                          "evidence_required": {
+                            "type": "array",
+                            "minItems": 1,
+                            "items": {"type": "string", "minLength": 1}
+                          },
+                          "reject_when": {
+                            "type": "array",
+                            "minItems": 1,
+                            "items": {"type": "string", "minLength": 1}
+                          },
+                          "decision_rule": {
+                            "type": "string",
+                            "minLength": 1
+                          }
+                        }
+                      }
+                    },
+                    "final_confirmation_required": {
+                      "type": "array",
+                      "minItems": 1,
+                      "items": {"type": "string", "minLength": 1}
+                    },
+                    "limitations": {
+                      "type": "array",
+                      "minItems": 1,
+                      "items": {"type": "string", "minLength": 1}
+                    }
+                  }
+                },
+                "calibration_result": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "version",
+                    "status",
+                    "study_id",
+                    "plan_fingerprint",
+                    "study_manifest_sha256",
+                    "decision_event_hash",
+                    "selected_candidate_ids",
+                    "selected_values",
+                    "full_cohort_confirmation_required"
+                  ],
+                  "properties": {
+                    "version": {"const": "0.1"},
+                    "status": {"const": "completed"},
+                    "full_cohort_optimizer_tolerance": {
+                      "type": "object", "additionalProperties": false,
+                      "required": ["value", "source", "pilot_check_value"],
+                      "properties": {
+                        "value": {"type": "number", "exclusiveMinimum": 0},
+                        "source": {"const": "original_project_configuration"},
+                        "pilot_check_value": {"type": "number", "exclusiveMinimum": 0}
+                      }
+                    },
+                    "final_pilot_completion": {
+                      "type": "object", "additionalProperties": false,
+                      "required": ["version", "converged", "provisional", "binding", "receipt",
+                                   "receipt_sha256", "legacy_numerical_pass", "limitation"],
+                      "properties": {
+                        "version": {"const": "saved-model-completion-v1"},
+                        "converged": {"type": "boolean"},
+                        "provisional": {"type": "boolean"},
+                        "binding": {
+                          "type": "object", "additionalProperties": false,
+                          "required": ["config_sha256", "inventory_sha256", "metrics_sha256",
+                                       "result_sha256", "run_manifest_sha256"],
+                          "properties": {
+                            "config_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                            "inventory_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                            "metrics_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                            "result_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                            "run_manifest_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+                          }
+                        },
+                        "receipt": {"type": "string", "minLength": 1},
+                        "receipt_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                        "legacy_numerical_pass": {"type": ["boolean", "null"]},
+                        "limitation": {"type": "string", "minLength": 1}
+                      }
+                    },
+                    "full_cohort_initialization": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": ["method", "source_run_manifest_sha256", "template_sha256",
+                                   "control_points_sha256", "limitation"],
+                      "properties": {
+                        "method": {"enum": ["learned_pilot_template_and_controls_zero_full_cohort_momenta", "preserved_pilot_momenta_fixed_basis_initialization", "preserved_atlas_momenta_fixed_basis_refinement"]},
+                        "source_run_directory": {"type": "string", "minLength": 1},
+                        "source_run_manifest_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                        "template_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                        "control_points_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                        "pilot_momenta_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                        "source_momenta_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                        "initial_momenta_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                        "subject_labels": {"type": "array", "minItems": 2, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+                        "subject_sha256": {"type": "object", "minProperties": 2, "additionalProperties": {"type": "string", "pattern": "^[0-9a-f]{64}$"}},
+                        "pilot_indices": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "integer", "minimum": 0}},
+                        "pilot_subject_labels": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+                        "individual_max_iterations": {"type": "integer", "minimum": 1, "maximum": 20000},
+                        "early_review_iteration": {"type": "integer", "minimum": 1, "maximum": 20000},
+                        "completed_initialization_indices": {"type": "array", "uniqueItems": true, "items": {"type": "integer", "minimum": 0}},
+                        "early_review_approved": {"type": "boolean"},
+                        "early_review_binding": {
+                          "type": "object", "additionalProperties": false,
+                          "required": ["review_sha256", "check_sha256", "checkpoint_sha256"],
+                          "properties": {
+                            "review_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                            "check_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                            "checkpoint_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+                          }
+                        },
+                        "limitation": {"type": "string", "minLength": 1}
+                      },
+                      "allOf": [{
+                        "if": {"properties": {"method": {"const": "preserved_pilot_momenta_fixed_basis_initialization"}}},
+                        "then": {"required": ["source_run_directory", "pilot_momenta_sha256", "initial_momenta_sha256", "subject_labels", "subject_sha256", "pilot_indices", "pilot_subject_labels", "individual_max_iterations", "early_review_iteration", "completed_initialization_indices", "early_review_approved"]}
+                      }, {
+                        "if": {"properties": {"method": {"const": "preserved_atlas_momenta_fixed_basis_refinement"}}},
+                        "then": {"required": ["source_run_directory", "source_momenta_sha256", "initial_momenta_sha256", "subject_labels", "subject_sha256", "pilot_indices", "pilot_subject_labels", "individual_max_iterations", "early_review_iteration", "completed_initialization_indices", "early_review_approved"]}
+                      }]
+                    },
+                    "handoff_upgrade": {
+                      "type": "object", "additionalProperties": false,
+                      "required": ["source_config_sha256", "source_study_manifest_sha256"],
+                      "properties": {
+                        "source_config_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                        "source_study_manifest_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+                      }
+                    },
+                    "study_id": {"type": "string", "minLength": 1},
+                    "plan_fingerprint": {
+                      "type": "string",
+                      "pattern": "^[0-9a-f]{64}$"
+                    },
+                    "study_manifest_sha256": {
+                      "type": "string",
+                      "pattern": "^[0-9a-f]{64}$"
+                    },
+                    "decision_event_hash": {
+                      "type": "string",
+                      "pattern": "^[0-9a-f]{64}$"
+                    },
+                    "selected_candidate_ids": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "attachment",
+                        "deformation",
+                        "noise",
+                        "timepoints"
+                      ],
+                      "properties": {
+                        "attachment": {"type": "string", "minLength": 1},
+                        "deformation": {"type": "string", "minLength": 1},
+                        "noise": {"type": "string", "minLength": 1},
+                        "timepoints": {"type": "string", "minLength": 1}
+                      }
+                    },
+                    "selection_modes": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "attachment",
+                        "deformation",
+                        "noise",
+                        "timepoints"
+                      ],
+                      "properties": {
+                        "attachment": {
+                          "enum": [
+                            "researcher_manual",
+                            "researcher_iteration_limit_provisional",
+                            "researcher_provisional_balanced_override",
+                            "automatic_provisional_balanced_score",
+                            "automatic_provisional_afk_v1"
+                          ]
+                        },
+                        "deformation": {
+                          "enum": [
+                            "researcher_manual",
+                            "researcher_iteration_limit_provisional",
+                            "researcher_retained_approved_fit",
+                            "researcher_provisional_balanced_override",
+                            "automatic_provisional_balanced_score",
+                            "automatic_provisional_afk_v1"
+                          ]
+                        },
+                        "noise": {
+                          "enum": [
+                            "researcher_manual",
+                            "researcher_iteration_limit_provisional",
+                            "researcher_retained_approved_fit",
+                            "researcher_provisional_balanced_override",
+                            "automatic_provisional_balanced_score",
+                            "automatic_provisional_afk_v1"
+                          ]
+                        },
+                        "timepoints": {
+                          "enum": [
+                            "researcher_manual",
+                            "researcher_saved_model_completion",
+                            "researcher_final_provisional",
+                            "researcher_provisional_balanced_override",
+                            "automatic_provisional_balanced_score",
+                            "automatic_provisional_afk_v1"
+                          ]
+                        }
+                      }
+                    },
+                    "selected_values": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "attachment_kernel_width",
+                        "deformation_kernel_width",
+                        "initial_control_point_spacing",
+                        "noise_std",
+                        "timepoints"
+                      ],
+                      "properties": {
+                        "attachment_kernel_width": {
+                          "type": "number",
+                          "exclusiveMinimum": 0
+                        },
+                        "deformation_kernel_width": {
+                          "type": "number",
+                          "exclusiveMinimum": 0
+                        },
+                        "initial_control_point_spacing": {
+                          "type": "number",
+                          "exclusiveMinimum": 0
+                        },
+                        "noise_std": {
+                          "type": "number",
+                          "exclusiveMinimum": 0
+                        },
+                        "timepoints": {
+                          "type": "integer",
+                          "minimum": 2
+                        }
+                      }
+                    },
+                    "full_cohort_confirmation_required": {"const": true},
+                    "iteration_limit_provisional_selections": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": ["stage_id", "candidate_id", "decision_event_hash",
+                                     "converged", "limitation"],
+                        "properties": {
+                          "stage_id": {"enum": ["attachment", "deformation", "noise"]},
+                          "candidate_id": {"type": "string", "minLength": 1},
+                          "decision_event_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                          "converged": {"const": false},
+                          "limitation": {"type": "string", "minLength": 1}
+                        }
+                      }
+                    },
+                    "runtime_calibration": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "version",
+                        "pilot_subject_count",
+                        "observations"
+                      ],
+                      "properties": {
+                        "version": {"const": "0.1"},
+                        "pilot_subject_count": {"type": "integer", "minimum": 2},
+                        "observations": {
+                          "type": "array",
+                          "minItems": 3,
+                          "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                              "stage_id",
+                              "candidate_id",
+                              "runtime_seconds",
+                              "final_iteration",
+                              "maximum_iterations"
+                            ],
+                            "properties": {
+                              "stage_id": {
+                                "enum": [
+                                  "attachment",
+                                  "deformation",
+                                  "noise",
+                                  "timepoints"
+                                ]
+                              },
+                              "candidate_id": {"type": "string", "minLength": 1},
+                              "runtime_seconds": {
+                                "type": "number",
+                                "exclusiveMinimum": 0
+                              },
+                              "final_iteration": {"type": "integer", "minimum": 0},
+                              "maximum_iterations": {"type": "integer", "minimum": 1}
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
         }
       }
     },
@@ -52,6 +880,70 @@
             "millimeter",
             "centimeter",
             "meter"
+          ]
+        }
+      }
+    },
+    "preprocessing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["procrustes"],
+      "properties": {
+        "procrustes": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "enabled",
+            "evidence_file",
+            "evidence_sha256",
+            "fingerprint",
+            "scale_to_unit_centroid_size",
+            "scaling_mode",
+            "target_size",
+            "allow_reflection",
+            "tolerance",
+            "max_iterations"
+          ],
+          "properties": {
+            "enabled": {"const": true},
+            "evidence_file": {"type": "string", "minLength": 1},
+            "evidence_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+            "fingerprint": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+            "scale_to_unit_centroid_size": {"type": "boolean"},
+            "scaling_mode": {
+              "enum": [
+                "pams_surface_area_weighted_rms",
+                "pams_surface_vertex_centroid_size",
+                "preserve_size",
+                "landmark_centroid_size_legacy",
+                "landmark_rigid_gpa_legacy"
+              ]
+            },
+            "target_size": {"type": "number", "exclusiveMinimum": 0},
+            "allow_reflection": {"type": "boolean"},
+            "tolerance": {"type": "number", "exclusiveMinimum": 0},
+            "max_iterations": {"type": "integer", "minimum": 1}
+          },
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "scaling_mode": {
+                    "enum": [
+                      "pams_surface_area_weighted_rms",
+                      "pams_surface_vertex_centroid_size",
+                      "landmark_centroid_size_legacy"
+                    ]
+                  }
+                }
+              },
+              "then": {
+                "properties": {"scale_to_unit_centroid_size": {"const": true}}
+              },
+              "else": {
+                "properties": {"scale_to_unit_centroid_size": {"const": false}}
+              }
+            }
           ]
         }
       }
@@ -95,6 +987,10 @@
         "deformation": {
           "type": "object",
           "additionalProperties": false,
+          "dependentRequired": {
+            "initial_momenta": ["initial_control_points", "initial_momenta_subjects"],
+            "initial_momenta_subjects": ["initial_momenta"]
+          },
           "required": [
             "kernel_width",
             "timepoints",
@@ -113,6 +1009,20 @@
             "initial_control_point_spacing": {
               "type": "number",
               "exclusiveMinimum": 0
+            },
+            "initial_control_points": {
+              "type": "string",
+              "minLength": 1
+            },
+            "initial_momenta": {
+              "type": "string",
+              "minLength": 1
+            },
+            "initial_momenta_subjects": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {"type": "string", "minLength": 1}
             },
             "use_rk2": {
               "type": "boolean"
@@ -211,7 +1121,7 @@
           "const": "deformetrica_reference"
         },
         "device": {
-          "const": "cpu"
+          "enum": ["cpu", "cuda"]
         },
         "threads": {
           "type": "integer",
@@ -299,6 +1209,9 @@
         },
         "retain_flow_meshes": {
           "const": true
+        },
+        "checkpoint_mode": {
+          "enum": ["native_full_outputs", "compact_final_export"]
         }
       }
     }

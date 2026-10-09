@@ -1,6 +1,7 @@
 # Modern engine feasibility baseline
 
-Status: **experimental; not a production atlas backend**
+Status: **experimental opt-in backend with passing 236-subject CUDA full-atlas
+Euclidean and Sobolev engineering gates; not a production default**
 
 Tracked by [scientific-change issue #12](https://github.com/heinjenny95/DiffeoForge/issues/12).
 
@@ -64,6 +65,8 @@ The experimental `diffeoforge.engine` module currently implements:
 - the complete per-subject deterministic-atlas contribution, with attachment
   `-distance / noise_variance`, regularity `-p^T K(q,q) p`, and their sum;
 - an unaveraged, order-preserving multi-subject objective sum.
+- exact reusable fixed-target Current/Varifold geometry and self terms, with
+  stale-cache rejection and unchanged source gradients.
 - a deterministic momenta-only gradient-ascent prototype with Armijo
   backtracking and complete accepted-state history.
 - a deterministic full-parameter block optimizer for per-subject momenta,
@@ -78,9 +81,16 @@ matching dtype/device, finite positive kernel widths, and valid zero-based
 `int64` triangle connectivity. They do not silently cast inputs. Degenerate
 zero-area faces fail explicitly.
 
-This boundary does **not** yet include automatic control-point initialization,
-optimizer checkpointing, GPU execution, sparse/chunked kernels, mesh-quality
-constraints, or a workflow-backend adapter.
+This boundary now includes automatic template-vertex control-point initialization,
+bounded complete-cycle checkpoints, exact optimizer-state crash recovery, fail-closed
+CUDA/float64 execution, a desktop worker adapter, transport-neutral portable server
+requests, and a private authenticated persistent server/client lifecycle. Blockwise
+exact kernels, a reconnectable Qt-independent desktop remote controller, explicit
+desktop server submission/reconnection controls, and deterministic mesh-quality
+constraints are implemented. It does
+**not** yet include sparse or approximate kernels, a managed or multi-tenant server
+deployment, per-job process isolation, automatic remote checkpoint recovery, a general
+cross-hardware CUDA qualification, or an anatomy-independent production preset.
 
 ## Evidence in this baseline
 
@@ -148,17 +158,120 @@ immutable provenance, workload planning, and fresh-process benchmarking. It is
 not an automatic default or evidence-backed performance preset. See
 [blockwise Gaussian primitives](BLOCKWISE_GAUSSIAN.md).
 
-An explicit direct-plan `recompute` autograd strategy now checkpoints each
+Ordinary Gaussian forward evaluation now uses a centered squared-distance
+matrix identity instead of materializing rank-3 XYZ differences. A detached
+common origin preserves translation stability without changing the exact
+mathematical distances or gradients. Its analytical backward reconstructs the
+rank-2 kernel rather than retaining construction matrices for every subject.
+Direct formula tests, first- and second-derivative checks, frozen reference
+fixtures, full-objective parity, and optimizer-result checks protect the change.
+See [centered Gaussian matrix evaluation](CENTERED_GAUSSIAN_MATRIX.md).
+
+An explicit direct-plan `recompute` autograd strategy checkpoints each
 deterministic Gaussian/Current/Varifold tile and reconstructs pairwise
 intermediates during backward. Primitive, complete Subject/Atlas objective, and
 one-cycle optimizer tests preserve forward, all-parameter-gradient, and decision
-parity. On the 320-face CC0 Current objective, tested `64 × 64` recompute removes
-the corresponding rank-3 pairwise tensors from the forward saved-tensor graph
-and reduces its largest and summed logical payload. Public workflow plans still
-construct standard autograd only. Benchmark v0.3 can explicitly measure either
-strategy in separate fresh processes, but its spawn smoke coverage is not a
-prospective performance comparison, process peak-memory, or runtime-scaling
-result.
+parity. On the 320-face CC0 Current objective, tested `64 × 64` standard
+evaluation retains tile-sized rank-2 matrices while recompute avoids saving
+them, reducing the largest and summed logical payload. Public workflow plans
+still construct standard autograd only. Benchmark v0.3 can explicitly measure
+either strategy in separate fresh processes, but its spawn smoke coverage is
+not a prospective performance comparison, process peak-memory, or
+runtime-scaling result.
+
+The production optimizer path now prepares the invariant target geometry and
+attachment self term once per subject instead of repeating that quadratic work
+for every line-search evaluation. The uncached path remains the oracle. Dense,
+blockwise-standard, and blockwise-recompute tests preserve exact values and
+source gradients; a first five-subject 1,500-face local observation measured a
+1.239x objective-plus-momenta-gradient ratio. This is implementation evidence,
+not a full-atlas performance or convergence claim. See
+[prepared fixed-target attachments](PREPARED_ATTACHMENT_TARGETS.md).
+
+Armijo candidate gradients are now deferred until the candidate objective
+passes the acceptance threshold. Rejected candidates therefore avoid unused
+backward work, while accepted candidates reuse the same forward graph. Existing
+optimizer histories remain unchanged. A matched two-subject, 1,500-face local
+observation measured a 1.388x ratio for a one-cycle run containing seven
+rejected candidates in its momenta block; this is rejection-specific
+implementation evidence rather than a full-atlas claim. See
+[deferred Armijo gradients](DEFERRED_ARMIJO_GRADIENTS.md).
+
+For one-block atlases, the accepted candidate objective and gradient are now
+carried across the cycle boundary instead of being recomputed unchanged. A
+ten-cycle accepted momenta-only run therefore avoids nine complete redundant
+objective-plus-gradient evaluations. Independent fresh one-cycle recomputation
+must reproduce the same parameter state, objective, gradient norm, accepted
+step, and line-search history exactly. Multi-block behavior is unchanged. See
+[single-block optimizer boundary reuse](SINGLE_BLOCK_BOUNDARY_REUSE.md).
+
+Blockwise Current and Varifold self inner products with equal query/source tile sizes now
+evaluate only the diagonal and upper triangle of the symmetric tile grid. Each
+off-diagonal kernel supplies both ordered contributions, while cross-surface
+terms remain complete and unequal tile plans retain the established path.
+Dense float64 value/gradient comparisons cover tetrahedral and public 320-face
+surfaces. See [symmetric surface tiles](SYMMETRIC_CURRENT_TILES.md).
+
+The versioned multi-cycle optimizer benchmark now runs the production block
+optimizer in a fresh process per repeat. It separates fixed-target cache
+preparation from optimizer wall time, samples process RSS, records exact
+objective/gradient/line-search counts, and hashes the complete history and final
+parameters. Strict JSON, CSV, and regenerated HTML verification make optimizer
+performance changes auditable without converting a limited pilot into a
+convergence, ETA, or Deformetrica-comparison claim. See
+[modern multi-cycle optimizer benchmark](MODERN_OPTIMIZER_BENCHMARK.md).
+
+Benchmark report v0.2 also stores that complete per-decision history directly.
+Its verifier reconstructs block order, cycle and status totals, line-search
+work, final objective components, and the history hash. This permits bounded
+cycle-to-quality comparisons without rerunning every possible cycle cap;
+historical v0.1 hash-only evidence remains readable.
+
+The separate immutable optimizer-scaling design freezes a full-factorial set of
+subject-prefix sizes and benchmark-only cycle caps before results exist. It
+hashes the complete input inventory and reviewed optimizer configuration,
+stores a deterministic condition order and exact argv, and has strict
+JSON/sidecar/HTML verification. Creating or verifying it runs no optimizer. A
+source-bound resumable executor now runs the frozen order, reconciles only a
+valid report prefix after interruption, and verifies every nested report plus a
+final hash manifest without analysis. See
+[prospective optimizer scaling design](MODERN_OPTIMIZER_BENCHMARK_DESIGN.md).
+
+The centered matrix implementation completed a two-repeat, all-68-subject,
+approximately 1,500-face, one-cycle observation in 61.614 s median optimizer
+time with exact cross-process histories and result hashes. Median sampled peak
+RSS was 10.103 GiB. This is useful deterministic integration evidence, but the
+single cycle and sampled memory remain insufficient for convergence, 300-subject
+feasibility, or comparative performance claims.
+
+With analytical backward recomputation enabled, a second two-repeat observation
+of the same 68-subject condition measured 57.385 s median optimizer time and
+2.975 GiB median sampled peak RSS. Internal repeat hashes and decisions matched
+exactly. The 70.6% sampled peak-RSS reduction is strong implementation evidence;
+the five-subject condition was 15.7% slower, so timing remains cohort- and
+machine-specific rather than a general speed claim.
+
+A separate public CC0 engineering study was frozen in Git before execution.
+It contains six paired standard/recompute conditions across one, three, and
+five-subject prefixes, with five measured fresh processes and one warm-up per
+condition. Every raw JSON/CSV/HTML report and the final run manifest verify.
+The committed run deliberately contains no automatic analysis or ranking; its
+tiny synthetic geometry cannot establish full-atlas performance, a public
+preset, or large-cohort feasibility.
+
+A prospective fixed-reference qualification path now isolates subject
+registration from atlas-template and control-grid drift. It copies and hashes a
+completed Deformetrica estimated template, its exact control points, subjects
+selected before Modern results, and the matching reference reconstructions. The
+Modern workflow can optimize momenta only and can declare blockwise analytical
+backward recomputation end to end. A common external surface-distance assessor
+uses gates frozen before results. The first five-subject screening run was
+inconclusive because it exhausted its deliberately short cycle cap. A later
+Engine 0.9 design bound 16 full-resolution Weevil subjects before results,
+converged after 83 of at most 150 cycles, and passed every predeclared
+fixed-reference engineering gate, including all 16 subject-level residual
+gates. See
+[Modern Engine fixed-reference qualification](MODERN_REFERENCE_QUALIFICATION.md).
 
 ## Gates before a usable atlas engine
 
@@ -169,7 +282,9 @@ result.
 3. ~~Prototype explicit optimization of momenta, template vertices, and shared
    control points.~~ Completed in the v0.4 CC0 block-optimizer evidence.
 4. Compare objective components, endpoint surfaces, control-point trajectories,
-   and gradients on CC0 meshes.
+   and gradients on CC0 meshes. A prospective fixed-reference endpoint-surface
+   harness now has a converged, passing 16-subject real-data result; the
+   remaining primitive and control-point-trajectory comparisons are still open.
 5. ~~Add explicit blockwise Gaussian and surface primitives and prove local
    forward/autograd parity with the dense baseline.~~ Completed as an isolated
    primitive slice.
@@ -180,9 +295,77 @@ result.
    as an explicit v0.2 configuration and report path with immutable plan
    cross-checks and fresh-process execution coverage.
 8. Benchmark runtime and peak memory over mesh, control-point, and subject count.
+   A versioned fresh-process multi-cycle primitive is complete; the prospective
+   multi-dimensional study and peak-memory characterization remain open. Engine
+   1.0 now also has an opt-in deterministic subject-batch path; an initial
+   16-subject observation reduced sampled peak RSS by 55.7% for a 7.8% wall-time
+   increase. Engine 1.1 subsequently completed three full three-block optimizer
+   cycles on 236 real 5k-face Trochanters in 48.64 minutes at 506.38 MiB sampled
+   peak RSS (`9/9` accepted, zero failures) after making shared-block starter
+   steps cohort invariant. A frozen 16-subject ten-cycle baseline completed in
+   12.55 minutes with `30/30` accepted decisions and no stationarity, motivating
+   the separate per-block L-BFGS candidate in Engine 1.2. A predeclared
+   seven-cycle L-BFGS efficiency gate was 12.1% faster but failed its objective
+   threshold. Its verified v0.2 trace attributed 78.8% of objective gain to
+   Momenta decisions. Engine 1.3 therefore adds an explicit multi-rate schedule
+   for repeated local Momenta visits per shared-parameter update. Its frozen
+   16-subject, five-cycle real-data gate accepted all 20 decisions, reached
+   objective `-160.400` in 9.044 minutes, and used 413.7 MB sampled peak RSS.
+   That passed the predeclared quality, time, memory, and trace gates against
+   the Engine 1.1 ten-cycle baseline, but stopped at its cycle cap and does not
+   establish convergence. A separate two-cycle 236-subject gate then accepted
+   all eight decisions and passed objective, trace, and memory thresholds, but
+   used 65.71 minutes and failed its 48.64-minute time threshold by 35.1%.
+   This localizes the next scaling target to serial full-cohort evaluation
+   rather than optimizer validity or sampled peak memory. A separate frozen
+   4/8/16-thread screen tests whether the current four-thread cap leaves safe
+   same-process CPU parallelism unused before a more invasive cohort-worker or
+   CUDA implementation is attempted. That screen produced bit-identical
+   numerical histories and selected eight threads: its 96.772-second median was
+   24.08% below the four-thread median, while 16 threads were slower than eight.
+   A separately frozen 236-subject exact-result and 10%-speedup confirmation
+   failed: eight threads were only 5.21% faster and changed last-order float64
+   reduction bits, so the four-thread default remains unchanged. The next
+   acceleration target must restructure cohort execution or validate a GPU
+   path rather than only increasing intra-operation threads. See
+   [subject batching](MODERN_SUBJECT_BATCHING.md) and
+   [shared-step scaling](MODERN_SHARED_STEP_SCALING.md), and
+   [multi-rate atlas optimization](MODERN_MULTIRATE_OPTIMIZATION.md).
+   Engine 1.4 now implements the first such restructuring: deterministic
+   concurrent execution across explicitly bounded subject batches, with frozen
+   reduction order and checkpoint-bound worker provenance. Its prospective
+   real-16-subject screen selected two workers, and the separate 236-subject
+   confirmation preserved every result hash while reducing two-cycle optimizer
+   time from 65.714 to 51.555 minutes (21.55%). Sampled peak RSS rose to 780.65
+   MB, close to the predeclared 800 MB ceiling, so this remains a verified
+   hardware-specific profile rather than a cross-machine default.
+   Engine 1.5 therefore introduces a separate, fail-closed CUDA/float64 path.
+   Its five-subject full-resolution Weevil qualification passes numerical,
+   repeat-determinism, memory, speed, convergence, and fixed-reference gates;
+   the matched one-cycle CUDA screen was 10.175 times faster than CPU. Later
+   16-subject, 54-of-67-subject, 236-subject fixed-reference, and prospectively
+   frozen 236-subject full-atlas CUDA gates also passed. Engine 1.6 adds an
+   opt-in Sobolev template gradient and passes its paired prospective 236-subject
+   full-atlas gate. A prospectively frozen Engine 1.7 Current study also passes
+   correspondence-independent analytic surface-recovery gates in both Euclidean
+   and Sobolev modes, with about 77.2% pooled surface-RMSE reduction. This tests
+   the landmark-free objective on synthetic geometry and is not biological
+   validation. Engine 1.8 removes the short-lived experimental ordered-point
+   attachment and restores the intended surface-only atlas contract; optional
+   landmarks remain confined to GPA preprocessing. The CPU and Current defaults
+   remain unchanged because these results are cohort- and hardware-specific. See
+   [Engine 1.5 CUDA feasibility](MODERN_ENGINE15_CUDA.md).
 9. Define evidence-derived tolerances before accepting a production backend.
-10. Integrate the engine through immutable run manifests without weakening the
-    existing reference workflow.
+   Provisional fixed-reference gates have now passed once prospectively; broader
+   datasets and atlas-update tests are still needed before the tolerances can be
+   treated as production acceptance criteria.
+10. ~~Integrate the engine through immutable run manifests without weakening the
+    existing reference workflow.~~ Completed for the experimental CLI and desktop
+    workflows, including strict nested verification, bounded complete-cycle
+    checkpoints, exact recovery, and a separately hash-bound external CUDA runtime.
+    A contained server CUDA distribution, managed multi-user deployment, public release,
+    and general scientific qualification remain separate.
 
-No scientific atlas result should be produced or interpreted through this
-experimental module until these gates pass.
+Modern results may be produced within these explicit evidence boundaries. Numerical
+convergence and engineering non-inferiority must still be kept separate from
+reconstruction QC, sensitivity, PCA stability, and biological interpretation.
