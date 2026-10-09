@@ -426,6 +426,10 @@ the problematic specimen was actually included in the original pilot subset.
 Before repeating an entire atlas, a bounded **in-sample diagnostic** can isolate
 the attachment/regularity trade-off:
 
+For prospective binding, controlled warm/zero initialization comparisons,
+singleton compatibility and endpoint-only diagnostic output, see the
+[fixed-basis diagnostic protocol](FIXED_BASIS_REGISTRATION_DIAGNOSTICS.md).
+
 1. Preserve the completed atlas, its QC decisions and PCA unchanged. Copy and
    hash-bind its learned template, control points and selected aligned inputs
    into a separate diagnostic directory. Include the problematic specimen and
