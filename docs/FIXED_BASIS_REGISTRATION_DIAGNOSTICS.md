@@ -89,6 +89,22 @@ button for this mode; a helper can prepare and supervise the run. Production
 output still retains the complete final flows once, with compact checkpoints
 during optimization. Diagnostic endpoint-only output is not a production import.
 
+If early review identifies another case and the researcher subsequently accepts
+its bounded same-settings diagnostic, preserve the earlier checkpoint and review.
+Record acceptance against the exact replacement endpoint and field, and confirm
+the other declared inspection shapes separately. A new complete starting tensor
+may retain every unaffected row exactly and use the reviewed correction only as
+initialization for an immutable common successor. Record its checkpoint ancestry,
+restarted optimizer history and remaining common iteration budget; isolated
+diagnostic steps are separate provenance. The successor needs a fresh early
+review, because acceptance of its starting shapes is not acceptance of later
+optimized shapes. Do not relabel the earlier rejected checkpoint as approved.
+
+Preserve the full stored momentum values during extraction and equality checks.
+The declared native compute dtype does not justify rounding saved parameter
+arrays before verifying identity. Verify the values actually loaded by the native
+model as well as the reconstructed inspection shapes on the frozen basis.
+
 Verification: scoped configuration/checkpoint/review tests passed. A native
 two-subject nonzero-seed check reached its declared early checkpoint without
 individual initializer logs or a complete-flow export. This checks execution
