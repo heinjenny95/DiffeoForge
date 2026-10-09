@@ -15,7 +15,9 @@ from diffeoforge.reference_atlas_handoff import (
     ADAPTER,
     EARLY_CHECK,
     PROGRESS,
+    REFINEMENT_METHOD,
     REVIEW,
+    adapter_source,
     configure_preserved_pilot,
     configure_resume,
     initialization,
@@ -183,3 +185,31 @@ def test_changed_early_mesh_blocks_review_and_legacy_configs_keep_their_meaning(
     assert initialization(new_run_config(legacy)) is None
     configure_resume(legacy, Path("unused"))
     assert legacy == {"output": {}}
+
+
+def test_saved_atlas_refinement_rejects_moving_basis_before_preparation(preserved):
+    config, path, _, _, _ = preserved
+    initialization(config)["method"] = REFINEMENT_METHOD
+    initialization(config)["source_momenta_sha256"] = "d" * 64
+    config["optimization"].update(freeze_template=True, freeze_control_points=True)
+    target = path.with_name("refinement.yaml")
+    target.write_text(yaml.safe_dump(config), encoding="utf-8")
+    run = prepare_run(target, run_id="fixed-refinement")
+    assert REFINEMENT_METHOD in (run / "engine/sitecustomize.py").read_text()
+    for setting in ("freeze_template", "freeze_control_points"):
+        config["optimization"][setting] = False
+        with pytest.raises(ConfigurationError, match="frozen template and controls"):
+            adapter_source(new_run_config(config))
+        config["optimization"][setting] = True
+
+
+def test_saved_atlas_refinement_keeps_checkpoint_bound_review_gate(early):
+    config, run, _ = early
+    initialization(config)["method"] = REFINEMENT_METHOD
+    with pytest.raises(ConfigurationError, match="Review.*before resuming"):
+        configure_resume(config, run)
+    record_early_review(
+        run, approved=True, inspected_subjects=initialization(config)["pilot_subject_labels"]
+    )
+    configure_resume(config, run)
+    assert initialization(config)["early_review_approved"] is True

@@ -19,6 +19,7 @@ from diffeoforge.mesh import inspect_vtk, sha256_file
 from diffeoforge.strict_json import load_strict_json_object
 
 METHOD = "preserved_pilot_momenta_fixed_basis_initialization"
+REFINEMENT_METHOD = "preserved_atlas_momenta_fixed_basis_refinement"
 PROGRESS = "atlas-initialization.json"
 EARLY_CHECK = "early-atlas-check.json"
 REVIEW = "early-atlas-review.json"
@@ -32,7 +33,7 @@ def initialization(config):
         .get("calibration_result", {})
         .get("full_cohort_initialization", {})
     )
-    return value if value.get("method") == METHOD else None
+    return value if value.get("method") in {METHOD, REFINEMENT_METHOD} else None
 
 
 def configure_preserved_pilot(config, *, root, seed, config_directory):
@@ -305,6 +306,11 @@ def adapter_source(config):
         raise ConfigurationError("Preserved-pilot initialization requires GradientAscent.")
     if config["output"].get("checkpoint_mode") != "compact_final_export":
         raise ConfigurationError("Preserved-pilot initialization requires compact checkpoints.")
+    if plan["method"] == REFINEMENT_METHOD and not (
+        config["optimization"]["freeze_template"]
+        and config["optimization"]["freeze_control_points"]
+    ):
+        raise ConfigurationError("Saved-atlas refinement requires a frozen template and controls.")
     return "\n_DF_ATLAS_PLAN = " + repr(plan) + "\n" + ADAPTER
 
 
@@ -373,6 +379,10 @@ def _df_atlas_update(self, *args, **kwargs):
     pilot = set(_DF_ATLAS_PLAN["pilot_indices"])
     preserved = model.get_momenta()[_DF_ATLAS_PLAN["pilot_indices"]].copy()
     completed = set(_DF_ATLAS_PLAN["completed_initialization_indices"]) | pilot
+    if _DF_ATLAS_PLAN["method"] == "preserved_atlas_momenta_fixed_basis_refinement":
+        # Every row already comes from the declared, hash-bound full-cohort seed.
+        # Use it directly in the common optimizer; do not refit other rows first.
+        completed.update(range(len(labels)))
     self.current_parameters = self._get_parameters()
     self._dump_state_file()
     for index, label in enumerate(labels):

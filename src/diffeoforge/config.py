@@ -123,6 +123,7 @@ def _pilot_cohort_template(
             initialization.get("method") not in {
                 "learned_pilot_template_and_controls_zero_full_cohort_momenta",
                 "preserved_pilot_momenta_fixed_basis_initialization",
+                "preserved_atlas_momenta_fixed_basis_refinement",
             }
             or template.is_symlink()
             or digest(template) != initialization.get("template_sha256")

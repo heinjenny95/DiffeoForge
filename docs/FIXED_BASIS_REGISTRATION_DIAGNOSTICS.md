@@ -70,3 +70,26 @@ Require anatomical review before selecting settings or starting a successor.
 Any common successor needs consistent cohort/model provenance and early review
 of the identified concerns; separately tuned fields must not be inserted into
 the old PCA and presented as its original result.
+
+## Refine a saved atlas on its existing basis
+
+After the researcher selects diagnostic starting fields, a source-level
+preparation may declare `preserved_atlas_momenta_fixed_basis_refinement`.
+Bind the complete ordered starting tensor to the source atlas, recording any
+reviewed replacement rows as initialization only. Freeze template and control
+points and keep the shared attachment/deformation settings unchanged.
+
+This mode sends all existing rows directly into one common native optimizer;
+it skips the pilot workflow's per-subject initialization fits. It retains the
+existing checkpoint-bound early review and prevents continuation until that
+review is recorded for every declared inspection case. Fresh preparation cannot
+reuse an old review or resume phase. The subsequent common outputs need new
+cohort QC and a new PCA bundle. The current desktop has no dedicated preparation
+button for this mode; a helper can prepare and supervise the run. Production
+output still retains the complete final flows once, with compact checkpoints
+during optimization. Diagnostic endpoint-only output is not a production import.
+
+Verification: scoped configuration/checkpoint/review tests passed. A native
+two-subject nonzero-seed check reached its declared early checkpoint without
+individual initializer logs or a complete-flow export. This checks execution
+and review gating, not anatomical validity of a subsequent cohort refinement.

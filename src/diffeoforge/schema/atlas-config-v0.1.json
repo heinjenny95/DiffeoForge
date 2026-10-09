@@ -630,12 +630,13 @@
                       "required": ["method", "source_run_manifest_sha256", "template_sha256",
                                    "control_points_sha256", "limitation"],
                       "properties": {
-                        "method": {"enum": ["learned_pilot_template_and_controls_zero_full_cohort_momenta", "preserved_pilot_momenta_fixed_basis_initialization"]},
+                        "method": {"enum": ["learned_pilot_template_and_controls_zero_full_cohort_momenta", "preserved_pilot_momenta_fixed_basis_initialization", "preserved_atlas_momenta_fixed_basis_refinement"]},
                         "source_run_directory": {"type": "string", "minLength": 1},
                         "source_run_manifest_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
                         "template_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
                         "control_points_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
                         "pilot_momenta_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                        "source_momenta_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
                         "initial_momenta_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
                         "subject_labels": {"type": "array", "minItems": 2, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
                         "subject_sha256": {"type": "object", "minProperties": 2, "additionalProperties": {"type": "string", "pattern": "^[0-9a-f]{64}$"}},
@@ -659,6 +660,9 @@
                       "allOf": [{
                         "if": {"properties": {"method": {"const": "preserved_pilot_momenta_fixed_basis_initialization"}}},
                         "then": {"required": ["source_run_directory", "pilot_momenta_sha256", "initial_momenta_sha256", "subject_labels", "subject_sha256", "pilot_indices", "pilot_subject_labels", "individual_max_iterations", "early_review_iteration", "completed_initialization_indices", "early_review_approved"]}
+                      }, {
+                        "if": {"properties": {"method": {"const": "preserved_atlas_momenta_fixed_basis_refinement"}}},
+                        "then": {"required": ["source_run_directory", "source_momenta_sha256", "initial_momenta_sha256", "subject_labels", "subject_sha256", "pilot_indices", "pilot_subject_labels", "individual_max_iterations", "early_review_iteration", "completed_initialization_indices", "early_review_approved"]}
                       }]
                     },
                     "handoff_upgrade": {
