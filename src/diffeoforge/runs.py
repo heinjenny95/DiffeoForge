@@ -1951,11 +1951,14 @@ def prepare_resume_run(
     additional_iterations: int = 0,
     checkpoint_mode: str | None = None,
     convergence_reference: dict | None = None,
+    precision: str | None = None,
 ) -> Path:
     """Prepare an immutable checkpoint successor, optionally extending a capped budget."""
 
     if checkpoint_mode not in {None, "compact_final_export", "compact_convergence_export"}:
         raise ConfigurationError("Unsupported resume output checkpoint mode.")
+    if precision not in {None, "float64"}:
+        raise ConfigurationError("Resume precision can only explicitly promote to float64.")
     evidence = inspect_resume_source(
         source_run_directory, additional_iterations=additional_iterations
     )
@@ -1970,6 +1973,14 @@ def prepare_resume_run(
     if (source_run / RESUME_PROVENANCE_PATH).is_file():
         source_provenance = json.loads((source_run / RESUME_PROVENANCE_PATH).read_text("utf-8"))
         inherited_reference = source_provenance.get("convergence_reference")
+    if precision is not None:
+        if source_manifest["effective_config"]["runtime"]["precision"] != "float32":
+            raise ConfigurationError("Precision promotion requires a float32 source.")
+        if inherited_reference is not None or convergence_reference is None:
+            raise ConfigurationError(
+                "Precision promotion requires a freshly evaluated float64 reference; "
+                "an inherited objective reference cannot be reused."
+            )
     if inherited_reference is not None:
         if convergence_reference is not None and convergence_reference != inherited_reference:
             raise ConfigurationError("Cannot replace a preserved convergence reference.")
@@ -2012,6 +2023,8 @@ def prepare_resume_run(
         from diffeoforge.reference_checkpoint_schedule import new_run_config
 
         config = new_run_config(source_manifest["effective_config"])
+        if precision is not None:
+            config["runtime"]["precision"] = precision
         if checkpoint_mode is not None:
             config["output"]["checkpoint_mode"] = checkpoint_mode
         from diffeoforge.reference_atlas_handoff import adapter_source, configure_resume
@@ -2039,12 +2052,21 @@ def prepare_resume_run(
                 "config/effective-config.yaml",
             }:
                 continue
+            if precision is not None and relative.as_posix() == "engine/model.xml":
+                continue
             if relative.parts and relative.parts[0] == "resume":
                 continue
             source = _resolve_run_artifact(source_run, artifact["path"], "Source artifact")
             destination = temp_directory.joinpath(*relative.parts)
             _copy_and_verify(source, destination, artifact["sha256"])
             copied_artifacts.append(destination)
+
+        if precision is not None:
+            from diffeoforge.reference_resume_precision import promote_model_precision
+
+            model_path = temp_directory / "engine" / "model.xml"
+            promote_model_precision(source_run / "engine" / "model.xml", model_path)
+            copied_artifacts.append(model_path)
 
         effective_path = temp_directory / "config" / "effective-config.yaml"
         with effective_path.open("x", encoding="utf-8", newline="\n") as handle:
@@ -2128,6 +2150,14 @@ def prepare_resume_run(
             provenance["convergence_reference"] = convergence_reference
             provenance["semantics"]["restored"].append("objective_baseline")
             provenance["semantics"]["reinitialized"].remove("objective_baseline")
+        if precision is not None:
+            provenance["precision_transition"] = {
+                "source_precision": "float32",
+                "successor_precision": "float64",
+                "checkpoint_storage": "byte_identical_source",
+                "model_arithmetic": "native_float64",
+                "reference_evaluation": "recomputed_in_successor_precision",
+            }
         if checkpoint_mode is not None:
             provenance["output_schedule_change"] = {
                 "source_mode": source_manifest["effective_config"]["output"].get(

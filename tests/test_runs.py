@@ -1168,3 +1168,69 @@ def test_resume_preserves_protected_objective_reference_across_following_caps(
 def test_extension_rejects_undeclared_budgets(tmp_path, budget):
     with pytest.raises(ConfigurationError, match="0 or 300"):
         inspect_resume_source(tmp_path, additional_iterations=budget)
+
+
+def test_precision_resume_promotes_model_and_preserves_source_and_future_precision(
+    tmp_path, monkeypatch,
+):
+    from xml.etree import ElementTree as ET
+
+    source = prepare_run(write_run_config(tmp_path), run_id="single-precision")
+    abandon_prepared_run(source, checkpoint=b"preserved-float32-checkpoint")
+    recover_run(source, reason="explicit precision transition", confirm_process_stopped=True)
+    before = {p.relative_to(source): p.read_bytes() for p in source.rglob("*") if p.is_file()}
+    config = json.loads((source / "manifest.json").read_text())["effective_config"]
+    context = dict(version=1, initial_log_likelihood=-44224.03125001, origin_iteration=0,
+                   origin_checkpoint_sha256="a" * 64,
+                   convergence_tolerance=config["optimization"]["convergence_tolerance"])
+    successor = prepare_resume_run(
+        source, run_id="double-precision", precision="float64",
+        checkpoint_mode="compact_convergence_export", convergence_reference=context,
+    )
+    manifest = verify_prepared_run(successor)
+    promoted = manifest["effective_config"]
+    assert promoted["runtime"] == {**config["runtime"], "precision": "float64"}
+    assert promoted["optimization"] == config["optimization"]
+    assert promoted["model"] == config["model"]
+    old_xml = ET.parse(source / "engine/model.xml")
+    new_xml = ET.parse(successor / "engine/model.xml")
+    assert new_xml.find("dtype").text == "float64"
+    old_xml.find("dtype").text = "float64"
+    assert ET.tostring(new_xml.getroot()) == ET.tostring(old_xml.getroot())
+    assert (successor / "resume/source-checkpoint.p").read_bytes() == (
+        b"preserved-float32-checkpoint"
+    )
+    provenance = json.loads((successor / "resume/resume.json").read_text())
+    assert provenance["precision_transition"]["model_arithmetic"] == "native_float64"
+    assert provenance["convergence_reference"] == context
+    _execute_cap_fixture(successor, monkeypatch)
+    following = prepare_resume_run(successor, run_id="double-next-cap", additional_iterations=300)
+    assert verify_prepared_run(following)["effective_config"]["runtime"]["precision"] == "float64"
+    assert ET.parse(following / "engine/model.xml").find("dtype").text == "float64"
+    following_provenance = json.loads((following / "resume/resume.json").read_text())
+    assert following_provenance["convergence_reference"] == context
+    assert before == {
+        p.relative_to(source): p.read_bytes() for p in source.rglob("*") if p.is_file()
+    }
+    with pytest.raises(ConfigurationError, match="float32 source"):
+        prepare_resume_run(successor, additional_iterations=300, precision="float64",
+                           convergence_reference=context)
+
+
+def test_precision_resume_requires_fresh_reference_and_rejects_downgrade(tmp_path, monkeypatch):
+    source = _finish_at_cap(tmp_path, monkeypatch)
+    with pytest.raises(ConfigurationError, match="freshly evaluated float64"):
+        prepare_resume_run(source, additional_iterations=300, precision="float64")
+    with pytest.raises(ConfigurationError, match="promote to float64"):
+        prepare_resume_run(source, additional_iterations=300, precision="float32")
+    config = json.loads((source / "manifest.json").read_text())["effective_config"]
+    context = dict(version=1, initial_log_likelihood=-100.0, origin_iteration=0,
+                   origin_checkpoint_sha256="a" * 64,
+                   convergence_tolerance=config["optimization"]["convergence_tolerance"])
+    inherited = prepare_resume_run(source, run_id="existing-reference", additional_iterations=300,
+                                  checkpoint_mode="compact_convergence_export",
+                                  convergence_reference=context)
+    _execute_cap_fixture(inherited, monkeypatch)
+    with pytest.raises(ConfigurationError, match="inherited objective reference"):
+        prepare_resume_run(inherited, additional_iterations=300, precision="float64",
+                           convergence_reference=context)

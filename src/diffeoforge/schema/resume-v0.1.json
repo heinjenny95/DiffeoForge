@@ -184,6 +184,21 @@
         }
       }
     },
+    "precision_transition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_precision", "successor_precision", "checkpoint_storage",
+        "model_arithmetic", "reference_evaluation"
+      ],
+      "properties": {
+        "source_precision": {"const": "float32"},
+        "successor_precision": {"const": "float64"},
+        "checkpoint_storage": {"const": "byte_identical_source"},
+        "model_arithmetic": {"const": "native_float64"},
+        "reference_evaluation": {"const": "recomputed_in_successor_precision"}
+      }
+    },
     "convergence_reference": {
       "type": "object",
       "additionalProperties": false,
@@ -239,6 +254,10 @@
     }
   },
   "allOf": [
+    {
+      "if": {"required": ["precision_transition"]},
+      "then": {"required": ["convergence_reference"]}
+    },
     {
       "if": {
         "properties": {

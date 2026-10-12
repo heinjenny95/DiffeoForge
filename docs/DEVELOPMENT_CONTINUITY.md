@@ -21,6 +21,13 @@ default supported reference route; the Modern engine remains evidence-gated.
 
 ## Current source work
 
+Explicit reference resume preparation can promote model arithmetic from float32
+to float64 while retaining the tolerance and native comparator. The successor
+protects the dtype/config change, original checkpoint bytes and a reference
+recomputed in matching precision. Future caps retain both; default runs and
+existing evidence stay unchanged. Scalar recasting alone is insufficient to
+resolve coarse objective spacing. See [precision and reference contract](REFERENCE_CONVERGENCE_EXPORT.md).
+
 An opt-in, protected convergence reference now survives canonical capped resumes.
 It retains the original objective denominator without changing the tolerance,
 native stopping comparator or the resumed line search's local objective. Context

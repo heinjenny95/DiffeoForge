@@ -1,5 +1,25 @@
 # Export only after native tolerance convergence
 
+An explicitly authorized precision successor can use
+`prepare_resume_run(precision="float64", convergence_reference=...)` to promote
+the actual reference model arithmetic from float32. The tolerance and native
+strict stopping comparison stay unchanged. At large objective magnitudes,
+float32 spacing can exceed the tolerance-scaled accumulated improvement, making
+every strictly positive accepted step too coarse to meet that comparison at the
+current values. Converting an already rounded scalar to double does not fix this;
+the model, attachment, regularity and gradients must be evaluated in float64.
+
+The immutable successor records the explicit precision change in effective
+config, model XML and protected resume provenance. All source checkpoint bytes,
+geometry, weights, integration and original evidence are retained. Native tensor
+conversion promotes saved parameter values for model evaluation. A fresh
+reference evaluated at its declared checkpoint in float64 is required; an
+inherited reference from the earlier arithmetic cannot be silently reused.
+Following capped successors inherit both float64 and the matching reference.
+Defaults do not change, and precision downgrades are not supported by this API.
+Precision promotion changes the numerical calculation and does not promise an
+identical trajectory, convergence time, anatomical validity or a global optimum.
+
 The opt-in `output.checkpoint_mode: compact_convergence_export` keeps the native
 atomic checkpoint cadence but defers the full mesh/trajectory writer until
 GradientAscent explicitly logs its tolerance stop. The default remains
@@ -60,7 +80,7 @@ is prepared only at a verified block boundary. Any operational driver handoff
 must distinguish its planned guard stop from a failed or interrupted backend;
 this output option does not authorize automatic error recovery or anatomical QC.
 
-Verification: 103 scoped public regressions cover scheduling, protected
+Verification: 108 scoped public regressions cover scheduling, protected
 preparation, reference continuity and validation, checkpoint-only chaining,
 source preservation, backend configuration, atlas initialization and terminal
 reports. Controlled-objective tests show the preserved reference reaches the
@@ -68,4 +88,6 @@ same stopping criterion across a cap and rejects a worsening first resumed
 step. The composed adapter imports in the installed native Python 3.8 runtime;
 controlled scalars exercise that runtime's original update, class closure,
 native precision, tolerance/line-search messages and atomic context bundle.
+Float64 controlled native scalars resolve a strictly positive step below the
+unchanged tolerance threshold, while the same values collapse in float32.
 These engineering checks do not optimize private meshes.
