@@ -116,10 +116,24 @@
     "output_schedule_change": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["source_mode", "successor_mode"],
+      "required": [
+        "source_mode",
+        "successor_mode"
+      ],
       "properties": {
-        "source_mode": {"enum": ["native_full_outputs", "compact_final_export", "compact_convergence_export"]},
-        "successor_mode": {"enum": ["compact_final_export", "compact_convergence_export"]}
+        "source_mode": {
+          "enum": [
+            "native_full_outputs",
+            "compact_final_export",
+            "compact_convergence_export"
+          ]
+        },
+        "successor_mode": {
+          "enum": [
+            "compact_final_export",
+            "compact_convergence_export"
+          ]
+        }
       }
     },
     "semantics": {
@@ -140,20 +154,63 @@
           "const": "4.3.0"
         },
         "restored": {
-          "const": [
-            "current_parameters",
-            "current_iteration"
+          "enum": [
+            [
+              "current_parameters",
+              "current_iteration"
+            ],
+            [
+              "current_parameters",
+              "current_iteration",
+              "objective_baseline"
+            ]
           ]
         },
         "reinitialized": {
-          "const": [
-            "objective_baseline",
-            "gradient",
-            "line_search_step_sizes"
+          "enum": [
+            [
+              "objective_baseline",
+              "gradient",
+              "line_search_step_sizes"
+            ],
+            [
+              "gradient",
+              "line_search_step_sizes"
+            ]
           ]
         },
         "trajectory_continuity": {
           "const": "not_guaranteed"
+        }
+      }
+    },
+    "convergence_reference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "initial_log_likelihood",
+        "origin_iteration",
+        "origin_checkpoint_sha256",
+        "convergence_tolerance"
+      ],
+      "properties": {
+        "version": {
+          "const": 1
+        },
+        "initial_log_likelihood": {
+          "type": "number"
+        },
+        "origin_iteration": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "origin_checkpoint_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "convergence_tolerance": {
+          "type": "number",
+          "exclusiveMinimum": 0
         }
       }
     }
@@ -212,6 +269,55 @@
             "properties": {
               "terminal_status": {
                 "const": "completed"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "convergence_reference"
+        ]
+      },
+      "then": {
+        "properties": {
+          "semantics": {
+            "properties": {
+              "restored": {
+                "const": [
+                  "current_parameters",
+                  "current_iteration",
+                  "objective_baseline"
+                ]
+              },
+              "reinitialized": {
+                "const": [
+                  "gradient",
+                  "line_search_step_sizes"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "semantics": {
+            "properties": {
+              "restored": {
+                "const": [
+                  "current_parameters",
+                  "current_iteration"
+                ]
+              },
+              "reinitialized": {
+                "const": [
+                  "objective_baseline",
+                  "gradient",
+                  "line_search_step_sizes"
+                ]
               }
             }
           }

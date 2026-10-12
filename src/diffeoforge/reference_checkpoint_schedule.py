@@ -127,10 +127,22 @@ _df_exp.write_flow = _df_flow
 '''
 
 
-def render_adapter(singleton_source="", atlas_source="", *, convergence_only=False):
+def render_adapter(
+    singleton_source="", atlas_source="", *, convergence_only=False,
+    convergence_reference=None, require_saved_reference=False,
+):
     """Fail closed if Python's normally nonfatal sitecustomize hook fails."""
     policy = "\n_df_export_on_convergence = True\n" if convergence_only else ""
-    body = singleton_source + SITECUSTOMIZE + policy + atlas_source
+    reference_source = ""
+    if convergence_reference is not None:
+        if not convergence_only:
+            raise ValueError("Preserved convergence reference requires convergence-only export.")
+        from diffeoforge.reference_convergence_context import adapter_source
+
+        reference_source = adapter_source(
+            convergence_reference, require_saved=require_saved_reference,
+        )
+    body = singleton_source + reference_source + SITECUSTOMIZE + policy + atlas_source
     return (
         '"""DiffeoForge reference output scheduling adapter v1."""\n'
         "try:\n"

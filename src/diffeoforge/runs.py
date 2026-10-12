@@ -1950,6 +1950,7 @@ def prepare_resume_run(
     run_id: str | None = None,
     additional_iterations: int = 0,
     checkpoint_mode: str | None = None,
+    convergence_reference: dict | None = None,
 ) -> Path:
     """Prepare an immutable checkpoint successor, optionally extending a capped budget."""
 
@@ -1965,6 +1966,34 @@ def prepare_resume_run(
     inventory_path = evidence.inventory_path
     checkpoint_path = evidence.checkpoint_path
     checkpoint_hash = evidence.checkpoint_sha256
+    inherited_reference = None
+    if (source_run / RESUME_PROVENANCE_PATH).is_file():
+        source_provenance = json.loads((source_run / RESUME_PROVENANCE_PATH).read_text("utf-8"))
+        inherited_reference = source_provenance.get("convergence_reference")
+    if inherited_reference is not None:
+        if convergence_reference is not None and convergence_reference != inherited_reference:
+            raise ConfigurationError("Cannot replace a preserved convergence reference.")
+        convergence_reference = inherited_reference
+    if convergence_reference is not None:
+        from diffeoforge.reference_convergence_context import validate_context
+
+        try:
+            convergence_reference = validate_context(
+                convergence_reference,
+                source_manifest["effective_config"]["optimization"]["convergence_tolerance"],
+            )
+        except ValueError as exc:
+            raise ConfigurationError(str(exc)) from exc
+        mode = checkpoint_mode or source_manifest["effective_config"]["output"].get(
+            "checkpoint_mode"
+        )
+        if mode != "compact_convergence_export":
+            raise ConfigurationError("Preserved reference requires convergence-only export.")
+        if (source_manifest["effective_config"]["optimization"]["method"] != "gradient_ascent"
+                or convergence_reference["origin_iteration"] > int(
+                    source_manifest["effective_config"]["optimization"]["max_iterations"]
+                )):
+            raise ConfigurationError("Invalid optimizer or future convergence reference origin.")
 
     output_root = source_run.parent
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
@@ -2032,6 +2061,8 @@ def prepare_resume_run(
                 convergence_only=(
                     config["output"].get("checkpoint_mode") == "compact_convergence_export"
                 ),
+                convergence_reference=convergence_reference,
+                require_saved_reference=(inherited_reference is not None),
             )
             if compact(config) else singleton_source
         )
@@ -2093,6 +2124,10 @@ def prepare_resume_run(
                 "maximum_iterations": old_maximum + additional_iterations,
                 "source_log_sha256": sha256_file(source_run / "logs" / "deformetrica.log"),
             }
+        if convergence_reference is not None:
+            provenance["convergence_reference"] = convergence_reference
+            provenance["semantics"]["restored"].append("objective_baseline")
+            provenance["semantics"]["reinitialized"].remove("objective_baseline")
         if checkpoint_mode is not None:
             provenance["output_schedule_change"] = {
                 "source_mode": source_manifest["effective_config"]["output"].get(

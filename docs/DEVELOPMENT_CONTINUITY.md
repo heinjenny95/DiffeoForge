@@ -21,6 +21,14 @@ default supported reference route; the Modern engine remains evidence-gated.
 
 ## Current source work
 
+An opt-in, protected convergence reference now survives canonical capped resumes.
+It retains the original objective denominator without changing the tolerance,
+native stopping comparator or the resumed line search's local objective. Context
+and native parameters share one atomic checkpoint; following successors refuse
+missing or conflicting context. Existing/default resumes remain unchanged.
+Gradient and step-size reinitialization still prevent a claim of uninterrupted
+trajectory identity. See [reference continuity](REFERENCE_CONVERGENCE_EXPORT.md).
+
 An opt-in convergence-only export schedule retains atomic checkpoints across
 capped +300 successors and invokes the unchanged full writer only after the
 native tolerance message. Explicit resume output-policy changes are protected

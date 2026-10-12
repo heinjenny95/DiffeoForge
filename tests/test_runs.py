@@ -1130,6 +1130,40 @@ def test_extension_rechecks_checkpoint_and_log_and_requires_explicit_budget(tmp_
         iteration_extension_limit(source)
 
 
+def test_resume_preserves_protected_objective_reference_across_following_caps(
+    tmp_path, monkeypatch,
+):
+    source = _finish_at_cap(tmp_path, monkeypatch)
+    before = {p.relative_to(source): p.read_bytes() for p in source.rglob("*") if p.is_file()}
+    context = dict(version=1, initial_log_likelihood=-100.0, origin_iteration=0,
+                   origin_checkpoint_sha256="a" * 64, convergence_tolerance=1e-6)
+    # Use the fixture's original tolerance; this change must never tune it.
+    config = json.loads((source / "manifest.json").read_text())["effective_config"]
+    context["convergence_tolerance"] = config["optimization"]["convergence_tolerance"]
+    successor = prepare_resume_run(
+        source, run_id="preserve-reference", additional_iterations=300,
+        checkpoint_mode="compact_convergence_export", convergence_reference=context,
+    )
+    provenance = json.loads((successor / "resume/resume.json").read_text())
+    assert provenance["convergence_reference"] == context
+    assert provenance["semantics"]["restored"][-1] == "objective_baseline"
+    assert provenance["semantics"]["reinitialized"] == ["gradient", "line_search_step_sizes"]
+    assert (successor / "resume/source-checkpoint.p").read_bytes() == b"opaque-native-state"
+    _execute_cap_fixture(successor, monkeypatch)
+    following = prepare_resume_run(successor, run_id="carry-reference", additional_iterations=300)
+    following_provenance = json.loads((following / "resume/resume.json").read_text())
+    assert following_provenance["convergence_reference"] == context
+    assert "True)" in (following / "engine/sitecustomize.py").read_text()
+    with pytest.raises(ConfigurationError, match="Cannot replace"):
+        prepare_resume_run(successor, additional_iterations=300,
+                           convergence_reference={**context, "initial_log_likelihood": -101.0})
+    with pytest.raises(ConfigurationError, match="convergence-only"):
+        prepare_resume_run(successor, additional_iterations=300,
+                           checkpoint_mode="compact_final_export")
+    retained = {p.relative_to(source): p.read_bytes() for p in source.rglob("*") if p.is_file()}
+    assert before == retained
+
+
 @pytest.mark.parametrize("budget", [True, 300.0, 1, 600])
 def test_extension_rejects_undeclared_budgets(tmp_path, budget):
     with pytest.raises(ConfigurationError, match="0 or 300"):
