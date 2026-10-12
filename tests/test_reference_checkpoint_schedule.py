@@ -1,5 +1,6 @@
 """Output suppression must preserve native checkpoint/final-export behavior."""
 
+import logging
 import pickle
 import sys
 from pathlib import Path
@@ -10,7 +11,7 @@ import pytest
 from diffeoforge.reference_checkpoint_schedule import SITECUSTOMIZE, new_run_config, render_adapter
 
 
-def _adapter(monkeypatch, tmp_path):
+def _adapter(monkeypatch, tmp_path, *, convergence_only=False, stop=None):
     class Exponential:
         def write_flow(self):
             self.flows += 1
@@ -20,6 +21,7 @@ def _adapter(monkeypatch, tmp_path):
             self.state_file = str(tmp_path / "state.p")
             self.current_parameters = {"field": [1, 2, 3]}
             self.current_iteration = 0
+            self.max_iterations = 3
             self.dataset = SimpleNamespace(subject_ids=["a", "b"])
             self.statistical_model = SimpleNamespace(exponential=Exponential())
             self.statistical_model.exponential.flows = 0
@@ -36,6 +38,8 @@ def _adapter(monkeypatch, tmp_path):
             for iteration in range(1, 4):
                 self.current_iteration = iteration
                 self.write()
+            if stop:
+                logging.getLogger("deformetrica.core.estimators.gradient_ascent").info(stop)
 
         def write(self):
             for _ in self.dataset.subject_ids:
@@ -68,7 +72,9 @@ def _adapter(monkeypatch, tmp_path):
         module = ModuleType(name)
         setattr(module, attribute, cls)
         monkeypatch.setitem(sys.modules, name, module)
-    exec(SITECUSTOMIZE, {})
+    logger = logging.getLogger("deformetrica.core.estimators.gradient_ascent")
+    monkeypatch.setattr(logger, "level", logging.INFO)
+    exec(render_adapter(convergence_only=True) if convergence_only else SITECUSTOMIZE, {})
     return Gradient, Scipy
 
 
@@ -117,3 +123,34 @@ def test_failed_final_export_still_has_latest_readable_checkpoint(monkeypatch, t
     with pytest.raises(OSError, match="final export failure"):
         estimator.write()
     assert pickle.loads(Path(estimator.state_file).read_bytes())[0] == 3
+
+
+@pytest.mark.parametrize("stop,flows", [
+    (None, 0),
+    ("Number of line search loops exceeded. Stopping.", 0),
+    ("Tolerance threshold met. Stopping the optimization process.", 2),
+    ("Unrecognized native termination", 0),
+])
+def test_convergence_policy_exports_only_explicit_native_tolerance(
+    monkeypatch, tmp_path, stop, flows
+):
+    logger = logging.getLogger("deformetrica.core.estimators.gradient_ascent")
+    before = list(logger.handlers)
+    estimator = _adapter(monkeypatch, tmp_path, convergence_only=True, stop=stop)[0]()
+    estimator.update()
+    assert logger.handlers == before
+    assert estimator.statistical_model.exponential.flows == 0
+    estimator.write()
+    assert estimator.statistical_model.exponential.flows == flows
+    assert pickle.loads(Path(estimator.state_file).read_bytes())[0] == 3
+
+
+def test_unrelated_tolerance_log_does_not_authorize_export(monkeypatch, tmp_path):
+    estimator = _adapter(monkeypatch, tmp_path, convergence_only=True)[0]()
+    estimator.update()
+    logging.getLogger("other.optimizer").warning(
+        "Tolerance threshold met. Stopping the optimization process."
+    )
+    estimator.current_iteration = 2  # Unknown stop before cap also remains checkpoint-only.
+    estimator.write()
+    assert estimator.statistical_model.exponential.flows == 0

@@ -1949,9 +1949,12 @@ def prepare_resume_run(
     *,
     run_id: str | None = None,
     additional_iterations: int = 0,
+    checkpoint_mode: str | None = None,
 ) -> Path:
     """Prepare an immutable checkpoint successor, optionally extending a capped budget."""
 
+    if checkpoint_mode not in {None, "compact_final_export", "compact_convergence_export"}:
+        raise ConfigurationError("Unsupported resume output checkpoint mode.")
     evidence = inspect_resume_source(
         source_run_directory, additional_iterations=additional_iterations
     )
@@ -1980,13 +1983,15 @@ def prepare_resume_run(
         from diffeoforge.reference_checkpoint_schedule import new_run_config
 
         config = new_run_config(source_manifest["effective_config"])
+        if checkpoint_mode is not None:
+            config["output"]["checkpoint_mode"] = checkpoint_mode
         from diffeoforge.reference_atlas_handoff import adapter_source, configure_resume
 
         configure_resume(config, source_run)
         old_maximum = int(config["optimization"]["max_iterations"])
         if additional_iterations:
             config["optimization"]["max_iterations"] = old_maximum + additional_iterations
-            validate_reference_config(config)
+        validate_reference_config(config)
         copied_artifacts: list[Path] = []
         from diffeoforge.reference_atlas_handoff import EARLY_CHECK, PROGRESS, REVIEW
 
@@ -2022,7 +2027,12 @@ def prepare_resume_run(
 
         singleton_source = SITECUSTOMIZE if needs_adapter(config) else ""
         rendered_adapter = (
-            render_adapter(singleton_source, adapter_source(config))
+            render_adapter(
+                singleton_source, adapter_source(config),
+                convergence_only=(
+                    config["output"].get("checkpoint_mode") == "compact_convergence_export"
+                ),
+            )
             if compact(config) else singleton_source
         )
         if rendered_adapter:
@@ -2082,6 +2092,13 @@ def prepare_resume_run(
                 "additional_iterations": additional_iterations,
                 "maximum_iterations": old_maximum + additional_iterations,
                 "source_log_sha256": sha256_file(source_run / "logs" / "deformetrica.log"),
+            }
+        if checkpoint_mode is not None:
+            provenance["output_schedule_change"] = {
+                "source_mode": source_manifest["effective_config"]["output"].get(
+                    "checkpoint_mode", "native_full_outputs"
+                ),
+                "successor_mode": checkpoint_mode,
             }
         _validate_resume_schema(provenance)
         provenance_path = temp_directory / RESUME_PROVENANCE_PATH

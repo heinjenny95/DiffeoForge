@@ -1211,7 +1211,7 @@
           "const": true
         },
         "checkpoint_mode": {
-          "enum": ["native_full_outputs", "compact_final_export"]
+          "enum": ["native_full_outputs", "compact_final_export", "compact_convergence_export"]
         }
       }
     }

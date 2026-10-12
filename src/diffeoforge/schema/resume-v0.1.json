@@ -113,6 +113,15 @@
         }
       }
     },
+    "output_schedule_change": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source_mode", "successor_mode"],
+      "properties": {
+        "source_mode": {"enum": ["native_full_outputs", "compact_final_export", "compact_convergence_export"]},
+        "successor_mode": {"enum": ["compact_final_export", "compact_convergence_export"]}
+      }
+    },
     "semantics": {
       "type": "object",
       "additionalProperties": false,

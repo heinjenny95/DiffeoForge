@@ -1087,6 +1087,29 @@ def test_extension_rejects_other_terminal_signals_even_at_cap(tmp_path, monkeypa
     assert not (source.parent / "extra").exists()
 
 
+def test_capped_checkpoint_only_successor_records_explicit_output_policy(tmp_path, monkeypatch):
+    source = _finish_at_cap(tmp_path, monkeypatch)
+    before = {p.relative_to(source): p.read_bytes() for p in source.rglob("*") if p.is_file()}
+    successor = prepare_resume_run(
+        source, run_id="convergence-export", additional_iterations=300,
+        checkpoint_mode="compact_convergence_export",
+    )
+    manifest = verify_prepared_run(successor)
+    assert manifest["effective_config"]["output"]["checkpoint_mode"] == "compact_convergence_export"
+    assert "_df_export_on_convergence = True" in (successor / "engine/sitecustomize.py").read_text()
+    provenance = json.loads((successor / "resume/resume.json").read_text())
+    assert provenance["output_schedule_change"] == {
+        "source_mode": "compact_final_export", "successor_mode": "compact_convergence_export",
+    }
+    _execute_cap_fixture(successor, monkeypatch)
+    following = prepare_resume_run(successor, run_id="next-cap", additional_iterations=300)
+    assert verify_prepared_run(following)["effective_config"]["output"]["checkpoint_mode"] == (
+        "compact_convergence_export"
+    )
+    retained = {p.relative_to(source): p.read_bytes() for p in source.rglob("*") if p.is_file()}
+    assert retained == before
+
+
 def test_extension_rechecks_checkpoint_and_log_and_requires_explicit_budget(tmp_path, monkeypatch):
     source = _finish_at_cap(tmp_path, monkeypatch)
     with pytest.raises(ConfigurationError, match="failed or interrupted"):

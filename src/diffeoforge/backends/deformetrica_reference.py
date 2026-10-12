@@ -60,6 +60,11 @@ def validate_reference_config(config: Mapping[str, Any]) -> None:
         raise ConfigurationError(
             "Reference runs must retain flow meshes in contract 0.1 so evidence is not deleted."
         )
+    if (
+        config["output"].get("checkpoint_mode") == "compact_convergence_export"
+        and config["optimization"]["method"] != "gradient_ascent"
+    ):
+        raise ConfigurationError("Convergence-only export requires native gradient ascent.")
     from diffeoforge.reference_atlas_handoff import adapter_source, initialization
     from diffeoforge.reference_checkpoint_schedule import new_run_config
 
@@ -249,7 +254,10 @@ def render_engine_file_bytes(
 
         singleton_source = rendered.get("sitecustomize.py", b"").decode("utf-8")
         rendered["sitecustomize.py"] = render_adapter(
-            singleton_source, adapter_source(config)
+            singleton_source, adapter_source(config),
+            convergence_only=(
+                config["output"].get("checkpoint_mode") == "compact_convergence_export"
+            ),
         ).encode("utf-8")
     return rendered
 

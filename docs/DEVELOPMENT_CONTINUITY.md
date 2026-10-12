@@ -21,6 +21,12 @@ default supported reference route; the Modern engine remains evidence-gated.
 
 ## Current source work
 
+An opt-in convergence-only export schedule retains atomic checkpoints across
+capped +300 successors and invokes the unchanged full writer only after the
+native tolerance message. Explicit resume output-policy changes are protected
+and recorded; checkpoint-only block completion is separate from a final shape
+delivery. See [contract and boundaries](REFERENCE_CONVERGENCE_EXPORT.md).
+
 Operational recovery guidance now distinguishes host-session teardown from a
 native numerical stop. It records stopped-process and atomic-checkpoint checks,
 an immutable successor with the original effective budget, and verified Windows
