@@ -16,6 +16,7 @@ import yaml
 
 from diffeoforge.config import ConfigurationError, load_config, validate_input_paths
 from diffeoforge.mesh import inspect_vtk, sha256_file
+from diffeoforge.reference_checkpoint_schedule import needs_adapter, new_run_config
 from diffeoforge.strict_json import load_strict_json_object
 
 METHOD = "preserved_pilot_momenta_fixed_basis_initialization"
@@ -41,9 +42,7 @@ def configure_preserved_pilot(config, *, root, seed, config_directory):
     from diffeoforge.reference_pca import read_deformetrica_momenta
     from diffeoforge.reference_pca_deformations import _write_momenta
 
-    if config.get("output", {}).get("checkpoint_mode", "compact_final_export") != (
-        "compact_final_export"
-    ):
+    if not needs_adapter(new_run_config(config)):
         raise ConfigurationError("Preserved pilot initialization requires compact checkpoints.")
 
     basis = root / seed["files"]["momenta"]["copy"]
@@ -304,7 +303,7 @@ def adapter_source(config):
         return ""
     if config["optimization"]["method"] != "gradient_ascent":
         raise ConfigurationError("Preserved-pilot initialization requires GradientAscent.")
-    if config["output"].get("checkpoint_mode") != "compact_final_export":
+    if not needs_adapter(config):
         raise ConfigurationError("Preserved-pilot initialization requires compact checkpoints.")
     if plan["method"] == REFINEMENT_METHOD and not (
         config["optimization"]["freeze_template"]

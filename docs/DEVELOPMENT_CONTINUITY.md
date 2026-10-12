@@ -27,6 +27,12 @@ native tolerance message. Explicit resume output-policy changes are protected
 and recorded; checkpoint-only block completion is separate from a final shape
 delivery. See [contract and boundaries](REFERENCE_CONVERGENCE_EXPORT.md).
 
+Preserved atlas handoffs now accept that opt-in compact schedule as well as the
+default. Canonical successor regressions include saved-atlas initialization and
+its review/basis gates; composed-adapter checks retain the cap-versus-tolerance
+export distinction. This fixes a pre-launch compatibility rejection without
+changing native optimization or existing run evidence.
+
 Operational recovery guidance now distinguishes host-session teardown from a
 native numerical stop. It records stopped-process and atomic-checkpoint checks,
 an immutable successor with the original effective budget, and verified Windows

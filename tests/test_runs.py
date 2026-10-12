@@ -1025,11 +1025,17 @@ def _finish_at_cap(tmp_path, monkeypatch, *, stop="", limit=300):
     return source
 
 
-def _execute_cap_fixture(run, monkeypatch, *, stop=""):
+def _execute_cap_fixture(run, monkeypatch, *, stop="", output_files=None):
     maximum = verify_prepared_run(run)["effective_config"]["optimization"]["max_iterations"]
     program = (
         "from pathlib import Path; "
-        "Path('output/deformetrica-state.p').write_bytes(b'opaque-native-state'); "
+        + "".join(
+            f"Path({str(run / path)!r}).write_bytes({content!r}); "
+            for path, content in (output_files or {}).items()
+        )
+        +
+        f"Path({str(run / 'output/deformetrica-state.p')!r})"
+        ".write_bytes(b'opaque-native-state'); "
         f"print('------ Iteration: {maximum} ------'); "
         "print('Log-likelihood = -10 ; attachment = -8 ; regularity = -2'); "
         f"print({stop!r})"

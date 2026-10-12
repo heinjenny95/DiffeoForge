@@ -1,19 +1,25 @@
 """Identity, immutability and review gates for the pilot-to-atlas handoff."""
 
+import hashlib
 import json
+import pickle
+import sys
 from pathlib import Path
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 
 import numpy as np
 import pytest
 import yaml
 from test_pilot_cohort_handoff import handoff  # noqa: F401
+from test_reference_checkpoint_schedule import _adapter
+from test_runs import _execute_cap_fixture, write_tetrahedron
 
 from diffeoforge.config import ConfigurationError, load_config, validate_input_paths
 from diffeoforge.mesh import sha256_file
 from diffeoforge.reference_atlas_handoff import (
     ADAPTER,
     EARLY_CHECK,
+    METHOD,
     PROGRESS,
     REFINEMENT_METHOD,
     REVIEW,
@@ -27,7 +33,7 @@ from diffeoforge.reference_atlas_handoff import (
 from diffeoforge.reference_checkpoint_schedule import new_run_config, render_adapter
 from diffeoforge.reference_pca import read_deformetrica_momenta
 from diffeoforge.reference_pca_deformations import _write_momenta
-from diffeoforge.runs import prepare_run
+from diffeoforge.runs import prepare_resume_run, prepare_run, verify_prepared_run
 
 
 @pytest.fixture
@@ -187,11 +193,13 @@ def test_changed_early_mesh_blocks_review_and_legacy_configs_keep_their_meaning(
     assert legacy == {"output": {}}
 
 
-def test_saved_atlas_refinement_rejects_moving_basis_before_preparation(preserved):
+@pytest.mark.parametrize("mode", ["compact_final_export", "compact_convergence_export"])
+def test_saved_atlas_refinement_rejects_moving_basis_before_preparation(preserved, mode):
     config, path, _, _, _ = preserved
     initialization(config)["method"] = REFINEMENT_METHOD
     initialization(config)["source_momenta_sha256"] = "d" * 64
     config["optimization"].update(freeze_template=True, freeze_control_points=True)
+    config["output"]["checkpoint_mode"] = mode
     target = path.with_name("refinement.yaml")
     target.write_text(yaml.safe_dump(config), encoding="utf-8")
     run = prepare_run(target, run_id="fixed-refinement")
@@ -203,8 +211,10 @@ def test_saved_atlas_refinement_rejects_moving_basis_before_preparation(preserve
         config["optimization"][setting] = True
 
 
-def test_saved_atlas_refinement_keeps_checkpoint_bound_review_gate(early):
+@pytest.mark.parametrize("mode", ["compact_final_export", "compact_convergence_export"])
+def test_saved_atlas_refinement_keeps_checkpoint_bound_review_gate(early, mode):
     config, run, _ = early
+    config["output"]["checkpoint_mode"] = mode
     initialization(config)["method"] = REFINEMENT_METHOD
     with pytest.raises(ConfigurationError, match="Review.*before resuming"):
         configure_resume(config, run)
@@ -213,3 +223,102 @@ def test_saved_atlas_refinement_keeps_checkpoint_bound_review_gate(early):
     )
     configure_resume(config, run)
     assert initialization(config)["early_review_approved"] is True
+
+
+@pytest.mark.parametrize("method", [METHOD, REFINEMENT_METHOD])
+def test_preserved_atlas_capped_resume_accepts_convergence_export_mode(
+    preserved, monkeypatch, method
+):
+    config, path, _, _, _ = preserved
+    plan = initialization(config)
+    plan["method"] = method
+    if method == REFINEMENT_METHOD:
+        plan["source_momenta_sha256"] = "d" * 64
+    config["optimization"].update(
+        max_iterations=10, freeze_template=True, freeze_control_points=True
+    )
+    target = path.with_name("reviewed-atlas.yaml")
+    target.write_text(yaml.safe_dump(config), encoding="utf-8")
+    early_run = prepare_run(target, run_id="early-atlas")
+    output_files = {}
+    rows = []
+    mesh_bytes = write_tetrahedron(path.with_name("early-shape.vtk")).read_bytes()
+    for index in plan["pilot_indices"]:
+        row = {"index": index}
+        for phase in ("before", "after"):
+            name = f"{phase}-{index}.vtk"
+            output_files[f"output/{name}"] = mesh_bytes
+            row[phase] = {
+                "index": index, "path": name, "sha256": hashlib.sha256(mesh_bytes).hexdigest(),
+            }
+        rows.append(row)
+    output_files[f"output/{EARLY_CHECK}"] = json.dumps({
+        "version": "0.1", "iteration": 10, "pilot_indices": plan["pilot_indices"],
+        "subject_labels": plan["subject_labels"], "pilot_momenta_preserved_exactly": True,
+        "checkpoint_sha256": hashlib.sha256(b"opaque-native-state").hexdigest(), "meshes": rows,
+    }).encode("utf-8")
+    _execute_cap_fixture(early_run, monkeypatch, output_files=output_files)
+    record_early_review(
+        early_run, approved=True, inspected_subjects=plan["pilot_subject_labels"]
+    )
+    source = prepare_resume_run(
+        early_run, run_id="capped-reviewed-atlas", additional_iterations=300
+    )
+    _execute_cap_fixture(source, monkeypatch)
+    before = {p.relative_to(source): p.read_bytes() for p in source.rglob("*") if p.is_file()}
+    successor = prepare_resume_run(
+        source, run_id="convergence-reviewed-atlas", additional_iterations=300,
+        checkpoint_mode="compact_convergence_export",
+    )
+    effective = verify_prepared_run(successor)["effective_config"]
+    assert initialization(effective)["method"] == method
+    assert initialization(effective)["early_review_approved"] is True
+    assert effective["optimization"]["max_iterations"] == 610
+    adapter = (successor / "engine/sitecustomize.py").read_text()
+    assert "_df_export_on_convergence = True" in adapter
+    assert "_df_ga.update = _df_atlas_update" in adapter
+    compile(adapter, "sitecustomize.py", "exec")
+    _execute_cap_fixture(successor, monkeypatch)
+    following = prepare_resume_run(successor, run_id="following-atlas", additional_iterations=300)
+    assert verify_prepared_run(following)["effective_config"]["output"]["checkpoint_mode"] == (
+        "compact_convergence_export"
+    )
+    retained = {p.relative_to(source): p.read_bytes() for p in source.rglob("*") if p.is_file()}
+    assert retained == before
+
+
+def test_preserved_pilot_policy_guard_accepts_only_compact_schedules(preserved):
+    config, path, root, seed, _ = preserved
+    config["output"]["checkpoint_mode"] = "compact_convergence_export"
+    configure_preserved_pilot(config, root=root, seed=seed, config_directory=path.parent)
+    assert adapter_source(config)
+    config["output"]["checkpoint_mode"] = "native_full_outputs"
+    with pytest.raises(ConfigurationError, match="compact checkpoints"):
+        configure_preserved_pilot(config, root=root, seed=seed, config_directory=path.parent)
+    with pytest.raises(ConfigurationError, match="compact checkpoints"):
+        adapter_source(config)
+
+
+@pytest.mark.parametrize("stop,flows", [
+    (None, 0),
+    ("Tolerance threshold met. Stopping the optimization process.", 2),
+])
+def test_reviewed_atlas_adapter_composition_keeps_convergence_export_gate(
+    preserved, monkeypatch, tmp_path, stop, flows
+):
+    config, _, _, _, _ = preserved
+    initialization(config).update(method=REFINEMENT_METHOD, early_review_approved=True)
+    config["optimization"].update(freeze_template=True, freeze_control_points=True)
+    config["output"]["checkpoint_mode"] = "compact_convergence_export"
+    support = ModuleType("deformetrica.support")
+    support.utilities = SimpleNamespace()
+    monkeypatch.setitem(sys.modules, "deformetrica.support", support)
+    estimator = _adapter(
+        monkeypatch, tmp_path, convergence_only=True, stop=stop,
+        atlas_source=adapter_source(config),
+    )[0]()
+    estimator.update()
+    assert estimator.statistical_model.exponential.flows == 0
+    estimator.write()
+    assert estimator.statistical_model.exponential.flows == flows
+    assert pickle.loads(Path(estimator.state_file).read_bytes())[0] == 3

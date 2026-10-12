@@ -27,14 +27,23 @@ that update cannot enable export. The latest checkpoint is saved before either
 deferring output or invoking the original complete writer. Existing atomic-save
 and export-failure protection remains in place.
 
+Preserved-pilot initialization and saved-atlas refinement accept both compact
+schedules through the same output-mode predicate. The earlier equality check
+against only the default schedule rejected an otherwise valid convergence-only
+successor before its backend started. The compatibility fix keeps the frozen
+basis and checkpoint-bound review requirements. Regression checks cover the
+reviewed early endpoint, ordinary capped continuation, output-policy transition,
+another checkpoint-only successor and the composed atlas/export adapters.
+
 An active run is never edited to switch policy. A separately identified successor
 is prepared only at a verified block boundary. Any operational driver handoff
 must distinguish its planned guard stop from a failed or interrupted backend;
 this output option does not authorize automatic error recovery or anatomical QC.
 
-Verification: 92 scoped regressions cover scheduling, protected preparation,
+Verification: 99 scoped regressions cover scheduling, protected preparation,
 checkpoint-only successor chaining, source preservation, backend configuration,
 atlas initialization and terminal reports. The generated adapter also compiles
 with the installed native Python 3.8 interpreter, and the observed stop messages
-match that runtime's GradientAscent source. No private optimizer was run for
+match that runtime's GradientAscent source. The composed reviewed-atlas adapter
+also imports successfully in that native runtime. No private optimizer was run for
 these engineering checks.

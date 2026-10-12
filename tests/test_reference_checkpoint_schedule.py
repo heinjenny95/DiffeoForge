@@ -11,7 +11,7 @@ import pytest
 from diffeoforge.reference_checkpoint_schedule import SITECUSTOMIZE, new_run_config, render_adapter
 
 
-def _adapter(monkeypatch, tmp_path, *, convergence_only=False, stop=None):
+def _adapter(monkeypatch, tmp_path, *, convergence_only=False, stop=None, atlas_source=""):
     class Exponential:
         def write_flow(self):
             self.flows += 1
@@ -74,7 +74,11 @@ def _adapter(monkeypatch, tmp_path, *, convergence_only=False, stop=None):
         monkeypatch.setitem(sys.modules, name, module)
     logger = logging.getLogger("deformetrica.core.estimators.gradient_ascent")
     monkeypatch.setattr(logger, "level", logging.INFO)
-    exec(render_adapter(convergence_only=True) if convergence_only else SITECUSTOMIZE, {})
+    exec(
+        render_adapter(atlas_source=atlas_source, convergence_only=convergence_only)
+        if convergence_only or atlas_source else SITECUSTOMIZE,
+        {},
+    )
     return Gradient, Scipy
 
 
