@@ -21,6 +21,13 @@ default supported reference route; the Modern engine remains evidence-gated.
 
 ## Current source work
 
+Operational recovery guidance now distinguishes host-session teardown from a
+native numerical stop. It records stopped-process and atomic-checkpoint checks,
+an immutable successor with the original effective budget, and verified Windows
+driver isolation without automatic error recovery. Ten existing recovery/resume
+regressions passed; runtime/model settings and desktop binaries are unchanged.
+See [launcher lifetime and recovery boundaries](REFERENCE_RUN_SESSION_LIFETIME.md).
+
 v120 makes the desktop atlas worker reuse review's content-bound mesh checks and
 its validated metadata during preparation. Fresh hashes, current quality gates,
 exact config/cohort matching and staged-copy verification remain mandatory.
