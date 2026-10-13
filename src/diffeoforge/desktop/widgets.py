@@ -1888,6 +1888,14 @@ class DiffeoForgeWindow(QMainWindow):
         layout.addWidget(title)
         layout.addWidget(subtitle)
 
+        self.open_demo_button = QPushButton("Open demo · explore all steps with public examples")
+        self.open_demo_button.setObjectName("secondary")
+        self.open_demo_button.setToolTip(
+            "Open a separate offline presentation window. No analysis, project changes or backend connection."
+        )
+        self.open_demo_button.clicked.connect(self._open_demo)
+        layout.addWidget(self.open_demo_button)
+
         boundary = QFrame()
         boundary.setObjectName("boundary")
         boundary_layout = QHBoxLayout(boundary)
@@ -4649,6 +4657,18 @@ class DiffeoForgeWindow(QMainWindow):
         data_card_layout.addLayout(data_form)
         parameter_card_layout.addLayout(parameter_form)
         return data_card, parameter_card
+
+    def _open_demo(self) -> None:
+        from diffeoforge.desktop.demo_window import DemoWindow
+
+        demo = getattr(self, "_demo_window", None)
+        if demo is None:
+            demo = DemoWindow(self)
+            self._demo_window = demo
+            demo.destroyed.connect(lambda: setattr(self, "_demo_window", None))
+        demo.show()
+        demo.raise_()
+        demo.activateWindow()
 
     def _build_result_card(self) -> QWidget:
         card = QFrame()

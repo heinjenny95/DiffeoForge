@@ -18,6 +18,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     parser.add_argument(
+        "--demo",
+        action="store_true",
+        help="Open the offline presentation with public examples; starts no analysis.",
+    )
+    parser.add_argument(
         "--smoke",
         action="store_true",
         help=argparse.SUPPRESS,
@@ -32,7 +37,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         from PySide6.QtWidgets import QApplication
 
-        from diffeoforge.desktop.widgets import DiffeoForgeWindow
+        if args.demo:
+            from diffeoforge.desktop.demo_window import DemoWindow as Window
+        else:
+            from diffeoforge.desktop.widgets import DiffeoForgeWindow as Window
     except ModuleNotFoundError as error:
         if error.name == "PySide6" or (error.name or "").startswith("PySide6."):
             print(
@@ -50,7 +58,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     application.setApplicationVersion(__version__)
     application.setOrganizationName("DiffeoForge")
 
-    window = DiffeoForgeWindow()
+    window = Window()
     if args.smoke:
         window.show()
         application.processEvents()

@@ -1,4 +1,4 @@
-# Development continuity — v122 pilot detail and continuation
+# Development continuity — v123 offline presentation
 
 Snapshot: 2026-10-13. This is a public, software-only continuation guide. Detailed
 research results, local paths, account destinations and run identities belong in
@@ -20,6 +20,11 @@ correct parameters or interpret biology for the researcher. Deformetrica is the
 default supported reference route; the Modern engine remains evidence-gated.
 
 ## Current source work
+
+v123 adds a separate offline presentation window with eight freely accessible
+stations, public recorded native examples and explicitly labeled illustrations.
+It starts no analysis, writes no project/QC/settings state and changes no real
+workflow gates. See [presentation scope and isolation](V123_PRESENTATION_MODE.md).
 
 v122 measures discrete screening detail and component coverage, escalates bounded
 decimation requests and retains originals when qualification fails. Finer trials
