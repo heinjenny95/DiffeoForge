@@ -28,6 +28,10 @@ continuation retains the seed tolerance after caps and avoids an unchanged-model
 probe after explicit tolerance stops. Fit, integration and anatomical gates,
 saved evidence and independently deployed server execution remain unchanged.
 See [scope and qualification limits](V122_PILOT_DETAIL_AND_CONTINUATION.md).
+The verified Windows build is installed locally after a complete dev121 backup
+and fresh idle checks. Package/startup and compiled detail/mesh-worker probes
+passed; a final read-only server check confirmed its independent execution.
+See [v122 delivery](V122_DELIVERY.md). Drive distribution is unchanged.
 
 v121 checks complete final-export and immutable-continuation storage for every
 desktop reference cohort, including cohorts below the production threshold.
