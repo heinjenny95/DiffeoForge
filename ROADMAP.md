@@ -14,6 +14,12 @@ scientific gates. Planning does not mark those gates complete.
 
 ## Pilot usability follow-up
 
+- [x] Check new screening approximations at every vertex/face centroid with
+  component coverage, bounded resolution escalation and original fallback;
+  retain cap tolerances and avoid redundant continuation after explicit tolerance
+  stops. Fit/ranking/anatomy gates remain unchanged. See
+  [v122 scope and limitations](docs/V122_PILOT_DETAIL_AND_CONTINUATION.md).
+
 - [ ] Qualify mesh- and disparity-adaptive pilot execution with explicit screening
   fidelity, local-feature protection, stop-reason-aware continuation, held-out
   coverage and a quality-first baseline comparison. Existing adaptive/progressive

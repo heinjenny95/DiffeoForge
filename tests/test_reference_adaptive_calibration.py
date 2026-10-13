@@ -59,13 +59,13 @@ def test_feedback_loop_preserves_old_runs_stops_at_plateau_and_reopens_budget(
     result = adaptive.run_adaptive_stage(runner)
     assert result.study_directory != original.study_directory
     assert result.status == "awaiting_review"
-    assert len(result.candidates) == len(original.candidates) + 7
+    assert len(result.candidates) == len(original.candidates) + 6
     assert result.adaptive_search_status["stop_reason"] == "fit_plateau"
     assert not result.visual_reviews and not result.selected_candidate_ids
     assert (original.study_directory / "events.jsonl").read_bytes().startswith(old_bytes)
     source_digest = sha256_file(original.study_directory / "events.jsonl")
     context = adaptive.study_context(result)
-    assert context["new_runs_used"] == 7
+    assert context["new_runs_used"] == 6
     assert context["round_index"] == 1
     attempts = {c.candidate_id: c.attempts for c in result.candidates}
     rerun = adaptive.run_adaptive_stage(
@@ -110,6 +110,7 @@ def test_prepared_trials_bind_momenta_and_reinitialize_changed_grid(tmp_path, mo
         adaptive_context=context,
     )
     trials = {t.trial_id: t for t in adaptive.decide_context(context).trials}
+    assert not any(t.label == "continue" for t in trials.values())
     for candidate in child.candidates:
         if candidate.candidate_id not in trials:
             continue
@@ -124,11 +125,10 @@ def test_prepared_trials_bind_momenta_and_reinitialize_changed_grid(tmp_path, mo
         assert config["optimization"]["max_iterations"] == 300
         if trial.label == "denser-controls":
             assert inputs.initial_control_points is None
-        if trial.label == "continue":
-            old = load_config(original.candidates[0].config_path)
-            assert config["optimization"]["convergence_tolerance"] == pytest.approx(
-                old["optimization"]["convergence_tolerance"] / 10
-            )
+        old = load_config(original.candidates[0].config_path)
+        assert config["optimization"]["convergence_tolerance"] == (
+            old["optimization"]["convergence_tolerance"]
+        )
     seed = child.study_directory / "adaptive-seed/momenta.txt"
     seed.write_text("changed")
     with pytest.raises(study.ReferenceCalibrationStudyError, match="input changed"):
@@ -149,6 +149,71 @@ def test_forged_scores_cannot_create_a_successor(tmp_path, monkeypatch):
     assert not (tmp_path / "forged").exists()
 
 
+@pytest.mark.parametrize("tolerance", [1e-4, 1e-6, 1e-10])
+def test_capped_continuation_preserves_exact_tolerance_and_original_evidence(
+    tmp_path, monkeypatch, tolerance
+):
+    from test_reference_calibration_study import _afk_runner
+
+    runner = _afk_runner(tmp_path, monkeypatch)
+
+    def capped(run):
+        atlas = run / "atlas.vtk"
+        atlas.write_text("public fixture")
+        return replace(_metrics(atlas), converged=False,
+                       optimizer_stop_signal="maximum_iterations", final_iteration=50)
+
+    monkeypatch.setattr(study, "collect_reference_calibration_run_metrics", capped)
+    original = runner.run_current_stage()
+    monkeypatch.setattr(adaptive, "bind_learned_seed", seed_stub)
+    bind = adaptive.bind_learned_seed
+
+    def seed_with_tolerance(*args):
+        seed = bind(*args)
+        seed["optimization"]["convergence_tolerance"] = tolerance
+        return seed
+
+    monkeypatch.setattr(adaptive, "bind_learned_seed", seed_with_tolerance)
+    source_events = (original.study_directory / "events.jsonl").read_bytes()
+    context = adaptive.study_context(original)
+    assert all(r["optimizer_stop_signal"] == "maximum_iterations"
+               for r in context["observations"])
+    decision = adaptive.decide_context(context)
+    trial = next(t for t in decision.trials if t.label == "continue")
+    child = study.create_reference_calibration_search_extension_study(
+        original.study_directory, tmp_path / "capped-successor",
+        safety_limits={k: tuple(v) for k, v in context["bounds"].items()},
+        adaptive_context=context,
+    )
+    candidate = next(c for c in child.candidates if c.candidate_id == trial.trial_id)
+    config = load_config(candidate.config_path)
+    assert config["optimization"]["convergence_tolerance"] == tolerance
+    assert config["optimization"]["max_iterations"] == 300
+    assert config["model"]["deformation"]["initial_momenta"]
+    assert (original.study_directory / "events.jsonl").read_bytes() == source_events
+    assert not child.visual_reviews and not child.selected_candidate_ids
+
+
+def test_legacy_context_without_stop_field_never_tightens_new_continuation(tmp_path, monkeypatch):
+    _, original = setup_search(tmp_path, monkeypatch)
+    context = adaptive.study_context(original)
+    for row in context["observations"]:
+        row.pop("optimizer_stop_signal")
+    decision = adaptive.decide_context(context)
+    trial = next(t for t in decision.trials if t.label == "continue")
+    root = tmp_path / "legacy-continuation"
+    seed = seed_stub(original, decision.center_id, root)
+    config = load_config(original.candidates[0].config_path)
+    before = copy.deepcopy(seed["optimization"])
+    adaptive.configure_adaptive_trial(
+        config, root=root, candidate_directory=root / "candidate",
+        manifest={"search_extension_source": {"proposal": {"adaptive_context": context}},
+                  "adaptive_seed": seed}, candidate_id=trial.trial_id,
+    )
+    assert config["optimization"]["convergence_tolerance"] == before["convergence_tolerance"]
+    assert config["optimization"]["max_iterations"] == trial.iterations
+
+
 def test_cancellation_at_decision_starts_no_successor(tmp_path, monkeypatch):
     runner, original = setup_search(tmp_path, monkeypatch)
 
@@ -161,7 +226,9 @@ def test_cancellation_at_decision_starts_no_successor(tmp_path, monkeypatch):
     assert result.search_extension_round == 0
 
 
-def test_final_cohort_uses_selected_geometry_but_never_pilot_momenta(tmp_path, monkeypatch):
+def test_final_cohort_retains_selected_geometry_and_existing_pilot_initializer(
+    tmp_path, monkeypatch
+):
     _, snapshot = setup_search(tmp_path, monkeypatch)
     manifest = study._verify_manifest(snapshot.study_directory)
     selected = {"attachment": snapshot.candidates[0].candidate_id}
@@ -181,7 +248,14 @@ def test_final_cohort_uses_selected_geometry_but_never_pilot_momenta(tmp_path, m
     )
     config = load_config(path)
     inputs = validate_input_paths(config, path)
-    assert inputs.initial_momenta is None
+    assert inputs.initial_momenta is not None
+    from diffeoforge.reference_atlas_handoff import initialization
+
+    binding = initialization(config)
+    assert binding["pilot_subject_labels"] == sorted(
+        s.filename for s in snapshot.plan.selected_pilot_subjects
+    )
+    assert binding["early_review_approved"] is False
     assert inputs.initial_control_points is not None
     assert "selected-seed" in str(inputs.template)
     original_template = Path(manifest["inputs"]["full_cohort"]["template"])

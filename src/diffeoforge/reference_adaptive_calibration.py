@@ -212,6 +212,7 @@ def study_context(snapshot, policy=None):
                     invalid_faces=metrics.get("invalid_face_count", -1),
                     converged=metrics.get("converged") is True,
                     review_approved=snapshot.visual_reviews.get(candidate.candidate_id),
+                    optimizer_stop_signal=metrics.get("optimizer_stop_signal"),
                 )
             )
         )
@@ -346,11 +347,9 @@ def configure_adaptive_trial(config, *, root, candidate_directory, manifest, can
     )
     config["optimization"] = copy.deepcopy(seed["optimization"])
     config["optimization"]["max_iterations"] = trial.iterations
-    if trial.label == "continue":
-        # A tolerance-stopped run needs a tighter stopping criterion for this probe.
-        config["optimization"]["convergence_tolerance"] = max(
-            1e-10, float(seed["optimization"]["convergence_tolerance"]) / 10
-        )
+    # Continuation and parameter probes retain the exact seed tolerance. Explicit
+    # tolerance-stopped centers do not propose an unchanged-model continuation;
+    # legacy contexts remain readable without retroactively changing saved runs.
     validate_schema(config)
 
 

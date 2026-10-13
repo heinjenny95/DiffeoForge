@@ -98,6 +98,33 @@ def test_finite_cap_limited_result_can_seed_more_optimization_without_approval()
     assert result.trials[0].iterations == 300
 
 
+def test_explicit_tolerance_stop_skips_only_unchanged_continuation():
+    result = decide([row("base", [0.02, 0.5], optimizer_stop_signal="tolerance_threshold")])
+    assert len(result.trials) == 6
+    assert "continue" not in {t.label for t in result.trials}
+    assert result.trials[0].label == "stronger-fit"
+    assert decide([row("base", [0.02, 0.5], optimizer_stop_signal="tolerance_threshold")],
+                  bounds=dict.fromkeys(FIT_PARAMETERS, (0.9, 1.1))).trials == ()
+
+
+def test_explicit_iteration_cap_retains_continuation_and_fit_parameters():
+    result = decide([row("base", [0.02, 0.5], converged=False,
+                         optimizer_stop_signal="maximum_iterations")])
+    assert result.trials[0].label == "continue"
+    assert result.trials[0].values == VALUES
+    assert result.trials[0].initialization == "warm"
+
+
+@pytest.mark.parametrize("signal,converged", [
+    ("maximum_iterations", True), ("tolerance_threshold", False),
+    ("line_search_exhausted", False), ("unknown", False), ("interrupted", False),
+])
+def test_unknown_or_inconsistent_stop_is_not_an_automatic_search_seed(signal, converged):
+    result = decide([row("base", [0.02, 0.5], converged=converged,
+                         optimizer_stop_signal=signal)])
+    assert result.trials == () and result.stop_reason == "no_valid_fit_evidence"
+
+
 @pytest.mark.parametrize("bad", [float("nan"), float("inf"), -0.1, True])
 def test_invalid_subject_evidence_does_not_seed_search(bad):
     assert decide([row("bad", [0.1, bad])]).stop_reason == "no_valid_fit_evidence"

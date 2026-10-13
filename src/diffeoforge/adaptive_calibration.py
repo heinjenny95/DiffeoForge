@@ -49,6 +49,7 @@ class FitObservation:
     invalid_faces: int = 0
     converged: bool = True
     review_approved: bool | None = None
+    optimizer_stop_signal: str | None = None
 
     @property
     def fit_key(self) -> tuple[float, float, str]:
@@ -84,6 +85,11 @@ def _valid_observation(row: FitObservation, expected: set[str]) -> bool:
         and row.review_approved is not False
         and type(row.invalid_faces) is int
         and row.invalid_faces == 0
+        and (
+            row.optimizer_stop_signal is None  # Retained pre-stop-aware study evidence.
+            or (row.optimizer_stop_signal == "maximum_iterations" and row.converged is False)
+            or (row.optimizer_stop_signal == "tolerance_threshold" and row.converged is True)
+        )
         and set(row.subject_fit) == expected
         and all(
             type(value) in (int, float) and math.isfinite(value) and value >= 0
@@ -251,6 +257,10 @@ def adaptive_fit_decision(
     trials = []
     tested = set(tested_trial_keys)
     for label, factors, initialization, reason in experiments:
+        if label == "continue" and center.optimizer_stop_signal == "tolerance_threshold":
+            # Do not demand a tighter tolerance merely to probe the same stopped model.
+            # Parameter experiments retain the seed tolerance and remain available.
+            continue
         values = {
             name: float(center.values[name]) * factors.get(name, 1.0) for name in FIT_PARAMETERS
         }

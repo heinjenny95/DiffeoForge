@@ -46,6 +46,8 @@ def test_search_preserves_originals_binds_working_targets_and_rejects_tampering(
     manifest = study._verify_manifest(created.study_directory)
     assert len(created.candidates) == 4
     assert sha256_file(original.study_directory / "events.jsonl") == before
+    assert all(row["detail_check"]["status"] == "original"
+               for row in manifest["fit_search"]["working_targets"])
     for candidate in created.candidates:
         config = load_config(candidate.config_path)
         inputs = validate_input_paths(config, candidate.config_path)
@@ -65,6 +67,60 @@ def test_search_preserves_originals_binds_working_targets_and_rejects_tampering(
     target.write_text("changed")
     with pytest.raises(ValueError, match="working geometry"):
         study.load_reference_calibration_study(created.study_directory)
+
+
+def test_finer_matching_falls_back_to_originals_without_changing_fit_settings(
+    tmp_path, monkeypatch
+):
+    import copy
+
+    from diffeoforge.screening_detail import KERNEL_FRACTION
+
+    _, original = _review_ready_stage(tmp_path, monkeypatch)
+    created = search.create_search(original.study_directory)
+    manifest = study._verify_manifest(created.study_directory)
+    candidate = created.candidates[0]
+    config = load_config(candidate.config_path)
+    width = config["model"]["attachment"]["kernel_width"]
+    for row in manifest["fit_search"]["working_targets"]:
+        # A synthetic recorded approximation suitable at this scale, too coarse at half-width.
+        row["detail_check"].update(status="qualified", maximum=width * KERNEL_FRACTION * 0.75)
+    source = created.study_directory
+    directory = candidate.config_path.parent
+    search.configure_trial(config, source, directory, manifest, candidate.candidate_id)
+    assert "working-targets" in config["input"]["directory"]
+    config["model"]["attachment"]["kernel_width"] = width / 2
+    before = copy.deepcopy(config)
+    search.configure_trial(config, source, directory, manifest, candidate.candidate_id)
+    assert "inputs" in config["input"]["directory"]
+    assert "working-targets" not in config["input"]["directory"]
+    assert config["model"] == before["model"]
+    assert config["optimization"] == before["optimization"]
+    assert validate_input_paths(config, candidate.config_path).subject_count == (
+        created.plan.pilot_subject_count
+    )
+    # Full confirmation remains full even when an approximation would be suitable.
+    manifest["fit_search"]["confirmation_ids"] = [candidate.candidate_id]
+    search.configure_trial(config, source, directory, manifest, candidate.candidate_id)
+    assert "working-targets" not in config["input"]["directory"]
+
+
+def test_legacy_working_targets_remain_readable_without_invented_detail_receipts(
+    tmp_path, monkeypatch
+):
+    _, original = _review_ready_stage(tmp_path, monkeypatch)
+    created = search.create_search(original.study_directory)
+    manifest = study._verify_manifest(created.study_directory)
+    candidate = created.candidates[0]
+    for row in manifest["fit_search"]["working_targets"]:
+        row.pop("detail_check")
+    before = (created.study_directory / study.STUDY_MANIFEST).read_bytes()
+    search.verify_search(created.study_directory, manifest)
+    config = load_config(candidate.config_path)
+    search.configure_trial(config, created.study_directory, candidate.config_path.parent,
+                           manifest, candidate.candidate_id)
+    assert "working-targets" in config["input"]["directory"]
+    assert (created.study_directory / study.STUDY_MANIFEST).read_bytes() == before
 
 
 def test_complete_search_refines_then_confirms_original_targets_without_qc(tmp_path, monkeypatch):

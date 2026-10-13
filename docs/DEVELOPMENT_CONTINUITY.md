@@ -1,6 +1,6 @@
-# Development continuity — v121 storage and live feedback
+# Development continuity — v122 pilot detail and continuation
 
-Snapshot: 2026-10-08. This is a public, software-only continuation guide. Detailed
+Snapshot: 2026-10-13. This is a public, software-only continuation guide. Detailed
 research results, local paths, account destinations and run identities belong in
 the owner's private project handoff, not this repository.
 
@@ -20,6 +20,14 @@ correct parameters or interpret biology for the researcher. Deformetrica is the
 default supported reference route; the Modern engine remains evidence-gated.
 
 ## Current source work
+
+v122 measures discrete screening detail and component coverage, escalates bounded
+decimation requests and retains originals when qualification fails. Finer trials
+cannot reuse a checked approximation outside its matching-scale budget. Adaptive
+continuation retains the seed tolerance after caps and avoids an unchanged-model
+probe after explicit tolerance stops. Fit, integration and anatomical gates,
+saved evidence and independently deployed server execution remain unchanged.
+See [scope and qualification limits](V122_PILOT_DETAIL_AND_CONTINUATION.md).
 
 v121 checks complete final-export and immutable-continuation storage for every
 desktop reference cohort, including cohorts below the production threshold.

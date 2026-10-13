@@ -196,7 +196,11 @@ def test_denser_model_reuses_targets_but_never_approvals_and_starts_with_current
     assert restored.study_directory == current.study_directory
     assert len(sequence._read(old_root)["approved"]) == 1
     rows = sequence.saved_sequences(denser.study_directory)
-    assert rows[0]["approved"] == 1
+    # Listing order is modification time, not approval count. Bind the assertion
+    # to the restored series rather than whichever directory was touched last.
+    restored_row = next(r for r in rows if Path(r["directory"]) == old_root)
+    assert restored_row["approved"] == 1
+    assert next(r for r in rows if Path(r["directory"]) == new_root)["approved"] == 0
     assert (old_root / sequence.STATE).read_bytes() == before
 
 

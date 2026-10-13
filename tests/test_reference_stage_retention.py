@@ -210,7 +210,7 @@ def test_source_approval_withdrawal_and_false_parameter_labels_block_reuse(tmp_p
         keep_previous_fit(second.study_directory)
 
 
-def test_retained_stages_complete_with_real_numerical_review_and_no_exported_pilot_field(
+def test_retained_stages_complete_with_numerical_review_and_preserved_pilot_initializer(
     tmp_path, monkeypatch
 ):
     runner, _, _, second = _second_stage(tmp_path, monkeypatch)
@@ -226,7 +226,14 @@ def test_retained_stages_complete_with_real_numerical_review_and_no_exported_pil
     assert final.status == "completed"
     config = load_config(final.final_config_path)
     inputs = validate_input_paths(config, final.final_config_path)
-    assert inputs.initial_control_points is not None and inputs.initial_momenta is None
+    assert inputs.initial_control_points is not None and inputs.initial_momenta is not None
+    from diffeoforge.reference_atlas_handoff import initialization
+
+    binding = initialization(config)
+    assert set(binding["pilot_subject_labels"]) == {
+        s.filename for s in final.plan.selected_pilot_subjects
+    }
+    assert binding["early_review_approved"] is False
     assert "selected-seed" in str(inputs.template)
     assert final.selected_candidate_ids["noise"] == "noise-retained"
     assert study.load_reference_calibration_study(final.study_directory).plan == final.plan

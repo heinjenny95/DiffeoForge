@@ -1,7 +1,10 @@
 # Pilot robustness: source audit and qualification plan
 
-Status: proposed work, 13 October 2026. No algorithm, default setting, running job
-or saved scientific result is changed by this document. The goal is fewer failed
+Status: first engineering implementation in v122, 13 October 2026. Screening
+detail checks and stop-aware continuation are covered in
+[v122 scope](V122_PILOT_DETAIL_AND_CONTINUATION.md); broader qualification and the
+remaining proposals below stay open. No running job or saved scientific result
+is changed by this document. The goal is fewer failed
 or repeated pilot trials while retaining fit quality across mesh families and
 deformation magnitudes. Universal success on arbitrary meshes is not established.
 
@@ -15,7 +18,9 @@ deformation magnitudes. Universal success on arbitrary meshes is not established
   confirmation, individual recovery, progressive refinement and joint fitting.
   The template retains its full topology. Working targets default to 20,000
   triangles; the initial control-grid target defaults to 200
-  (`reference_fit_search.py`). These constants do not measure approximation error.
+  (`reference_fit_search.py`). v122 adds measured discrete detail checks,
+  bounded resolution escalation and original fallback; the initial constants
+  themselves do not certify approximation fidelity.
 - The fit-search route measures original surfaces with 2,048 area-stratified
   point-to-triangle samples per direction, recording p95, p99 and mean. Older
   generic metrics can use sampled nearest vertices. Metric identity and scope
@@ -25,11 +30,10 @@ deformation magnitudes. Universal success on arbitrary meshes is not established
   the center and stops below a 1% progress heuristic. These are computational
   search limits, not universal fit thresholds (`adaptive_calibration.py`).
 - Changing deformation kernel or control basis starts a new field. Compatible
-  warm starts are reused. A generic continuation probe currently tightens the
-  stopping tolerance tenfold, including when the observation was cap-limited;
-  the branch does not consult the stored convergence flag
-  (`reference_adaptive_calibration.py:configure_adaptive_trial`). This requires
-  a targeted, precision-aware review before future implementation.
+  warm starts are reused. The audit found tenfold automatic tolerance tightening
+  even for cap-limited observations. v122 retains exact seed tolerance and skips
+  unchanged-model continuation after explicit tolerance stops. No precision or
+  final quality criterion is changed.
 - Anatomical decisions, fixed-state integration and optimizer convergence remain
   separate. A provisional capped result is not a converged recommendation.
 
@@ -121,8 +125,9 @@ reasons. Accept reduced work only after quality eligibility; retain a baseline
 fallback when a proposed path regresses. Successful synthetic cases do not prove
 all anatomies or arbitrary topologies. Keep failed experiments and run lineage.
 
-The first implementation should cover screening-fidelity/detail diagnostics and
-stop-reason-aware continuation. Deformation-basis transport, representation
+The first implementation now covers discrete screening-fidelity/detail checks
+and stop-reason-aware continuation; independent regional reconstruction metrics
+remain a separate qualification task. Deformation-basis transport, representation
 comparison and coverage expansion need separate native validation. No private
 pilot rerun, existing-result conversion or server-runtime update is authorized
 implicitly by this plan.

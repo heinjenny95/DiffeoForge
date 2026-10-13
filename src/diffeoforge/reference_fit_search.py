@@ -93,7 +93,16 @@ def control_grid(bounds, target=200):
 
 def prepare_working_targets(root, manifest, search):
     from diffeoforge import reference_calibration_study as study
-    from diffeoforge.mesh_filter_worker import run_mesh_filter
+    from diffeoforge.screening_detail import prepare_target
+
+    width = min(
+        r["parameter_values"].get(
+            "attachment_kernel_width", manifest["plan"]["baseline_effective_values"][
+                "attachment_kernel_width"
+            ]
+        )
+        for r in manifest["plan"]["stages"][0]["candidates"]
+    )
 
     if search.get("sequence"):
         info = search["sequence"]
@@ -139,20 +148,20 @@ def prepare_working_targets(root, manifest, search):
             previous = inherited.get(row["filename"])
             if not previous or previous["source_sha256"] != row["sha256"]:
                 raise ValueError("Denser model targets differ from the original cohort")
-            study._copy_bound(parent / previous["copy"], root / previous["copy"],
-                              previous["sha256"])
-            records.append(copy.deepcopy(previous))
-            continue
+            from diffeoforge.screening_detail import supports_width
+
+            if supports_width(previous.get("detail_check"), width):
+                study._copy_bound(parent / previous["copy"], root / previous["copy"],
+                                  previous["sha256"])
+                records.append(copy.deepcopy(previous))
+                continue
         source = root / row["copy"]
         loaded = load_surface_mesh(source)
         vertices = np.asarray(loaded.geometry.vertices, float)
         faces = np.asarray(loaded.geometry.triangles, np.int32)
-        if len(faces) > TARGET_FACES:
-            result = run_mesh_filter("decimate", vertices=vertices, faces=faces,
-                                     budget=np.array(TARGET_FACES))
-            vertices, faces = result["vertices"], result["faces"]
-        if len(faces) > TARGET_FACES * 1.5:
-            raise ValueError("Topology-preserving working mesh exceeds the screening budget")
+        vertices, faces, detail = prepare_target(
+            vertices, faces, attachment_width=width, target_faces=TARGET_FACES
+        )
         dst = root / "working-targets" / row["filename"]
         dst.parent.mkdir(exist_ok=True)
         write_vtk_polydata(
@@ -168,6 +177,7 @@ def prepare_working_targets(root, manifest, search):
                 sha256=sha256_file(dst),
                 source_sha256=row["sha256"],
                 faces=len(faces),
+                detail_check=detail,
             )
         )
     template = load_surface_mesh(root / manifest["inputs"]["template"]["copy"])
@@ -238,7 +248,22 @@ def configure_trial(config, root, directory, manifest, candidate_id):
         return
     joint = search.get("sequence", {}).get("phase") == "joint"
     if candidate_id not in search["confirmation_ids"] and not joint:
-        config["input"]["directory"] = os.path.relpath(root / "working-targets", directory)
+        from diffeoforge.screening_detail import supports_width
+
+        # Old immutable searches retain their declared working inputs. New checked
+        # searches fall back to originals if a later trial requests finer matching
+        # than its approximation supports; never silently reuse a coarse surface.
+        rows = search["working_targets"]
+        checked = any("detail_check" in row for row in rows)
+        supported = all(supports_width(row.get("detail_check"),
+                                       config["model"]["attachment"]["kernel_width"])
+                        for row in rows)
+        if not checked or supported:
+            config["input"]["directory"] = os.path.relpath(root / "working-targets", directory)
+        else:
+            config["input"]["directory"] = os.path.relpath(
+                root / manifest["inputs"]["subject_directory"], directory
+            )
         config["optimization"]["freeze_template"] = True
         config["optimization"]["freeze_control_points"] = True
     else:
