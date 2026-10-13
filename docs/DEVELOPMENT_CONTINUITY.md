@@ -21,6 +21,13 @@ default supported reference route; the Modern engine remains evidence-gated.
 
 ## Current source work
 
+Explicit institutional-server migration guidance now covers byte-verified native
+runtime/input staging, exact process identities at the deliberate stop boundary,
+checkpoint restoration and a full-cohort origin-reference gate before optimization.
+The deployment retains native scientific settings and records pending startup
+verification honestly. This is an operational protocol, not a new transport UI
+or universal server qualification. See [server migration boundaries](REFERENCE_SERVER_MIGRATION.md).
+
 Explicit reference resume preparation can promote model arithmetic from float32
 to float64 while retaining the tolerance and native comparator. The successor
 protects the dtype/config change, original checkpoint bytes and a reference
