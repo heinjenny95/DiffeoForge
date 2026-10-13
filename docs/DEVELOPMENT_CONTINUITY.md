@@ -27,6 +27,10 @@ Binary source size no longer substitutes for ASCII output planning. Independent
 30-second resource events keep live telemetry current while ordinary activity
 reminders use 180 seconds. Scientific settings and separately deployed server jobs
 remain unchanged. See [scope and regression boundaries](V121_STORAGE_AND_ACTIVITY.md).
+The verified Windows build is installed locally after a complete previous-version
+backup and fresh local idle checks. Installed hashes, companions, registry and
+startup passed; the separate server computation remains untouched. See
+[v121 delivery](V121_DELIVERY.md). Drive distribution is unchanged.
 
 Explicit institutional-server migration guidance now covers byte-verified native
 runtime/input staging, exact process identities at the deliberate stop boundary,
