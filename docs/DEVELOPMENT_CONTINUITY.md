@@ -25,6 +25,9 @@ v123 adds a separate offline presentation window with eight freely accessible
 stations, public recorded native examples and explicitly labeled illustrations.
 It starts no analysis, writes no project/QC/settings state and changes no real
 workflow gates. See [presentation scope and isolation](V123_PRESENTATION_MODE.md).
+The verified Windows build is installed after a complete previous-version backup
+and fresh idle checks. Frozen/installed demo, resource and shortcut checks pass.
+See [v123 delivery](V123_DELIVERY.md). Drive distribution remains unchanged.
 
 v122 measures discrete screening detail and component coverage, escalates bounded
 decimation requests and retains originals when qualification fails. Finer trials
