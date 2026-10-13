@@ -14,6 +14,12 @@ scientific gates. Planning does not mark those gates complete.
 
 ## Pilot usability follow-up
 
+- [ ] Qualify mesh- and disparity-adaptive pilot execution with explicit screening
+  fidelity, local-feature protection, stop-reason-aware continuation, held-out
+  coverage and a quality-first baseline comparison. Existing adaptive/progressive
+  features remain the baseline; no universal fit or speed claim is made. See
+  [source audit and qualification plan](docs/PILOT_ROBUSTNESS_PLAN.md).
+
 - [x] Reduce repetitive **Deformetrica still active** status messages from every
   30 seconds to every 3 minutes (180 seconds). Apply this interval only to the
   activity reminder; keep new iterations, phase changes, completion, errors and
