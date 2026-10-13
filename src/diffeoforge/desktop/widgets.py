@@ -1891,7 +1891,8 @@ class DiffeoForgeWindow(QMainWindow):
         self.open_demo_button = QPushButton("Open demo · explore all steps with public examples")
         self.open_demo_button.setObjectName("secondary")
         self.open_demo_button.setToolTip(
-            "Open a separate offline presentation window. No analysis, project changes or backend connection."
+            "Open a separate offline presentation window. "
+            "No analysis, project changes or backend connection."
         )
         self.open_demo_button.clicked.connect(self._open_demo)
         layout.addWidget(self.open_demo_button)
