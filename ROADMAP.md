@@ -14,10 +14,12 @@ scientific gates. Planning does not mark those gates complete.
 
 ## Pilot usability follow-up
 
-- [ ] Reduce repetitive **Deformetrica still active** status messages from every
+- [x] Reduce repetitive **Deformetrica still active** status messages from every
   30 seconds to every 3 minutes (180 seconds). Apply this interval only to the
   activity reminder; keep new iterations, phase changes, completion, errors and
   review requests visible immediately.
+  Resource-only updates retain their 30-second cadence without reminder spam.
+  See [v121 storage and activity](docs/V121_STORAGE_AND_ACTIVITY.md).
 
 - [x] Reuse content-bound project mesh checks in desktop atlas startup, retain
   fresh hashes/current quality gates, and show actual per-mesh check counts.
@@ -48,8 +50,10 @@ scientific gates. Planning does not mark those gates complete.
   native stop: restore the unchanged saved state in a separate protected
   successor, reserve complete output space and skip further optimization.
   See [verification and limits](docs/REFERENCE_FINAL_EXPORT_RECOVERY.md).
-- [ ] Expose saved-state export recovery in the desktop and apply complete-flow
-  storage planning to large-template cohorts below the production-scale threshold.
+- [ ] Expose saved-state export recovery in the desktop.
+- [x] Apply complete-flow storage planning to desktop cohorts below the production
+  threshold, including resume, binary input/ASCII output expansion and the worker
+  launch guard. See [v121 scope](docs/V121_STORAGE_AND_ACTIVITY.md).
 
 - [x] Show a lightweight live objective history during full-reference atlas
   execution, with optional attachment/regularity curves, and offer an explicit

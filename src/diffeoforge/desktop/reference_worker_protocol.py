@@ -28,6 +28,7 @@ ReferenceWorkerEventKind = Literal[
     "phase",
     "inspection",
     "activity",
+    "resources",
     "progress",
     "terminal",
 ]
@@ -269,6 +270,11 @@ class ReferenceWorkerEventLedger:
             if not valid:
                 raise DesktopReferenceWorkerProtocolError("Mesh inspection boundaries are invalid")
             self._inspection = payload
+        elif event.kind == "resources":
+            if self._last_phase_index != REFERENCE_WORKER_PHASES.index("execute"):
+                raise DesktopReferenceWorkerProtocolError(
+                    "Reference worker resources are allowed only during the execute phase"
+                )
         elif event.kind == "activity":
             execute_index = REFERENCE_WORKER_PHASES.index("execute")
             if self._last_phase_index != execute_index:

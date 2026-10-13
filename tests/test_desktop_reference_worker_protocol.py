@@ -220,7 +220,8 @@ def test_reference_worker_accepts_increasing_activity_only_during_execute() -> N
         before_execute.accept(_activity(4, 10.0))
 
 
-def test_reference_worker_accepts_bounded_resource_observation() -> None:
+@pytest.mark.parametrize("kind", ["activity", "resources"])
+def test_reference_worker_accepts_bounded_resource_observation(kind: str) -> None:
     resources = {
         "backend_process_id": 42,
         "requested_device": "cuda",
@@ -246,9 +247,21 @@ def test_reference_worker_accepts_bounded_resource_observation() -> None:
     }
     ledger = _ledger_with_phases("verify_request", "preflight", "prepare", "execute")
 
-    ledger.accept(_activity(5, 10.0, resources=resources))
-
-    assert ledger.events[-1].payload["resources"]["gpu"]["utilization_percent"] == 80.0
+    if kind == "activity":
+        ledger.accept(_activity(5, 10.0, resources=resources))
+        observed = ledger.events[-1].payload["resources"]
+    else:
+        event = DesktopReferenceWorkerEvent(
+            request_id=REQUEST_ID, sequence=5, kind="resources", payload=resources,
+        )
+        wrong_phase = _ledger_with_phases("verify_request", "preflight", "prepare")
+        with pytest.raises(DesktopReferenceWorkerProtocolError, match="execute phase"):
+            wrong_phase.accept(DesktopReferenceWorkerEvent(
+                request_id=REQUEST_ID, sequence=4, kind="resources", payload=resources,
+            ))
+        ledger.accept(event)
+        observed = ledger.events[-1].payload
+    assert observed["gpu"]["utilization_percent"] == 80.0
 
 
 def test_reference_worker_progress_rejects_nonfinite_json_numbers() -> None:

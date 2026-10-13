@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
+
+import pytest
 
 from diffeoforge.config import InputSummary
 from diffeoforge.desktop.reference_production_readiness import (
@@ -94,7 +97,10 @@ def test_production_readiness_accepts_300_by_10k_with_disk_reserve(
     assert readiness.projected_output_bytes > 3 * 1024**3
 
 
-def test_production_gate_does_not_block_small_pilot(tmp_path: Path) -> None:
+@pytest.mark.parametrize("free_bytes, ready", [(0, False), (100 * 1024**3, True)])
+def test_small_pilot_checks_storage_without_enforcing_production_checkpoint_cadence(
+    tmp_path: Path, free_bytes: int, ready: bool,
+) -> None:
     readiness = assess_reference_production_readiness(
         _preflight(
             tmp_path,
@@ -103,17 +109,39 @@ def test_production_gate_does_not_block_small_pilot(tmp_path: Path) -> None:
             checkpoint_interval=100,
             device="cpu",
         ),
-        observed_free_bytes=0,
+        observed_free_bytes=free_bytes,
     )
 
     assert readiness.production_scale is False
-    assert readiness.ready is True
-    assert readiness.blockers == ()
+    assert readiness.ready is ready
+    assert all("checkpoint" not in message for message in readiness.blockers)
     assert readiness.warnings == ()
 
 
-def test_production_resume_rechecks_checkpoint_cadence_and_successor_disk(
-    tmp_path: Path,
+def test_large_mesh_cohort_below_250_subjects_cannot_bypass_export_storage(tmp_path: Path):
+    preflight = _preflight(tmp_path, subjects=94, faces=300_000)
+    preflight.config["model"]["deformation"]["timepoints"] = 50
+    readiness = assess_reference_production_readiness(preflight, observed_free_bytes=10 * 1024**3)
+    assert not readiness.production_scale
+    assert not readiness.ready
+    assert readiness.projected_vtk_file_count == 4795
+    assert readiness.required_free_bytes > 10 * 1024**3
+    assert "run-plus-resume reserve" in readiness.blockers[0]
+
+
+def test_binary_input_size_cannot_underestimate_ascii_mesh_output(tmp_path: Path):
+    preflight = _preflight(tmp_path, subjects=2, faces=20_000)
+    preflight = replace(
+        preflight, template=replace(preflight.template, bytes=100, encoding="BINARY"),
+        subjects=tuple(replace(mesh, bytes=100, encoding="BINARY") for mesh in preflight.subjects),
+    )
+    readiness = assess_reference_production_readiness(preflight, observed_free_bytes=100 * 1024**3)
+    assert readiness.projected_output_bytes > 40 * 10_002 * 3 * 24
+
+
+@pytest.mark.parametrize("subjects", [94, 300])
+def test_resume_rechecks_successor_disk_below_and_above_production_threshold(
+    tmp_path: Path, subjects: int,
 ) -> None:
     source_run = tmp_path / "runs" / "interrupted-001"
     source_run.mkdir(parents=True)
@@ -126,12 +154,12 @@ def test_production_resume_rechecks_checkpoint_cadence_and_successor_disk(
                 "optimization": {"save_every_n_iterations": 100},
                 "runtime": {"device": "cuda"},
             },
-            "input_count": {"subjects": 300, "templates": 1},
+            "input_count": {"subjects": subjects, "templates": 1},
             "inputs": [
                 {"role": "template", "geometry": geometry},
                 *(
                     {"role": "subject", "geometry": geometry}
-                    for _index in range(300)
+                    for _index in range(subjects)
                 ),
             ],
         },
@@ -143,8 +171,9 @@ def test_production_resume_rechecks_checkpoint_cadence_and_successor_disk(
         observed_free_bytes=5 * 1024**3,
     )
 
-    assert readiness.production_scale is True
+    assert readiness.production_scale is (subjects == 300)
     assert readiness.ready is False
-    assert len(readiness.blockers) == 2
-    assert "checkpoint" in readiness.blockers[0]
-    assert "successor reserve" in readiness.blockers[1]
+    assert len(readiness.blockers) == (2 if subjects == 300 else 1)
+    assert "successor reserve" in readiness.blockers[-1]
+    if subjects == 300:
+        assert "checkpoint" in readiness.blockers[0]

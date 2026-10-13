@@ -10466,13 +10466,12 @@ class DiffeoForgeWindow(QMainWindow):
         production_readiness = review.production_readiness
         if (
             production_readiness is not None
-            and production_readiness.production_scale
             and not production_readiness.ready
         ):
             self.run_readiness_status_label.setObjectName("statusError")
             self.run_readiness_status_label.setStyleSheet("")
             self.run_readiness_status_label.setText(
-                "Production-scale execution is blocked until its recovery and storage "
+                "Atlas execution is blocked until its recovery and storage "
                 "requirements pass."
             )
             self.run_readiness_detail_label.setText("\n".join(production_readiness.blockers))
@@ -11047,6 +11046,16 @@ class DiffeoForgeWindow(QMainWindow):
                 "a fresh content check. A new deep check can take several minutes.\n"
                 "Cancel safely stops at the next mesh-check boundary."
             )
+        elif event.kind == "resources":
+            self._latest_reference_resource_text = self._reference_resource_text(event.payload)
+            lines = [
+                line for line in self.run_optimizer_label.text().splitlines()
+                if not line.startswith("Live resources:")
+            ]
+            self.run_optimizer_label.setText(
+                "\n".join([*lines, self._latest_reference_resource_text])
+            )
+            return
         elif event.kind == "activity":
             elapsed = float(event.payload["elapsed_seconds"])
             state = str(event.payload["state"])

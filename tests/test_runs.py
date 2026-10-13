@@ -394,7 +394,8 @@ def test_convergence_parser_collapses_exact_native_log_duplicates(tmp_path: Path
 
 
 def test_reference_activity_interval_is_thirty_seconds() -> None:
-    assert REFERENCE_ACTIVITY_INTERVAL_SECONDS == 30.0
+    assert REFERENCE_ACTIVITY_INTERVAL_SECONDS == 180.0
+    assert runs.REFERENCE_RESOURCE_INTERVAL_SECONDS == 30.0
 
 
 def test_prepare_refuses_to_overwrite_existing_run(tmp_path: Path) -> None:
@@ -873,8 +874,11 @@ def test_child_reported_keyboard_interrupt_is_terminal_interruption(
     )
 
 
+@pytest.mark.parametrize("activity_interval, expect_activity", [(0.05, True), (180.0, False)])
 def test_execute_run_tails_native_deformetrica_log_and_reports_activity(
     tmp_path: Path,
+    activity_interval: float,
+    expect_activity: bool,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     run_directory = prepare_run(write_run_config(tmp_path), run_id="native-log")
@@ -902,8 +906,9 @@ def test_execute_run_tails_native_deformetrica_log_and_reports_activity(
     )
     monkeypatch.setattr(
         "diffeoforge.runs.REFERENCE_ACTIVITY_INTERVAL_SECONDS",
-        0.05,
+        activity_interval,
     )
+    monkeypatch.setattr(runs, "REFERENCE_RESOURCE_INTERVAL_SECONDS", 0.05)
     observed_lines: list[str] = []
     activities: list[tuple[float, str | None, str | None]] = []
     resources: list[dict[str, object]] = []
@@ -922,8 +927,9 @@ def test_execute_run_tails_native_deformetrica_log_and_reports_activity(
 
     assert any("Iteration: 0" in line for line in observed_lines)
     assert any("Log-likelihood = -8.0" in line for line in observed_lines)
-    assert activities
-    assert activities[-1][2] == "output/test_info.log"
+    assert bool(activities) is expect_activity
+    if expect_activity:
+        assert activities[-1][2] == "output/test_info.log"
     assert resources
     assert resources[-1]["requested_device"] == "cpu"
     assert resources[-1]["gpu"]["status"] == "not_requested"

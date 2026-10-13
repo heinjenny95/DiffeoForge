@@ -196,6 +196,7 @@ def test_reference_execution_worker_runs_full_lifecycle_and_emits_eta_progress(
         "phase",
         "phase",
         "phase",
+        "resources",
         "activity",
         "progress",
         "progress",
@@ -215,6 +216,24 @@ def test_reference_execution_worker_runs_full_lifecycle_and_emits_eta_progress(
     assert events[-1].payload["result_sha256"] == sha256_file(
         request.destination / "result.json"
     )
+
+
+def test_small_cohort_storage_failure_stops_before_preparation(tmp_path, monkeypatch):
+    request = _request(tmp_path)
+    monkeypatch.setattr(execution_worker, "collect_preflight", lambda *a, **k: object())
+    monkeypatch.setattr(
+        execution_worker, "assess_reference_production_readiness",
+        lambda _: SimpleNamespace(production_scale=False, ready=False, blockers=("Disk reserve",)),
+    )
+    monkeypatch.setattr(
+        execution_worker, "prepare_run",
+        lambda *a, **k: pytest.fail("Insufficient storage must be caught before preparation"),
+    )
+    code, events, _ = _run(request)
+    assert code != 0
+    assert events[-1].payload["outcome"] == "failed"
+    assert "Disk reserve" in events[-1].payload["message"]
+    assert not request.destination.exists()
 
 
 def test_reference_execution_worker_cancels_before_preparation_without_mutation(

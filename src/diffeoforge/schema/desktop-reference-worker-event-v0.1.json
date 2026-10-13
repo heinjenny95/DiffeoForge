@@ -17,7 +17,7 @@
       "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
     },
     "sequence": {"type": "integer", "minimum": 0},
-    "kind": {"enum": ["accepted", "phase", "inspection", "activity", "progress", "terminal"]},
+    "kind": {"enum": ["accepted", "phase", "inspection", "activity", "resources", "progress", "terminal"]},
     "payload": {"type": "object"}
   },
   "allOf": [
@@ -36,6 +36,10 @@
     {
       "if": {"properties": {"kind": {"const": "activity"}}},
       "then": {"properties": {"payload": {"$ref": "#/$defs/activity"}}}
+    },
+    {
+      "if": {"properties": {"kind": {"const": "resources"}}},
+      "then": {"properties": {"payload": {"$ref": "#/$defs/resources"}}}
     },
     {
       "if": {"properties": {"kind": {"const": "progress"}}},

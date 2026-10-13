@@ -71,7 +71,8 @@ CONVERGENCE_RE = re.compile(
     rf".*?regularity\s*=\s*({NUMBER})"
 )
 ITERATION_RE = re.compile(r"-+\s*Iteration:\s*(\d+)\s*-+")
-REFERENCE_ACTIVITY_INTERVAL_SECONDS = 30.0
+REFERENCE_ACTIVITY_INTERVAL_SECONDS = 180.0
+REFERENCE_RESOURCE_INTERVAL_SECONDS = 30.0
 
 
 @dataclass(frozen=True)
@@ -1463,6 +1464,7 @@ def execute_run(
             latest_source: str | None = None
             stdout_eof = False
             last_activity_emit = start_time
+            last_resource_emit = start_time
 
             def dispatch_line(line: str, source: str) -> None:
                 nonlocal latest_message, latest_source
@@ -1523,18 +1525,21 @@ def execute_run(
                     raise KeyboardInterrupt
                 now = time.monotonic()
                 if (
-                    (activity_callback is not None or resource_callback is not None)
+                    resource_callback is not None and resource_monitor is not None
+                    and now - last_resource_emit >= REFERENCE_RESOURCE_INTERVAL_SECONDS
+                ):
+                    resource_callback(resource_monitor.sample())
+                    last_resource_emit = now
+                if (
+                    activity_callback is not None
                     and now - last_activity_emit
                     >= REFERENCE_ACTIVITY_INTERVAL_SECONDS
                 ):
-                    if resource_callback is not None and resource_monitor is not None:
-                        resource_callback(resource_monitor.sample())
-                    if activity_callback is not None:
-                        activity_callback(
-                            now - start_time,
-                            latest_message,
-                            latest_source,
-                        )
+                    activity_callback(
+                        now - start_time,
+                        latest_message,
+                        latest_source,
+                    )
                     last_activity_emit = now
                 if process.poll() is not None and stdout_eof and output_queue.empty():
                     observe_native_logs()

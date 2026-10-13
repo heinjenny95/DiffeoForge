@@ -1,4 +1,4 @@
-"""Fail-closed production-scale readiness for Deformetrica reference runs."""
+"""Storage checks for every reference run and additional production recovery gates."""
 
 from __future__ import annotations
 
@@ -21,6 +21,14 @@ MAX_PRODUCTION_CHECKPOINT_INTERVAL = 5
 OUTPUT_SERIALIZATION_SAFETY_FACTOR = 1.25
 RESUME_STORAGE_COPIES = 2
 MINIMUM_FREE_DISK_RESERVE_BYTES = 2 * 1024**3
+
+
+def _mesh_output_bytes(*, points: int, cells: int, source_bytes: int) -> int:
+    """Plan for ASCII coordinates/connectivity even when the input is binary."""
+    coordinate_bytes = points * 3 * 32
+    index_digits = len(str(max(points - 1, 0)))
+    connectivity_bytes = cells * (3 * (index_digits + 1) + 3)
+    return max(source_bytes, 4096 + coordinate_bytes + connectivity_bytes)
 
 
 @dataclass(frozen=True)
@@ -111,13 +119,13 @@ def assess_reference_production_readiness(
     # factor covers ASCII formatting and small metadata differences without
     # pretending to be an observed byte-exact forecast.
     projected_vtk_file_count = 1 + subject_count * (timepoints + 1)
-    largest_input_bytes = max(
-        preflight.template.bytes,
-        *(subject.bytes for subject in preflight.subjects),
+    largest_mesh_bytes = max(
+        _mesh_output_bytes(points=mesh.points, cells=mesh.cells, source_bytes=mesh.bytes)
+        for mesh in (preflight.template, *preflight.subjects)
     )
     projected_output_bytes = math.ceil(
         projected_vtk_file_count
-        * largest_input_bytes
+        * largest_mesh_bytes
         * OUTPUT_SERIALIZATION_SAFETY_FACTOR
     )
     # Reserve enough room for the first immutable run and one immutable resume
@@ -140,16 +148,16 @@ def assess_reference_production_readiness(
                 f"{MAX_PRODUCTION_CHECKPOINT_INTERVAL} iterations; the reviewed value is "
                 f"{checkpoint_interval}."
             )
-        if free_bytes < required_free_bytes:
-            blockers.append(
-                "Free disk space is below the fail-safe run-plus-resume reserve: "
-                f"{free_bytes} observed bytes versus {required_free_bytes} required bytes."
-            )
         warnings.extend(
             _production_warnings(
                 device=str(config["runtime"]["device"]),
                 output_root=output_root,
             )
+        )
+    if free_bytes < required_free_bytes:
+        blockers.append(
+            "Free disk space is below the fail-safe run-plus-resume reserve: "
+            f"{free_bytes} observed bytes versus {required_free_bytes} required bytes."
         )
 
     return ReferenceProductionReadiness(
@@ -190,7 +198,15 @@ def assess_reference_resume_production_readiness(
     subject_faces = [int(item["geometry"]["cells"]) for item in subjects]
     template_faces = int(templates[0]["geometry"]["cells"])
     input_bytes = sum(int(item["geometry"]["bytes"]) for item in inputs)
-    largest_input_bytes = max(int(item["geometry"]["bytes"]) for item in inputs)
+    largest_mesh_bytes = max(
+        _mesh_output_bytes(
+            points=int(item["geometry"].get("points", 3 * int(item["geometry"]["cells"]))),
+            cells=int(item["geometry"]["cells"]),
+            source_bytes=int(item["geometry"]["bytes"]),
+        )
+        for item in inputs
+        if item["role"] in {"template", "subject"}
+    )
     timepoints = int(config["model"]["deformation"]["timepoints"])
     checkpoint_interval = int(config["optimization"]["save_every_n_iterations"])
     maximum_subject_faces = max(subject_faces)
@@ -201,7 +217,7 @@ def assess_reference_resume_production_readiness(
     projected_vtk_file_count = 1 + subject_count * (timepoints + 1)
     geometric_projection = math.ceil(
         projected_vtk_file_count
-        * largest_input_bytes
+        * largest_mesh_bytes
         * OUTPUT_SERIALIZATION_SAFETY_FACTOR
     )
     observed_output_bytes = int(evidence.result["outputs"]["total_bytes"])
@@ -223,16 +239,16 @@ def assess_reference_resume_production_readiness(
                 f"{MAX_PRODUCTION_CHECKPOINT_INTERVAL} iterations; the protected value is "
                 f"{checkpoint_interval}."
             )
-        if free_bytes < required_free_bytes:
-            blockers.append(
-                "Free disk space is below the immutable-successor reserve: "
-                f"{free_bytes} observed bytes versus {required_free_bytes} required bytes."
-            )
         warnings.extend(
             _production_warnings(
                 device=str(config["runtime"]["device"]),
                 output_root=output_root,
             )
+        )
+    if free_bytes < required_free_bytes:
+        blockers.append(
+            "Free disk space is below the immutable-successor reserve: "
+            f"{free_bytes} observed bytes versus {required_free_bytes} required bytes."
         )
 
     return ReferenceProductionReadiness(

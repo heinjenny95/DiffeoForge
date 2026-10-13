@@ -613,7 +613,7 @@ def _reference_review(config_path: Path, config_sha256: str) -> ProjectReviewRes
             "during the run.",
         ),
         ReviewItem(
-            "Production-scale recovery gate",
+            "Storage and recovery check",
             (
                 "ready"
                 if production_readiness.ready
@@ -623,21 +623,18 @@ def _reference_review(config_path: Path, config_sha256: str) -> ProjectReviewRes
                 f" · checkpoint every {production_readiness.checkpoint_interval} "
                 f"· {production_readiness.projected_vtk_file_count} projected VTK files"
                 if production_readiness.production_scale
-                else " · not triggered for this cohort size and resolution"
+                else f" · {production_readiness.projected_vtk_file_count} projected VTK files"
             ),
-            "For at least 250 subjects near 10,000 faces, DiffeoForge requires frequent "
-            "checkpoints and enough free disk for both the immutable run and one resume "
-            "successor.",
+            "Every cohort needs enough free disk for its complete export and one resume "
+            "successor. Production-scale cohorts additionally require frequent checkpoints.",
         ),
         ReviewItem(
-            "Production storage reserve",
+            "Disk space for run and continuation",
             (
                 f"{_bytes(production_readiness.observed_free_bytes)} free · "
                 f"{_bytes(production_readiness.required_free_bytes)} required"
-                if production_readiness.production_scale
-                else "not required at pilot scale"
             ),
-            "The production requirement includes staged inputs, projected retained flow "
+            "The requirement includes staged inputs, projected retained flow "
             "meshes, one immutable resume successor, and a fixed free-space reserve.",
         ),
     )

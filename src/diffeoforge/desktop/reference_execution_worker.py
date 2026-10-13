@@ -199,9 +199,9 @@ def run_reference_execution_worker(
                     "Cancelled during mesh preflight; no run was prepared.",
                 )
             production_readiness = assess_reference_production_readiness(preflight)
-            if production_readiness.production_scale and not production_readiness.ready:
+            if not production_readiness.ready:
                 raise RuntimeError(
-                    "Production-scale readiness failed: "
+                    "Reference storage/recovery readiness failed: "
                     + " ".join(production_readiness.blockers)
                 )
         config = load_config(request.config_path)
@@ -308,6 +308,7 @@ def run_reference_execution_worker(
         def observe_resources(resources: Mapping[str, object]) -> None:
             nonlocal latest_resources
             latest_resources = dict(resources)
+            emit("resources", latest_resources)
 
         with contextlib.redirect_stdout(stderr):
             return_code = execute_run(

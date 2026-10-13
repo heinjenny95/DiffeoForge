@@ -1,4 +1,4 @@
-# Development continuity — v120 cached atlas preflight
+# Development continuity — v121 storage and live feedback
 
 Snapshot: 2026-10-08. This is a public, software-only continuation guide. Detailed
 research results, local paths, account destinations and run identities belong in
@@ -20,6 +20,13 @@ correct parameters or interpret biology for the researcher. Deformetrica is the
 default supported reference route; the Modern engine remains evidence-gated.
 
 ## Current source work
+
+v121 checks complete final-export and immutable-continuation storage for every
+desktop reference cohort, including cohorts below the production threshold.
+Binary source size no longer substitutes for ASCII output planning. Independent
+30-second resource events keep live telemetry current while ordinary activity
+reminders use 180 seconds. Scientific settings and separately deployed server jobs
+remain unchanged. See [scope and regression boundaries](V121_STORAGE_AND_ACTIVITY.md).
 
 Explicit institutional-server migration guidance now covers byte-verified native
 runtime/input staging, exact process identities at the deliberate stop boundary,

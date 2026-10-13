@@ -264,9 +264,9 @@ class DesktopReferenceLaunchRequest:
                     "Reference resume launcher differs from the protected effective runtime"
                 )
             production_readiness = assess_reference_resume_production_readiness(evidence)
-            if production_readiness.production_scale and not production_readiness.ready:
+            if not production_readiness.ready:
                 raise DesktopReferencePrelaunchError(
-                    "Reference production-scale resume is not safe: "
+                    "Reference resume storage/recovery check failed: "
                     + " ".join(production_readiness.blockers)
                 )
             output_root = evidence.source_run.parent
