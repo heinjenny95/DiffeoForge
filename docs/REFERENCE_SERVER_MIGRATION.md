@@ -20,6 +20,39 @@ or a new anatomical acceptance decision. Start with the qualified native
 execution topology; independent multi-GPU throughput observations do not prove
 ordered full-cohort objective/gradient or global line-search equivalence.
 
+## Optional native multi-GPU contribution workers
+
+`reference_parallel_execution.py` is a standalone Python 3.8-compatible,
+explicitly deployed adapter for a Float64 deterministic atlas with frozen
+template and control points. It assigns one native contribution worker to each
+declared GPU. The native ordered `Pool.map`, per-subject equations, gradient
+assembly and single global optimizer remain unchanged. This is full-cohort
+evaluation, with one global line-search decision, rather than stochastic updates.
+
+GPU placement must include KeOps reduction device IDs: selecting a Torch CUDA
+device alone does not route CPU-hosted kernel-mode tensors. Legacy KeOps compiled
+GPU property tables also depend on the number of visible GPUs. Use a separate
+cache initialized with the target visible-device count before compilation;
+never reuse a cache compiled for one visible GPU on workers targeting four.
+The adapter rejects a missing or mismatched cache-topology receipt, unsupported
+models, duplicate routing and worker replacement. Deploy it beside the guarded
+native entry point without changing the shared runtime installation.
+
+Qualify the actual native interpreter and kernels before private optimization.
+Compare serial and parallel full-cohort objective components, all momenta
+gradients, native initial step size and the proposed global line-search step.
+Do not apply the proposal during qualification. Public 94-subject fixtures with
+50 integration points can exercise ordering and global assembly; they do not
+establish private-cohort parity, cross-machine reference agreement or an atlas
+completion ETA. Keep the separate immutable-origin reference gate before any
+private optimizer step, and preserve the original reference on agreement.
+
+Record exact worker identities and GPU assignments and supervise their liveness.
+A disappeared or replaced worker must stop the job, not cause an indefinitely
+waiting pool or silent recovery. Allow normal pool cleanup after native terminal
+metadata. Measure acceleration on the real workload; cold compilation timing and
+independent GPU throughput are insufficient evidence of atlas speedup.
+
 ## Transfer and stop boundary
 
 Stage a separate private successor and verify every copied input, script and
