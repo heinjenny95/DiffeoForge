@@ -14,6 +14,18 @@ scientific gates. Planning does not mark those gates complete.
 
 ## Pilot usability follow-up
 
+- [ ] Make the initial guided primary action use the existing one-specimen,
+  one-attempt Find fit route and pause for human review. Remove the conflicting
+  hidden Advanced-mode default and batch-start guidance; keep a full stage batch
+  an explicit choice with its specimen/option workload shown before launch.
+  Retain common-basis joint confirmation and all existing fit/anatomy gates.
+- [ ] Qualify and repair cancellation end to end during native WSL execution and
+  preparation: visible persistent cancellation state, verified command delivery,
+  bounded backend exit, no subsequent candidate, checkpoint preservation and
+  truthful terminal metadata. Include frozen Windows and backend shutdown-failure
+  cases. An observed ineffective cancellation remains unresolved; a manual
+  operational stop does not establish a software repair.
+
 - [ ] Profile and accelerate preparation before the pilot starts: aligned-cohort
   analysis, staged-plan construction, alignment/project preparation, verification
   and screening-target preparation. Reuse content/version/settings-bound mesh
