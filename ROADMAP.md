@@ -14,6 +14,17 @@ scientific gates. Planning does not mark those gates complete.
 
 ## Pilot usability follow-up
 
+- [ ] Profile and accelerate preparation before the pilot starts: aligned-cohort
+  analysis, staged-plan construction, alignment/project preparation, verification
+  and screening-target preparation. Reuse content/version/settings-bound mesh
+  measurements, valid checks and approved transforms across steps; evaluate faster
+  parsing/transformation/VTK writing and bounded CPU parallelism. Retain fresh
+  hashes, stale-input rejection, coordinate precision, topology, scientific
+  geometry and all fit/tolerance/anatomy gates; no silent decimation or skipped
+  integrity checks. Verify cold/warm large-mesh timings, unchanged outputs,
+  invalidation, progress and cancellation. Backlog only, recorded 2026-10-14;
+  implementation is deferred while the owner's current workflow/run continues.
+
 - [x] Check new screening approximations at every vertex/face centroid with
   component coverage, bounded resolution escalation and original fallback;
   retain cap tolerances and avoid redundant continuation after explicit tolerance
