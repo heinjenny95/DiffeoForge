@@ -7,6 +7,8 @@ joint chooser. Earlier approvals and outputs remain intact; the runner persists
 and enforces the selected scope. Existing joint/QC/numerical gates remain separate.
 See [scope and verification](V124_SCREENING_CHOICE.md). Source, tested installer
 and installed version are recorded separately; no Drive upload is implicit.
+The verified Windows build is installed after complete backup and idle checks;
+see [delivery evidence and limits](V124_DELIVERY.md).
 
 ## v120 — cached atlas preflight and mesh-level startup progress
 

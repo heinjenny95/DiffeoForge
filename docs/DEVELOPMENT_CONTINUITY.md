@@ -25,8 +25,9 @@ v124 compares saved early-screen measurements and requires an explicit single
 kept option for the joint test. Other approvals remain saved and deferred; joint
 QC and numerical gates remain separate. Existing queues reopen without a rerun;
 already-started legacy comparisons keep their scope. See
-[scope and verification](V124_SCREENING_CHOICE.md). Build/installation evidence
-is tracked separately; Drive distribution remains request-only.
+[scope and verification](V124_SCREENING_CHOICE.md). The tested Windows build is
+installed after a full previous-version backup and fresh idle checks. See
+[delivery and limits](V124_DELIVERY.md). Drive distribution remains request-only.
 
 v123 adds a separate offline presentation window with eight freely accessible
 stations, public recorded native examples and explicitly labeled illustrations.
