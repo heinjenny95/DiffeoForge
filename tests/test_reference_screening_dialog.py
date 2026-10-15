@@ -61,13 +61,25 @@ def test_saved_screen_waits_for_review_and_kept_options_use_joint_dispatch(tmp_p
     monkeypatch.setattr(dialog, "_start_pilot", lambda **kwargs: calls.append(kwargs))
     dialog._start()
     assert calls == ["review"]  # No default winner and no batch dispatch.
+    from diffeoforge.desktop.widgets import _STYLE
+
+    previous_style = app.styleSheet()
+    app.setStyleSheet(_STYLE)
+    dialog.resize(1000, 720)
+    app.processEvents()
+    assert dialog.minimumSizeHint().height() <= 720
+    assert dialog.content_layout.indexOf(dialog.screen_comparison) == 0
     chosen = result.early_screening["kept"][1]
     dialog.screen_comparison.choice.setCurrentIndex(
         dialog.screen_comparison.choice.findData(chosen)
     )
     dialog._start()
     assert calls[-1] == dict(adaptive=False, screen_joint_choice=chosen)
+    dialog._render()
+    app.processEvents()
+    assert dialog.screen_comparison.selected_candidate_id == chosen
     dialog.close()
+    app.setStyleSheet(previous_style)
     app.processEvents()
 
 

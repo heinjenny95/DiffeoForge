@@ -1175,10 +1175,9 @@ class ReferenceCalibrationDialog(QDialog):
         self._screen_selector_stage = None
         from diffeoforge.desktop.screening_choice import ScreeningChoicePanel
 
-        self.screen_comparison = ScreeningChoicePanel()
+        self.screen_comparison = ScreeningChoicePanel(self)
         self.screen_comparison.choice_changed.connect(self._screen_choice_changed)
         self.screen_comparison.hide()
-        root.addWidget(self.screen_comparison)
         from diffeoforge.reference_integration_check import DEFAULT_TOLERANCES
 
         numerical_panel = QWidget()
@@ -1345,6 +1344,10 @@ class ReferenceCalibrationDialog(QDialog):
         return self._snapshot
 
     def _clear_content(self) -> None:
+        # Reuse the choice widget without letting a redraw delete the saved UI choice.
+        self.content_layout.removeWidget(self.screen_comparison)
+        self.screen_comparison.setParent(self)
+        self.screen_comparison.hide()
         while self.content_layout.count():
             item = self.content_layout.takeAt(0)
             widget = item.widget()
@@ -2029,6 +2032,7 @@ class ReferenceCalibrationDialog(QDialog):
         )
         if state["complete"] and state.get("joint_selection"):
             self.screen_comparison.present(self._snapshot, running=running)
+            self.content_layout.insertWidget(0, self.screen_comparison)
             self.screen_comparison.show()
         if not state["complete"]:
             self.selection_combo.hide()
@@ -2054,6 +2058,8 @@ class ReferenceCalibrationDialog(QDialog):
                 c.attempts for c in self._snapshot.candidates
             ):
                 self.screen_comparison.present(self._snapshot, running=running)
+                if self.content_layout.indexOf(self.screen_comparison) < 0:
+                    self.content_layout.insertWidget(0, self.screen_comparison)
                 self.screen_comparison.show()
                 self._screen_choice_changed()
             else:
