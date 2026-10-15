@@ -1,5 +1,13 @@
 # Private-alpha build numbering
 
+## v124 — one explicit joint test after early screening
+
+v124 (`0.0.0.dev124`) adds saved-screen numerical comparison and a single-option
+joint chooser. Earlier approvals and outputs remain intact; the runner persists
+and enforces the selected scope. Existing joint/QC/numerical gates remain separate.
+See [scope and verification](V124_SCREENING_CHOICE.md). Source, tested installer
+and installed version are recorded separately; no Drive upload is implicit.
+
 ## v120 — cached atlas preflight and mesh-level startup progress
 
 v120 (`0.0.0.dev120`) reuses content-verified project checks in desktop atlas

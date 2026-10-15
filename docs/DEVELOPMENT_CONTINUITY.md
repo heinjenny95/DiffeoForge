@@ -1,6 +1,6 @@
-# Development continuity — v123 offline presentation
+# Development continuity — v124 screening choice
 
-Snapshot: 2026-10-13. This is a public, software-only continuation guide. Detailed
+Snapshot: 2026-10-15. This is a public, software-only continuation guide. Detailed
 research results, local paths, account destinations and run identities belong in
 the owner's private project handoff, not this repository.
 
@@ -20,6 +20,13 @@ correct parameters or interpret biology for the researcher. Deformetrica is the
 default supported reference route; the Modern engine remains evidence-gated.
 
 ## Current source work
+
+v124 compares saved early-screen measurements and requires an explicit single
+kept option for the joint test. Other approvals remain saved and deferred; joint
+QC and numerical gates remain separate. Existing queues reopen without a rerun;
+already-started legacy comparisons keep their scope. See
+[scope and verification](V124_SCREENING_CHOICE.md). Build/installation evidence
+is tracked separately; Drive distribution remains request-only.
 
 v123 adds a separate offline presentation window with eight freely accessible
 stations, public recorded native examples and explicitly labeled illustrations.

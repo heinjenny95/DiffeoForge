@@ -227,6 +227,7 @@ class _CalibrationStageWorker(QRunnable):
         early_screen: bool = False,
         screen_subjects: tuple[str, ...] | None = None,
         retry_screens: bool = False,
+        screen_joint_choice: str | None = None,
         finer_resolution: bool = False,
         qualification: bool = False,
         qualification_source: str | None = None,
@@ -245,6 +246,7 @@ class _CalibrationStageWorker(QRunnable):
         self.finish_candidate_id = finish_candidate_id
         self.early_screen = early_screen
         self.retry_screens = retry_screens
+        self.screen_joint_choice = screen_joint_choice
         self.finer_resolution = finer_resolution
         self.qualification = qualification
         self.qualification_source = qualification_source
@@ -322,6 +324,13 @@ class _CalibrationStageWorker(QRunnable):
                 result = add_finer_resolution(self.runner.study_directory)
                 emit(dict(event="integration_resolution_prepared", snapshot=result))
                 result = self.runner.run_current_stage(event_callback=emit)
+            elif self.screen_joint_choice is not None:
+                from diffeoforge.reference_stage_screening import select_joint_option
+
+                select_joint_option(self.runner.study_directory, self.screen_joint_choice)
+                result = self.runner.run_current_stage(
+                    event_callback=emit, candidate_ids={self.screen_joint_choice}
+                )
             elif self.retry_screens:
                 from diffeoforge.reference_stage_screening import retry_failed_screens
 
@@ -1164,6 +1173,12 @@ class ReferenceCalibrationDialog(QDialog):
         root.addWidget(self.retry_screens_button)
         self.retry_screens_button.hide()
         self._screen_selector_stage = None
+        from diffeoforge.desktop.screening_choice import ScreeningChoicePanel
+
+        self.screen_comparison = ScreeningChoicePanel()
+        self.screen_comparison.choice_changed.connect(self._screen_choice_changed)
+        self.screen_comparison.hide()
+        root.addWidget(self.screen_comparison)
         from diffeoforge.reference_integration_check import DEFAULT_TOLERANCES
 
         numerical_panel = QWidget()
@@ -1722,6 +1737,21 @@ class ReferenceCalibrationDialog(QDialog):
             self.progress.setRange(0, total_candidates)
             self.progress.setValue(total_completed)
             self.progress.setFormat(f"{total_completed} of {total_candidates} pilot runs completed")
+        elif self._snapshot.early_screening:
+            screen = self._snapshot.early_screening
+            selected_joint = screen.get("joint_selection")
+            if selected_joint:
+                done = next(c.status == "completed" for c in self._snapshot.candidates
+                            if c.candidate_id == selected_joint)
+                self.progress.setRange(0, 1)
+                self.progress.setValue(int(done))
+                self.progress.setFormat(f"{int(done)} of 1 selected joint tests completed")
+            else:
+                decided = screen["reviewed"] + len(screen["technical_failures"])
+                total = len(screen["candidate_ids"])
+                self.progress.setRange(0, total)
+                self.progress.setValue(decided)
+                self.progress.setFormat(f"{decided} of {total} screening options decided")
         elif stage.order == 4:
             checks = [
                 c for c in self._snapshot.candidates if c.candidate_id.startswith("qualification-")
@@ -1928,6 +1958,7 @@ class ReferenceCalibrationDialog(QDialog):
         self._render_screening()
 
     def _render_screening(self) -> None:
+        self.screen_comparison.hide()
         stage = self._snapshot.current_stage
         active = bool(
             stage
@@ -1944,7 +1975,7 @@ class ReferenceCalibrationDialog(QDialog):
         running = self._worker is not None or self._restoring_search
         if state and state["technical_failures"]:
             self.retry_screens_button.show()
-            self.retry_screens_button.setEnabled(not running)
+            self.retry_screens_button.setEnabled(not running and not state.get("joint_selection"))
             self.retry_screens_button.setText(
                 f"Retry technically failed screens ({len(state['technical_failures'])})"
             )
@@ -1996,6 +2027,9 @@ class ReferenceCalibrationDialog(QDialog):
                 else f" · {state['next_subject']}"
             )
         )
+        if state["complete"] and state.get("joint_selection"):
+            self.screen_comparison.present(self._snapshot, running=running)
+            self.screen_comparison.show()
         if not state["complete"]:
             self.selection_combo.hide()
             self.advance_button.hide()
@@ -2013,14 +2047,20 @@ class ReferenceCalibrationDialog(QDialog):
             if not running:
                 self.status.setText("Review this screen; keeping an option permits its joint test.")
         elif any(
-            c.status not in {"completed", "screened_out", "screen_failed"}
+            c.status not in {"completed", "screened_out", "screen_failed", "screen_deferred"}
             for c in self._snapshot.candidates
         ):
-            self.start_button.setText(
-                f"Run kept options with all {self._snapshot.plan.pilot_subject_count} specimens"
-            )
-            self.start_button.setVisible(True)
-            self.start_button.setEnabled(not running)
+            if state.get("joint_selection") or not any(
+                c.attempts for c in self._snapshot.candidates
+            ):
+                self.screen_comparison.present(self._snapshot, running=running)
+                self.screen_comparison.show()
+                self._screen_choice_changed()
+            else:
+                # A legacy joint comparison already started; preserve its saved scope.
+                self.start_button.setText("Continue existing joint comparison")
+                self.start_button.setVisible(True)
+                self.start_button.setEnabled(not running)
         elif state["technical_failures"]:
             self.start_button.hide()
             if not running:
@@ -2028,6 +2068,22 @@ class ReferenceCalibrationDialog(QDialog):
                     "Technical screens failed. Retry them; existing fits are preserved."
                 )
         self.adaptive_fit_search.setEnabled(False)
+
+    def _screen_choice_changed(self) -> None:
+        chosen = self.screen_comparison.selected_candidate_id
+        self.start_button.setText(
+            f"Test selected option with all {self._snapshot.plan.pilot_subject_count} specimens"
+            if chosen else "Choose one option for the joint test"
+        )
+        self.start_button.setVisible(True)
+        self.start_button.setEnabled(chosen is not None and self._worker is None)
+        _set_action_emphasis(self.start_button, chosen is not None)
+        if self._worker is None and not self._restoring_search:
+            self.status.setText(
+                f"Only {self.screen_comparison.choice.currentText()} will be tested with all "
+                f"{self._snapshot.plan.pilot_subject_count} specimens; other approvals stay saved."
+                if chosen else "Compare the screening numbers, then choose one kept option."
+            )
 
     def _candidate_card(
         self,
@@ -2267,7 +2323,10 @@ class ReferenceCalibrationDialog(QDialog):
                 layout.addWidget(InfoDisclosure("Technical failure details", details))
         else:
             detail = QLabel(
-                "Ready to run." if candidate.status == "pending" else "Ready for a new attempt."
+                "Screening approval preserved; not selected for this joint test."
+                if candidate.status == "screen_deferred"
+                else "Ready to run." if candidate.status == "pending"
+                else "Ready for a new attempt."
             )
             self._candidate_state_labels[candidate.candidate_id] = detail
             detail.setWordWrap(True)
@@ -2562,7 +2621,16 @@ class ReferenceCalibrationDialog(QDialog):
                 )
                 return
             if state and state["complete"]:
-                self._start_pilot(adaptive=False)
+                if state.get("joint_selection") or not any(
+                    c.attempts for c in self._snapshot.candidates
+                ):
+                    chosen = self.screen_comparison.selected_candidate_id
+                    if chosen is None:
+                        self.status.setText("Choose one kept option before starting a joint test.")
+                        return
+                    self._start_pilot(adaptive=False, screen_joint_choice=chosen)
+                else:
+                    self._start_pilot(adaptive=False)
                 return
         if (
             not self._snapshot.selected_candidate_ids
@@ -2646,6 +2714,7 @@ class ReferenceCalibrationDialog(QDialog):
         early_screen: bool = False,
         screen_subjects: tuple[str, ...] | None = None,
         retry_screens: bool = False,
+        screen_joint_choice: str | None = None,
         finer_resolution: bool = False,
         qualification: bool = False,
         qualification_source: str | None = None,
@@ -2673,6 +2742,7 @@ class ReferenceCalibrationDialog(QDialog):
             early_screen=early_screen,
             screen_subjects=screen_subjects,
             retry_screens=retry_screens,
+            screen_joint_choice=screen_joint_choice,
             finer_resolution=finer_resolution,
             qualification=qualification,
             qualification_source=qualification_source

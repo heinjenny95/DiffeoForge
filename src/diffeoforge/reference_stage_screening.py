@@ -7,6 +7,7 @@ never seed or replace joint results, and their approval never advances a stage.
 from __future__ import annotations
 
 import copy
+import math
 from dataclasses import replace
 from pathlib import Path
 
@@ -31,6 +32,7 @@ def screening_state(root, stage_id, events, candidates, *, verify=True):
             raise ValueError("Screening source configuration changed")
     probes = {}
     decisions = {}
+    measurements = {}
     retired = []
     for event in relevant:
         if event["sequence"] <= start["sequence"]:
@@ -66,6 +68,9 @@ def screening_state(root, stage_id, events, candidates, *, verify=True):
             if decision:
                 snapshot = study.load_reference_calibration_study(child)
                 candidate = snapshot.candidates[0]
+                measurements[(event["candidate_id"], event["filename"])] = dict(
+                    status=candidate.status, metrics=candidate.metrics,
+                )
                 if decision["event"] == "stage_screening_failed":
                     if (candidate.status != "failed" or study._canonical_hash(
                         study._load_events(child)
@@ -99,9 +104,54 @@ def screening_state(root, stage_id, events, candidates, *, verify=True):
     current = probes.get(next_key)
     current_status = None
     if current:
-        current_status = study.load_reference_calibration_study(
+        current_candidate = study.load_reference_calibration_study(
             study._safe_study_path(root, current["child"])
-        ).candidates[0].status
+        ).candidates[0]
+        current_status = current_candidate.status
+        measurements[next_key] = dict(
+            status=current_status, metrics=current_candidate.metrics,
+        )
+    choices = [e for e in relevant if e["event"] == "stage_screening_joint_selected"
+               and e["sequence"] > start["sequence"]]
+    selection = choices[-1] if choices else None
+    review_hashes = [decisions[key]["event_hash"] for key in sorted(decisions)]
+    if selection and (
+        next_key is not None or selection["candidate_id"] not in kept
+        or selection.get("screening_event_hash") != start["event_hash"]
+        or selection.get("review_event_hashes") != review_hashes
+        or selection.get("deferred_candidate_ids") != [
+            cid for cid in kept if cid != selection["candidate_id"]
+        ]
+        or any(e["event"] == "candidate_started"
+               and e.get("candidate_id") in start["candidate_ids"]
+               and e["sequence"] < selection["sequence"] for e in relevant)
+        or any(c.attempts and c.candidate_id in start["candidate_ids"]
+               and c.candidate_id != selection["candidate_id"] for c in candidates)
+    ):
+        raise ValueError("Saved joint choice differs from the verified screening decisions")
+    comparison = []
+    for cid in start["candidate_ids"]:
+        observed = [measurements.get((cid, name), {}) for name in start["subjects"]]
+        metrics = [o.get("metrics") or {} for o in observed]
+        def measured(key, metrics=metrics):
+            values = [m.get(key) for m in metrics]
+            return (max(values) if values and all(
+                isinstance(v, (int, float)) and not isinstance(v, bool)
+                and math.isfinite(v) and v >= 0 for v in values
+            ) else None)
+        comparison.append(dict(
+            candidate_id=cid,
+            p95=measured("residual_p95"), median=measured("residual_median"),
+            deformation_energy=measured("deformation_energy"),
+            distortion_p95=measured("distortion_p95"),
+            resampling_sensitivity=measured("resampling_sensitivity"),
+            stop_signals=sorted({str(m.get("optimizer_stop_signal", "unknown"))
+                                 for m in metrics}),
+            converged=bool(metrics) and all(m.get("converged") is True for m in metrics),
+            completed=bool(observed) and all(o.get("status") == "completed" for o in observed),
+            review=("kept" if cid in kept else "discarded" if cid in rejected
+                    else "technical failure" if cid in failed else "awaiting decision"),
+        ))
     return dict(
         stage_id=stage_id, subjects=start["subjects"], candidate_ids=start["candidate_ids"],
         rejected=rejected, kept=kept, complete=next_key is None,
@@ -110,6 +160,9 @@ def screening_state(root, stage_id, events, candidates, *, verify=True):
         current_child=current["child"] if current else None,
         current_status=current_status,
         reviewed=len(rejected) + len(kept),
+        comparison=comparison,
+        joint_selection=selection["candidate_id"] if selection else None,
+        deferred=[cid for cid in kept if selection and cid != selection["candidate_id"]],
         technical_failures=failed,
         failed_screens=[dict(candidate_id=cid, filename=name, failure_event_hash=e["event_hash"])
                         for (cid, name), e in decisions.items()
@@ -129,6 +182,8 @@ def retry_failed_screens(directory):
     state = snapshot.early_screening
     if not state or not state["technical_failures"]:
         raise ValueError("No technically failed screens to retry")
+    if state.get("joint_selection"):
+        raise ValueError("Screening decisions are locked by the saved joint choice")
     if state["current_status"] == "running":
         raise ValueError("Wait until the current screen stops before retrying failures")
     for failure in state["failed_screens"]:
@@ -313,5 +368,45 @@ def joint_candidate_ids(snapshot):
         return None
     if not state["complete"]:
         raise ValueError("Review the early screens before running joint comparisons")
+    if state.get("joint_selection"):
+        return {state["joint_selection"]} | {
+            c.candidate_id for c in snapshot.candidates if c.status == "completed"
+        }
     return ({c.candidate_id for c in snapshot.candidates}
             - set(state["rejected"]) - set(state["technical_failures"]))
+
+
+def select_joint_option(directory, candidate_id):
+    """Append one explicit joint-test choice; preserve every screen and approval.
+
+    Other kept options are deferred, not rejected. No optimizer runs here.
+    Already-started legacy joint comparisons retain their original scope.
+    """
+    snapshot = study.load_reference_calibration_study(directory)
+    state = snapshot.early_screening
+    if not state or not state["complete"]:
+        raise ValueError("Review the early screens before choosing a joint test")
+    if candidate_id not in state["kept"]:
+        raise ValueError("Choose one visually kept screening option")
+    existing = state.get("joint_selection")
+    if existing == candidate_id:
+        return snapshot
+    if existing or any(c.attempts for c in snapshot.candidates):
+        raise ValueError("The joint choice is locked after selection or an existing joint attempt")
+    events = study._load_events(snapshot.study_directory)
+    start = next(e for e in reversed(events) if e["event"] == "stage_screening_started"
+                 and e["stage_id"] == state["stage_id"])
+    decisions = {}
+    for event in events:
+        if (event["sequence"] > start["sequence"]
+                and event.get("stage_id") == state["stage_id"]
+                and event["event"] in {"stage_screening_review", "stage_screening_failed"}):
+            decisions[(event["candidate_id"], event["filename"])] = event["event_hash"]
+    study._append_event(snapshot.study_directory, "stage_screening_joint_selected", dict(
+        stage_id=state["stage_id"], candidate_id=candidate_id,
+        screening_event_hash=start["event_hash"],
+        review_event_hashes=[decisions[key] for key in sorted(decisions)],
+        deferred_candidate_ids=[cid for cid in state["kept"] if cid != candidate_id],
+        meaning="Explicit single-option joint test; other screening approvals remain unchanged",
+    ))
+    return study.load_reference_calibration_study(snapshot.study_directory)

@@ -14,6 +14,11 @@ scientific gates. Planning does not mark those gates complete.
 
 ## Pilot usability follow-up
 
+- [x] Compare saved early-screen numbers, explicitly choose one kept option for
+  the joint pilot test, and preserve all other screening approvals without
+  launching them or calling them rejected. New joint results still need their
+  own all-specimen QC. See [v124 scope](docs/V124_SCREENING_CHOICE.md).
+
 - [ ] Make the initial guided primary action use the existing one-specimen,
   one-attempt Find fit route and pause for human review. Remove the conflicting
   hidden Advanced-mode default and batch-start guidance; keep a full stage batch

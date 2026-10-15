@@ -1810,17 +1810,22 @@ def _load_verified_calibration_study(
                 status=(
                     "screen_failed"
                     if c.candidate_id in early_screening["technical_failures"]
+                    else "screen_deferred"
+                    if c.candidate_id in early_screening.get("deferred", [])
                     else "screened_out"
                 ),
                 metrics=None,
                 error=(
                     "Early screen failed technically; joint fit not run."
                     if c.candidate_id in early_screening["technical_failures"]
+                    else "Kept screening approval preserved; not chosen for this joint test."
+                    if c.candidate_id in early_screening.get("deferred", [])
                     else "Excluded after your early specimen review; joint fit not run."
                 ),
             )
             if c.candidate_id
-            in (early_screening["rejected"] + early_screening["technical_failures"])
+            in (early_screening["rejected"] + early_screening["technical_failures"]
+                + early_screening.get("deferred", []))
             else c
             for c in candidate_states
         ]
@@ -2087,7 +2092,9 @@ class ReferenceCalibrationStudyRunner:
                 event_callback(terminal)
         updated = load_reference_calibration_study(self.study_directory)
         if not self._cancel_requested and all(
-            candidate.status in {"completed", "failed", "screened_out", "screen_failed"}
+            candidate.status in {
+                "completed", "failed", "screened_out", "screen_failed", "screen_deferred"
+            }
             for candidate in updated.candidates
         ):
             events = _load_events(self.study_directory)
