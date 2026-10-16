@@ -84,6 +84,25 @@ successful imports, a loaded checkpoint and an active process do not establish
 numerical equivalence or convergence. Resume still initializes gradients and
 line-search step sizes, so uninterrupted trajectory identity is not claimed.
 
+## Owner-requested in-memory pause
+
+An explicit owner pause can retain the existing Linux optimizer in memory with
+SIGSTOP. Match the boot, start time, full command, working directory, parent and
+selected environment of the driver, optimizer and every contribution worker;
+use identity-verified pidfds rather than targeting a PID alone. Stop the driver
+first so it cannot advance the chain. Verify all threads stopped, unchanged CPU
+counters and logs, a finite protected checkpoint and its separate backup, and
+the same process identities over an independent reconnection. Preserve every
+earlier pause/resume receipt and mark the current state as owner-paused.
+
+This intended pause is not a native failure or convergence stop. Pause the
+monitor and require a new explicit owner instruction before SIGCONT; never
+relaunch an optimizer or restore a checkpoint as an automatic substitute. On
+verified in-memory continuation, exclude the new pause interval only from
+timers that spanned it. A gradient already finished before SIGSTOP must not lose
+that interval; an active global line-search evaluation may include it instead.
+Process memory survives an SSH disconnect, not a host reboot or process death.
+
 ## Terminal verification and monitoring
 
 Advance a canonical capped successor only after native return code zero,
