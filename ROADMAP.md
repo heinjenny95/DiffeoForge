@@ -14,6 +14,11 @@ scientific gates. Planning does not mark those gates complete.
 
 ## Pilot usability follow-up
 
+- [x] Rebuild the Stage 4 saved-fit chooser when the stage is ready, clear stale
+  previous-stage IDs and label the retained result by its source stage. Preserve
+  reviews, outputs and independent completion gates. See
+  [v125 scope](docs/V125_SAVED_FIT_SELECTION.md).
+
 - [x] Compare saved early-screen numbers, explicitly choose one kept option for
   the joint pilot test, and preserve all other screening approvals without
   launching them or calling them rejected. New joint results still need their

@@ -1,6 +1,6 @@
-# Development continuity — v124 screening choice
+# Development continuity — v125 saved-fit selection
 
-Snapshot: 2026-10-15. This is a public, software-only continuation guide. Detailed
+Snapshot: 2026-10-16. This is a public, software-only continuation guide. Detailed
 research results, local paths, account destinations and run identities belong in
 the owner's private project handoff, not this repository.
 
@@ -20,6 +20,12 @@ correct parameters or interpret biology for the researcher. Deformetrica is the
 default supported reference route; the Modern engine remains evidence-gated.
 
 ## Current source work
+
+v125 fixes the Stage 4 ready-state saved-fit chooser: stale stage-three IDs are
+removed, current-stage choices survive redraws and both default check buttons
+route to the displayed saved fit. Retained geometry keeps an explicit source-stage
+label. Existing reviews and numerical/anatomical gates need no migration. See
+[scope and verification](V125_SAVED_FIT_SELECTION.md).
 
 v124 compares saved early-screen measurements and requires an explicit single
 kept option for the joint test. Other approvals remain saved and deferred; joint

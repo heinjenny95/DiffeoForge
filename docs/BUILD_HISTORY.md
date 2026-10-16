@@ -1,5 +1,13 @@
 # Private-alpha build numbering
 
+## v125 — Stage 4 saved-fit selection
+
+v125 (`0.0.0.dev125`) refreshes the saved-fit chooser on entry to the final stage,
+including its ready state. Both check buttons use the current-stage identity;
+retained geometry is labeled as the saved stage-three fit. Existing reviews,
+results and numerical/anatomical gates remain unchanged. See
+[scope and regression boundaries](V125_SAVED_FIT_SELECTION.md).
+
 ## v124 — one explicit joint test after early screening
 
 v124 (`0.0.0.dev124`) adds saved-screen numerical comparison and a single-option

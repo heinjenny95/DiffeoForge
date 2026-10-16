@@ -1873,7 +1873,11 @@ class ReferenceCalibrationDialog(QDialog):
             automatic_mode or not awaiting or retryable,
         )
         _set_action_emphasis(self.advance_button, False)
-        if awaiting:
+        if awaiting or stage.order == 4:
+            # A newly entered final stage is still "ready": only its retained
+            # saved fit is complete. Never dispatch the hidden previous-stage
+            # combo value as the source of a fixed-state integration check.
+            assessment = self._assessment
             previous_selection = self.selection_combo.currentData()
             self.selection_combo.blockSignals(True)
             self.selection_combo.clear()
@@ -1886,7 +1890,6 @@ class ReferenceCalibrationDialog(QDialog):
                 start=1,
             ):
                 if candidate.status == "completed" and candidate.metrics is not None:
-                    option_letter = candidate_option_label(index)
                     review_suffix = (
                         " · visual QC passed"
                         if candidate.candidate_id in self._visually_approved_candidates
@@ -1897,14 +1900,16 @@ class ReferenceCalibrationDialog(QDialog):
                     recommendation_suffix = (
                         " · converged, integration checked, approved"
                         if stage.order == 4
+                        and assessment is not None
                         and candidate.candidate_id == assessment.balanced_candidate_id
                         else " · lowest measured distance"
-                        if candidate.candidate_id == assessment.balanced_candidate_id
+                        if assessment is not None
+                        and candidate.candidate_id == assessment.balanced_candidate_id
                         else ""
                     )
                     self.selection_combo.addItem(
-                        f"Option {option_letter} — {candidate.label}"
-                        f"{recommendation_suffix}{review_suffix}",
+                        self._candidate_option_text(candidate, index)
+                        + f"{recommendation_suffix}{review_suffix}",
                         candidate.candidate_id,
                     )
             previous_index = self.selection_combo.findData(previous_selection)
@@ -1923,8 +1928,12 @@ class ReferenceCalibrationDialog(QDialog):
             if previous_index >= 0:
                 self.selection_combo.setCurrentIndex(previous_index)
             self.selection_combo.blockSignals(False)
-            self.collect_evidence_button.show()
+            if awaiting:
+                self.collect_evidence_button.show()
             self._update_stage_review_action()
+            if stage.order == 4 and not awaiting:
+                self.selection_combo.show()
+                self.selection_combo.setEnabled(not running)
         elif running:
             self.status.setText(
                 "Running. Inspect any completed option while the next option computes."
@@ -2103,7 +2112,7 @@ class ReferenceCalibrationDialog(QDialog):
         card.setObjectName("card")
         layout = QVBoxLayout(card)
         option_letter = candidate_option_label(option_index)
-        title = QLabel(f"Option {option_letter} — {candidate.label}")
+        title = QLabel(self._candidate_option_text(candidate, option_index))
         title.setObjectName("sectionTitle")
         layout.addWidget(title)
         if self._assessment:
@@ -2384,6 +2393,14 @@ class ReferenceCalibrationDialog(QDialog):
                 selectable.add(candidate.candidate_id)
         return selectable
 
+    def _candidate_option_text(
+        self, candidate: CalibrationStudyCandidateState, index: int,
+    ) -> str:
+        stage = self._snapshot.current_stage
+        if stage and stage.order == 4 and candidate.candidate_id == stage.stage_id + "-retained":
+            return "Saved fit from stage 3"
+        return f"Option {candidate_option_label(index)} — {candidate.label}"
+
     def _recommended_option_text(self, assessment: object) -> str | None:
         """Return the human-facing option name for the balanced pilot candidate."""
 
@@ -2392,8 +2409,7 @@ class ReferenceCalibrationDialog(QDialog):
             return None
         for index, candidate in enumerate(self._snapshot.candidates, start=1):
             if candidate.candidate_id == candidate_id:
-                option_letter = candidate_option_label(index)
-                return f"Option {option_letter} — {candidate.label}"
+                return self._candidate_option_text(candidate, index)
         return None
 
     @Slot()
@@ -2737,6 +2753,13 @@ class ReferenceCalibrationDialog(QDialog):
             and not finer_resolution
             and not continuation
         )
+        if qualification:
+            qualification_source = qualification_source or self.selection_combo.currentData()
+            if qualification_source is not None and not any(
+                c.candidate_id == qualification_source and c.status == "completed"
+                for c in self._snapshot.candidates
+            ):
+                raise ValueError("Choose a saved fit from the current stage before checking it")
         worker = _CalibrationStageWorker(
             runner,
             continuation=continuation,
@@ -2751,8 +2774,7 @@ class ReferenceCalibrationDialog(QDialog):
             screen_joint_choice=screen_joint_choice,
             finer_resolution=finer_resolution,
             qualification=qualification,
-            qualification_source=qualification_source
-            or (self.selection_combo.currentData() if qualification else None),
+            qualification_source=qualification_source,
             qualification_iterations=qualification_iterations,
             strict_optimizer=strict_optimizer,
             finer_model=finer_model,
