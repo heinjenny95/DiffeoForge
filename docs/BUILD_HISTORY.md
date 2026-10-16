@@ -7,6 +7,8 @@ their optional density comparison. Browsing and applying parameters remain
 separate; no fit starts on open. Existing reviews and density/numerical gates are
 preserved. See [scope and guards](V127_SAVED_PILOT_ACCESS.md). Source, frozen build,
 local installation and optional distribution are tracked separately.
+The verified local build is installed after full backup and idle checks;
+see [delivery verification](V127_DELIVERY.md).
 
 ## v126 — chosen-fit control-point density
 

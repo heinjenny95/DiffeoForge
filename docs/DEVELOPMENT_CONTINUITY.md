@@ -27,6 +27,8 @@ parameters or starting scientific work. Unchanged browsing preserves the current
 configuration; a completed successor retains the ordinary explicit handoff. See
 [scope and guards](V127_SAVED_PILOT_ACCESS.md). Build and installation evidence
 are tracked separately from source and scientific first use.
+The tested Windows build is installed after full backup and fresh idle guards;
+source/frozen/installed access checks passed. See [delivery](V127_DELIVERY.md).
 
 v126 adds an explicit density comparison of one chosen reviewed joint fit. A
 separate sibling study compares a matched reference with nested 1.5×/2× common
