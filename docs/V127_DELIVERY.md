@@ -29,3 +29,12 @@ These are software, packaging and provenance checks. New density results still
 need explicit launch and their own QC and numerical completion gates. See
 [behavior and regression scope](V127_SAVED_PILOT_ACCESS.md). No release, tag or
 merge is implied. Drive distribution remains request-only and was unchanged.
+
+## Subsequent observed limitation
+
+The owner reported overlapping report/configuration actions and density-stage
+headings in the installed Windows density view. Access and data-preservation
+checks above remain their stated scope; they did not qualify this layout case.
+The presentation repair is recorded as an unchecked roadmap item and explicitly
+deferred at the owner's request while work continues. No fix or new build is
+claimed for this report.

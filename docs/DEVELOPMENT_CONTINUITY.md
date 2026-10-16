@@ -21,6 +21,13 @@ default supported reference route; the Modern engine remains evidence-gated.
 
 ## Current source work
 
+Owner follow-up,2026-10-16: the reopened control-density view can show overlapping
+recommendation/report buttons and stage headings. This is an open presentation
+defect; the earlier access/compiled-widget checks did not establish layout
+correctness for the reported view. Record and defer the repair while the owner
+continues. See the unchecked pilot usability item in the roadmap. No runtime
+change, installation or scientific action is authorized by this backlog request.
+
 v127 fixes the main-workflow entry to completed pilots: a visible parameter-page
 action opens saved results and the optional density comparison without applying
 parameters or starting scientific work. Unchanged browsing preserves the current

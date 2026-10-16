@@ -14,6 +14,16 @@ scientific gates. Planning does not mark those gates complete.
 
 ## Pilot usability follow-up
 
+- [ ] Fix the control-density dialog layout after reopening a completed pilot:
+  recommendation/report buttons overlap the density-stage heading in the
+  reported Windows view. Check stale completed-result actions during the
+  transition, vertical size hints, scrolling, resizing and display scaling.
+  Require legible, separate headings/actions and reachable controls on the
+  supported window sizes, including the installed main-workflow route. Preserve
+  density execution, saved approvals and scientific settings. Owner requested
+  backlog only on2026-10-16 and continues working; do not interrupt a pilot,
+  patch the running app or install a build for this report yet.
+
 - [x] Reopen a saved completed pilot from the parameter-page footer, keeping
   browsing separate from parameter application and exposing the optional density
   comparison. See [v127 access fix](docs/V127_SAVED_PILOT_ACCESS.md).
