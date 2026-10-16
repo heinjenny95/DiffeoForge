@@ -36,6 +36,7 @@ targets, runtime, optimizer tolerance/cap and freeze settings remain unchanged.
 All variants start from the same learned template and deformation. The matched
 reference separates density changes from additional optimization. Earlier A–E
 choices are not replayed, and independent specimen fits are not spliced together.
+Each variant is a new warm-initialized fit whose optimizer history starts afresh.
 
 ## Review, comparison and selection
 
@@ -69,6 +70,7 @@ field, stale inputs/settings and source withdrawal, one-fit dispatch, review
 pauses, manual selection, integration, reporting, reopening and selected-basis
 handoff. Desktop dispatch probes capture workers without executing them.
 Private source inspection and packaging/install evidence are recorded separately.
+See [verified local delivery](V126_DELIVERY.md).
 
 These are software and provenance checks. A finite density comparison is
 sensitivity evidence, not a proof of the optimal count, biological validity,

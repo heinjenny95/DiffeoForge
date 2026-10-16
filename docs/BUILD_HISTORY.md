@@ -8,6 +8,8 @@ original approvals/results remain unchanged and each new fit requires fresh QC.
 No earlier parameter screens or full-cohort jobs start automatically. See
 [protocol and verification limits](V126_CONTROL_DENSITY.md). Source, tested
 Windows build, local installation and optional distribution are tracked separately.
+The verified Windows build is installed after a complete prior-version backup
+and fresh idle checks; see [delivery evidence](V126_DELIVERY.md).
 
 ## v125 — Stage 4 saved-fit selection
 

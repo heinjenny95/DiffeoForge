@@ -28,6 +28,9 @@ unchanged. Each new fit pauses for its own QC. Selection and fixed-state numeric
 checks remain explicit; A–E screens and full-cohort jobs do not run automatically.
 See [scope, protocol and limits](V126_CONTROL_DENSITY.md). Build/installation
 evidence is tracked separately from source work and scientific first use.
+The tested Windows build is installed locally after full backup and fresh idle
+checks. See [verified delivery](V126_DELIVERY.md). No private fit or PCA starts
+automatically; Drive distribution remains request-only.
 
 v125 fixes the Stage 4 ready-state saved-fit chooser: stale stage-three IDs are
 removed, current-stage choices survive redraws and both default check buttons
