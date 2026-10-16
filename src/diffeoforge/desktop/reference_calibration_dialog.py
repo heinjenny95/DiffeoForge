@@ -234,6 +234,7 @@ class _CalibrationStageWorker(QRunnable):
         qualification_iterations: int = 100,
         strict_optimizer: bool = False,
         finer_model: bool = False,
+        density_next: bool = False,
         integration_tolerances: Mapping[str, float] | None = None,
     ) -> None:
         super().__init__()
@@ -253,6 +254,7 @@ class _CalibrationStageWorker(QRunnable):
         self.qualification_iterations = qualification_iterations
         self.strict_optimizer = strict_optimizer
         self.finer_model = finer_model
+        self.density_next = density_next
         self.screen_subjects = screen_subjects
         self.integration_tolerances = integration_tolerances
         self.adaptive_fit_search = adaptive_fit_search
@@ -301,6 +303,10 @@ class _CalibrationStageWorker(QRunnable):
                     self.runner.study_directory,
                     selected_candidate_id=self.provisional_candidate_id,
                 )
+            elif self.density_next:
+                from diffeoforge.reference_control_density import run_next
+
+                result = run_next(self.runner, event_callback=emit)
             elif self.qualification:
                 if self.finer_model or self.strict_optimizer:
                     from diffeoforge.reference_pilot_qualification import run
@@ -1242,6 +1248,16 @@ class ReferenceCalibrationDialog(QDialog):
         )
         qualification_actions.addWidget(self.finer_model_button)
         root.addLayout(qualification_actions)
+        self.density_button = QPushButton("Compare control-point density of chosen fit…")
+        self.density_button.setToolTip(
+            "Open a separate matched-reference and two-finer-grid comparison for the "
+            "chosen joint fit only. Existing fits and approvals stay saved."
+        )
+        self.density_button.clicked.connect(self._open_density_comparison)
+        root.addWidget(self.density_button)
+        self.density_return_button = QPushButton("Return to original approved fit")
+        self.density_return_button.clicked.connect(self._return_density_source)
+        root.addWidget(self.density_return_button)
         self.audit_button = QPushButton("Export pilot audit")
         _set_action_emphasis(self.audit_button, False)
         self.audit_button.clicked.connect(self._export_audit)
@@ -1256,7 +1272,8 @@ class ReferenceCalibrationDialog(QDialog):
         self.continuation_iterations.valueChanged.connect(self._update_continuation_labels)
         continuation_layout.addWidget(self.continuation_iterations)
         continuation_layout.addStretch()
-        root.addWidget(InfoDisclosure("Continuation budget", continuation_controls))
+        self.continuation_disclosure = InfoDisclosure("Continuation budget", continuation_controls)
+        root.addWidget(self.continuation_disclosure)
         self.progress = QProgressBar()
         self.progress.setRange(0, 1)
         self.progress.setValue(0)
@@ -1365,12 +1382,27 @@ class ReferenceCalibrationDialog(QDialog):
             button.setText(f"{prefix}: +{self.continuation_iterations.value()} iterations")
 
     def _render(self, snapshot: ReferenceCalibrationStudySnapshot | None = None) -> None:
+        for control, visible in getattr(self, "_density_hidden_visibility", {}).items():
+            control.setVisible(visible)
+        self._density_hidden_visibility = {}
         self.finer_resolution_button.hide()
         self._assessment = None
         self._snapshot = snapshot or load_reference_calibration_study(self.study_directory)
+        from diffeoforge.reference_calibration_study import STUDY_MANIFEST, _read_json
+
+        self._density_record = _read_json(
+            self.study_directory / STUDY_MANIFEST, "study",
+        ).get("control_density")
         self.screen_controls.hide()
         self.screen_notice.hide()
         stage = self._snapshot.current_stage
+        self.density_button.setVisible(
+            not self._density_record
+            and bool(self._snapshot.status == "completed" or stage and stage.order == 4)
+        )
+        self.density_button.setEnabled(self._worker is None and not self._restoring_search)
+        self.density_return_button.setVisible(bool(self._density_record))
+        self.density_return_button.setEnabled(self._worker is None and not self._restoring_search)
         self.qualification_button.setVisible(bool(stage and stage.order == 4))
         self.finer_model_button.setVisible(bool(stage and stage.order == 4))
         self.finer_model_button.setEnabled(
@@ -1572,6 +1604,10 @@ class ReferenceCalibrationDialog(QDialog):
                 legacy.setWordWrap(True)
                 recommendation_layout.addWidget(legacy)
             self.content_layout.addWidget(recommendation)
+            if self._density_record:
+                from diffeoforge.desktop.control_density import render_density
+
+                render_density(self)
 
             actions = QHBoxLayout()
             if self._snapshot.report_html_path is not None:
@@ -1637,6 +1673,20 @@ class ReferenceCalibrationDialog(QDialog):
                 caution="Engineering checks do not establish "
                 "biological validity or a global optimum.",
             )
+            if self._density_record:
+                heading.setText("Additional pilot check — Control-point density of chosen fit")
+                guidance = replace(
+                    guidance,
+                    question="Does a denser common basis improve the chosen fit?",
+                    explanation="Only the common control-point basis changes. Kernel widths, "
+                    "noise, time resolution, targets and optimizer settings stay fixed. "
+                    "The original approved fit remains available separately.",
+                    action="Run the matched reference and two finer grids, one fit at a time. "
+                    "Review every new reconstruction, compare the measurements, then check "
+                    "the selected fit's time resolution before finishing.",
+                    caution="These comparisons do not establish a universal optimal point count. "
+                    "New fits require their own anatomical approval.",
+                )
         if self._snapshot.plan.qc_recalibration_source:
             guidance = replace(
                 guidance,
@@ -1968,6 +2018,10 @@ class ReferenceCalibrationDialog(QDialog):
                     "verified evidence or shoots the unchanged state; no optimization runs."
                 )
         self._render_screening()
+        if self._density_record:
+            from diffeoforge.desktop.control_density import render_density
+
+            render_density(self)
 
     def _render_screening(self) -> None:
         self.screen_comparison.hide()
@@ -2312,6 +2366,7 @@ class ReferenceCalibrationDialog(QDialog):
             continuation.clicked.connect(
                 lambda _checked=False, value=candidate: self._start_selected_continuation(value)
             )
+            continuation.setVisible(not bool(getattr(self, "_density_record", None)))
             review_controls.addWidget(continuation)
             review_controls.addWidget(approval)
             review_controls.addStretch()
@@ -2396,6 +2451,8 @@ class ReferenceCalibrationDialog(QDialog):
     def _candidate_option_text(
         self, candidate: CalibrationStudyCandidateState, index: int,
     ) -> str:
+        if getattr(self, "_density_record", None):
+            return candidate.label
         stage = self._snapshot.current_stage
         if stage and stage.order == 4 and candidate.candidate_id == stage.stage_id + "-retained":
             return "Saved fit from stage 3"
@@ -2612,6 +2669,11 @@ class ReferenceCalibrationDialog(QDialog):
     def _start(self) -> None:
         if self._worker is not None:
             return
+        if getattr(self, "_density_record", None) and any(
+            c.status != "completed" for c in self._snapshot.candidates
+        ):
+            self._start_pilot(adaptive=False, density_next=True)
+            return
         stage = self._snapshot.current_stage
         state = self._snapshot.early_screening
         if (
@@ -2686,6 +2748,11 @@ class ReferenceCalibrationDialog(QDialog):
     def _start_selected_continuation(self, candidate: CalibrationStudyCandidateState) -> None:
         if self._worker is not None or self._restoring_search:
             return
+        if getattr(self, "_density_record", None):
+            self.status.setText(
+                "Density comparisons keep the same optimizer budget across variants."
+            )
+            return
         if self._snapshot.current_stage and self._snapshot.current_stage.order == 4:
             self._start_pilot(
                 adaptive=False,
@@ -2743,6 +2810,7 @@ class ReferenceCalibrationDialog(QDialog):
         qualification_iterations: int = 100,
         strict_optimizer: bool = False,
         finer_model: bool = False,
+        density_next: bool = False,
     ) -> None:
         if self._restoring_search:
             raise ValueError("Wait until the saved search has finished loading")
@@ -2752,6 +2820,7 @@ class ReferenceCalibrationDialog(QDialog):
             and self._snapshot.current_stage.order == 4
             and not finer_resolution
             and not continuation
+            and not density_next
         )
         if qualification:
             qualification_source = qualification_source or self.selection_combo.currentData()
@@ -2778,6 +2847,7 @@ class ReferenceCalibrationDialog(QDialog):
             qualification_iterations=qualification_iterations,
             strict_optimizer=strict_optimizer,
             finer_model=finer_model,
+            density_next=density_next,
             integration_tolerances=(
                 {k: f.value() / 100 for k, f in self.integration_fields.items()}
                 if self._snapshot.current_stage
@@ -3247,6 +3317,34 @@ class ReferenceCalibrationDialog(QDialog):
                 )
                 return
             self._start_pilot(adaptive=False, specimen_fit=True)
+
+    @Slot()
+    def _open_density_comparison(self) -> None:
+        if self._worker is not None or self._restoring_search:
+            return
+        from diffeoforge.reference_control_density import prepare
+
+        origin = self.study_directory
+        self._restoring_search = True
+        self.status.setText(
+            "Verifying the chosen fit and preparing its separate density comparison…"
+        )
+        self.density_button.setEnabled(False)
+        self.start_button.setEnabled(False)
+        self.advance_button.setEnabled(False)
+        self._saved_search_loader.request_operation(("density", origin), lambda: prepare(origin))
+
+    @Slot()
+    def _return_density_source(self) -> None:
+        if self._worker is not None or self._restoring_search or not self._density_record:
+            return
+        source = Path(self._density_record["source_directory"])
+        origin = self.study_directory
+        self._restoring_search = True
+        self.status.setText("Reopening the original approved fit; density results remain saved…")
+        self._saved_search_loader.request_operation(
+            ("restore", origin), lambda: load_reference_calibration_study(source),
+        )
 
     @Slot()
     def _test_denser_model(self) -> None:

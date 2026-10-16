@@ -621,6 +621,10 @@ def _prepare_stage(
             from diffeoforge.reference_fit_search import configure_trial
 
             configure_trial(config, root, candidate_directory, manifest, candidate.candidate_id)
+        if manifest.get("control_density"):
+            from diffeoforge.reference_control_density import configure_trial as configure_density
+
+            configure_density(config, root, manifest, candidate.candidate_id)
         config_path = candidate_directory / "atlas.yaml"
         _write_yaml(config_path, config, overwrite=False)
         records.append(
@@ -1297,6 +1301,10 @@ def _verify_manifest(root: Path) -> dict[str, Any]:
         from diffeoforge.reference_fit_search import verify_search
 
         verify_search(root, manifest)
+    if manifest.get("control_density"):
+        from diffeoforge.reference_control_density import verify_source
+
+        verify_source(root, manifest)
     return manifest
 
 
@@ -1976,12 +1984,16 @@ class ReferenceCalibrationStudyRunner:
             candidate.status == "completed" for candidate in snapshot.candidates
         ):
             return snapshot
+        manifest = _verify_manifest(self.study_directory)
+        assert snapshot.current_stage is not None
+        if manifest.get("control_density"):
+            from diffeoforge.reference_control_density import validate_dispatch
+
+            validate_dispatch(snapshot, candidate_ids)
         if snapshot.current_stage.order == 4 and candidate_ids is None:
             from diffeoforge.reference_integration_check import declare_tolerances
 
             snapshot = declare_tolerances(snapshot, integration_tolerances)
-        manifest = _verify_manifest(self.study_directory)
-        assert snapshot.current_stage is not None
         from diffeoforge.reference_stage_screening import joint_candidate_ids
 
         allowed = joint_candidate_ids(snapshot)
@@ -2030,6 +2042,12 @@ class ReferenceCalibrationStudyRunner:
                 if result.completed:
                     metrics = collect_reference_calibration_run_metrics(request.destination)
                     measured = metrics.as_manifest()
+                    if manifest.get("control_density"):
+                        from diffeoforge.reference_control_density import measure_fit
+
+                        measured.update(measure_fit(
+                            self.study_directory, manifest, candidate, request.destination,
+                        ))
                     if manifest.get("fit_search"):
                         from diffeoforge.reference_fit_search import measure_original_fit
 
@@ -2701,7 +2719,13 @@ def _calibration_report_payload(
                 "meaning": meaning,
             }
         )
+    density_report = {}
+    if manifest.get("control_density"):
+        from diffeoforge.reference_control_density import report as density_comparison_report
+
+        density_report["control_point_density"] = density_comparison_report(root)
     return {
+        **density_report,
         "report_version": "0.2",
         "study_id": manifest["study_id"],
         "plan_fingerprint": plan.fingerprint,
@@ -2898,6 +2922,11 @@ def _calibration_report_html(report: Mapping[str, object]) -> str:
             + "</p>"
             + qualification_html
         )
+    density_html = ""
+    if report.get("control_point_density"):
+        from diffeoforge.reference_control_density import report_html as density_comparison_html
+
+        density_html = density_comparison_html(report["control_point_density"])
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <title>DiffeoForge pilot calibration report</title>
@@ -2932,6 +2961,7 @@ DiffeoForge allowed an automatic choice only when the same candidate remained
 preferred under reasonable metric-weight changes, an independent rank analysis,
 and subject resampling whenever subject-level evidence was available. Ambiguous
 evidence required a recorded researcher decision.</p>
+{density_html}
 {stage_rows}
 {qualification_html}
 <h2>Required next steps</h2><ol>{next_steps}</ol>

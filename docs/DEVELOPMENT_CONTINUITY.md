@@ -1,4 +1,4 @@
-# Development continuity — v125 saved-fit selection
+# Development continuity — v126 chosen-fit control density
 
 Snapshot: 2026-10-16. This is a public, software-only continuation guide. Detailed
 research results, local paths, account destinations and run identities belong in
@@ -20,6 +20,14 @@ correct parameters or interpret biology for the researcher. Deformetrica is the
 default supported reference route; the Modern engine remains evidence-gated.
 
 ## Current source work
+
+v126 adds an explicit density comparison of one chosen reviewed joint fit. A
+separate sibling study compares a matched reference with nested 1.5×/2× common
+bases; all remaining scientific settings stay fixed and original approvals remain
+unchanged. Each new fit pauses for its own QC. Selection and fixed-state numerical
+checks remain explicit; A–E screens and full-cohort jobs do not run automatically.
+See [scope, protocol and limits](V126_CONTROL_DENSITY.md). Build/installation
+evidence is tracked separately from source work and scientific first use.
 
 v125 fixes the Stage 4 ready-state saved-fit chooser: stale stage-three IDs are
 removed, current-stage choices survive redraws and both default check buttons

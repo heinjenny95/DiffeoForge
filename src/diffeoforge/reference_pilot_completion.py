@@ -185,15 +185,26 @@ def assess(snapshot, base):
         if eligible
         else None
     )
+    density_comparison = bool(study._read_json(
+        snapshot.study_directory / study.STUDY_MANIFEST, "study",
+    ).get("control_density"))
+    if density_comparison:
+        # Passing integration/QC cannot rank different control bases. Keep the
+        # density decision explicit even when every saved state is eligible.
+        winner = None
+        rows = [replace(row, pareto_optimal=False) for row in rows]
     result = replace(
         base,
         version=VERSION,
         fingerprint="",
         candidates=tuple(rows),
-        status="recommendation_ready" if winner else "needs_review_or_check",
+        status="selection_required" if density_comparison and eligible
+        else "recommendation_ready" if winner else "needs_review_or_check",
         balanced_candidate_id=winner,
         independent_rank_candidate_id=winner,
-        recommendation_confidence="native_convergence_integration_and_QC"
+        recommendation_confidence="density_requires_researcher_choice"
+        if density_comparison and eligible
+        else "native_convergence_integration_and_QC"
         if winner
         else "not_qualified",
         automatic_selection_allowed=False,
@@ -328,6 +339,11 @@ def run(runner, *, candidate_id=None, event_callback=None):
 
 
 def decision(snapshot, identifier):
+    manifest = study._read_json(snapshot.study_directory / study.STUDY_MANIFEST, "study")
+    if manifest.get("control_density"):
+        from diffeoforge.reference_control_density import verify_decision
+
+        verify_decision(snapshot)
     checked = evidence(snapshot)
     candidate = next(c for c in snapshot.candidates if c.candidate_id == identifier)
     record = checked.get(identifier)

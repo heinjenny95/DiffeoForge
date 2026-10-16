@@ -1,5 +1,14 @@
 # Private-alpha build numbering
 
+## v126 — chosen-fit control-point density
+
+v126 (`0.0.0.dev126`) adds a separate matched-reference and two-finer-basis
+comparison for one reviewed joint fit. All remaining settings stay fixed;
+original approvals/results remain unchanged and each new fit requires fresh QC.
+No earlier parameter screens or full-cohort jobs start automatically. See
+[protocol and verification limits](V126_CONTROL_DENSITY.md). Source, tested
+Windows build, local installation and optional distribution are tracked separately.
+
 ## v125 — Stage 4 saved-fit selection
 
 v125 (`0.0.0.dev125`) refreshes the saved-fit chooser on entry to the final stage,

@@ -14,6 +14,11 @@ scientific gates. Planning does not mark those gates complete.
 
 ## Pilot usability follow-up
 
+- [x] Add a chosen-fit-only, separate control-density comparison with a matched
+  reference, two nested finer bases, fixed remaining settings, fresh result QC,
+  manual selection and preserved source approvals. See
+  [v126 scope and limits](docs/V126_CONTROL_DENSITY.md).
+
 - [x] Rebuild the Stage 4 saved-fit chooser when the stage is ready, clear stale
   previous-stage IDs and label the retained result by its source stage. Preserve
   reviews, outputs and independent completion gates. See
