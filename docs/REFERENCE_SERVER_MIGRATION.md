@@ -103,6 +103,15 @@ timers that spanned it. A gradient already finished before SIGSTOP must not lose
 that interval; an active global line-search evaluation may include it instead.
 Process memory survives an SSH disconnect, not a host reboot or process death.
 
+For a separately authorized SIGCONT, reverify the entire stopped process tree,
+environments, checkpoint, protected sources, reference context and resources.
+Resume contribution workers first, then the existing native parent, record the
+running state and measured native pause interval, and resume the driver last.
+Preserve earlier pause/resume histories. Independently reconnect to verify the
+same identities and active workers before reactivating a quiet monitor with the
+current continuation and timing context. This is continuation in memory, not
+checkpoint restoration or a new optimizer launch.
+
 ## Terminal verification and monitoring
 
 Advance a canonical capped successor only after native return code zero,
