@@ -7,6 +7,8 @@ including its ready state. Both check buttons use the current-stage identity;
 retained geometry is labeled as the saved stage-three fit. Existing reviews,
 results and numerical/anatomical gates remain unchanged. See
 [scope and regression boundaries](V125_SAVED_FIT_SELECTION.md).
+The tested Windows build is installed after full backup and fresh idle checks;
+see [delivery verification](V125_DELIVERY.md).
 
 ## v124 — one explicit joint test after early screening
 

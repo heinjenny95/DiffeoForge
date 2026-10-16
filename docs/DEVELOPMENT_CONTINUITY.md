@@ -26,6 +26,8 @@ removed, current-stage choices survive redraws and both default check buttons
 route to the displayed saved fit. Retained geometry keeps an explicit source-stage
 label. Existing reviews and numerical/anatomical gates need no migration. See
 [scope and verification](V125_SAVED_FIT_SELECTION.md).
+The tested Windows build is installed after the owner closed the app normally,
+full backup and fresh idle checks. See [delivery evidence](V125_DELIVERY.md).
 
 v124 compares saved early-screen measurements and requires an explicit single
 kept option for the joint test. Other approvals remain saved and deferred; joint
