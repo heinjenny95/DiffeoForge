@@ -1,4 +1,4 @@
-# Development continuity — v126 chosen-fit control density
+# Development continuity — v127 saved pilot access
 
 Snapshot: 2026-10-16. This is a public, software-only continuation guide. Detailed
 research results, local paths, account destinations and run identities belong in
@@ -20,6 +20,13 @@ correct parameters or interpret biology for the researcher. Deformetrica is the
 default supported reference route; the Modern engine remains evidence-gated.
 
 ## Current source work
+
+v127 fixes the main-workflow entry to completed pilots: a visible parameter-page
+action opens saved results and the optional density comparison without applying
+parameters or starting scientific work. Unchanged browsing preserves the current
+configuration; a completed successor retains the ordinary explicit handoff. See
+[scope and guards](V127_SAVED_PILOT_ACCESS.md). Build and installation evidence
+are tracked separately from source and scientific first use.
 
 v126 adds an explicit density comparison of one chosen reviewed joint fit. A
 separate sibling study compares a matched reference with nested 1.5×/2× common

@@ -1570,6 +1570,12 @@ def test_desktop_continues_existing_reference_project_instead_of_restarting_gpa(
     assert window.new_parameter_workflow_button.isHidden() is False
     assert window.new_parameter_workflow_button.isEnabled() is True
 
+    (completed_study / "study.json").write_text("{}", encoding="utf-8")
+    window._sync_ready_state()
+    assert window.review_saved_reference_pilot_button.isHidden() is False
+    assert window.review_saved_reference_pilot_button.isEnabled() is True
+    assert window.page_stack.widget(1).isAncestorOf(window.review_saved_reference_pilot_button)
+
     window.new_parameter_workflow_button.click()
     application.processEvents()
 

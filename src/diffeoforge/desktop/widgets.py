@@ -695,10 +695,13 @@ class _EarlyAtlasDecisionWorker(QRunnable):
 class _ReferenceCalibrationOpenWorker(QRunnable):
     """Resolve and verify saved pilot evidence before opening it, off the GUI thread."""
 
-    def __init__(self, config_path: Path, study_directory: Path) -> None:
+    def __init__(
+        self, config_path: Path, study_directory: Path, *, existing_only: bool = False
+    ) -> None:
         super().__init__()
         self.config_path = config_path
         self.study_directory = study_directory
+        self.existing_only = existing_only
         self.signals = _WorkerSignals()
 
     @Slot()
@@ -706,6 +709,10 @@ class _ReferenceCalibrationOpenWorker(QRunnable):
         try:
             directory = self.study_directory
             if not directory.exists():
+                if self.existing_only:
+                    raise ValueError(
+                        "The saved pilot is no longer available; no new study was created"
+                    )
                 create_reference_calibration_study(
                     self.config_path, directory, pilot_max_iterations=150
                 )
@@ -1736,6 +1743,8 @@ class DiffeoForgeWindow(QMainWindow):
         self._pilot_status_loading = False
         self._pilot_context_cache = None
         self._pilot_open_context_key = None
+        self._pilot_open_review_only = False
+        self._pilot_review_source = None
         self._guided_reference_calibration_requested = False
         self._template_preview_worker: _TemplatePreviewWorker | None = None
         self._template_preview_scroll_value: int | None = None
@@ -2064,8 +2073,23 @@ class DiffeoForgeWindow(QMainWindow):
 
         footer = QFrame()
         footer.setObjectName("footer")
-        footer_layout = QHBoxLayout(footer)
-        footer_layout.setContentsMargins(28, 14, 28, 14)
+        footer_outer = QVBoxLayout(footer)
+        footer_outer.setContentsMargins(28, 14, 28, 14)
+        self.review_saved_reference_pilot_button = QPushButton("Open saved pilot & density test…")
+        self.review_saved_reference_pilot_button.setObjectName("secondary")
+        self.review_saved_reference_pilot_button.setToolTip(
+            "Open the saved pilot, including completed results and the optional "
+            "control-point density comparison. Opening does not apply parameters or run a fit."
+        )
+        self.review_saved_reference_pilot_button.clicked.connect(
+            self._review_saved_reference_pilot
+        )
+        self.review_saved_reference_pilot_button.hide()
+        footer_outer.addWidget(
+            self.review_saved_reference_pilot_button, 0, Qt.AlignmentFlag.AlignRight
+        )
+        footer_layout = QHBoxLayout()
+        footer_outer.addLayout(footer_layout)
         footer_layout.setSpacing(12)
         back = QPushButton("Back to data & engine")
         back.setObjectName("secondary")
@@ -7785,6 +7809,10 @@ class DiffeoForgeWindow(QMainWindow):
         loaded_project = bool(self._result is not None or self._review is not None)
         self.new_parameter_workflow_button.setVisible(loaded_project)
         self.new_parameter_workflow_button.setEnabled(loaded_project and self._worker is None)
+        context = self._reference_calibration_context()
+        saved_pilot = bool(context is not None and (context[1] / "study.json").is_file())
+        self.review_saved_reference_pilot_button.setVisible(saved_pilot)
+        self.review_saved_reference_pilot_button.setEnabled(saved_pilot and self._worker is None)
         if isinstance(self._worker, _ResultReviewWorker):
             self.data_status_label.setObjectName("status")
             self.data_status_label.setText(self._worker.verification_message)
@@ -9599,8 +9627,8 @@ class DiffeoForgeWindow(QMainWindow):
                 "QC status remains in the calibration provenance.\n"
                 f"Selected configuration: {self._reference_calibrated_config_path}"
             )
-            self.open_reference_calibration_button.setText("Pilot calibration completed")
-            self.open_reference_calibration_button.setEnabled(False)
+            self.open_reference_calibration_button.setText("Open saved pilot & density test…")
+            self.open_reference_calibration_button.setEnabled(self._worker is None)
             return
         context = self._reference_calibration_context()
         if context is None:
@@ -9708,6 +9736,9 @@ class DiffeoForgeWindow(QMainWindow):
             for state in (self._result, self._review)
         ):
             self._clear_engine_project_state()
+        if self._reference_calibration_completed():
+            self._review_saved_reference_pilot()
+            return
         if not self._reference_calibration_plan_matches_current_inputs():
             self.reference_calibration_execution_status.setObjectName("statusWarning")
             self.reference_calibration_execution_status.setStyleSheet("")
@@ -9716,8 +9747,6 @@ class DiffeoForgeWindow(QMainWindow):
                 "plan before starting pilot calibration."
             )
             self._sync_ready_state()
-            return
-        if self._reference_calibration_completed():
             return
         context = self._reference_calibration_context()
         if context is not None and self._reference_readiness is not None:
@@ -9824,7 +9853,10 @@ class DiffeoForgeWindow(QMainWindow):
         self._update_reference_parameter_profile()
 
     @Slot()
-    def _open_reference_calibration(self) -> None:
+    def _review_saved_reference_pilot(self) -> None:
+        self._open_reference_calibration(review_only=True)
+
+    def _open_reference_calibration(self, *, review_only: bool = False) -> None:
         if self._worker is not None:
             return
         if self._reference_calibration_dialog is not None:
@@ -9835,7 +9867,13 @@ class DiffeoForgeWindow(QMainWindow):
         context = self._reference_calibration_context()
         if context is None or self._review is None:
             return
-        if self._reference_readiness is None or not self._reference_readiness.ready:
+        _plan, directory = context
+        if review_only and not (directory / "study.json").is_file():
+            self.status_label.setText("No saved pilot is available to open.")
+            return
+        if not review_only and (
+            self._reference_readiness is None or not self._reference_readiness.ready
+        ):
             QMessageBox.warning(
                 self,
                 "Deformetrica setup not ready",
@@ -9843,12 +9881,14 @@ class DiffeoForgeWindow(QMainWindow):
                 "to pass before starting pilot calibration.",
             )
             return
-        _plan, directory = context
-        worker = _ReferenceCalibrationOpenWorker(self._review.config_path, directory)
+        worker = _ReferenceCalibrationOpenWorker(
+            self._review.config_path, directory, existing_only=review_only
+        )
         worker.signals.succeeded.connect(self._reference_calibration_opened)
         worker.signals.failed.connect(self._reference_calibration_open_failed)
         self._worker = worker
         self._pilot_open_context_key = self._pilot_status_context_key(context)
+        self._pilot_open_review_only = review_only
         self.status_label.setText("Verifying saved pilot before opening…")
         self._sync_ready_state()
         self._thread_pool.start(worker)
@@ -9856,6 +9896,8 @@ class DiffeoForgeWindow(QMainWindow):
     @Slot(object)
     def _reference_calibration_opened(self, snapshot) -> None:
         self._worker = None
+        review_only = self._pilot_open_review_only
+        self._pilot_open_review_only = False
         if self._close_after_worker:
             self._close_after_worker = False
             self.close()
@@ -9870,7 +9912,7 @@ class DiffeoForgeWindow(QMainWindow):
         self._pilot_status_loader.cancel()
         self._pilot_status_key = None
         self._pilot_status_loading = False
-        if snapshot.status != "completed":
+        if review_only or snapshot.status != "completed":
             try:
                 dialog = ReferenceCalibrationDialog(
                     snapshot.study_directory, verified_snapshot=snapshot
@@ -9880,6 +9922,10 @@ class DiffeoForgeWindow(QMainWindow):
                 return
             dialog.setStyleSheet(self.styleSheet())
             self._reference_calibration_dialog = dialog
+            self._pilot_review_source = (
+                (snapshot.study_directory.resolve(), snapshot.final_config_path)
+                if review_only and snapshot.status == "completed" else None
+            )
             dialog.finished.connect(self._reference_calibration_closed)
             self.centralWidget().setEnabled(False)
             dialog.show()
@@ -10004,6 +10050,8 @@ class DiffeoForgeWindow(QMainWindow):
     @Slot(str)
     def _reference_calibration_open_failed(self, error: str) -> None:
         self._worker = None
+        self._pilot_open_review_only = False
+        self._pilot_open_context_key = None
         if self._close_after_worker:
             self._close_after_worker = False
             self.close()
@@ -10019,6 +10067,8 @@ class DiffeoForgeWindow(QMainWindow):
             return
         directory = dialog.study_directory.expanduser().resolve()
         self._reference_calibration_dialog = None
+        review_source = self._pilot_review_source
+        self._pilot_review_source = None
         self.centralWidget().setEnabled(True)
         dialog.deleteLater()
         self._reference_calibration_study_directory = directory
@@ -10027,7 +10077,11 @@ class DiffeoForgeWindow(QMainWindow):
             if snapshot.study_directory.resolve() != directory:
                 raise ValueError("Pilot snapshot belongs to a different study")
             self._pilot_status_key = None
-            self._finish_reference_calibration(snapshot)
+            if review_source == (directory, snapshot.final_config_path):
+                self._refresh_reference_calibration_execution_card()
+                self._sync_ready_state()
+            else:
+                self._finish_reference_calibration(snapshot)
         except (OSError, RuntimeError, TypeError, ValueError) as error:
             QMessageBox.warning(self, "Pilot calibration unavailable", str(error))
             self._refresh_reference_calibration_execution_card()

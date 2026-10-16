@@ -1,5 +1,13 @@
 # Private-alpha build numbering
 
+## v127 — saved completed pilot access
+
+v127 (`0.0.0.dev127`) adds a main parameter-page entry to saved pilot results and
+their optional density comparison. Browsing and applying parameters remain
+separate; no fit starts on open. Existing reviews and density/numerical gates are
+preserved. See [scope and guards](V127_SAVED_PILOT_ACCESS.md). Source, frozen build,
+local installation and optional distribution are tracked separately.
+
 ## v126 — chosen-fit control-point density
 
 v126 (`0.0.0.dev126`) adds a separate matched-reference and two-finer-basis

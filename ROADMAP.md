@@ -14,6 +14,10 @@ scientific gates. Planning does not mark those gates complete.
 
 ## Pilot usability follow-up
 
+- [x] Reopen a saved completed pilot from the parameter-page footer, keeping
+  browsing separate from parameter application and exposing the optional density
+  comparison. See [v127 access fix](docs/V127_SAVED_PILOT_ACCESS.md).
+
 - [x] Add a chosen-fit-only, separate control-density comparison with a matched
   reference, two nested finer bases, fixed remaining settings, fresh result QC,
   manual selection and preserved source approvals. See

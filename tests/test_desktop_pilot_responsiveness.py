@@ -3,6 +3,7 @@
 import hashlib
 import threading
 import time
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -163,6 +164,73 @@ def test_open_does_not_apply_after_project_change_or_close(
     window._reference_calibration_opened(snapshot)
     assert not applied and window._reference_calibration_dialog is None
     assert window._worker is None
+
+
+@pytest.mark.parametrize("changed_selection", [False, True])
+def test_completed_pilot_review_opens_without_applying_or_running(
+    pilot_window, monkeypatch, changed_selection,
+):
+    from PySide6.QtWidgets import QDialog
+
+    app, window, source = pilot_window
+    snapshot = replace(
+        source, status="completed", final_config_path=source.study_directory / "final.yaml"
+    )
+    queued, applied = [], []
+    window._thread_pool = SimpleNamespace(start=queued.append)
+    window._reference_readiness = None  # Browsing saved results needs no backend launch/check.
+    monkeypatch.setattr(window, "_finish_reference_calibration", applied.append)
+    monkeypatch.setattr(window, "_refresh_reference_calibration_execution_card", lambda: None)
+    monkeypatch.setattr(
+        module, "latest_reference_calibration_search_extension_directory", lambda d: d
+    )
+    monkeypatch.setattr(module, "load_reference_calibration_study", lambda _d: snapshot)
+
+    class SavedDialog(QDialog):
+        def __init__(self, directory, *, verified_snapshot):
+            super().__init__()
+            assert verified_snapshot is snapshot
+            self.study_directory = directory
+            self.snapshot = verified_snapshot
+
+    monkeypatch.setattr(module, "ReferenceCalibrationDialog", SavedDialog)
+    before = {p: p.read_bytes() for p in source.study_directory.rglob("*") if p.is_file()}
+    window.review_saved_reference_pilot_button.setEnabled(True)
+    window.review_saved_reference_pilot_button.click()
+    assert len(queued) == 1 and queued[0].existing_only
+    assert window._reference_calibration_dialog is None
+    queued.pop().run()  # Only the saved-evidence verification worker, never an optimizer.
+    app.processEvents()
+    dialog = window._reference_calibration_dialog
+    assert dialog is not None and dialog.isVisible()
+    assert not applied
+    if changed_selection:
+        child = source.study_directory.parent / "density-successor"
+        dialog.study_directory = child
+        dialog.snapshot = replace(
+            snapshot, study_directory=child, final_config_path=child / "final.yaml"
+        )
+    dialog.reject()
+    app.processEvents()
+    assert len(applied) == int(changed_selection)
+    if changed_selection:
+        assert applied[0].study_directory == child
+    assert all(p.read_bytes() == value for p, value in before.items())
+    assert window.centralWidget().isEnabled()
+
+
+def test_saved_pilot_review_never_creates_a_missing_study(tmp_path, monkeypatch):
+    created, failed = [], []
+    monkeypatch.setattr(
+        module, "create_reference_calibration_study", lambda *a, **k: created.append(a)
+    )
+    missing = tmp_path / "deleted-pilot"
+    worker = module._ReferenceCalibrationOpenWorker(
+        tmp_path / "atlas.yaml", missing, existing_only=True
+    )
+    worker.signals.failed.connect(failed.append)
+    worker.run()
+    assert failed and not created and not missing.exists()
 
 
 def test_dialog_reuses_fresh_worker_snapshot_without_loading_again(
