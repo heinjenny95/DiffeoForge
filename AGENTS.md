@@ -55,5 +55,12 @@ unrelated software installations or starting scientific runs.
 - Before installation, verify no relevant pilot, atlas, validation or backend job
   is active. Do not close the app or replace runtimes during computation. Existing
   installation permission does not authorize stopping a scientific job.
+- For owner-authorized persistent desktop computations, open the installed app
+  through the ordinary Windows shell and use its normal execution/recovery UI.
+  Do not keep the scientific GUI in an assistant-owned interpreter or transient
+  tool process tree. Verify executable, creation time and shell ancestry before
+  dispatch; a live process alone does not prove independence from a tool restart.
+  Preserve the app's own worker supervision and explicit stopped-process recovery
+  guards. Never test independence by interrupting a live scientific computation.
 - Native/platform tests, independent first-use review, scientific validation and
   public-release gates remain separate from internal regression-test success.

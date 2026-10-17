@@ -31,6 +31,12 @@ The tested Windows build is installed after a verified dev127 backup and fresh
 idle guards;79 regressions and frozen/installed compiled-module probes passed.
 See [verified delivery](V128_DELIVERY.md). Drive distribution is unchanged.
 
+Persistent desktop startup must use the installed executable through the normal
+Windows shell, outside assistant-owned launch interpreters/process trees. Use
+the existing explicit crash-recovery and checkpoint-resume UI after verifying
+that all writers stopped; preserve checkpoint bytes, reviews and source evidence.
+See the operational startup boundary in [v128 delivery](V128_DELIVERY.md).
+
 Owner follow-up,2026-10-16: the reopened control-density view can show overlapping
 recommendation/report buttons and stage headings. This is an open presentation
 defect; the earlier access/compiled-widget checks did not establish layout
