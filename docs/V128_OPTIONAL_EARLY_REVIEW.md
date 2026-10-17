@@ -6,6 +6,10 @@ after ten joint iterations. Individual initialization, pilot momentum identity,
 the common atlas model and native likelihood/gradient/line-search/tolerance
 equations are unchanged. Final full-cohort anatomical QC remains separate.
 
+For an existing completed pilot, use **Prepare atlas with saved pilot fits** and
+the checkbox beside that action to create the linked launch configuration. This
+does not refit the pilot or rewrite its historical selected configuration.
+
 Changing the launch choice creates a linked configuration when necessary; it
 does not rewrite the completed pilot or transfer its approvals to a new result.
 Existing protected contracts without the new field retain their historical

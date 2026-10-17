@@ -27,6 +27,9 @@ continue without recording an anatomical approval; the decision is bound to
 verified evidence and retained by immutable successors. Old approvals and real
 rejections remain preserved. Final full-cohort QC remains required. See
 [scope and continuation boundaries](V128_OPTIONAL_EARLY_REVIEW.md).
+The tested Windows build is installed after a verified dev127 backup and fresh
+idle guards;79 regressions and frozen/installed compiled-module probes passed.
+See [verified delivery](V128_DELIVERY.md). Drive distribution is unchanged.
 
 Owner follow-up,2026-10-16: the reopened control-density view can show overlapping
 recommendation/report buttons and stage headings. This is an open presentation
