@@ -5,8 +5,12 @@ import subprocess
 import sys
 from pathlib import Path
 
+import numpy as np
+
+from diffeoforge.analysis.landmarks import read_landmark_csv
 from diffeoforge.cli import main
-from diffeoforge.mesh import inspect_vtk, sha256_file
+from diffeoforge.mesh import inspect_vtk, read_vtk_polydata, sha256_file
+from diffeoforge.preprocessing import preview_landmark_alignment
 from diffeoforge.runs import prepare_run, verify_prepared_run
 
 REPOSITORY_ROOT = Path(__file__).parents[1]
@@ -53,6 +57,23 @@ def test_example_passes_full_geometry_validation(capsys) -> None:
     assert "Subject meshes: 5" in captured.out
     assert "Template geometry: 162 points, 320 triangles" in captured.out
     assert "Subject geometry: 162-162 points" in captured.out
+
+
+def test_public_walkthrough_landmarks_are_exact_generator_correspondences() -> None:
+    meshes = (MESH_DIRECTORY / "template.vtk", *sorted(MESH_DIRECTORY.glob("subject-*.vtk")))
+    landmarks = SYNTHETIC_DIRECTORY / "landmarks.csv"
+    labels, coordinates = read_landmark_csv(landmarks, [path.name for path in meshes])
+    assert labels == ("a", "b", "c", "d")
+    assert coordinates.shape == (6, 4, 3)
+    hashes_before = [sha256_file(path) for path in (*meshes, landmarks)]
+    for index, path in enumerate(meshes):
+        vertices = np.asarray(read_vtk_polydata(path).vertices)
+        np.testing.assert_array_equal(coordinates[index], vertices[[0, 40, 80, 100]])
+    preview = preview_landmark_alignment(MESH_DIRECTORY, landmarks_file=landmarks)
+    assert preview.landmark_labels == labels
+    assert len(preview.subjects) == 5
+    assert preview.allow_reflection is False
+    assert hashes_before == [sha256_file(path) for path in (*meshes, landmarks)]
 
 
 def test_open_example_prepares_complete_immutable_run(tmp_path: Path) -> None:

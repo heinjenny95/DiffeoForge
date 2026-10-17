@@ -77,6 +77,12 @@ synthetic case; it is not a biological validation result.
 
 ## Use it for another dataset
 
+Current cross-CPU limitation: September reruns alternated between an 8/10 scalar
+comparison failure and an exact 10/10 AMD pass without changing the numerical
+implementation. The July result is historical same-fixture evidence, not a
+universal cross-CPU guarantee. See [the retained CPU investigation](REFERENCE_CPU_DIAGNOSTICS.md).
+No baseline, tolerance, dependency or production compatibility setting was reset.
+
 Copy `examples/minimal-atlas-container.yaml`, then change the input directory,
 template, subject pattern, output directory, and scientifically chosen model
 parameters. Keep the container launcher block unchanged. DiffeoForge stages

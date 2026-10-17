@@ -1,0 +1,207 @@
+# Next DiffeoForge development version
+
+> v94 supersedes unattended stage advancement: each stage batches its candidates,
+> then waits for recorded visual acceptance of every specimen. The former AFK
+> controls and policies below describe historical behavior. Existing ledgers remain
+> readable. See [current fit-first workflow](V94_SURFACE_FIT.md).
+
+Scope agreed on 2026-09-14: implement the current usability backlog and plan the
+larger roadmap. This is a development plan, not a public release or scientific
+qualification claim. The established development branch remains authoritative.
+
+## Adaptive search implementation
+
+v96 implements bounded feedback search and learned-state continuation in the
+ordinary pilot. See [behavior, evidence and limits](V96_ADAPTIVE_PILOT.md).
+Independent usability and prospective fit-quality acceptance remain open.
+The earlier manual refinement proposal below is superseded by the direct
+**Improve fit automatically** action; the other backlog items remain separate.
+
+## Delivery order and acceptance gates
+
+### Priority: slow pilot previews and invisible QC locks
+
+First-use feedback on 2026-09-28: preview loading is too slow and the specimen
+decision/rejection controls appear inert. Static inspection found that both
+depend on registered full-detail presentation, while preview loading still
+parses full meshes and builds full edges. Existing display-proxy caching occurs
+after full parsing. The actual runtime bottleneck has not yet been profiled.
+
+- [ ] Put the specific lock reason and a direct **Load detail for QC** action
+  beside decision controls; clearly style disabled controls, including rejection.
+  Distinguish loading, preview ready, detail ready and failure with concise copy.
+- [ ] Support early rejection/uncertainty based on a successfully displayed
+  preview with explicit preview-only evidence scope. Keep these concerns separate
+  from full-detail inspection and final acceptance; preserve every-specimen pass
+  requirements and reject stale/unloaded specimen decisions.
+- [ ] Measure cold/warm time to first useful image and specimen/option switches,
+  separating I/O/hash, parse/inspection, edges, proxy generation and rendering.
+  Choose a performance target from measurements rather than assuming a cause.
+- [ ] Reuse verified previews and unchanged originals across comparisons; avoid
+  full parsing/edge preparation on repeated preview loads. Evaluate bounded,
+  content/version/resolution-bound project-local display caching and on-demand
+  full detail without modifying scientific geometry or weakening source checks.
+- [ ] Keep navigation/closing responsive, discard stale callbacks and bound
+  cancellation/prefetch work. Show honest progress and actionable errors. Verify
+  large-mesh cold/warm loads, review transitions and loading/rendering failures.
+
+Backlog only; no performance result, runtime change or new QC approval is claimed.
+
+### Planned: clear pilot review, refinement and continuation
+
+Backlog recorded 2026-09-28 after first-use feedback; implementation is pending.
+
+- [ ] Separate **Review selected option**, optional **Refine fit**, and using an
+  approved option to continue. Use a neutral option chooser and visible QC status;
+  the current "Choose an option to review or refine…" omits continuation.
+- [ ] Once all specimens pass and approval is saved, emphasize a primary action
+  such as **Use this option and continue to stage 2**, adapted to the actual next
+  stage or final handoff. Keep re-review/refinement secondary. If blocked, show
+  the specific remaining requirement briefly rather than only a disabled button.
+- [ ] Explain refinement where it is offered: propose new parameter combinations
+  around the selected fit; do not imply stage advancement or direct mesh repair.
+  Distinguish preparing the comparison from starting calculations. Audit adjacent
+  controls, including **Prepare next stage**, confirmation and Run labels together.
+- [ ] Show the base option and new-option count before an explicit **Run new
+  refinement options** action; make progress, completion, current stage/round and
+  return to comparison clear. Distinguish retained results from new options and
+  preserve valid saved reviews; new options require their own QC. Refinement is
+  optional when the selected option already meets continuation requirements.
+- [ ] First-use acceptance must cover review -> approve -> continue, failed or
+  uncertain fit -> optional refinement -> run -> review, and returning to a
+  previously approved option. Preserve the theme, concise copy, existing results
+  and every-specimen approval gate; keep detailed explanations collapsed.
+
+### Planned: discoverable axis shapes and precise method terminology
+
+Backlog recorded 2026-09-28; no implementation or new numerical run is claimed.
+The [reference analysis and PC Shooting route](REFERENCE_PCA.md) already exists.
+
+- [ ] Place **Show shape changes along PC axes** beside the Results morphospace,
+  with available PC1–PC3, mean-momenta and minus/plus 2-SD shapes. Reuse verified
+  outputs; keep the existing theme and put technical detail in collapsed help.
+  Distinguish observed specimen meshes at score positions from modeled axis
+  shapes. Require an explicit click for missing outputs, visible progress and
+  protection against duplicate work or console popups.
+- [ ] Audit UI, figure/PDF/export and methods labels against each saved result's
+  method. Describe the reference default as LDDMM-metric tangent-space PCA and
+  explain its relation to linearized PGA. Preserve the identities of Cartesian
+  PCA, Modern-engine analyses and generic RBF KernelPCA. Do not alter old scores
+  or evidence merely to change terminology.
+- [ ] Add concise methods text citing the applicable
+  [Vaillant et al. (2004)](https://doi.org/10.1016/j.neuroimage.2004.07.023)
+  tangent-momenta framework and
+  [Fletcher et al. (2004)](https://doi.org/10.1109/TMI.2004.831793) PGA context.
+  State the tangent approximation; claim neither exact nonlinear PGA nor an
+  intrinsic mean solely from shooting mean momenta. Keep the main UI concise.
+- [x] Statically compare the supplied reference helper with existing endpoint
+  construction: both use mean plus a signed score times the already inverse-
+  mapped momenta component, with SD steps scaled by sqrt(explained variance).
+  The helper prepares momentum fields only; actual Shooting already exists here.
+  No external code was executed, imported or published.
+- [ ] Complete the endpoint audit and bounded numerical comparison. Check
+  centering, mean +/- 2*sqrt(eigenvalue)
+  times the inverse component, metric normalization/inverse mapping, component
+  signs and XYZ/control-point order. Retain the fitted template, control points,
+  deformation kernel and integration settings. Implement verified gaps only.
+- [ ] Any reusable reconstruction helper must enforce the supported method and
+  feature-space contract, label Cartesian and metric PCA separately, handle
+  zero-variance modes and reject non-finite outputs. Retain source/control-point
+  binding and immutable output publication rather than a parallel overwrite path.
+- [ ] Verify momentum serialization against the exact source Deformetrica
+  runtime, including header, dimensions and finite values. Add missing tests and
+  a bounded synthetic reader/writer round-trip before any future batch; document
+  supported formats and reject unsupported ones without guessing or reshaping.
+  Keep single-field Shooting input distinct from PCA cohort import; the latter
+  intentionally requires at least two subjects and cannot certify a one-field
+  serializer by itself. Exact-runtime round-trip verification remains pending.
+
+Acceptance: the axis-shape entry is visible from the morphospace without searching
+below unrelated tools; method labels match recorded analyses; existing verified
+endpoints are reused and completed runs remain unchanged. External helper static
+review is complete; runtime verification and implementation remain pending. This
+backlog does not authorize running that script or a scientific batch.
+
+### Existing delivery sequence
+
+1. **Validation Lab reliability:** responsive opening, frozen-study creation and
+   preflight; safe cancellation and explicit launch confirmation. Count the
+   entire frozen training-plus-holdout design, separately show backend completion
+   and verified evidence, retain original-start wall time across restarts, and
+   never call an iteration fraction a measured work fraction or a reliable ETA.
+   Verify cancellation races, failed evidence, retries and legacy ledgers.
+2. **Large-mesh viewing:** reduced, cached display geometry in every mesh viewer,
+   including settled frames; original scientific geometry and exact picking stay
+   protected. Explicit original-detail inspection remains available. QC must not
+   claim inspection of hidden details. Verify all rendering routes, bounded
+   memory/jobs, stale results, source integrity and responsiveness on large meshes.
+3. **AFK pilot:** explicit opt-in and a bounded pilot-only scope; automatically
+   select eligible stage recommendations with an auditable provisional policy.
+   Stop on missing eligibility/hard failure. Preserve cancellation/resume and
+   return-to-desk review; never manufacture visual approvals or launch the atlas.
+4. **Concise guided workflow:** short next-action summaries, collapsed supporting
+   explanations, essential warnings/decisions visible. Include finite GPA review
+   navigation and audit the remaining staged-calibration UX checklist.
+5. **Engineering handoff:** run regressions and large-mesh UI checks, build and
+   verify a private local installer, and record exact code/evidence provenance.
+   Installation, public releases and changes to live scientific runs require
+   their own user decision; no private datasets or installers go to GitHub.
+
+Each completed package includes a scoped commit/push and a concise English entry
+in the existing Google Docs Project log. Partial implementation is not completion.
+
+The AFK pilot now implements the explicit bounded provisional policy described in
+`AFK_PILOT.md`. Standard robustness-gated behavior remains available. Default copy
+has been shortened in data intake, pilot planning, landmark placement, GPA review,
+registration QC, shape-space comparison and report export; detailed explanations
+remain in collapsed disclosures and mandatory QC warnings stay visible. These
+internal UI changes are not a substitute for independent usability evaluation.
+
+## Larger roadmap: planned work, not automatically completed by this version
+
+Large-mesh viewing is implemented as bounded, cached, display-only quadric
+clustering, shared background rendering/loading and explicit original-detail
+inspection. See `LARGE_MESH_VIEWER.md` for the measured private-mandible example
+and limits: fine anatomical detail can be lost in a proxy, so exact picking and
+QC confirmation still require the original view. This is not scientific mesh
+decimation, GPU rendering or a hard frame-latency guarantee.
+
+| Workstream | Dependencies and next work | Acceptance gate |
+| --- | --- | --- |
+| Modern/reference qualification | Review frozen Weevil continuation, then execute the authorized continuation; predeclare numerical and geometric comparisons | Converged, independently recomputed gradient/objective/deformation and performance evidence; inconclusive runs remain inconclusive |
+| Scientific parameter validation | Independent anatomical landmarks, PCA/subspace stability, predeclared test/holdout separation | Report uncertainty and sensitivity; no tuning to published PCs or universal-optimum claim |
+| Multiresolution analysis | Prospective approved face-count levels and immutable provenance, distinct from display proxies | Compare atlas geometry, residuals, tangent/PCA stability and PC endpoint shapes before recommending scientific decimation |
+| Pilot selection/search | Optional biological strata/extremes; bounded adaptive search with explicit attachment/deformation/noise labels | Tail stability tests, boundary-winner regression, safety caps and honest unbounded-search reporting |
+| Runtime/memory calibration | Representative small/medium/large cohorts and fresh-process measurements | End-to-end runtime and peak-memory evidence; confidence-calibrated estimates rather than an untested fixed ETA |
+| GPU | Identify accessible NVIDIA hardware, memory budget and supported environment; preserve CPU fallback | Same scientific gates plus CPU/GPU parity/tolerance, determinism and failure/memory tests; no GPU speedup claim from CPU tests |
+| HPC/Apptainer | Obtain target cluster policy, storage/mounts, scheduler and container support; stage-only dry run first | Reproducible submission, cancellation, restart, path/provenance and data-permission checks on the actual target; NAS storage alone is not compute |
+| Linux/macOS CPU | Installed-wheel/offscreen and public synthetic CPU matrix defined in `PLATFORM_COMPATIBILITY.md`; Apple Silicon engine and Intel GUI scopes are separate | Observe the matrix first; native clean-system install/uninstall, interactive GUI and project-preservation evidence remain separate gates |
+| Distribution | Review pinned release lock, SBOM and licenses; signing and clean-VM resources | Signed installer and retained-integrity evidence, followed by explicit release authorization |
+| External usability and documentation | Recruit independent testers with consent; task-based protocol; update user/method docs | Observed completion/errors, documented limitations, reproducible examples; internal tests do not substitute for external usability evidence |
+| Scientific release | Complete qualification, benchmarks, documentation and authors' review | Approved archived release/DOI and manuscript submission; neither is implied by implementing UI features |
+
+These gates have no invented dates or approvals. Hardware access, cluster policy,
+independent testers, author decisions and scientific observations are dependencies
+to resolve explicitly. Existing roadmap items stay open until their evidence is
+actually available.
+
+## Validation Lab implementation notes
+
+The first package adds hash-chained UTC event times for new events, without
+rewriting legacy ledgers. If the first execution event was untimed, the UI says
+the original start is unavailable instead of using a later resume or file mtime.
+Wall time includes interruptions; it is not accumulated compute time. Completed
+whole-study wall time stops at the recorded holdout-report completion.
+
+The progress denominator includes every frozen training/resampling run and every
+planned fixed-template holdout run, even before holdout input preparation. A local
+backend receipt is only an observed backend finish; it does not verify scientific
+evidence. Failed postprocessing cannot silently trigger a repeated completed atlas
+or registration. Results are not called fully validated until both reports exist.
+
+Opening, source/result verification, protected study preparation, workload checks
+and terminal snapshot reloads run off the GUI thread. Cancellation is cooperative
+at phase boundaries: a long individual verification/copy may finish before it is
+acknowledged, and a valid prepared study may be retained, but no engine launches
+after cancellation. Integrity failures are surfaced, not hidden by creating a
+fresh replacement study. Existing source/configuration hash gates remain active.

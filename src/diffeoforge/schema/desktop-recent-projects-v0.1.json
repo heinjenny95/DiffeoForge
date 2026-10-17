@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DiffeoForge desktop recent-project convenience store",
+  "description": "Local, per-user list of recently opened project folders. This is interface convenience state only. It records paths the researcher already chose; it is not run evidence, not a scientific record, and never authorizes loading, computing, or changing a project.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "store_version",
+    "kind",
+    "scientific_boundary",
+    "entries"
+  ],
+  "properties": {
+    "store_version": {"const": "0.1"},
+    "kind": {"const": "diffeoforge_desktop_recent_projects"},
+    "scientific_boundary": {
+      "const": "interface_convenience_state_not_run_evidence"
+    },
+    "entries": {
+      "type": "array",
+      "maxItems": 8,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "engine",
+          "project_directory",
+          "mesh_directory",
+          "subject_pattern",
+          "coordinate_unit",
+          "recorded_at"
+        ],
+        "properties": {
+          "engine": {"enum": ["deformetrica_reference", "modern_cpu"]},
+          "project_directory": {"type": "string", "minLength": 1},
+          "mesh_directory": {"type": "string", "minLength": 1},
+          "subject_pattern": {"type": "string", "minLength": 1},
+          "coordinate_unit": {
+            "enum": ["unitless", "micrometer", "millimeter", "centimeter", "meter"]
+          },
+          "project_name": {"type": "string", "minLength": 1},
+          "template": {"type": "string", "minLength": 1},
+          "landmarks": {"type": "string", "minLength": 1},
+          "recorded_at": {"type": "string", "format": "date-time"}
+        }
+      }
+    }
+  }
+}

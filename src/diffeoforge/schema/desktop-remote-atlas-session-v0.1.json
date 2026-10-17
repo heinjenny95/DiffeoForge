@@ -1,0 +1,149 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://diffeoforge.org/schema/desktop-remote-atlas-session-v0.1.json",
+  "title": "DiffeoForge desktop remote atlas session",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "session_version",
+    "request_id",
+    "submission_id",
+    "created_at",
+    "updated_at",
+    "server_url",
+    "request",
+    "tls",
+    "remote",
+    "result",
+    "scientific_boundary"
+  ],
+  "properties": {
+    "session_version": { "const": "0.1" },
+    "request_id": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "submission_id": { "type": "string", "pattern": "^[0-9a-f]{32}$" },
+    "created_at": { "type": "string", "format": "date-time" },
+    "updated_at": { "type": "string", "format": "date-time" },
+    "server_url": { "type": "string", "minLength": 1, "maxLength": 2048 },
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "directory",
+        "manifest_sha256",
+        "original_config_path",
+        "original_config_sha256",
+        "result_destination",
+        "subjects",
+        "device"
+      ],
+      "properties": {
+        "directory": { "const": "request" },
+        "manifest_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "original_config_path": { "type": "string", "minLength": 1 },
+        "original_config_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "result_destination": { "type": "string", "minLength": 1 },
+        "subjects": { "type": "integer", "minimum": 2 },
+        "device": { "enum": ["cpu", "cuda"] }
+      }
+    },
+    "tls": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ca_file", "ca_sha256"],
+      "properties": {
+        "ca_file": { "type": ["string", "null"] },
+        "ca_sha256": {
+          "oneOf": [
+            { "type": "null" },
+            { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+          ]
+        }
+      }
+    },
+    "remote": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "event_cursor", "last_server_update", "error"],
+      "properties": {
+        "status": {
+          "enum": [
+            "prepared",
+            "queued",
+            "running",
+            "cancel_requested",
+            "completed",
+            "downloaded",
+            "failed",
+            "cancelled",
+            "interrupted",
+            "cancelled_before_submit"
+          ]
+        },
+        "event_cursor": { "type": "integer", "minimum": -1 },
+        "last_server_update": { "type": ["string", "null"] },
+        "server_deleted_at": { "type": ["string", "null"], "format": "date-time" },
+        "error": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["type", "message"],
+              "properties": {
+                "type": { "type": "string", "minLength": 1, "maxLength": 128 },
+                "message": { "type": "string", "minLength": 1, "maxLength": 2048 }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "result": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["workflow_manifest_sha256"],
+          "properties": {
+            "workflow_manifest_sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          }
+        }
+      ]
+    },
+    "scientific_boundary": { "type": "string", "minLength": 1 }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "remote": { "properties": { "status": { "const": "downloaded" } } } } },
+      "then": { "properties": { "result": { "type": "object" } } }
+    },
+    {
+      "if": {
+        "properties": {
+          "remote": {
+            "properties": {
+              "status": {
+                "enum": [
+                  "prepared",
+                  "queued",
+                  "running",
+                  "cancel_requested",
+                  "completed",
+                  "failed",
+                  "cancelled",
+                  "interrupted",
+                  "cancelled_before_submit"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "then": { "properties": { "result": { "type": "null" } } }
+    }
+  ]
+}

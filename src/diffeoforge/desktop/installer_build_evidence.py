@@ -289,7 +289,10 @@ def _prerequisites(
         or plan["compiler"]["program"] != COMPILER_NAME
         or plan["compiler"]["shell"] is not False
         or plan["compiler"]["execution_authorized"] is not False
-        or len(plan["compiler"]["arguments"]) != 9
+        or len(plan["compiler"]["arguments"]) != (
+            10 if re.fullmatch(r"0\.0\.0\.dev([1-9][0-9]*)", plan["source"]["application_version"])
+            else 9
+        )
         or plan["toolchain"]["asset_sha256"] != portable["installer"]["sha256"]
         or portable["compiler_probe"]["program"]["path"]
         != str(Path(portable["portable_install"]["installation_directory"]) / COMPILER_NAME)

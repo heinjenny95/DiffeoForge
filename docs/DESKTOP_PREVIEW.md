@@ -1,7 +1,8 @@
 # Desktop setup, review, and Modern compute preview
 
-Status: **four graphical steps with verified Modern CPU execution and result review;
-same-owner private-alpha installer available**
+Status: **six graphical steps with verified Modern CPU execution, an explicitly
+bound local or private-server Modern CUDA route, persistent remote reconnection,
+and result review; same-owner private-alpha installer available**
 
 Tracked by [engineering issue #75](https://github.com/heinjenny95/DiffeoForge/issues/75)
 and [engineering issue #77](https://github.com/heinjenny95/DiffeoForge/issues/77),
@@ -23,48 +24,120 @@ The distribution architecture and its stricter release gates remain in
 
 ## What works now
 
+The last three steps are **Compute atlas → Visual quality review → Results & PCA**.
+After completion and technical verification, Step 5 opens only the flagged cases
+in descending registration-discrepancy order. **All specimens (optional)** remains
+available for additional checks. The blue original is the verified
+input in atlas coordinates; the orange surface is its reconstruction. Users rotate,
+zoom and toggle the meshes, explicitly acknowledge visual inspection, and record
+Plausible / Uncertain / Implausible. Decisions advance once through the queue and
+are autosaved with the identities of both displayed meshes.
+
+Step 6, atlas/PCA summary forms, method comparisons and result exports remain
+locked until every flagged case has an acknowledged plausible decision and the
+user explicitly releases results. The screen uses the same descriptive upper
+Tukey fence as the scientific report: residual strictly greater than
+`Q3 + 1.5 × IQR`, using linear quartiles over the full cohort. The threshold and
+individual reasons are shown and saved. For fewer than four specimens, screening
+is unavailable and manual review is required. An empty flagged queue needs no
+per-mesh approval, but still requires an explicit release action. This relative
+screen can miss uniformly poor fits; optional spot checks remain useful.
+
+Any researcher-recorded uncertain or implausible decision also blocks release,
+even for an otherwise unflagged specimen. Resolve it through further inspection
+or a separate corrected run; there is no bulk approval or automatic specimen
+exclusion. Search only narrows the viewer list, never the required queue or PCA.
+Unflagged/uninspected subjects retain `unreviewed`, not an invented pass. Exports
+distinguish completed required review from incomplete full-cohort manual review.
+
+Release is bound to the verified run, analysis, original/reconstruction hashes and
+an immutable finalized QC review. Reopening resumes the saved visual review;
+legacy QC decisions alone do not release results. Changed decisions/evidence
+relock results. Review files live in the reference run's `reviews/` directory;
+Modern uses a sibling `<run-name>-reviews/` directory to preserve its exact run
+inventory. This is a desktop workflow gate, not encryption or a restriction on
+manual access to existing files/CLI tools, and is not biological validation.
+
 The optional PySide6 application provides one complete setup path without a
 terminal:
 
-1. choose the modern CPU or external Deformetrica 4.3 reference engine;
-2. select a directory of VTK meshes and an explicit template, or allow only a
-   literally named `template.vtk` to be detected;
+1. choose the Modern engine or external Deformetrica 4.3 reference engine; for
+   Modern, explicitly select contained CPU/float64 or a separately verified
+   NVIDIA CUDA/float64 runtime;
+2. select a directory of triangular VTK, PLY, OBJ, or STL meshes and an
+   explicit template, or allow one unambiguous file named `template` with a
+   supported extension to be detected; non-VTK sources require the reviewed
+   landmark/GPA path and become canonical aligned VTK copies before either
+   engine is configured;
 3. select the coordinate unit, project directory, optional project name, and
    subject filename pattern;
 4. for the Modern route, explicitly choose the dense small-pilot baseline or
    the exact `256 × 256` blockwise high-face-count experiment;
 5. explicitly choose either a three-cycle technical pilot or a convergence
    attempt capped at 50 cycles, with early stopping only when every parameter
-   block reaches the declared gradient tolerance in one completed cycle;
-6. optionally select a labelled-landmark CSV for the modern workflow;
-7. validate schemas, paths, mesh geometry, and the engine-specific setup
+   block reaches the declared gradient tolerance in one completed cycle; retain
+   the established Euclidean template gradient or explicitly opt into Sobolev
+   smoothing with a recorded positive kernel-width ratio, without either mode
+   being presented as biologically superior;
+6. optionally select a labelled-landmark CSV, select any one tagged per-mesh TXT
+   to import its complete folder, import that folder directly, or place arbitrary
+   triangle-surface landmarks in a rotatable, zoomable native 3D view for either
+   engine; TXT import matches files to the exact current cohort by filename stem
+   and creates `landmarks.csv` automatically in the project folder without a
+   second CSV-selection dialog; when that generated working CSV already exists,
+   DiffeoForge asks before replacing it atomically. Source TXT coordinates are
+   never changed; choose the planned
+   count before opening the editor and optionally disable automatic next-mesh
+   loading after the final planned point; recover the count, navigation
+   preference, and placements from a hash-validated autosaved draft; then
+   explicitly configure the GPA scaling, reflection, tolerance, and iteration
+   policy, run a read-only numerical alignment preview, and approve its exact
+   converged fingerprint;
+7. for the Deformetrica route, either confirm that the selected coordinates
+   were already GPA aligned outside DiffeoForge or use the exact approved
+   DiffeoForge GPA transforms; then choose the anatomical surface-detail scale
+   and whether the biological differences of interest are local, balanced, or
+   global, and run the read-only aligned-mesh parameter analysis;
+8. inspect the measured cohort scale, centroid and size dispersion, sampled
+   mesh resolution, sampling-aware attachment lower bound, proposed effective
+   values, explicit user decisions, non-inferable provisional noise value, and
+   the recommendation fingerprint;
+9. validate schemas, paths, mesh geometry, and the engine-specific setup
    contract through the same application services used by the CLI;
-8. create a starter configuration, requiring a destructive confirmation before
-   atomically replacing only a recognized DiffeoForge-generated configuration,
-   and review a visible result summary;
-9. continue to a second screen that reads the effective values back from the
-   validated configuration and explains their role;
-10. optionally load the exact selected template outside the event loop and view
+10. continue from the data-and-engine screen to a dedicated parameter-setting
+    screen whose guided Deformetrica order is aligned-mesh analysis, staged
+    pilot planning, automatic candidate execution and visual selection, then
+    the final selected parameter values;
+11. follow one context-sensitive green action through that order; DiffeoForge
+    creates and reviews the provisional pilot configuration and performs the
+    managed-engine readiness check automatically, then applies the visually
+    approved candidate selections as a read-only final parameter set;
+12. explicitly choose advanced manual parameters only to bypass the guided
+    pilot requirement, or continue to a third screen that reads the effective values back from the
+   validated configuration, explains their role, and verifies any
+   content-addressed Procrustes evidence and aligned-mesh hashes;
+13. optionally load the exact selected template outside the event loop and view
    native aspect-preserving XY, XZ, or YZ wireframe projections with source
    hash and displayed/total edge counts;
-11. for the modern route, generate and render the existing exact-count
+14. for the modern route, generate and render the existing exact-count
    `modern-plan` JSON/HTML evidence; or, for the reference route, render the
    existing preflight parameter ratios and external-engine boundary, then
    optionally diagnose the exact configured container engine and image without
    changing or starting either one, then inspect one externally hash-bound
    preparation approval and its exact destination/private-stage state through
    the shared read-only reconciliation core;
-12. for a reviewed Modern project, continue to a third screen that binds the
+15. for a reviewed Modern project, continue to a fourth screen that binds the
    exact reviewed configuration SHA-256, displays and refreshes the read-only
    destination/private-state evidence, checks it again immediately before
    starting the separate worker, shows real workflow stages and committed
    optimizer decisions, and offers one cooperative cancel action; and
-13. expose the result directory only after the parent controller independently
-    verifies the published workflow, manifest hash, subject count, and bundle;
-14. automatically continue to a fourth screen only after a fresh full
+16. have the parent controller independently verify the published workflow,
+    manifest hash, subject count, and bundle without releasing results yet;
+17. automatically continue to a fifth screen only after a fresh full
     verification of the workflow, nested bundle, exact inventories, hashes,
-    mesh QC, and static SVG safety checks; and
-15. inspect bounded Atlas, optimizer, momenta-PCA, and QC summaries together
+    mesh QC, and static SVG safety checks; inspect and explicitly approve the
+    flagged original/reconstruction overlays before releasing results; and
+18. in the sixth screen, inspect bounded Atlas, optimizer, momenta-PCA, and QC summaries together
     with an embedded verified objective/gradient convergence plot plus verified
     PC1/PC2 and PC2/PC3 score plots, then open only
     inventoried VTK/CSV/JSON/SVG artifacts whose manifest bindings, size, and
@@ -73,20 +146,40 @@ terminal:
 The left workflow rail is state-aware navigation rather than a passive progress
 legend. A completed or otherwise available step can be opened directly; future
 steps and all navigation during an active worker remain disabled. The fixed
-bottom-right primary action also advances with the workflow: project creation
-becomes parameter review, atlas launch becomes verified Results & PCA review,
-and a completed review can be reopened without exposing duplicate primary
-actions inside result cards.
+bottom-right primary action also advances with the workflow: data selection
+continues to parameter setting, aligned-mesh analysis becomes pilot planning,
+pilot planning becomes automatic calibration, and the selected parameters
+become parameter review. The same green emphasis is applied to the matching
+in-page action, while other available controls remain visually secondary.
+Atlas launch leads to mandatory visual quality review, then released Results &
+PCA. Both the saved review and released results can be reopened without rerunning
+the atlas.
 
-The reference path creates `atlas.yaml` and `atlas.preflight.html`. The modern
+The reference path creates `atlas.yaml` and `atlas.preflight.html`. Its setup
+screen does not expose a static “recommended” profile. Parameter values remain
+inactive until an aligned-mesh analysis is complete. The guided route labels
+geometry-derived values as provisional pilot centers, places candidate execution
+before the final-value display, and locks the automatically applied
+pilot-selected values. Advanced manual parameters explicitly skip the guided
+pilot requirement. The guided route records geometry measurements,
+researcher-selected surface detail and deformation scale, a recommendation
+fingerprint, and explicit pilot-validation requirements. Every expandable
+parameter guide uses its own bounded vertical scroll area, so its complete
+explanation and example remain available at any window height. The expert panel
+retains attachment type, deformation time discretization, RK2, line search,
+checkpoint/log cadence, step scaling, Sobolev gradient controls, freeze flags,
+CPU threads, and random seed. Values are rendered into the validated
+configuration and exact Deformetrica XML; the fixed float32 reference precision
+is not shown as editable. The modern
 path creates `modern-atlas.yaml` after its stronger mesh-quality,
 initialization, optional Procrustes, and PCA-dimension checks pass. Its second
-screen publishes `modern-atlas.workload/workload.json` and `workload.html`.
-Both paths label geometry-scaled values as exploratory. Only the Modern route
-can currently continue to numerical work; the external reference button stays
-explicitly unavailable rather than implying unsupported supervision. A passed
-reference diagnostic proves only its listed host/container observations; it is
-not a hidden launch prerequisite or evidence of a completed atlas.
+review screen publishes `modern-atlas.workload/workload.json` and `workload.html`.
+Both paths label geometry-scaled values as exploratory. The Deformetrica route
+can continue through contained supervised execution, observed optimizer events,
+elapsed time and a bounded estimate to the configured iteration limit, followed
+by independently verified momenta PCA and result review. A passed reference
+diagnostic proves only its listed host/runtime observations; it is not evidence
+of a completed atlas or scientific convergence.
 
 ## Developer launch
 
@@ -115,39 +208,82 @@ python -m diffeoforge.desktop --smoke
   ownership checks.
 - Review refreshes only reports that carry the expected DiffeoForge generator
   markers; researcher-owned paths are refused.
-- Template preview loading runs outside the GUI event loop, checks the source
+- Template preview and landmark loading check the source
   SHA-256 before and after parsing, and never rewrites or decimates the mesh.
-  Projection switches reuse the same immutable model. A deterministic 20,000-
-  edge display budget is always shown when it omits edges.
+  Projection switches reuse the same immutable model. The inspection preview's
+  deterministic 20,000-edge display budget is always shown when it omits edges.
+  Landmark clicks are resolved against the full triangle set, including when a
+  lower-detail transient rendering is used while rotating a high-face-count mesh.
+  Releasing the mouse always schedules a complete opaque surface repaint, so
+  the transient triangle budget cannot remain visible as the final placement
+  state.
+  Landmark plans require at least three non-collinear points for GPA and have no
+  arbitrary ten-point cap. The editor advances to the next label after every
+  click; automatic loading of the next mesh after the last label is a visible
+  option that can be changed during placement and is retained in draft recovery.
+- Procrustes preview hashes the exact selected meshes and canonical landmark CSV before
+  and after computation, writes nothing, and reports convergence, residual,
+  scale, and fingerprint diagnostics. Project creation is disabled until the
+  exact converged preview is explicitly approved. Form edits clear that
+  approval immediately; in-place source changes are independently detected by
+  the setup service before it creates a configuration or publishes aligned
+  copies.
 - The reference-environment check parses the exact reviewed configuration
   bytes, uses their configured container engine/image, and checks the file hash
   again afterward. It shows raw doctor evidence but performs no install, image
-  build/pull, run preparation, backend start, resume, recovery, or repair.
+  build/pull, run preparation, backend start, resume, recovery, or repair. A
+  passing result unlocks the separate supervised execution page.
 - The reference preparation-status check requires the previously reviewed
   approval file plus its independently recorded complete-file SHA-256. It runs
   outside the event loop, remains bound to the completed config review, and
   discards results after any approval/config input drift. It exposes no prepare,
   publish, delete, rename, repair, resume, recovery, or execute action.
-- Mesh inspection runs in a background GUI thread. Modern numerical work runs
-  in a separate child process supervised by the fail-closed parent controller;
-  Qt receives only validated events through queued signals.
+- Mesh inspection runs in a background GUI thread. Modern numerical work and
+  Deformetrica execution use distinct child processes supervised by fail-closed
+  parent controllers; Qt receives only validated events through queued signals.
+- Local execution of a Modern CUDA project is blocked unless DiffeoForge discovers
+  or is explicitly pointed to a separate Python runtime that can access CUDA and
+  reports the exact current Modern engine implementation. The review records the
+  interpreter, PyTorch/CUDA/device identity, source locations, and interpreter,
+  package, and worker SHA-256 values. Launch rechecks those hashes and uses the bound
+  external worker command; it never silently falls back to CPU. A missing local CUDA
+  runtime does not block the explicit private-server route; the server independently
+  enforces the request's CUDA/float64 identity and preflight.
 - The launch must match the SHA-256 captured by the completed review. An edited
   configuration is refused until it is reviewed again.
-- Before launch, the compute page shows the exact destination, whether it
+- Before a fresh launch, the compute page shows the exact destination, whether it
   exists, and every exact-name private candidate's raw status, path, and reason.
   Refresh and the mandatory immediate pre-launch recheck are read-only; the GUI
-  exposes no delete, rename, resume, or publish action for private state.
-- The compute page shows exact completed stages and optimizer decisions. It
-  does not turn them into an ETA, runtime estimate, peak-memory claim, or
-  invented percentage.
-- Normal window close while compute is active requests cooperative cancellation
-  and keeps the window alive until the worker has a reconciled terminal state.
+  exposes no delete, rename, or publish action for private state. Separately,
+  **Resume interrupted run…** discovers only terminal interrupted/failed
+  Deformetrica runs, reverifies their complete evidence and checkpoint, and binds
+  a new immutable successor without modifying the source.
+- The Modern compute page shows exact completed stages and optimizer decisions
+  without an ETA, runtime estimate, peak-memory claim, or invented percentage.
+  The Deformetrica page shows observed iterations and objective components. Its
+  rolling estimate is labelled ETA to the configured iteration cap and explicitly
+  not convergence.
+- The same Modern page can instead target an exact private server URL. It requires
+  a separately selected bearer-token file, optional CA file, and explicit consent
+  to upload packaged raw meshes and specimen filenames. The token is never copied
+  into the project or persistent remote-session directory. An existing session can
+  be reopened to resume event polling and a strictly request-bound download. After
+  download, a separate confirmation-gated background action can delete the terminal
+  server copy while preserving local request/result evidence and recording the deletion
+  time in the session.
+- Normal window close during local or Deformetrica compute requests cooperative
+  cancellation and keeps the window alive until the worker has a reconciled terminal
+  state. During remote compute it only stops local monitoring; the server job continues
+  and can be reconnected from the persistent session.
 - Result review and per-artifact verification also run outside the GUI event
   loop. A close request waits for those read-only checks to finish; it never
   opens an artifact after a close was requested.
 - Project files stay in the user-selected directory, separate from future
   application files.
-- The window performs no upload, telemetry, update check, or network request.
+- Ordinary local workflows perform no upload, telemetry, update check, or network
+  request. Only the explicitly selected private-server route transfers the reviewed
+  portable request to the exact operator-supplied endpoint after the separate privacy
+  authorization is checked.
 - A passed setup proves supported file/schema/geometry checks only. It does not
   establish biological validity, parameter suitability, Deformetrica
   equivalence, or production suitability for more than 300 specimens.
@@ -158,17 +294,33 @@ python -m diffeoforge.desktop --smoke
 
 ## Current limitations
 
-The GUI does not yet edit scientific parameters, render meshes interactively in
-3D, place landmarks, resume a Modern atlas, reconcile an already dead parent application, or supervise the
-external Deformetrica engine. Its reference cards are read-only environment and
-preparation-state diagnosis only;
-the start button remains disabled even when every check passes. The projection
-preview is not mesh QC or registration evidence. Step 4 is a detailed read-only evidence and
-artifact-handoff view, not an interactive 3D renderer or a scientific
-interpretation system. A developer-machine PyInstaller one-directory evidence
-freeze exists, but it is not a redistributable release and is not wrapped in an
-Inno Setup installer. Those capabilities require their own tests and release
-gates.
+The GUI resumes a fully evidenced terminal interrupted/failed Deformetrica atlas,
+but does not yet reconcile an abandoned nonterminal run after an already dead
+parent application. Its 3D landmark editor does not provide semilandmark sliding,
+automated homology, uncertainty estimates, symmetry constraints, or missing-data
+imputation. Verified Deformetrica momenta enter the shared PCA screen;
+separately executed and verified Deformetrica Shooting PC endpoints are detected
+at their default result path and added to the native 3D viewer. A dedicated
+background desktop action now creates or verifies the immutable default design,
+runs the source-bound Shooting operation once, reports elapsed time, and reloads
+the viewer only after full result verification. Richer registration renderings
+remain open.
+Source-level Deformetrica supervision is connected and its dedicated execution
+worker is now in the prospective v0.4 Windows freeze contract. A clean-runner
+v0.4 observation and rebuilt installer remain pending. The projection preview is
+not mesh QC or registration evidence. Step 5 is the interactive visual-registration
+approval gate; Step 6 is the released evidence and artifact-handoff view, not a
+scientific interpretation system. An unsigned same-owner private-alpha Inno Setup installer
+exists, but it is not a redistributable release. Public distribution, signing,
+clean-machine validation, and the remaining scientific release gates remain
+separate work.
+
+The private-alpha installer contains the CPU worker, not a CUDA-enabled PyTorch
+distribution. CUDA execution currently depends on a separately managed local
+runtime. The verified 236-subject Trochanter Euclidean and Sobolev arms establish
+prospective engineering non-inferiority for that cohort and protocol only; they
+do not establish a general biological preset, independent 300-subject production
+readiness, or equivalent behavior on another GPU/driver/runtime combination.
 
 ## Preliminary Qt licensing boundary
 

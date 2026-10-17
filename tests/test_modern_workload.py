@@ -61,19 +61,27 @@ def test_example_workload_has_exact_public_dimensions_and_formulas() -> None:
     report = collect_modern_workload(EXAMPLE, host_observations=FIXED_HOST)
 
     assert report["input"]["subject_count"] == 5
+    assert report["engine"]["implementation_version"] == "1.8"
+    assert report["configuration"]["subject_batch_size"] is None
+    assert report["configuration"]["subject_batch_workers"] == 1
+    assert report["configuration"]["attachment_kernel_width"] == 0.45
+    assert report["configuration"]["deformation_kernel_width"] == 0.6
+    assert report["configuration"]["template_gradient"] == "euclidean"
+    assert report["configuration"]["sobolev_kernel_width_ratio"] == 1.0
+    assert report["configuration"]["effective_sobolev_kernel_width"] is None
     assert report["input"]["template"]["points"] == 162
     assert report["input"]["template"]["triangles"] == 320
     assert {subject["triangles"] for subject in report["input"]["subjects"]} == {320}
     objective = report["operation_model"]["one_objective_forward"]
     assert objective == {
-        "gaussian_calls": 200,
-        "gaussian_pair_elements": 1_606_065,
+        "gaussian_calls": 160,
+        "gaussian_pair_elements": 1_602_825,
         "attachment": {
             "calls": 15,
             "pair_elements": 1_536_000,
             "orientation_pair_elements": 0,
         },
-        "shooting": {"calls": 120, "pair_elements": 9_720},
+        "shooting": {"calls": 80, "pair_elements": 6_480},
         "template_flow": {"calls": 40, "pair_elements": 58_320},
         "deformetrica_heun_extrapolation": {"calls": 20, "pair_elements": 1_620},
         "deformation_energy": {"calls": 5, "pair_elements": 405},
@@ -82,9 +90,18 @@ def test_example_workload_has_exact_public_dimensions_and_formulas() -> None:
     assert largest["rows"] == largest["columns"] == 320
     assert largest["float64_xyz_difference_tensor_bytes"] == 2_457_600
     assert report["optimizer_bound"]["objective_gradient_evaluation_upper_bound"] == 190
-    assert report["optimizer_bound"]["gaussian_pair_elements_upper_bound"] == (
-        190 * 1_606_065
+    assert (
+        report["optimizer_bound"]["objective_forward_gaussian_pair_elements_upper_bound"]
+        == 190 * 1_602_825
     )
+    assert report["optimizer_bound"]["sobolev_template_gradient_evaluation_upper_bound"] == 0
+    assert (
+        report["optimizer_bound"][
+            "sobolev_template_gradient_gaussian_pair_elements_upper_bound"
+        ]
+        == 0
+    )
+    assert report["optimizer_bound"]["gaussian_pair_elements_upper_bound"] == (190 * 1_602_825)
     assert report["output_bound"] == {
         "maximum_retained_components": 4,
         "maximum_deformation_components": 3,
@@ -111,18 +128,92 @@ def test_blockwise_plan_separates_logical_pair_from_exact_execution_tile(
     report = collect_modern_workload(path, host_observations=FIXED_HOST)
 
     assert report["engine"]["id"] == "diffeoforge_modern_blockwise"
-    assert report["engine"]["pairwise_evaluation"] == config["runtime"][
-        "pairwise_evaluation"
-    ]
-    assert report["operation_model"]["largest_logical_pair"][
-        "float64_xyz_difference_tensor_bytes"
-    ] == 2_457_600
+    assert report["engine"]["pairwise_evaluation"] == config["runtime"]["pairwise_evaluation"]
+    assert (
+        report["operation_model"]["largest_logical_pair"]["float64_xyz_difference_tensor_bytes"]
+        == 2_457_600
+    )
     tile = report["operation_model"]["largest_execution_tile"]
     assert (tile["tile_rows"], tile["tile_columns"]) == (64, 64)
     assert tile["float64_xyz_difference_tensor_bytes"] == 64 * 64 * 3 * 8
-    assert report["payload_model"][
-        "largest_single_execution_xyz_difference_tensor_bytes"
-    ] == 64 * 64 * 3 * 8
+    assert (
+        report["payload_model"]["largest_single_execution_xyz_difference_tensor_bytes"]
+        == 64 * 64 * 3 * 8
+    )
+
+
+def test_multirate_momenta_updates_expand_the_declared_optimizer_bound(
+    tmp_path: Path,
+) -> None:
+    path = _write_portable_config(tmp_path / "multirate.yaml")
+    config = yaml.safe_load(path.read_text(encoding="utf-8"))
+    config["optimization"]["momenta_updates_per_cycle"] = 2
+    path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+
+    report = collect_modern_workload(path, host_observations=FIXED_HOST)
+
+    assert report["configuration"]["momenta_updates_per_cycle"] == 2
+    assert report["optimizer_bound"]["parameter_blocks"] == 3
+    assert report["optimizer_bound"]["block_decisions_per_cycle"] == 4
+    assert report["optimizer_bound"]["objective_gradient_evaluation_upper_bound"] == 253
+
+
+def test_parallel_subject_batches_are_declared_in_workload_evidence(tmp_path: Path) -> None:
+    path = _write_portable_config(tmp_path / "parallel-subjects.yaml")
+    config = yaml.safe_load(path.read_text(encoding="utf-8"))
+    config["optimization"]["subject_batch_size"] = 1
+    config["optimization"]["subject_batch_workers"] = 4
+    path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+
+    report = collect_modern_workload(path, host_observations=FIXED_HOST)
+
+    assert report["configuration"]["subject_batch_size"] == 1
+    assert report["configuration"]["subject_batch_workers"] == 4
+
+
+def test_sobolev_template_gradient_is_explicit_and_counted_in_workload(
+    tmp_path: Path,
+) -> None:
+    path = _write_portable_config(tmp_path / "sobolev.yaml")
+    config = yaml.safe_load(path.read_text(encoding="utf-8"))
+    config["optimization"]["template_gradient"] = "sobolev"
+    config["optimization"]["sobolev_kernel_width_ratio"] = 1.5
+    path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+
+    report = collect_modern_workload(path, host_observations=FIXED_HOST)
+
+    configuration = report["configuration"]
+    optimizer = report["optimizer_bound"]
+    assert configuration["template_gradient"] == "sobolev"
+    assert configuration["attachment_kernel_width"] == 0.45
+    assert configuration["deformation_kernel_width"] == 0.6
+    assert configuration["effective_sobolev_kernel_width"] == pytest.approx(0.9)
+    expected_gradient_evaluations = configuration["max_cycles"] * (
+        1 + configuration["max_line_search_iterations"]
+    )
+    expected_per_gradient = report["input"]["template"]["points"] ** 2
+    expected_sobolev_pairs = expected_gradient_evaluations * expected_per_gradient
+    assert (
+        optimizer["sobolev_template_gradient_evaluation_upper_bound"]
+        == expected_gradient_evaluations
+    )
+    assert (
+        optimizer["sobolev_template_gradient_gaussian_pair_elements_per_evaluation"]
+        == expected_per_gradient
+    )
+    assert (
+        optimizer["sobolev_template_gradient_gaussian_pair_elements_upper_bound"]
+        == expected_sobolev_pairs
+    )
+    assert optimizer["gaussian_pair_elements_upper_bound"] == (
+        optimizer["objective_forward_gaussian_pair_elements_upper_bound"]
+        + expected_sobolev_pairs
+    )
+    rendered = render_modern_workload_html(report)
+    assert "Attachment surface-matching width" in rendered
+    assert "Deformation kernel width" in rendered
+    assert "Sobolev (ratio 1.5; effective width 0.9)" in rendered
+    assert "Sobolev template-gradient pair-element upper bound" in rendered
 
 
 @pytest.mark.parametrize("attachment_type", ["current", "varifold"])
@@ -167,13 +258,19 @@ def test_predicted_gaussian_pairs_equal_instrumented_dense_objective(
     ]
     predicted = _operation_model(config, template, subjects)["one_objective_forward"]
     observed_calls: list[int] = []
-    original = dense.gaussian_kernel
+    original_matrix = dense._gaussian_matrix
+    original_tile = dense._gaussian_tile
 
-    def observed(x, y, kernel_width):
+    def observed_matrix(x, y, kernel_width):
         observed_calls.append(x.shape[0] * y.shape[0])
-        return original(x, y, kernel_width)
+        return original_matrix(x, y, kernel_width)
 
-    monkeypatch.setattr(dense, "gaussian_kernel", observed)
+    def observed_tile(x, y, kernel_width):
+        observed_calls.append(x.shape[0] * y.shape[0])
+        return original_tile(x, y, kernel_width)
+
+    monkeypatch.setattr(dense, "_gaussian_matrix", observed_matrix)
+    monkeypatch.setattr(dense, "_gaussian_tile", observed_tile)
     result = atlas_objective(
         template_vertices,
         template_triangles,
@@ -205,7 +302,7 @@ def test_html_is_escaped_and_reports_known_payloads(tmp_path: Path) -> None:
 
     assert "<script>alert(1)</script>" not in rendered
     assert "&lt;script&gt;alert(1)&lt;/script&gt;" in rendered
-    assert "Known payloads, not peak RAM" in rendered
+    assert "Conservative payload equivalents, not peak RAM" in rendered
     assert "not a peak-RAM predictor" in rendered
     parser = _ReportStructureParser()
     parser.feed(rendered)
@@ -256,13 +353,9 @@ def test_report_directory_is_deterministic_atomic_and_safely_replaceable(
     assert not (tmp_path / "inconsistent").exists()
 
     inconsistent_operation = json.loads(json.dumps(report))
-    inconsistent_operation["operation_model"]["one_objective_forward"][
-        "gaussian_calls"
-    ] += 1
+    inconsistent_operation["operation_model"]["one_objective_forward"]["gaussian_calls"] += 1
     with pytest.raises(ModernWorkloadError, match="inventory and configuration"):
-        write_modern_workload_report(
-            inconsistent_operation, tmp_path / "inconsistent-operation"
-        )
+        write_modern_workload_report(inconsistent_operation, tmp_path / "inconsistent-operation")
 
     import diffeoforge.modern_workload as module
 
@@ -311,6 +404,4 @@ def test_modern_plan_cli_writes_reports_without_starting_optimizer(
 
     assert main(["modern-plan", str(config), "--output", str(destination)]) == 2
     assert "already exists" in capsys.readouterr().err
-    assert main(
-        ["modern-plan", str(config), "--output", str(destination), "--force"]
-    ) == 0
+    assert main(["modern-plan", str(config), "--output", str(destination), "--force"]) == 0

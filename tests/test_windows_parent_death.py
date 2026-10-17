@@ -188,6 +188,42 @@ def test_reference_parent_death_audit_terminates_suspended_worker(
     assert not (root / "runs" / "frozen-reference-parent-death-evidence").exists()
 
 
+def test_reference_execution_parent_death_audit_terminates_suspended_worker(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "Reference execution parent death"
+    root.mkdir()
+    config = root / "atlas.yaml"
+    shutil.copyfile(ROOT / "examples" / "minimal-atlas-container.yaml", config)
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "tools/audit_frozen_reference_parent_death.py",
+            sys.executable,
+            str(config),
+            "--execution",
+        ],
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=20,
+        creationflags=subprocess.CREATE_NO_WINDOW,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    summary = json.loads(completed.stdout)
+    assert summary["controller_exit_code"] == 73
+    assert summary["job_assignment_completed"] is True
+    assert summary["worker_started_suspended"] is True
+    assert summary["worker_stopped"] is True
+    assert summary["worker_role"] == "execution"
+    assert summary["destination_exists"] is False
+    assert not (root / "runs" / "frozen-reference-parent-death-evidence").exists()
+
+
 def test_preparation_parent_death_audit_terminates_real_suspended_worker(
     tmp_path: Path,
 ) -> None:

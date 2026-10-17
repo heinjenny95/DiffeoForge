@@ -49,6 +49,6 @@ mistakes. It does not provide:
 - biological interpretation.
 
 Existing preflight and immutable mesh-QC evidence remain authoritative for
-their declared checks. A later interactive renderer and landmark workflow must
-receive separate usability, picking-accuracy, dependency, and distribution
-evidence.
+their declared checks. The separate 3D surface-landmark editor reuses the same
+immutable geometry but has its own picking, persistence, and workflow tests; it
+does not turn this inspection component into registration or QC evidence.

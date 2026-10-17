@@ -3,14 +3,22 @@
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
 from diffeoforge.config import ConfigurationError
-from diffeoforge.mesh import inspect_vtk, read_vtk_polydata, sha256_file
+from diffeoforge.desktop.display_proxy import (
+    DEFAULT_DISPLAY_FACES,
+    DisplayProxy,
+    build_display_proxy,
+    cached_display_proxy,
+)
+from diffeoforge.mesh import sha256_file
+from diffeoforge.surface_io import load_surface_mesh
 
 DEFAULT_EDGE_BUDGET = 20_000
+DEFAULT_GPA_TRIANGLE_BUDGET = 8_000
 PreviewPlane = Literal["xy", "xz", "yz"]
 _PLANE_AXES: dict[PreviewPlane, tuple[int, int]] = {
     "xy": (0, 1),
@@ -53,6 +61,10 @@ class MeshPreviewModel:
     triangles: tuple[tuple[int, int, int], ...]
     edges: tuple[tuple[int, int], ...]
     bounds: tuple[float, float, float, float, float, float]
+    display_proxy: DisplayProxy | None = field(default=None, compare=False, repr=False)
+    display_proxy_error: str | None = None
+    geometry_is_proxy: bool = False
+    source_triangle_count: int | None = None
 
     @property
     def point_count(self) -> int:
@@ -101,30 +113,20 @@ class MeshPreviewModel:
             selected = self.edges
         else:
             selected = tuple(
-                self.edges[index * self.edge_count // edge_budget]
-                for index in range(edge_budget)
+                self.edges[index * self.edge_count // edge_budget] for index in range(edge_budget)
             )
-        source_vertex_indices = tuple(
-            sorted({vertex for edge in selected for vertex in edge})
-        )
+        source_vertex_indices = tuple(sorted({vertex for edge in selected for vertex in edge}))
         local_index = {
-            source_index: index
-            for index, source_index in enumerate(source_vertex_indices)
+            source_index: index for index, source_index in enumerate(source_vertex_indices)
         }
         points = tuple(
             (
-                2.0
-                * (self.vertices[index][horizontal] - horizontal_center)
-                / scale,
-                -2.0
-                * (self.vertices[index][vertical] - vertical_center)
-                / scale,
+                2.0 * (self.vertices[index][horizontal] - horizontal_center) / scale,
+                -2.0 * (self.vertices[index][vertical] - vertical_center) / scale,
             )
             for index in source_vertex_indices
         )
-        projected_edges = tuple(
-            (local_index[start], local_index[end]) for start, end in selected
-        )
+        projected_edges = tuple((local_index[start], local_index[end]) for start, end in selected)
         return ProjectedMeshPreview(
             plane=plane,
             source_vertex_indices=source_vertex_indices,
@@ -149,28 +151,90 @@ def _unique_edges(
     return tuple(sorted(edges))
 
 
-def load_mesh_preview(path: Path | str) -> MeshPreviewModel:
-    """Load one exact VTK template and reject concurrent source changes."""
+def _sample_triangle_geometry(
+    vertices: tuple[tuple[float, float, float], ...],
+    triangles: tuple[tuple[int, int, int], ...],
+    triangle_budget: int | None,
+) -> tuple[
+    tuple[tuple[float, float, float], ...],
+    tuple[tuple[int, int, int], ...],
+]:
+    """Return bounded simplified display geometry, never a sparse face subset."""
+
+    if triangle_budget is None or len(triangles) <= triangle_budget:
+        return vertices, triangles
+    proxy = build_display_proxy(vertices, triangles, budget=triangle_budget)
+    return (
+        tuple(tuple(float(value) for value in row) for row in proxy.vertices),
+        tuple(tuple(int(value) for value in row) for row in proxy.triangles),
+    )
+
+
+def load_mesh_preview(
+    path: Path | str,
+    *,
+    triangle_budget: int | None = None,
+) -> MeshPreviewModel:
+    """Load one exact supported surface and reject concurrent source changes.
+
+    ``triangle_budget`` creates an in-memory display proxy only.  Source identity,
+    bounds, and hashes remain those of the complete file, and callers that omit the
+    budget retain exact geometry plus a separate reduced display representation.
+    Call from a background loader for large files.
+    """
+
+    if triangle_budget is not None and (
+        isinstance(triangle_budget, bool)
+        or not isinstance(triangle_budget, int)
+        or triangle_budget < 1
+    ):
+        raise ValueError("triangle_budget must be a positive integer or None")
 
     source = Path(path).expanduser().resolve()
     try:
         hash_before = sha256_file(source)
-        metadata = inspect_vtk(source)
-        geometry = read_vtk_polydata(source)
+        loaded = load_surface_mesh(source)
         hash_after = sha256_file(source)
     except (ConfigurationError, OSError, TypeError, ValueError) as error:
         raise MeshPreviewError(f"Template preview could not read {source}: {error}") from error
+    metadata = loaded.metadata
+    geometry = loaded.geometry
     if hash_before != metadata.sha256 or hash_before != hash_after:
         raise MeshPreviewError("Template changed while its preview model was loaded")
     if len(geometry.vertices) != metadata.points:
         raise MeshPreviewError("Template point count changed while preview was loaded")
-    if len(geometry.triangles) != metadata.cells:
+    if len(geometry.triangles) != metadata.triangles:
         raise MeshPreviewError("Template triangle count changed while preview was loaded")
+    proxy, proxy_error = None, None
+    try:
+        proxy = cached_display_proxy(
+            hash_after,
+            geometry.vertices, geometry.triangles, budget=triangle_budget or DEFAULT_DISPLAY_FACES
+        )
+    except ValueError as error:
+        if triangle_budget is not None:
+            raise MeshPreviewError(str(error)) from error
+        proxy_error = str(error)
+    reduced = triangle_budget is not None and proxy is not None and proxy.reduced
+    display_vertices = (
+        tuple(tuple(float(value) for value in row) for row in proxy.vertices)
+        if reduced
+        else geometry.vertices
+    )
+    display_triangles = (
+        tuple(tuple(int(value) for value in row) for row in proxy.triangles)
+        if reduced
+        else geometry.triangles
+    )
     return MeshPreviewModel(
         path=source,
         sha256=hash_after,
-        vertices=geometry.vertices,
-        triangles=geometry.triangles,
-        edges=_unique_edges(geometry.triangles),
+        vertices=display_vertices,
+        triangles=display_triangles,
+        edges=_unique_edges(display_triangles),
         bounds=metadata.bounds,
+        display_proxy=proxy,
+        display_proxy_error=proxy_error,
+        geometry_is_proxy=reduced,
+        source_triangle_count=metadata.triangles,
     )

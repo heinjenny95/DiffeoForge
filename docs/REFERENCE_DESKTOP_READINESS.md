@@ -1,61 +1,55 @@
-# Desktop reference-environment readiness
+# Desktop reference-runtime readiness
 
-Status: **read-only environment evidence; no reference execution**
+Status: **launcher-neutral read-only evidence; no reference execution**
 
-Desktop step 2 can inspect the external Deformetrica 4.3 container route named
-by one completed reference-project review. This makes the legacy dependency
-boundary visible without importing or bundling Deformetrica's Python 3.8 stack
-in the desktop application.
+Desktop step 2 verifies the exact Deformetrica 4.3 launcher named by one
+completed project review. Normal Windows projects use the installer-managed WSL
+runtime; same-owner alpha projects may reuse a separately verified existing WSL
+runtime. Container and native launchers remain supported configuration routes
+for developers and other operating systems.
 
 ## Exact binding
 
-The Qt-independent service accepts a `ProjectReviewResult` for the reference
-engine. It reads the configuration bytes once, requires their SHA-256 to equal
-the completed review, parses and validates those bytes in memory, and extracts
-the declared container engine and image. It does not substitute GUI defaults.
+The Qt-independent service reads the reviewed configuration bytes, requires
+their SHA-256 to match the completed review, validates those bytes in memory,
+and extracts the complete launcher mapping. It never substitutes a GUI default.
 
-The existing `run_doctor` service then observes:
+Launcher-independent observations cover:
 
-- host Python and operating system;
+- the frozen application runtime and operating system;
 - logical CPU count and physical memory;
-- project-directory writability and free disk space;
-- presence of the configured container command;
-- container-service readiness; and
-- local availability of the configured immutable reference-image name.
+- project-folder writability and free disk space.
 
-The configuration SHA-256 is checked again after those commands finish. A
-changed or unreadable file discards the entire diagnostic result. Native and
-WSL reference launchers remain explicit unsupported desktop-diagnostic routes
-in this slice; the generated desktop reference project uses the reviewed
-container contract.
+For WSL the service additionally verifies:
+
+- availability of the Windows WSL command;
+- presence of the exact configured distribution;
+- executability of the exact absolute Linux path; and
+- exact Deformetrica version 4.3.0 from a real process probe.
+
+Container diagnostics retain their command, service, and image checks for
+developer/CI configurations. Native diagnostics verify the executable and
+version. The configuration SHA-256 is checked again after the observations; a
+changed or unreadable file discards the result.
 
 ## GUI behavior
 
-The check runs in a Qt thread-pool task, so container-service timeouts do not
-freeze the event loop. The card shows the exact configuration, review hash,
-project directory, engine, image, and every doctor's raw status, label,
-summary, and optional guidance. Refresh starts a new read-only observation.
+The check runs outside the Qt event loop. The card shows the reviewed
+configuration, hash, project folder, human-readable runtime identity, and every
+observed status. A ready result unlocks the supervised reference-execution
+step. Advanced approval/status artifacts remain available in internal services
+but are not a beginner-facing prerequisite.
 
-A ready report does not enable the reference compute button. Preparing a run,
-supervising Deformetrica and its descendants, cancellation, parent-death
-containment, checkpoint/resume, abandoned-run recovery, and verified result
-handoff remain a separate engineering gate.
+The check itself installs, repairs, prepares, and starts nothing. A missing
+managed runtime is reported as **repair required**, not as an instruction to
+install Docker or manually assemble Python dependencies.
 
 ## Non-mutation contract
 
-This service does not:
+This service does not modify WSL, a distribution, PATH, the reviewed
+configuration, source meshes, run directories, or engine files. Its evidence is
+one observation, so the worker re-verifies the configured launcher immediately
+before computation.
 
-- install or configure a container engine;
-- build, pull, delete, or start an image;
-- modify PATH, Docker settings, or the reviewed configuration;
-- create a reference run directory or XML files;
-- launch, resume, recover, or terminate Deformetrica; or
-- claim scientific validity, parameter suitability, runtime, or memory.
-
-Its result is observational evidence at one moment. Container state may change
-afterward, so a future reference supervisor must perform its own immediate
-pre-launch checks rather than trusting this display as authorization.
-
-The next read-only seam converts a matching ready observation into an exact,
-schema-validatable future-supervisor request without preparing a run. See
-[the desktop reference prelaunch contract](REFERENCE_PRELAUNCH.md).
+See [managed Deformetrica reference runtime](MANAGED_REFERENCE_RUNTIME.md) and
+[desktop reference prelaunch](REFERENCE_PRELAUNCH.md).

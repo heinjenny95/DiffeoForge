@@ -1,0 +1,47 @@
+{
+  "schema_version": "0.1",
+  "sizes": [
+    10000,
+    100000,
+    200000
+  ],
+  "families": [
+    "landmark-result-pc",
+    "calibration-registration-qc",
+    "gpa"
+  ],
+  "viewport": [
+    900,
+    650
+  ],
+  "source_hashes": {
+    "10000\\meshes\\template.vtk": "50f0c3eff8d9d889f023f3452f91e1680b149f958aa81b57d3abd285f5f2bb1e",
+    "10000\\meshes\\subject-01.vtk": "c7790671ab2120355b0f4367ef770eea2ce645c66804ab172232862441bbb9d1",
+    "10000\\meshes\\subject-02.vtk": "ce1389360827a83e75e00ddf15c337c65a700204a91b364224115422dbd2bd32",
+    "10000\\landmarks.csv": "9f96757f178ed3dcf01a54574fda9bfff042e34621b0e5aaa49c3e6b65ec990f",
+    "100000\\meshes\\template.vtk": "7d982050e58445750941c06cf483a73c6adce0ad72c56220df93738a9cfab713",
+    "100000\\meshes\\subject-01.vtk": "f5f749c43d900b89212cb5c7e95601efd7d981a75c231583b8180ae6f118efa3",
+    "100000\\meshes\\subject-02.vtk": "562829c9722d18200c2e8d21796d6ee9dbe1c61e3069405fddce0fba8638dccc",
+    "100000\\landmarks.csv": "47f8fee9bbaba64325af6c858062f936d623ed2bfc0f97483e7b9c28272f96c7",
+    "200000\\meshes\\template.vtk": "f153f7ace122dab29791291c4d5fd8a0b6a6c07e9f90fbe8ebc32a830fcfbaed",
+    "200000\\meshes\\subject-01.vtk": "5ff354cbac35e842c60ec3609388ad082c78ee58aeb4c743f30a9774134591df",
+    "200000\\meshes\\subject-02.vtk": "efdc52b7fdef2153eee1ca4a3499b0d854bb8866b132c94ff6da73a65ce46c5e",
+    "200000\\landmarks.csv": "cec66e468ed90cb5f79686f9d5d3b96288add9eb40e9cba999d28351b8f4d0df"
+  },
+  "script_sha256": "df1f6b02de9a253959f4a166feb0af20681d415207a9ac0a5e3185ca2b70ce4c",
+  "python": "3.12.14 (main, Aug 25 2026, 14:01:42) [MSC v.1944 64 bit (AMD64)]",
+  "viewer_module_sha256": {
+    "gpa_visualization_widget.py": "a36b58d38784328f7c59f4c1208bcdb99812e08fe07938dbfc235bc158c155f1",
+    "gpa_visualization.py": "2b756631b5becb33d26ba562ea42afcb969adbeb1e0f005551e1ac780e59668d",
+    "landmark_3d_widget.py": "9c9eabbf10a91c9eeaf28cba02c77d115ba2e4b0448fea892028af9cabfa5969",
+    "calibration_comparison_widget.py": "55ab8a3a7c4bb57715ee16fba7df93a9188405eb65cbf108becbf6fc86b29f55",
+    "surface_rendering.py": "c62a10970339ed101fe582a68ea140784f842abbae4a407c206d56028df5adac",
+    "mesh_preview.py": "e061aaf2e6a22b3fd15f24e69170244187373817f39099f6d5a4effea7df9b39",
+    "preview_mesh_loader.py": "c9faffe11eb3081cc2bfe856aefcedbf1be2d937e5199eb2194ac323c53cf816",
+    "display_proxy.py": "b13c6778226404416ad7109a4bf8523d8df502cd21974360f52555d843d157a5"
+  },
+  "platform": "Windows-11-10.0.26200-SP0",
+  "camera_samples": 5,
+  "reopen_cycles": 3,
+  "scope": "synthetic canvas/preview-loader engineering only; no atlas or result approval"
+}
