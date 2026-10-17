@@ -14,6 +14,11 @@ scientific gates. Planning does not mark those gates complete.
 
 ## Pilot usability follow-up
 
+- [x] Make the early atlas checkpoint an explicit, default-off option. Allow
+  checkpoint-bound continuation without inventing anatomical approval; preserve
+  old pilot approvals, recorded rejections and final full-cohort QC. Replace stale
+  live-activity text on stop. See [v128 scope](docs/V128_OPTIONAL_EARLY_REVIEW.md).
+
 - [ ] Fix the control-density dialog layout after reopening a completed pilot:
   recommendation/report buttons overlap the density-stage heading in the
   reported Windows view. Check stale completed-result actions during the

@@ -643,3 +643,37 @@ def test_approved_early_atlas_verifies_resume_outside_gui_callback(review_window
     assert verified == [result.run_directory]
     assert shown == [(request, result)]
     assert window._worker is None
+
+
+@pytest.mark.parametrize("decision", ["continue", "review", "cancel"])
+def test_optional_early_atlas_choice_queues_only_explicit_continuation(
+    review_window, monkeypatch, decision
+):
+    from types import SimpleNamespace
+
+    import diffeoforge.desktop.widgets as widgets
+    from diffeoforge.reference_atlas_handoff import EARLY_CHECK
+
+    window = review_window
+    assert not window.early_atlas_review_check.isChecked()
+    run = window._result_review.run_directory
+    (run / "output").mkdir(exist_ok=True)
+    (run / "output" / EARLY_CHECK).write_text("{}", encoding="utf-8")
+    result = SimpleNamespace(run_directory=run)
+    queued, reviewed, choices = [], [], []
+    monkeypatch.setattr(window, "_thread_pool", SimpleNamespace(start=queued.append))
+    monkeypatch.setattr(window, "_optional_early_atlas_decision", lambda: decision)
+    monkeypatch.setattr(window, "_open_early_atlas_check", reviewed.append)
+    monkeypatch.setattr(window, "_show_reference_resume", lambda *_: None)
+    monkeypatch.setattr(
+        widgets, "build_reference_resume_launch_request", lambda *_a, **_k: object()
+    )
+    monkeypatch.setattr("diffeoforge.reference_atlas_handoff.record_early_review_choice",
+                        lambda path, **kw: choices.append((path, kw)))
+    window._prepare_reference_resume(result)
+    assert bool(queued) is (decision == "continue")
+    assert reviewed == ([run] if decision == "review" else [])
+    assert not choices
+    if queued:
+        queued[0].run()
+        assert choices == [(run, {"enabled": False})]

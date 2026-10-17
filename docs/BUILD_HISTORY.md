@@ -1,5 +1,14 @@
 # Private-alpha build numbering
 
+## v128 — optional early atlas review
+
+v128 (`0.0.0.dev128`) makes the ten-iteration review checkpoint optional and off
+for new preserved-pilot atlas handoffs. Existing early checkpoints offer explicit
+continuation without manufacturing anatomical approval. Saved pilot approvals,
+actual rejections, initialized rows and final full-cohort QC remain separate.
+Stopped runs replace stale live-activity text. See
+[scope and continuation evidence](V128_OPTIONAL_EARLY_REVIEW.md).
+
 ## v127 — saved completed pilot access
 
 v127 (`0.0.0.dev127`) adds a main parameter-page entry to saved pilot results and

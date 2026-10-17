@@ -23,11 +23,15 @@ from diffeoforge.reference_atlas_handoff import (
     PROGRESS,
     REFINEMENT_METHOD,
     REVIEW,
+    REVIEW_CHOICE,
     adapter_source,
+    choose_early_review,
     configure_preserved_pilot,
     configure_resume,
+    early_review_enabled,
     initialization,
     record_early_review,
+    record_early_review_choice,
     verify_early_check_files,
 )
 from diffeoforge.reference_checkpoint_schedule import new_run_config, render_adapter
@@ -158,6 +162,53 @@ def test_missing_incomplete_rejected_or_stale_review_never_resumes(early):
         configure_resume(config, run)
 
 
+def test_new_handoff_defaults_off_and_linked_opt_in_preserves_source(preserved):
+    config, path, _, _, _ = preserved
+    assert early_review_enabled(initialization(config)) is False
+    target = path.with_name("optional.yaml")
+    target.write_text(yaml.safe_dump(config), encoding="utf-8")
+    original = target.read_bytes()
+    chosen = choose_early_review(target, enabled=True)
+    assert early_review_enabled(initialization(load_config(chosen))) is True
+    assert target.read_bytes() == original
+    assert choose_early_review(target, enabled=True) == chosen
+    legacy = dict(initialization(config))
+    legacy.pop("early_review_enabled")
+    assert early_review_enabled(legacy) is True
+    with pytest.raises(ConfigurationError, match="boolean"):
+        choose_early_review(target, enabled=0)
+
+
+def test_optional_review_choice_is_bound_and_never_anatomical_approval(early):
+    config, run, _ = early
+    original = {p: p.read_bytes() for p in (run / "output").iterdir()}
+    record_early_review_choice(run, enabled=False)
+    configure_resume(config, run)
+    plan = initialization(config)
+    assert plan["early_review_enabled"] is False
+    assert plan["early_review_approved"] is False
+    assert plan["completed_initialization_indices"] == list(range(len(plan["subject_labels"])))
+    assert not (run / "analysis" / REVIEW).exists()
+    assert all(p.read_bytes() == data for p, data in original.items())
+    choice_path = run / "analysis" / REVIEW_CHOICE
+    choice = json.loads(choice_path.read_text())
+    choice["checkpoint_sha256"] = "a" * 64
+    choice_path.write_text(json.dumps(choice), encoding="utf-8")
+    with pytest.raises(ConfigurationError, match="invalid or stale"):
+        configure_resume(config, run)
+
+
+def test_explicit_anatomical_rejection_cannot_be_bypassed_by_optional_choice(early):
+    config, run, _ = early
+    record_early_review(run, approved=False, inspected_subjects=[])
+    before = (run / "analysis" / REVIEW).read_bytes()
+    with pytest.raises(ConfigurationError, match="rejected"):
+        record_early_review_choice(run, enabled=False)
+    assert (run / "analysis" / REVIEW).read_bytes() == before
+    with pytest.raises(ConfigurationError, match="rejected, incomplete or stale"):
+        configure_resume(config, run)
+
+
 def test_initializer_resume_restores_completed_indices_only_on_exact_checkpoint(
     preserved, tmp_path
 ):
@@ -226,8 +277,9 @@ def test_saved_atlas_refinement_keeps_checkpoint_bound_review_gate(early, mode):
 
 
 @pytest.mark.parametrize("method", [METHOD, REFINEMENT_METHOD])
+@pytest.mark.parametrize("decision", ["approve", "skip_optional"])
 def test_preserved_atlas_capped_resume_accepts_convergence_export_mode(
-    preserved, monkeypatch, method
+    preserved, monkeypatch, method, decision
 ):
     config, path, _, _, _ = preserved
     plan = initialization(config)
@@ -258,9 +310,12 @@ def test_preserved_atlas_capped_resume_accepts_convergence_export_mode(
         "checkpoint_sha256": hashlib.sha256(b"opaque-native-state").hexdigest(), "meshes": rows,
     }).encode("utf-8")
     _execute_cap_fixture(early_run, monkeypatch, output_files=output_files)
-    record_early_review(
-        early_run, approved=True, inspected_subjects=plan["pilot_subject_labels"]
-    )
+    if decision == "approve":
+        record_early_review(
+            early_run, approved=True, inspected_subjects=plan["pilot_subject_labels"]
+        )
+    else:
+        record_early_review_choice(early_run, enabled=False)
     source = prepare_resume_run(
         early_run, run_id="capped-reviewed-atlas", additional_iterations=300
     )
@@ -272,7 +327,10 @@ def test_preserved_atlas_capped_resume_accepts_convergence_export_mode(
     )
     effective = verify_prepared_run(successor)["effective_config"]
     assert initialization(effective)["method"] == method
-    assert initialization(effective)["early_review_approved"] is True
+    assert initialization(effective)["early_review_approved"] is (decision == "approve")
+    if decision == "skip_optional":
+        assert initialization(effective)["early_review_enabled"] is False
+        assert (successor / "resume" / REVIEW_CHOICE).is_file()
     assert effective["optimization"]["max_iterations"] == 610
     adapter = (successor / "engine/sitecustomize.py").read_text()
     assert "_df_export_on_convergence = True" in adapter
@@ -322,3 +380,64 @@ def test_reviewed_atlas_adapter_composition_keeps_convergence_export_gate(
     estimator.write()
     assert estimator.statistical_model.exponential.flows == flows
     assert pickle.loads(Path(estimator.state_file).read_bytes())[0] == 3
+
+
+@pytest.mark.parametrize("already_initialized", [False, True])
+def test_disabled_early_check_runs_native_optimizer_without_review_exports(
+    preserved, monkeypatch, tmp_path, already_initialized
+):
+    config, _, _, _, _ = preserved
+    plan = initialization(config)
+    plan.update(subject_labels=["a", "b"], pilot_indices=[0, 1],
+                completed_initialization_indices=[0, 1] if already_initialized else [],
+                early_review_enabled=False, early_review_approved=False)
+    support = ModuleType("deformetrica.support")
+    support.utilities = SimpleNamespace()
+    monkeypatch.setitem(sys.modules, "deformetrica.support", support)
+    gradient = _adapter(
+        monkeypatch, tmp_path, atlas_source=adapter_source(new_run_config(config))
+    )[0]
+    estimator = gradient()
+    estimator.output_dir = str(tmp_path)
+    estimator.callback = None
+    estimator._get_parameters = lambda: estimator.current_parameters
+    momenta = np.arange(12, dtype=float).reshape(2, 2, 3)
+    estimator.statistical_model.get_momenta = lambda: momenta
+    estimator.update()
+    assert estimator.current_iteration == 3
+    assert not (tmp_path / EARLY_CHECK).exists()
+    assert not (tmp_path / "early-atlas-before").exists()
+    assert not (tmp_path / "early-atlas-after").exists()
+    np.testing.assert_array_equal(momenta, np.arange(12).reshape(2, 2, 3))
+    assert estimator.statistical_model.exponential.flows == 0
+    estimator.write()
+    assert estimator.statistical_model.exponential.flows == 2
+
+
+def test_default_off_joint_checkpoint_resumes_after_completed_initialization(
+    preserved, monkeypatch
+):
+    config, path, _, _, _ = preserved
+    config["optimization"]["max_iterations"] = 10
+    plan = initialization(config)
+    target = path.with_name("no-early-check.yaml")
+    target.write_text(yaml.safe_dump(config), encoding="utf-8")
+    source = prepare_run(target, run_id="joint-no-early-check")
+    initialized = b"verified initialized state before later joint iterations"
+    _execute_cap_fixture(source, monkeypatch, output_files={
+        "output/atlas-initialized-state.p": initialized,
+        f"output/{PROGRESS}": json.dumps({
+            "version": "0.1", "subject_labels": plan["subject_labels"],
+            "completed_indices": list(range(len(plan["subject_labels"]))),
+            "checkpoint_sha256": hashlib.sha256(initialized).hexdigest(),
+        }).encode(),
+    })
+    successor = prepare_resume_run(source, run_id="joint-resumed", additional_iterations=300)
+    resumed = initialization(verify_prepared_run(successor)["effective_config"])
+    assert resumed["early_review_enabled"] is False
+    assert resumed["early_review_approved"] is False
+    assert resumed["completed_initialization_indices"] == list(range(len(plan["subject_labels"])))
+    assert not (source / "analysis" / REVIEW).exists()
+    _execute_cap_fixture(successor, monkeypatch)
+    following = prepare_resume_run(successor, run_id="joint-following", additional_iterations=300)
+    assert initialization(verify_prepared_run(following)["effective_config"]) == resumed

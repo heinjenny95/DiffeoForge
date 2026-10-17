@@ -1,6 +1,6 @@
-# Development continuity — v127 saved pilot access
+# Development continuity — v128 optional early atlas review
 
-Snapshot: 2026-10-16. This is a public, software-only continuation guide. Detailed
+Snapshot: 2026-10-17. This is a public, software-only continuation guide. Detailed
 research results, local paths, account destinations and run identities belong in
 the owner's private project handoff, not this repository.
 
@@ -20,6 +20,13 @@ correct parameters or interpret biology for the researcher. Deformetrica is the
 default supported reference route; the Modern engine remains evidence-gated.
 
 ## Current source work
+
+v128 makes the ten-iteration early anatomical checkpoint optional and disabled
+for new preserved-pilot handoffs. Existing early checkpoints can explicitly
+continue without recording an anatomical approval; the decision is bound to
+verified evidence and retained by immutable successors. Old approvals and real
+rejections remain preserved. Final full-cohort QC remains required. See
+[scope and continuation boundaries](V128_OPTIONAL_EARLY_REVIEW.md).
 
 Owner follow-up,2026-10-16: the reopened control-density view can show overlapping
 recommendation/report buttons and stage headings. This is an open presentation

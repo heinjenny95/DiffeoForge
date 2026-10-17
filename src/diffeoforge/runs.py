@@ -2040,9 +2040,15 @@ def prepare_resume_run(
             config["optimization"]["max_iterations"] = old_maximum + additional_iterations
         validate_reference_config(config)
         copied_artifacts: list[Path] = []
-        from diffeoforge.reference_atlas_handoff import EARLY_CHECK, PROGRESS, REVIEW
+        from diffeoforge.reference_atlas_handoff import (
+            EARLY_CHECK,
+            PROGRESS,
+            REVIEW,
+            REVIEW_CHOICE,
+        )
 
-        for relative in (f"output/{EARLY_CHECK}", f"output/{PROGRESS}", f"analysis/{REVIEW}"):
+        for relative in (f"output/{EARLY_CHECK}", f"output/{PROGRESS}",
+                         f"analysis/{REVIEW}", f"analysis/{REVIEW_CHOICE}"):
             source = source_run / relative
             if not source.is_file():
                 source = source_run / "resume" / Path(relative).name

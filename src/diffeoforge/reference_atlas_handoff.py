@@ -24,6 +24,15 @@ REFINEMENT_METHOD = "preserved_atlas_momenta_fixed_basis_refinement"
 PROGRESS = "atlas-initialization.json"
 EARLY_CHECK = "early-atlas-check.json"
 REVIEW = "early-atlas-review.json"
+REVIEW_CHOICE = "early-atlas-review-choice.json"
+
+
+def early_review_enabled(plan):
+    """Old protected contracts retain their explicit review stop until changed."""
+    enabled = plan.get("early_review_enabled", True)
+    if type(enabled) is not bool:
+        raise ConfigurationError("Early atlas review must be an explicit boolean choice.")
+    return enabled
 
 
 def initialization(config):
@@ -101,6 +110,7 @@ def configure_preserved_pilot(config, *, root, seed, config_directory):
         "pilot_subject_labels": labels,
         "individual_max_iterations": int(config["optimization"]["max_iterations"]),
         "early_review_iteration": 10,
+        "early_review_enabled": False,
         "completed_initialization_indices": [],
         "early_review_approved": False,
         "limitation": "Pilot rows initialize the common joint model; each other specimen "
@@ -180,6 +190,33 @@ def upgrade_saved_pilot_config(config_path):
     return target
 
 
+def choose_early_review(config_path, *, enabled):
+    """Save a linked launch choice without rewriting the completed pilot config."""
+    if type(enabled) is not bool:
+        raise ConfigurationError("Early atlas review must be an explicit boolean choice.")
+    path = Path(config_path).resolve()
+    config = load_config(path)
+    plan = initialization(config)
+    if not plan:
+        raise ConfigurationError("This configuration has no preserved-pilot atlas handoff.")
+    if early_review_enabled(plan) == enabled:
+        return path
+    plan["early_review_enabled"] = enabled
+    plan["early_review_choice"] = {"source_config_sha256": sha256_file(path)}
+    target = path.with_name(f"{path.stem}-early-review-{'on' if enabled else 'off'}.yaml")
+    from diffeoforge.initialization import _CONFIG_MARKER
+
+    rendered = _CONFIG_MARKER + "\n" + yaml.safe_dump(config, sort_keys=False, allow_unicode=True)
+    if target.exists():
+        if target.read_text(encoding="utf-8") != rendered:
+            raise ConfigurationError("Existing early-review configuration differs.")
+    else:
+        with target.open("x", encoding="utf-8", newline="\n") as handle:
+            handle.write(rendered)
+    validate_input_paths(config, target)
+    return target
+
+
 def read_early_check(run_directory, *, verified_report=None):
     """Verify terminal inventory, exact checkpoint and both sets of pilot meshes."""
     from diffeoforge.result_report import collect_run_report
@@ -250,6 +287,32 @@ def record_early_review(run_directory, *, approved, inspected_subjects, notes=""
     write_text_safely(target, json.dumps(record, indent=2) + "\n", overwrite=True)
 
 
+def record_early_review_choice(run_directory, *, enabled):
+    """Record an optional-check decision, never an anatomical approval."""
+    from diffeoforge.atomic_io import write_text_safely
+
+    if enabled is not False:
+        raise ConfigurationError("Use anatomical review to approve an enabled early check.")
+    run = Path(run_directory).resolve()
+    check = read_early_check(run)
+    review_path = run / "analysis" / REVIEW
+    if review_path.is_file():
+        review = load_strict_json_object(review_path.read_bytes(), review_path,
+                                        label="Early atlas review")
+        if review.get("approved") is not True:
+            raise ConfigurationError("A rejected early atlas review cannot be skipped.")
+    target = run / "analysis" / REVIEW_CHOICE
+    record = {
+        "version": "0.1", "early_review_enabled": False,
+        "checkpoint_sha256": check["checkpoint_sha256"],
+        "check_sha256": sha256_file(run / "output" / EARLY_CHECK),
+        "decision": "researcher_continues_without_optional_early_review",
+        "anatomical_approval": False,
+    }
+    target.parent.mkdir(exist_ok=True)
+    write_text_safely(target, json.dumps(record, indent=2) + "\n", overwrite=True)
+
+
 def configure_resume(config, source_run):
     """Bind phase continuation to inventoried initialization and explicit review."""
     plan = initialization(config)
@@ -261,7 +324,28 @@ def configure_resume(config, source_run):
         check = read_early_check(source_run)
         review_path = source_run / "analysis" / REVIEW
         if not review_path.is_file():
-            raise ConfigurationError("Review the early atlas check before resuming.")
+            choice_path = source_run / "analysis" / REVIEW_CHOICE
+            if not choice_path.is_file():
+                raise ConfigurationError("Review the early atlas check before resuming, or "
+                                         "explicitly continue without the optional check.")
+            choice = load_strict_json_object(choice_path.read_bytes(), choice_path,
+                                            label="Optional early-review choice")
+            if (choice.get("version") != "0.1"
+                    or choice.get("early_review_enabled") is not False
+                    or choice.get("anatomical_approval") is not False
+                    or choice.get("decision") !=
+                    "researcher_continues_without_optional_early_review"
+                    or choice.get("checkpoint_sha256") != check["checkpoint_sha256"]
+                    or choice.get("check_sha256") != sha256_file(guard)):
+                raise ConfigurationError("Optional early-review choice is invalid or stale.")
+            plan["early_review_enabled"] = False
+            plan["completed_initialization_indices"] = list(range(len(plan["subject_labels"])))
+            plan["early_review_choice_binding"] = {
+                "choice_sha256": sha256_file(choice_path),
+                "check_sha256": sha256_file(guard),
+                "checkpoint_sha256": check["checkpoint_sha256"],
+            }
+            return
         review = load_strict_json_object(
             review_path.read_bytes(), review_path, label="Early atlas review"
         )
@@ -285,15 +369,24 @@ def configure_resume(config, source_run):
         progress = load_strict_json_object(
             progress_path.read_bytes(), progress_path, label="Atlas initialization progress"
         )
-        if progress.get("subject_labels") != plan["subject_labels"] or progress.get(
-            "checkpoint_sha256"
-        ) != sha256_file(source_run / "output/deformetrica-state.p"):
+        if progress.get("subject_labels") != plan["subject_labels"]:
             raise ConfigurationError("Initializer progress is not bound to the saved checkpoint.")
         indices = progress["completed_indices"]
         if len(indices) != len(set(indices)) or any(
             type(i) is not int or i not in range(len(plan["subject_labels"])) for i in indices
         ):
             raise ConfigurationError("Initializer progress contains invalid subject indices.")
+        if progress.get("checkpoint_sha256") != sha256_file(
+            source_run / "output/deformetrica-state.p"
+        ):
+            initialized = source_run / "output/atlas-initialized-state.p"
+            if (early_review_enabled(plan)
+                    or set(indices) != set(range(len(plan["subject_labels"])))
+                    or not initialized.is_file()
+                    or sha256_file(initialized) != progress.get("checkpoint_sha256")):
+                raise ConfigurationError(
+                    "Initializer progress is not bound to the saved checkpoint."
+                )
         plan["completed_initialization_indices"] = indices
 
 
@@ -301,6 +394,7 @@ def adapter_source(config):
     plan = initialization(config)
     if not plan:
         return ""
+    early_review_enabled(plan)
     if config["optimization"]["method"] != "gradient_ascent":
         raise ConfigurationError("Preserved-pilot initialization requires GradientAscent.")
     if not needs_adapter(config):
@@ -369,7 +463,10 @@ _df_atlas_base_update = _df_ga.update
 
 def _df_atlas_update(self, *args, **kwargs):
     if (getattr(self, "_df_individual_initialization", False)
-            or _DF_ATLAS_PLAN["early_review_approved"]):
+            or _DF_ATLAS_PLAN["early_review_approved"]
+            or (not _DF_ATLAS_PLAN.get("early_review_enabled", True)
+                and set(_DF_ATLAS_PLAN["completed_initialization_indices"])
+                == set(range(len(_DF_ATLAS_PLAN["subject_labels"]))))):
         return _df_atlas_base_update(self, *args, **kwargs)
     labels = _DF_ATLAS_PLAN["subject_labels"]
     if list(self.dataset.subject_ids) != labels:
@@ -446,7 +543,8 @@ def _df_atlas_update(self, *args, **kwargs):
                          "checkpoint_sha256": _df_digest(self.state_file)})
     if not _df_np.array_equal(preserved, model.get_momenta()[_DF_ATLAS_PLAN["pilot_indices"]]):
         raise RuntimeError("Pilot momentum fields changed during individual initialization")
-    before = _df_pilot_shapes(self, "before")
+    review_enabled = _DF_ATLAS_PLAN.get("early_review_enabled", True)
+    before = _df_pilot_shapes(self, "before") if review_enabled else None
     self.current_parameters = self._get_parameters()
     self._dump_state_file()
     _df_json_atomic(_df_os.path.join(self.output_dir, "atlas-initialization.json"),
@@ -459,6 +557,11 @@ def _df_atlas_update(self, *args, **kwargs):
         self._dump_state_file()
     finally:
         self.state_file = original_state_file
+    if not review_enabled:
+        _df_log.info("DiffeoForge joint atlas: initialized %s of %s specimens; "
+                     "optional early review disabled; continuing native optimization",
+                     len(completed), len(labels))
+        return _df_atlas_base_update(self, *args, **kwargs)
     _df_log.info("DiffeoForge joint atlas: initialized %s of %s specimens; "
                  "early review at iteration %s",
                  len(completed), len(labels), _DF_ATLAS_PLAN["early_review_iteration"])

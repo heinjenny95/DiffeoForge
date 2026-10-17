@@ -588,17 +588,22 @@ class _TemplatePreviewWorker(QRunnable):
 
 
 class _PilotAtlasHandoffWorker(QRunnable):
-    def __init__(self, config_path: Path) -> None:
+    def __init__(self, config_path: Path, *, early_review: bool = False) -> None:
         super().__init__()
         self.config_path = config_path
+        self.early_review = early_review
         self.signals = _WorkerSignals()
 
     @Slot()
     def run(self) -> None:
         try:
-            from diffeoforge.reference_atlas_handoff import upgrade_saved_pilot_config
+            from diffeoforge.reference_atlas_handoff import (
+                choose_early_review,
+                upgrade_saved_pilot_config,
+            )
 
             path = upgrade_saved_pilot_config(self.config_path)
+            path = choose_early_review(path, enabled=self.early_review)
             result = load_existing_reference_project(path)
         except (KeyError, OSError, RuntimeError, TypeError, ValueError) as error:
             self.signals.failed.emit(str(error))
@@ -649,14 +654,19 @@ class _EarlyAtlasCheckWorker(QRunnable):
 class _EarlyAtlasResumeWorker(QRunnable):
     """Keep full-cohort resume verification out of the review callback."""
 
-    def __init__(self, result: ResumableReferenceRun) -> None:
+    def __init__(self, result: ResumableReferenceRun, *, skip_early_review: bool = False) -> None:
         super().__init__()
         self.result = result
+        self.skip_early_review = skip_early_review
         self.signals = _WorkerSignals()
 
     @Slot()
     def run(self) -> None:
         try:
+            if self.skip_early_review:
+                from diffeoforge.reference_atlas_handoff import record_early_review_choice
+
+                record_early_review_choice(self.result.run_directory, enabled=False)
             request = build_reference_resume_launch_request(
                 self.result.run_directory,
                 request_id=f"reference-resume-{uuid.uuid4().hex}",
@@ -2179,8 +2189,18 @@ class DiffeoForgeWindow(QMainWindow):
         self.prepare_preserved_atlas_button.setObjectName("secondary")
         self.prepare_preserved_atlas_button.setToolTip(
             "Create a separate configuration that preserves compatible pilot fields, fits "
-            "the remaining specimens on the common basis, then pauses for an early atlas check."
+            "the remaining specimens on the common basis, then runs the joint atlas."
         )
+        self.early_atlas_review_check = QCheckBox(
+            "Pause after 10 joint iterations for an optional early anatomical check"
+        )
+        self.early_atlas_review_check.setChecked(False)
+        self.early_atlas_review_check.setToolTip(
+            "Off by default: continue to the configured optimizer stop. "
+            "The finished atlas still requires its own anatomical review."
+        )
+        self.early_atlas_review_check.hide()
+        calibration_layout.addWidget(self.early_atlas_review_check)
         self.prepare_preserved_atlas_button.clicked.connect(self._prepare_preserved_atlas)
         self.prepare_preserved_atlas_button.hide()
         calibration_layout.addWidget(self.prepare_preserved_atlas_button)
@@ -7740,6 +7760,7 @@ class DiffeoForgeWindow(QMainWindow):
     def _sync_ready_state(self) -> None:
         self.review_early_atlas_button.setEnabled(self._worker is None)
         self.prepare_preserved_atlas_button.setEnabled(self._worker is None)
+        self.early_atlas_review_check.setEnabled(self._worker is None)
         for button in (
             self.run_more_iterations_button, self.result_more_iterations_button,
             self.qc_more_iterations_button,
@@ -8202,18 +8223,24 @@ class DiffeoForgeWindow(QMainWindow):
 
         approved = getattr(self, "_approved_early_review_run", None) == result.run_directory
         self._approved_early_review_run = None
+        skip_early_review = False
         if (
             not early_review_done and not approved
             and (result.run_directory / "output" / EARLY_CHECK).is_file()
         ):
-            self._open_early_atlas_check(result.run_directory)
-            return
-        if approved or early_review_done:
-            worker = _EarlyAtlasResumeWorker(result)
+            decision = self._optional_early_atlas_decision()
+            if decision == "review":
+                self._open_early_atlas_check(result.run_directory)
+                return
+            if decision != "continue":
+                return
+            skip_early_review = True
+        if approved or early_review_done or skip_early_review:
+            worker = _EarlyAtlasResumeWorker(result, skip_early_review=skip_early_review)
             worker.signals.succeeded.connect(self._early_atlas_resume_ready)
             worker.signals.failed.connect(self._preserved_atlas_failed)
             self._worker = worker
-            self.run_state_label.setText("Verifying the approved atlas continuation in background…")
+            self.run_state_label.setText("Verifying the saved atlas continuation in background…")
             self._sync_ready_state()
             self._thread_pool.start(worker)
             return
@@ -8237,6 +8264,25 @@ class DiffeoForgeWindow(QMainWindow):
             return
 
         self._show_reference_resume(request, result)
+
+    def _optional_early_atlas_decision(self) -> str:
+        dialog = QMessageBox(self)
+        dialog.setWindowTitle("Optional early atlas check")
+        dialog.setText(
+            "The atlas saved a checkpoint for an optional early check. "
+            "You can continue from it without recording a new anatomical approval. "
+            "Your existing pilot approvals stay saved; the finished atlas needs its own QC."
+        )
+        continue_button = dialog.addButton(
+            "Continue without early check", QMessageBox.ButtonRole.AcceptRole
+        )
+        review_button = dialog.addButton("Review first", QMessageBox.ButtonRole.ActionRole)
+        dialog.addButton(QMessageBox.StandardButton.Cancel)
+        dialog.setDefaultButton(continue_button)
+        dialog.exec()
+        return "continue" if dialog.clickedButton() == continue_button else (
+            "review" if dialog.clickedButton() == review_button else "cancel"
+        )
 
     @Slot(object)
     def _early_atlas_resume_ready(self, prepared: tuple) -> None:
@@ -9573,6 +9619,8 @@ class DiffeoForgeWindow(QMainWindow):
             and self.engine_combo.currentData() == DesktopEngine.DEFORMETRICA_REFERENCE
         )
         self.prepare_preserved_atlas_button.setEnabled(self._worker is None)
+        self.early_atlas_review_check.setVisible(not self.prepare_preserved_atlas_button.isHidden())
+        self.early_atlas_review_check.setEnabled(self._worker is None)
         reference = self.engine_combo.currentData() == DesktopEngine.DEFORMETRICA_REFERENCE
         if not reference:
             self.reference_calibration_execution_card.hide()
@@ -9936,7 +9984,10 @@ class DiffeoForgeWindow(QMainWindow):
     def _prepare_preserved_atlas(self) -> None:
         if self._worker is not None or self._reference_calibrated_config_path is None:
             return
-        worker = _PilotAtlasHandoffWorker(self._reference_calibrated_config_path)
+        worker = _PilotAtlasHandoffWorker(
+            self._reference_calibrated_config_path,
+            early_review=self.early_atlas_review_check.isChecked(),
+        )
         worker.signals.succeeded.connect(self._preserved_atlas_ready)
         worker.signals.failed.connect(self._preserved_atlas_failed)
         self._worker = worker
@@ -10602,10 +10653,16 @@ class DiffeoForgeWindow(QMainWindow):
             "again inside the worker immediately before preparation."
         )
         if review.preserved_pilot_atlas:
-            self.run_title_label.setText("Initialize atlas and check pilot anatomy early")
+            from diffeoforge.config import load_config
+            from diffeoforge.reference_atlas_handoff import early_review_enabled, initialization
+
+            early = early_review_enabled(initialization(load_config(request.config_path)))
+            self.run_title_label.setText("Initialize and compute atlas")
             self.run_subtitle_label.setText(
                 "Preserve the pilot fields, initialize other specimens on the same fixed basis, "
-                "then run up to 10 joint iterations and pause for your anatomical review."
+                + ("then pause after 10 joint iterations for the optional anatomical check."
+                   if early else "then continue to the configured optimizer stop. "
+                   "The finished atlas requires its own anatomical review.")
             )
         self.run_progress_bar.setRange(0, 1)
         self.run_progress_bar.setValue(0)
@@ -11147,7 +11204,7 @@ class DiffeoForgeWindow(QMainWindow):
                 self.run_optimizer_label.setText(
                     f"Initialization precedes the joint atlas. {message}\n"
                     f"{self._format_duration(elapsed)} elapsed; "
-                    "the early joint checkpoint will need your review.\n"
+                    "the joint atlas starts after initialization.\n"
                     f"{self._latest_reference_resource_text}"
                 )
             elif state == "computing_first_iteration":
@@ -11503,11 +11560,15 @@ class DiffeoForgeWindow(QMainWindow):
             self.review_early_atlas_button.setVisible(early)
             self.run_state_label.setObjectName("status")
             self.run_state_label.setText(
-                "Early atlas checkpoint ready. Review the pilot specimens, then explicitly "
-                "start the saved-state continuation. The full mesh export has not started."
+                "Optional early atlas check ready. Review now or continue from the saved "
+                "checkpoint without the optional check. The full mesh export has not started."
                 if early else
                 "Deformetrica was interrupted safely. Terminal evidence and any checkpoint "
                 "reported by the run were preserved and independently verified."
+            )
+            self.run_optimizer_label.setText(
+                "Execution stopped; the previous live activity timer is no longer running. "
+                "The saved checkpoint is ready for explicit continuation."
             )
         elif outcome == "prepared_not_executed":
             self.run_state_label.setObjectName("status")
