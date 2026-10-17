@@ -127,3 +127,18 @@ SSH-session independence does not make jobs survive a server reboot. Monitoring
 access lifetime and server process lifetime are separate operational concerns.
 Numerical convergence, final export, anatomical review and PCA remain separate
 states; preserve previously accepted results and analyses.
+
+## Owner-authorized monitoring access renewal
+
+Renew a monitoring key's expiry only after the owner specifies the new deadline
+and timezone. Convert that deadline to UTC explicitly. Preserve the existing
+public key, restriction options, other authorized-key entries, file ownership,
+permissions and extended attributes. Keep a private, verified backup and guard
+an atomic replacement against a concurrent edit; change only the expiry value.
+
+Test a fresh SSH authentication after renewal, then independently verify the
+existing scientific process identities, environments and resources. Renewal
+does not authorize a restart, a new optimization or broader access. Update the
+existing monitor's expiry context while preserving its cadence, notification
+rules and read-only scope. Unavailable or expired access means monitoring is
+unavailable; it does not establish that the optimizer failed.
