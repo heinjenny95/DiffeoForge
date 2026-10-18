@@ -30,15 +30,16 @@ job boundaries. See [behavior and limits](V130_PROCESS_RECORDING.md). Source,
 tested build and installed version are tracked separately; no installer upload
 is implied. Demo removal below remains an open task.
 
-The v130 frozen bundle and installer are verified, including recording and native
-MP4 playback with the exact product code/runtime. The existing installation is
-still dev129 while the owner window remains open; normal close, full backup and
-fresh idle guards precede installation. See [delivery state](V130_DELIVERY.md).
+The tested v130 is installed after the owner closed dev129 normally, a complete
+verified backup and fresh application/backend idle guards. Installed payload,
+all six evidence companions, exact-product recording/export/native MP4 playback
+and normal Windows shell startup passed. Recording remains opt-in. See
+[verified delivery](V130_DELIVERY.md). Installer Drive is unchanged.
 
 Owner backlog update, 18 October 2026: remove the demo/presentation mode and its
 demo-only UI entry points, shortcuts and packaged assets. The owner found it
 unhelpful. This is an open task in the roadmap, not an implemented removal;
-the installed dev129, real projects/results and test fixtures are unchanged.
+real projects/results and engineering test fixtures remain preserved.
 
 v129 implements the owner-selected Pilot/PCA work and the follow-up Visualization
 page and iteration-budget recommendation. New pilots use one-fit/review steps;
@@ -54,10 +55,10 @@ source-preservation and cache/close/release guards were checked. Selected pilot
 iteration observations now inform a visible, bounded starting budget; caps and
 native tolerance stops remain distinct. See [scope and limits](V129_PILOT_AND_VISUALIZATION.md).
 
-The tested Windows build is now installed as dev129 after a complete verified
-v128 backup and fresh idle guards. All installed files and six evidence companions
-match the build; frozen/installed media playback, export and ordinary shell startup
-passed. See [verified delivery](V129_DELIVERY.md). The last distributed installer
+The earlier dev129 delivery followed a complete verified v128 backup and fresh
+idle guards. Its installed files and six evidence companions matched the build;
+frozen/installed media playback, export and ordinary shell startup passed. See
+[historical delivery](V129_DELIVERY.md). The last distributed installer
 is unchanged; no installer upload was requested. Independent first-use and
 scientific acceptance remain separate.
 

@@ -1,10 +1,11 @@
-# v130 verified Windows build
+# v130 verified Windows installation
 
 The v130 process recorder is implemented and the Windows CPU installer is built
 and verified from runtime source `cb114b9299745af880e1a9082f315cdc3604c1d2`.
-The existing local installation is still dev129: the owner’s application window
-must be closed normally before backup and installation. No running application
-or scientific computation was interrupted to replace it.
+After the owner closed dev129 normally and confirmed saved work, a complete
+3,472-file backup was copied and hash-verified. Fresh application/backend idle
+guards passed before installation. The tested dev130 is now installed; no
+running application or scientific computation was interrupted to replace it.
 
 ## Verification
 
@@ -34,12 +35,28 @@ Frozen application SHA-256:
 Product PYZ SHA-256:
 `f50d6ba1ba483e4b2d9ec8690caba08a979e6e67ccce8ed8f30d0add7e659f5a`.
 
-## Remaining delivery and scope
+## Installation and scope
 
-Installation is pending the ordinary owner close, a complete verified dev129
-backup and fresh application/backend idle checks. Installed payload, companions,
-recording/playback and normal shell startup must then be verified separately.
-The saved recording opt-in is not enabled by engineering tests.
+The installer exited zero. All 3,463 bundle files, including its two generated
+freeze receipts, match the build, and all six installed evidence companions
+match their verified originals. Registry version dev130, executable hash and
+ordinary installed startup smoke passed. The three retained completed-run
+metadata hashes checked before installation remain unchanged.
+
+The exact installed product PYZ and installed runtime passed a separate native
+recording probe: automatic computation export, immediate follow-up recording,
+1080p decode and Qt playback all passed, with 66 frames / 40 distinct frames,
+completed original detail and no dropped samples or capture gaps. Capture
+median was 4.00 ms / maximum 9.33 ms; active GUI heartbeat p95 was 23.90 ms /
+maximum 33.71 ms. These short public-fixture measurements do not establish
+12-hour real-study behavior. The original loaded mesh and input hash were kept.
+
+The installed GUI was reopened through the ordinary Windows shell. Executable,
+creation time, visible v130 title and Explorer/service ancestry were verified
+outside assistant-owned Python/PowerShell launch trees. The same GUI remained
+alive after its Explorer launcher exited naturally; no process was signalled.
+No scientific job was dispatched to test startup. The saved recording opt-in was not enabled by
+engineering tests: the owner activates **Auto-record process** once in the rail.
 
 The last distributed installer is unchanged; no installer upload was requested.
 No scientific run, anatomical approval, private PCA, remote deployment or
