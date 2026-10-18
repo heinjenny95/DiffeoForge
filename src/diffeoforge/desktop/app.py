@@ -58,7 +58,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     application.setApplicationVersion(__version__)
     application.setOrganizationName("DiffeoForge")
 
-    window = Window()
+    window = Window() if args.demo else Window(recording_allowed=not args.smoke)
     if args.smoke:
         window.show()
         application.processEvents()

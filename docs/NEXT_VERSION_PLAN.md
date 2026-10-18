@@ -11,6 +11,11 @@ qualification claim. The established development branch remains authoritative.
 
 ## v129 owner-selected implementation
 
+The follow-up v130 process recorder implements saved opt-in, active 10× / waiting
+300× capture and automatic MP4 export after each computation, followed by a new
+recording for QC and subsequent work. See [scope and limits](V130_PROCESS_RECORDING.md).
+It records presentation only and never advances or recovers scientific work.
+
 The owner authorized Pilot/PCA implementation on 18 October 2026, including an
 in-app Visualization page and pilot-informed iteration-budget headroom. v129
 supersedes the older explicit-click requirement for axis shapes: preparation is

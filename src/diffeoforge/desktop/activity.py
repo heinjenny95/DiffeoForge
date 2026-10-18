@@ -5,7 +5,7 @@ from __future__ import annotations
 import weakref
 from itertools import count
 
-from PySide6.QtCore import QObject, Qt, QThreadPool, Slot
+from PySide6.QtCore import QObject, Qt, QThreadPool, Signal, Slot
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QProgressBar, QWidget
 from shiboken6 import isValid
 
@@ -42,6 +42,8 @@ _LABELS = {
 
 class ActivityIndicator(QWidget):
     """Own only this window's cursor; other windows and override stacks are untouched."""
+
+    task_finished = Signal(object)
 
     def __init__(self, owner: QWidget) -> None:
         super().__init__(owner)
@@ -116,6 +118,7 @@ class _Ticket(QObject):
         if pool is not None and pool._tickets.get(self.key) is self:
             pool._tickets.pop(self.key)
             pool.indicator.set_task(self.key, None)
+            pool.indicator.task_finished.emit(self.worker)
         self.worker = None
         self.deleteLater()
 

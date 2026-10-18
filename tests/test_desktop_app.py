@@ -847,7 +847,7 @@ def test_desktop_window_separates_data_parameters_review_run_and_results(
     application = QApplication.instance() or QApplication(["diffeoforge-five-step-test"])
     window = DiffeoForgeWindow()
 
-    assert window.page_stack.count() == 6
+    assert window.page_stack.count() == 7
     assert window.page_stack.widget(0).isAncestorOf(window.engine_combo)
     assert window.page_stack.widget(0).isAncestorOf(window.mesh_edit)
     assert window.page_stack.widget(1).isAncestorOf(window.reference_guidance_box)
@@ -1550,7 +1550,8 @@ def test_desktop_continues_existing_reference_project_instead_of_restarting_gpa(
 
     window._review = SimpleNamespace(
         engine=DesktopEngine.DEFORMETRICA_REFERENCE,
-        config_path=config_path, config_sha256=hashlib.sha256(original).hexdigest(),
+        config_path=config_path,
+        config_sha256=hashlib.sha256(original).hexdigest(),
     )
     window._reference_readiness = SimpleNamespace(ready=True)
     monkeypatch.setattr(
@@ -1792,7 +1793,8 @@ def test_desktop_applies_completed_search_extension_after_dialog_closes(
             self.study_directory = successor_study
             self.snapshot = SimpleNamespace(
                 study_directory=successor_study,
-                status="completed", final_config_path=calibrated_config,
+                status="completed",
+                final_config_path=calibrated_config,
             )
 
     loaded: list[Path] = []
@@ -2060,6 +2062,7 @@ def test_desktop_window_renders_parameter_review_as_third_step(monkeypatch, tmp_
         True,
         True,
         True,
+        False,
         False,
         False,
     ]
@@ -3669,6 +3672,7 @@ def test_desktop_window_verifies_and_renders_step_five_before_artifact_handoff(
         True,
         True,
         True,
+        True,
     ]
     assert window.rail_steps[5].toolTip() == "Open Results & PCA."
     assert window.start_atlas_button.text() == "Open Results & PCA"
@@ -3756,7 +3760,7 @@ def test_desktop_window_verifies_and_renders_step_five_before_artifact_handoff(
     assert "not proof" in window.result_completion_label.text()
     assert window.reference_pca_deformation_card.isHidden() is False
     assert window.generate_reference_pca_deformations_button.isEnabled() is True
-    assert "Click to generate" in window.reference_pca_deformation_status_label.text()
+    assert "prepared automatically" in window.reference_pca_deformation_status_label.text()
 
     monkeypatch.setattr(
         QMessageBox,
@@ -3795,8 +3799,8 @@ def test_desktop_window_verifies_and_renders_step_five_before_artifact_handoff(
         )
     )
     assert window.generate_reference_pca_deformations_button.isEnabled() is True
-    assert window.generate_reference_pca_deformations_button.text() == "View saved PC shape meshes"
-    assert "loaded in the atlas viewer" in (window.reference_pca_deformation_status_label.text())
+    assert window.generate_reference_pca_deformations_button.text() == "Open Visualization"
+    assert "prepared automatically" in window.reference_pca_deformation_status_label.text()
     window._show_run_page_from_results()
     assert window.page_stack.currentIndex() == 3
     window.start_atlas_button.click()
@@ -4040,8 +4044,15 @@ def test_reference_pca_deformation_worker_reuses_a_verified_design(
         ["diffeoforge-reference-pca-shooting-worker-test"]
     )
     run = (tmp_path / "reference-run").resolve()
-    design = run / "analysis" / "reference-pca-deformations-v0.1"
-    result = run / "analysis" / "reference-pca-deformations-v0.1-result"
+    from diffeoforge.reference_pca_deformations import (
+        DEFAULT_DIRECTORY_NAME as DEFAULT_REFERENCE_PCA_DEFORMATION_DESIGN_DIRECTORY,
+    )
+    from diffeoforge.reference_pca_deformations import (
+        DEFAULT_RESULT_DIRECTORY as DEFAULT_REFERENCE_PCA_DEFORMATION_RESULT_DIRECTORY,
+    )
+
+    design = run / "analysis" / DEFAULT_REFERENCE_PCA_DEFORMATION_DESIGN_DIRECTORY
+    result = run / DEFAULT_REFERENCE_PCA_DEFORMATION_RESULT_DIRECTORY
     design.mkdir(parents=True)
     calls: list[tuple[str, object]] = []
 
@@ -4071,6 +4082,16 @@ def test_reference_pca_deformation_worker_reuses_a_verified_design(
         "diffeoforge.desktop.widgets.verify_reference_pca_deformation_result",
         lambda path, **kwargs: calls.append(("result", path)),
     )
+    media = tmp_path / "verified-media"
+
+    def prepare(run_directory, project_directory, *, progress, cancelled):
+        assert run_directory == run
+        assert project_directory == run.parent.parent
+        assert callable(progress) and not cancelled.is_set()
+        calls.append(("media", run_directory))
+        return media
+
+    monkeypatch.setattr("diffeoforge.pca_media.prepare_reference_media", prepare)
     succeeded: list[Path] = []
     failed: list[str] = []
     worker = _ReferencePCADeformationWorker(run)
@@ -4081,11 +4102,12 @@ def test_reference_pca_deformation_worker_reuses_a_verified_design(
     application.processEvents()
 
     assert failed == []
-    assert succeeded == [result]
+    assert succeeded == [media]
     assert calls == [
         ("design", design),
         ("execute", (design, result)),
         ("result", result),
+        ("media", run),
     ]
 
 
@@ -4374,9 +4396,16 @@ def test_desktop_window_renders_mesh_preflight_progress(monkeypatch, tmp_path):
     window = DiffeoForgeWindow()
     for sequence, (state, completed) in enumerate((("checking", 3), ("reused", 4))):
         event = DesktopReferenceWorkerEvent(
-            request_id="reference-test", sequence=sequence, kind="inspection",
-            payload={"completed": completed, "total": 95, "role": "subject",
-                     "path": str(tmp_path / "subject.vtk"), "state": state},
+            request_id="reference-test",
+            sequence=sequence,
+            kind="inspection",
+            payload={
+                "completed": completed,
+                "total": 95,
+                "role": "subject",
+                "path": str(tmp_path / "subject.vtk"),
+                "state": state,
+            },
         )
         window._atlas_event(event)
         assert window.run_progress_bar.value() == completed

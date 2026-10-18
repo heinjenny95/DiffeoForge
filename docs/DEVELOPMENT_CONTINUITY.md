@@ -1,4 +1,4 @@
-# Development continuity — v129 pilot and Visualization
+# Development continuity — v130 process recording
 
 Snapshot: 2026-10-18. This is a public, software-only continuation guide. Detailed
 research results, local paths, account destinations and run identities belong in
@@ -20,6 +20,15 @@ correct parameters or interpret biology for the researcher. Deformetrica is the
 default supported reference route; the Modern engine remains evidence-gated.
 
 ## Current source work
+
+v130 adds owner-authorized, remembered opt-in DiffeoForge-only process recording:
+10× active interaction, 300× long waits, and automatic MP4 export after each
+completed computation with immediate follow-up recording. Encoding uses bounded
+background work and compressed segments; verified local exports, explicit
+capture-gap labels and presentation-only partial recovery preserve scientific
+job boundaries. See [behavior and limits](V130_PROCESS_RECORDING.md). Source,
+tested build and installed version are tracked separately; no installer upload
+is implied. Demo removal below remains an open task.
 
 Owner backlog update, 18 October 2026: remove the demo/presentation mode and its
 demo-only UI entry points, shortcuts and packaged assets. The owner found it

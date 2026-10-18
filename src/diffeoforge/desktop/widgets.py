@@ -1688,7 +1688,7 @@ class _FormControlWheelGuard(QObject):
 class DiffeoForgeWindow(QMainWindow):
     """Project creation window backed by the Qt-independent setup service."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, recording_allowed: bool = True) -> None:
         super().__init__()
         self.setObjectName("diffeoforgeWindow")
         self.setWindowTitle(f"DiffeoForge {display_version()}")
@@ -1825,6 +1825,11 @@ class DiffeoForgeWindow(QMainWindow):
         self._restore_recent_project_inputs()
         self._sync_ready_state()
 
+        from diffeoforge.desktop.process_recorder import ProcessRecorder
+
+        self.process_recorder = ProcessRecorder(self, allowed=recording_allowed)
+        self._rail_layout.insertWidget(self._rail_layout.count() - 1, self.process_recorder.panel)
+
     def _build_ui(self) -> None:
         root = QWidget()
         root_layout = QHBoxLayout(root)
@@ -1857,6 +1862,7 @@ class DiffeoForgeWindow(QMainWindow):
         rail.setObjectName("rail")
         rail.setFixedWidth(250)
         layout = QVBoxLayout(rail)
+        self._rail_layout = layout
         layout.setContentsMargins(28, 28, 28, 28)
         layout.setSpacing(7)
 
@@ -13539,6 +13545,9 @@ class DiffeoForgeWindow(QMainWindow):
                 "The window will remain open until the current numerical method finishes "
                 "safely. Cancellation was requested; completed method caches are retained."
             )
+            event.ignore()
+            return
+        if self.process_recorder.handle_close():
             event.ignore()
             return
         self._result_mesh_loader.cancel()

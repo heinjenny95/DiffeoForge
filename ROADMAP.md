@@ -14,6 +14,13 @@ scientific gates. Planning does not mark those gates complete.
 
 ## Owner-requested cleanup
 
+- [x] Add opt-in automatic process recording: active sections at 10×, long waits
+  at 300×, MP4 after each completed computation and immediate follow-up recording.
+  Capture only owned application UI, use bounded background encoding, declare
+  capture gaps and recover sealed presentation fragments. Engineering checks
+  and independent first-use acceptance are distinct. See
+  [v130 behavior and limits](docs/V130_PROCESS_RECORDING.md).
+
 - [ ] Remove the demo/presentation mode and demo-only content from DiffeoForge,
   including its UI entry points, shortcuts and packaged assets. The owner found
   the demo unhelpful and requested removal on 18 October 2026. Preserve real
