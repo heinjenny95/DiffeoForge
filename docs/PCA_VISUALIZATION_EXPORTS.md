@@ -76,3 +76,7 @@ in the private project rather than the presentation package. Numeric plot IDs
 may remain. Verify media copies, local links and every ZIP member against hashes;
 retain the verification receipt alongside the original private delivery. Creating
 the export does not authorize sending it or uploading it to a public service.
+After explicit upload authorization, verify the complete uploaded bytes against
+the local export and check the requested file-specific read-only link scope.
+Keep file IDs, URLs and verification receipts in the private project; preserve
+other files' permissions and the separately tracked installer distribution.
