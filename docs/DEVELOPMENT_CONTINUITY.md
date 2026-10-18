@@ -28,8 +28,12 @@ does not grant anatomical approval. See [behavior and boundaries](V131_FIT_PREFE
 The same version repairs recording of the actual separate pilot and nested
 review windows by assigning their application owner, retaining visible workflow
 context across external focus changes, and using a selected project directory
-for early landmark videos. Prior recordings/results are preserved. Build and
-installed states remain separate; demo removal remains an open task.
+for early landmark videos. Prior recordings/results are preserved. The tested
+v131 is installed after normal owner close, verified backup and fresh idle
+guards. Exact frozen/installed window recordings and native best-field successor
+checks passed, along with payload/companion verification and ordinary shell
+startup. See [verified delivery](V131_DELIVERY.md). Source, runtime and installer
+distribution remain separate; demo removal remains an open task.
 
 v130 adds owner-authorized, remembered opt-in DiffeoForge-only process recording:
 10× active interaction, 300× long waits, and automatic MP4 export after each
@@ -40,7 +44,7 @@ job boundaries. See [behavior and limits](V130_PROCESS_RECORDING.md). Source,
 tested build and installed version are tracked separately; no installer upload
 is implied. Demo removal below remains an open task.
 
-The tested v130 is installed after the owner closed dev129 normally, a complete
+The previous tested v130 was installed after the owner closed dev129 normally, a complete
 verified backup and fresh application/backend idle guards. Installed payload,
 all six evidence companions, exact-product recording/export/native MP4 playback
 and normal Windows shell startup passed. Recording remains opt-in. See

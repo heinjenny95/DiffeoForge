@@ -38,6 +38,8 @@ scientific gates. Planning does not mark those gates complete.
 - [x] Repair recording of the separate pilot/review windows and keep early
   landmark videos in the selected project before its config exists. Check the
   actual workflow window constructors and decoded media, not just generic dialogs.
+  The tested v131 is installed; see [delivery verification](docs/V131_DELIVERY.md).
+  Long real-study recording and independent first-use acceptance remain distinct.
   See [v131 recording repair](docs/V131_FIT_PREFERENCES.md#separate-window-recording-repair).
 
 - [x] Make the early atlas checkpoint an explicit, default-off option. Allow

@@ -70,4 +70,6 @@ pilot opening path, its candidate viewer and the new preference dialog. Its
 1080p MP4 decoded successfully with 42 distinct frames and zero reported capture
 gaps. Foreign focus and early project placement were checked. These bounded
 engineering observations do not qualify a long real-study session or establish
-anatomical suitability; frozen/installed verification remains a separate step.
+anatomical suitability. Exact frozen and installed checks have subsequently
+passed; the tested v131 is installed. See [verified delivery](V131_DELIVERY.md)
+for runtime provenance, package checks and the remaining first-use boundary.
