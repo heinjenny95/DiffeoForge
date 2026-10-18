@@ -36,10 +36,12 @@ all six evidence companions, exact-product recording/export/native MP4 playback
 and normal Windows shell startup passed. Recording remains opt-in. See
 [verified delivery](V130_DELIVERY.md). Installer Drive is unchanged.
 
-Owner backlog update, 18 October 2026: remove the demo/presentation mode and its
-demo-only UI entry points, shortcuts and packaged assets. The owner found it
-unhelpful. This is an open task in the roadmap, not an implemented removal;
-real projects/results and engineering test fixtures remain preserved.
+Owner backlog update, reaffirmed 18 October 2026: remove the visible **Open demo**
+button (`open_demo_button`), demo/presentation mode, other demo UI entry points,
+shortcuts and packaged assets. The owner reports that the button remains in
+installed v130. The roadmap task stays open until removal is implemented,
+tested, installed and checked in the installed UI. Real projects/results and
+engineering test fixtures remain preserved. This is a backlog clarification only.
 
 v129 implements the owner-selected Pilot/PCA work and the follow-up Visualization
 page and iteration-budget recommendation. New pilots use one-fit/review steps;

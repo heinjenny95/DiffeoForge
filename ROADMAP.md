@@ -21,10 +21,13 @@ scientific gates. Planning does not mark those gates complete.
   and independent first-use acceptance are distinct. See
   [v130 behavior and limits](docs/V130_PROCESS_RECORDING.md).
 
-- [ ] Remove the demo/presentation mode and demo-only content from DiffeoForge,
-  including its UI entry points, shortcuts and packaged assets. The owner found
-  the demo unhelpful and requested removal on 18 October 2026. Preserve real
-  projects/results and engineering test fixtures. Backlog only; removal is pending.
+- [ ] Remove the visible **Open demo · explore all steps with public examples**
+  button (`open_demo_button`) and the demo/presentation mode, its other UI entry
+  points, shortcuts and packaged assets. Owner request reaffirmed on 18 October
+  2026: the button is still present in installed v130. Preserve real projects,
+  results and engineering test fixtures. This task remains open until the button
+  and demo entry points are removed, the change is tested and installed, and the
+  installed UI is checked. Backlog only; removal has not been implemented.
 
 ## Pilot usability follow-up
 
