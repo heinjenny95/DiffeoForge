@@ -27,6 +27,8 @@ verification. The inspected reference Shooting export can select an intermediate
 physical time when its effective grid differs from the declaration; the product
 repair remains open. See [requirements and limits](PCA_VISUALIZATION_EXPORTS.md).
 This documentation does not change the installed application or automate PCA.
+Owner view feedback also requires synchronized opposing perspectives in PC-axis
+movies, so deformation on the far side of a surface remains visible.
 
 Owner follow-up,2026-10-18: automatically generate and show -2 SD/+2 SD PC-axis
 shapes directly below the PCA plots, without requiring a separate button. Treat

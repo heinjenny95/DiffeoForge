@@ -53,6 +53,15 @@ policy; do not present this as an optimization trajectory. Verify display-proxy
 anchors against the full-resolution endpoints, and decode the delivered videos
 to check frame count, rate, dimensions and actual geometry change.
 
+Show multiple synchronized views simultaneously so a change on the far side of
+the surface is visible. A complete orthographic layout pairs the two opposing
+directions for each coordinate plane: XY from +/-Z, XZ from +/-Y and YZ from
++/-X. Keep the same score in every panel and label viewing direction with an
+orientation glyph. Preserve aspect ratios, match camera scale across axes and
+frames, and verify opposite camera vectors and visible change in each view.
+This view requirement follows owner feedback about occluded PC-axis changes;
+it does not establish an anatomical interpretation or an installed UI change.
+
 Keep scripts, dependency versions, grid receipts, source immutability checks,
 measurement definitions and final hashes with the private delivery. Automatic
 generation beneath the PCA plots remains a separate open product backlog item.
