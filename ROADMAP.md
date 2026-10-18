@@ -49,11 +49,13 @@ scientific gates. Planning does not mark those gates complete.
   launching them or calling them rejected. New joint results still need their
   own all-specimen QC. See [v124 scope](docs/V124_SCREENING_CHOICE.md).
 
-- [ ] Make the initial guided primary action use the existing one-specimen,
+- [x] Make the initial guided primary action use the existing one-specimen,
   one-attempt Find fit route and pause for human review. Remove the conflicting
   hidden Advanced-mode default and batch-start guidance; keep a full stage batch
   an explicit choice with its specimen/option workload shown before launch.
   Retain common-basis joint confirmation and all existing fit/anatomy gates.
+  See [v129 implementation](docs/V129_PILOT_AND_VISUALIZATION.md) and
+  [verified local delivery](docs/V129_DELIVERY.md); independent first use remains open.
 - [ ] Qualify and repair cancellation end to end during native WSL execution and
   preparation: visible persistent cancellation state, verified command delivery,
   bounded backend exit, no subsequent candidate, checkpoint preservation and

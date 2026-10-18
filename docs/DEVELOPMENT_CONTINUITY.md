@@ -35,9 +35,12 @@ source-preservation and cache/close/release guards were checked. Selected pilot
 iteration observations now inform a visible, bounded starting budget; caps and
 native tolerance stops remain distinct. See [scope and limits](V129_PILOT_AND_VISUALIZATION.md).
 
-These are source/software checks. Frozen Windows and local installation require
-separate delivery evidence; the installed v128 and last distributed installer
-remain authoritative until that verification. No installer upload was requested.
+The tested Windows build is now installed as dev129 after a complete verified
+v128 backup and fresh idle guards. All installed files and six evidence companions
+match the build; frozen/installed media playback, export and ordinary shell startup
+passed. See [verified delivery](V129_DELIVERY.md). The last distributed installer
+is unchanged; no installer upload was requested. Independent first-use and
+scientific acceptance remain separate.
 
 v128 makes the ten-iteration early anatomical checkpoint optional and disabled
 for new preserved-pilot handoffs. Existing early checkpoints can explicitly

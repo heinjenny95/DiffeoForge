@@ -16,9 +16,10 @@ in-app Visualization page and pilot-informed iteration-budget headroom. v129
 supersedes the older explicit-click requirement for axis shapes: preparation is
 automatic after verified result/QC release, with source-bound reuse and failure
 handling. Scrollable pilot tools, content-bound mesh reuse, the native physical
-endpoint repair and media-only export are implemented in source. Frozen/installed
-and independent first-use acceptance remain separate. See
-[v129 scope](V129_PILOT_AND_VISUALIZATION.md). Historical checklists below retain
+endpoint repair and media-only export are implemented and installed after separate
+frozen/installed engineering checks. Independent first-use acceptance remains
+open. See [v129 scope](V129_PILOT_AND_VISUALIZATION.md) and
+[verified delivery](V129_DELIVERY.md). Historical checklists below retain
 their original context; unrelated research/platform gates remain open.
 
 ## Adaptive search implementation
