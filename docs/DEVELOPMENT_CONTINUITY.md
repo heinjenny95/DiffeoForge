@@ -26,8 +26,11 @@ delivery against a changed selection, a different loaded current fit and
 self-comparison. Byte-identical exports from separate runs are labeled, rather
 than treated as incorrect identities. The reported intermittent display was not
 reproduced in the inspected recent pair. See [scope and limits](V133_FIT_COMPARISON_IDENTITY.md).
-Installed runtime remains v132 until separate frozen checks and fresh idle
-installation guards pass. Scientific results and saved preferences are preserved.
+Exact frozen comparison, bundle/worker/startup/preparation and installer checks
+have passed. Installed remains v132 while the owner uses the pilot; normal saved
+close, verified backup, fresh idle guards and installed verification are pending.
+Scientific results and saved preferences are preserved. No installer upload was
+requested.
 
 v132 moves relative feedback into the actual individual-fit inspection: compare
 the two surfaces, select better/worse/equal, then explicitly accept/reject.

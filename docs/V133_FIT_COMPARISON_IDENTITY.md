@@ -31,7 +31,15 @@ Source, tested build, installed runtime and installer distribution are separate;
 installation waits for the owner's application and scientific workers to be idle.
 
 All 52 distinct targeted regression cases pass, including six new comparison
-identity/rendering cases. The initial version-contract check detected the old
-installer filename; the contract and packaging wrapper were updated together,
-and all six version/repository checks passed on the final files. Ruff and diff
-checks pass. Frozen and installed observations are tracked separately.
+identity/rendering cases. Version/repository contracts, Ruff and diff checks
+pass. Exact-product frozen inspection also passed with the product PYZ, actual
+runtime and four matching worker executables: selected paths/hashes, repeated
+and rapid switching, current geometry reuse and minimum/ordinary-size labels.
+All source fixture files were preserved, with no QC write or new native job.
+
+The five-executable Windows bundle, startup/worker/preparation checks, dependency
+metadata, SBOM and complete installer build verification passed. The tested
+installer is staged locally. Installed remains v132 because the owner's GUI and
+scientific worker were still active at the final readiness check. Normal saved
+owner close, verified backup, fresh idle guards and installed verification remain
+required. No installer upload, research rerun or approval change occurred.
