@@ -1,4 +1,4 @@
-# Development continuity — v133 fit comparison identity
+# Development continuity — v134 pilot next step
 
 Snapshot: 2026-10-18. This is a public, software-only continuation guide. Detailed
 research results, local paths, account destinations and run identities belong in
@@ -20,6 +20,14 @@ correct parameters or interpret biology for the researcher. Deformetrica is the
 default supported reference route; the Modern engine remains evidence-gated.
 
 ## Current source work
+
+v134 exposes the approved Stage 2/3 baseline in the persistent footer and makes
+it the explicit next step after all new options are rejected. Technical retries
+stay separate. Stage 4 now shows one contextual action, short status and folded
+check details; a finer refit is bound to the selected saved fit. Mathematical,
+approval and completion gates remain unchanged. See [scope](V134_PILOT_NEXT_STEP.md).
+Source/build/installed verification remain separate; installed remains v132
+while the owner works. Do not install the intermediate v133 over the active app.
 
 v133 makes both saved/current attempt identities explicit and guards surface
 delivery against a changed selection, a different loaded current fit and

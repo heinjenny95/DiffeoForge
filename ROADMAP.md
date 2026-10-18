@@ -31,6 +31,12 @@ scientific gates. Planning does not mark those gates complete.
 
 ## Pilot usability follow-up
 
+- [x] Keep the approved baseline and technical-screen retry visible after rejected
+  options; provide one contextual Stage 4 next action and fold repeated check
+  details. Preserve explicit selection, provisional warnings, fresh-fit QC and
+  numerical completion gates. See [v134 scope](docs/V134_PILOT_NEXT_STEP.md).
+  Tested build, installation and independent first use remain separate gates.
+
 - [x] Make saved/current attempt identity explicit in fit inspection, reject
   self-file comparisons and stale deliveries, and label identical exports from
   separate runs. Retain the current geometry across reference changes. See

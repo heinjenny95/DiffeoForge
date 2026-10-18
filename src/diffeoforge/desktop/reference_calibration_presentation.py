@@ -8,7 +8,10 @@ from dataclasses import dataclass
 from typing import Literal
 
 from diffeoforge.reference_calibration import CalibrationStage
-from diffeoforge.reference_calibration_study import CalibrationStudyCandidateState
+from diffeoforge.reference_calibration_study import (
+    CalibrationStudyCandidateState,
+    ReferenceCalibrationStudySnapshot,
+)
 
 
 def candidate_option_label(index: int) -> str:
@@ -152,6 +155,65 @@ def stage_guidance(stage: CalibrationStage) -> CalibrationStageGuidance:
         return _GUIDANCE[stage.kind]
     except KeyError as error:
         raise ValueError(f"Unsupported calibration stage kind: {stage.kind!r}") from error
+
+
+def stage_options_rejected(snapshot: ReferenceCalibrationStudySnapshot) -> bool:
+    """Recognize explicit rejection of every new option, excluding the saved baseline.
+
+    Technical failures, unfinished fits and unreviewed results are not anatomical
+    decisions. A kept early screen still requires its own joint-fit review.
+    """
+    stage = snapshot.current_stage
+    if stage is None or stage.order not in (2, 3):
+        return False
+    options = [c for c in snapshot.candidates if c.candidate_id != stage.stage_id + "-retained"]
+    return bool(options) and all(
+        c.status == "screened_out"
+        or (c.status == "completed" and snapshot.visual_reviews.get(c.candidate_id) is False)
+        for c in options
+    )
+
+
+@dataclass(frozen=True)
+class PilotNextStep:
+    action: str
+    label: str
+    message: str
+    warning: bool = False
+
+
+def final_stage_next_step(
+    *, selected: bool, approved: bool, reasons: Sequence[str], provisional: bool = False,
+    pending: bool = False, eligible: bool = False,
+) -> PilotNextStep:
+    """Explain verified assessment results; this never changes an eligibility gate."""
+    if pending:
+        return PilotNextStep("check", "Resume saved check", "An earlier check is unfinished. "
+                             "Resume it with its original settings.", True)
+    if not selected:
+        return PilotNextStep("choose", "Choose a saved fit", "Choose the saved fit to check.")
+    if any(r.startswith(("Geometry", "A complete, valid", "roundtrip check")) for r in reasons):
+        return PilotNextStep("details", "Inspect check details…", "The saved fit could not be "
+                             "verified. Inspect the check details before continuing.", True)
+    if not approved:
+        return PilotNextStep("review", "Review saved fit…", "Inspect the saved joint fit and "
+                             "record your decision before finishing.")
+    if any(r.startswith("integration check differs") for r in reasons):
+        return PilotNextStep("finer", "Recalculate fit with more time steps…", "Shape approved; "
+                             "time resolution is not stable yet. Recalculate with more time "
+                             "steps, then review and check again.", True)
+    if any(r.startswith("Check time resolution") for r in reasons):
+        return PilotNextStep("check", "Check time resolution", "Shape approved. Check its "
+                             "time resolution next; the saved fit is not re-optimized.")
+    if provisional:
+        return PilotNextStep("finish", "Finish pilot provisionally → atlas setup", "Shape and "
+                             "time resolution checked. The iteration limit was reached; "
+                             "finishing provisionally keeps that warning.", True)
+    if eligible:
+        return PilotNextStep("finish", "Finish pilot → atlas setup", "Shape and time "
+                             "resolution checked. Finish the pilot to prepare the full atlas.")
+    return PilotNextStep("details", "Inspect check details…", "This fit is not ready to finish. "
+                         "Inspect the remaining check details.", True)
 
 
 def candidate_parameter_summary(

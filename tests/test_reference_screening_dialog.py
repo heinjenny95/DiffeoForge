@@ -24,6 +24,9 @@ def test_stage_two_default_filter_and_optional_full_comparison(tmp_path, monkeyp
     app, _, dialog = _dialog(tmp_path, monkeypatch)
     calls = []
     monkeypatch.setattr(dialog, "_start_pilot", lambda **kwargs: calls.append(kwargs))
+    assert not dialog.pilot_tools.toggle_button.isChecked()
+    assert not dialog.screen_controls.isVisible()
+    dialog.pilot_tools.toggle_button.setChecked(True)
     assert dialog.screen_controls.isVisible()
     assert dialog.screen_enabled.isChecked()
     dialog.start_button.click()
@@ -87,6 +90,7 @@ def test_stage_three_filter_and_stage_four_full_cohort_controls(tmp_path, monkey
     app, _, dialog = _dialog(tmp_path, monkeypatch)
     keep_previous_fit(dialog.study_directory)
     dialog._render()
+    dialog.pilot_tools.toggle_button.setChecked(True)
     assert dialog.screen_controls.isVisible()
     assert dialog.snapshot.current_stage.order == 3
     keep_previous_fit(dialog.study_directory)
@@ -95,7 +99,9 @@ def test_stage_three_filter_and_stage_four_full_cohort_controls(tmp_path, monkey
     assert dialog.screen_controls.isHidden()
     # Current stage 4 uses fixed-state qualification; legacy refit criteria stay hidden.
     assert dialog.integration_controls.isHidden()
-    assert dialog.qualification_button.isVisible()
+    assert dialog.qualification_button.isHidden()
+    assert dialog.next_step_button.isVisible()
+    assert dialog.next_step_button.text() == "Check time resolution"
     assert all(field.isEnabled() for field in dialog.integration_fields.values())
     assert dialog.integration_fields["atlas_rms_relative"].value() == 0.5
     dialog.close()
@@ -113,7 +119,9 @@ def test_technical_failures_show_retry_with_separate_counts_and_worker_dispatch(
     while not result.early_screening["complete"]:
         result = screening.run_next_screen(runner)
     dialog._render()
+    assert not dialog.pilot_tools.toggle_button.isChecked()
     assert dialog.retry_screens_button.isVisible()
+    assert "All stage" not in dialog.retained_fit_notice.text()
     assert "0 discarded" in dialog.screen_notice.text()
     assert "technical failures" in dialog.screen_notice.text()
     assert dialog.start_button.isHidden()
