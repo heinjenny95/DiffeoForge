@@ -349,11 +349,14 @@ def run(runner, *, candidate_id=None, event_callback=None, iterations=100, finer
     root = runner.study_directory
     snapshot = study.load_reference_calibration_study(root)
     existing = declarations(study._load_events(root))
+    from diffeoforge.reference_resolution_adoption import superseded_checks
+
+    ignored = superseded_checks(study._load_events(root))
     pending = next(
         (
             e
             for e in reversed(existing)
-            if not any(
+            if e["candidate"]["candidate_id"] not in ignored and not any(
                 r["event"] in {"pilot_qualification_finished", "pilot_refinement_finished"}
                 and r.get("candidate_id") == e["candidate"]["candidate_id"]
                 for r in study._load_events(root)

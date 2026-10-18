@@ -2293,8 +2293,10 @@ class ReferenceCalibrationDialog(QDialog):
         candidate = next((c for c in self._snapshot.candidates if c.candidate_id == selected), None)
         row = next((r for r in self._assessment.candidates if r.candidate_id == selected), None) \
             if self._assessment else None
-        pending = any(c.candidate_id.startswith("qualification-") and c.status != "completed"
-                      for c in self._snapshot.candidates)
+        pending_checks = [c for c in self._snapshot.candidates
+                          if c.candidate_id.startswith("qualification-")
+                          and c.status not in {"completed", "superseded"}]
+        pending = bool(pending_checks)
         # The assessment already verified the receipt and provisional gates.
         # Reusing that result avoids hashing the entire check again on combo changes.
         provisional = bool(row and (
@@ -2308,6 +2310,9 @@ class ReferenceCalibrationDialog(QDialog):
         reasons = row.rejection_reasons if row else ("Check time resolution",)
         finer_evaluation = next((int(r.split(": ", 1)[1]) for r in reasons
                                  if r.startswith("Finer saved evaluation available: ")), None)
+        if finer_evaluation and all(c.status == "pending" and c.attempts == 0
+                                    for c in pending_checks):
+            pending = False  # Explicit adoption retires this unstarted queued refit.
         step = final_stage_next_step(
             selected=candidate is not None,
             approved=self._snapshot.visual_reviews.get(selected) is True,
@@ -2780,6 +2785,8 @@ class ReferenceCalibrationDialog(QDialog):
             detail = QLabel(
                 "Screening approval preserved; not selected for this joint test."
                 if candidate.status == "screen_deferred"
+                else "Queued refit replaced by saved-field evaluation; no optimizer was started."
+                if candidate.status == "superseded"
                 else "Ready to run." if candidate.status == "pending"
                 else "Ready for a new attempt."
             )

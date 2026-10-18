@@ -248,8 +248,11 @@ def run(runner, *, candidate_id=None, event_callback=None):
     if not snapshot.current_stage or snapshot.current_stage.order != 4:
         raise ValueError("Saved-model integration checks belong to Stage 4")
     events = study._load_events(snapshot.study_directory)
+    from diffeoforge.reference_resolution_adoption import superseded_checks
+
+    ignored = superseded_checks(events)
     if any(
-        not any(
+        e["candidate"]["candidate_id"] not in ignored and not any(
             r["event"] in {"pilot_qualification_finished", "pilot_refinement_finished"}
             and r.get("candidate_id") == e["candidate"]["candidate_id"]
             for r in events

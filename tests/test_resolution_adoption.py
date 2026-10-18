@@ -15,6 +15,9 @@ from diffeoforge.config import load_config
 
 def _setup(tmp_path, monkeypatch, *, coarse_mismatch=False):
     runner, _ = _fourth(tmp_path, monkeypatch)
+    from diffeoforge.reference_adaptive_calibration import bind_learned_seed
+
+    monkeypatch.setattr(completion.legacy, "bind_learned_seed", bind_learned_seed)
     collect = study.collect_reference_calibration_run_metrics
     monkeypatch.setattr(
         study,
@@ -199,3 +202,45 @@ def test_one_failing_specimen_blocks_finer_pair_and_missing_grid_finish(tmp_path
     assert not completion.provisional_available(done, candidate.candidate_id)
     with pytest.raises(ValueError, match="integration evidence"):
         completion.finish(done.study_directory, candidate.candidate_id)
+
+
+@pytest.mark.parametrize("started", [False, True])
+def test_queued_refit_is_retired_only_if_it_never_started(tmp_path, monkeypatch, started):
+    runner, checked, source, calls = _setup(tmp_path, monkeypatch)
+    queued, identifier = completion.legacy.prepare(checked, candidate_id=source, finer_model=True)
+    if started:
+        study._append_event(
+            queued.study_directory,
+            "candidate_started",
+            dict(
+                stage_id=queued.current_stage.stage_id,
+                candidate_id=identifier,
+                run_directory="never-executed-test",
+                attempt=1,
+            ),
+        )
+        with pytest.raises(ValueError, match="started or different"):
+            adoption.run(runner, candidate_id=source)
+        assert not adoption.superseded_checks(study._load_events(queued.study_directory))
+        return
+    done = adoption.run(runner, candidate_id=source)
+    assert next(c for c in done.candidates if c.candidate_id == identifier).status == "superseded"
+    assert identifier in adoption.superseded_checks(study._load_events(done.study_directory))
+    assert len(calls) == 4
+    monkeypatch.setattr(
+        completion.legacy, "run", lambda *a, **k: pytest.fail("Retired refit resumed")
+    )
+    completion.run(runner, candidate_id=source)
+    assert len(calls) == 4
+    study._append_event(
+        done.study_directory,
+        "candidate_started",
+        dict(
+            stage_id=done.current_stage.stage_id,
+            candidate_id=identifier,
+            run_directory="never-executed-test",
+            attempt=1,
+        ),
+    )
+    with pytest.raises(ValueError, match="unstarted declared"):
+        study.load_reference_calibration_study(done.study_directory)

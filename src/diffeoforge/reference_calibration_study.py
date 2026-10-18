@@ -1766,6 +1766,9 @@ def _load_verified_calibration_study(
         )
     stage = plan.stages[len(selected_candidates)]
     prepared = _prepared_candidates(root, events, stage.stage_id)
+    from diffeoforge.reference_resolution_adoption import superseded_checks
+
+    superseded = superseded_checks(events)
     candidate_states: list[CalibrationStudyCandidateState] = []
     for candidate in stage.candidates:
         candidate_events = [
@@ -1782,7 +1785,9 @@ def _load_verified_calibration_study(
         ]
         starts = [event for event in candidate_events if event["event"] == "candidate_started"]
         latest = (completed or failures or starts or [None])[-1]
-        if completed:
+        if candidate.candidate_id in superseded:
+            status = "superseded"
+        elif completed:
             status = "completed"
         elif failures:
             status = "interrupted" if failures[-1]["event"] == "candidate_interrupted" else "failed"
@@ -2010,7 +2015,7 @@ class ReferenceCalibrationStudyRunner:
         allowed = joint_candidate_ids(snapshot)
         for candidate in snapshot.candidates:
             if (
-                candidate.status == "completed"
+                candidate.status in {"completed", "superseded"}
                 or (allowed is not None and candidate.candidate_id not in allowed)
                 or (candidate_ids is not None and candidate.candidate_id not in candidate_ids)
             ):

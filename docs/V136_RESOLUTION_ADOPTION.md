@@ -5,6 +5,9 @@ when the existing finer-grid comparison passes for every pilot specimen. The
 primary action names that grid and explicitly says **no refit**. The original
 two evaluations are reused; only the missing third nested grid is computed.
 Integration equations, complete-cohort checks and thresholds stay unchanged.
+Choosing adoption can explicitly retire a queued optimizer check that has never
+started. Its declaration remains in history; it cannot later resume implicitly.
+A check that has already started requires a separate decision and is preserved.
 
 The adoption is a distinct immutable evaluation candidate. Its provenance binds
 the original optimizer result, learned template, control points, ordered momenta,

@@ -29,7 +29,78 @@ def records(events):
     return tuple(e for e in events if e["event"] == "candidate_completed" and KEY in e)
 
 
+def superseded_checks(events):
+    """An explicit alternative may retire a declared check that never started."""
+    result = set()
+    for event in events:
+        if event["event"] != "pilot_check_superseded":
+            continue
+        declaration = next(e for e in events if e["event_hash"] == event["declaration_event_hash"])
+        identifier = event["candidate_id"]
+        if (
+            declaration["event"] != "pilot_qualification_declared"
+            or declaration["candidate"]["candidate_id"] != identifier
+            or declaration["sequence"] >= event["sequence"]
+            or event["version"] != VERSION
+            or identifier in result
+            or any(
+                e.get("candidate_id") == identifier
+                and e["event"]
+                in {
+                    "candidate_started",
+                    "candidate_completed",
+                    "pilot_qualification_finished",
+                    "pilot_refinement_finished",
+                }
+                for e in events
+            )
+        ):
+            raise ValueError("Only an unstarted declared pilot check can be superseded")
+        result.add(identifier)
+    return result
+
+
+def _supersede_pending(root, source_id, replacement):
+    events = study._load_events(root)
+    ignored = superseded_checks(events)
+    for declaration in events:
+        if declaration["event"] != "pilot_qualification_declared":
+            continue
+        identifier = declaration["candidate"]["candidate_id"]
+        if identifier in ignored or any(
+            e.get("candidate_id") == identifier
+            and e["event"]
+            in {
+                "pilot_qualification_finished",
+                "pilot_refinement_finished",
+            }
+            for e in events
+        ):
+            continue
+        if declaration["source"]["candidate_id"] != source_id or any(
+            e["event"] == "candidate_started" and e.get("candidate_id") == identifier
+            for e in events
+        ):
+            raise ValueError(
+                "A started or different saved check needs an explicit separate decision"
+            )
+        study._append_event(
+            root,
+            "pilot_check_superseded",
+            dict(
+                version=VERSION,
+                stage_id=declaration["stage_id"],
+                candidate_id=identifier,
+                declaration_event_hash=declaration["event_hash"],
+                replacement=replacement,
+                reason="Researcher chose finer saved evaluation "
+                "without the queued optimizer refit.",
+            ),
+        )
+
+
 def overlay_plan(plan, events):
+    superseded_checks(events)
     for event in records(events):
         row = event[KEY]["candidate"]
         stage = plan.stages[-1]
@@ -217,7 +288,8 @@ def _verify(root, event, events):
     if declaration["counts"] != [count, 2 * count - 1, 4 * count - 3]:
         raise ValueError("Resolution adoption nested grids changed")
     expected_labels = sorted(
-        (r["filename"] for r in study._verify_manifest(root)["inputs"]["subjects"]), key=Path,
+        (r["filename"] for r in study._verify_manifest(root)["inputs"]["subjects"]),
+        key=Path,
     )
     expected_names = set(expected_labels)
     pair = original["integration"][f"{count}->{2 * count - 1}"]
@@ -336,13 +408,14 @@ def run(runner, *, candidate_id, event_callback=None):
             return snapshot
     source, completed = _candidate(root, snapshot.current_stage.stage_id, candidate_id)
     folder = root / "resolution-adoptions" / uuid4().hex
+    identifier = "resolution-" + folder.name
+    _supersede_pending(root, candidate_id, identifier)
     seed = bind_learned_seed(snapshot, candidate_id, folder)
     labels = seed["subject_labels"]
     original = checked[candidate_id]
     grids = {n: _grid(root, original["receipt"], labels, n) for n in (count, 2 * count - 1)}
     for bound in seed["files"].values():
         bound["copy"] = study._relative_path(root, folder / bound["copy"])
-    identifier = "resolution-" + folder.name
     declaration = study._append_event(
         root,
         "resolution_evaluation_declared",
