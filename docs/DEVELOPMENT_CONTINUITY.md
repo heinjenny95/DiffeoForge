@@ -32,6 +32,10 @@ Source, tested build and installed states remain separate. Installed remains
 v132 until safe backed-up installation after saved normal close and finished
 video encoding. The previously uninstalled v133/v134 changes are included;
 do not install either intermediate build.
+65 scoped cases, source/exact frozen UI checks and the complete five-executable
+bundle/installer verification pass. Tested runtime source is 78781eb; the
+installed app remains v132 with active pilot/encoder processes. Safe backed-up
+installation and installed checks remain pending; no installer upload requested.
 
 v134 exposes the approved Stage 2/3 baseline in the persistent footer and makes
 it the explicit next step after all new options are rejected. Technical retries
