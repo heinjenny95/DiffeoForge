@@ -518,6 +518,11 @@ scientific gates. Planning does not mark those gates complete.
   shapes on reopen, and preserve the source atlas, PCA and approvals. Backlog
   only: implementation and installed-UI acceptance remain pending.
 - [ ] Add verified reference PC deformation meshes and registration-quality rendering
+- [ ] Verify native PC Shooting's effective time grid and physical endpoint before
+  selecting meshes. The inspected reference route can ignore the declared point
+  count and select `t=0.9` as an endpoint. Repair selection with regression and
+  installed checks; preserve existing evidence. See
+  [derived-media requirements](docs/PCA_VISUALIZATION_EXPORTS.md).
 - [x] Export the reference shape-space comparison as a PDF in the project folder
   in addition to the local HTML report; use a deterministic,
   provenance-bound destination, refuse silent overwrite, and expose both reports
