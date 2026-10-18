@@ -33,6 +33,7 @@ class FitPreferencePanel(QWidget):
         self._comparison = None
         self._closed = False
         self._ready = False
+        self._same_surface = False
         layout = QVBoxLayout(self)
         title = QLabel("Inspect current fit and compare with your best")
         title.setObjectName("heading")
@@ -65,7 +66,8 @@ class FitPreferencePanel(QWidget):
         right_panel = QWidget()
         right = QVBoxLayout(right_panel)
         right.setContentsMargins(0, 0, 0, 0)
-        right.addWidget(QLabel("Current fit"))
+        self.current_label = QLabel("Current fit")
+        right.addWidget(self.current_label)
         self.current_canvas = current_canvas or CalibrationComparisonCanvas3D()
         right.addWidget(self.current_canvas, 1)
         views.addWidget(self.reference_panel, 1)
@@ -130,6 +132,7 @@ class FitPreferencePanel(QWidget):
         if self._closed or not self._descriptor:
             return
         self._ready = False
+        self._same_surface = False
         self._comparison = None
         self.decision = None
         self.button_group.setExclusive(False)
@@ -179,6 +182,10 @@ class FitPreferencePanel(QWidget):
             paths = [pair.original_path, pair.reconstruction_path]
             expected = [pair.original_sha256, pair.reconstruction_sha256]
             if reference:
+                if (reference["study"], reference["candidate_id"]) == (
+                    descriptor["current"]["study"], descriptor["current"]["candidate_id"]
+                ):
+                    raise ValueError("The selected saved fit is the current attempt")
                 saved = verified_fit(root, state, reference)
                 other = next(
                     c for c in saved.candidates if c.candidate_id == reference["candidate_id"]
@@ -190,6 +197,8 @@ class FitPreferencePanel(QWidget):
                 )
                 if pair.original_sha256 != other_pair.original_sha256:
                     raise ValueError("Compared fits do not share the same original specimen")
+                if pair.reconstruction_path.resolve() == other_pair.reconstruction_path.resolve():
+                    raise ValueError("Saved and current fits point to the same reconstruction")
                 paths.append(other_pair.reconstruction_path)
                 expected.append(other_pair.reconstruction_sha256)
             models = list(current_models or ())
@@ -221,7 +230,9 @@ class FitPreferencePanel(QWidget):
             return
         if key == "choices":
             self._descriptor = result
+            self.current_label.setText("Current fit · " + result["current"]["study"])
             self.reference_combo.blockSignals(True)
+            self.reference_combo.clear()
             best = result["best"]
             choices = result["choices"]
             already_best = best == result["current"]
@@ -251,7 +262,34 @@ class FitPreferencePanel(QWidget):
             self._load_comparison()
             return
         models, comparison = result
+        # Bind the delivered surfaces to the visible attempt selection as well as
+        # the loader's generation token. Never label a late result as a newer fit.
+        if not self._descriptor or comparison != dict(
+            current=self._descriptor["current"],
+            reference=self.reference_combo.currentData(),
+            best=self._descriptor["best"],
+        ):
+            return
+        reference = comparison["reference"]
+        if reference and (
+            (reference["study"], reference["candidate_id"]) == (
+                comparison["current"]["study"], comparison["current"]["candidate_id"]
+            )
+            or len(models) != 3
+            or models[1].path.resolve() == models[2].path.resolve()
+        ):
+            self._failed(key, "Saved and current fits must be different attempts and files")
+            return
+        if self._shared_canvas and (
+            not self._current_models or any(
+                shown.path.resolve() != loaded.path.resolve() or shown.sha256 != loaded.sha256
+                for shown, loaded in zip(self._current_models, models[:2], strict=True)
+            )
+        ):
+            self._failed(key, "Displayed current specimen changed; reopen the inspection")
+            return
         self._comparison = comparison
+        self._same_surface = bool(reference and models[1].sha256 == models[2].sha256)
         if not self._shared_canvas:
             self.current_canvas.set_models(models[0], models[1])
         if len(models) == 3:
@@ -288,12 +326,15 @@ class FitPreferencePanel(QWidget):
         self.start_button.setEnabled(bool(ready and not reference))
         if self._ready:
             self.status.setText(
-                "Compare with Best so far to guide the next attempt; "
-                "other saved fits are available for inspection."
-                if reference and not ranked_reference
-                else "Choose relative fit, then accept or reject to save."
-                if reference
-                else "Keep this starting point, then accept or reject the fit."
+                ("These separate runs exported identical surfaces. " if self._same_surface else "")
+                + (
+                    "Compare with Best so far to guide the next attempt; "
+                    "other saved fits are available for inspection."
+                    if reference and not ranked_reference
+                    else "Choose relative fit, then accept or reject to save."
+                    if reference
+                    else "Keep this starting point, then accept or reject the fit."
+                )
             )
         self.selectionChanged.emit()
 
@@ -324,6 +365,8 @@ class FitPreferencePanel(QWidget):
 
     def _failed(self, _key, message):
         self._ready = False
+        self._comparison = None
+        self.reference_canvas.clear()
         self._update_actions()
         self.status.setText("Comparison unavailable: " + message)
 

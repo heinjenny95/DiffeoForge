@@ -1,4 +1,4 @@
-# Development continuity — v132 integrated fit inspection
+# Development continuity — v133 fit comparison identity
 
 Snapshot: 2026-10-18. This is a public, software-only continuation guide. Detailed
 research results, local paths, account destinations and run identities belong in
@@ -20,6 +20,14 @@ correct parameters or interpret biology for the researcher. Deformetrica is the
 default supported reference route; the Modern engine remains evidence-gated.
 
 ## Current source work
+
+v133 makes both saved/current attempt identities explicit and guards surface
+delivery against a changed selection, a different loaded current fit and
+self-comparison. Byte-identical exports from separate runs are labeled, rather
+than treated as incorrect identities. The reported intermittent display was not
+reproduced in the inspected recent pair. See [scope and limits](V133_FIT_COMPARISON_IDENTITY.md).
+Installed runtime remains v132 until separate frozen checks and fresh idle
+installation guards pass. Scientific results and saved preferences are preserved.
 
 v132 moves relative feedback into the actual individual-fit inspection: compare
 the two surfaces, select better/worse/equal, then explicitly accept/reject.

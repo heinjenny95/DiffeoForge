@@ -124,6 +124,21 @@ def test_changed_reference_invalidates_rating_and_reuses_the_current_display(tmp
     app.processEvents()
 
 
+def test_late_surfaces_cannot_replace_the_current_inspection_identity(tmp_path, monkeypatch):
+    app, dialog, panel, original, reconstruction, _ = inspection(tmp_path, monkeypatch)
+    comparison = panel._comparison
+    panel._loaded("surfaces", (
+        [original, _model(tmp_path / "other-current.vtk"), _model(tmp_path / "previous.vtk")],
+        comparison,
+    ))
+    assert dialog.canvas.reconstruction_model is reconstruction
+    assert panel.reference_canvas.reconstruction_model is None
+    assert "Displayed current specimen changed" in panel.status.text()
+    assert not dialog.complete_button.isEnabled() and not dialog.fail_button.isEnabled()
+    dialog.close()
+    app.processEvents()
+
+
 def test_invalid_individual_fit_cannot_be_accepted_or_seeded(tmp_path, monkeypatch):
     app, old, _, _, _, candidate = inspection(tmp_path, monkeypatch)
     old.close()

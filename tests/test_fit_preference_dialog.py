@@ -1,4 +1,5 @@
 import time
+from dataclasses import replace
 
 import numpy as np
 from test_reference_calibration_dialog import _model
@@ -110,4 +111,77 @@ def test_legacy_unranked_sequence_can_select_an_older_better_attempt(tmp_path, m
     dialog.feedback_buttons["same"].click()
     assert dialog.decision[0] == "same"
     assert dialog.decision[2]["best"] is None
+    dialog.close()
+    app.processEvents()
+
+
+def test_attempt_labels_and_late_reference_delivery_cannot_mirror_current(tmp_path, monkeypatch):
+    app, dialog, comparison, _ = setup_dialog(tmp_path, monkeypatch)
+    wait(app, lambda: dialog.feedback_buttons["better"].isEnabled())
+    assert dialog.current_label.text() == "Current fit · specimen-01-03"
+    assert "specimen-01-01" in dialog.reference_label.text()
+    dialog.reference_combo.setCurrentIndex(1)
+    # The old saved-fit delivery arrives after the user selects the previous attempt.
+    dialog._loaded("surfaces", (
+        [_model(tmp_path / name) for name in ("target.vtk", "current.vtk", "saved.vtk")],
+        comparison,
+    ))
+    assert dialog.reference_canvas.reconstruction_model is None
+    assert not dialog.selection_ready and not dialog._ready
+    selected = dict(comparison, reference=dialog.reference_combo.currentData())
+    models = [_model(tmp_path / name) for name in ("target.vtk", "current.vtk", "previous.vtk")]
+    dialog._loaded("surfaces", (models, selected))
+    wait(app, lambda: dialog.reference_canvas.comparison_ready)
+    assert dialog.reference_canvas.reconstruction_model is models[2]
+    assert dialog.current_canvas.reconstruction_model is models[1]
+    assert "specimen-01-02" in dialog.reference_label.text()
+    dialog.close()
+    app.processEvents()
+
+
+def test_distinct_attempts_cannot_display_the_current_file_on_both_sides(tmp_path, monkeypatch):
+    app, dialog, comparison, _ = setup_dialog(tmp_path, monkeypatch)
+    wait(app, lambda: dialog.feedback_buttons["better"].isEnabled())
+    models = [_model(tmp_path / name) for name in ("target.vtk", "current.vtk", "current.vtk")]
+    dialog._loaded("surfaces", (models, comparison))
+    assert "different attempts and files" in dialog.status.text()
+    assert dialog.reference_canvas.reconstruction_model is None
+    assert not any(b.isEnabled() for b in dialog.feedback_buttons.values())
+    dialog.close()
+    app.processEvents()
+
+
+def test_identical_exports_from_separate_attempts_are_explicit_and_still_reviewable(
+    tmp_path, monkeypatch
+):
+    app, dialog, comparison, _ = setup_dialog(tmp_path, monkeypatch)
+    wait(app, lambda: dialog.feedback_buttons["same"].isEnabled())
+    assert "separate runs exported identical surfaces" in dialog.status.text()
+    assert dialog.reference_canvas.reconstruction_model.path != (
+        dialog.current_canvas.reconstruction_model.path
+    )
+    dialog.feedback_buttons["same"].click()
+    assert dialog.decision == ("same", "fit-specimen", comparison)
+    dialog.close()
+    app.processEvents()
+
+
+def test_rendered_previous_and_current_surfaces_retain_their_own_geometry(tmp_path, monkeypatch):
+    app, dialog, comparison, _ = setup_dialog(tmp_path, monkeypatch, best=False)
+    original = _model(tmp_path / "target.vtk")
+    previous = replace(_model(tmp_path / "previous.vtk"), sha256="1" * 64)
+    current = replace(
+        _model(tmp_path / "current.vtk"), sha256="2" * 64,
+        vertices=((-1., -1., 0.), (1., -1., 0.), (0., 1., 0.), (.9, .4, 1.8)),
+    )
+    dialog._loaded("surfaces", ([original, current, previous], comparison))
+    wait(app, lambda: dialog.feedback_buttons["better"].isEnabled())
+    left, right = dialog.reference_canvas, dialog.current_canvas
+    assert left.reconstruction_model is previous and right.reconstruction_model is current
+    assert np.array_equal(left._reconstruction_vertices, previous.vertices)
+    assert np.array_equal(right._reconstruction_vertices, current.vertices)
+    assert left._frames._image != right._frames._image
+    dialog.feedback_buttons["worse"].click()
+    assert dialog.decision[2]["reference"]["study"] == "specimen-01-02"
+    dialog.close()
     app.processEvents()

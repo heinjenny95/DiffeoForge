@@ -31,6 +31,11 @@ scientific gates. Planning does not mark those gates complete.
 
 ## Pilot usability follow-up
 
+- [x] Make saved/current attempt identity explicit in fit inspection, reject
+  self-file comparisons and stale deliveries, and label identical exports from
+  separate runs. Retain the current geometry across reference changes. See
+  [v133 scope and separate delivery gates](docs/V133_FIT_COMPARISON_IDENTITY.md).
+
 - [x] Integrate relative better/worse/equal assessment directly into individual
   fit inspection, followed by explicit accept/reject. Ranking alone starts no
   attempt; closing without a final decision records nothing. Reuse the current
