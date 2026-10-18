@@ -21,6 +21,11 @@ default supported reference route; the Modern engine remains evidence-gated.
 
 ## Current source work
 
+Owner backlog update, 18 October 2026: remove the demo/presentation mode and its
+demo-only UI entry points, shortcuts and packaged assets. The owner found it
+unhelpful. This is an open task in the roadmap, not an implemented removal;
+the installed dev129, real projects/results and test fixtures are unchanged.
+
 v129 implements the owner-selected Pilot/PCA work and the follow-up Visualization
 page and iteration-budget recommendation. New pilots use one-fit/review steps;
 optional controls move inside the scroll area, full detail/proxies reuse verified

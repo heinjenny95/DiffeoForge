@@ -12,6 +12,13 @@ The [next development-version plan](docs/NEXT_VERSION_PLAN.md) sequences the
 current UX work and explicitly plans the larger hardware, distribution and
 scientific gates. Planning does not mark those gates complete.
 
+## Owner-requested cleanup
+
+- [ ] Remove the demo/presentation mode and demo-only content from DiffeoForge,
+  including its UI entry points, shortcuts and packaged assets. The owner found
+  the demo unhelpful and requested removal on 18 October 2026. Preserve real
+  projects/results and engineering test fixtures. Backlog only; removal is pending.
+
 ## Pilot usability follow-up
 
 - [x] Make the early atlas checkpoint an explicit, default-off option. Allow
