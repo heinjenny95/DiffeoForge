@@ -31,6 +31,31 @@ They use the same public core that a future graphical interface will call.
 Keep unpublished meshes, specimen identifiers, landmarks, and private intake
 reports out of public repository updates.
 
+## Preparing a clean input folder for a fresh start
+
+When the cohort changes, consolidate the documented current membership into a
+new input folder and keep the received originals and earlier projects intact.
+Use the recorded inclusion/exclusion decisions and source metadata, rather than
+collecting every historical STL or inferring specimen identity from filenames.
+
+Reuse already prepared working copies when their source hashes and transformations
+still match. A filename containing `right` may describe the original side even
+after a recorded reflection; do not reflect it again based on its name. For an
+STL reflection, verify transformed coordinates, reversed facet winding and
+transformed stored normals. Retain previously authorized component repairs as
+documented copies, without silently introducing new repairs or scale changes.
+
+Verify the copied mesh inventory, byte sizes and SHA-256 values, and rerun the
+applicable structural gates. Keep a private manifest connecting each specimen
+to its source, preparation, side metadata and output hash. These checks do not
+replace anatomical review or establish physical units.
+
+Use an empty project folder for a requested restart from zero. Do not carry old
+landmark drafts, GPA approvals, pilot selections or atlas/PCA results into the
+new project. A separate template alias must remain distinct from the target
+specimen inventory; keep it outside the subject folder or explicitly exclude it
+from the file pattern. Preparing this folder does not start a computation.
+
 ## 1. Diagnose the computer
 
 From the intended project directory, run:
