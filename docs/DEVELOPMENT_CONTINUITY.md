@@ -25,9 +25,11 @@ v132 moves relative feedback into the actual individual-fit inspection: compare
 the two surfaces, select better/worse/equal, then explicitly accept/reject.
 The hidden independent comparison entry point is removed. Ranking alone neither
 persists a decision nor launches a fit, and the current loaded mesh objects are
-reused. See [workflow and boundaries](V132_INLINE_FIT_INSPECTION.md). Source
-verification, Windows package and installation are recorded separately below;
-the last verified installation remains v131 until the new delivery is checked.
+reused. See [workflow and boundaries](V132_INLINE_FIT_INSPECTION.md). The tested
+v132 is installed after a verified full backup and fresh application/backend
+idle checks. Exact product inspection/native/recording probes and ordinary shell
+startup passed. See [verified delivery](V132_DELIVERY.md). Source, runtime and
+installer distribution remain separate; no installer upload was requested.
 
 v131 adds synchronized side-by-side individual-fit comparisons, better/worse/equal
 feedback and a persistent best starting point. New attempts use that verified
@@ -37,7 +39,7 @@ The same version repairs recording of the actual separate pilot and nested
 review windows by assigning their application owner, retaining visible workflow
 context across external focus changes, and using a selected project directory
 for early landmark videos. Prior recordings/results are preserved. The tested
-v131 is installed after normal owner close, verified backup and fresh idle
+v131 was installed after normal owner close, verified backup and fresh idle
 guards. Exact frozen/installed window recordings and native best-field successor
 checks passed, along with payload/companion verification and ordinary shell
 startup. See [verified delivery](V131_DELIVERY.md). Source, runtime and installer

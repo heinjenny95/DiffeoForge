@@ -35,8 +35,9 @@ scientific gates. Planning does not mark those gates complete.
   fit inspection, followed by explicit accept/reject. Ranking alone starts no
   attempt; closing without a final decision records nothing. Reuse the current
   mesh view and preserve the best after rejected improvements. See
-  [v132 workflow](docs/V132_INLINE_FIT_INSPECTION.md). Build/installed verification
-  and independent first use remain separate.
+  [v132 workflow](docs/V132_INLINE_FIT_INSPECTION.md). The tested version is
+  installed; [build/installed verification](docs/V132_DELIVERY.md) and independent
+  first use remain separate.
 - [x] Add direct, synchronized better/worse comparison of individual fits and a
   persistent human-selected best starting point. Relative ranking guides bounded
   new attempts without approving anatomy or carrying fields across control bases.

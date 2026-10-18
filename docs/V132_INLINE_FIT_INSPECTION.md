@@ -50,4 +50,5 @@ Minimum-size layouts were visually inspected. The actual-window recording probe
 decoded a 1080p MP4 with 36 distinct frames and no reported capture gaps, covering
 landmarking, pilot and integrated fit inspection/rating. These bounded source
 observations do not establish long-session behavior; frozen/installed checks are
-tracked separately.
+tracked separately. Those exact-product frozen and installed checks have now
+passed, and tested v132 is installed; see [delivery](V132_DELIVERY.md).
