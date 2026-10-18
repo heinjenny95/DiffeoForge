@@ -3,10 +3,11 @@
 from pathlib import Path
 
 import numpy as np
+from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
+    QButtonGroup,
     QCheckBox,
     QComboBox,
-    QDialog,
     QHBoxLayout,
     QLabel,
     QPushButton,
@@ -19,26 +20,29 @@ from diffeoforge.desktop.preview_mesh_loader import PreviewMeshLoader
 from diffeoforge.reference_fit_preferences import comparison_choices, verified_fit
 
 
-class FitPreferenceDialog(QDialog):
-    def __init__(self, directory, parent=None):
+class FitPreferencePanel(QWidget):
+    selectionChanged = Signal()
+
+    def __init__(self, directory, parent=None, *, current_canvas=None):
         super().__init__(parent)
         self.directory = Path(directory).resolve()
-        self.setWindowTitle("Compare fits — guide the next attempt")
-        self.resize(1120, 760)
-        self.setMinimumSize(820, 600)
+        self._shared_canvas = current_canvas is not None
+        self._current_models = None
         self.decision = None
         self._descriptor = None
         self._comparison = None
         self._closed = False
         self._ready = False
         layout = QVBoxLayout(self)
-        title = QLabel("Which fit is closer to the anatomy you need?")
+        title = QLabel("Inspect current fit and compare with your best")
         title.setObjectName("heading")
+        title.setVisible(not self._shared_canvas)
         layout.addWidget(title)
         intro = QLabel(
             "Orange: target specimen · Blue: fitted surface. Both views share camera and scale."
         )
         intro.setWordWrap(True)
+        intro.setVisible(not self._shared_canvas)
         layout.addWidget(intro)
         controls = QHBoxLayout()
         controls.addWidget(QLabel("Compare with"))
@@ -62,14 +66,15 @@ class FitPreferenceDialog(QDialog):
         right = QVBoxLayout(right_panel)
         right.setContentsMargins(0, 0, 0, 0)
         right.addWidget(QLabel("Current fit"))
-        self.current_canvas = CalibrationComparisonCanvas3D()
+        self.current_canvas = current_canvas or CalibrationComparisonCanvas3D()
         right.addWidget(self.current_canvas, 1)
         views.addWidget(self.reference_panel, 1)
         views.addWidget(right_panel, 1)
         layout.addLayout(views, 1)
         for canvas in (self.reference_canvas, self.current_canvas):
-            canvas.setMinimumHeight(300)
-            canvas.original_detail.hide()
+            canvas.setMinimumHeight(220 if self._shared_canvas else 300)
+            if canvas is self.reference_canvas or not self._shared_canvas:
+                canvas.original_detail.hide()
             canvas.fullResolutionReadyChanged.connect(self._update_actions)
         self.reference_canvas.cameraChanged.connect(self.current_canvas.set_linked_camera)
         self.current_canvas.cameraChanged.connect(self.reference_canvas.set_linked_camera)
@@ -79,37 +84,45 @@ class FitPreferenceDialog(QDialog):
         self.status = QLabel("Loading saved comparisons…")
         self.status.setWordWrap(True)
         layout.addWidget(self.status)
+        self.feedback_controls = QWidget()
+        self.feedback_controls.setStyleSheet(
+            "QPushButton { background: #f2f8f6; border: 1px solid #cee3dd; "
+            "border-radius: 6px; min-height: 28px; padding: 2px 10px; }"
+            "QPushButton:checked { background: #167c6b; border-color: #167c6b; color: white; }"
+            "QPushButton:disabled { color: #78918d; background: #f2f5f4; }"
+        )
+        feedback_layout = QVBoxLayout(self.feedback_controls)
+        feedback_layout.setContentsMargins(0, 0, 0, 0)
+        self.step_label = QLabel("1. Compared with the saved fit")
+        feedback_layout.addWidget(self.step_label)
         buttons = QHBoxLayout()
+        self.button_group = QButtonGroup(self)
         self.feedback_buttons = {}
         for label, outcome in [
-            ("Better, still not right", "better"),
+            ("Better", "better"),
             ("Worse", "worse"),
             ("About the same", "same"),
         ]:
             button = QPushButton(label)
             button.setEnabled(False)
+            button.setCheckable(True)
+            self.button_group.addButton(button)
             button.clicked.connect(lambda _checked=False, value=outcome: self._choose(value))
             self.feedback_buttons[outcome] = button
             buttons.addWidget(button)
-        self.start_button = QPushButton("Improve from this fit")
+        self.start_button = QPushButton("First fit — use as starting point")
         self.start_button.setEnabled(False)
+        self.start_button.setCheckable(True)
+        self.button_group.addButton(self.start_button)
         self.start_button.clicked.connect(lambda: self._choose("starting_point"))
         buttons.addWidget(self.start_button)
-        close = QPushButton("Close")
-        close.clicked.connect(self.reject)
-        buttons.addWidget(close)
-        layout.addLayout(buttons)
-        note = QLabel(
-            "Feedback starts one new attempt. The best starting point stays saved; "
-            "anatomical approval is a separate review."
-        )
-        note.setWordWrap(True)
-        note.setObjectName("hint")
-        layout.addWidget(note)
+        feedback_layout.addLayout(buttons)
+        layout.addWidget(self.feedback_controls)
         self.loader = PreviewMeshLoader(self)
         self.loader.loaded.connect(self._loaded)
         self.loader.failed.connect(self._failed)
         self.reference_combo.currentIndexChanged.connect(self._load_comparison)
+        self.detail.setVisible(not self._shared_canvas)
         self.detail.toggled.connect(self._load_comparison)
         self.loader.request_operation("choices", lambda: comparison_choices(self.directory))
 
@@ -118,12 +131,25 @@ class FitPreferenceDialog(QDialog):
             return
         self._ready = False
         self._comparison = None
-        self.current_canvas.clear()
+        self.decision = None
+        self.button_group.setExclusive(False)
+        for button in self.button_group.buttons():
+            button.setChecked(False)
+        self.button_group.setExclusive(True)
+        if not self._shared_canvas:
+            self.current_canvas.clear()
         self.reference_canvas.clear()
         self._update_actions()
         descriptor = self._descriptor
         reference = self.reference_combo.currentData()
-        detail = self.detail.isChecked()
+        detail = (
+            self.current_canvas.original_detail.isChecked()
+            if self._shared_canvas else self.detail.isChecked()
+        )
+        current_models = self._current_models
+        if self._shared_canvas and current_models is None:
+            self.status.setText("Load the current specimen to compare its fit.")
+            return
         self.status.setText("Loading the selected surfaces…")
 
         def prepare():
@@ -166,8 +192,14 @@ class FitPreferenceDialog(QDialog):
                     raise ValueError("Compared fits do not share the same original specimen")
                 paths.append(other_pair.reconstruction_path)
                 expected.append(other_pair.reconstruction_sha256)
-            models = []
-            for path, digest in zip(paths, expected, strict=True):
+            models = list(current_models or ())
+            if current_models and any(
+                model.sha256 != digest or model.path.resolve() != path.resolve()
+                for model, path, digest in zip(current_models, paths[:2], expected[:2], strict=True)
+            ):
+                raise ValueError("Displayed current specimen differs from the bound fit")
+            offset = 2 if current_models else 0
+            for path, digest in zip(paths[offset:], expected[offset:], strict=True):
                 if sha256_file(path) != digest:
                     raise ValueError("A compared surface changed")
                 model = (
@@ -192,9 +224,10 @@ class FitPreferenceDialog(QDialog):
             self.reference_combo.blockSignals(True)
             best = result["best"]
             choices = result["choices"]
-            if best and best != result["current"]:
+            already_best = best == result["current"]
+            if best and not already_best:
                 self.reference_combo.addItem("Best so far · " + best["study"], best)
-            for index, record in enumerate(choices):
+            for index, record in enumerate([] if already_best else choices):
                 if record == best:
                     continue
                 self.reference_combo.addItem(
@@ -202,15 +235,25 @@ class FitPreferenceDialog(QDialog):
                     record,
                 )
             self.reference_combo.blockSignals(False)
-            self.reference_panel.setVisible(bool(choices))
-            self.start_button.setVisible(not bool(choices))
+            has_reference = bool(self.reference_combo.count())
+            self.reference_panel.setVisible(has_reference)
+            self.reference_combo.setVisible(has_reference)
+            self.start_button.setVisible(not has_reference)
+            if already_best:
+                self.start_button.setText("Keep saved best as starting point")
+            self.step_label.setText(
+                "1. Compared with your best / selected previous fit"
+                if has_reference else "1. Saved best fit" if already_best
+                else "1. First fit — no previous attempt"
+            )
             for button in self.feedback_buttons.values():
-                button.setVisible(bool(choices))
+                button.setVisible(has_reference)
             self._load_comparison()
             return
         models, comparison = result
         self._comparison = comparison
-        self.current_canvas.set_models(models[0], models[1])
+        if not self._shared_canvas:
+            self.current_canvas.set_models(models[0], models[1])
         if len(models) == 3:
             self.reference_canvas.set_models(models[0], models[2])
         vertices = np.vstack([m.vertices for m in models])
@@ -218,7 +261,11 @@ class FitPreferenceDialog(QDialog):
         for canvas in (self.reference_canvas, self.current_canvas):
             canvas.set_comparison_extent((low + high) / 2, float(np.max(high - low)))
             canvas.original_detail.blockSignals(True)
-            canvas.original_detail.setChecked(self.detail.isChecked())
+            if canvas is self.reference_canvas or not self._shared_canvas:
+                canvas.original_detail.setChecked(
+                    self.current_canvas.original_detail.isChecked()
+                    if self._shared_canvas else self.detail.isChecked()
+                )
             canvas.original_detail.blockSignals(False)
         self.reference_canvas.set_linked_camera(self.current_canvas.camera_state())
         self.reference_label.setText(self.reference_combo.currentText())
@@ -244,12 +291,15 @@ class FitPreferenceDialog(QDialog):
                 "Compare with Best so far to guide the next attempt; "
                 "other saved fits are available for inspection."
                 if reference and not ranked_reference
-                else "Better replaces the starting point. Worse or About the same keeps it."
+                else "Choose relative fit, then accept or reject to save."
                 if reference
-                else "First attempt: keep this as your starting point without approving it."
+                else "Keep this starting point, then accept or reject the fit."
             )
+        self.selectionChanged.emit()
 
     def _choose(self, outcome):
+        if self._closed:
+            return
         self._update_actions()
         button = (
             self.start_button if outcome == "starting_point" else self.feedback_buttons[outcome]
@@ -257,14 +307,30 @@ class FitPreferenceDialog(QDialog):
         if not button.isEnabled():
             return
         self.decision = outcome, self._descriptor["current"]["candidate_id"], self._comparison
-        self.accept()
+        button.setChecked(True)
+        self.selectionChanged.emit()
+
+    @property
+    def selection_ready(self):
+        if not self.decision or not self._ready or not self.current_canvas.comparison_ready:
+            return False
+        if self._comparison.get("reference") and not self.reference_canvas.comparison_ready:
+            return False
+        return self.decision[2] == self._comparison
+
+    def set_current_models(self, pair, models):
+        self._current_models = tuple(models) if pair.required else None
+        self._load_comparison()
 
     def _failed(self, _key, message):
         self._ready = False
         self._update_actions()
         self.status.setText("Comparison unavailable: " + message)
 
-    def done(self, result):
+    def shutdown(self):
         self._closed = True
         self.loader.cancel()
-        super().done(result)
+
+    def closeEvent(self, event):
+        self.shutdown()
+        super().closeEvent(event)

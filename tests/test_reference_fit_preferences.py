@@ -153,3 +153,40 @@ def test_first_fit_can_be_a_provisional_start_without_becoming_approved(tmp_path
     assert sequence._read(root)["approved"] == []
     assert sequence._read(root)["best_fits"]["0"]["study"] == first.study_directory.name
     assert not successor.visual_reviews
+
+
+@pytest.mark.parametrize("outcome", ["better", "worse", "same"])
+def test_final_inspection_saves_ranking_without_launching_and_rejection_uses_it(
+    tmp_path, monkeypatch, outcome
+):
+    runner, root, first, second, _ = prepared_pair(tmp_path, monkeypatch)
+    cid = second.candidates[0].candidate_id
+    previous = preferences.fit_record(first, cid)
+    current = preferences.fit_record(second, cid)
+    comparison = dict(current=current, reference=previous, best=None)
+    trials = tuple(sequence._read(root)["trials"])
+    preferred = preferences.save_inspection_preference(
+        second.study_directory, (outcome, cid, comparison)
+    )
+    state = sequence._read(root)
+    assert tuple(state["trials"]) == trials and state["current"] == second.study_directory.name
+    assert state["approved"] == []
+    assert study.load_reference_calibration_study(second.study_directory).visual_reviews == {}
+    assert preferred == (current if outcome == "better" else previous)
+    _reject(second)
+    successor = sequence.run_specimen_sequence(runner, action=("reject", cid, 0))
+    assert study._verify_manifest(successor.study_directory)["fit_search"]["warm_seed"][
+        "source_study"
+    ] == str(root / preferred["study"])
+
+
+def test_inspection_preference_rejects_a_stale_fit_without_writing(tmp_path, monkeypatch):
+    _, root, first, second, _ = prepared_pair(tmp_path, monkeypatch)
+    cid = second.candidates[0].candidate_id
+    comparison = dict(current=preferences.fit_record(first, cid), reference=None, best=None)
+    before = (root / sequence.STATE).read_bytes()
+    with pytest.raises(ValueError, match="no longer current"):
+        preferences.save_inspection_preference(
+            first.study_directory, ("starting_point", cid, comparison)
+        )
+    assert (root / sequence.STATE).read_bytes() == before

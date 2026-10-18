@@ -129,6 +129,12 @@ def record_preference(root, state, snapshot, candidate_id, outcome, comparison):
             raise ValueError("Compare against the best starting point before guiding the next fit")
         selected = current if outcome == "better" else (best or reference)
     else:
+        if best and best != current:
+            raise ValueError("Use relative feedback to replace the saved best fit")
+        if isinstance(comparison, dict) and (
+            comparison.get("current") != current or comparison.get("best") != best
+        ):
+            raise ValueError("Displayed starting point changed; reopen the inspection")
         selected = current
     events = state.setdefault("fit_preferences", [])
     event = dict(
@@ -145,6 +151,27 @@ def record_preference(root, state, snapshot, candidate_id, outcome, comparison):
     event["event_hash"] = _canonical_hash(event)
     events.append(event)
     state.setdefault("best_fits", {})[key] = selected
+
+
+def save_inspection_preference(directory, decision):
+    """Persist the final inspection's ranking without launching or granting QC."""
+    from diffeoforge.reference_sequential_fit import _read, _save, sequence_info
+
+    directory = Path(directory).resolve()
+    info = sequence_info(directory)
+    if not info or info["phase"] != "individual":
+        raise ValueError("Relative inspection needs an individual fit")
+    root = Path(info["root"]).resolve()
+    state = _read(root)
+    if state["current"] != directory.relative_to(root).as_posix():
+        raise ValueError("This fit is no longer current; reopen the inspection")
+    outcome, candidate_id, comparison = decision
+    if not isinstance(comparison, dict):
+        raise ValueError("Inspection must bind its displayed comparison")
+    snapshot = study.load_reference_calibration_study(directory)
+    record_preference(root, state, snapshot, candidate_id, outcome, comparison)
+    _save(root, state)
+    return state["best_fits"][str(info["index"])]
 
 
 def next_from_best(root, state, record):

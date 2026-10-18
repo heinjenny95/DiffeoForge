@@ -31,6 +31,12 @@ scientific gates. Planning does not mark those gates complete.
 
 ## Pilot usability follow-up
 
+- [x] Integrate relative better/worse/equal assessment directly into individual
+  fit inspection, followed by explicit accept/reject. Ranking alone starts no
+  attempt; closing without a final decision records nothing. Reuse the current
+  mesh view and preserve the best after rejected improvements. See
+  [v132 workflow](docs/V132_INLINE_FIT_INSPECTION.md). Build/installed verification
+  and independent first use remain separate.
 - [x] Add direct, synchronized better/worse comparison of individual fits and a
   persistent human-selected best starting point. Relative ranking guides bounded
   new attempts without approving anatomy or carrying fields across control bases.

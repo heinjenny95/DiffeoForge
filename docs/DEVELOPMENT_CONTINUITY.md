@@ -1,4 +1,4 @@
-# Development continuity — v131 relative pilot feedback
+# Development continuity — v132 integrated fit inspection
 
 Snapshot: 2026-10-18. This is a public, software-only continuation guide. Detailed
 research results, local paths, account destinations and run identities belong in
@@ -20,6 +20,14 @@ correct parameters or interpret biology for the researcher. Deformetrica is the
 default supported reference route; the Modern engine remains evidence-gated.
 
 ## Current source work
+
+v132 moves relative feedback into the actual individual-fit inspection: compare
+the two surfaces, select better/worse/equal, then explicitly accept/reject.
+The hidden independent comparison entry point is removed. Ranking alone neither
+persists a decision nor launches a fit, and the current loaded mesh objects are
+reused. See [workflow and boundaries](V132_INLINE_FIT_INSPECTION.md). Source
+verification, Windows package and installation are recorded separately below;
+the last verified installation remains v131 until the new delivery is checked.
 
 v131 adds synchronized side-by-side individual-fit comparisons, better/worse/equal
 feedback and a persistent best starting point. New attempts use that verified

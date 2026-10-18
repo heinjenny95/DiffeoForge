@@ -16,7 +16,7 @@ def setup_dialog(tmp_path, monkeypatch, *, best=True):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
 
-    from diffeoforge.desktop.fit_preference_dialog import FitPreferenceDialog
+    from diffeoforge.desktop.fit_preference_dialog import FitPreferencePanel
     from diffeoforge.desktop.preview_mesh_loader import PreviewMeshLoader
 
     app = QApplication.instance() or QApplication([])
@@ -24,7 +24,8 @@ def setup_dialog(tmp_path, monkeypatch, *, best=True):
     monkeypatch.setattr(
         PreviewMeshLoader, "request_operation", lambda self, key, op: queued.append((key, op))
     )
-    dialog = FitPreferenceDialog(tmp_path)
+    dialog = FitPreferencePanel(tmp_path)
+    dialog.resize(1120, 760)
     def record(name):
         return dict(study=name, candidate_id="fit-specimen")
     saved, previous, current = (
@@ -67,7 +68,8 @@ def test_direct_comparison_has_shared_scale_camera_and_frame_gated_feedback(tmp_
     wait(app, lambda: dialog.feedback_buttons["better"].isEnabled())
     dialog.feedback_buttons["worse"].click()
     assert dialog.decision == ("worse", "fit-specimen", comparison)
-    assert dialog._closed
+    assert not dialog._closed  # Rating alone never closes inspection or starts a fit.
+    dialog.close()
     app.processEvents()
 
 
@@ -93,7 +95,7 @@ def test_other_history_can_be_viewed_but_cannot_silently_replace_best(tmp_path, 
     assert not any(b.isEnabled() for b in dialog.feedback_buttons.values())
     assert "Best so far" in dialog.status.text()
     assert queued[-1][0] == "surfaces"
-    dialog.reject()
+    dialog.close()
     assert dialog.decision is None
     # A late worker delivery cannot revive a closed dialog or apply a decision.
     dialog._loaded("surfaces", ([], {}))

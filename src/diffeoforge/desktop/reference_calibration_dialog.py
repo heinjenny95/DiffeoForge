@@ -425,6 +425,7 @@ class CalibrationCandidateViewerDialog(QDialog):
         pairs: tuple[CalibrationQcPair, ...] | None = None,
         allow_plan_b: bool = False,
         read_only: bool = False,
+        compare_preferences: bool = False,
     ) -> None:
         super().__init__(parent)
         if candidate.run_directory is None:
@@ -455,6 +456,13 @@ class CalibrationCandidateViewerDialog(QDialog):
         self._keep_as_plan_b = False
         self._allow_plan_b = allow_plan_b
         self._read_only = read_only
+        self.fit_preferences = None
+        self._valid_individual = not compare_preferences or (
+            candidate.status == "completed"
+            and bool(candidate.metrics)
+            and candidate.metrics.get("invalid_face_count") == 0
+        )
+        self._allow_plan_b = self._allow_plan_b and self._valid_individual
         self.feature_observations: dict[str, dict[str, object]] = {}
         self._mesh_loader = PreviewMeshLoader(self)
         self._mesh_loader.loaded.connect(self._pair_loaded)
@@ -486,6 +494,7 @@ class CalibrationCandidateViewerDialog(QDialog):
             "the orange lines should sit on the blue surface."
         )
         intro.setWordWrap(True)
+        self._comparison_intro = intro
         if read_only:
             intro.setText(
                 "Compare the saved shapes. Close this view to return to your current fit."
@@ -500,7 +509,8 @@ class CalibrationCandidateViewerDialog(QDialog):
         )
         instructions.setWordWrap(True)
         instructions.setObjectName("card")
-        layout.addWidget(InfoDisclosure("What to check", instructions))
+        instructions_disclosure = InfoDisclosure("What to check", instructions)
+        layout.addWidget(instructions_disclosure)
         self.mesh_combo = QComboBox()
         for index, pair in enumerate(self._pairs):
             if pair.required:
@@ -545,13 +555,34 @@ class CalibrationCandidateViewerDialog(QDialog):
         self.canvas.originalDetailRequested.connect(self._load_original_detail)
         self.show_original.toggled.connect(self.canvas.set_show_original)
         self.show_reconstruction.toggled.connect(self.canvas.set_show_reconstruction)
-        layout.addWidget(self.canvas, 1)
+        if compare_preferences and not read_only and self._valid_individual:
+            from diffeoforge.desktop.fit_preference_dialog import FitPreferencePanel
+
+            self.fit_preferences = FitPreferencePanel(
+                study_directory, self, current_canvas=self.canvas
+            )
+            title.setText("Fit inspection · compare, then decide")
+            intro.setText(
+                "Orange: original specimen. Blue: reconstructed surface. "
+                "Both views share camera and scale."
+            )
+            instructions_disclosure.hide()
+            self.previous_specimen_button.hide()
+            self.next_specimen_button.hide()
+            self.mesh_combo.hide()
+            reset.hide()
+            self.status.hide()
+            layout.addWidget(self.fit_preferences, 1)
+            self._allow_plan_b = False  # Rejected improvements now retain the best automatically.
+        else:
+            layout.addWidget(self.canvas, 1)
         canvas_help = QLabel(
             "Controls: drag to rotate; right-drag to pan; use the mouse wheel to "
             "zoom; double-click to reset the view."
         )
         canvas_help.setObjectName("hint")
         canvas_help.setWordWrap(True)
+        canvas_help.setVisible(self.fit_preferences is None)
         layout.addWidget(canvas_help)
         self.specimen_decision = QComboBox()
         self.specimen_decision.setAccessibleName("Surface fit of this specimen")
@@ -612,7 +643,16 @@ class CalibrationCandidateViewerDialog(QDialog):
         self.decision_panel = QFrame()
         self.decision_panel.setObjectName("card")
         decision_layout = QVBoxLayout(self.decision_panel)
-        layout.addWidget(InfoDisclosure("Optional individual assessment", self.specimen_decision))
+        if self.fit_preferences:
+            self.fit_preferences.layout().removeWidget(self.fit_preferences.feedback_controls)
+            decision_layout.addWidget(self.fit_preferences.feedback_controls)
+            decision_layout.addWidget(QLabel("2. Accept or reject this fit"))
+            self.fit_preferences.selectionChanged.connect(self._update_review_progress)
+        individual_assessment = InfoDisclosure(
+            "Optional individual assessment", self.specimen_decision
+        )
+        individual_assessment.setVisible(self.fit_preferences is None)
+        layout.addWidget(individual_assessment)
         self.review_progress = QLabel()
         self.review_progress.setWordWrap(True)
         decision_layout.addWidget(self.review_progress)
@@ -627,6 +667,9 @@ class CalibrationCandidateViewerDialog(QDialog):
         )
         self.anatomical_notes.setAccessibleName("Anatomical review notes")
         decision_layout.addWidget(self.anatomical_notes)
+        if self.fit_preferences:
+            decision_layout.removeWidget(self.anatomical_notes)
+            feature_layout.addWidget(self.anatomical_notes)
         self.pass_check = QCheckBox(
             "Visual QC passed: I checked every pilot specimen, the important anatomy "
             "is preserved, and I see no implausible warping."
@@ -642,8 +685,15 @@ class CalibrationCandidateViewerDialog(QDialog):
         self.fail_button.setObjectName("danger")
         self.fail_button.clicked.connect(self._record_visual_qc_fail)
         self.complete_button = QPushButton("Approve all specimens")
+        if self.fit_preferences:
+            self.complete_button.setText("Accept fit")
+            self.fail_button.setText("Reject fit")
+            self.fail_button.setStyleSheet(
+                "QPushButton:disabled { background: #f2f5f4; "
+                "border-color: #d5dfdc; color: #78918d; }"
+            )
         self.maybe_button = QPushButton("Maybe / Plan B → try next")
-        self.maybe_button.setVisible(allow_plan_b and not read_only)
+        self.maybe_button.setVisible(self._allow_plan_b and not read_only)
         self.maybe_button.setToolTip(
             "Save this fallback and test new parameters for this specimen. "
             "This does not approve or reject it."
@@ -677,6 +727,19 @@ class CalibrationCandidateViewerDialog(QDialog):
         elif self.mesh_combo.count():
             self._load_selected(self.mesh_combo.currentIndex())
         self._update_review_progress()
+
+    def done(self, result):
+        if self.fit_preferences:
+            self.fit_preferences.shutdown()
+        self._mesh_loader.cancel()
+        super().done(result)
+
+    @property
+    def preference_decision(self):
+        return self.fit_preferences.decision if self.fit_preferences else None
+
+    def _ranking_ready(self):
+        return self.fit_preferences is None or self.fit_preferences.selection_ready
 
     @property
     def review_complete(self) -> bool:
@@ -814,6 +877,8 @@ class CalibrationCandidateViewerDialog(QDialog):
     def _pair_failed(self, _key: object, message: str) -> None:
         self.canvas.clear()
         self.status.setText(f"Comparison could not be displayed: {message}")
+        if self.fit_preferences:
+            self.fit_preferences._failed(_key, message)
         self._update_review_progress()
 
     @Slot(object, object)
@@ -830,6 +895,11 @@ class CalibrationCandidateViewerDialog(QDialog):
             self.canvas.original_detail.setChecked(True)
         else:
             self.canvas.reset_view()
+        if self.fit_preferences:
+            self._comparison_intro.setText(
+                f"{pair.original_path.name} · Orange: original · Blue: reconstruction"
+            )
+            self.fit_preferences.set_current_models(pair, (original, reconstruction))
         self.status.setText(
             f"Original: {pair.original_path.name} ({original.triangle_count} faces)  |  "
             f"Reconstruction: {pair.reconstruction_path.name} "
@@ -935,9 +1005,21 @@ class CalibrationCandidateViewerDialog(QDialog):
             self.review_gate.setObjectName("statusError")
         self.review_gate.setStyleSheet("")
         self.fail_button.setVisible(not self._read_only)
-        self.fail_button.setEnabled(current_seen)
-        self.complete_button.setEnabled(all_pass and not conflicts and self.canvas.comparison_ready)
-        self.maybe_button.setEnabled(current_seen)
+        ranking_ready = self._ranking_ready()
+        self.fail_button.setEnabled(current_seen and ranking_ready)
+        self.complete_button.setEnabled(
+            all_pass and not conflicts and self.canvas.comparison_ready
+            and ranking_ready and self._valid_individual
+        )
+        self.maybe_button.setEnabled(current_seen and ranking_ready)
+        if self.fit_preferences and not ranking_ready:
+            self.review_gate.setText(
+                "First choose the relative fit assessment, then accept or reject."
+            )
+        elif not self._valid_individual:
+            self.review_gate.setText(
+                "Technically invalid fit: reject it; it cannot become the starting point."
+            )
         if self._read_only:
             self.complete_button.hide()
             self.decision_panel.hide()
@@ -950,6 +1032,8 @@ class CalibrationCandidateViewerDialog(QDialog):
         required_names = {p.original_path.name for p in self._pairs if p.required}
         if (
             required_names
+            and self._ranking_ready()
+            and self._valid_individual
             and self._required_pair_ids <= self._reviewed_pair_ids
             and not self._feature_conflicts()
             and not any(
@@ -970,7 +1054,7 @@ class CalibrationCandidateViewerDialog(QDialog):
     def _record_visual_qc_fail(self) -> None:
         index = self.mesh_combo.currentData()
         pair = self._pairs[int(index)] if index is not None else None
-        if pair and pair.required and self.canvas.comparison_ready:
+        if pair and pair.required and self.canvas.comparison_ready and self._ranking_ready():
             self.subject_decisions[pair.original_path.name] = "fail"
             self._review_decision = False
             self.pass_check.setChecked(False)
@@ -1148,13 +1232,6 @@ class ReferenceCalibrationDialog(QDialog):
         fit_row.addWidget(self.denser_model_button)
         fit_row.addStretch()
         root.addLayout(fit_row)
-        self.compare_fits_button = QPushButton("Compare fits · better / worse…")
-        self.compare_fits_button.setToolTip(
-            "Compare the current fit with previous attempts and your best starting point. "
-            "Relative feedback guides one next attempt; it does not approve anatomy."
-        )
-        self.compare_fits_button.clicked.connect(self._compare_fit_preferences)
-        root.addWidget(self.compare_fits_button)
         self.keep_previous_button = QPushButton("Keep previously approved fit")
         self.keep_previous_button.setToolTip(
             "Use the unchanged, previously approved reconstruction. No new fit or repeated QC."
@@ -1979,14 +2056,6 @@ class ReferenceCalibrationDialog(QDialog):
         self.saved_searches_button.setEnabled(not running)
         self.denser_model_button.setVisible(self._individual_checkpoint())
         self.denser_model_button.setEnabled(not running)
-        self.compare_fits_button.setVisible(self._individual_checkpoint())
-        self.compare_fits_button.setEnabled(
-            not running and any(c.status == "completed" for c in self._snapshot.candidates)
-        )
-        best = (self._sequence_progress or {}).get("best")
-        self.compare_fits_button.setText(
-            "Compare fits · better / worse…" + (" · best: " + best["study"] if best else "")
-        )
         if self._individual_checkpoint():
             self.find_fit_button.setToolTip(
                 "Try the next coarse-to-fine attempt for this specimen. Saved deformations "
@@ -3659,6 +3728,8 @@ class ReferenceCalibrationDialog(QDialog):
                 pairs=pairs,
                 allow_plan_b=self._individual_checkpoint()
                 and Path(root).resolve() == self.study_directory.resolve(),
+                compare_preferences=self._individual_checkpoint()
+                and Path(root).resolve() == self.study_directory.resolve(),
             )
             dialog.anatomical_notes.setText(
                 reviewed_snapshot.visual_review_notes.get(candidate.candidate_id, "")
@@ -3689,20 +3760,26 @@ class ReferenceCalibrationDialog(QDialog):
                     "Keeps this option for joint testing. This is not joint-fit approval."
                 )
             elif checkpoint and checkpoint["phase"] == "individual":
-                dialog.fail_button.setText("Reject → next parameters")
+                dialog.fail_button.setText("Reject → next attempt")
                 dialog.fail_button.setToolTip(
                     "Keeps this result and starts a new attempt for the same specimen."
                 )
                 dialog.complete_button.setText(
-                    "Approve → combined confirmation"
+                    "Accept → combined confirmation"
                     if checkpoint["index"] + 1 == checkpoint["total"]
-                    else "Approve → next specimen"
+                    else "Accept → next specimen"
                 )
             index = dialog.mesh_combo.currentData()
             if index is not None:
                 dialog._show_feature_check(dialog._pairs[int(index)])
             dialog._update_review_progress()
             dialog.exec()
+            if dialog.review_recorded and dialog.fit_preferences:
+                from diffeoforge.reference_fit_preferences import save_inspection_preference
+
+                if not dialog.preference_decision:
+                    raise ValueError("Choose relative fit feedback before the final decision")
+                save_inspection_preference(root, dialog.preference_decision)
             if dialog.keep_as_plan_b:
                 if Path(root).resolve() == self.study_directory.resolve() and self._worker is None:
                     self._start_pilot(
@@ -3775,18 +3852,6 @@ class ReferenceCalibrationDialog(QDialog):
     def _restore_plan_b(self) -> None:
         if self._worker is None and not self._restoring_search:
             self._start_pilot(adaptive=False, specimen_action=("restore", "", 0))
-
-    def _compare_fit_preferences(self) -> None:
-        if self._worker is not None or self._restoring_search or not self._individual_checkpoint():
-            return
-        from diffeoforge.desktop.fit_preference_dialog import FitPreferenceDialog
-
-        root = self.study_directory
-        dialog = FitPreferenceDialog(root, self)
-        dialog.exec()
-        if (dialog.decision and root == self.study_directory and self._worker is None
-                and not self._restoring_search):
-            self._start_pilot(adaptive=False, specimen_action=dialog.decision)
 
     def _compare_plan_b(self) -> None:
         if self._worker is not None or self._restoring_search:
