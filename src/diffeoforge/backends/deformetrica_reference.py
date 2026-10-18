@@ -355,6 +355,7 @@ def build_shooting_command(
     run_directory: Path,
     *,
     follow_run_directory_symlinks: bool = True,
+    verified_grid: bool = False,
 ) -> CommandSpec:
     """Resolve an exact Deformetrica ``compute Shooting`` command.
 
@@ -365,6 +366,14 @@ def build_shooting_command(
     """
 
     validate_reference_config(config)
+    if type(verified_grid) is not bool:
+        raise TypeError("verified_grid must be a boolean")
+    if verified_grid:
+        from diffeoforge.reference_shooting_grid import SITECUSTOMIZE
+
+        adapter = run_directory / "engine/sitecustomize.py"
+        if not adapter.is_file() or adapter.read_text(encoding="utf-8") != SITECUSTOMIZE:
+            raise ConfigurationError("Verified Shooting grid adapter is missing or changed")
     arguments = (
         "compute",
         "engine/model.xml",
@@ -379,6 +388,7 @@ def build_shooting_command(
         run_directory,
         arguments=arguments,
         follow_run_directory_symlinks=follow_run_directory_symlinks,
+        verified_shooting_grid=verified_grid,
     )
 
 
@@ -417,6 +427,7 @@ def _build_launcher_command(
     *,
     arguments: tuple[str, ...],
     follow_run_directory_symlinks: bool,
+    verified_shooting_grid: bool = False,
 ) -> CommandSpec:
     """Apply one validated reference runtime to a prepared engine operation."""
 
@@ -434,7 +445,7 @@ def _build_launcher_command(
     singleton = arguments[0] == "estimate" and needs_adapter(config)
     from diffeoforge.reference_checkpoint_schedule import needs_adapter as compact
 
-    if singleton or (arguments[0] == "estimate" and compact(config)):
+    if singleton or verified_shooting_grid or (arguments[0] == "estimate" and compact(config)):
         # Use the original executable/interpreter. The adapter is confined to this
         # protected engine directory; no global runtime or package file changes.
         environment["PYTHONPATH"] = (

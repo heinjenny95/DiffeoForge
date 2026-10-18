@@ -32,12 +32,12 @@ from diffeoforge.runs import _backend_process_working_directory, publish_directo
 from diffeoforge.strict_json import load_strict_json_object
 from diffeoforge.subprocess_policy import hidden_windows_process_kwargs
 
-DESIGN_VERSION = "0.1"
+DESIGN_VERSION = "0.2"
 DESIGN_NAME = "reference-pca-deformation-design.json"
 DESIGN_SIDECAR = "reference-pca-deformation-design.sha256"
-DEFAULT_DIRECTORY_NAME = "reference-pca-deformations-v0.1"
-DEFAULT_RESULT_DIRECTORY = Path("analysis") / "reference-pca-deformations-v0.1-result"
-RESULT_VERSION = "0.1"
+DEFAULT_DIRECTORY_NAME = "reference-pca-deformations-v0.2"
+DEFAULT_RESULT_DIRECTORY = Path("analysis") / "reference-pca-deformations-v0.2-result"
+RESULT_VERSION = "0.2"
 RESULT_NAME = "reference-pca-deformation-result.json"
 RESULT_SIDECAR = "reference-pca-deformation-result.sha256"
 DEFORMATION_EQUATION = (
@@ -308,6 +308,9 @@ def create_reference_pca_deformation_design(
         model_path.write_bytes(_render_shooting_model(source_model.read_bytes()))
         optimization_path = engine_directory / "optimization_parameters.xml"
         shutil.copyfile(source_optimization, optimization_path)
+        from diffeoforge.reference_shooting_grid import SITECUSTOMIZE
+
+        (engine_directory / "sitecustomize.py").write_text(SITECUSTOMIZE, encoding="utf-8")
 
         artifacts = [
             _artifact(temporary, path)
@@ -403,7 +406,7 @@ def verify_reference_pca_deformation_design(
     except (OSError, ValueError) as error:
         raise ReferencePCADeformationError(str(error)) from error
     if (
-        manifest.get("design_version") != DESIGN_VERSION
+        manifest.get("design_version") not in {"0.1", DESIGN_VERSION}
         or manifest.get("status") != "prospective_not_executed"
         or manifest.get("scientific_boundary") != SCIENTIFIC_BOUNDARY
     ):
@@ -431,6 +434,13 @@ def verify_reference_pca_deformation_design(
     }
     if actual != declared:
         raise ReferencePCADeformationError("Design artifact inventory is incomplete")
+    if manifest.get("design_version") == "0.2":
+        from diffeoforge.reference_shooting_grid import SITECUSTOMIZE
+
+        if _safe_design_path(root, "engine/sitecustomize.py").read_text(
+            encoding="utf-8"
+        ) != SITECUSTOMIZE:
+            raise ReferencePCADeformationError("Shooting grid adapter differs")
 
     source = manifest.get("source")
     shooting = manifest.get("shooting")
@@ -567,6 +577,10 @@ def execute_reference_pca_deformation_design(
         raise ValueError("timeout_seconds must be positive")
     design_root = Path(design_directory).expanduser().resolve()
     design = verify_reference_pca_deformation_design(design_root)
+    if design["design_version"] != "0.2":
+        raise ReferencePCADeformationExecutionError(
+            "Legacy Shooting designs remain readable; create a v0.2 design for execution"
+        )
     source = design["source"]
     assert isinstance(source, Mapping)
     run = Path(str(source["run_directory"])).expanduser().resolve()
@@ -594,7 +608,7 @@ def execute_reference_pca_deformation_design(
         output.mkdir()
         logs = temporary / "logs"
         logs.mkdir()
-        command = build_shooting_command(config, temporary)
+        command = build_shooting_command(config, temporary, verified_grid=True)
         environment = os.environ.copy()
         environment.update(command.environment)
         started = time.perf_counter()
@@ -640,6 +654,12 @@ def execute_reference_pca_deformation_design(
         deformation_directory = temporary / "deformations"
         deformation_directory.mkdir()
         endpoint_records: list[dict[str, object]] = []
+        grid_directory = temporary / "grid"
+        grid_directory.mkdir()
+        from diffeoforge.reference_pca import read_deformetrica_momenta
+
+        fields = read_deformetrica_momenta(temporary / "source/endpoint-momenta.txt")
+        precision = np.float32 if config["runtime"]["precision"] == "float32" else np.float64
         template_metadata = inspect_vtk(temporary / "source" / "estimated-template.vtk")
         for endpoint in endpoints:
             if not isinstance(endpoint, Mapping):
@@ -647,11 +667,11 @@ def execute_reference_pca_deformation_design(
                     "Shooting endpoint definition is invalid"
                 )
             endpoint_index = int(endpoint["index"])
-            generated = _final_shooting_output(
-                output,
-                endpoint_index=endpoint_index,
-                final_timepoint=final_timepoint,
-            )
+            generated = output / f"Shooting_{endpoint_index}__endpoint.vtk"
+            grid_path = output / f"Shooting_{endpoint_index}__grid.json"
+            grid = load_strict_json_object(grid_path.read_bytes(), grid_path, label="Shooting grid")
+            _verify_grid(grid, final_timepoint + 1, fields[endpoint_index].astype(precision))
+            shutil.copyfile(grid_path, grid_directory / grid_path.name)
             published = deformation_directory / _endpoint_output_name(endpoint)
             shutil.copyfile(generated, published)
             metadata = inspect_vtk(published)
@@ -758,7 +778,10 @@ def verify_reference_pca_deformation_result(
         )
     except (OSError, ValueError) as error:
         raise ReferencePCADeformationError(str(error)) from error
-    if result.get("result_version") != RESULT_VERSION or result.get("status") != "completed":
+    if (
+        result.get("result_version") not in {"0.1", RESULT_VERSION}
+        or result.get("status") != "completed"
+    ):
         raise ReferencePCADeformationError("PCA deformation result identity is invalid")
     execution = result.get("execution")
     if not isinstance(execution, Mapping) or execution.get("return_code") != 0:
@@ -792,6 +815,8 @@ def verify_reference_pca_deformation_result(
         nested_design,
         source_run=source_run,
     )
+    if design["design_version"] != result["result_version"]:
+        raise ReferencePCADeformationError("Result and source design versions differ")
     source_design = result.get("source_design")
     if not isinstance(source_design, Mapping) or (
         source_design.get("manifest_sha256") != sha256_file(nested_design / DESIGN_NAME)
@@ -833,4 +858,28 @@ def verify_reference_pca_deformation_result(
             raise ReferencePCADeformationError(
                 f"Result endpoint geometry differs: {observed.get('path')}"
             )
+    if result["result_version"] == "0.2":
+        from diffeoforge.reference_pca import read_deformetrica_momenta
+
+        fields = read_deformetrica_momenta(root / "source/endpoint-momenta.txt")
+        dtype = np.float32 if design["runtime"]["precision"] == "float32" else np.float64
+        count = _number_of_time_points(root / "engine/model.xml")
+        for index, field in enumerate(fields):
+            path = _safe_design_path(root, f"grid/Shooting_{index}__grid.json")
+            _verify_grid(load_strict_json_object(path.read_bytes(), path, label="Shooting grid"),
+                         count, field.astype(dtype))
     return result
+
+
+def _verify_grid(grid: Mapping, count: int, field: np.ndarray) -> None:
+    import hashlib
+
+    times = np.asarray(grid.get("times", []), dtype=float)
+    if (
+        grid.get("exported_time") != 1 or grid.get("timepoints") != count
+        or times.shape != (count,) or not np.isfinite(times).all()
+        or not np.allclose(times, np.linspace(0, 1, count), atol=1e-12, rtol=0)
+        or grid.get("precision") != str(field.dtype)
+        or grid.get("momenta_sha256") != hashlib.sha256(field.tobytes()).hexdigest()
+    ):
+        raise ReferencePCADeformationError("Native Shooting grid, endpoint or momenta differ")

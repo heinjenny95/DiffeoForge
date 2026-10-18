@@ -1,7 +1,9 @@
 # PCA mesh plots, endpoint heatmaps and axis movies
 
-These are requirements for reproducible derived media, not an installed feature
-or a replacement for atlas/PCA verification and human anatomical review. Keep
+v129 implements the integrated source route described in [its scope](V129_PILOT_AND_VISUALIZATION.md).
+Frozen/installed verification remains separate. The requirements below retain the
+original media/interpretation contract. Atlas/PCA verification and human
+anatomical review remain separate. Keep
 private study files, specimen identifiers and local paths outside this public
 repository. Deliver media alongside the original project, with a private source
 manifest and file hashes.
@@ -31,7 +33,8 @@ Geodesic concentration used by that route. Its default produced 11 points over
 An endpoint export must establish `t=1` explicitly and record the actual grid,
 native precision and initial momenta. A run-scoped display adapter can do this
 without changing native equations or existing runtime files. Existing application
-endpoint selection still needs a separate repair and regression/installed checks.
+endpoint selection is repaired in v129 source with v0.2 native grid receipts;
+legacy exports remain unchanged and installed checks are tracked separately.
 
 ## Heatmaps
 
@@ -64,7 +67,8 @@ it does not establish an anatomical interpretation or an installed UI change.
 
 Keep scripts, dependency versions, grid receipts, source immutability checks,
 measurement definitions and final hashes with the private delivery. Automatic
-generation beneath the PCA plots remains a separate open product backlog item.
+generation beneath the PCA plots is implemented in v129 after verified result
+release; independent usability acceptance remains separate.
 
 ## Media-only sharing export
 

@@ -1130,14 +1130,21 @@ class _PCAMetadataWorker(QRunnable):
 class _ReferencePCADeformationWorker(QRunnable):
     """Create, execute, and verify default reference PCA Shooting endpoints."""
 
-    def __init__(self, run_directory: Path) -> None:
+    def __init__(self, run_directory: Path, project_directory: Path | None = None) -> None:
         super().__init__()
         self.run_directory = run_directory.expanduser().resolve()
+        self.project_directory = project_directory or self.run_directory.parent.parent
         self.signals = _WorkerSignals()
+        self.cancelled = threading.Event()
+
+    def request_cancel(self) -> None:
+        self.cancelled.set()
 
     @Slot()
     def run(self) -> None:
         try:
+            if self.cancelled.is_set():
+                raise RuntimeError("Visualization preparation cancelled before native work")
             bundle = verify_reference_pca_bundle(
                 self.run_directory / DEFAULT_REFERENCE_PCA_DIRECTORY,
                 source_run=self.run_directory,
@@ -1162,18 +1169,25 @@ class _ReferencePCADeformationWorker(QRunnable):
                     components=components,
                     standard_deviations=2.0,
                 )
-            result = execute_reference_pca_deformation_design(
-                design,
-                self.run_directory / DEFAULT_REFERENCE_PCA_DEFORMATION_RESULT_DIRECTORY,
-            )
+            result = self.run_directory / DEFAULT_REFERENCE_PCA_DEFORMATION_RESULT_DIRECTORY
+            if not result.exists():
+                self.signals.progress.emit("Generating native mean and ±2 SD shapes")
+                result = execute_reference_pca_deformation_design(design, result)
             verify_reference_pca_deformation_result(
                 result,
                 source_run=self.run_directory,
             )
-        except (OSError, RuntimeError, TypeError, ValueError) as error:
+            from diffeoforge.pca_media import prepare_reference_media
+
+            media = prepare_reference_media(
+                self.run_directory, self.project_directory,
+                progress=self.signals.progress.emit,
+                cancelled=self.cancelled,
+            )
+        except Exception as error:  # Unexpected media/decoder failures must release the UI too.
             self.signals.failed.emit(str(error))
             return
-        self.signals.succeeded.emit(result)
+        self.signals.succeeded.emit(media)
 
 
 class _ShapeSpaceComparisonDialog(QDialog):
@@ -1827,6 +1841,14 @@ class DiffeoForgeWindow(QMainWindow):
         results_page = self._build_results_content()
         self.page_stack.addWidget(self._build_quality_review_content())
         self.page_stack.addWidget(results_page)
+        from diffeoforge.desktop.visualization_panel import VisualizationPanel
+
+        self.visualization_panel = VisualizationPanel(self)
+        self.visualization_panel.retry_requested.connect(self._start_reference_pca_deformations)
+        self.visualization_panel.cancel_requested.connect(self._cancel_visualization)
+        self.page_stack.addWidget(self.visualization_panel)
+        self._pca_auto_attempted = set()
+        self._visualization_media_by_run = {}
         root_layout.addWidget(self.page_stack, 1)
         self.setCentralWidget(root)
 
@@ -1863,6 +1885,7 @@ class DiffeoForgeWindow(QMainWindow):
             "4  Compute atlas",
             "5  Visual quality review",
             "6  Results & PCA",
+            "7  Visualization",
         )
         self.rail_steps: list[QPushButton] = []
         for index, text in enumerate(steps):
@@ -3342,6 +3365,9 @@ class DiffeoForgeWindow(QMainWindow):
         )
         reference_pca_deformation_layout.addWidget(self.reference_pca_deformation_status_label)
         reference_pca_deformation_layout.addWidget(self.generate_reference_pca_deformations_button)
+        self.reference_pca_sd_previews = QWidget()
+        self.reference_pca_sd_previews.setLayout(QVBoxLayout())
+        reference_pca_deformation_layout.addWidget(self.reference_pca_sd_previews)
         self.reference_pca_deformation_card.hide()
         layout.insertWidget(layout.indexOf(pca_plots) + 1, self.reference_pca_deformation_card)
 
@@ -3941,6 +3967,13 @@ class DiffeoForgeWindow(QMainWindow):
                 ),
             )
         reference_parameter_layout.addLayout(self.reference_parameter_form)
+        self.reference_iteration_budget_hint = QLabel(
+            "Iteration budget: the pilot can recommend more headroom. "
+            "Reaching this cap is not convergence."
+        )
+        self.reference_iteration_budget_hint.setWordWrap(True)
+        self.reference_iteration_budget_hint.setObjectName("hint")
+        reference_parameter_layout.addWidget(self.reference_iteration_budget_hint)
         self.reference_effective_widths_label = QLabel()
         self.reference_effective_widths_label.setObjectName("status")
         self.reference_effective_widths_label.setWordWrap(True)
@@ -7251,6 +7284,8 @@ class DiffeoForgeWindow(QMainWindow):
         )
 
     def _step_is_unlocked(self, step: int) -> bool:
+        if step in (5, 6) and isinstance(self._worker, _ReferencePCADeformationWorker):
+            return self._registration_results_released()
         if self._worker is not None:
             return False
         if step == 0:
@@ -7280,7 +7315,7 @@ class DiffeoForgeWindow(QMainWindow):
             return bool(self._reference_readiness is not None and self._reference_readiness.ready)
         if step == 4:
             return self._result_review is not None
-        if step == 5:
+        if step in (5, 6):
             return self._registration_results_released()
         return False
 
@@ -7291,6 +7326,7 @@ class DiffeoForgeWindow(QMainWindow):
             "Complete parameter review in Step 3 before atlas computation.",
             "Complete and verify an atlas run before visual quality review.",
             "Approve the visual quality review in Step 5 before opening Results & PCA.",
+            "Approve the visual quality review in Step 5 before opening Visualization.",
         )
         for index, button in enumerate(self.rail_steps):
             unlocked = self._step_is_unlocked(index)
@@ -8649,39 +8685,16 @@ class DiffeoForgeWindow(QMainWindow):
             or self._worker is not None
         ):
             return
-        try:
-            review.artifact("pca-mean-shape")
-        except KeyError:
-            pass
-        else:
-            self._sync_reference_pca_deformation_action(review)
-            self.result_atlas_mesh_group_combo.setCurrentIndex(
-                self.result_atlas_mesh_group_combo.findData("summary")
-            )
-            self.result_atlas_mesh_search_edit.clear()
-            index = self.result_atlas_mesh_combo.findData("pca-mean-shape")
-            if index >= 0:
-                self.result_atlas_mesh_combo.setCurrentIndex(index)
-            self.result_atlas_mesh_combo.setFocus()
+        media = self._visualization_media_by_run.get(review.run_directory)
+        if media is not None:
+            self._navigate_to_step(6)
             return
-        choice = QMessageBox.warning(
-            self,
-            "Run Deformetrica PC shape generation",
-            "DiffeoForge will run one separate Deformetrica compute Shooting operation "
-            "for the mean and the negative and positive 2-SD endpoints of up to the "
-            "first three retained PCs. It uses the exact source runtime, including its "
-            "configured CPU/GPU device, and may take substantial time.\n\n"
-            "The completed atlas and PCA remain unchanged. Only a new immutable result "
-            "directory is published, and only after every endpoint passes verification.\n\n"
-            "These shapes are visualizations, not biological validation. Start now?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
-            QMessageBox.StandardButton.Cancel,
-        )
-        if choice != QMessageBox.StandardButton.Yes:
-            return
+        self._pca_auto_attempted.add((review.run_directory, review.bundle_manifest_sha256))
         worker = _ReferencePCADeformationWorker(review.run_directory)
+        self._pca_media_source_identity = (review.run_directory, review.bundle_manifest_sha256)
         worker.signals.succeeded.connect(self._reference_pca_deformation_succeeded)
         worker.signals.failed.connect(self._reference_pca_deformation_failed)
+        worker.signals.progress.connect(self._visualization_progress)
         self._worker = worker
         self._reference_pca_deformation_started_at = time.monotonic()
         self._reference_pca_deformation_timer.start()
@@ -8699,6 +8712,21 @@ class DiffeoForgeWindow(QMainWindow):
             "Generating verified Deformetrica PC shape meshes in the background…"
         )
         self._thread_pool.start(worker)
+        self._sync_navigation_state()
+
+    @Slot(object)
+    def _visualization_progress(self, text) -> None:
+        self._pca_media_phase = str(text)
+        self.visualization_panel.set_busy(str(text))
+        self.reference_pca_deformation_status_label.setText(str(text))
+
+    @Slot()
+    def _cancel_visualization(self) -> None:
+        if isinstance(self._worker, _ReferencePCADeformationWorker):
+            self._worker.request_cancel()
+            self.visualization_panel.set_busy(
+                "Cancellation requested; waiting for the current native Shooting step to finish."
+            )
 
     @Slot()
     def _update_reference_pca_deformation_elapsed(self) -> None:
@@ -8707,9 +8735,8 @@ class DiffeoForgeWindow(QMainWindow):
             return
         elapsed = time.monotonic() - self._reference_pca_deformation_started_at
         self.reference_pca_deformation_status_label.setText(
-            "Deformetrica Shooting is running in the background · elapsed "
-            f"{self._format_result_duration(elapsed)}. No endpoint is exposed before "
-            "atomic publication and full verification."
+            f"{getattr(self, '_pca_media_phase', 'Preparing PCA visualization')} · "
+            f"{self._format_result_duration(elapsed)} elapsed."
         )
 
     @Slot(object)
@@ -8722,6 +8749,15 @@ class DiffeoForgeWindow(QMainWindow):
                 "The source result review disappeared before final reverification"
             )
             return
+        if (review.run_directory, review.bundle_manifest_sha256) != getattr(
+            self, "_pca_media_source_identity", None
+        ):
+            self._reference_pca_deformation_failed(
+                "The active result changed; media were kept with their source and not displayed."
+            )
+            return
+        self._visualization_media_by_run[review.run_directory] = _result
+        self._pca_media_finalizing = True
         worker = _ResultReviewWorker(review.run_directory, reference=True)
         worker.signals.succeeded.connect(self._result_review_succeeded)
         worker.signals.failed.connect(self._reference_pca_deformation_reload_failed)
@@ -8748,6 +8784,9 @@ class DiffeoForgeWindow(QMainWindow):
     @Slot(str)
     def _reference_pca_deformation_failed(self, message: str) -> None:
         self._worker = None
+        self._pca_media_finalizing = False
+        if self._result_review is not None:
+            self._visualization_media_by_run.pop(self._result_review.run_directory, None)
         self._reference_pca_deformation_timer.stop()
         self._reference_pca_deformation_started_at = None
         self._set_result_controls_enabled(True)
@@ -8764,6 +8803,9 @@ class DiffeoForgeWindow(QMainWindow):
         self.result_status_label.setText(
             "PC shape generation failed closed; the previously verified result remains loaded."
         )
+        self.visualization_panel.status.setText(f"Visualization preparation failed: {message}")
+        self.visualization_panel.cancel.hide()
+        self.visualization_panel.retry.show()
         if self._close_after_worker:
             self._close_after_worker = False
             self.close()
@@ -8782,9 +8824,10 @@ class DiffeoForgeWindow(QMainWindow):
         except KeyError:
             generated = False
         else:
-            generated = True
+            generated = (review.run_directory / DEFAULT_REFERENCE_PCA_DEFORMATION_RESULT_DIRECTORY
+                         / "reference-pca-deformation-result.json").is_file()
         self.generate_reference_pca_deformations_button.setText(
-            "View saved PC shape meshes" if generated else "Show shape changes along PC axes…"
+            "Open Visualization"
         )
         self.generate_reference_pca_deformations_button.setEnabled(self._worker is None)
         self.reference_pca_deformation_status_label.setObjectName(
@@ -8794,8 +8837,44 @@ class DiffeoForgeWindow(QMainWindow):
         self.reference_pca_deformation_status_label.setText(
             "Verified mean and ±PC endpoint meshes are loaded in the atlas viewer."
             if generated
-            else ("No axis shapes saved yet. Click to generate them.")
+            else ("Mean and ±2 SD views are prepared automatically after result review.")
         )
+        identity = review.run_directory, review.bundle_manifest_sha256
+        media = self._visualization_media_by_run.get(review.run_directory)
+        if media is not None and self._registration_results_released():
+            try:
+                self.visualization_panel.load(media)
+            except Exception as error:  # Corrupt cached UI data must not escape a Qt slot.
+                self.visualization_panel.clear()
+                self.visualization_panel.status.setText(f"Media could not be displayed: {error}")
+                self.visualization_panel.retry.show()
+                self._visualization_media_by_run.pop(review.run_directory, None)
+                return
+            previews = self.reference_pca_sd_previews.layout()
+            if self.reference_pca_sd_previews.property("media") != str(media):
+                while previews.count():
+                    previews.takeAt(0).widget().deleteLater()
+                for path in sorted((media / "PCA-Gallery/figures").glob("PC*-SD.png")):
+                    from diffeoforge.desktop.visualization_panel import ResponsiveMediaImage
+
+                    label = ResponsiveMediaImage(path)
+                    previews.addWidget(label)
+                self.reference_pca_sd_previews.setProperty("media", str(media))
+        elif (self._worker is None and self._registration_results_released()
+              and identity not in self._pca_auto_attempted):
+            self._pca_auto_attempted.add(identity)
+
+            def start_if_current():
+                current = self._result_review
+                if (current is not None
+                    and (current.run_directory, current.bundle_manifest_sha256) == identity
+                    and self.isVisible() and not self._close_after_worker
+                    and self._reference_calibration_dialog is None and self._worker is None):
+                    self._start_reference_pca_deformations()
+                else:
+                    self._pca_auto_attempted.discard(identity)
+
+            QTimer.singleShot(0, start_if_current)
 
     @Slot()
     def _open_validation_lab(self) -> None:
@@ -9832,6 +9911,15 @@ class DiffeoForgeWindow(QMainWindow):
         deformation = model["deformation"]
         optimization = config["optimization"]
         runtime = config["runtime"]
+        calibration = config.get("project", {}).get("parameter_provenance", {}).get(
+            "recommendation", {}).get("calibration_result", {})
+        budget = calibration.get("iteration_budget_recommendation")
+        self.reference_iteration_budget_hint.setText(
+            f"Suggested starting budget: {budget['suggested_max_iterations']} iterations. "
+            f"{budget['reason']} "
+            "Native tolerance can stop earlier; a cap is not convergence."
+            if budget else "Iteration cap is a budget, not a convergence target."
+        )
         values = (
             (self.reference_attachment_ratio_spin, model["attachment"]["kernel_width"]),
             (self.reference_deformation_ratio_spin, deformation["kernel_width"]),
@@ -11657,6 +11745,12 @@ class DiffeoForgeWindow(QMainWindow):
     @Slot(object)
     def _result_review_succeeded(self, review: ModernResultReview) -> None:
         self._worker = None
+        if review.run_directory not in self._visualization_media_by_run:
+            self.visualization_panel.clear()
+            previews = self.reference_pca_sd_previews.layout()
+            while previews.count():
+                previews.takeAt(0).widget().deleteLater()
+            self.reference_pca_sd_previews.setProperty("media", None)
         self._result_review = review
         self._refresh_iteration_extension(review.run_directory)
         method_label = review.pca_method_label
@@ -11858,6 +11952,9 @@ class DiffeoForgeWindow(QMainWindow):
         self._set_result_controls_enabled(True)
         self._sync_ready_state()
         step = 5 if self._registration_results_released() else 4
+        if getattr(self, "_pca_media_finalizing", False) and self._active_step in (5, 6):
+            step = self._active_step
+        self._pca_media_finalizing = False
         self._set_active_step(step)
         self.page_stack.setCurrentIndex(step)
         if self._close_after_worker:
@@ -12642,6 +12739,7 @@ class DiffeoForgeWindow(QMainWindow):
         self._populate_atlas_viewer(review)
         self._sync_ready_state()
         self._navigate_to_step(5)
+        self._sync_reference_pca_deformation_action(review)
 
     def _registration_results_released(self) -> bool:
         if self._result_review is None:
@@ -13094,6 +13192,9 @@ class DiffeoForgeWindow(QMainWindow):
         self.result_back_button.setEnabled(enabled)
         released = enabled and self._registration_results_released()
         self.page_stack.widget(5).setEnabled(released)
+        if isinstance(self._worker, _ReferencePCADeformationWorker):
+            self.page_stack.widget(5).setEnabled(self._registration_results_released())
+        self.page_stack.widget(6).setEnabled(self._registration_results_released())
         self.create_scientific_report_button.setEnabled(released)
         self.create_publication_bundle_button.setEnabled(released)
         self.create_pca_metadata_button.setEnabled(released)
@@ -13404,6 +13505,7 @@ class DiffeoForgeWindow(QMainWindow):
                     "The window will remain open until result verification finishes."
                 )
             elif isinstance(self._worker, _ReferencePCADeformationWorker):
+                self._worker.request_cancel()
                 self.reference_pca_deformation_status_label.setText(
                     "The window will remain open until Deformetrica Shooting stops and "
                     "the atomic result is either verified or rejected."

@@ -1063,7 +1063,7 @@ class ReferenceCalibrationDialog(QDialog):
             "Use this only when you want to override the transparent provisional "
             "recommendation after each parameter family."
         )
-        self.advanced_mode.toggled.connect(lambda _checked: self._render())
+        self.advanced_mode.toggled.connect(lambda _checked: self._render(self._snapshot))
         root.addWidget(self.advanced_mode)
         self.afk_mode = QCheckBox(
             "AFK / overnight: continue with eligible provisional recommendations"
@@ -1129,17 +1129,17 @@ class ReferenceCalibrationDialog(QDialog):
         )
         self.find_fit_button.clicked.connect(self._find_fit)
         fit_row.addWidget(self.find_fit_button)
-        self.saved_searches_button = QPushButton("Saved fit searches…")
+        self.saved_searches_button = QPushButton("Saved searches…")
         self.saved_searches_button.clicked.connect(self._choose_saved_search)
         fit_row.addWidget(self.saved_searches_button)
-        self.plan_b_button = QPushButton("Review / use Plan B")
+        self.plan_b_button = QPushButton("Use Plan B")
         self.plan_b_button.clicked.connect(self._restore_plan_b)
         self.plan_b_button.setToolTip("Return to your saved fallback. A fresh review is required.")
         fit_row.addWidget(self.plan_b_button)
         self.compare_plan_b_button = QPushButton("Compare Plan B")
         self.compare_plan_b_button.clicked.connect(self._compare_plan_b)
         fit_row.addWidget(self.compare_plan_b_button)
-        self.denser_model_button = QPushButton("Test denser common model")
+        self.denser_model_button = QPushButton("Denser model")
         self.denser_model_button.setToolTip(
             "More control points; starts with this specimen. All specimens need fresh QC "
             "on this new basis. Earlier searches and approvals stay saved."
@@ -1159,7 +1159,7 @@ class ReferenceCalibrationDialog(QDialog):
         screen_layout.setContentsMargins(0, 0, 0, 0)
         self.screen_enabled = QCheckBox("Review one specimen before joint comparisons")
         self.screen_enabled.setChecked(True)
-        self.screen_enabled.toggled.connect(lambda _checked: self._render())
+        self.screen_enabled.toggled.connect(lambda _checked: self._render(self._snapshot))
         screen_layout.addWidget(self.screen_enabled)
         self.screen_subject = QComboBox()
         self.screen_subject.setToolTip("First screening specimen; choose a difficult fit.")
@@ -1297,7 +1297,7 @@ class ReferenceCalibrationDialog(QDialog):
         self.scroll.setWidget(self.content)
         root.addWidget(self.scroll, 1)
 
-        footer = QHBoxLayout()
+        footer = QVBoxLayout()
         self.footer = footer
         self.cancel_button = QPushButton("Cancel safely")
         self.cancel_button.clicked.connect(self._cancel)
@@ -1332,19 +1332,32 @@ class ReferenceCalibrationDialog(QDialog):
         _set_action_emphasis(self.collect_evidence_button, False)
         _set_action_emphasis(self.advance_button, False)
         _set_action_emphasis(self.close_button, False)
-        footer.addWidget(self.cancel_button)
-        footer.addStretch()
-        footer.addWidget(self.review_next_button)
-        footer.addWidget(self.selection_combo)
-        footer.addWidget(self.collect_evidence_button)
-        footer.addWidget(self.compare_options_button)
-        footer.addWidget(self.use_provisional_button)
-        footer.addWidget(self.start_button)
-        footer.addWidget(self.advance_button)
-        footer.addWidget(close)
+        review_actions = QHBoxLayout()
+        review_actions.addWidget(self.selection_combo, 1)
+        review_actions.addWidget(self.review_next_button)
+        review_actions.addWidget(self.compare_options_button)
+        footer.addLayout(review_actions)
+        extra_actions = QHBoxLayout()
+        extra_actions.addWidget(self.collect_evidence_button)
+        extra_actions.addWidget(self.use_provisional_button)
+        extra_actions.addStretch()
+        footer.addLayout(extra_actions)
+        main_actions = QHBoxLayout()
+        main_actions.addWidget(self.cancel_button)
+        main_actions.addStretch()
+        main_actions.addWidget(self.start_button)
+        main_actions.addWidget(self.advance_button)
+        main_actions.addWidget(close)
+        footer.addLayout(main_actions)
         root.addLayout(footer)
         self.advanced_mode.blockSignals(True)
-        self.advanced_mode.setChecked(True)
+        from diffeoforge.reference_sequential_fit import sequence_info
+
+        self.advanced_mode.setChecked(bool(
+            self._snapshot.plan.qc_recalibration_source
+            or (any(c.status == "completed" for c in self._snapshot.candidates)
+                and not sequence_info(self.study_directory))
+        ))
         self.advanced_mode.blockSignals(False)
         self.advanced_mode.hide()
         self.afk_mode.hide()
@@ -1354,6 +1367,41 @@ class ReferenceCalibrationDialog(QDialog):
             "Reject tries new parameters; approve continues. "
             "A combined fit is checked afterwards."
         )
+        # Keep optional controls inside the scroll area. They previously consumed
+        # most of the window before its content, especially at high DPI.
+        options = QWidget()
+        options_layout = QVBoxLayout(options)
+        options_layout.setContentsMargins(0, 0, 0, 0)
+
+        def child_widgets(item):
+            if item.widget() is not None:
+                yield item.widget()
+            elif item.layout() is not None:
+                for index in range(item.layout().count()):
+                    yield from child_widgets(item.layout().itemAt(index))
+
+        while root.indexOf(self.progress) > 3:
+            item = root.takeAt(3)
+            visibility = [(widget, widget.isHidden()) for widget in child_widgets(item)]
+            if item.widget() is not None:
+                options_layout.addWidget(item.widget())
+            elif item.layout() is not None:
+                item.layout().setParent(None)
+                options_layout.addLayout(item.layout())
+            else:
+                options_layout.addItem(item)
+            for widget, was_hidden in visibility:
+                widget.setVisible(not was_hidden)
+        self.scroll.takeWidget()
+        scroll_body = QWidget()
+        scroll_layout = QVBoxLayout(scroll_body)
+        scroll_layout.setContentsMargins(0, 0, 0, 0)
+        scroll_layout.addWidget(self.content)
+        self.pilot_tools = InfoDisclosure("Fit tools and saved searches", options)
+        scroll_layout.addWidget(self.pilot_tools)
+        scroll_layout.addStretch()
+        self.scroll.setWidget(scroll_body)
+        title.setText("Pilot · fit → review → combined check")
         self._render(self._snapshot)
 
     @property
@@ -1649,6 +1697,12 @@ class ReferenceCalibrationDialog(QDialog):
         stage = self._snapshot.current_stage
         assert stage is not None
         automatic_mode = False
+        fresh_guided = (
+            stage.order == 1 and not self._sequence_info
+            and not self.advanced_mode.isChecked()
+            and not self._snapshot.plan.qc_recalibration_source
+            and all(c.status == "pending" and c.attempts == 0 for c in self._snapshot.candidates)
+        )
         self.advanced_mode.setEnabled(
             not running and not self._snapshot.plan.qc_recalibration_source
         )
@@ -1659,6 +1713,8 @@ class ReferenceCalibrationDialog(QDialog):
             + f"Stage {stage.order} of {len(self._snapshot.plan.stages)} — {stage.title}"
         )
         heading.setObjectName("sectionTitle")
+        if fresh_guided:
+            heading.setText("1 · Find an individual fit")
         self.content_layout.addWidget(heading)
         guidance = stage_guidance(stage)
         if stage.order == 4:
@@ -1704,9 +1760,21 @@ class ReferenceCalibrationDialog(QDialog):
         question = QLabel(guidance.question)
         if self._individual_checkpoint():
             question.setText("Does this fit preserve the original shape?")
-        question.setObjectName("title")
+        if fresh_guided:
+            question.setText("Fit → review → continue")
+        question.setObjectName("sectionTitle")
         question.setWordWrap(True)
         self.content_layout.addWidget(question)
+        if fresh_guided:
+            steps = QLabel(
+                "1. Fit one specimen with the proposed starting settings.\n\n"
+                "2. Inspect its reconstruction. Reject tries another setting; "
+                "approve continues.\n\n"
+                "3. Check a combined fit before preparing the full atlas."
+            )
+            steps.setWordWrap(True)
+            steps.setObjectName("card")
+            self.content_layout.addWidget(steps)
         stage_help = QWidget()
         stage_help_layout = QVBoxLayout(stage_help)
         stage_help_layout.setContentsMargins(0, 0, 0, 0)
@@ -1830,6 +1898,8 @@ class ReferenceCalibrationDialog(QDialog):
         candidate_layout.setContentsMargins(0, 0, 0, 0)
         self._candidate_state_labels = {}
         for index, candidate in enumerate(self._snapshot.candidates, start=1):
+            if fresh_guided:
+                continue
             if (
                 stage.order == 4
                 and candidate.status == "pending"
@@ -1844,7 +1914,12 @@ class ReferenceCalibrationDialog(QDialog):
                     tradeoffs=tradeoffs[candidate.candidate_id],
                 )
             )
-        if automatic_mode:
+        if fresh_guided:
+            candidate_container.hide()
+            candidate_container.deleteLater()
+            self.progress.setRange(0, 1)
+            self.progress.setFormat("Ready for the first specimen")
+        elif automatic_mode:
             self.content_layout.addWidget(
                 InfoDisclosure(
                     f"See all {len(self._snapshot.candidates)} pilot candidates",
@@ -1989,7 +2064,7 @@ class ReferenceCalibrationDialog(QDialog):
                 "Running. Inspect any completed option while the next option computes."
             )
         else:
-            self.status.setText("Next: click the green Run all candidates in this stage button.")
+            self.status.setText(f"Next: {self.start_button.text()}.")
         if stage and stage.order == 4:
             pending = any(
                 c.candidate_id.startswith("qualification-") and c.status != "completed"

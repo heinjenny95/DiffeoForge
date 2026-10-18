@@ -67,8 +67,9 @@ def load_pilot_preview(
     caches are regenerated. Full resolution remains a separate explicit load.
     """
     source = path.resolve()
-    raw = source.read_bytes()
-    digest = hashlib.sha256(raw).hexdigest()
+    from diffeoforge.mesh import sha256_file
+
+    digest = sha256_file(source)
     key = digest, triangle_budget
     with _LOCK:
         model = _MODELS.get(key)
@@ -117,6 +118,9 @@ def load_pilot_preview(
         except (OSError, ValueError, KeyError, EOFError):
             data = None
     if data is None:
+        raw = source.read_bytes()
+        if hashlib.sha256(raw).hexdigest() != digest:
+            raise ValueError("Mesh changed while preparing its preview")
         parsed = _classic_ascii(raw) if source.suffix.lower() == ".vtk" else None
         if parsed is None:
             model = load_mesh_preview(source, triangle_budget=triangle_budget)

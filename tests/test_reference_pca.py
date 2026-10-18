@@ -109,6 +109,7 @@ def _completed_reference_run(
     *,
     linear_momenta: bool = False,
     launcher: dict[str, str] | None = None,
+    three_components: bool = False,
 ) -> Path:
     example = Path(__file__).parents[1] / "examples" / "minimal-atlas.yaml"
     if launcher is not None:
@@ -133,7 +134,8 @@ def _completed_reference_run(
                     -0.5
                     + (subject_index if linear_momenta else subject_index**2) * 0.2
                     - point_index * 0.05,
-                    subject_index * 0.4 + point_index**2 * 0.3,
+                    (float(np.sin(subject_index)) * 0.4 if three_components
+                     else subject_index * 0.4) + point_index**2 * 0.3,
                 )
             )
     momenta_path.write_text(
@@ -1538,7 +1540,7 @@ def test_reference_pca_deformation_execution_publishes_verified_endpoints(
             mount = _argv[_argv.index("--mount") + 1]
             root = Path(mount.removeprefix("type=bind,source=").removesuffix(",target=/work"))
         assert root.parent == design.parent
-        assert root.name.startswith(".reference-pca-deformations-v0.1-result.tmp-")
+        assert root.name.startswith(".reference-pca-deformations-v0.2-result.tmp-")
         assert _kwargs["env"]["OMP_NUM_THREADS"] == "4"
         output = root / "output"
         header = (
@@ -1551,15 +1553,21 @@ def test_reference_pca_deformation_execution_publishes_verified_endpoints(
             .findtext("./deformation-parameters/number-of-timepoints")
         )
         source_template = root / "source" / "estimated-template.vtk"
+        import hashlib
+
+        fields = read_deformetrica_momenta(root / "source/endpoint-momenta.txt")
+        native_dtype = json.loads((run / "manifest.json").read_text())["effective_config"][
+            "runtime"]["precision"]
         for endpoint_index in range(endpoint_count):
             shutil.copyfile(
                 source_template,
-                output
-                / (
-                    f"Shooting_{endpoint_index}__GeodesicFlow__surface__tp_"
-                    f"{timepoints - 1}__age_1.00.vtk"
-                ),
+                output / f"Shooting_{endpoint_index}__endpoint.vtk",
             )
+            grid = {"times": np.linspace(0, 1, timepoints).tolist(),
+                    "exported_time": 1, "timepoints": timepoints, "precision": native_dtype,
+                    "momenta_sha256": hashlib.sha256(
+                        fields[endpoint_index].astype(native_dtype).tobytes()).hexdigest()}
+            (output / f"Shooting_{endpoint_index}__grid.json").write_text(json.dumps(grid))
         return SimpleNamespace(
             returncode=0,
             stdout="shooting completed\n",

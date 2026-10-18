@@ -2538,6 +2538,19 @@ def _final_configuration(
         configure_preserved_pilot(
             config, root=seed_root, seed=seed, config_directory=root / "selected"
         )
+    from diffeoforge.iteration_budget import recommend_iteration_budget
+
+    calibration = config["project"]["parameter_provenance"]["recommendation"]["calibration_result"]
+    budget = recommend_iteration_budget(
+        config["optimization"]["max_iterations"], runtime_observations,
+        selected_candidate_ids.values(),
+    )
+    calibration["iteration_budget_recommendation"] = budget
+    config["optimization"]["max_iterations"] = budget["suggested_max_iterations"]
+    if "full_cohort_initialization" in calibration:
+        calibration["full_cohort_initialization"]["individual_max_iterations"] = budget[
+            "suggested_max_iterations"
+        ]
     validate_schema(config)
     final_path = root / "selected" / "atlas-calibrated.yaml"
     final_path.parent.mkdir(parents=True, exist_ok=False)

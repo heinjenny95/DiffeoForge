@@ -60,7 +60,7 @@ diffeoforge reference-pca-deformation-run `
   C:\path\to\new-shooting-design
 
 diffeoforge reference-pca-deformation-verify `
-  RUN_DIRECTORY\analysis\reference-pca-deformations-v0.1-result `
+  RUN_DIRECTORY\analysis\reference-pca-deformations-v0.2-result `
   --source-run RUN_DIRECTORY
 ```
 
@@ -218,3 +218,7 @@ exposes executed mean/positive/negative PC deformation meshes only when their
 separate Shooting result exists at the default location and passes full
 verification. Covariate-aware plots and inferential statistics likewise
 require separate methods and validation decisions.
+
+New v0.2 axis exports verify the actual native integration grid and physical t=1.
+Legacy v0.1 evidence remains readable and unchanged, with its unverified endpoint
+time labeled. See [v129 scope](V129_PILOT_AND_VISUALIZATION.md).

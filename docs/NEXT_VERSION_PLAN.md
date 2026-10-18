@@ -9,6 +9,18 @@ Scope agreed on 2026-09-14: implement the current usability backlog and plan the
 larger roadmap. This is a development plan, not a public release or scientific
 qualification claim. The established development branch remains authoritative.
 
+## v129 owner-selected implementation
+
+The owner authorized Pilot/PCA implementation on 18 October 2026, including an
+in-app Visualization page and pilot-informed iteration-budget headroom. v129
+supersedes the older explicit-click requirement for axis shapes: preparation is
+automatic after verified result/QC release, with source-bound reuse and failure
+handling. Scrollable pilot tools, content-bound mesh reuse, the native physical
+endpoint repair and media-only export are implemented in source. Frozen/installed
+and independent first-use acceptance remain separate. See
+[v129 scope](V129_PILOT_AND_VISUALIZATION.md). Historical checklists below retain
+their original context; unrelated research/platform gates remain open.
+
 ## Adaptive search implementation
 
 v96 implements bounded feedback search and learned-state continuation in the

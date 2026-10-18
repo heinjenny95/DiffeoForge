@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field
+import threading
+from collections import OrderedDict
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Literal
 
@@ -26,6 +28,14 @@ _PLANE_AXES: dict[PreviewPlane, tuple[int, int]] = {
     "yz": (1, 2),
 }
 _AXIS_BOUNDS = ((0, 1), (2, 3), (4, 5))
+_MODEL_CACHE: OrderedDict = OrderedDict()
+_MODEL_CACHE_LOCK = threading.Lock()
+
+
+def clear_mesh_preview_cache() -> None:
+    """Release retained full-detail geometry (also useful for cold-load measurements)."""
+    with _MODEL_CACHE_LOCK:
+        _MODEL_CACHE.clear()
 
 
 class MeshPreviewError(RuntimeError):
@@ -193,6 +203,12 @@ def load_mesh_preview(
     source = Path(path).expanduser().resolve()
     try:
         hash_before = sha256_file(source)
+        identity = (hash_before, triangle_budget)
+        with _MODEL_CACHE_LOCK:
+            cached = _MODEL_CACHE.get(identity)
+            if cached is not None:
+                _MODEL_CACHE.move_to_end(identity)
+                return replace(cached, path=source)
         loaded = load_surface_mesh(source)
         hash_after = sha256_file(source)
     except (ConfigurationError, OSError, TypeError, ValueError) as error:
@@ -226,7 +242,7 @@ def load_mesh_preview(
         if reduced
         else geometry.triangles
     )
-    return MeshPreviewModel(
+    model = MeshPreviewModel(
         path=source,
         sha256=hash_after,
         vertices=display_vertices,
@@ -238,3 +254,16 @@ def load_mesh_preview(
         geometry_is_proxy=reduced,
         source_triangle_count=metadata.triangles,
     )
+    # Geometry is immutable, content/resolution bound and shared across viewers.
+    # Fresh byte hashing above is required even on hits; metadata alone is unsafe.
+    # Do not retain oversized tuple graphs indefinitely. One million faces is
+    # roughly several hundred MB in Python, so the aggregate budget is smaller.
+    if len(model.triangles) <= 1_500_000:
+        with _MODEL_CACHE_LOCK:
+            _MODEL_CACHE[identity] = model
+            _MODEL_CACHE.move_to_end(identity)
+            while len(_MODEL_CACHE) > 1 and (len(_MODEL_CACHE) > 4 or sum(
+                len(item.triangles) for item in _MODEL_CACHE.values()
+            ) > 600_000):
+                _MODEL_CACHE.popitem(last=False)
+    return model

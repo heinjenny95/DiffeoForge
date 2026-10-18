@@ -165,6 +165,7 @@ def test_mesh_preview_discards_model_if_source_changes_during_load(
         source.write_bytes(source.read_bytes() + b"\n")
         return loaded
 
+    mesh_preview.clear_mesh_preview_cache()  # Exercise a cold read, including its race guard.
     monkeypatch.setattr(mesh_preview, "load_surface_mesh", changing_read)
 
     with pytest.raises(MeshPreviewError, match="changed while"):

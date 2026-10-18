@@ -19,15 +19,16 @@ scientific gates. Planning does not mark those gates complete.
   old pilot approvals, recorded rejections and final full-cohort QC. Replace stale
   live-activity text on stop. See [v128 scope](docs/V128_OPTIONAL_EARLY_REVIEW.md).
 
-- [ ] Fix the control-density dialog layout after reopening a completed pilot:
-  recommendation/report buttons overlap the density-stage heading in the
-  reported Windows view. Check stale completed-result actions during the
-  transition, vertical size hints, scrolling, resizing and display scaling.
-  Require legible, separate headings/actions and reachable controls on the
-  supported window sizes, including the installed main-workflow route. Preserve
-  density execution, saved approvals and scientific settings. Owner requested
-  backlog only on2026-10-16 and continues working; do not interrupt a pilot,
-  patch the running app or install a build for this report yet.
+- [x] Repair the reopened control-density layout with proper widget ownership,
+  scrollable optional controls and a persistent footer. Source visual checks
+  cover pending/completed/density views at 850×650 and 1040×820. See
+  [v129 scope and separate delivery gates](docs/V129_PILOT_AND_VISUALIZATION.md).
+- [x] Guide new pilots through one fit, review, then a combined check; reuse
+  freshly hashed full-detail/proxy geometry across views. Saved protocols and
+  approvals remain preserved. See [v129](docs/V129_PILOT_AND_VISUALIZATION.md).
+- [x] Propose starting atlas/initializer iteration headroom from selected pilot
+  observations, retaining higher budgets and the native stopping criterion.
+  Cap continuation remains explicit. See [policy and limits](docs/V129_PILOT_AND_VISUALIZATION.md).
 
 - [x] Reopen a saved completed pilot from the parameter-page footer, keeping
   browsing separate from parameter application and exposing the optional density
@@ -507,7 +508,7 @@ scientific gates. Planning does not mark those gates complete.
   resume to the guided desktop workflow
 - [x] Display observed progress and explicitly labelled ETA-to-iteration-cap
 - [x] Import verified Deformetrica momenta into the shared PCA/result pipeline
-- [ ] **Automatically show PC-axis shapes with the PCA plots (owner request,
+- [x] **Automatically show PC-axis shapes with the PCA plots (owner request,
   2026-10-18).** Generate the -2 SD and +2 SD reconstructed shapes for the
   displayed PC axes automatically when PCA results become available, and show
   them directly below the corresponding plots without a separate generation
@@ -515,9 +516,9 @@ scientific gates. Planning does not mark those gates complete.
   the mean shape available for comparison and clear axis/sign/SD labels. These
   views are a standard aid to anatomical and biological interpretation. Keep
   generation responsive with visible progress, reuse matching verified saved
-  shapes on reopen, and preserve the source atlas, PCA and approvals. Backlog
-  only: implementation and installed-UI acceptance remain pending.
-- [ ] **Export PCA media directly from DiffeoForge (owner request, 2026-10-18).**
+  shapes on reopen, and preserve the source atlas, PCA and approvals. Implemented
+  in v129; frozen/installed acceptance is tracked separately in its delivery.
+- [x] **Export PCA media directly from DiffeoForge (owner request, 2026-10-18).**
   Add a Results & PCA export for mesh glyph plots at saved scores, comparable
   +/-2 SD extrema/mean heatmaps, and PC1-PC3 morphing movies from -2 SD through
   the mean to +2 SD. Movies should show six synchronized opposing perspectives
@@ -527,14 +528,16 @@ scientific gates. Planning does not mark those gates complete.
   saved evidence, validate native physical endpoints, keep progress responsive
   and preserve source runs/PCA/reviews. Keep technical logs, raw scientific files
   and identity keys outside the presentation package. See
-  [media/export requirements](docs/PCA_VISUALIZATION_EXPORTS.md). Backlog only;
-  integrated implementation and installed-UI acceptance remain pending.
+  [media/export requirements](docs/PCA_VISUALIZATION_EXPORTS.md). Implemented
+  in v129 with a separate left-rail Visualization page; installed acceptance
+  remains a separate delivery gate.
 - [ ] Add verified reference PC deformation meshes and registration-quality rendering
-- [ ] Verify native PC Shooting's effective time grid and physical endpoint before
+- [x] Verify native PC Shooting's effective time grid and physical endpoint before
   selecting meshes. The inspected reference route can ignore the declared point
   count and select `t=0.9` as an endpoint. Repair selection with regression and
   installed checks; preserve existing evidence. See
-  [derived-media requirements](docs/PCA_VISUALIZATION_EXPORTS.md).
+  [derived-media requirements](docs/PCA_VISUALIZATION_EXPORTS.md) and
+  [v129 native grid repair](docs/V129_PILOT_AND_VISUALIZATION.md).
 - [x] Export the reference shape-space comparison as a PDF in the project folder
   in addition to the local HTML report; use a deterministic,
   provenance-bound destination, refuse silent overwrite, and expose both reports

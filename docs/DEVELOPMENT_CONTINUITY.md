@@ -1,6 +1,6 @@
-# Development continuity — v128 optional early atlas review
+# Development continuity — v129 pilot and Visualization
 
-Snapshot: 2026-10-17. This is a public, software-only continuation guide. Detailed
+Snapshot: 2026-10-18. This is a public, software-only continuation guide. Detailed
 research results, local paths, account destinations and run identities belong in
 the owner's private project handoff, not this repository.
 
@@ -21,27 +21,23 @@ default supported reference route; the Modern engine remains evidence-gated.
 
 ## Current source work
 
-Derived PCA media requirements now cover mesh glyphs at saved scores, comparable
-endpoint heatmaps and PC-axis movies, with source preservation and native-grid
-verification. The inspected reference Shooting export can select an intermediate
-physical time when its effective grid differs from the declaration; the product
-repair remains open. See [requirements and limits](PCA_VISUALIZATION_EXPORTS.md).
-This documentation does not change the installed application or automate PCA.
-Owner view feedback also requires synchronized opposing perspectives in PC-axis
-movies, so deformation on the far side of a surface remains visible.
+v129 implements the owner-selected Pilot/PCA work and the follow-up Visualization
+page and iteration-budget recommendation. New pilots use one-fit/review steps;
+optional controls move inside the scroll area, full detail/proxies reuse verified
+geometry, and completed/density layouts have real size/scrolling checks.
 
-Owner follow-up,2026-10-18: add the complete mesh-PCA/heatmap/synchronized-movie
-sharing export directly to Results & PCA, including a portable offline HTML/ZIP
-gallery with short English headings. The roadmap records this as a separate open
-product item. Existing private media exports do not establish implementation or
-installed-UI acceptance; this request records backlog only.
+The new Visualization rail page contains exact-score mesh PCA, automatic mean
+and +/-2 SD views, comparable heatmaps and synchronized opposing-view movies,
+plus a presentation-only offline gallery ZIP. Native Shooting now proves the
+effective grid and physical t=1 in versioned v0.2 results. Legacy evidence is
+retained and labeled. Native public fixtures, media decoding, UI playback,
+source-preservation and cache/close/release guards were checked. Selected pilot
+iteration observations now inform a visible, bounded starting budget; caps and
+native tolerance stops remain distinct. See [scope and limits](V129_PILOT_AND_VISUALIZATION.md).
 
-Owner follow-up,2026-10-18: automatically generate and show -2 SD/+2 SD PC-axis
-shapes directly below the PCA plots, without requiring a separate button. Treat
-these views as standard interpretation context, retain the existing mean/PC1-PC3
-scope and verified result binding, and reuse saved shapes on reopen. This is an
-open Results & PCA usability item in the roadmap, recorded as backlog only;
-no implementation, numerical work or installation was requested by this entry.
+These are source/software checks. Frozen Windows and local installation require
+separate delivery evidence; the installed v128 and last distributed installer
+remain authoritative until that verification. No installer upload was requested.
 
 v128 makes the ten-iteration early anatomical checkpoint optional and disabled
 for new preserved-pilot handoffs. Existing early checkpoints can explicitly
@@ -59,12 +55,10 @@ the existing explicit crash-recovery and checkpoint-resume UI after verifying
 that all writers stopped; preserve checkpoint bytes, reviews and source evidence.
 See the operational startup boundary in [v128 delivery](V128_DELIVERY.md).
 
-Owner follow-up,2026-10-16: the reopened control-density view can show overlapping
-recommendation/report buttons and stage headings. This is an open presentation
-defect; the earlier access/compiled-widget checks did not establish layout
-correctness for the reported view. Record and defer the repair while the owner
-continues. See the unchecked pilot usability item in the roadmap. No runtime
-change, installation or scientific action is authorized by this backlog request.
+The owner-reported reopened density layout is repaired by v129's proper widget
+reparenting and scrollable options. Actual pending/completed/density layouts were
+inspected at the supported minimum and ordinary sizes; installed checks and
+independent first-use acceptance remain separate from those source observations.
 
 v127 fixes the main-workflow entry to completed pilots: a visible parameter-page
 action opens saved results and the optional density comparison without applying

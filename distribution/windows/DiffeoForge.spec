@@ -17,6 +17,11 @@ demo_data = [
     for path in sorted((source / "diffeoforge/desktop/demo_data").iterdir())
     if path.is_file()
 ]
+third_party_data = [
+    (str(path), "third-party/licenses" if path.parent.name == "licenses" else "third-party")
+    for path in sorted((repository / "distribution/third-party").rglob("*"))
+    if path.is_file()
+]
 
 # The post-build SBOM and installer-plan tools run from source after the frozen
 # bundle has been verified. Their implementations and third-party builder
@@ -67,7 +72,6 @@ hidden_imports = [
 ]
 excluded_modules = [
     "IPython",
-    "matplotlib",
     "pip",
     "pytest",
     "tkinter",
@@ -78,7 +82,7 @@ desktop_analysis = Analysis(
     [str(entrypoints / "diffeoforge_desktop.py")],
     pathex=[str(source)],
     binaries=[],
-    datas=schema_data + demo_data,
+    datas=schema_data + demo_data + third_party_data,
     hiddenimports=hidden_imports,
     hookspath=[],
     hooksconfig={},

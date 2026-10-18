@@ -820,6 +820,22 @@
                         }
                       }
                     },
+                    "iteration_budget_recommendation": {
+                      "type": "object", "additionalProperties": false,
+                      "required": ["version", "suggested_max_iterations", "previous_max_iterations",
+                                   "observations", "pilot_near_iteration_cap", "reason", "boundary"],
+                      "properties": {
+                        "version": {"const": "1"},
+                        "suggested_max_iterations": {"type": "integer", "minimum": 1},
+                        "previous_max_iterations": {"type": "integer", "minimum": 1},
+                        "observations": {"type": "array", "items": {
+                          "$ref": "#/properties/project/properties/parameter_provenance/properties/recommendation/properties/calibration_result/properties/runtime_calibration/properties/observations/items"
+                        }},
+                        "pilot_near_iteration_cap": {"type": "boolean"},
+                        "reason": {"type": "string", "minLength": 1},
+                        "boundary": {"type": "string", "minLength": 1}
+                      }
+                    },
                     "runtime_calibration": {
                       "type": "object",
                       "additionalProperties": false,

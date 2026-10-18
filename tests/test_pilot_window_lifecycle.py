@@ -16,7 +16,8 @@ def test_pilot_minimize_progress_escape_and_idle_close(tmp_path, monkeypatch):
     from diffeoforge.reference_calibration_study import create_reference_calibration_study
 
     application = QApplication.instance() or QApplication([])
-    snapshot = create_reference_calibration_study(_project(tmp_path), tmp_path / "pilot")
+    config_path = _project(tmp_path)
+    snapshot = create_reference_calibration_study(config_path, tmp_path / "pilot")
     dialog = ReferenceCalibrationDialog(snapshot.study_directory)
     finished = []
     dialog.finished.connect(finished.append)
@@ -57,19 +58,28 @@ def test_independent_pilot_retains_main_window_appearance(tmp_path, monkeypatch)
     from PySide6.QtWidgets import QApplication, QLabel, QPushButton
     from test_reference_calibration_study import _project
 
+    from diffeoforge.desktop.project_review import review_project
+    from diffeoforge.desktop.project_setup import DesktopEngine
     from diffeoforge.desktop.widgets import DiffeoForgeWindow
     from diffeoforge.reference_calibration_study import create_reference_calibration_study
 
     application = QApplication.instance() or QApplication([])
-    snapshot = create_reference_calibration_study(_project(tmp_path), tmp_path / "pilot")
+    config_path = _project(tmp_path)
+    snapshot = create_reference_calibration_study(config_path, tmp_path / "pilot")
     window = DiffeoForgeWindow()
-    window._review = SimpleNamespace()
+    window._review = review_project(config_path, DesktopEngine.DEFORMETRICA_REFERENCE)
     window._reference_readiness = SimpleNamespace(ready=True)
     monkeypatch.setattr(
         window, "_reference_calibration_context", lambda: (snapshot.plan, snapshot.study_directory)
     )
     monkeypatch.setattr(window, "_finish_reference_calibration", lambda _snapshot: None)
     window._open_reference_calibration()
+    import time
+
+    deadline = time.monotonic() + 15
+    while window._reference_calibration_dialog is None and time.monotonic() < deadline:
+        application.processEvents()
+        time.sleep(.01)
     pilot = window._reference_calibration_dialog
     try:
         application.processEvents()

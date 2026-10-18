@@ -220,7 +220,7 @@ def _decide(window, decision="pass"):
 
 def test_completed_atlas_enters_visual_review_and_gates_all_result_actions(review_window):
     window = review_window
-    assert window.page_stack.count() == 6
+    assert window.page_stack.count() == 7
     assert window.page_stack.currentIndex() == 4
     assert window._loaded_qc_subject == "subject-1"
     assert window.result_registration_qc_canvas.original_model is not None

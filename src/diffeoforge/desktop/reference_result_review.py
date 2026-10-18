@@ -550,6 +550,9 @@ def review_reference_result(
         ) from error
 
     deformation_result_directory = run / DEFAULT_PCA_DEFORMATION_RESULT_DIRECTORY
+    legacy_deformations = run / "analysis/reference-pca-deformations-v0.1-result"
+    if not deformation_result_directory.exists() and legacy_deformations.exists():
+        deformation_result_directory = legacy_deformations
     deformation_result: Mapping[str, object] | None = None
     if deformation_result_directory.exists():
         if progress_callback is not None:
@@ -936,6 +939,9 @@ def review_reference_result(
                     )
                 rendered_distance = f"{float(result_shooting['standard_deviations']):g}"
                 label = f"PC{component} {sign}{rendered_distance} SD (Deformetrica VTK)"
+            legacy_grid = deformation_result["result_version"] == "0.1"
+            if legacy_grid:
+                label += " · legacy, endpoint time unverified"
             artifacts.append(
                 ModernResultArtifact(
                     key,
@@ -944,7 +950,10 @@ def review_reference_result(
                     "vtk",
                     int(endpoint["bytes"]),
                     str(endpoint["sha256"]),
-                    "Verified final-timepoint surface from Deformetrica compute Shooting.",
+                    ("Saved legacy surface; physical endpoint time is unverified. "
+                     "Visualization prepares a separately verified corrected result."
+                     if legacy_grid else
+                     "Verified physical-t=1 surface from Deformetrica compute Shooting."),
                 )
             )
 
