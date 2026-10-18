@@ -30,6 +30,12 @@ This documentation does not change the installed application or automate PCA.
 Owner view feedback also requires synchronized opposing perspectives in PC-axis
 movies, so deformation on the far side of a surface remains visible.
 
+Owner follow-up,2026-10-18: add the complete mesh-PCA/heatmap/synchronized-movie
+sharing export directly to Results & PCA, including a portable offline HTML/ZIP
+gallery with short English headings. The roadmap records this as a separate open
+product item. Existing private media exports do not establish implementation or
+installed-UI acceptance; this request records backlog only.
+
 Owner follow-up,2026-10-18: automatically generate and show -2 SD/+2 SD PC-axis
 shapes directly below the PCA plots, without requiring a separate button. Treat
 these views as standard interpretation context, retain the existing mean/PC1-PC3

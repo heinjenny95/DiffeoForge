@@ -517,6 +517,18 @@ scientific gates. Planning does not mark those gates complete.
   generation responsive with visible progress, reuse matching verified saved
   shapes on reopen, and preserve the source atlas, PCA and approvals. Backlog
   only: implementation and installed-UI acceptance remain pending.
+- [ ] **Export PCA media directly from DiffeoForge (owner request, 2026-10-18).**
+  Add a Results & PCA export for mesh glyph plots at saved scores, comparable
+  +/-2 SD extrema/mean heatmaps, and PC1-PC3 morphing movies from -2 SD through
+  the mean to +2 SD. Movies should show six synchronized opposing perspectives
+  (both sides of XY/XZ/YZ), with fixed cameras and shared colour scales. Produce
+  a portable offline HTML gallery/ZIP with short English media headings, plus
+  PNG/PDF figures and MP4 videos, for sharing with colleagues. Reuse verified
+  saved evidence, validate native physical endpoints, keep progress responsive
+  and preserve source runs/PCA/reviews. Keep technical logs, raw scientific files
+  and identity keys outside the presentation package. See
+  [media/export requirements](docs/PCA_VISUALIZATION_EXPORTS.md). Backlog only;
+  integrated implementation and installed-UI acceptance remain pending.
 - [ ] Add verified reference PC deformation meshes and registration-quality rendering
 - [ ] Verify native PC Shooting's effective time grid and physical endpoint before
   selecting meshes. The inspected reference route can ignore the declared point
