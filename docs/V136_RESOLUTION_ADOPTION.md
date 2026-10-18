@@ -33,5 +33,7 @@ with no fixture changes or native jobs. Ruff and diff checks pass.
 Coverage includes reuse of two grids with only one new Shooting call, original
 bytes and review preservation, distinct evaluated QC surfaces, provisional finish
 and reopen, changed-artifact rejection, cancellation and an individual specimen
-failure. Native execution, packaged UI, installation and independent first use
-remain separate evidence gates.
+failure. Exact packaged and installed UI, full bundle/installer checks, safe
+backed-up installation and ordinary-shell startup pass; see
+[delivery evidence](V136_DELIVERY.md). Native study evaluation, human anatomy
+approval and independent first use remain separate evidence gates.
